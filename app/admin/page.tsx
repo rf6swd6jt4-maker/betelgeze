@@ -1,7 +1,15 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { ONBOARDING_STEPS } from "@/lib/onboarding/steps"
+import { cookies } from "next/headers"
+import { redirect } from "next/navigation"
 
 export default async function AdminPage() {
+    const cookieStore = await cookies()
+    const adminSession = cookieStore.get("admin_session")?.value
+
+    if (adminSession !== process.env.ADMIN_SESSION_SECRET) {
+        redirect("/admin/login")
+    }
     const { data: clients, error: clientsError } = await supabaseAdmin
         .from("clients")
         .select("*")

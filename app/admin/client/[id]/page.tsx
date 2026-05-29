@@ -3,6 +3,12 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
+import { CopyLinkButton } from "./CopyLinkButton"
+import {
+    archiveClient,
+    deleteClient,
+    updateClientModules,
+} from "./actions"
 
 type PageProps = {
     params: Promise<{
@@ -79,7 +85,19 @@ export default async function ClientDetailPage({ params }: PageProps) {
             ? 100
             : Math.round((completedCount / steps.length) * 100)
 
-    const onboardingUrl = `/session/${client.session_token}`
+    const latestActivity = progressRows?.reduce<string | null>((latest, row) => {
+        const rowDate = row.completed_at ?? row.created_at
+
+        if (!rowDate) return latest
+        if (!latest) return rowDate
+
+        return new Date(rowDate) > new Date(latest) ? rowDate : latest
+    }, null)
+
+    const baseUrl =
+        process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
+
+    const onboardingUrl = `${baseUrl}/session/${client.session_token}`
 
     return (
         <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
@@ -101,14 +119,41 @@ export default async function ClientDetailPage({ params }: PageProps) {
                         <p className="mt-2 text-neutral-400">
                             {client.email}
                         </p>
+
+                        <p className="mt-2 text-sm text-neutral-500">
+                            Last activity:{" "}
+                            {latestActivity
+                                ? new Date(latestActivity).toLocaleString(
+                                      "en-IE",
+                                      {
+                                          dateStyle: "medium",
+                                          timeStyle: "short",
+                                      }
+                                  )
+                                : "No activity yet"}
+                        </p>
                     </div>
 
-                    <Link
-                        href={onboardingUrl}
-                        className="rounded-xl bg-white px-4 py-3 text-sm font-medium text-black"
-                    >
-                        Open onboarding link
-                    </Link>
+                    <div className="flex flex-wrap gap-3">
+                        <Link
+                            href={`/session/${client.session_token}`}
+                            className="rounded-xl bg-white px-4 py-3 text-sm font-medium text-black"
+                        >
+                            Open onboarding
+                        </Link>
+
+                        <CopyLinkButton url={onboardingUrl} />
+                    </div>
+                </div>
+
+                <div className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+                    <p className="text-sm font-medium text-neutral-300">
+                        Onboarding link
+                    </p>
+
+                    <p className="mt-3 break-all font-mono text-xs text-neutral-500">
+                        {onboardingUrl}
+                    </p>
                 </div>
 
                 <div className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
@@ -129,28 +174,50 @@ export default async function ClientDetailPage({ params }: PageProps) {
                     </p>
                 </div>
 
-                <div className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+                <form
+                    action={async (formData) => {
+                        "use server"
+                        await updateClientModules(client.id, formData)
+                    }}
+                    className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6"
+                >
                     <p className="text-sm font-medium text-neutral-300">
                         Assigned modules
                     </p>
 
-                    <div className="mt-4 flex flex-wrap gap-2">
-                        {assignedModuleKeys.length > 0 ? (
-                            assignedModuleKeys.map((moduleKey) => (
-                                <span
-                                    key={moduleKey}
-                                    className="rounded-full bg-neutral-800 px-3 py-1 text-sm text-neutral-300"
-                                >
-                                    {MODULES[moduleKey]?.title ?? moduleKey}
+                    <div className="mt-4 space-y-3">
+                        {Object.values(MODULES).map((module) => (
+                            <label
+                                key={module.key}
+                                className="flex cursor-pointer items-start gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4"
+                            >
+                                <input
+                                    type="checkbox"
+                                    name="modules"
+                                    value={module.key}
+                                    defaultChecked={assignedModuleKeys.includes(
+                                        module.key
+                                    )}
+                                    className="mt-1"
+                                />
+
+                                <span>
+                                    <span className="block font-medium">
+                                        {module.title}
+                                    </span>
+
+                                    <span className="mt-1 block text-sm text-neutral-500">
+                                        {module.steps.length} onboarding steps
+                                    </span>
                                 </span>
-                            ))
-                        ) : (
-                            <span className="text-sm text-neutral-500">
-                                No modules assigned.
-                            </span>
-                        )}
+                            </label>
+                        ))}
                     </div>
-                </div>
+
+                    <button className="mt-6 rounded-xl bg-white px-4 py-3 text-sm font-medium text-black">
+                        Save modules
+                    </button>
+                </form>
 
                 <div className="mt-8 overflow-hidden rounded-2xl border border-neutral-800">
                     <table className="w-full border-collapse text-left text-sm">
@@ -201,6 +268,42 @@ export default async function ClientDetailPage({ params }: PageProps) {
                             })}
                         </tbody>
                     </table>
+                </div>
+
+                <div className="mt-8 rounded-2xl border border-red-900/60 bg-red-950/30 p-6">
+                    <p className="text-sm font-medium text-red-200">
+                        Danger zone
+                    </p>
+
+                    <p className="mt-2 text-sm text-red-200/70">
+                        Archive hides the client from the dashboard but keeps
+                        their records. Delete permanently removes the client and
+                        their related onboarding data.
+                    </p>
+
+                    <div className="mt-5 flex flex-wrap gap-3">
+                        <form
+                            action={async () => {
+                                "use server"
+                                await archiveClient(client.id)
+                            }}
+                        >
+                            <button className="rounded-xl border border-red-500/40 px-4 py-3 text-sm font-medium text-red-200">
+                                Archive client
+                            </button>
+                        </form>
+
+                        <form
+                            action={async () => {
+                                "use server"
+                                await deleteClient(client.id)
+                            }}
+                        >
+                            <button className="rounded-xl bg-red-500 px-4 py-3 text-sm font-medium text-white">
+                                Delete client permanently
+                            </button>
+                        </form>
+                    </div>
                 </div>
 
                 <div className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">

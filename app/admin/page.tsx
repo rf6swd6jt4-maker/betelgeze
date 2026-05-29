@@ -22,6 +22,7 @@ export default async function AdminPage() {
     const { data: clients, error: clientsError } = await supabaseAdmin
         .from("clients")
         .select("*")
+        .is("archived_at", null)
         .order("created_at", { ascending: false })
 
     const { data: progressRows, error: progressError } = await supabaseAdmin
@@ -41,11 +42,23 @@ export default async function AdminPage() {
     }
 
     const progressByClient = new Map<string, string[]>()
+    const activityByClient = new Map<string, string>()
 
     for (const row of progressRows ?? []) {
         const existing = progressByClient.get(row.client_id) ?? []
         existing.push(row.step_key)
         progressByClient.set(row.client_id, existing)
+
+        const activityDate = row.completed_at ?? row.created_at
+        const existingActivity = activityByClient.get(row.client_id)
+
+        if (
+            activityDate &&
+            (!existingActivity ||
+                new Date(activityDate) > new Date(existingActivity))
+        ) {
+            activityByClient.set(row.client_id, activityDate)
+        }
     }
 
     const modulesByClient = new Map<string, string[]>()
@@ -96,7 +109,7 @@ export default async function AdminPage() {
                                     Current step
                                 </th>
                                 <th className="px-4 py-3 font-medium">
-                                    Token
+                                    Last activity
                                 </th>
                             </tr>
                         </thead>
@@ -152,6 +165,9 @@ export default async function AdminPage() {
                                         moduleTitle: "General",
                                     }
 
+                                const lastActivity =
+                                    activityByClient.get(client.id)
+
                                 return (
                                     <tr
                                         key={client.id}
@@ -162,7 +178,8 @@ export default async function AdminPage() {
                                                 href={`/admin/client/${client.id}`}
                                                 className="font-medium underline underline-offset-4"
                                             >
-                                                {client.name ?? "Unnamed client"}
+                                                {client.name ??
+                                                    "Unnamed client"}
                                             </Link>
                                         </td>
 
@@ -216,8 +233,15 @@ export default async function AdminPage() {
                                             {currentStep.title}
                                         </td>
 
-                                        <td className="max-w-xs truncate px-4 py-4 font-mono text-xs text-neutral-500">
-                                            {client.session_token}
+                                        <td className="px-4 py-4 text-neutral-400">
+                                            {lastActivity
+                                                ? new Date(
+                                                      lastActivity
+                                                  ).toLocaleString("en-IE", {
+                                                      dateStyle: "medium",
+                                                      timeStyle: "short",
+                                                  })
+                                                : "No activity yet"}
                                         </td>
                                     </tr>
                                 )

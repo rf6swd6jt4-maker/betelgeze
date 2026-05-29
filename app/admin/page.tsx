@@ -158,7 +158,12 @@ export default async function AdminPage() {
                                         className="border-t border-neutral-800"
                                     >
                                         <td className="px-4 py-4">
-                                            {client.name ?? "Unnamed client"}
+                                            <Link
+                                                href={`/admin/client/${client.id}`}
+                                                className="font-medium underline underline-offset-4"
+                                            >
+                                                {client.name ?? "Unnamed client"}
+                                            </Link>
                                         </td>
 
                                         <td className="px-4 py-4 text-neutral-300">

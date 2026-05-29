@@ -1,7 +1,15 @@
-import { supabaseAdmin } from "@/lib/supabase/admin"
-import { ONBOARDING_STEPS } from "@/lib/onboarding/steps"
+import Link from "next/link"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
+import { supabaseAdmin } from "@/lib/supabase/admin"
+import { MODULES } from "@/lib/onboarding/modules"
+
+const BASE_STEPS = [
+    {
+        key: "welcome-video",
+        title: "Welcome",
+    },
+]
 
 export default async function AdminPage() {
     const cookieStore = await cookies()
@@ -10,6 +18,7 @@ export default async function AdminPage() {
     if (adminSession !== process.env.ADMIN_SESSION_SECRET) {
         redirect("/admin/login")
     }
+
     const { data: clients, error: clientsError } = await supabaseAdmin
         .from("clients")
         .select("*")
@@ -19,7 +28,11 @@ export default async function AdminPage() {
         .from("client_progress")
         .select("*")
 
-    if (clientsError || progressError) {
+    const { data: moduleRows, error: modulesError } = await supabaseAdmin
+        .from("client_modules")
+        .select("*")
+
+    if (clientsError || progressError || modulesError) {
         return (
             <main className="min-h-screen bg-neutral-950 text-white flex items-center justify-center px-6">
                 <p>Could not load admin dashboard.</p>
@@ -35,6 +48,14 @@ export default async function AdminPage() {
         progressByClient.set(row.client_id, existing)
     }
 
+    const modulesByClient = new Map<string, string[]>()
+
+    for (const row of moduleRows ?? []) {
+        const existing = modulesByClient.get(row.client_id) ?? []
+        existing.push(row.module_key)
+        modulesByClient.set(row.client_id, existing)
+    }
+
     return (
         <main className="min-h-screen bg-neutral-950 text-white px-6 py-10">
             <div className="mx-auto max-w-6xl">
@@ -48,6 +69,13 @@ export default async function AdminPage() {
                     Track client onboarding progress from one place.
                 </p>
 
+                <Link
+                    href="/admin/new"
+                    className="mt-6 inline-flex rounded-xl bg-white px-4 py-3 text-sm font-medium text-black"
+                >
+                    Add client
+                </Link>
+
                 <div className="mt-8 overflow-hidden rounded-2xl border border-neutral-800">
                     <table className="w-full border-collapse text-left text-sm">
                         <thead className="bg-neutral-900 text-neutral-400">
@@ -57,6 +85,9 @@ export default async function AdminPage() {
                                 </th>
                                 <th className="px-4 py-3 font-medium">
                                     Email
+                                </th>
+                                <th className="px-4 py-3 font-medium">
+                                    Modules
                                 </th>
                                 <th className="px-4 py-3 font-medium">
                                     Progress
@@ -75,20 +106,51 @@ export default async function AdminPage() {
                                 const completedKeys =
                                     progressByClient.get(client.id) ?? []
 
+                                const assignedModuleKeys =
+                                    modulesByClient.get(client.id) ?? []
+
+                                const moduleSteps = assignedModuleKeys.flatMap(
+                                    (moduleKey) => {
+                                        const module = MODULES[moduleKey]
+
+                                        if (!module) {
+                                            return []
+                                        }
+
+                                        return module.steps.map((step) => ({
+                                            ...step,
+                                            moduleTitle: module.title,
+                                        }))
+                                    }
+                                )
+
+                                const completableSteps = [
+                                    ...BASE_STEPS,
+                                    ...moduleSteps,
+                                ]
+
+                                const completedCount = completableSteps.filter(
+                                    (step) => completedKeys.includes(step.key)
+                                ).length
+
+                                const percentage =
+                                    completableSteps.length === 0
+                                        ? 100
+                                        : Math.round(
+                                              (completedCount /
+                                                  completableSteps.length) *
+                                                  100
+                                          )
+
                                 const currentStep =
-                                    ONBOARDING_STEPS.find(
+                                    completableSteps.find(
                                         (step) =>
                                             !completedKeys.includes(step.key)
-                                    ) ??
-                                    ONBOARDING_STEPS[
-                                        ONBOARDING_STEPS.length - 1
-                                    ]
-
-                                const percentage = Math.round(
-                                    (completedKeys.length /
-                                        ONBOARDING_STEPS.length) *
-                                        100
-                                )
+                                    ) ?? {
+                                        key: "final",
+                                        title: "Complete",
+                                        moduleTitle: "General",
+                                    }
 
                                 return (
                                     <tr
@@ -101,6 +163,31 @@ export default async function AdminPage() {
 
                                         <td className="px-4 py-4 text-neutral-300">
                                             {client.email}
+                                        </td>
+
+                                        <td className="px-4 py-4">
+                                            <div className="flex flex-wrap gap-2">
+                                                {assignedModuleKeys.length >
+                                                0 ? (
+                                                    assignedModuleKeys.map(
+                                                        (moduleKey) => (
+                                                            <span
+                                                                key={moduleKey}
+                                                                className="rounded-full bg-neutral-800 px-2.5 py-1 text-xs text-neutral-300"
+                                                            >
+                                                                {MODULES[
+                                                                    moduleKey
+                                                                ]?.title ??
+                                                                    moduleKey}
+                                                            </span>
+                                                        )
+                                                    )
+                                                ) : (
+                                                    <span className="text-neutral-500">
+                                                        No modules
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
 
                                         <td className="px-4 py-4">

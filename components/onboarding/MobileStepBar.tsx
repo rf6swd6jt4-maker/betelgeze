@@ -14,15 +14,15 @@ export function MobileStepBar({ steps }: MobileStepBarProps) {
     const currentStep = steps[safeCurrentIndex]
     const stepNumber = safeCurrentIndex + 1
 
-    const maxVisibleSteps = 4
-
+    const visibleCount = 4
     let startIndex = safeCurrentIndex
 
-    if (startIndex > steps.length - maxVisibleSteps) {
-        startIndex = Math.max(steps.length - maxVisibleSteps, 0)
+    if (startIndex > steps.length - visibleCount) {
+        startIndex = Math.max(steps.length - visibleCount, 0)
     }
 
-    const visibleSteps = steps.slice(startIndex, startIndex + maxVisibleSteps)
+    const visibleSteps = steps.slice(startIndex, startIndex + visibleCount)
+    const showLeftLine = startIndex > 0
 
     return (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-8px_30px_rgba(15,23,42,0.12)] lg:hidden">
@@ -43,17 +43,25 @@ export function MobileStepBar({ steps }: MobileStepBarProps) {
                     </p>
                 </div>
 
-                <div className="flex items-center">
+                <div className="grid grid-cols-[1fr_36px_1fr_36px_1fr_36px_1fr_36px_1fr] items-center">
+                    <div
+                        className={`h-0.5 ${
+                            showLeftLine ? "bg-slate-300" : "bg-transparent"
+                        }`}
+                    />
+
                     {visibleSteps.map((step, visibleIndex) => {
                         const actualIndex = startIndex + visibleIndex
+                        const isLastVisible =
+                            visibleIndex === visibleSteps.length - 1
 
                         return (
                             <div
                                 key={step.key}
-                                className="flex flex-1 items-center"
+                                className="contents"
                             >
                                 <div
-                                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-sm font-semibold ${
+                                    className={`flex h-9 w-9 items-center justify-center rounded-full border text-sm font-semibold ${
                                         step.complete
                                             ? "border-[#1E3A5F] bg-[#1E3A5F] text-white"
                                             : step.current
@@ -64,8 +72,8 @@ export function MobileStepBar({ steps }: MobileStepBarProps) {
                                     {step.complete ? "✓" : actualIndex + 1}
                                 </div>
 
-                                {visibleIndex < visibleSteps.length - 1 && (
-                                    <div className="h-0.5 flex-1 bg-slate-300" />
+                                {!isLastVisible && (
+                                    <div className="h-0.5 bg-slate-300" />
                                 )}
                             </div>
                         )

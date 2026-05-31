@@ -1,5 +1,6 @@
 import { NeedHelpCard } from "./NeedHelpCard"
 import { Roadmap } from "./Roadmap"
+import { MobileStepBar } from "./MobileStepBar"
 
 type RoadmapStep = {
     key: string
@@ -38,11 +39,7 @@ export function OnboardingLayout({
                     </div>
                 </div>
 
-                <section className="min-w-0 overflow-y-auto pb-10">
-                    <div className="mb-6 lg:hidden">
-                        <Roadmap steps={roadmapSteps} />
-                    </div>
-
+                <section className="min-w-0 overflow-y-auto pb-32 lg:pb-10">
                     {children}
 
                     <div className="mt-6 lg:hidden">
@@ -56,6 +53,8 @@ export function OnboardingLayout({
                     </div>
                 </div>
             </div>
+
+            <MobileStepBar steps={roadmapSteps} />
         </main>
     )
 }

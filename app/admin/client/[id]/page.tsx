@@ -4,11 +4,7 @@ import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
 import { CopyLinkButton } from "./CopyLinkButton"
-import {
-    archiveClient,
-    deleteClient,
-    updateClientModules,
-} from "./actions"
+import { archiveClient, deleteClient } from "./actions"
 
 type PageProps = {
     params: Promise<{
@@ -143,6 +139,13 @@ export default async function ClientDetailPage({ params }: PageProps) {
                         </Link>
 
                         <CopyLinkButton url={onboardingUrl} />
+
+                        <Link
+                            href={`/admin/client/${client.id}/edit`}
+                            className="rounded-xl border border-neutral-700 px-4 py-3 text-sm font-medium text-white"
+                        >
+                            Edit client
+                        </Link>
                     </div>
                 </div>
 
@@ -174,50 +177,28 @@ export default async function ClientDetailPage({ params }: PageProps) {
                     </p>
                 </div>
 
-                <form
-                    action={async (formData) => {
-                        "use server"
-                        await updateClientModules(client.id, formData)
-                    }}
-                    className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6"
-                >
+                <div className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
                     <p className="text-sm font-medium text-neutral-300">
                         Assigned modules
                     </p>
 
-                    <div className="mt-4 space-y-3">
-                        {Object.values(MODULES).map((module) => (
-                            <label
-                                key={module.key}
-                                className="flex cursor-pointer items-start gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4"
-                            >
-                                <input
-                                    type="checkbox"
-                                    name="modules"
-                                    value={module.key}
-                                    defaultChecked={assignedModuleKeys.includes(
-                                        module.key
-                                    )}
-                                    className="mt-1"
-                                />
-
-                                <span>
-                                    <span className="block font-medium">
-                                        {module.title}
-                                    </span>
-
-                                    <span className="mt-1 block text-sm text-neutral-500">
-                                        {module.steps.length} onboarding steps
-                                    </span>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                        {assignedModuleKeys.length > 0 ? (
+                            assignedModuleKeys.map((moduleKey) => (
+                                <span
+                                    key={moduleKey}
+                                    className="rounded-full bg-neutral-800 px-3 py-1 text-sm text-neutral-300"
+                                >
+                                    {MODULES[moduleKey]?.title ?? moduleKey}
                                 </span>
-                            </label>
-                        ))}
+                            ))
+                        ) : (
+                            <span className="text-sm text-neutral-500">
+                                No modules assigned.
+                            </span>
+                        )}
                     </div>
-
-                    <button className="mt-6 rounded-xl bg-white px-4 py-3 text-sm font-medium text-black">
-                        Save modules
-                    </button>
-                </form>
+                </div>
 
                 <div className="mt-8 overflow-hidden rounded-2xl border border-neutral-800">
                     <table className="w-full border-collapse text-left text-sm">

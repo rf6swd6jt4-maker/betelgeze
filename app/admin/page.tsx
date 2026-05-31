@@ -3,6 +3,7 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
+export const dynamic = "force-dynamic"
 
 const BASE_STEPS = [
     {
@@ -26,11 +27,11 @@ export default async function AdminPage() {
     ] = await Promise.all([
         supabaseAdmin
             .from("clients")
-            .select("*")
+            .select("id, name, email, created_at, archived_at")
             .is("archived_at", null)
             .order("created_at", { ascending: false }),
-        supabaseAdmin.from("client_progress").select("*"),
-        supabaseAdmin.from("client_modules").select("*"),
+        supabaseAdmin.from("client_progress").select("client_id, step_key, completed_at, created_at"),
+        supabaseAdmin.from("client_modules").select("client_id, module_key"),
     ])
 
     if (clientsError || progressError || modulesError) {

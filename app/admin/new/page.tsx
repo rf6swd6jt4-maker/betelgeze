@@ -3,6 +3,7 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { MODULES } from "@/lib/onboarding/modules"
 import { createClient } from "./actions"
+export const dynamic = "force-dynamic"
 
 type PageProps = {
     searchParams: Promise<{

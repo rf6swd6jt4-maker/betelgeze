@@ -6,6 +6,8 @@ import { MODULES } from "@/lib/onboarding/modules"
 import { CopyLinkButton } from "./CopyLinkButton"
 import { addClientNote, archiveClient, deleteClient } from "./actions"
 
+export const dynamic = "force-dynamic"
+
 type PageProps = {
     params: Promise<{
         id: string
@@ -32,13 +34,13 @@ export default async function ClientDetailPage({ params }: PageProps) {
 
     const { data: client } = await supabaseAdmin
         .from("clients")
-        .select("*")
+        .select("id, name, email, session_token, created_at, archived_at")
         .eq("id", id)
         .single()
 
     if (!client) {
         return (
-            <main className="min-h-screen bg-neutral-950 text-white flex items-center justify-center px-6">
+            <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-6 text-white">
                 <p>Client not found.</p>
             </main>
         )
@@ -52,21 +54,21 @@ export default async function ClientDetailPage({ params }: PageProps) {
     ] = await Promise.all([
         supabaseAdmin
             .from("client_modules")
-            .select("*")
+            .select("id, client_id, module_key")
             .eq("client_id", client.id),
         supabaseAdmin
             .from("client_progress")
-            .select("*")
+            .select("id, client_id, step_key, completed_at, created_at")
             .eq("client_id", client.id)
             .order("created_at", { ascending: false }),
         supabaseAdmin
             .from("client_notes")
-            .select("*")
+            .select("id, client_id, note, created_at")
             .eq("client_id", client.id)
             .order("created_at", { ascending: false }),
         supabaseAdmin
             .from("client_activity")
-            .select("*")
+            .select("id, client_id, activity_type, activity_text, created_at")
             .eq("client_id", client.id)
             .order("created_at", { ascending: false }),
     ])
@@ -98,17 +100,17 @@ export default async function ClientDetailPage({ params }: PageProps) {
             ? 100
             : Math.round((completedCount / steps.length) * 100)
 
-    const latestProgressActivity = progressRows?.reduce<string | null>(
-        (latest, row) => {
-            const rowDate = row.completed_at ?? row.created_at
+    const progressDates =
+        progressRows
+            ?.map((row) => row.completed_at ?? row.created_at)
+            .filter(Boolean) ?? []
 
-            if (!rowDate) return latest
-            if (!latest) return rowDate
-
-            return new Date(rowDate) > new Date(latest) ? rowDate : latest
-        },
-        null
-    )
+    const latestProgressActivity =
+        progressDates.length > 0
+            ? progressDates.sort(
+                  (a, b) => new Date(b).getTime() - new Date(a).getTime()
+              )[0]
+            : null
 
     const latestAdminActivity = activityRows?.[0]?.created_at ?? null
 

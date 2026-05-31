@@ -3,8 +3,13 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
-import { CopyLinkButton } from "./CopyLinkButton"
-import { addClientNote, archiveClient, deleteClient } from "./actions"
+import { ClientActionsMenu } from "./ClientActionsMenu"
+import {
+    addClientNote,
+    archiveClient,
+    clearClientProgress,
+    deleteClient,
+} from "./actions"
 
 export const dynamic = "force-dynamic"
 
@@ -124,7 +129,8 @@ export default async function ClientDetailPage({ params }: PageProps) {
     const baseUrl =
         process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
 
-    const onboardingUrl = `${baseUrl}/session/${client.session_token}`
+    const onboardingPath = `/session/${client.session_token}`
+    const onboardingUrl = `${baseUrl}${onboardingPath}`
 
     const timelineItems = [
         ...(progressRows ?? []).map((row) => {
@@ -182,20 +188,20 @@ export default async function ClientDetailPage({ params }: PageProps) {
 
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                         <Link
-                            href={`/session/${client.session_token}`}
-                            className="rounded-xl bg-white px-4 py-3 text-center text-sm font-medium text-black"
-                        >
-                            Open onboarding
-                        </Link>
-
-                        <CopyLinkButton url={onboardingUrl} />
-
-                        <Link
                             href={`/admin/client/${client.id}/edit`}
-                            className="rounded-xl border border-neutral-700 px-4 py-3 text-center text-sm font-medium text-white"
+                            className="rounded-xl bg-white px-4 py-3 text-center text-sm font-medium text-black"
                         >
                             Edit client
                         </Link>
+
+                        <ClientActionsMenu
+                            onboardingPath={onboardingPath}
+                            onboardingUrl={onboardingUrl}
+                            clearProgressAction={async () => {
+                                "use server"
+                                await clearClientProgress(client.id)
+                            }}
+                        />
                     </div>
                 </div>
 

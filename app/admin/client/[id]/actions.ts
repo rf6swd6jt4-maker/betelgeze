@@ -44,6 +44,19 @@ export async function addClientNote(clientId: string, formData: FormData) {
     redirect(`/admin/client/${clientId}`)
 }
 
+export async function clearClientProgress(clientId: string) {
+    await requireAdmin()
+
+    await supabaseAdmin
+        .from("client_progress")
+        .delete()
+        .eq("client_id", clientId)
+
+    await addActivity(clientId, "progress_cleared", "Client progress cleared")
+
+    redirect(`/admin/client/${clientId}`)
+}
+
 export async function archiveClient(clientId: string) {
     await requireAdmin()
 

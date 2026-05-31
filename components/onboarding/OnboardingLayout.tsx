@@ -1,6 +1,5 @@
 import { NeedHelpCard } from "./NeedHelpCard"
 import { Roadmap } from "./Roadmap"
-import { MobileStepBar } from "./MobileStepBar"
 
 type RoadmapStep = {
     key: string
@@ -19,11 +18,11 @@ export function OnboardingLayout({
     roadmapSteps,
 }: OnboardingLayoutProps) {
     return (
-        <main className="min-h-screen bg-[#F8F7F3] text-slate-900">
-            <header className="sticky top-0 z-20 h-16 border-b border-slate-200 bg-white px-4 sm:px-6">
+        <main className="h-screen overflow-hidden bg-[#F8F7F3] text-slate-900">
+            <header className="h-16 border-b border-slate-200 bg-white px-4 sm:px-6">
                 <div className="mx-auto flex h-full max-w-7xl items-center justify-between">
                     <p className="text-xl font-semibold text-[#1E3A5F]">
-                        ScaylUp
+                        GPG Studios
                     </p>
 
                     <p className="hidden text-sm text-slate-500 sm:block">
@@ -32,27 +31,31 @@ export function OnboardingLayout({
                 </div>
             </header>
 
-            <div className="mx-auto grid max-w-7xl gap-6 px-4 pb-32 pt-4 sm:px-6 lg:grid-cols-[260px_minmax(0,1fr)_260px] lg:py-6">
+            <div className="mx-auto grid h-[calc(100vh-4rem)] max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[260px_minmax(0,1fr)_260px]">
                 <div className="hidden lg:block">
-                    <div className="sticky top-22">
+                    <div className="sticky top-6">
                         <Roadmap steps={roadmapSteps} />
                     </div>
                 </div>
 
-                <section className="min-w-0">{children}</section>
+                <section className="min-w-0 overflow-y-auto pb-10">
+                    <div className="mb-6 lg:hidden">
+                        <Roadmap steps={roadmapSteps} />
+                    </div>
+
+                    {children}
+
+                    <div className="mt-6 lg:hidden">
+                        <NeedHelpCard />
+                    </div>
+                </section>
 
                 <div className="hidden lg:block">
-                    <div className="sticky top-22">
+                    <div className="sticky top-6">
                         <NeedHelpCard />
                     </div>
                 </div>
-
-                <div className="lg:hidden">
-                    <NeedHelpCard />
-                </div>
             </div>
-
-            <MobileStepBar steps={roadmapSteps} />
         </main>
     )
 }

@@ -1,54 +1,67 @@
+export type ModuleStep = {
+    key: string
+    title: string
+    description: string
+}
+
 export type ModuleDefinition = {
     key: string
     title: string
-    steps: {
-        key: string
-        title: string
-        description: string
-    }[]
+    steps: ModuleStep[]
 }
 
 export const MODULES: Record<string, ModuleDefinition> = {
-    "landing-page": {
-        key: "landing-page",
-        title: "Landing Page Creation",
+    "general-info": {
+        key: "general-info",
+        title: "General Info",
         steps: [
             {
-                key: "lp-brand",
-                title: "Brand Information",
+                key: "web-access",
+                title: "Website Access",
                 description:
-                    "Tell us about your company, services and branding.",
+                    "Share access to your current website, domain, hosting, or website builder if you have one.",
             },
             {
-                key: "lp-domain",
-                title: "Domain Information",
+                key: "business-info",
+                title: "Business Information",
                 description:
-                    "Provide domain and hosting information.",
+                    "Tell us where you operate, what services you provide, and the areas you want to target.",
             },
             {
-                key: "lp-design",
-                title: "Design Preferences",
+                key: "cta-information",
+                title: "Call-to-Action Information",
                 description:
-                    "Show us examples and design preferences.",
-            },
-        ],
-    },
-
-    "full-website": {
-        key: "full-website",
-        title: "Website Creation",
-        steps: [
-            {
-                key: "web-structure",
-                title: "Website Structure",
-                description:
-                    "Tell us which pages and features are needed.",
+                    "Tell us what you want customers to do, such as call, request a quote, book a visit, or fill out a form.",
             },
             {
-                key: "web-content",
-                title: "Content Collection",
+                key: "usps",
+                title: "Why Customers Choose You",
                 description:
-                    "Provide content, imagery and assets.",
+                    "Tell us what makes your business different, better, faster, more reliable, or more trusted than competitors.",
+            },
+            {
+                key: "competitors",
+                title: "Competitors",
+                description:
+                    "Share competitors or similar businesses so we understand your local market.",
+            },
+            {
+                key: "accreditations",
+                title: "Accreditations and Trust Signals",
+                description:
+                    "Share qualifications, trade memberships, certifications, guarantees, awards, or insurance details.",
+            },
+            {
+                key: "process",
+                title: "Your Process",
+                description:
+                    "Explain how a customer usually works with you from first contact to completed job.",
+            },
+            {
+                key: "history",
+                title: "Business History",
+                description:
+                    "Tell us how the business started, how long you have been operating, and anything that builds trust.",
             },
         ],
     },
@@ -58,54 +71,53 @@ export const MODULES: Record<string, ModuleDefinition> = {
         title: "Google Search Ads",
         steps: [
             {
-                key: "ga4-access",
-                title: "GA4 Access",
+                key: "ga-access",
+                title: "Google Analytics Access",
                 description:
-                    "Grant Google Analytics access.",
+                    "Share Google Analytics access so we can understand website traffic and track important actions.",
             },
             {
                 key: "gtm-access",
-                title: "GTM Access",
+                title: "Google Tag Manager Access",
                 description:
-                    "Grant Google Tag Manager access.",
-            },
-            {
-                key: "google-ads-access",
-                title: "Google Ads Access",
-                description:
-                    "Grant Google Ads account access.",
+                    "Share Google Tag Manager access so we can set up tracking without repeatedly editing your website.",
             },
         ],
     },
 
-    "full-seo": {
-        key: "full-seo",
-        title: "Full SEO",
+    "website-lp": {
+        key: "website-lp",
+        title: "Website / Landing Page Assets",
         steps: [
             {
-                key: "gsc-access",
-                title: "Search Console Access",
+                key: "logo",
+                title: "Logo",
                 description:
-                    "Grant Search Console access.",
-            },
-        ],
-    },
-
-    "ai-voice-automation": {
-        key: "ai-voice-automation",
-        title: "AI Voice Automation",
-        steps: [
-            {
-                key: "phone-system",
-                title: "Phone System Information",
-                description:
-                    "Tell us about your current setup.",
+                    "Upload or share your logo so we can use the correct brand assets.",
             },
             {
-                key: "call-handling",
-                title: "Call Handling Rules",
+                key: "before-after-images",
+                title: "Job Site Before and After Images",
                 description:
-                    "Define how calls should be handled.",
+                    "Share examples of completed work, especially before and after photos if you have them.",
+            },
+            {
+                key: "team-pictures",
+                title: "Team Pictures",
+                description:
+                    "Share photos of you, your team, vans, workshop, or job sites to make the business feel trustworthy.",
+            },
+            {
+                key: "branding",
+                title: "Colours, Slogan, and Branding",
+                description:
+                    "Share preferred colours, slogans, fonts, existing branding, or examples you like.",
+            },
+            {
+                key: "video-assets",
+                title: "Video Assets",
+                description:
+                    "Share any videos of your team, jobs, testimonials, vehicles, workshop, or finished work.",
             },
         ],
     },

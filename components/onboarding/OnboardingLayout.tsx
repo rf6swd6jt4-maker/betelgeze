@@ -18,28 +18,42 @@ export function OnboardingLayout({
     roadmapSteps,
 }: OnboardingLayoutProps) {
     return (
-        <main className="min-h-screen bg-[#F8F7F3] text-slate-900">
-            <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
-                <div className="mx-auto flex max-w-7xl items-center justify-between">
+        <main className="h-screen overflow-hidden bg-[#F8F7F3] text-slate-900">
+            <header className="h-16 border-b border-slate-200 bg-white px-4 sm:px-6">
+                <div className="mx-auto flex h-full max-w-7xl items-center justify-between">
                     <p className="text-xl font-semibold text-[#1E3A5F]">
-                        Client Onboarding
+                        GPG Studios
                     </p>
 
-                    <p className="text-sm text-slate-500">
+                    <p className="hidden text-sm text-slate-500 sm:block">
                         Progress saved automatically
                     </p>
                 </div>
             </header>
 
-            <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[260px_1fr_260px]">
-                <div className="lg:sticky lg:top-6 lg:self-start">
-                    <Roadmap steps={roadmapSteps} />
+            <div className="mx-auto grid h-[calc(100vh-4rem)] max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[260px_minmax(0,1fr)_260px]">
+                <div className="hidden lg:block">
+                    <div className="sticky top-6">
+                        <Roadmap steps={roadmapSteps} />
+                    </div>
                 </div>
 
-                <section>{children}</section>
+                <section className="min-w-0 overflow-y-auto pb-10">
+                    <div className="mb-6 lg:hidden">
+                        <Roadmap steps={roadmapSteps} />
+                    </div>
 
-                <div className="lg:sticky lg:top-6 lg:self-start">
-                    <NeedHelpCard />
+                    {children}
+
+                    <div className="mt-6 lg:hidden">
+                        <NeedHelpCard />
+                    </div>
+                </section>
+
+                <div className="hidden lg:block">
+                    <div className="sticky top-6">
+                        <NeedHelpCard />
+                    </div>
                 </div>
             </div>
         </main>

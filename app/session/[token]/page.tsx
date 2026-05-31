@@ -19,6 +19,7 @@ const BASE_STEPS = [
         description:
             "We’ll explain how this onboarding works and what we need from you.",
         moduleTitle: "General",
+        estimatedTime: "2 minutes",
         why:
             "This helps us make sure you know exactly what happens next before we ask for any business details.",
     },
@@ -29,6 +30,7 @@ const FINAL_STEP = {
     title: "All done",
     description: "You have completed the onboarding steps.",
     moduleTitle: "Finished",
+    estimatedTime: "No action needed",
     why:
         "Once onboarding is complete, our team can review everything and start preparing your project properly.",
 }
@@ -64,6 +66,7 @@ export default async function SessionPage({ params }: PageProps) {
             return module.steps.map((step) => ({
                 ...step,
                 moduleTitle: module.title,
+                estimatedTime: "2–3 minutes",
                 why:
                     "This information helps us set up your project correctly and avoid delays later.",
             }))
@@ -80,10 +83,6 @@ export default async function SessionPage({ params }: PageProps) {
     const completedKeys = new Set(
         progressRows?.map((row) => row.step_key) ?? []
     )
-
-    const completedCount = completableSteps.filter((step) =>
-        completedKeys.has(step.key)
-    ).length
 
     const currentStep =
         completableSteps.find((step) => !completedKeys.has(step.key)) ??
@@ -115,13 +114,19 @@ export default async function SessionPage({ params }: PageProps) {
 
                 <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
                     {isFinalStep
-                        ? "Onboarding complete"
+                        ? "You’re all set"
                         : currentStep.title}
                 </h1>
 
                 <p className="mt-4 text-lg leading-7 text-slate-600">
-                    {currentStep.description}
+                    {isFinalStep
+                        ? "We’ve received everything required to begin your project."
+                        : currentStep.description}
                 </p>
+
+                <div className="mt-5 inline-flex rounded-full bg-amber-50 px-3 py-1 text-sm font-medium text-[#1E3A5F]">
+                    Estimated time: {currentStep.estimatedTime}
+                </div>
 
                 {currentStep.key === "welcome-video" && (
                     <div className="mt-8 rounded-2xl bg-[#F8F7F3] p-5">
@@ -161,16 +166,27 @@ export default async function SessionPage({ params }: PageProps) {
                     </div>
                 )}
 
-                <div className="mt-8">
-                    <WhyWeAskCard>{currentStep.why}</WhyWeAskCard>
-                </div>
+                {!isFinalStep && (
+                    <div className="mt-8">
+                        <WhyWeAskCard>{currentStep.why}</WhyWeAskCard>
+                    </div>
+                )}
 
                 {isFinalStep ? (
                     <div className="mt-8 rounded-2xl border border-green-200 bg-green-50 p-5 text-green-900">
-                        <p className="font-semibold">You’re all set.</p>
-                        <p className="mt-2 text-sm leading-6">
-                            Our team will review your information and contact
-                            you if anything else is needed.
+                        <p className="font-semibold">What happens next?</p>
+
+                        <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6">
+                            <li>Our team reviews your information.</li>
+                            <li>We prepare your project internally.</li>
+                            <li>
+                                We’ll contact you if anything else is needed.
+                            </li>
+                        </ol>
+
+                        <p className="mt-4 text-sm leading-6">
+                            You can close this page now. There is nothing else
+                            you need to do at this stage.
                         </p>
                     </div>
                 ) : (

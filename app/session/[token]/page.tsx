@@ -1,6 +1,10 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
 import { completeStep } from "./actions"
+import { OnboardingLayout } from "@/components/onboarding/OnboardingLayout"
+import { WhyWeAskCard } from "@/components/onboarding/WhyWeAskCard"
+
+export const dynamic = "force-dynamic"
 
 type PageProps = {
     params: Promise<{
@@ -12,16 +16,21 @@ const BASE_STEPS = [
     {
         key: "welcome-video",
         title: "Welcome",
-        description: "Watch this short welcome video before starting.",
+        description:
+            "We’ll explain how this onboarding works and what we need from you.",
         moduleTitle: "General",
+        why:
+            "This helps us make sure you know exactly what happens next before we ask for any business details.",
     },
 ]
 
 const FINAL_STEP = {
     key: "final",
     title: "All done",
-    description: "You have completed the core onboarding steps.",
-    moduleTitle: "General",
+    description: "You have completed the onboarding steps.",
+    moduleTitle: "Finished",
+    why:
+        "Once onboarding is complete, our team can review everything and start preparing your project properly.",
 }
 
 export default async function SessionPage({ params }: PageProps) {
@@ -29,13 +38,13 @@ export default async function SessionPage({ params }: PageProps) {
 
     const { data: client, error } = await supabaseAdmin
         .from("clients")
-        .select("*")
+        .select("id, name, email, session_token")
         .eq("session_token", token)
         .single()
 
     if (error || !client) {
         return (
-            <main className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+            <main className="flex min-h-screen items-center justify-center bg-[#F8F7F3] px-6 text-slate-900">
                 <p>Invalid onboarding link.</p>
             </main>
         )
@@ -55,6 +64,8 @@ export default async function SessionPage({ params }: PageProps) {
             return module.steps.map((step) => ({
                 ...step,
                 moduleTitle: module.title,
+                why:
+                    "This information helps us set up your project correctly and avoid delays later.",
             }))
         }) ?? []
 
@@ -74,58 +85,93 @@ export default async function SessionPage({ params }: PageProps) {
         completedKeys.has(step.key)
     ).length
 
-    const allCompletableStepsDone = completedCount === completableSteps.length
-
     const currentStep =
         completableSteps.find((step) => !completedKeys.has(step.key)) ??
         FINAL_STEP
 
     const isFinalStep = currentStep.key === "final"
 
-    const percentage =
-        completableSteps.length === 0
-            ? 100
-            : Math.round((completedCount / completableSteps.length) * 100)
+    const roadmapSteps = steps.map((step) => ({
+        key: step.key,
+        title: step.title,
+        complete:
+            step.key === "final"
+                ? isFinalStep
+                : completedKeys.has(step.key),
+        current: step.key === currentStep.key,
+    }))
 
-    const currentStepNumber = isFinalStep
-        ? completableSteps.length
-        : completableSteps.findIndex((step) => step.key === currentStep.key) + 1
+    const assignedModules =
+        clientModules
+            ?.map((row) => MODULES[row.module_key]?.title)
+            .filter(Boolean) ?? []
 
     return (
-        <main className="min-h-screen bg-neutral-950 text-white px-5 py-10">
-            <div className="mx-auto max-w-xl">
-                <p className="text-sm text-neutral-400">
-                    Welcome, {client.name}
-                </p>
-
-                <div className="mt-6 h-2 overflow-hidden rounded-full bg-neutral-800">
-                    <div
-                        className="h-full rounded-full bg-white transition-all"
-                        style={{ width: `${percentage}%` }}
-                    />
-                </div>
-
-                <p className="mt-3 text-xs text-neutral-500">
-                    {isFinalStep
-                        ? `Complete · ${percentage}% complete`
-                        : `Step ${currentStepNumber} of ${completableSteps.length} · ${percentage}% complete`}
-                </p>
-
-                <p className="mt-8 text-sm font-medium text-neutral-400">
+        <OnboardingLayout roadmapSteps={roadmapSteps}>
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+                <p className="text-sm font-semibold uppercase tracking-wide text-[#1E3A5F]">
                     {currentStep.moduleTitle}
                 </p>
 
-                <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-                    {currentStep.title}
+                <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+                    {isFinalStep
+                        ? "Onboarding complete"
+                        : currentStep.title}
                 </h1>
 
-                <p className="mt-4 text-neutral-300">
+                <p className="mt-4 text-lg leading-7 text-slate-600">
                     {currentStep.description}
                 </p>
 
+                {currentStep.key === "welcome-video" && (
+                    <div className="mt-8 rounded-2xl bg-[#F8F7F3] p-5">
+                        <p className="font-semibold text-slate-950">
+                            Your project includes:
+                        </p>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                            {assignedModules.length > 0 ? (
+                                assignedModules.map((moduleTitle) => (
+                                    <span
+                                        key={moduleTitle}
+                                        className="rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-[#1E3A5F]"
+                                    >
+                                        ✓ {moduleTitle}
+                                    </span>
+                                ))
+                            ) : (
+                                <span className="text-sm text-slate-500">
+                                    No services assigned yet.
+                                </span>
+                            )}
+                        </div>
+
+                        <p className="mt-5 text-sm text-slate-600">
+                            You can leave and come back any time. Your progress
+                            is saved automatically.
+                        </p>
+                    </div>
+                )}
+
+                {!isFinalStep && (
+                    <div className="mt-8 aspect-video overflow-hidden rounded-2xl bg-[#1E3A5F]">
+                        <div className="flex h-full items-center justify-center text-white">
+                            Video placeholder
+                        </div>
+                    </div>
+                )}
+
+                <div className="mt-8">
+                    <WhyWeAskCard>{currentStep.why}</WhyWeAskCard>
+                </div>
+
                 {isFinalStep ? (
-                    <div className="mt-8 rounded-xl border border-green-500/30 bg-green-500/10 px-5 py-4 text-green-200">
-                        Onboarding complete.
+                    <div className="mt-8 rounded-2xl border border-green-200 bg-green-50 p-5 text-green-900">
+                        <p className="font-semibold">You’re all set.</p>
+                        <p className="mt-2 text-sm leading-6">
+                            Our team will review your information and contact
+                            you if anything else is needed.
+                        </p>
                     </div>
                 ) : (
                     <form
@@ -134,41 +180,12 @@ export default async function SessionPage({ params }: PageProps) {
                             await completeStep(token, currentStep.key)
                         }}
                     >
-                        <button className="mt-8 w-full rounded-xl bg-white px-5 py-4 font-medium text-black">
+                        <button className="mt-8 w-full rounded-xl bg-[#1E3A5F] px-5 py-4 font-medium text-white">
                             Complete and continue
                         </button>
                     </form>
                 )}
-
-                <div className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-                    <p className="text-sm font-medium">Assigned modules</p>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                        {clientModules && clientModules.length > 0 ? (
-                            clientModules.map((row) => {
-                                const module = MODULES[row.module_key]
-
-                                return (
-                                    <span
-                                        key={row.module_key}
-                                        className="rounded-full bg-neutral-800 px-3 py-1 text-xs text-neutral-300"
-                                    >
-                                        {module?.title ?? row.module_key}
-                                    </span>
-                                )
-                            })
-                        ) : (
-                            <span className="text-sm text-neutral-500">
-                                No modules assigned.
-                            </span>
-                        )}
-                    </div>
-                </div>
-
-                <p className="mt-6 text-sm text-neutral-500">
-                    Client email: {client.email}
-                </p>
             </div>
-        </main>
+        </OnboardingLayout>
     )
 }

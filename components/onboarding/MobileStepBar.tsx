@@ -9,20 +9,31 @@ type MobileStepBarProps = {
 
 export function MobileStepBar({ steps }: MobileStepBarProps) {
     const currentIndex = steps.findIndex((step) => step.current)
+    const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0
 
-    const currentStep = steps[currentIndex] ?? steps[0]
-    const stepNumber = currentIndex >= 0 ? currentIndex + 1 : 1
+    const currentStep = steps[safeCurrentIndex]
+    const stepNumber = safeCurrentIndex + 1
+
+    const maxVisibleSteps = 4
+
+    let startIndex = safeCurrentIndex
+
+    if (startIndex > steps.length - maxVisibleSteps) {
+        startIndex = Math.max(steps.length - maxVisibleSteps, 0)
+    }
+
+    const visibleSteps = steps.slice(startIndex, startIndex + maxVisibleSteps)
 
     return (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-8px_30px_rgba(15,23,42,0.12)] lg:hidden">
             <div className="mx-auto max-w-md">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                    <div>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                             Current step
                         </p>
 
-                        <p className="max-w-[230px] truncate text-sm font-semibold text-[#1E3A5F]">
+                        <p className="truncate text-sm font-semibold text-[#1E3A5F]">
                             {currentStep?.title ?? "Onboarding"}
                         </p>
                     </div>
@@ -32,35 +43,33 @@ export function MobileStepBar({ steps }: MobileStepBarProps) {
                     </p>
                 </div>
 
-                <div className="flex items-center overflow-hidden">
-                    {steps.map((step, index) => (
-                        <div
-                            key={step.key}
-                            className="flex flex-1 items-center"
-                        >
-                            <div
-                                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-semibold ${
-                                    step.complete
-                                        ? "border-[#1E3A5F] bg-[#1E3A5F] text-white"
-                                        : step.current
-                                          ? "border-[#F0B429] bg-[#F0B429] text-slate-950"
-                                          : "border-slate-300 bg-white text-slate-500"
-                                }`}
-                            >
-                                {step.complete ? "✓" : index + 1}
-                            </div>
+                <div className="flex items-center">
+                    {visibleSteps.map((step, visibleIndex) => {
+                        const actualIndex = startIndex + visibleIndex
 
-                            {index < steps.length - 1 && (
+                        return (
+                            <div
+                                key={step.key}
+                                className="flex flex-1 items-center"
+                            >
                                 <div
-                                    className={`h-0.5 flex-1 ${
+                                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-sm font-semibold ${
                                         step.complete
-                                            ? "bg-[#1E3A5F]"
-                                            : "bg-slate-200"
+                                            ? "border-[#1E3A5F] bg-[#1E3A5F] text-white"
+                                            : step.current
+                                              ? "border-[#F0B429] bg-[#F0B429] text-slate-950"
+                                              : "border-slate-300 bg-white text-slate-500"
                                     }`}
-                                />
-                            )}
-                        </div>
-                    ))}
+                                >
+                                    {step.complete ? "✓" : actualIndex + 1}
+                                </div>
+
+                                {visibleIndex < visibleSteps.length - 1 && (
+                                    <div className="h-0.5 flex-1 bg-slate-300" />
+                                )}
+                            </div>
+                        )
+                    })}
                 </div>
             </div>
         </div>

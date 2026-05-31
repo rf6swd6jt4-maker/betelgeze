@@ -1,5 +1,6 @@
 import { NeedHelpCard } from "./NeedHelpCard"
 import { Roadmap } from "./Roadmap"
+import { MobileStepBar } from "./MobileStepBar"
 
 type RoadmapStep = {
     key: string
@@ -18,11 +19,11 @@ export function OnboardingLayout({
     roadmapSteps,
 }: OnboardingLayoutProps) {
     return (
-        <main className="h-screen overflow-hidden bg-[#F8F7F3] text-slate-900">
+        <main className="min-h-screen bg-[#F8F7F3] text-slate-900 lg:h-screen lg:overflow-hidden">
             <header className="h-16 border-b border-slate-200 bg-white px-4 sm:px-6">
                 <div className="mx-auto flex h-full max-w-7xl items-center justify-between">
                     <p className="text-xl font-semibold text-[#1E3A5F]">
-                        GPG Studios
+                        ScaylUp
                     </p>
 
                     <p className="hidden text-sm text-slate-500 sm:block">
@@ -31,18 +32,12 @@ export function OnboardingLayout({
                 </div>
             </header>
 
-            <div className="mx-auto grid h-[calc(100vh-4rem)] max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[260px_minmax(0,1fr)_260px]">
-                <div className="hidden lg:block">
-                    <div className="sticky top-6">
-                        <Roadmap steps={roadmapSteps} />
-                    </div>
-                </div>
+            <div className="mx-auto grid max-w-7xl gap-6 px-4 pb-32 pt-4 sm:px-6 lg:h-[calc(100vh-4rem)] lg:min-h-0 lg:grid-cols-[260px_minmax(0,1fr)_260px] lg:py-6">
+                <aside className="hidden lg:block lg:min-h-0">
+                    <Roadmap steps={roadmapSteps} />
+                </aside>
 
-                <section className="min-w-0 overflow-y-auto pb-10">
-                    <div className="mb-6 lg:hidden">
-                        <Roadmap steps={roadmapSteps} />
-                    </div>
-
+                <section className="min-w-0 lg:min-h-0 lg:overflow-y-auto lg:pb-10">
                     {children}
 
                     <div className="mt-6 lg:hidden">
@@ -50,12 +45,12 @@ export function OnboardingLayout({
                     </div>
                 </section>
 
-                <div className="hidden lg:block">
-                    <div className="sticky top-6">
-                        <NeedHelpCard />
-                    </div>
-                </div>
+                <aside className="hidden lg:block lg:min-h-0">
+                    <NeedHelpCard />
+                </aside>
             </div>
+
+            <MobileStepBar steps={roadmapSteps} />
         </main>
     )
 }

@@ -3,7 +3,6 @@
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { MODULES } from "@/lib/onboarding/modules"
 
 async function requireAdmin() {
     const cookieStore = await cookies()
@@ -14,27 +13,33 @@ async function requireAdmin() {
     }
 }
 
-export async function updateClientModules(clientId: string, formData: FormData) {
+async function addActivity(
+    clientId: string,
+    activityType: string,
+    activityText: string
+) {
+    await supabaseAdmin.from("client_activity").insert({
+        client_id: clientId,
+        activity_type: activityType,
+        activity_text: activityText,
+    })
+}
+
+export async function addClientNote(clientId: string, formData: FormData) {
     await requireAdmin()
 
-    const selectedModules = formData
-        .getAll("modules")
-        .map(String)
-        .filter((moduleKey) => moduleKey in MODULES)
+    const note = String(formData.get("note") ?? "").trim()
 
-    await supabaseAdmin
-        .from("client_modules")
-        .delete()
-        .eq("client_id", clientId)
-
-    if (selectedModules.length > 0) {
-        await supabaseAdmin.from("client_modules").insert(
-            selectedModules.map((moduleKey) => ({
-                client_id: clientId,
-                module_key: moduleKey,
-            }))
-        )
+    if (!note) {
+        redirect(`/admin/client/${clientId}`)
     }
+
+    await supabaseAdmin.from("client_notes").insert({
+        client_id: clientId,
+        note,
+    })
+
+    await addActivity(clientId, "note_added", "Note added")
 
     redirect(`/admin/client/${clientId}`)
 }
@@ -48,6 +53,8 @@ export async function archiveClient(clientId: string) {
             archived_at: new Date().toISOString(),
         })
         .eq("id", clientId)
+
+    await addActivity(clientId, "client_archived", "Client archived")
 
     redirect("/admin")
 }

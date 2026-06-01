@@ -4,7 +4,11 @@ import { completeStep } from "./actions"
 import { OnboardingLayout } from "@/components/onboarding/OnboardingLayout"
 import { WhyWeAskCard } from "@/components/onboarding/WhyWeAskCard"
 import { ScrollToTopOnStepChange } from "@/components/onboarding/ScrollToTopOnStepChange"
-import { FormPlaceholder } from "@/components/onboarding/FormPlaceholder"
+import { OnboardingForm } from "@/components/onboarding/OnboardingForm"
+import {
+    FormResponse,
+    getOnboardingForm,
+} from "@/lib/onboarding/forms"
 
 export const dynamic = "force-dynamic"
 
@@ -125,6 +129,27 @@ export default async function SessionPage({ params }: PageProps) {
             ?.map((row) => MODULES[row.module_key]?.title)
             .filter(Boolean) ?? []
 
+    const currentForm =
+        currentStep.kind === "form"
+            ? getOnboardingForm(currentStep.formKey)
+            : null
+
+    const { data: currentFormResponse } =
+        currentForm && currentStep.kind === "form"
+            ? await supabaseAdmin
+                  .from("client_form_responses")
+                  .select("response")
+                  .eq("client_id", client.id)
+                  .eq("step_key", currentStep.key)
+                  .maybeSingle()
+            : { data: null }
+
+    const initialResponse =
+        currentFormResponse?.response &&
+        typeof currentFormResponse.response === "object"
+            ? (currentFormResponse.response as FormResponse)
+            : undefined
+
     return (
         <OnboardingLayout roadmapSteps={roadmapSteps}>
             <ScrollToTopOnStepChange stepKey={currentStep.key} />
@@ -187,7 +212,18 @@ export default async function SessionPage({ params }: PageProps) {
                 )}
 
                 {!isFinalStep && currentStep.kind === "form" && (
-                    <FormPlaceholder formKey={currentStep.formKey} />
+                    currentForm ? (
+                        <OnboardingForm
+                            token={token}
+                            stepKey={currentStep.key}
+                            form={currentForm}
+                            initialResponse={initialResponse}
+                        />
+                    ) : (
+                        <div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-5 text-red-900">
+                            This form has not been configured yet.
+                        </div>
+                    )
                 )}
 
                 {!isFinalStep && (
@@ -213,7 +249,7 @@ export default async function SessionPage({ params }: PageProps) {
                             you need to do at this stage.
                         </p>
                     </div>
-                ) : (
+                ) : currentStep.kind === "video" ? (
                     <form
                         action={async () => {
                             "use server"
@@ -224,7 +260,7 @@ export default async function SessionPage({ params }: PageProps) {
                             Complete and continue
                         </button>
                     </form>
-                )}
+                ) : null}
             </div>
         </OnboardingLayout>
     )

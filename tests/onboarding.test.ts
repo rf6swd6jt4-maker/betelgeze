@@ -1,6 +1,11 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { getCompletedStepCount, getProgressPercentage } from "../lib/onboarding/progress.ts"
+import {
+    getFileAcceptValue,
+    getOnboardingForm,
+    ONBOARDING_FORMS,
+} from "../lib/onboarding/forms.ts"
 import { maskToken } from "../lib/security/tokens.ts"
 
 test("counts unique completed onboarding steps", () => {
@@ -35,4 +40,32 @@ test("masks session tokens while preserving enough characters for debugging", ()
         maskToken("1234567890abcdef1234567890abcdef"),
         "123456...abcdef"
     )
+})
+
+test("defines every expected client onboarding form", () => {
+    assert.deepEqual(Object.keys(ONBOARDING_FORMS).sort(), [
+        "accreditations",
+        "before-after-images",
+        "branding",
+        "business-info",
+        "competitors",
+        "cta-information",
+        "history",
+        "logo",
+        "process",
+        "team-pictures",
+        "usps",
+        "video-assets",
+        "web-access",
+    ])
+})
+
+test("looks up configured form definitions", () => {
+    assert.equal(getOnboardingForm("business-info")?.title, "Business information")
+    assert.equal(getOnboardingForm("missing-form"), null)
+})
+
+test("maps upload accept helpers for browser file inputs", () => {
+    assert.equal(getFileAcceptValue("image"), "image/*,.svg,.pdf")
+    assert.equal(getFileAcceptValue("video"), "video/*")
 })

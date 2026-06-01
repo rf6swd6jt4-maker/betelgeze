@@ -3,10 +3,16 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
 import { requireAdmin } from "@/lib/admin/auth"
 import {
+    FormResponse,
+    getOnboardingForm,
+    OnboardingFormDefinition,
+} from "@/lib/onboarding/forms"
+import {
     getCompletedStepCount,
     getProgressPercentage,
 } from "@/lib/onboarding/progress"
 import { maskToken } from "@/lib/security/tokens"
+import { FormResponsesSummary } from "@/components/admin/FormResponsesSummary"
 import { ClientActionsMenu } from "./ClientActionsMenu"
 import {
     addClientNote,
@@ -55,6 +61,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
         { data: progressRows },
         { data: noteRows },
         { data: activityRows },
+        { data: formResponseRows },
     ] = await Promise.all([
         supabaseAdmin
             .from("client_modules")
@@ -75,6 +82,11 @@ export default async function ClientDetailPage({ params }: PageProps) {
             .select("id, client_id, activity_type, activity_text, created_at")
             .eq("client_id", client.id)
             .order("created_at", { ascending: false }),
+        supabaseAdmin
+            .from("client_form_responses")
+            .select("step_key, response, updated_at")
+            .eq("client_id", client.id)
+            .order("updated_at", { ascending: false }),
     ])
 
     const assignedModuleKeys = moduleRows?.map((row) => row.module_key) ?? []
@@ -94,6 +106,15 @@ export default async function ClientDetailPage({ params }: PageProps) {
     })
 
     const steps = [...BASE_STEPS, ...moduleSteps]
+    const formsByStep: Record<string, OnboardingFormDefinition> = {}
+
+    for (const step of moduleSteps) {
+        const form = step.formKey ? getOnboardingForm(step.formKey) : null
+
+        if (form) {
+            formsByStep[step.key] = form
+        }
+    }
 
     const completedCount = getCompletedStepCount(steps, completedKeys)
 
@@ -341,6 +362,15 @@ export default async function ClientDetailPage({ params }: PageProps) {
                         </div>
                     </div>
                 </section>
+
+                <FormResponsesSummary
+                    responses={(formResponseRows ?? []).map((row) => ({
+                        step_key: row.step_key,
+                        response: row.response as FormResponse,
+                        updated_at: row.updated_at,
+                    }))}
+                    formsByStep={formsByStep}
+                />
 
                 <div className="mt-8 overflow-x-auto rounded-2xl border border-neutral-800">
                     <table className="w-full min-w-[640px] border-collapse text-left text-sm">

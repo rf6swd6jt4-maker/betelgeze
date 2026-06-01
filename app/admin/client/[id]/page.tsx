@@ -12,6 +12,7 @@ import {
     getProgressPercentage,
 } from "@/lib/onboarding/progress"
 import { maskToken } from "@/lib/security/tokens"
+import { AdminCopyButton } from "@/components/admin/AdminCopyButton"
 import { FormResponsesSummary } from "@/components/admin/FormResponsesSummary"
 import { ClientActionsMenu } from "./ClientActionsMenu"
 import {
@@ -167,27 +168,30 @@ export default async function ClientDetailPage({ params }: PageProps) {
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
     return (
-        <main className="min-h-screen bg-neutral-950 px-4 py-8 text-white sm:px-6 sm:py-10">
-            <div className="mx-auto max-w-5xl">
-                <Link href="/admin" className="text-sm text-neutral-400">
+        <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
+            <div className="mx-auto max-w-7xl">
+                <Link
+                    href="/admin"
+                    className="text-sm text-neutral-400 hover:text-white"
+                >
                     ← Back to dashboard
                 </Link>
 
-                <div className="mt-8 flex flex-col justify-between gap-6 md:flex-row md:items-start">
+                <div className="mt-5 flex flex-col justify-between gap-4 md:flex-row md:items-start">
                     <div>
-                        <p className="text-sm text-neutral-400">
+                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                             Client details
                         </p>
 
-                        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+                        <h1 className="mt-2 text-2xl font-semibold tracking-tight">
                             {client.name ?? "Unnamed client"}
                         </h1>
 
-                        <p className="mt-2 text-neutral-400">
+                        <p className="mt-1 text-sm text-neutral-400">
                             {client.email}
                         </p>
 
-                        <p className="mt-2 text-sm text-neutral-500">
+                        <p className="mt-1 text-xs text-neutral-500">
                             Last activity:{" "}
                             {latestActivity
                                 ? new Date(latestActivity).toLocaleString(
@@ -204,7 +208,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                         <Link
                             href={`/admin/client/${client.id}/edit`}
-                            className="rounded-xl bg-white px-4 py-3 text-center text-sm font-medium text-black"
+                            className="rounded-lg bg-white px-3 py-2 text-center text-sm font-medium text-black"
                         >
                             Edit client
                         </Link>
@@ -220,36 +224,36 @@ export default async function ClientDetailPage({ params }: PageProps) {
                     </div>
                 </div>
 
-                <div className="mt-8 grid gap-6 lg:grid-cols-3">
-                    <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-6 lg:col-span-2">
-                        <p className="text-sm font-medium text-neutral-300">
+                <div className="mt-5 grid gap-3 lg:grid-cols-4">
+                    <section className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 lg:col-span-2">
+                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                             Progress
                         </p>
 
-                        <div className="mt-4 h-3 overflow-hidden rounded-full bg-neutral-800">
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-neutral-800">
                             <div
                                 className="h-full rounded-full bg-white"
                                 style={{ width: `${percentage}%` }}
                             />
                         </div>
 
-                        <p className="mt-3 text-sm text-neutral-400">
+                        <p className="mt-2 text-sm text-neutral-400">
                             {completedCount} of {steps.length} steps completed
                             · {percentage}%
                         </p>
                     </section>
 
-                    <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-                        <p className="text-sm font-medium text-neutral-300">
+                    <section className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 lg:col-span-2">
+                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                             Assigned modules
                         </p>
 
-                        <div className="mt-4 flex flex-wrap gap-2">
+                        <div className="mt-3 flex flex-wrap gap-2">
                             {assignedModuleKeys.length > 0 ? (
                                 assignedModuleKeys.map((moduleKey) => (
                                     <span
                                         key={moduleKey}
-                                        className="rounded-full bg-neutral-800 px-3 py-1 text-sm text-neutral-300"
+                                        className="rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-300"
                                     >
                                         {MODULES[moduleKey]?.title ?? moduleKey}
                                     </span>
@@ -263,19 +267,29 @@ export default async function ClientDetailPage({ params }: PageProps) {
                     </section>
                 </div>
 
-                <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-                    <p className="text-sm font-medium text-neutral-300">
-                        Onboarding link
-                    </p>
+                <section className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                        <div className="min-w-0">
+                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                                Onboarding link
+                            </p>
 
-                    <p className="mt-3 break-all font-mono text-xs text-neutral-500">
-                        {onboardingUrl}
-                    </p>
+                            <p className="mt-2 break-all font-mono text-xs text-neutral-400">
+                                {onboardingUrl}
+                            </p>
+                        </div>
+
+                        <AdminCopyButton
+                            value={onboardingUrl}
+                            label="Copy link"
+                            className="shrink-0 rounded-md border border-neutral-700 px-3 py-2 text-xs font-medium text-neutral-300 hover:border-neutral-500 hover:text-white"
+                        />
+                    </div>
                 </section>
 
-                <section className="mt-8 grid gap-6 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-                        <p className="text-sm font-medium text-neutral-300">
+                <section className="mt-3 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                             Notes
                         </p>
 
@@ -290,20 +304,20 @@ export default async function ClientDetailPage({ params }: PageProps) {
                                 name="note"
                                 required
                                 placeholder="Add an internal note..."
-                                className="min-h-28 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none"
+                                className="min-h-24 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white outline-none"
                             />
 
-                            <button className="mt-3 rounded-xl bg-white px-4 py-3 text-sm font-medium text-black">
+                            <button className="mt-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-black">
                                 Add note
                             </button>
                         </form>
 
-                        <div className="mt-6 space-y-3">
+                        <div className="mt-4 space-y-2">
                             {(noteRows ?? []).length > 0 ? (
                                 noteRows?.map((note) => (
                                     <div
                                         key={note.id}
-                                        className="rounded-xl bg-neutral-950 p-4"
+                                        className="rounded-lg bg-neutral-950 p-3"
                                     >
                                         <p className="whitespace-pre-wrap text-sm text-neutral-200">
                                             {note.note}
@@ -327,12 +341,12 @@ export default async function ClientDetailPage({ params }: PageProps) {
                         </div>
                     </div>
 
-                    <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-                        <p className="text-sm font-medium text-neutral-300">
+                    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                             Timeline
                         </p>
 
-                        <div className="mt-6 space-y-4">
+                        <div className="mt-4 space-y-3">
                             {timelineItems.length > 0 ? (
                                 timelineItems.map((item) => (
                                     <div
@@ -372,17 +386,17 @@ export default async function ClientDetailPage({ params }: PageProps) {
                     formsByStep={formsByStep}
                 />
 
-                <div className="mt-8 overflow-x-auto rounded-2xl border border-neutral-800">
+                <div className="mt-6 overflow-x-auto rounded-lg border border-neutral-800">
                     <table className="w-full min-w-[640px] border-collapse text-left text-sm">
-                        <thead className="bg-neutral-900 text-neutral-400">
+                        <thead className="bg-neutral-900 text-xs uppercase tracking-wide text-neutral-500">
                             <tr>
-                                <th className="px-4 py-3 font-medium">
+                                <th className="px-3 py-2 font-medium">
                                     Status
                                 </th>
-                                <th className="px-4 py-3 font-medium">
+                                <th className="px-3 py-2 font-medium">
                                     Module
                                 </th>
-                                <th className="px-4 py-3 font-medium">
+                                <th className="px-3 py-2 font-medium">
                                     Step
                                 </th>
                             </tr>
@@ -397,23 +411,23 @@ export default async function ClientDetailPage({ params }: PageProps) {
                                         key={step.key}
                                         className="border-t border-neutral-800"
                                     >
-                                        <td className="px-4 py-4">
+                                        <td className="px-3 py-2">
                                             {complete ? (
-                                                <span className="rounded-full bg-green-500/10 px-3 py-1 text-xs text-green-300">
+                                                <span className="rounded-md bg-green-500/10 px-2 py-1 text-xs text-green-300">
                                                     Complete
                                                 </span>
                                             ) : (
-                                                <span className="rounded-full bg-neutral-800 px-3 py-1 text-xs text-neutral-400">
+                                                <span className="rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-400">
                                                     Pending
                                                 </span>
                                             )}
                                         </td>
 
-                                        <td className="px-4 py-4 text-neutral-300">
+                                        <td className="px-3 py-2 text-neutral-300">
                                             {step.moduleTitle}
                                         </td>
 
-                                        <td className="px-4 py-4">
+                                        <td className="px-3 py-2">
                                             {step.title}
                                         </td>
                                     </tr>
@@ -423,7 +437,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
                     </table>
                 </div>
 
-                <div className="mt-8 rounded-2xl border border-red-900/60 bg-red-950/30 p-6">
+                <div className="mt-6 rounded-lg border border-red-900/60 bg-red-950/30 p-4">
                     <p className="text-sm font-medium text-red-200">
                         Danger zone
                     </p>
@@ -434,14 +448,14 @@ export default async function ClientDetailPage({ params }: PageProps) {
                         their related onboarding data.
                     </p>
 
-                    <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                         <form
                             action={async () => {
                                 "use server"
                                 await archiveClient(client.id)
                             }}
                         >
-                            <button className="w-full rounded-xl border border-red-500/40 px-4 py-3 text-sm font-medium text-red-200 sm:w-auto">
+                            <button className="w-full rounded-lg border border-red-500/40 px-3 py-2 text-sm font-medium text-red-200 sm:w-auto">
                                 Archive client
                             </button>
                         </form>
@@ -452,15 +466,15 @@ export default async function ClientDetailPage({ params }: PageProps) {
                                 await deleteClient(client.id)
                             }}
                         >
-                            <button className="w-full rounded-xl bg-red-500 px-4 py-3 text-sm font-medium text-white sm:w-auto">
+                            <button className="w-full rounded-lg bg-red-500 px-3 py-2 text-sm font-medium text-white sm:w-auto">
                                 Delete client permanently
                             </button>
                         </form>
                     </div>
                 </div>
 
-                <div className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-                    <p className="text-sm font-medium text-neutral-300">
+                <div className="mt-6 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                    <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                         Session token
                     </p>
 

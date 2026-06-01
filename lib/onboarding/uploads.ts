@@ -55,3 +55,19 @@ export async function createUploadSignedUrl(path: string) {
 
     return data?.signedUrl ?? null
 }
+
+export async function createUploadSignedUrls(paths: string[]) {
+    if (paths.length === 0) {
+        return new Map<string, string>()
+    }
+
+    const { data } = await supabaseAdmin.storage
+        .from(ONBOARDING_UPLOADS_BUCKET)
+        .createSignedUrls(paths, 60 * 60)
+
+    return new Map(
+        data
+            ?.filter((item) => item.signedUrl)
+            .map((item) => [item.path, item.signedUrl]) ?? []
+    )
+}

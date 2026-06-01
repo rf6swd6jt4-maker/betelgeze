@@ -107,19 +107,26 @@ export default async function AdminPage() {
             lastActivity,
         }
     })
+    const totalClients = clientSummaries.length
+    const completedClients = clientSummaries.filter(
+        ({ percentage }) => percentage === 100
+    ).length
+    const activeClients = totalClients - completedClients
 
     return (
-        <main className="min-h-screen bg-neutral-950 px-4 py-8 text-white sm:px-6 sm:py-10">
-            <div className="mx-auto max-w-6xl">
-                <p className="text-sm text-neutral-400">Agency Onboarding</p>
+        <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
+            <div className="mx-auto max-w-7xl">
+                <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    Agency Onboarding
+                </p>
 
-                <div className="mt-3 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                <div className="mt-2 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
-                        <h1 className="text-3xl font-semibold tracking-tight">
+                        <h1 className="text-2xl font-semibold tracking-tight">
                             Admin dashboard
                         </h1>
 
-                        <p className="mt-3 text-neutral-400">
+                        <p className="mt-2 text-sm text-neutral-400">
                             Track client onboarding progress, modules, and
                             activity from one place.
                         </p>
@@ -128,21 +135,41 @@ export default async function AdminPage() {
                     <div className="flex flex-col gap-3 sm:flex-row">
                         <Link
                             href="/admin/new"
-                            className="inline-flex justify-center rounded-xl bg-white px-4 py-3 text-sm font-medium text-black"
+                            className="inline-flex justify-center rounded-lg bg-white px-3 py-2 text-sm font-medium text-black"
                         >
                             Add client
                         </Link>
 
                         <Link
                             href="/admin/logout"
-                            className="inline-flex justify-center rounded-xl border border-neutral-700 px-4 py-3 text-sm font-medium text-white"
+                            className="inline-flex justify-center rounded-lg border border-neutral-700 px-3 py-2 text-sm font-medium text-white"
                         >
                             Log out
                         </Link>
                     </div>
                 </div>
 
-                <div className="mt-8 grid gap-4 md:hidden">
+                <div className="mt-5 grid grid-cols-3 gap-3">
+                    {[
+                        ["Clients", totalClients],
+                        ["Active", activeClients],
+                        ["Complete", completedClients],
+                    ].map(([label, value]) => (
+                        <div
+                            key={label}
+                            className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2"
+                        >
+                            <p className="text-xs text-neutral-500">
+                                {label}
+                            </p>
+                            <p className="mt-1 text-lg font-semibold">
+                                {value}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="mt-5 grid gap-3 md:hidden">
                     {clientSummaries.map(
                         ({
                             client,
@@ -154,7 +181,7 @@ export default async function AdminPage() {
                             <Link
                                 key={client.id}
                                 href={`/admin/client/${client.id}`}
-                                className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5"
+                                className="rounded-lg border border-neutral-800 bg-neutral-900 p-4"
                             >
                                 <div className="flex items-start justify-between gap-4">
                                     <div>
@@ -197,7 +224,7 @@ export default async function AdminPage() {
                                     )}
                                 </div>
 
-                                <div className="mt-5 grid gap-3 text-sm">
+                                <div className="mt-4 grid gap-3 text-sm">
                                     <div>
                                         <p className="text-neutral-500">
                                             Current step
@@ -228,26 +255,26 @@ export default async function AdminPage() {
                     )}
                 </div>
 
-                <div className="mt-8 hidden overflow-hidden rounded-2xl border border-neutral-800 md:block">
+                <div className="mt-5 hidden overflow-hidden rounded-lg border border-neutral-800 md:block">
                     <table className="w-full border-collapse text-left text-sm">
-                        <thead className="bg-neutral-900 text-neutral-400">
+                        <thead className="bg-neutral-900 text-xs uppercase tracking-wide text-neutral-500">
                             <tr>
-                                <th className="px-4 py-3 font-medium">
+                                <th className="px-3 py-2 font-medium">
                                     Client
                                 </th>
-                                <th className="px-4 py-3 font-medium">
+                                <th className="px-3 py-2 font-medium">
                                     Email
                                 </th>
-                                <th className="px-4 py-3 font-medium">
+                                <th className="px-3 py-2 font-medium">
                                     Modules
                                 </th>
-                                <th className="px-4 py-3 font-medium">
+                                <th className="px-3 py-2 font-medium">
                                     Progress
                                 </th>
-                                <th className="px-4 py-3 font-medium">
+                                <th className="px-3 py-2 font-medium">
                                     Current step
                                 </th>
-                                <th className="px-4 py-3 font-medium">
+                                <th className="px-3 py-2 font-medium">
                                     Last activity
                                 </th>
                             </tr>
@@ -264,23 +291,23 @@ export default async function AdminPage() {
                                 }) => (
                                     <tr
                                         key={client.id}
-                                        className="border-t border-neutral-800"
+                                        className="border-t border-neutral-800 hover:bg-neutral-900/70"
                                     >
-                                        <td className="px-4 py-4">
+                                        <td className="px-3 py-3">
                                             <Link
                                                 href={`/admin/client/${client.id}`}
-                                                className="font-medium underline underline-offset-4"
+                                                className="font-medium text-white underline-offset-4 hover:underline"
                                             >
                                                 {client.name ??
                                                     "Unnamed client"}
                                             </Link>
                                         </td>
 
-                                        <td className="px-4 py-4 text-neutral-300">
+                                        <td className="px-3 py-3 text-neutral-300">
                                             {client.email}
                                         </td>
 
-                                        <td className="px-4 py-4">
+                                        <td className="px-3 py-3">
                                             <div className="flex flex-wrap gap-2">
                                                 {assignedModuleKeys.length >
                                                 0 ? (
@@ -288,7 +315,7 @@ export default async function AdminPage() {
                                                         (moduleKey) => (
                                                             <span
                                                                 key={moduleKey}
-                                                                className="rounded-full bg-neutral-800 px-2.5 py-1 text-xs text-neutral-300"
+                                                                className="rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-300"
                                                             >
                                                                 {MODULES[
                                                                     moduleKey
@@ -305,9 +332,9 @@ export default async function AdminPage() {
                                             </div>
                                         </td>
 
-                                        <td className="px-4 py-4">
+                                        <td className="px-3 py-3">
                                             <div className="flex items-center gap-3">
-                                                <div className="h-2 w-24 overflow-hidden rounded-full bg-neutral-800">
+                                                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-neutral-800">
                                                     <div
                                                         className="h-full rounded-full bg-white"
                                                         style={{
@@ -322,11 +349,11 @@ export default async function AdminPage() {
                                             </div>
                                         </td>
 
-                                        <td className="px-4 py-4 text-neutral-300">
+                                        <td className="px-3 py-3 text-neutral-300">
                                             {currentStep.title}
                                         </td>
 
-                                        <td className="px-4 py-4 text-neutral-400">
+                                        <td className="px-3 py-3 text-neutral-400">
                                             {lastActivity
                                                 ? new Date(
                                                       lastActivity

@@ -1,5 +1,11 @@
 import { redirect } from "next/navigation"
 import { cookies } from "next/headers"
+import {
+    ADMIN_COOKIE_PATH,
+    ADMIN_SESSION_COOKIE,
+    getAdminSessionSecret,
+    isValidAdminPassword,
+} from "@/lib/admin/auth"
 export const dynamic = "force-dynamic"
 
 async function login(formData: FormData) {
@@ -7,17 +13,17 @@ async function login(formData: FormData) {
 
     const password = String(formData.get("password") ?? "")
 
-    if (password !== process.env.ADMIN_PASSWORD) {
+    if (!isValidAdminPassword(password)) {
         redirect("/admin/login?error=1")
     }
 
     const cookieStore = await cookies()
 
-    cookieStore.set("admin_session", process.env.ADMIN_SESSION_SECRET!, {
+    cookieStore.set(ADMIN_SESSION_COOKIE, getAdminSessionSecret(), {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        path: "/admin",
+        path: ADMIN_COOKIE_PATH,
         maxAge: 60 * 60 * 24 * 7,
     })
 

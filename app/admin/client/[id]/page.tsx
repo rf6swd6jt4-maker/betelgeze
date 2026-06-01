@@ -1,8 +1,12 @@
 import Link from "next/link"
-import { cookies } from "next/headers"
-import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
+import { requireAdmin } from "@/lib/admin/auth"
+import {
+    getCompletedStepCount,
+    getProgressPercentage,
+} from "@/lib/onboarding/progress"
+import { maskToken } from "@/lib/security/tokens"
 import { ClientActionsMenu } from "./ClientActionsMenu"
 import {
     addClientNote,
@@ -28,12 +32,7 @@ const BASE_STEPS = [
 ]
 
 export default async function ClientDetailPage({ params }: PageProps) {
-    const cookieStore = await cookies()
-    const adminSession = cookieStore.get("admin_session")?.value
-
-    if (adminSession !== process.env.ADMIN_SESSION_SECRET) {
-        redirect("/admin/login")
-    }
+    await requireAdmin()
 
     const { id } = await params
 
@@ -84,26 +83,21 @@ export default async function ClientDetailPage({ params }: PageProps) {
     )
 
     const moduleSteps = assignedModuleKeys.flatMap((moduleKey) => {
-        const module = MODULES[moduleKey]
+        const moduleDefinition = MODULES[moduleKey]
 
-        if (!module) return []
+        if (!moduleDefinition) return []
 
-        return module.steps.map((step) => ({
+        return moduleDefinition.steps.map((step) => ({
             ...step,
-            moduleTitle: module.title,
+            moduleTitle: moduleDefinition.title,
         }))
     })
 
     const steps = [...BASE_STEPS, ...moduleSteps]
 
-    const completedCount = steps.filter((step) =>
-        completedKeys.has(step.key)
-    ).length
+    const completedCount = getCompletedStepCount(steps, completedKeys)
 
-    const percentage =
-        steps.length === 0
-            ? 100
-            : Math.round((completedCount / steps.length) * 100)
+    const percentage = getProgressPercentage(steps, completedKeys)
 
     const progressDates =
         progressRows
@@ -440,8 +434,8 @@ export default async function ClientDetailPage({ params }: PageProps) {
                         Session token
                     </p>
 
-                    <p className="mt-3 break-all font-mono text-xs text-neutral-500">
-                        {client.session_token}
+                    <p className="mt-3 font-mono text-xs text-neutral-500">
+                        {maskToken(client.session_token)}
                     </p>
                 </div>
             </div>

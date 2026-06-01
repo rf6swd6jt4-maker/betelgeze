@@ -1,8 +1,8 @@
 import Link from "next/link"
-import { cookies } from "next/headers"
-import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
+import { requireAdmin } from "@/lib/admin/auth"
+import { getProgressPercentage } from "@/lib/onboarding/progress"
 export const dynamic = "force-dynamic"
 
 const BASE_STEPS = [
@@ -13,12 +13,7 @@ const BASE_STEPS = [
 ]
 
 export default async function AdminPage() {
-    const cookieStore = await cookies()
-    const adminSession = cookieStore.get("admin_session")?.value
-
-    if (adminSession !== process.env.ADMIN_SESSION_SECRET) {
-        redirect("/admin/login")
-    }
+    await requireAdmin()
 
     const [
         { data: clients, error: clientsError },
@@ -30,7 +25,9 @@ export default async function AdminPage() {
             .select("id, name, email, created_at, archived_at")
             .is("archived_at", null)
             .order("created_at", { ascending: false }),
-        supabaseAdmin.from("client_progress").select("client_id, step_key, completed_at, created_at"),
+        supabaseAdmin
+            .from("client_progress")
+            .select("client_id, step_key, completed_at, created_at"),
         supabaseAdmin.from("client_modules").select("client_id, module_key"),
     ])
 
@@ -75,26 +72,22 @@ export default async function AdminPage() {
         const assignedModuleKeys = modulesByClient.get(client.id) ?? []
 
         const moduleSteps = assignedModuleKeys.flatMap((moduleKey) => {
-            const module = MODULES[moduleKey]
+            const moduleDefinition = MODULES[moduleKey]
 
-            if (!module) return []
+            if (!moduleDefinition) return []
 
-            return module.steps.map((step) => ({
+            return moduleDefinition.steps.map((step) => ({
                 ...step,
-                moduleTitle: module.title,
+                moduleTitle: moduleDefinition.title,
             }))
         })
 
         const completableSteps = [...BASE_STEPS, ...moduleSteps]
 
-        const completedCount = completableSteps.filter((step) =>
-            completedKeys.includes(step.key)
-        ).length
-
-        const percentage =
-            completableSteps.length === 0
-                ? 100
-                : Math.round((completedCount / completableSteps.length) * 100)
+        const percentage = getProgressPercentage(
+            completableSteps,
+            completedKeys
+        )
 
         const currentStep =
             completableSteps.find((step) => !completedKeys.includes(step.key)) ??
@@ -132,12 +125,21 @@ export default async function AdminPage() {
                         </p>
                     </div>
 
-                    <Link
-                        href="/admin/new"
-                        className="inline-flex justify-center rounded-xl bg-white px-4 py-3 text-sm font-medium text-black"
-                    >
-                        Add client
-                    </Link>
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                        <Link
+                            href="/admin/new"
+                            className="inline-flex justify-center rounded-xl bg-white px-4 py-3 text-sm font-medium text-black"
+                        >
+                            Add client
+                        </Link>
+
+                        <Link
+                            href="/admin/logout"
+                            className="inline-flex justify-center rounded-xl border border-neutral-700 px-4 py-3 text-sm font-medium text-white"
+                        >
+                            Log out
+                        </Link>
+                    </div>
                 </div>
 
                 <div className="mt-8 grid gap-4 md:hidden">

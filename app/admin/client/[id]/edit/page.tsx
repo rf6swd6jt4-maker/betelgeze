@@ -1,8 +1,7 @@
 import Link from "next/link"
-import { cookies } from "next/headers"
-import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
+import { requireAdmin } from "@/lib/admin/auth"
 import { updateClient } from "./actions"
 
 type PageProps = {
@@ -18,12 +17,7 @@ export default async function EditClientPage({
     params,
     searchParams,
 }: PageProps) {
-    const cookieStore = await cookies()
-    const adminSession = cookieStore.get("admin_session")?.value
-
-    if (adminSession !== process.env.ADMIN_SESSION_SECRET) {
-        redirect("/admin/login")
-    }
+    await requireAdmin()
 
     const { id } = await params
     const { error } = await searchParams

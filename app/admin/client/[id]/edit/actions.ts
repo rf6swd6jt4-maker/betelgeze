@@ -1,18 +1,9 @@
 "use server"
 
-import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
-
-async function requireAdmin() {
-    const cookieStore = await cookies()
-    const adminSession = cookieStore.get("admin_session")?.value
-
-    if (adminSession !== process.env.ADMIN_SESSION_SECRET) {
-        redirect("/admin/login")
-    }
-}
+import { requireAdmin } from "@/lib/admin/auth"
 
 export async function updateClient(clientId: string, formData: FormData) {
     await requireAdmin()

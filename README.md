@@ -1,38 +1,114 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Agency Onboarding
 
-## Getting Started
+Private client onboarding portal for an agency. Admins create clients, assign
+the services/modules they purchased, and share a tokenized onboarding link.
+Clients use that link to complete the onboarding steps required for their
+project.
 
-First, run the development server:
+## Current Features
+
+- Password-protected admin area.
+- Admin dashboard with active clients, assigned modules, progress, and activity.
+- Manual client creation without opening Supabase.
+- Client detail page with onboarding link, notes, timeline, progress, and
+  danger-zone actions.
+- Client editing for name, email, and assigned modules.
+- Module-based client onboarding flow.
+- Supabase-backed progress tracking.
+
+## Tech Stack
+
+- Next.js App Router
+- React
+- TypeScript
+- Tailwind CSS
+- Supabase
+- Vercel deployment
+
+## Local Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Create a local env file:
+
+```bash
+cp .env.example .env.local
+```
+
+Fill in the Supabase and admin values, then run:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+ADMIN_PASSWORD=
+ADMIN_SESSION_SECRET=
+NEXT_PUBLIC_SITE_URL=
+```
 
-## Learn More
+`ADMIN_SESSION_SECRET` should be a long random value. `SUPABASE_SERVICE_ROLE_KEY`
+must only be used server-side.
 
-To learn more about Next.js, take a look at the following resources:
+## Supabase
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The current schema is represented in
+`supabase/migrations/20260601000000_initial_schema.sql`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Tables used by the app:
 
-## Deploy on Vercel
+- `clients`
+- `client_modules`
+- `client_progress`
+- `client_notes`
+- `client_activity`
+- `client_form_responses`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Important constraints:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# agency-onbaording
-# agency-onboarding
+- `clients.session_token` is unique.
+- `client_progress` is unique per `client_id` and `step_key`.
+- `client_modules` is unique per `client_id` and `module_key`.
+- `client_form_responses` is unique per `client_id` and `step_key`.
+
+## Admin Flow
+
+1. Log in at `/admin/login`.
+2. Add a client at `/admin/new`.
+3. Assign the modules included in the client's project.
+4. Copy the onboarding link from the client detail page.
+5. Track progress, notes, and activity from the admin dashboard.
+
+## Client Flow
+
+Clients open `/session/[token]`, where `[token]` is their private session token.
+The onboarding flow is generated from the modules assigned to that client.
+
+Form steps are currently placeholders. The `client_form_responses` table exists
+for the next phase, where form answers will be collected and stored.
+
+## Scripts
+
+```bash
+npm run dev
+npm run build
+npm run start
+npm run lint
+npm run test
+```
+
+## Deployment
+
+The project is designed for Vercel. Configure the same environment variables in
+the Vercel project settings for the production deployment.

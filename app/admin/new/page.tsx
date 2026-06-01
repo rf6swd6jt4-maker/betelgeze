@@ -1,7 +1,6 @@
 import Link from "next/link"
-import { cookies } from "next/headers"
-import { redirect } from "next/navigation"
 import { MODULES } from "@/lib/onboarding/modules"
+import { requireAdmin } from "@/lib/admin/auth"
 import { createClient } from "./actions"
 export const dynamic = "force-dynamic"
 
@@ -12,12 +11,7 @@ type PageProps = {
 }
 
 export default async function NewClientPage({ searchParams }: PageProps) {
-    const cookieStore = await cookies()
-    const adminSession = cookieStore.get("admin_session")?.value
-
-    if (adminSession !== process.env.ADMIN_SESSION_SECRET) {
-        redirect("/admin/login")
-    }
+    await requireAdmin()
 
     const { error } = await searchParams
 

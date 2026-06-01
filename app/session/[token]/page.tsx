@@ -76,13 +76,13 @@ export default async function SessionPage({ params }: PageProps) {
 
     const moduleSteps: SessionStep[] =
         clientModules?.flatMap((row) => {
-            const module = MODULES[row.module_key]
+            const moduleDefinition = MODULES[row.module_key]
 
-            if (!module) return []
+            if (!moduleDefinition) return []
 
-            return module.steps.map((step) => ({
+            return moduleDefinition.steps.map((step) => ({
                 ...step,
-                moduleTitle: module.title,
+                moduleTitle: moduleDefinition.title,
                 estimatedTime:
                     step.kind === "video" ? "2 minutes" : "2–3 minutes",
                 why:

@@ -1,4 +1,5 @@
 import { NeedHelpCard } from "./NeedHelpCard"
+import { ProfileMenu } from "./ProfileMenu"
 import { Roadmap } from "./Roadmap"
 import { MobileStepBar } from "./MobileStepBar"
 
@@ -12,11 +13,16 @@ type RoadmapStep = {
 type OnboardingLayoutProps = {
     children: React.ReactNode
     roadmapSteps: RoadmapStep[]
+    client: {
+        name: string | null
+        email: string
+    }
 }
 
 export function OnboardingLayout({
     children,
     roadmapSteps,
+    client,
 }: OnboardingLayoutProps) {
     return (
         <main className="flex min-h-screen flex-col bg-[#F8F7F3] text-slate-900 lg:h-[100dvh] lg:min-h-0 lg:overflow-hidden">
@@ -26,9 +32,7 @@ export function OnboardingLayout({
                         ScaylUp
                     </p>
 
-                    <p className="hidden text-sm text-slate-500 sm:block">
-                        Progress saved automatically
-                    </p>
+                    <ProfileMenu name={client.name} email={client.email} />
                 </div>
             </header>
 
@@ -51,6 +55,10 @@ export function OnboardingLayout({
                 <aside className="hidden lg:min-h-0 lg:overflow-hidden lg:block">
                     <NeedHelpCard />
                 </aside>
+            </div>
+
+            <div className="hidden shrink-0 border-t border-slate-200 bg-white px-6 py-3 text-center text-sm font-medium text-slate-500 lg:block">
+                Progress saved automatically
             </div>
 
             <MobileStepBar steps={roadmapSteps} />

@@ -151,7 +151,13 @@ export default async function SessionPage({ params }: PageProps) {
             : undefined
 
     return (
-        <OnboardingLayout roadmapSteps={roadmapSteps}>
+        <OnboardingLayout
+            roadmapSteps={roadmapSteps}
+            client={{
+                name: client.name,
+                email: client.email,
+            }}
+        >
             <ScrollToTopOnStepChange stepKey={currentStep.key} />
 
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">

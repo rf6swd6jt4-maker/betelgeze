@@ -45,6 +45,10 @@ export function MobileStepBar({ steps }: MobileStepBarProps) {
                     </p>
                 </div>
 
+                <p className="mb-3 text-center text-xs font-medium text-slate-500">
+                    Progress saved automatically
+                </p>
+
                 <div className="grid grid-cols-[0.5fr_36px_1fr_36px_1fr_36px_1fr_36px_0.25fr] items-center">
                     <div
                         className={`h-0.5 ${

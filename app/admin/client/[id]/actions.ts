@@ -3,6 +3,8 @@
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireAdmin } from "@/lib/admin/auth"
+import { getUploadPathsFromResponse } from "@/lib/onboarding/response-files"
+import { deleteOnboardingUploads } from "@/lib/onboarding/uploads"
 
 async function addActivity(
     clientId: string,
@@ -37,6 +39,18 @@ export async function addClientNote(clientId: string, formData: FormData) {
 
 export async function clearClientProgress(clientId: string) {
     await requireAdmin()
+
+    const { data: formResponses } = await supabaseAdmin
+        .from("client_form_responses")
+        .select("response")
+        .eq("client_id", clientId)
+
+    const uploadPaths =
+        formResponses?.flatMap((row) =>
+            getUploadPathsFromResponse(row.response)
+        ) ?? []
+
+    await deleteOnboardingUploads(uploadPaths)
 
     await Promise.all([
         supabaseAdmin

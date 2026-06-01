@@ -1,5 +1,10 @@
 import { randomUUID } from "crypto"
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
+import {
+    DeleteObjectsCommand,
+    GetObjectCommand,
+    PutObjectCommand,
+    S3Client,
+} from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { getRequiredEnv } from "@/lib/env"
 import { getUploadKind, StoredUpload } from "@/lib/onboarding/forms"
@@ -100,4 +105,26 @@ export async function createUploadSignedUrls(paths: string[]) {
     )
 
     return new Map(entries)
+}
+
+export async function deleteOnboardingUploads(paths: string[]) {
+    const uniquePaths = [...new Set(paths)].filter(Boolean)
+
+    if (uniquePaths.length === 0) {
+        return
+    }
+
+    for (let index = 0; index < uniquePaths.length; index += 1000) {
+        const chunk = uniquePaths.slice(index, index + 1000)
+
+        await getR2Client().send(
+            new DeleteObjectsCommand({
+                Bucket: getR2BucketName(),
+                Delete: {
+                    Objects: chunk.map((path) => ({ Key: path })),
+                    Quiet: true,
+                },
+            })
+        )
+    }
 }

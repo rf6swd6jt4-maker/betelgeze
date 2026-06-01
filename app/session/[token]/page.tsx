@@ -3,6 +3,7 @@ import { MODULES } from "@/lib/onboarding/modules"
 import { completeStep } from "./actions"
 import { OnboardingLayout } from "@/components/onboarding/OnboardingLayout"
 import { WhyWeAskCard } from "@/components/onboarding/WhyWeAskCard"
+import { ScrollToTopOnStepChange } from "@/components/onboarding/ScrollToTopOnStepChange"
 
 export const dynamic = "force-dynamic"
 
@@ -107,15 +108,15 @@ export default async function SessionPage({ params }: PageProps) {
 
     return (
         <OnboardingLayout roadmapSteps={roadmapSteps}>
+            <ScrollToTopOnStepChange stepKey={currentStep.key} />
+
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
                 <p className="text-sm font-semibold uppercase tracking-wide text-[#1E3A5F]">
                     {currentStep.moduleTitle}
                 </p>
 
                 <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-                    {isFinalStep
-                        ? "You’re all set"
-                        : currentStep.title}
+                    {isFinalStep ? "You’re all set" : currentStep.title}
                 </h1>
 
                 <p className="mt-4 text-lg leading-7 text-slate-600">
@@ -196,7 +197,7 @@ export default async function SessionPage({ params }: PageProps) {
                             await completeStep(token, currentStep.key)
                         }}
                     >
-                        <button className="mt-8 w-full rounded-xl bg-[#1E3A5F] px-5 py-4 font-medium text-white">
+                        <button className="mt-8 w-full rounded-xl bg-[#1E3A5F] px-5 py-4 font-medium text-white transition active:scale-[0.99] active:opacity-80">
                             Complete and continue
                         </button>
                     </form>

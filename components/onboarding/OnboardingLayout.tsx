@@ -37,7 +37,10 @@ export function OnboardingLayout({
                     <Roadmap steps={roadmapSteps} />
                 </aside>
 
-                <section className="min-w-0 lg:min-h-0 lg:overflow-y-auto lg:pb-10">
+                <section
+                    id="onboarding-scroll-area"
+                    className="min-w-0 lg:min-h-0 lg:overflow-y-auto lg:pb-10"
+                >
                     {children}
 
                     <div className="mt-6 lg:hidden">

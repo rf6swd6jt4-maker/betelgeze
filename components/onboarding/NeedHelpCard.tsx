@@ -10,8 +10,7 @@ export function NeedHelpCard() {
                 through it.
             </p>
 
-            <button className="mt-5 w-full rounded-xl border border-white/30 px-4 py-3 text-sm font-medium">
-                Call us
+        <button className="mt-5 w-full rounded-xl border border-white/30 px-4 py-3 text-sm font-medium transition active:scale-[0.99] active:opacity-80">                Call us
             </button>
         </div>
     )

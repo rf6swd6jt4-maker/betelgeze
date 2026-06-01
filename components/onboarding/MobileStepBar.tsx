@@ -22,7 +22,9 @@ export function MobileStepBar({ steps }: MobileStepBarProps) {
     }
 
     const visibleSteps = steps.slice(startIndex, startIndex + visibleCount)
+
     const showLeftLine = startIndex > 0
+    const showRightLine = startIndex + visibleSteps.length < steps.length
 
     return (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-8px_30px_rgba(15,23,42,0.12)] lg:hidden">
@@ -43,7 +45,7 @@ export function MobileStepBar({ steps }: MobileStepBarProps) {
                     </p>
                 </div>
 
-                <div className="grid grid-cols-[1fr_36px_1fr_36px_1fr_36px_1fr_36px_1fr] items-center">
+                <div className="grid grid-cols-[0.5fr_36px_1fr_36px_1fr_36px_1fr_36px_0.25fr] items-center">
                     <div
                         className={`h-0.5 ${
                             showLeftLine ? "bg-slate-300" : "bg-transparent"
@@ -56,10 +58,7 @@ export function MobileStepBar({ steps }: MobileStepBarProps) {
                             visibleIndex === visibleSteps.length - 1
 
                         return (
-                            <div
-                                key={step.key}
-                                className="contents"
-                            >
+                            <div key={step.key} className="contents">
                                 <div
                                     className={`flex h-9 w-9 items-center justify-center rounded-full border text-sm font-semibold ${
                                         step.complete
@@ -78,6 +77,12 @@ export function MobileStepBar({ steps }: MobileStepBarProps) {
                             </div>
                         )
                     })}
+
+                    <div
+                        className={`h-0.5 ${
+                            showRightLine ? "bg-slate-300" : "bg-transparent"
+                        }`}
+                    />
                 </div>
             </div>
         </div>

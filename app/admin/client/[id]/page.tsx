@@ -19,6 +19,7 @@ import {
     addClientNote,
     archiveClient,
     clearClientProgress,
+    deleteClientNote,
     deleteClient,
 } from "./actions"
 
@@ -319,9 +320,29 @@ export default async function ClientDetailPage({ params }: PageProps) {
                                         key={note.id}
                                         className="rounded-lg bg-neutral-950 p-3"
                                     >
-                                        <p className="whitespace-pre-wrap text-sm text-neutral-200">
-                                            {note.note}
-                                        </p>
+                                        <div className="flex items-start justify-between gap-3">
+                                            <p className="whitespace-pre-wrap text-sm text-neutral-200">
+                                                {note.note}
+                                            </p>
+
+                                            <form
+                                                action={async () => {
+                                                    "use server"
+                                                    await deleteClientNote(
+                                                        client.id,
+                                                        note.id
+                                                    )
+                                                }}
+                                            >
+                                                <button
+                                                    className="rounded-md border border-neutral-800 px-2 py-1 text-xs text-neutral-500 hover:border-red-500/40 hover:bg-red-950/30 hover:text-red-200"
+                                                    aria-label="Delete note"
+                                                    title="Delete note"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </form>
+                                        </div>
 
                                         <p className="mt-3 text-xs text-neutral-500">
                                             {new Date(

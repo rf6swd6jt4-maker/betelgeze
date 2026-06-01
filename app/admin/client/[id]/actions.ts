@@ -38,12 +38,36 @@ export async function addClientNote(clientId: string, formData: FormData) {
 export async function clearClientProgress(clientId: string) {
     await requireAdmin()
 
+    await Promise.all([
+        supabaseAdmin
+            .from("client_progress")
+            .delete()
+            .eq("client_id", clientId),
+        supabaseAdmin
+            .from("client_form_responses")
+            .delete()
+            .eq("client_id", clientId),
+    ])
+
+    await addActivity(
+        clientId,
+        "progress_cleared",
+        "Client progress and form submissions cleared"
+    )
+
+    redirect(`/admin/client/${clientId}`)
+}
+
+export async function deleteClientNote(clientId: string, noteId: string) {
+    await requireAdmin()
+
     await supabaseAdmin
-        .from("client_progress")
+        .from("client_notes")
         .delete()
+        .eq("id", noteId)
         .eq("client_id", clientId)
 
-    await addActivity(clientId, "progress_cleared", "Client progress cleared")
+    await addActivity(clientId, "note_deleted", "Note deleted")
 
     redirect(`/admin/client/${clientId}`)
 }

@@ -63,7 +63,3 @@ create index if not exists client_activity_client_id_created_at_idx
 
 create index if not exists client_form_responses_client_id_idx
     on public.client_form_responses (client_id);
-
-insert into storage.buckets (id, name, public, file_size_limit)
-values ('onboarding-uploads', 'onboarding-uploads', false, 52428800)
-on conflict (id) do nothing;

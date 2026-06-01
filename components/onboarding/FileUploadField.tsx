@@ -44,8 +44,8 @@ export function FileUploadField({
                     Tap to choose {multiple ? "files" : "a file"}
                 </span>
                 <span className="mt-2 text-sm leading-6 text-slate-500">
-                    Images preview before you submit. Large videos may take a
-                    moment to upload.
+                    Images preview before you submit. Videos upload directly
+                    and show progress.
                 </span>
                 <input
                     name={name}

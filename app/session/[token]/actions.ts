@@ -5,9 +5,8 @@ import { revalidatePath } from "next/cache"
 import {
     FormResponse,
     getOnboardingForm,
-    StoredUpload,
 } from "@/lib/onboarding/forms"
-import { uploadOnboardingFile } from "@/lib/onboarding/uploads"
+import { createSignedOnboardingUpload } from "@/lib/onboarding/uploads"
 
 export async function completeStep(token: string, stepKey: string) {
     const { data: client, error: clientError } = await supabaseAdmin
@@ -52,11 +51,33 @@ async function saveStepCompletion(clientId: string, stepKey: string) {
     })
 }
 
-export async function submitFormStep(
+export async function prepareDirectUpload(
+    token: string,
+    stepKey: string,
+    file: {
+        name: string
+        size: number
+        type: string
+    }
+) {
+    const { data: client, error: clientError } = await supabaseAdmin
+        .from("clients")
+        .select("id")
+        .eq("session_token", token)
+        .single()
+
+    if (clientError || !client) {
+        throw new Error("Invalid onboarding session")
+    }
+
+    return createSignedOnboardingUpload(client.id, stepKey, file)
+}
+
+export async function submitPreparedFormStep(
     token: string,
     stepKey: string,
     formKey: string,
-    formData: FormData
+    response: FormResponse
 ) {
     const form = getOnboardingForm(formKey)
 
@@ -74,47 +95,6 @@ export async function submitFormStep(
         throw new Error("Invalid onboarding session")
     }
 
-    const { data: existingResponse } = await supabaseAdmin
-        .from("client_form_responses")
-        .select("response")
-        .eq("client_id", client.id)
-        .eq("step_key", stepKey)
-        .maybeSingle()
-
-    const response: FormResponse =
-        existingResponse?.response &&
-        typeof existingResponse.response === "object"
-            ? (existingResponse.response as FormResponse)
-            : {}
-
-    for (const field of form.fields) {
-        if (field.type === "file") {
-            const existingFiles = Array.isArray(response[field.name])
-                ? (response[field.name] as StoredUpload[])
-                : []
-
-            const files = formData
-                .getAll(field.name)
-                .filter(
-                    (value): value is File =>
-                        value instanceof File &&
-                        value.size > 0 &&
-                        Boolean(value.name)
-                )
-
-            const uploadedFiles = await Promise.all(
-                files.map((file) =>
-                    uploadOnboardingFile(client.id, stepKey, file)
-                )
-            )
-
-            response[field.name] = [...existingFiles, ...uploadedFiles]
-            continue
-        }
-
-        response[field.name] = String(formData.get(field.name) ?? "").trim()
-    }
-
     const now = new Date().toISOString()
 
     const responseRow = {
@@ -123,6 +103,13 @@ export async function submitFormStep(
         response,
         updated_at: now,
     }
+
+    const { data: existingResponse } = await supabaseAdmin
+        .from("client_form_responses")
+        .select("id")
+        .eq("client_id", client.id)
+        .eq("step_key", stepKey)
+        .maybeSingle()
 
     const { error: responseError } = existingResponse
         ? await supabaseAdmin

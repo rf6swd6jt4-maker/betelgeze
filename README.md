@@ -53,7 +53,10 @@ Open [http://localhost:3000](http://localhost:3000).
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-SUPABASE_ONBOARDING_UPLOADS_BUCKET=
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET_NAME=
 ADMIN_PASSWORD=
 ADMIN_SESSION_SECRET=
 NEXT_PUBLIC_SITE_URL=
@@ -76,9 +79,10 @@ Tables used by the app:
 - `client_activity`
 - `client_form_responses`
 
-Uploaded onboarding files are stored in the private Supabase Storage bucket
-configured by `SUPABASE_ONBOARDING_UPLOADS_BUCKET`, defaulting to
-`onboarding-uploads`. Admin previews use signed URLs.
+Uploaded onboarding files are stored in a private Cloudflare R2 bucket. The
+browser uploads directly to R2 with short-lived signed upload URLs, so large
+videos do not pass through the Next.js server. Admin previews use signed
+download URLs.
 
 Important constraints:
 
@@ -101,8 +105,8 @@ Clients open `/session/[token]`, where `[token]` is their private session token.
 The onboarding flow is generated from the modules assigned to that client.
 
 Form steps save structured answers to `client_form_responses`. Image, video,
-and document uploads are stored in Supabase Storage and referenced from the
-saved response JSON.
+and document uploads are stored in Cloudflare R2 and referenced from the saved
+response JSON.
 
 ## Scripts
 

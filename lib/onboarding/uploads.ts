@@ -1,11 +1,28 @@
 import { randomUUID } from "crypto"
-import { supabaseAdmin } from "@/lib/supabase/admin"
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
+import { getRequiredEnv } from "@/lib/env"
 import { getUploadKind, StoredUpload } from "@/lib/onboarding/forms"
 
-export const ONBOARDING_UPLOADS_BUCKET =
-    process.env.SUPABASE_ONBOARDING_UPLOADS_BUCKET ?? "onboarding-uploads"
+export const MAX_ONBOARDING_UPLOAD_SIZE = 500 * 1024 * 1024
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024
+const R2_SIGNED_URL_TTL_SECONDS = 60 * 60
+const R2_UPLOAD_URL_TTL_SECONDS = 15 * 60
+
+function getR2Client() {
+    return new S3Client({
+        region: "auto",
+        endpoint: `https://${getRequiredEnv("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com`,
+        credentials: {
+            accessKeyId: getRequiredEnv("R2_ACCESS_KEY_ID"),
+            secretAccessKey: getRequiredEnv("R2_SECRET_ACCESS_KEY"),
+        },
+    })
+}
+
+function getR2BucketName() {
+    return getRequiredEnv("R2_BUCKET_NAME")
+}
 
 function sanitizeFileName(name: string) {
     return name
@@ -16,44 +33,61 @@ function sanitizeFileName(name: string) {
         .slice(0, 120)
 }
 
-export async function uploadOnboardingFile(
+export async function createSignedOnboardingUpload(
     clientId: string,
     stepKey: string,
-    file: File
-): Promise<StoredUpload> {
-    if (file.size > MAX_FILE_SIZE) {
-        throw new Error(`${file.name} is larger than the 50MB upload limit.`)
+    file: {
+        name: string
+        size: number
+        type: string
+    }
+) {
+    if (file.size > MAX_ONBOARDING_UPLOAD_SIZE) {
+        throw new Error(`${file.name} is larger than the 500MB upload limit.`)
     }
 
     const fileName = sanitizeFileName(file.name) || "upload"
     const path = `${clientId}/${stepKey}/${randomUUID()}-${fileName}`
+    const contentType = file.type || "application/octet-stream"
 
-    const { error } = await supabaseAdmin.storage
-        .from(ONBOARDING_UPLOADS_BUCKET)
-        .upload(path, file, {
-            contentType: file.type || "application/octet-stream",
-            upsert: false,
-        })
+    const uploadUrl = await getSignedUrl(
+        getR2Client(),
+        new PutObjectCommand({
+            Bucket: getR2BucketName(),
+            Key: path,
+            ContentType: contentType,
+        }),
+        {
+            expiresIn: R2_UPLOAD_URL_TTL_SECONDS,
+        }
+    )
 
-    if (error) {
-        throw new Error(`Could not upload ${file.name}: ${error.message}`)
-    }
-
-    return {
+    const storedUpload: StoredUpload = {
         name: file.name,
         path,
         size: file.size,
-        type: file.type || "application/octet-stream",
-        kind: getUploadKind(file.type || ""),
+        type: contentType,
+        kind: getUploadKind(contentType),
+        provider: "r2",
+    }
+
+    return {
+        uploadUrl,
+        storedUpload,
     }
 }
 
 export async function createUploadSignedUrl(path: string) {
-    const { data } = await supabaseAdmin.storage
-        .from(ONBOARDING_UPLOADS_BUCKET)
-        .createSignedUrl(path, 60 * 60)
-
-    return data?.signedUrl ?? null
+    return getSignedUrl(
+        getR2Client(),
+        new GetObjectCommand({
+            Bucket: getR2BucketName(),
+            Key: path,
+        }),
+        {
+            expiresIn: R2_SIGNED_URL_TTL_SECONDS,
+        }
+    )
 }
 
 export async function createUploadSignedUrls(paths: string[]) {
@@ -61,13 +95,9 @@ export async function createUploadSignedUrls(paths: string[]) {
         return new Map<string, string>()
     }
 
-    const { data } = await supabaseAdmin.storage
-        .from(ONBOARDING_UPLOADS_BUCKET)
-        .createSignedUrls(paths, 60 * 60)
-
-    return new Map(
-        data
-            ?.filter((item) => item.signedUrl)
-            .map((item) => [item.path, item.signedUrl]) ?? []
+    const entries = await Promise.all(
+        paths.map(async (path) => [path, await createUploadSignedUrl(path)] as const)
     )
+
+    return new Map(entries)
 }

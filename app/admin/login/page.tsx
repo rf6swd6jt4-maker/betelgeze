@@ -3,6 +3,7 @@ import { cookies } from "next/headers"
 import {
     ADMIN_COOKIE_PATH,
     ADMIN_SESSION_COOKIE,
+    LEGACY_ADMIN_COOKIE_PATH,
     getAdminSessionSecret,
     isValidAdminPassword,
 } from "@/lib/admin/auth"
@@ -18,6 +19,14 @@ async function login(formData: FormData) {
     }
 
     const cookieStore = await cookies()
+
+    cookieStore.set(ADMIN_SESSION_COOKIE, "", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: LEGACY_ADMIN_COOKIE_PATH,
+        maxAge: 0,
+    })
 
     cookieStore.set(ADMIN_SESSION_COOKIE, getAdminSessionSecret(), {
         httpOnly: true,

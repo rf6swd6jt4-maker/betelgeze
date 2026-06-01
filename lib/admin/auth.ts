@@ -4,7 +4,8 @@ import { redirect } from "next/navigation"
 import { getRequiredEnv } from "@/lib/env"
 
 export const ADMIN_SESSION_COOKIE = "admin_session"
-export const ADMIN_COOKIE_PATH = "/admin"
+export const ADMIN_COOKIE_PATH = "/"
+export const LEGACY_ADMIN_COOKIE_PATH = "/admin"
 
 function constantTimeCompare(value: string, expected: string) {
     const expectedBuffer = Buffer.from(expected)

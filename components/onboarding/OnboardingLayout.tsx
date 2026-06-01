@@ -19,8 +19,8 @@ export function OnboardingLayout({
     roadmapSteps,
 }: OnboardingLayoutProps) {
     return (
-        <main className="min-h-screen bg-[#F8F7F3] text-slate-900 lg:h-screen lg:overflow-hidden">
-            <header className="h-16 border-b border-slate-200 bg-white px-4 sm:px-6">
+        <main className="flex min-h-screen flex-col bg-[#F8F7F3] text-slate-900 lg:h-[100dvh] lg:min-h-0 lg:overflow-hidden">
+            <header className="h-16 shrink-0 border-b border-slate-200 bg-white px-4 sm:px-6">
                 <div className="mx-auto flex h-full max-w-7xl items-center justify-between">
                     <p className="text-xl font-semibold text-[#1E3A5F]">
                         ScaylUp
@@ -32,14 +32,14 @@ export function OnboardingLayout({
                 </div>
             </header>
 
-            <div className="mx-auto grid max-w-7xl gap-6 px-4 pb-32 pt-4 sm:px-6 lg:h-[calc(100vh-4rem)] lg:min-h-0 lg:grid-cols-[260px_minmax(0,1fr)_260px] lg:py-6">
-                <aside className="hidden lg:block lg:min-h-0">
+            <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 pb-32 pt-4 sm:px-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[260px_minmax(0,1fr)_260px] lg:overflow-hidden lg:py-6">
+                <aside className="hidden lg:min-h-0 lg:overflow-hidden lg:block">
                     <Roadmap steps={roadmapSteps} />
                 </aside>
 
                 <section
                     id="onboarding-scroll-area"
-                    className="min-w-0 lg:min-h-0 lg:overflow-y-auto lg:pb-10"
+                    className="min-w-0 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pb-10"
                 >
                     {children}
 
@@ -48,7 +48,7 @@ export function OnboardingLayout({
                     </div>
                 </section>
 
-                <aside className="hidden lg:block lg:min-h-0">
+                <aside className="hidden lg:min-h-0 lg:overflow-hidden lg:block">
                     <NeedHelpCard />
                 </aside>
             </div>

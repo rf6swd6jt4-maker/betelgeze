@@ -1,9 +1,10 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { MODULES } from "@/lib/onboarding/modules"
+import { MODULES, StepKind } from "@/lib/onboarding/modules"
 import { completeStep } from "./actions"
 import { OnboardingLayout } from "@/components/onboarding/OnboardingLayout"
 import { WhyWeAskCard } from "@/components/onboarding/WhyWeAskCard"
 import { ScrollToTopOnStepChange } from "@/components/onboarding/ScrollToTopOnStepChange"
+import { FormPlaceholder } from "@/components/onboarding/FormPlaceholder"
 
 export const dynamic = "force-dynamic"
 
@@ -13,7 +14,19 @@ type PageProps = {
     }>
 }
 
-const BASE_STEPS = [
+type SessionStep = {
+    key: string
+    title: string
+    description: string
+    moduleTitle: string
+    estimatedTime: string
+    why: string
+    kind: StepKind | "final"
+    formKey?: string
+    videoUrl?: string
+}
+
+const BASE_STEPS: SessionStep[] = [
     {
         key: "welcome-video",
         title: "Welcome",
@@ -23,10 +36,12 @@ const BASE_STEPS = [
         estimatedTime: "2 minutes",
         why:
             "This helps us make sure you know exactly what happens next before we ask for any business details.",
+        kind: "video",
+        videoUrl: "",
     },
 ]
 
-const FINAL_STEP = {
+const FINAL_STEP: SessionStep = {
     key: "final",
     title: "All done",
     description: "You have completed the onboarding steps.",
@@ -34,6 +49,7 @@ const FINAL_STEP = {
     estimatedTime: "No action needed",
     why:
         "Once onboarding is complete, our team can review everything and start preparing your project properly.",
+    kind: "final",
 }
 
 export default async function SessionPage({ params }: PageProps) {
@@ -58,7 +74,7 @@ export default async function SessionPage({ params }: PageProps) {
         .select("module_key")
         .eq("client_id", client.id)
 
-    const moduleSteps =
+    const moduleSteps: SessionStep[] =
         clientModules?.flatMap((row) => {
             const module = MODULES[row.module_key]
 
@@ -67,9 +83,12 @@ export default async function SessionPage({ params }: PageProps) {
             return module.steps.map((step) => ({
                 ...step,
                 moduleTitle: module.title,
-                estimatedTime: "2–3 minutes",
+                estimatedTime:
+                    step.kind === "video" ? "2 minutes" : "2–3 minutes",
                 why:
-                    "This information helps us set up your project correctly and avoid delays later.",
+                    step.kind === "video"
+                        ? "This video shows you exactly what to do, so you do not need to guess your way through account settings."
+                        : "This information helps us set up your project correctly and avoid delays later.",
             }))
         }) ?? []
 
@@ -159,12 +178,16 @@ export default async function SessionPage({ params }: PageProps) {
                     </div>
                 )}
 
-                {!isFinalStep && (
+                {!isFinalStep && currentStep.kind === "video" && (
                     <div className="mt-8 aspect-video overflow-hidden rounded-2xl bg-[#1E3A5F]">
                         <div className="flex h-full items-center justify-center text-white">
                             Video placeholder
                         </div>
                     </div>
+                )}
+
+                {!isFinalStep && currentStep.kind === "form" && (
+                    <FormPlaceholder formKey={currentStep.formKey} />
                 )}
 
                 {!isFinalStep && (

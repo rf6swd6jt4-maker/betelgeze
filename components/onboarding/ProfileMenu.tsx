@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from "react"
 
 type ProfileMenuProps = {
     name: string | null
-    email: string
+    email: string | null
+    phone: string | null
 }
 
-export function ProfileMenu({ name, email }: ProfileMenuProps) {
+export function ProfileMenu({ name, email, phone }: ProfileMenuProps) {
     const [open, setOpen] = useState(false)
     const menuRef = useRef<HTMLDivElement>(null)
 
@@ -66,8 +67,13 @@ export function ProfileMenu({ name, email }: ProfileMenuProps) {
                         {displayName}
                     </p>
                     <p className="mt-1 break-all text-sm text-slate-600">
-                        {email}
+                        {phone ?? "No phone saved"}
                     </p>
+                    {email && (
+                        <p className="mt-1 break-all text-xs text-slate-500">
+                            {email}
+                        </p>
+                    )}
                 </div>
             )}
         </div>

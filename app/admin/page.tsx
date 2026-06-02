@@ -22,7 +22,7 @@ export default async function AdminPage() {
     ] = await Promise.all([
         supabaseAdmin
             .from("clients")
-            .select("id, name, email, created_at, archived_at")
+            .select("id, name, email, phone, created_at, archived_at")
             .is("archived_at", null)
             .order("created_at", { ascending: false }),
         supabaseAdmin
@@ -189,9 +189,15 @@ export default async function AdminPage() {
                                             {client.name ?? "Unnamed client"}
                                         </h2>
 
-                                        <p className="mt-1 text-sm text-neutral-400">
-                                            {client.email}
+                                        <p className="mt-1 text-sm text-neutral-300">
+                                            {client.phone ?? "No phone saved"}
                                         </p>
+
+                                        {client.email && (
+                                            <p className="mt-1 text-xs text-neutral-500">
+                                                {client.email}
+                                            </p>
+                                        )}
                                     </div>
 
                                     <span className="rounded-full bg-neutral-800 px-3 py-1 text-xs text-neutral-300">
@@ -263,7 +269,7 @@ export default async function AdminPage() {
                                     Client
                                 </th>
                                 <th className="px-3 py-2 font-medium">
-                                    Email
+                                    Contact
                                 </th>
                                 <th className="px-3 py-2 font-medium">
                                     Modules
@@ -303,8 +309,17 @@ export default async function AdminPage() {
                                             </Link>
                                         </td>
 
-                                        <td className="px-3 py-3 text-neutral-300">
-                                            {client.email}
+                                        <td className="px-3 py-3">
+                                            <p className="text-neutral-300">
+                                                {client.phone ??
+                                                    "No phone saved"}
+                                            </p>
+
+                                            {client.email && (
+                                                <p className="mt-1 text-xs text-neutral-500">
+                                                    {client.email}
+                                                </p>
+                                            )}
                                         </td>
 
                                         <td className="px-3 py-3">

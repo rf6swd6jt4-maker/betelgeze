@@ -140,12 +140,16 @@ Required environment variables:
 Setup:
 
 1. Run the Supabase migrations.
-2. In each client admin page, fill in the client address and ClickUp Chat
-   channel ID in the Client messages bridge panel.
+2. Add clients with their phone number as the primary contact. If ClickUp and
+   Twilio credentials are configured, the app creates a ClickUp Chat channel,
+   stores the bridge mapping, and sends the onboarding link by SMS/WhatsApp.
 3. In Twilio, point the incoming message webhook to:
    `/api/client-messages/twilio/inbound`
 4. To send a team reply back to the client, post JSON to:
    `/api/client-messages/clickup/outbound`
+
+For testing, the client admin page still lets you fill in or override the
+client address and ClickUp Chat channel ID manually.
 
 Outbound replies require either an `Authorization: Bearer ...` header or an
 `x-bridge-secret` header matching `CLIENT_MESSAGES_BRIDGE_SECRET`.

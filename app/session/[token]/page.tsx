@@ -61,7 +61,7 @@ export default async function SessionPage({ params }: PageProps) {
 
     const { data: client, error } = await supabaseAdmin
         .from("clients")
-        .select("id, name, email, session_token")
+        .select("id, name, email, phone, session_token")
         .eq("session_token", token)
         .single()
 
@@ -156,6 +156,7 @@ export default async function SessionPage({ params }: PageProps) {
             client={{
                 name: client.name,
                 email: client.email,
+                phone: client.phone,
             }}
         >
             <ScrollToTopOnStepChange stepKey={currentStep.key} />

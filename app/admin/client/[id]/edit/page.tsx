@@ -63,7 +63,7 @@ export default async function EditClientPage({
 
                 {error && (
                     <div className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                        Name and email are required.
+                        Name and phone are required.
                     </div>
                 )}
 
@@ -87,14 +87,25 @@ export default async function EditClientPage({
                     />
 
                     <label className="mt-6 block text-sm text-neutral-300">
+                        Client phone / WhatsApp
+                    </label>
+
+                    <input
+                        name="phone"
+                        type="tel"
+                        required
+                        defaultValue={client.phone ?? ""}
+                        className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
+                    />
+
+                    <label className="mt-6 block text-sm text-neutral-300">
                         Client email
                     </label>
 
                     <input
                         name="email"
                         type="email"
-                        required
-                        defaultValue={client.email}
+                        defaultValue={client.email ?? ""}
                         className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
                     />
 

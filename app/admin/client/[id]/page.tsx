@@ -54,7 +54,7 @@ export default async function ClientDetailPage({
 
     const { data: client } = await supabaseAdmin
         .from("clients")
-        .select("id, name, email, session_token, created_at, archived_at")
+        .select("id, name, email, phone, session_token, created_at, archived_at")
         .eq("id", id)
         .single()
 
@@ -213,9 +213,15 @@ export default async function ClientDetailPage({
                             {client.name ?? "Unnamed client"}
                         </h1>
 
-                        <p className="mt-1 text-sm text-neutral-400">
-                            {client.email}
+                        <p className="mt-1 text-sm text-neutral-300">
+                            {client.phone ?? "No phone saved"}
                         </p>
+
+                        {client.email && (
+                            <p className="mt-1 text-xs text-neutral-500">
+                                {client.email}
+                            </p>
+                        )}
 
                         <p className="mt-1 text-xs text-neutral-500">
                             Last activity:{" "}
@@ -367,6 +373,7 @@ export default async function ClientDetailPage({
                                 placeholder="sms:+15551234567 or whatsapp:+15551234567"
                                 defaultValue={
                                     communicationChannel?.external_address ??
+                                    client.phone ??
                                     ""
                                 }
                                 className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white outline-none"

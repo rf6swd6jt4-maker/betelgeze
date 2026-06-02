@@ -33,7 +33,7 @@ export default async function NewClientPage({ searchParams }: PageProps) {
 
                 {error && (
                     <div className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                        Could not create client. Check that name, email, and at
+                        Could not create client. Check that name, phone, and at
                         least one service are filled in.
                     </div>
                 )}
@@ -55,15 +55,32 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                     />
 
                     <label className="mt-6 block text-sm text-neutral-300">
+                        Client phone / WhatsApp
+                    </label>
+
+                    <input
+                        name="phone"
+                        type="tel"
+                        required
+                        className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
+                        placeholder="+1 555 123 4567"
+                    />
+
+                    <p className="mt-2 text-xs text-neutral-500">
+                        Use their normal mobile number. Add
+                        whatsapp:+15551234567 only when WhatsApp is already set
+                        up.
+                    </p>
+
+                    <label className="mt-6 block text-sm text-neutral-300">
                         Client email
                     </label>
 
                     <input
                         name="email"
                         type="email"
-                        required
                         className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
-                        placeholder="client@example.com"
+                        placeholder="client@example.com (optional)"
                     />
 
                     <div className="mt-8">

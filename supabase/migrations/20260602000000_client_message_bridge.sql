@@ -1,3 +1,9 @@
+alter table public.clients
+    add column if not exists phone text;
+
+alter table public.clients
+    alter column email drop not null;
+
 create table if not exists public.client_communication_channels (
     id uuid primary key default gen_random_uuid(),
     client_id uuid not null references public.clients(id) on delete cascade,

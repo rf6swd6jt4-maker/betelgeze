@@ -15,7 +15,8 @@ type OnboardingLayoutProps = {
     roadmapSteps: RoadmapStep[]
     client: {
         name: string | null
-        email: string
+        email: string | null
+        phone: string | null
     }
 }
 
@@ -32,7 +33,11 @@ export function OnboardingLayout({
                         ScaylUp
                     </p>
 
-                    <ProfileMenu name={client.name} email={client.email} />
+                    <ProfileMenu
+                        name={client.name}
+                        email={client.email}
+                        phone={client.phone}
+                    />
                 </div>
             </header>
 

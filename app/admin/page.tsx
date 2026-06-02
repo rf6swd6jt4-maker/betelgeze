@@ -16,18 +16,28 @@ const BASE_STEPS = [
 export default async function AdminPage() {
     await requireAdmin()
 
-    let clientsResponse = await supabaseAdmin
+    const clientsResponse = await supabaseAdmin
         .from("clients")
         .select("id, name, email, phone, created_at, archived_at")
         .is("archived_at", null)
         .order("created_at", { ascending: false })
 
+    let clients = clientsResponse.data
+    let clientsError = clientsResponse.error
+
     if (clientsResponse.error?.message.toLowerCase().includes("phone")) {
-        clientsResponse = await supabaseAdmin
+        const fallbackClientsResponse = await supabaseAdmin
             .from("clients")
             .select("id, name, email, created_at, archived_at")
             .is("archived_at", null)
             .order("created_at", { ascending: false })
+
+        clients =
+            fallbackClientsResponse.data?.map((client) => ({
+                ...client,
+                phone: null,
+            })) ?? null
+        clientsError = fallbackClientsResponse.error
     }
 
     const [
@@ -39,9 +49,6 @@ export default async function AdminPage() {
             .select("client_id, step_key, completed_at, created_at"),
         supabaseAdmin.from("client_modules").select("client_id, module_key"),
     ])
-
-    const clients = clientsResponse.data
-    const clientsError = clientsResponse.error
 
     if (clientsError || progressError || modulesError) {
         return (

@@ -15,21 +15,32 @@ const BASE_STEPS = [
 export default async function AdminPage() {
     await requireAdmin()
 
+    let clientsResponse = await supabaseAdmin
+        .from("clients")
+        .select("id, name, email, phone, created_at, archived_at")
+        .is("archived_at", null)
+        .order("created_at", { ascending: false })
+
+    if (clientsResponse.error?.message.toLowerCase().includes("phone")) {
+        clientsResponse = await supabaseAdmin
+            .from("clients")
+            .select("id, name, email, created_at, archived_at")
+            .is("archived_at", null)
+            .order("created_at", { ascending: false })
+    }
+
     const [
-        { data: clients, error: clientsError },
         { data: progressRows, error: progressError },
         { data: moduleRows, error: modulesError },
     ] = await Promise.all([
-        supabaseAdmin
-            .from("clients")
-            .select("id, name, email, phone, created_at, archived_at")
-            .is("archived_at", null)
-            .order("created_at", { ascending: false }),
         supabaseAdmin
             .from("client_progress")
             .select("client_id, step_key, completed_at, created_at"),
         supabaseAdmin.from("client_modules").select("client_id, module_key"),
     ])
+
+    const clients = clientsResponse.data
+    const clientsError = clientsResponse.error
 
     if (clientsError || progressError || modulesError) {
         return (

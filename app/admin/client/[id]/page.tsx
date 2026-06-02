@@ -12,6 +12,7 @@ import {
     getProgressPercentage,
 } from "@/lib/onboarding/progress"
 import { maskToken } from "@/lib/security/tokens"
+import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { AdminCopyButton } from "@/components/admin/AdminCopyButton"
 import { FormResponsesSummary } from "@/components/admin/FormResponsesSummary"
 import { ClientActionsMenu } from "./ClientActionsMenu"
@@ -214,7 +215,9 @@ export default async function ClientDetailPage({
                         </h1>
 
                         <p className="mt-1 text-sm text-neutral-300">
-                            {client.phone ?? "No phone saved"}
+                            {client.phone
+                                ? displayMessageAddress(client.phone)
+                                : "No phone saved"}
                         </p>
 
                         {client.email && (

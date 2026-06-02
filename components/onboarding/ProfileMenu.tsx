@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { displayMessageAddress } from "@/lib/client-messages/addresses"
 
 type ProfileMenuProps = {
     name: string | null
@@ -67,7 +68,7 @@ export function ProfileMenu({ name, email, phone }: ProfileMenuProps) {
                         {displayName}
                     </p>
                     <p className="mt-1 break-all text-sm text-slate-600">
-                        {phone ?? "No phone saved"}
+                        {phone ? displayMessageAddress(phone) : "No phone saved"}
                     </p>
                     {email && (
                         <p className="mt-1 break-all text-xs text-slate-500">

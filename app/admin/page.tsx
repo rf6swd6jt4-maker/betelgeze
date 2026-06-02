@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
 import { requireAdmin } from "@/lib/admin/auth"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
+import { displayMessageAddress } from "@/lib/client-messages/addresses"
 export const dynamic = "force-dynamic"
 
 const BASE_STEPS = [
@@ -201,7 +202,11 @@ export default async function AdminPage() {
                                         </h2>
 
                                         <p className="mt-1 text-sm text-neutral-300">
-                                            {client.phone ?? "No phone saved"}
+                                            {client.phone
+                                                ? displayMessageAddress(
+                                                      client.phone
+                                                  )
+                                                : "No phone saved"}
                                         </p>
 
                                         {client.email && (
@@ -322,8 +327,11 @@ export default async function AdminPage() {
 
                                         <td className="px-3 py-3">
                                             <p className="text-neutral-300">
-                                                {client.phone ??
-                                                    "No phone saved"}
+                                                {client.phone
+                                                    ? displayMessageAddress(
+                                                          client.phone
+                                                      )
+                                                    : "No phone saved"}
                                             </p>
 
                                             {client.email && (

@@ -22,9 +22,9 @@ export function toTwilioAddress(value: string): string {
 export function displayMessageAddress(value: string): string {
     if (!value.includes(":")) return value
 
-    const [channel, address] = value.split(":", 2)
+    const [, address] = value.split(":", 2)
 
-    return `${channel.toUpperCase()} ${address}`
+    return address
 }
 
 export function formatClientInboundMessage({

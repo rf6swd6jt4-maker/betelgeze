@@ -7,6 +7,10 @@ import {
     ONBOARDING_FORMS,
 } from "../lib/onboarding/forms.ts"
 import { maskToken } from "../lib/security/tokens.ts"
+import {
+    normalizeMessageAddress,
+    toTwilioAddress,
+} from "../lib/client-messages/addresses.ts"
 
 test("counts unique completed onboarding steps", () => {
     const steps = [{ key: "welcome" }, { key: "business-info" }]
@@ -68,4 +72,20 @@ test("looks up configured form definitions", () => {
 test("maps upload accept helpers for browser file inputs", () => {
     assert.equal(getFileAcceptValue("image"), "image/*,.svg,.pdf")
     assert.equal(getFileAcceptValue("video"), "video/*")
+})
+
+test("normalizes SMS and WhatsApp bridge addresses", () => {
+    assert.equal(normalizeMessageAddress("+1 (555) 123-4567"), "sms:+15551234567")
+    assert.equal(
+        normalizeMessageAddress("whatsapp:+1 (555) 123-4567"),
+        "whatsapp:+15551234567"
+    )
+})
+
+test("converts normalized bridge addresses for Twilio sends", () => {
+    assert.equal(toTwilioAddress("sms:+15551234567"), "+15551234567")
+    assert.equal(
+        toTwilioAddress("whatsapp:+15551234567"),
+        "whatsapp:+15551234567"
+    )
 })

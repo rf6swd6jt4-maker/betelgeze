@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireAdmin } from "@/lib/admin/auth"
 import { getUploadPathsFromResponse } from "@/lib/onboarding/response-files"
 import { deleteOnboardingUploads } from "@/lib/onboarding/uploads"
+import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 
 async function addActivity(
     clientId: string,
@@ -82,6 +83,50 @@ export async function deleteClientNote(clientId: string, noteId: string) {
         .eq("client_id", clientId)
 
     await addActivity(clientId, "note_deleted", "Note deleted")
+
+    redirect(`/admin/client/${clientId}`)
+}
+
+export async function updateClientCommunication(
+    clientId: string,
+    formData: FormData
+) {
+    await requireAdmin()
+
+    const externalAddress = normalizeMessageAddress(
+        String(formData.get("external_address") ?? "")
+    )
+    const clickupWorkspaceId = String(
+        formData.get("clickup_workspace_id") ?? ""
+    ).trim()
+    const clickupChannelId = String(formData.get("clickup_channel_id") ?? "")
+        .trim()
+    const isActive = formData.get("is_active") === "on"
+
+    if (!externalAddress || !clickupChannelId) {
+        redirect(`/admin/client/${clientId}?bridgeError=missing-fields`)
+    }
+
+    await supabaseAdmin.from("client_communication_channels").upsert(
+        {
+            client_id: clientId,
+            provider: "twilio",
+            external_address: externalAddress,
+            clickup_workspace_id: clickupWorkspaceId || null,
+            clickup_channel_id: clickupChannelId,
+            is_active: isActive,
+            updated_at: new Date().toISOString(),
+        },
+        {
+            onConflict: "client_id",
+        }
+    )
+
+    await addActivity(
+        clientId,
+        "communication_updated",
+        "Client communication bridge updated"
+    )
 
     redirect(`/admin/client/${clientId}`)
 }

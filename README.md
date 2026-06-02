@@ -122,3 +122,40 @@ npm run test
 
 The project is designed for Vercel. Configure the same environment variables in
 the Vercel project settings for the production deployment.
+
+## Client Messages Bridge
+
+The bridge routes client SMS or WhatsApp messages through Twilio into ClickUp
+Chat, then lets a protected webhook send team replies back through Twilio.
+
+Required environment variables:
+
+- `CLICKUP_API_TOKEN`
+- `CLICKUP_WORKSPACE_ID`
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_FROM_ADDRESS`, for example `sms:+15551234567` or `whatsapp:+15551234567`
+- `CLIENT_MESSAGES_BRIDGE_SECRET`
+
+Setup:
+
+1. Run the Supabase migrations.
+2. In each client admin page, fill in the client address and ClickUp Chat
+   channel ID in the Client messages bridge panel.
+3. In Twilio, point the incoming message webhook to:
+   `/api/client-messages/twilio/inbound`
+4. To send a team reply back to the client, post JSON to:
+   `/api/client-messages/clickup/outbound`
+
+Outbound replies require either an `Authorization: Bearer ...` header or an
+`x-bridge-secret` header matching `CLIENT_MESSAGES_BRIDGE_SECRET`.
+
+Example outbound body:
+
+```json
+{
+  "clientId": "CLIENT_UUID",
+  "authorName": "Team",
+  "body": "Thanks, we have this and will update you shortly."
+}
+```

@@ -21,6 +21,7 @@ import {
     clearClientProgress,
     deleteClientNote,
     deleteClient,
+    updateClientCommunication,
 } from "./actions"
 
 export const dynamic = "force-dynamic"
@@ -28,6 +29,9 @@ export const dynamic = "force-dynamic"
 type PageProps = {
     params: Promise<{
         id: string
+    }>
+    searchParams: Promise<{
+        bridgeError?: string
     }>
 }
 
@@ -39,10 +43,14 @@ const BASE_STEPS = [
     },
 ]
 
-export default async function ClientDetailPage({ params }: PageProps) {
+export default async function ClientDetailPage({
+    params,
+    searchParams,
+}: PageProps) {
     await requireAdmin()
 
     const { id } = await params
+    const { bridgeError } = await searchParams
 
     const { data: client } = await supabaseAdmin
         .from("clients")
@@ -64,6 +72,8 @@ export default async function ClientDetailPage({ params }: PageProps) {
         { data: noteRows },
         { data: activityRows },
         { data: formResponseRows },
+        { data: communicationChannel },
+        { data: messageRows },
     ] = await Promise.all([
         supabaseAdmin
             .from("client_modules")
@@ -89,6 +99,21 @@ export default async function ClientDetailPage({ params }: PageProps) {
             .select("step_key, response, updated_at")
             .eq("client_id", client.id)
             .order("updated_at", { ascending: false }),
+        supabaseAdmin
+            .from("client_communication_channels")
+            .select(
+                "id, external_address, clickup_workspace_id, clickup_channel_id, is_active, updated_at"
+            )
+            .eq("client_id", client.id)
+            .maybeSingle(),
+        supabaseAdmin
+            .from("client_messages")
+            .select(
+                "id, direction, provider, from_address, to_address, body, status, error, created_at"
+            )
+            .eq("client_id", client.id)
+            .order("created_at", { ascending: false })
+            .limit(8),
     ])
 
     const assignedModuleKeys = moduleRows?.map((row) => row.module_key) ?? []
@@ -285,6 +310,165 @@ export default async function ClientDetailPage({ params }: PageProps) {
                             label="Copy link"
                             className="shrink-0 rounded-md border border-neutral-700 px-3 py-2 text-xs font-medium text-neutral-300 hover:border-neutral-500 hover:text-white"
                         />
+                    </div>
+                </section>
+
+                <section className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                                Client messages bridge
+                            </p>
+
+                            <h2 className="mt-2 text-lg font-semibold">
+                                SMS / WhatsApp to ClickUp Chat
+                            </h2>
+
+                            <p className="mt-1 text-sm text-neutral-400">
+                                Route this client&apos;s texts into their ClickUp
+                                Chat channel.
+                            </p>
+                        </div>
+
+                        <span
+                            className={`w-fit rounded-md px-2 py-1 text-xs ${
+                                communicationChannel?.is_active
+                                    ? "bg-green-500/10 text-green-300"
+                                    : "bg-neutral-800 text-neutral-400"
+                            }`}
+                        >
+                            {communicationChannel?.is_active
+                                ? "Active"
+                                : "Not active"}
+                        </span>
+                    </div>
+
+                    {bridgeError && (
+                        <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                            Add both the client phone/channel address and the
+                            ClickUp Chat channel ID.
+                        </div>
+                    )}
+
+                    <form
+                        action={async (formData) => {
+                            "use server"
+                            await updateClientCommunication(
+                                client.id,
+                                formData
+                            )
+                        }}
+                        className="mt-4 grid gap-3 md:grid-cols-2"
+                    >
+                        <label className="block text-sm text-neutral-300">
+                            Client SMS/WhatsApp address
+                            <input
+                                name="external_address"
+                                placeholder="sms:+15551234567 or whatsapp:+15551234567"
+                                defaultValue={
+                                    communicationChannel?.external_address ??
+                                    ""
+                                }
+                                className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white outline-none"
+                            />
+                        </label>
+
+                        <label className="block text-sm text-neutral-300">
+                            ClickUp Chat channel ID
+                            <input
+                                name="clickup_channel_id"
+                                defaultValue={
+                                    communicationChannel?.clickup_channel_id ??
+                                    ""
+                                }
+                                className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white outline-none"
+                            />
+                        </label>
+
+                        <label className="block text-sm text-neutral-300">
+                            ClickUp workspace ID override
+                            <input
+                                name="clickup_workspace_id"
+                                placeholder="Leave blank to use CLICKUP_WORKSPACE_ID"
+                                defaultValue={
+                                    communicationChannel?.clickup_workspace_id ??
+                                    ""
+                                }
+                                className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white outline-none"
+                            />
+                        </label>
+
+                        <div className="flex items-end justify-between gap-3">
+                            <label className="flex items-center gap-2 text-sm text-neutral-300">
+                                <input
+                                    type="checkbox"
+                                    name="is_active"
+                                    defaultChecked={
+                                        communicationChannel?.is_active ?? true
+                                    }
+                                />
+                                Active bridge
+                            </label>
+
+                            <button className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-black">
+                                Save bridge
+                            </button>
+                        </div>
+                    </form>
+
+                    <div className="mt-5">
+                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                            Recent bridged messages
+                        </p>
+
+                        <div className="mt-3 space-y-2">
+                            {(messageRows ?? []).length > 0 ? (
+                                messageRows?.map((message) => (
+                                    <div
+                                        key={message.id}
+                                        className="rounded-lg bg-neutral-950 p-3"
+                                    >
+                                        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                                            <p className="whitespace-pre-wrap text-sm text-neutral-200">
+                                                {message.body}
+                                            </p>
+
+                                            <span
+                                                className={`w-fit rounded-md px-2 py-1 text-xs ${
+                                                    message.status.includes(
+                                                        "failed"
+                                                    )
+                                                        ? "bg-red-500/10 text-red-200"
+                                                        : "bg-neutral-800 text-neutral-300"
+                                                }`}
+                                            >
+                                                {message.direction} ·{" "}
+                                                {message.status}
+                                            </span>
+                                        </div>
+
+                                        {message.error && (
+                                            <p className="mt-2 text-xs text-red-200">
+                                                {message.error}
+                                            </p>
+                                        )}
+
+                                        <p className="mt-3 text-xs text-neutral-500">
+                                            {new Date(
+                                                message.created_at
+                                            ).toLocaleString("en-IE", {
+                                                dateStyle: "medium",
+                                                timeStyle: "short",
+                                            })}
+                                        </p>
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-sm text-neutral-500">
+                                    No bridged messages yet.
+                                </p>
+                            )}
+                        </div>
                     </div>
                 </section>
 

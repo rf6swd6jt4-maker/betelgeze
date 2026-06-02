@@ -2,6 +2,7 @@ import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
 import { requireAdmin } from "@/lib/admin/auth"
+import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { updateClient } from "./actions"
 
 type PageProps = {
@@ -94,7 +95,11 @@ export default async function EditClientPage({
                         name="phone"
                         type="tel"
                         required
-                        defaultValue={client.phone ?? ""}
+                        defaultValue={
+                            client.phone
+                                ? displayMessageAddress(client.phone)
+                                : ""
+                        }
                         className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
                     />
 

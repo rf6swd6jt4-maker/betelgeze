@@ -8,6 +8,7 @@ import {
 } from "../lib/onboarding/forms.ts"
 import { maskToken } from "../lib/security/tokens.ts"
 import {
+    displayMessageAddress,
     normalizeMessageAddress,
     toTwilioAddress,
 } from "../lib/client-messages/addresses.ts"
@@ -87,5 +88,13 @@ test("converts normalized bridge addresses for Twilio sends", () => {
     assert.equal(
         toTwilioAddress("whatsapp:+15551234567"),
         "whatsapp:+15551234567"
+    )
+})
+
+test("shows phone numbers without the bridge channel prefix", () => {
+    assert.equal(displayMessageAddress("sms:+15551234567"), "+15551234567")
+    assert.equal(
+        displayMessageAddress("whatsapp:+15551234567"),
+        "+15551234567"
     )
 })

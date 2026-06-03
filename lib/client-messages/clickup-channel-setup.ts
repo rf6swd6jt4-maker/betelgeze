@@ -76,10 +76,12 @@ export async function ensureClientClickUpChannel(clientId: string) {
 
     try {
         const clientName = client.name?.trim() || "Client"
+        const channelName = `Client - ${clientName} - ${client.id.slice(0, 8)}`
         const clickupChannel = await createClickUpChatChannel({
-            name: `Client - ${clientName}`,
+            name: channelName,
             description: `Client communication channel for ${clientName}.`,
             topic: "Client fulfilment communication",
+            visibility: "PUBLIC",
         })
 
         const clickupChannelId = getChannelId(clickupChannel)

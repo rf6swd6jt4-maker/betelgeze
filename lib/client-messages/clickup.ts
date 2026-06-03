@@ -88,7 +88,7 @@ export async function createClickUpChatChannel({
     name,
     description,
     topic,
-    visibility = "PRIVATE",
+    visibility = "PUBLIC",
 }: CreateClickUpChannelInput) {
     const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
 

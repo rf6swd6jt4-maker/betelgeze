@@ -6,22 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
 import { requireAdmin } from "@/lib/admin/auth"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
-import {
-    createClickUpChatChannel,
-    hasClickUpConfig,
-} from "@/lib/client-messages/clickup"
-
-function getChannelId(response: unknown): string | null {
-    if (!response || typeof response !== "object") return null
-
-    const value = response as {
-        id?: string
-        data?: { id?: string }
-        channel?: { id?: string }
-    }
-
-    return value.id ?? value.data?.id ?? value.channel?.id ?? null
-}
+import { ensureClientClickUpChannel } from "@/lib/client-messages/clickup-channel-setup"
 
 async function addActivity(
     clientId: string,
@@ -84,53 +69,7 @@ export async function createClient(formData: FormData) {
         redirect("/admin/new?error=modules-failed")
     }
 
-    let clickupChannelId: string | null = null
-
-    if (hasClickUpConfig()) {
-        try {
-            const clickupChannel = await createClickUpChatChannel({
-                name: `Client - ${name}`,
-                description: `Client communication channel for ${name}.`,
-                topic: "Client fulfilment communication",
-            })
-
-            clickupChannelId = getChannelId(clickupChannel)
-
-            if (clickupChannelId) {
-                await supabaseAdmin
-                    .from("client_communication_channels")
-                    .upsert(
-                        {
-                            client_id: client.id,
-                            provider: "meta_whatsapp",
-                            external_address: phone,
-                            clickup_workspace_id:
-                                process.env.CLICKUP_WORKSPACE_ID ?? null,
-                            clickup_channel_id: clickupChannelId,
-                            is_active: true,
-                            updated_at: new Date().toISOString(),
-                        },
-                        {
-                            onConflict: "client_id",
-                        }
-                    )
-
-                await addActivity(
-                    client.id,
-                    "clickup_channel_created",
-                    "ClickUp Chat channel created"
-                )
-            }
-        } catch (error) {
-            await addActivity(
-                client.id,
-                "clickup_channel_failed",
-                error instanceof Error
-                    ? `ClickUp Chat channel failed: ${error.message}`
-                    : "ClickUp Chat channel failed"
-            )
-        }
-    }
+    await ensureClientClickUpChannel(client.id)
 
     const baseUrl =
         process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"

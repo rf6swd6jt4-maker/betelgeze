@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/admin/auth"
 import { getUploadPathsFromResponse } from "@/lib/onboarding/response-files"
 import { deleteOnboardingUploads } from "@/lib/onboarding/uploads"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
+import { ensureClientClickUpChannel } from "@/lib/client-messages/clickup-channel-setup"
 
 async function addActivity(
     clientId: string,
@@ -127,6 +128,14 @@ export async function updateClientCommunication(
         "communication_updated",
         "Client communication bridge updated"
     )
+
+    redirect(`/admin/client/${clientId}`)
+}
+
+export async function createClientClickUpChannel(clientId: string) {
+    await requireAdmin()
+
+    await ensureClientClickUpChannel(clientId)
 
     redirect(`/admin/client/${clientId}`)
 }

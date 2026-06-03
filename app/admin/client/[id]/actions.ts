@@ -110,7 +110,7 @@ export async function updateClientCommunication(
     await supabaseAdmin.from("client_communication_channels").upsert(
         {
             client_id: clientId,
-            provider: "twilio",
+            provider: "meta_whatsapp",
             external_address: externalAddress,
             clickup_workspace_id: clickupWorkspaceId || null,
             clickup_channel_id: clickupChannelId,

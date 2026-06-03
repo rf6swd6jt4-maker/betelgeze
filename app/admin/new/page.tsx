@@ -55,7 +55,7 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                     />
 
                     <label className="mt-6 block text-sm text-neutral-300">
-                        Client phone / WhatsApp
+                        Client WhatsApp number
                     </label>
 
                     <input
@@ -67,9 +67,7 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                     />
 
                     <p className="mt-2 text-xs text-neutral-500">
-                        Use their normal mobile number. Add
-                        whatsapp:+15551234567 only when WhatsApp is already set
-                        up.
+                        Use the mobile number they use for WhatsApp.
                     </p>
 
                     <label className="mt-6 block text-sm text-neutral-300">

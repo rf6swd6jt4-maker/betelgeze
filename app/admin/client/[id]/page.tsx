@@ -330,11 +330,11 @@ export default async function ClientDetailPage({
                             </p>
 
                             <h2 className="mt-2 text-lg font-semibold">
-                                SMS / WhatsApp to ClickUp Chat
+                                WhatsApp to ClickUp Chat
                             </h2>
 
                             <p className="mt-1 text-sm text-neutral-400">
-                                Route this client&apos;s texts into their ClickUp
+                                Route this client&apos;s WhatsApp messages into their ClickUp
                                 Chat channel.
                             </p>
                         </div>
@@ -370,14 +370,16 @@ export default async function ClientDetailPage({
                         className="mt-4 grid gap-3 md:grid-cols-2"
                     >
                         <label className="block text-sm text-neutral-300">
-                            Client SMS/WhatsApp address
+                            Client WhatsApp number
                             <input
                                 name="external_address"
-                                placeholder="sms:+15551234567 or whatsapp:+15551234567"
+                                placeholder="+15551234567"
                                 defaultValue={
-                                    communicationChannel?.external_address ??
-                                    client.phone ??
-                                    ""
+                                    displayMessageAddress(
+                                        communicationChannel?.external_address ??
+                                            client.phone ??
+                                            ""
+                                    )
                                 }
                                 className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white outline-none"
                             />

@@ -7,7 +7,7 @@ alter table public.clients
 create table if not exists public.client_communication_channels (
     id uuid primary key default gen_random_uuid(),
     client_id uuid not null references public.clients(id) on delete cascade,
-    provider text not null default 'twilio',
+    provider text not null default 'meta_whatsapp',
     external_address text not null,
     clickup_workspace_id text,
     clickup_channel_id text not null,

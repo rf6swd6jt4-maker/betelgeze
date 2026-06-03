@@ -88,7 +88,7 @@ export default async function EditClientPage({
                     />
 
                     <label className="mt-6 block text-sm text-neutral-300">
-                        Client phone / WhatsApp
+                        Client WhatsApp number
                     </label>
 
                     <input

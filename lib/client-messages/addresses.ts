@@ -2,7 +2,7 @@ export function normalizeMessageAddress(value: string): string {
     const trimmed = value.trim()
     const [channel, address] = trimmed.includes(":")
         ? trimmed.split(":", 2)
-        : ["sms", trimmed]
+        : ["whatsapp", trimmed]
 
     const compactAddress = address.replace(/[^\d+]/g, "")
 
@@ -11,12 +11,12 @@ export function normalizeMessageAddress(value: string): string {
     return `${channel.toLowerCase()}:${compactAddress}`
 }
 
-export function toTwilioAddress(value: string): string {
-    if (!value.includes(":")) return value
+export function toMetaWhatsAppRecipient(value: string): string {
+    if (!value.includes(":")) return value.replace(/[^\d]/g, "")
 
-    const [channel, address] = value.split(":", 2)
+    const [, address] = value.split(":", 2)
 
-    return channel === "sms" ? address : `${channel}:${address}`
+    return address.replace(/[^\d]/g, "")
 }
 
 export function displayMessageAddress(value: string): string {

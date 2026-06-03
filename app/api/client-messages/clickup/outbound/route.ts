@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { sendTwilioMessage } from "@/lib/client-messages/twilio"
+import { sendMetaWhatsAppMessage } from "@/lib/client-messages/meta-whatsapp"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     let query = supabaseAdmin
         .from("client_communication_channels")
         .select("id, client_id, external_address")
-        .eq("provider", "twilio")
+        .eq("provider", "meta_whatsapp")
         .eq("is_active", true)
         .limit(1)
 
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
             client_id: channel.client_id,
             communication_channel_id: channel.id,
             direction: "outbound",
-            provider: "twilio",
+            provider: "meta_whatsapp",
             to_address: channel.external_address,
             body: messageText,
             status: "sending",
@@ -87,20 +87,25 @@ export async function POST(request: NextRequest) {
         .single()
 
     try {
-        const twilioMessage = await sendTwilioMessage({
+        const whatsappMessage = await sendMetaWhatsAppMessage({
             to: channel.external_address,
             body: messageText,
         })
+
+        const messageId =
+            whatsappMessage?.messages?.[0]?.id ??
+            whatsappMessage?.id ??
+            null
 
         await supabaseAdmin
             .from("client_messages")
             .update({
                 status: "sent",
-                provider_message_id: twilioMessage?.sid ?? null,
+                provider_message_id: messageId,
             })
             .eq("id", messageLog?.id)
 
-        return Response.json({ ok: true, sid: twilioMessage?.sid ?? null })
+        return Response.json({ ok: true, id: messageId })
     } catch (error) {
         await supabaseAdmin
             .from("client_messages")
@@ -109,12 +114,12 @@ export async function POST(request: NextRequest) {
                 error:
                     error instanceof Error
                         ? error.message
-                        : "Unknown Twilio error",
+                        : "Unknown Meta WhatsApp error",
             })
             .eq("id", messageLog?.id)
 
         return Response.json(
-            { error: "Twilio send failed" },
+            { error: "Meta WhatsApp send failed" },
             { status: 502 }
         )
     }

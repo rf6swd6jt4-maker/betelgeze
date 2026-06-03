@@ -38,7 +38,7 @@ export async function updateClient(clientId: string, formData: FormData) {
             updated_at: new Date().toISOString(),
         })
         .eq("client_id", clientId)
-        .eq("provider", "twilio")
+        .eq("provider", "meta_whatsapp")
 
     await supabaseAdmin.from("client_modules").delete().eq("client_id", clientId)
 

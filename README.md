@@ -125,31 +125,32 @@ the Vercel project settings for the production deployment.
 
 ## Client Messages Bridge
 
-The bridge routes client SMS or WhatsApp messages through Twilio into ClickUp
-Chat, then lets a protected webhook send team replies back through Twilio.
+The bridge routes client WhatsApp messages through Meta WhatsApp Cloud API into
+ClickUp Chat, then lets a protected webhook send team replies back to WhatsApp.
 
 Required environment variables:
 
 - `CLICKUP_API_TOKEN`
 - `CLICKUP_WORKSPACE_ID`
-- `TWILIO_ACCOUNT_SID`
-- `TWILIO_AUTH_TOKEN`
-- `TWILIO_FROM_ADDRESS`, for example `sms:+15551234567` or `whatsapp:+15551234567`
+- `META_WHATSAPP_ACCESS_TOKEN`
+- `META_WHATSAPP_PHONE_NUMBER_ID`
+- `META_WHATSAPP_BUSINESS_ACCOUNT_ID`
+- `META_WHATSAPP_WEBHOOK_VERIFY_TOKEN`
 - `CLIENT_MESSAGES_BRIDGE_SECRET`
 
 Setup:
 
 1. Run the Supabase migrations.
-2. Add clients with their phone number as the primary contact. If ClickUp and
-   Twilio credentials are configured, the app creates a ClickUp Chat channel,
-   stores the bridge mapping, and sends the onboarding link by SMS/WhatsApp.
-3. In Twilio, point the incoming message webhook to:
-   `/api/client-messages/twilio/inbound`
+2. Add clients with their WhatsApp number as the primary contact. If ClickUp
+   credentials are configured, the app creates a ClickUp Chat channel and stores
+   the WhatsApp bridge mapping.
+3. In Meta, point the WhatsApp webhook callback URL to:
+   `/api/client-messages/meta/whatsapp`
 4. To send a team reply back to the client, post JSON to:
    `/api/client-messages/clickup/outbound`
 
-For testing, the client admin page still lets you fill in or override the
-client address and ClickUp Chat channel ID manually.
+For testing, the client admin page still lets you fill in or override the client
+WhatsApp number and ClickUp Chat channel ID manually.
 
 Outbound replies require either an `Authorization: Bearer ...` header or an
 `x-bridge-secret` header matching `CLIENT_MESSAGES_BRIDGE_SECRET`.

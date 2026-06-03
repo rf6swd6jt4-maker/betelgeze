@@ -10,7 +10,7 @@ import { maskToken } from "../lib/security/tokens.ts"
 import {
     displayMessageAddress,
     normalizeMessageAddress,
-    toTwilioAddress,
+    toMetaWhatsAppRecipient,
 } from "../lib/client-messages/addresses.ts"
 
 test("counts unique completed onboarding steps", () => {
@@ -75,24 +75,26 @@ test("maps upload accept helpers for browser file inputs", () => {
     assert.equal(getFileAcceptValue("video"), "video/*")
 })
 
-test("normalizes SMS and WhatsApp bridge addresses", () => {
-    assert.equal(normalizeMessageAddress("+1 (555) 123-4567"), "sms:+15551234567")
+test("normalizes WhatsApp bridge addresses", () => {
+    assert.equal(
+        normalizeMessageAddress("+1 (555) 123-4567"),
+        "whatsapp:+15551234567"
+    )
     assert.equal(
         normalizeMessageAddress("whatsapp:+1 (555) 123-4567"),
         "whatsapp:+15551234567"
     )
 })
 
-test("converts normalized bridge addresses for Twilio sends", () => {
-    assert.equal(toTwilioAddress("sms:+15551234567"), "+15551234567")
+test("converts normalized bridge addresses for Meta WhatsApp sends", () => {
+    assert.equal(toMetaWhatsAppRecipient("+1 (555) 123-4567"), "15551234567")
     assert.equal(
-        toTwilioAddress("whatsapp:+15551234567"),
-        "whatsapp:+15551234567"
+        toMetaWhatsAppRecipient("whatsapp:+15551234567"),
+        "15551234567"
     )
 })
 
 test("shows phone numbers without the bridge channel prefix", () => {
-    assert.equal(displayMessageAddress("sms:+15551234567"), "+15551234567")
     assert.equal(
         displayMessageAddress("whatsapp:+15551234567"),
         "+15551234567"

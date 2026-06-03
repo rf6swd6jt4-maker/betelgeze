@@ -2,6 +2,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 import {
     createClickUpChatChannel,
+    getClickUpWorkspaceId,
+    getAuthorizedClickUpWorkspaces,
     hasClickUpConfig,
 } from "@/lib/client-messages/clickup"
 
@@ -90,7 +92,7 @@ export async function ensureClientClickUpChannel(clientId: string) {
                 client_id: client.id,
                 provider: "meta_whatsapp",
                 external_address: externalAddress,
-                clickup_workspace_id: process.env.CLICKUP_WORKSPACE_ID ?? null,
+                clickup_workspace_id: getClickUpWorkspaceId(),
                 clickup_channel_id: clickupChannelId,
                 is_active: true,
                 updated_at: new Date().toISOString(),
@@ -124,5 +126,51 @@ export async function ensureClientClickUpChannel(clientId: string) {
             ok: false,
             error: message,
         }
+    }
+}
+
+export async function checkClientClickUpConnection(clientId: string) {
+    if (!process.env.CLICKUP_API_TOKEN) {
+        await addActivity(
+            clientId,
+            "clickup_connection_failed",
+            "ClickUp connection failed: CLICKUP_API_TOKEN is missing"
+        )
+
+        return
+    }
+
+    try {
+        const configuredWorkspaceId = process.env.CLICKUP_WORKSPACE_ID
+            ? getClickUpWorkspaceId()
+            : "missing"
+        const workspaces = await getAuthorizedClickUpWorkspaces()
+        const workspaceSummary =
+            workspaces.length > 0
+                ? workspaces
+                      .map((workspace) => `${workspace.name} (${workspace.id})`)
+                      .join(", ")
+                : "No workspaces returned"
+        const configuredWorkspace = workspaces.find(
+            (workspace) => workspace.id === configuredWorkspaceId
+        )
+
+        await addActivity(
+            clientId,
+            configuredWorkspace
+                ? "clickup_connection_ok"
+                : "clickup_connection_mismatch",
+            configuredWorkspace
+                ? `ClickUp connection ok. Configured workspace: ${configuredWorkspace.name} (${configuredWorkspace.id}).`
+                : `ClickUp token can see: ${workspaceSummary}. Configured CLICKUP_WORKSPACE_ID: ${configuredWorkspaceId}.`
+        )
+    } catch (error) {
+        await addActivity(
+            clientId,
+            "clickup_connection_failed",
+            error instanceof Error
+                ? `ClickUp connection failed: ${error.message}`
+                : "ClickUp connection failed"
+        )
     }
 }

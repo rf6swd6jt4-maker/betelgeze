@@ -12,6 +12,7 @@ import {
     normalizeMessageAddress,
     toMetaWhatsAppRecipient,
 } from "../lib/client-messages/addresses.ts"
+import { parseClickUpWorkspaceId } from "../lib/client-messages/clickup-workspace.ts"
 
 test("counts unique completed onboarding steps", () => {
     const steps = [{ key: "welcome" }, { key: "business-info" }]
@@ -98,5 +99,13 @@ test("shows phone numbers without the bridge channel prefix", () => {
     assert.equal(
         displayMessageAddress("whatsapp:+15551234567"),
         "+15551234567"
+    )
+})
+
+test("extracts numeric ClickUp workspace IDs from plain IDs or URLs", () => {
+    assert.equal(parseClickUpWorkspaceId("9012345678"), "9012345678")
+    assert.equal(
+        parseClickUpWorkspaceId("https://app.clickup.com/9012345678/v/c/abc"),
+        "9012345678"
     )
 })

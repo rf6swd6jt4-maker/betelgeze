@@ -24,6 +24,7 @@ import {
     deleteClient,
     updateClientCommunication,
     createClientClickUpChannel,
+    checkClickUpConnection,
 } from "./actions"
 
 export const dynamic = "force-dynamic"
@@ -429,19 +430,31 @@ export default async function ClientDetailPage({
                         </div>
                     </form>
 
-                    {!communicationChannel?.clickup_channel_id && (
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                         <form
                             action={async () => {
                                 "use server"
-                                await createClientClickUpChannel(client.id)
+                                await checkClickUpConnection(client.id)
                             }}
-                            className="mt-3"
                         >
                             <button className="rounded-lg border border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-200 hover:border-neutral-500 hover:text-white">
-                                Create ClickUp Chat channel
+                                Check ClickUp connection
                             </button>
                         </form>
-                    )}
+
+                        {!communicationChannel?.clickup_channel_id && (
+                            <form
+                                action={async () => {
+                                    "use server"
+                                    await createClientClickUpChannel(client.id)
+                                }}
+                            >
+                                <button className="rounded-lg border border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-200 hover:border-neutral-500 hover:text-white">
+                                    Create ClickUp Chat channel
+                                </button>
+                            </form>
+                        )}
+                    </div>
 
                     <div className="mt-5">
                         <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">

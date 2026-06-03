@@ -20,13 +20,20 @@ type ClickUpAuthorizedWorkspace = {
     name?: string
 }
 
+export type AuthorizedClickUpWorkspace = {
+    id: string
+    name: string
+}
+
 export function hasClickUpConfig() {
     return Boolean(
         process.env.CLICKUP_API_TOKEN && process.env.CLICKUP_WORKSPACE_ID
     )
 }
 
-export async function getAuthorizedClickUpWorkspaces() {
+export async function getAuthorizedClickUpWorkspaces(): Promise<
+    AuthorizedClickUpWorkspace[]
+> {
     const response = await fetch("https://api.clickup.com/api/v2/team", {
         headers: {
             Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),

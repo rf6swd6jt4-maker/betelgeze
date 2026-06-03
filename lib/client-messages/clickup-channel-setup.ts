@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 import {
+    AuthorizedClickUpWorkspace,
     createClickUpChatChannel,
     getClickUpWorkspaceId,
     getAuthorizedClickUpWorkspaces,
@@ -148,11 +149,15 @@ export async function checkClientClickUpConnection(clientId: string) {
         const workspaceSummary =
             workspaces.length > 0
                 ? workspaces
-                      .map((workspace) => `${workspace.name} (${workspace.id})`)
+                      .map(
+                          (workspace: AuthorizedClickUpWorkspace) =>
+                              `${workspace.name} (${workspace.id})`
+                      )
                       .join(", ")
                 : "No workspaces returned"
         const configuredWorkspace = workspaces.find(
-            (workspace) => workspace.id === configuredWorkspaceId
+            (workspace: AuthorizedClickUpWorkspace) =>
+                workspace.id === configuredWorkspaceId
         )
 
         await addActivity(

@@ -85,6 +85,10 @@ test("normalizes WhatsApp bridge addresses", () => {
         normalizeMessageAddress("whatsapp:+1 (555) 123-4567"),
         "whatsapp:+15551234567"
     )
+    assert.equal(
+        normalizeMessageAddress("whatsapp:15551234567"),
+        "whatsapp:+15551234567"
+    )
 })
 
 test("converts normalized bridge addresses for Meta WhatsApp sends", () => {

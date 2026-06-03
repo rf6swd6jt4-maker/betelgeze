@@ -8,7 +8,11 @@ export function normalizeMessageAddress(value: string): string {
 
     if (!compactAddress) return ""
 
-    return `${channel.toLowerCase()}:${compactAddress}`
+    const normalizedAddress = compactAddress.startsWith("+")
+        ? compactAddress
+        : `+${compactAddress}`
+
+    return `${channel.toLowerCase()}:${normalizedAddress}`
 }
 
 export function toMetaWhatsAppRecipient(value: string): string {

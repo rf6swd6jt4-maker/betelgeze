@@ -33,20 +33,12 @@ export function displayMessageAddress(value: string): string {
 
 export function formatClientInboundMessage({
     clientName,
-    channel,
-    from,
     body,
+    showClientName = true,
 }: {
     clientName: string
-    channel: string
-    from: string
     body: string
+    showClientName?: boolean
 }) {
-    return [
-        `**${clientName}** via ${channel.toUpperCase()}`,
-        "",
-        body,
-        "",
-        `_From ${from}_`,
-    ].join("\n")
+    return showClientName ? [`**${clientName}**`, body].join("\n") : body
 }

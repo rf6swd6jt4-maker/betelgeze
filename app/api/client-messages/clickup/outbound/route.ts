@@ -67,9 +67,7 @@ export async function POST(request: NextRequest) {
         )
     }
 
-    const messageText = payload.authorName
-        ? `${payload.authorName}: ${body}`
-        : body
+    const messageText = body
 
     const { data: messageLog } = await supabaseAdmin
         .from("client_messages")

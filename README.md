@@ -137,6 +137,8 @@ Required environment variables:
 - `META_WHATSAPP_BUSINESS_ACCOUNT_ID`
 - `META_WHATSAPP_WEBHOOK_VERIFY_TOKEN`
 - `CLIENT_MESSAGES_BRIDGE_SECRET`
+- `CLICKUP_BRIDGE_USER_NAME`, optional, defaults to `ScaylUp`
+- `CLICKUP_BRIDGE_USER_ID`, optional, used to ignore bot-authored Chat messages
 
 Setup:
 
@@ -146,8 +148,11 @@ Setup:
    the WhatsApp bridge mapping.
 3. In Meta, point the WhatsApp webhook callback URL to:
    `/api/client-messages/meta/whatsapp`
-4. To send a team reply back to the client, post JSON to:
+4. To send a team reply back to the client manually, post JSON to:
    `/api/client-messages/clickup/outbound`
+5. To send team ClickUp Chat replies back to WhatsApp, create a ClickUp Chat
+   webhook Automation for "Message is posted" and send it to:
+   `/api/client-messages/clickup/chat`
 
 For testing, the client admin page still lets you fill in or override the client
 WhatsApp number and ClickUp Chat channel ID manually.
@@ -164,3 +169,20 @@ Example outbound body:
   "body": "Thanks, we have this and will update you shortly."
 }
 ```
+
+Recommended ClickUp Chat Automation webhook body:
+
+```json
+{
+  "clickupChannelId": "{{channel.id}}",
+  "body": "{{message.text}}",
+  "authorName": "{{user.name}}",
+  "authorId": "{{user.id}}",
+  "clickupMessageId": "{{message.id}}"
+}
+```
+
+The bridge ignores messages posted by the bridge user, messages from
+`CLICKUP_BRIDGE_USER_ID`, system-style messages that begin with `Update` or
+`ERROR` formatting markers, and recent echoes of inbound client WhatsApp
+messages.

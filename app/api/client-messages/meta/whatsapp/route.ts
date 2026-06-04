@@ -104,6 +104,19 @@ async function handleInboundMessage({
         .single()
 
     const clientName = client?.name ?? "Client"
+    const { data: lastMessage } = await supabaseAdmin
+        .from("client_messages")
+        .select("direction, provider, created_at")
+        .eq("client_id", channel.client_id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000
+    const showClientName =
+        !lastMessage ||
+        lastMessage.direction !== "inbound" ||
+        lastMessage.provider !== "meta_whatsapp" ||
+        new Date(lastMessage.created_at).getTime() < tenMinutesAgo
 
     const { data: insertedMessage } = await supabaseAdmin
         .from("client_messages")
@@ -128,9 +141,8 @@ async function handleInboundMessage({
             channelId: channel.clickup_channel_id,
             content: formatClientInboundMessage({
                 clientName,
-                channel: "whatsapp",
-                from,
                 body: messageBody,
+                showClientName,
             }),
         })
 

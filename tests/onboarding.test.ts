@@ -9,9 +9,11 @@ import {
 import { maskToken } from "../lib/security/tokens.ts"
 import {
     displayMessageAddress,
+    formatClientInboundMessage,
     normalizeMessageAddress,
     toMetaWhatsAppRecipient,
 } from "../lib/client-messages/addresses.ts"
+import { shouldIgnoreClickUpMessage } from "../lib/client-messages/clickup-message-filters.ts"
 import { parseClickUpWorkspaceId } from "../lib/client-messages/clickup-workspace.ts"
 
 test("counts unique completed onboarding steps", () => {
@@ -103,6 +105,43 @@ test("shows phone numbers without the bridge channel prefix", () => {
     assert.equal(
         displayMessageAddress("whatsapp:+15551234567"),
         "+15551234567"
+    )
+})
+
+test("formats the first client message in a run with a client name", () => {
+    assert.equal(
+        formatClientInboundMessage({
+            clientName: "Rick",
+            body: "Hello",
+        }),
+        "**Rick**\nHello"
+    )
+    assert.equal(
+        formatClientInboundMessage({
+            clientName: "Rick",
+            body: "Another thing",
+            showClientName: false,
+        }),
+        "Another thing"
+    )
+})
+
+test("ignores ClickUp messages that were posted by the bridge", () => {
+    assert.equal(
+        shouldIgnoreClickUpMessage({
+            body: "**Rick**\nHello",
+            authorId: null,
+            authorName: null,
+        }),
+        true
+    )
+    assert.equal(
+        shouldIgnoreClickUpMessage({
+            body: "Hello from the team",
+            authorId: null,
+            authorName: "Sarah",
+        }),
+        false
     )
 })
 

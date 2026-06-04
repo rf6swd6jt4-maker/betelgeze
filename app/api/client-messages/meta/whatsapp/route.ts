@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic"
 type WhatsAppTextMessage = {
     from?: string
     id?: string
+    timestamp?: string
     type?: string
     text?: {
         body?: string
@@ -43,6 +44,12 @@ function getClickUpMessageId(response: unknown): string | null {
     }
 
     return value.id ?? value.data?.id ?? value.message?.id ?? null
+}
+
+function getMessageTimestampMs(message: WhatsAppTextMessage) {
+    const timestamp = Number(message.timestamp)
+
+    return Number.isFinite(timestamp) ? timestamp * 1000 : Date.now()
 }
 
 async function handleInboundMessage({
@@ -186,19 +193,28 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
     const payload = (await request.json()) as WhatsAppWebhookPayload
-    const changes =
-        payload.entry?.flatMap((entry) => entry.changes ?? []) ?? []
+    const inboundMessages =
+        payload.entry
+            ?.flatMap((entry) => entry.changes ?? [])
+            .flatMap((change) =>
+                (change.value?.messages ?? []).map((message) => ({
+                    message,
+                    value: change.value ?? {},
+                }))
+            ) ?? []
 
-    for (const change of changes) {
-        const value = change.value
+    inboundMessages.sort(
+        (left, right) =>
+            getMessageTimestampMs(left.message) -
+            getMessageTimestampMs(right.message)
+    )
 
-        for (const message of value?.messages ?? []) {
-            await handleInboundMessage({
-                message,
-                value: value ?? {},
-                payload,
-            })
-        }
+    for (const { message, value } of inboundMessages) {
+        await handleInboundMessage({
+            message,
+            value,
+            payload,
+        })
     }
 
     return Response.json({ ok: true })

@@ -153,6 +153,9 @@ Setup:
 5. To send team ClickUp Chat replies back to WhatsApp, create a ClickUp Chat
    webhook Automation for "Message is posted" and send it to:
    `/api/client-messages/clickup/chat`
+6. If ClickUp Chat webhooks are not available on your plan, use an external
+   scheduler to call:
+   `/api/client-messages/clickup/poll`
 
 For testing, the client admin page still lets you fill in or override the client
 WhatsApp number and ClickUp Chat channel ID manually.
@@ -186,3 +189,21 @@ The bridge ignores messages posted by the bridge user, messages from
 `CLICKUP_BRIDGE_USER_ID`, system-style messages that begin with `Update` or
 `ERROR` formatting markers, and recent echoes of inbound client WhatsApp
 messages.
+
+Polling endpoint:
+
+```text
+GET /api/client-messages/clickup/poll
+```
+
+Authorize it with either:
+
+```text
+x-bridge-secret: CLIENT_MESSAGES_BRIDGE_SECRET
+```
+
+or, only when your scheduler cannot send headers:
+
+```text
+/api/client-messages/clickup/poll?secret=CLIENT_MESSAGES_BRIDGE_SECRET
+```

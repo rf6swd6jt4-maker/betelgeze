@@ -13,6 +13,15 @@ type RetrieveClickUpChannelMessagesInput = {
     limit?: number
 }
 
+type DeleteClickUpChannelInput = {
+    workspaceId?: string | null
+    channelId: string
+}
+
+type DeleteClickUpSpaceInput = {
+    spaceId: string
+}
+
 type CreateClickUpChannelInput = {
     workspaceId?: string | null
     name: string
@@ -174,6 +183,32 @@ export async function createClickUpSpace({
     return responseBody ? JSON.parse(responseBody) : null
 }
 
+export async function deleteClickUpSpace({
+    spaceId,
+}: DeleteClickUpSpaceInput) {
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/space/${spaceId}`,
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                accept: "application/json",
+            },
+        }
+    )
+    const responseBody = await response.text()
+
+    if (!response.ok && response.status !== 404) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Space deletion",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+}
+
 export async function createClickUpChatChannel({
     workspaceId,
     name,
@@ -214,6 +249,35 @@ export async function createClickUpChatChannel({
     }
 
     return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function deleteClickUpChatChannel({
+    workspaceId,
+    channelId,
+}: DeleteClickUpChannelInput) {
+    const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
+
+    const response = await fetch(
+        `https://api.clickup.com/api/v3/workspaces/${resolvedWorkspaceId}/chat/channels/${channelId}`,
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                accept: "application/json",
+            },
+        }
+    )
+    const responseBody = await response.text()
+
+    if (!response.ok && response.status !== 404) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Chat channel deletion",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
 }
 
 export async function createClickUpLocationChatChannel({

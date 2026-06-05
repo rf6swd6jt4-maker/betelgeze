@@ -43,14 +43,18 @@ export default async function AdminPage() {
     const [
         { data: progressRows, error: progressError },
         { data: moduleRows, error: modulesError },
+        { data: communicationRows, error: communicationError },
     ] = await Promise.all([
         supabaseAdmin
             .from("client_progress")
             .select("client_id, step_key, completed_at, created_at"),
         supabaseAdmin.from("client_modules").select("client_id, module_key"),
+        supabaseAdmin
+            .from("client_communication_channels")
+            .select("client_id, clickup_channel_id, is_active"),
     ])
 
-    if (clientsError || progressError || modulesError) {
+    if (clientsError || progressError || modulesError || communicationError) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-6 text-white">
                 <p>Could not load admin dashboard.</p>
@@ -79,6 +83,10 @@ export default async function AdminPage() {
     }
 
     const modulesByClient = new Map<string, string[]>()
+    const communicationByClient = new Map<
+        string,
+        { clickup_channel_id: string | null; is_active: boolean | null }
+    >()
 
     for (const row of moduleRows ?? []) {
         const existing = modulesByClient.get(row.client_id) ?? []
@@ -86,9 +94,17 @@ export default async function AdminPage() {
         modulesByClient.set(row.client_id, existing)
     }
 
+    for (const row of communicationRows ?? []) {
+        communicationByClient.set(row.client_id, {
+            clickup_channel_id: row.clickup_channel_id,
+            is_active: row.is_active,
+        })
+    }
+
     const clientSummaries = (clients ?? []).map((client) => {
         const completedKeys = progressByClient.get(client.id) ?? []
         const assignedModuleKeys = modulesByClient.get(client.id) ?? []
+        const communication = communicationByClient.get(client.id) ?? null
 
         const moduleSteps = assignedModuleKeys.flatMap((moduleKey) => {
             const moduleDefinition = MODULES[moduleKey]
@@ -124,6 +140,7 @@ export default async function AdminPage() {
             percentage,
             currentStep,
             lastActivity,
+            communication,
         }
     })
     const totalClients = clientSummaries.length
@@ -196,6 +213,7 @@ export default async function AdminPage() {
                             percentage,
                             currentStep,
                             lastActivity,
+                            communication,
                         }) => (
                             <Link
                                 key={client.id}
@@ -221,6 +239,12 @@ export default async function AdminPage() {
                                                 {client.email}
                                             </p>
                                         )}
+
+                                        <p className="mt-2 break-all font-mono text-xs text-neutral-500">
+                                            {communication?.clickup_channel_id
+                                                ? `ClickUp: ${communication.clickup_channel_id}`
+                                                : "No ClickUp channel"}
+                                        </p>
                                     </div>
 
                                     <span className="rounded-full bg-neutral-800 px-3 py-1 text-xs text-neutral-300">
@@ -295,6 +319,9 @@ export default async function AdminPage() {
                                     Contact
                                 </th>
                                 <th className="px-3 py-2 font-medium">
+                                    ClickUp channel
+                                </th>
+                                <th className="px-3 py-2 font-medium">
                                     Modules
                                 </th>
                                 <th className="px-3 py-2 font-medium">
@@ -317,6 +344,7 @@ export default async function AdminPage() {
                                     percentage,
                                     currentStep,
                                     lastActivity,
+                                    communication,
                                 }) => (
                                     <tr
                                         key={client.id}
@@ -345,6 +373,34 @@ export default async function AdminPage() {
                                                 <p className="mt-1 text-xs text-neutral-500">
                                                     {client.email}
                                                 </p>
+                                            )}
+                                        </td>
+
+                                        <td className="px-3 py-3">
+                                            {communication?.clickup_channel_id ? (
+                                                <div>
+                                                    <p className="break-all font-mono text-xs text-neutral-300">
+                                                        {
+                                                            communication.clickup_channel_id
+                                                        }
+                                                    </p>
+
+                                                    <p
+                                                        className={`mt-1 text-xs ${
+                                                            communication.is_active
+                                                                ? "text-green-300"
+                                                                : "text-neutral-500"
+                                                        }`}
+                                                    >
+                                                        {communication.is_active
+                                                            ? "Active"
+                                                            : "Inactive"}
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <span className="text-neutral-500">
+                                                    Not created
+                                                </span>
                                             )}
                                         </td>
 

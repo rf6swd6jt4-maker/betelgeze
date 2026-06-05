@@ -35,6 +35,7 @@ type PageProps = {
     }>
     searchParams: Promise<{
         bridgeError?: string
+        deleteError?: string
     }>
 }
 
@@ -53,7 +54,7 @@ export default async function ClientDetailPage({
     await requireAdmin()
 
     const { id } = await params
-    const { bridgeError } = await searchParams
+    const { bridgeError, deleteError } = await searchParams
 
     const { data: client } = await supabaseAdmin
         .from("clients")
@@ -105,7 +106,7 @@ export default async function ClientDetailPage({
         supabaseAdmin
             .from("client_communication_channels")
             .select(
-                "id, external_address, clickup_workspace_id, clickup_channel_id, is_active, updated_at"
+                "id, external_address, clickup_workspace_id, clickup_space_id, clickup_channel_id, is_active, updated_at"
             )
             .eq("client_id", client.id)
             .maybeSingle(),
@@ -261,6 +262,14 @@ export default async function ClientDetailPage({
                     </div>
                 </div>
 
+                {deleteError === "clickup-cleanup" && (
+                    <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                        Client deletion was stopped because the ClickUp Space
+                        or channel could not be removed. Check the timeline for
+                        the ClickUp error.
+                    </div>
+                )}
+
                 <div className="mt-5 grid gap-3 lg:grid-cols-4">
                     <section className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 lg:col-span-2">
                         <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
@@ -409,6 +418,19 @@ export default async function ClientDetailPage({
                                     ""
                                 }
                                 className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white outline-none"
+                            />
+                        </label>
+
+                        <label className="block text-sm text-neutral-300">
+                            ClickUp Space ID
+                            <input
+                                value={
+                                    communicationChannel?.clickup_space_id ??
+                                    ""
+                                }
+                                readOnly
+                                placeholder="Created automatically"
+                                className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-400 outline-none"
                             />
                         </label>
 

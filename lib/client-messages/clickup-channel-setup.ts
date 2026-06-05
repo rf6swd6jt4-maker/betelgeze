@@ -5,6 +5,8 @@ import {
     createClickUpChatChannel,
     createClickUpLocationChatChannel,
     createClickUpSpace,
+    deleteClickUpChatChannel,
+    deleteClickUpSpace,
     getClickUpWorkspaceId,
     getAuthorizedClickUpWorkspaces,
     hasClickUpConfig,
@@ -179,6 +181,7 @@ export async function ensureClientClickUpChannel(clientId: string) {
                 provider: "meta_whatsapp",
                 external_address: externalAddress,
                 clickup_workspace_id: getClickUpWorkspaceId(),
+                clickup_space_id: clickupSpaceId,
                 clickup_channel_id: clickupChannelId,
                 is_active: true,
                 updated_at: new Date().toISOString(),
@@ -212,6 +215,56 @@ export async function ensureClientClickUpChannel(clientId: string) {
         return {
             ok: false,
             error: message,
+        }
+    }
+}
+
+export async function deleteClientClickUpResources(clientId: string) {
+    if (!hasClickUpConfig()) {
+        return {
+            ok: false,
+            error: "Missing CLICKUP_API_TOKEN or CLICKUP_WORKSPACE_ID",
+        }
+    }
+
+    const { data: channel } = await supabaseAdmin
+        .from("client_communication_channels")
+        .select("clickup_workspace_id, clickup_space_id, clickup_channel_id")
+        .eq("client_id", clientId)
+        .eq("provider", "meta_whatsapp")
+        .maybeSingle()
+
+    if (!channel) {
+        return {
+            ok: true,
+            deletedChannel: false,
+            deletedSpace: false,
+        }
+    }
+
+    try {
+        if (channel.clickup_space_id) {
+            await deleteClickUpSpace({
+                spaceId: channel.clickup_space_id,
+            })
+        }
+
+        if (channel.clickup_channel_id) {
+            await deleteClickUpChatChannel({
+                workspaceId: channel.clickup_workspace_id,
+                channelId: channel.clickup_channel_id,
+            })
+        }
+
+        return {
+            ok: true,
+            deletedChannel: Boolean(channel.clickup_channel_id),
+            deletedSpace: Boolean(channel.clickup_space_id),
+        }
+    } catch (error) {
+        return {
+            ok: false,
+            error: getErrorMessage(error),
         }
     }
 }

@@ -8,6 +8,7 @@ import { deleteOnboardingUploads } from "@/lib/onboarding/uploads"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 import {
     checkClientClickUpConnection,
+    deleteClientClickUpResources,
     ensureClientClickUpChannel,
 } from "@/lib/client-messages/clickup-channel-setup"
 
@@ -168,6 +169,18 @@ export async function archiveClient(clientId: string) {
 
 export async function deleteClient(clientId: string) {
     await requireAdmin()
+
+    const clickUpCleanup = await deleteClientClickUpResources(clientId)
+
+    if (!clickUpCleanup.ok) {
+        await addActivity(
+            clientId,
+            "client_delete_blocked",
+            `Client delete blocked: ClickUp cleanup failed: ${clickUpCleanup.error}`
+        )
+
+        redirect(`/admin/client/${clientId}?deleteError=clickup-cleanup`)
+    }
 
     await supabaseAdmin.from("clients").delete().eq("id", clientId)
 

@@ -21,6 +21,28 @@ type CreateClickUpChannelInput = {
     visibility?: "PUBLIC" | "PRIVATE"
 }
 
+type CreateClickUpLocationChannelInput = {
+    workspaceId?: string | null
+    locationId: string
+    locationType: "space" | "folder" | "list"
+    description?: string
+    topic?: string
+    visibility?: "PUBLIC" | "PRIVATE"
+}
+
+type CreateClickUpSpaceInput = {
+    workspaceId?: string | null
+    name: string
+    color: string
+}
+
+type CreateClickUpFolderlessListInput = {
+    spaceId: string
+    name: string
+    content?: string
+    status?: string
+}
+
 type ClickUpAuthorizedWorkspace = {
     id?: string | number
     name?: string
@@ -73,6 +95,36 @@ export function getClickUpWorkspaceId(value?: string | null) {
     return parseClickUpWorkspaceId(rawValue)
 }
 
+const DEFAULT_SPACE_FEATURES = {
+    due_dates: {
+        enabled: true,
+        start_date: false,
+        remap_due_dates: true,
+        remap_closed_due_date: false,
+    },
+    time_tracking: {
+        enabled: false,
+    },
+    tags: {
+        enabled: true,
+    },
+    time_estimates: {
+        enabled: false,
+    },
+    checklists: {
+        enabled: true,
+    },
+    custom_fields: {
+        enabled: true,
+    },
+    remap_dependencies: {
+        enabled: true,
+    },
+    dependency_warning: {
+        enabled: true,
+    },
+}
+
 function getClickUpErrorMessage({
     action,
     status,
@@ -87,6 +139,84 @@ function getClickUpErrorMessage({
     }
 
     return `${action} failed with ${status}: ${body}`
+}
+
+export async function createClickUpSpace({
+    workspaceId,
+    name,
+    color,
+}: CreateClickUpSpaceInput) {
+    const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
+
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/team/${resolvedWorkspaceId}/space`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                "Content-Type": "application/json",
+                accept: "application/json",
+            },
+            body: JSON.stringify({
+                name,
+                color,
+                multiple_assignees: true,
+                features: DEFAULT_SPACE_FEATURES,
+            }),
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Space",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function createClickUpFolderlessList({
+    spaceId,
+    name,
+    content,
+    status,
+}: CreateClickUpFolderlessListInput) {
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/space/${spaceId}/list`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                "Content-Type": "application/json",
+                accept: "application/json",
+            },
+            body: JSON.stringify({
+                name,
+                content,
+                status,
+            }),
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp List",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
 }
 
 export async function createClickUpChatChannel({
@@ -122,6 +252,52 @@ export async function createClickUpChatChannel({
         throw new Error(
             getClickUpErrorMessage({
                 action: "ClickUp channel",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function createClickUpLocationChatChannel({
+    workspaceId,
+    locationId,
+    locationType,
+    description,
+    topic,
+    visibility = "PUBLIC",
+}: CreateClickUpLocationChannelInput) {
+    const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
+
+    const response = await fetch(
+        `https://api.clickup.com/api/v3/workspaces/${resolvedWorkspaceId}/chat/channels/location`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                "Content-Type": "application/json",
+                accept: "application/json",
+            },
+            body: JSON.stringify({
+                description,
+                topic,
+                visibility,
+                location: {
+                    id: locationId,
+                    type: locationType,
+                },
+            }),
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp location Chat channel",
                 status: response.status,
                 body: responseBody,
             })

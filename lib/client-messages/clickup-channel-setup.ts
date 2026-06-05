@@ -2,7 +2,9 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 import {
     AuthorizedClickUpWorkspace,
-    createClickUpChatChannel,
+    createClickUpFolderlessList,
+    createClickUpLocationChatChannel,
+    createClickUpSpace,
     getClickUpWorkspaceId,
     getAuthorizedClickUpWorkspaces,
     hasClickUpConfig,
@@ -18,6 +20,42 @@ function getChannelId(response: unknown): string | null {
     }
 
     return value.id ?? value.data?.id ?? value.channel?.id ?? null
+}
+
+function getEntityId(response: unknown): string | null {
+    if (!response || typeof response !== "object") return null
+
+    const value = response as {
+        id?: string | number
+        data?: { id?: string | number }
+        space?: { id?: string | number }
+        list?: { id?: string | number }
+    }
+    const id = value.id ?? value.data?.id ?? value.space?.id ?? value.list?.id
+
+    return id ? String(id) : null
+}
+
+const SPACE_COLORS = [
+    "#1abc9c",
+    "#2ecd6f",
+    "#3498db",
+    "#9b59b6",
+    "#f1c40f",
+    "#e67e22",
+    "#e74c3c",
+    "#ff6b81",
+    "#7f8c8d",
+]
+
+function getClientSpaceColor(seed: string) {
+    const colorIndex =
+        [...seed].reduce(
+            (total, character) => total + character.charCodeAt(0),
+            0
+        ) % SPACE_COLORS.length
+
+    return SPACE_COLORS[colorIndex]
 }
 
 async function addActivity(
@@ -76,9 +114,34 @@ export async function ensureClientClickUpChannel(clientId: string) {
 
     try {
         const clientName = client.name?.trim() || "Client"
-        const channelName = `Client - ${clientName} - ${client.id.slice(0, 8)}`
-        const clickupChannel = await createClickUpChatChannel({
-            name: channelName,
+        const dashboardSpaceName = `${clientName} - Dashboard`
+        const chatListName = `${clientName} - Chat`
+        const spaceColor = getClientSpaceColor(client.id)
+        const clickupSpace = await createClickUpSpace({
+            name: dashboardSpaceName,
+            color: spaceColor,
+        })
+        const clickupSpaceId = getEntityId(clickupSpace)
+
+        if (!clickupSpaceId) {
+            throw new Error("ClickUp did not return a Space ID")
+        }
+
+        const clickupChatList = await createClickUpFolderlessList({
+            spaceId: clickupSpaceId,
+            name: chatListName,
+            content: `WhatsApp communication hub for ${clientName}.`,
+            status: spaceColor,
+        })
+        const clickupChatListId = getEntityId(clickupChatList)
+
+        if (!clickupChatListId) {
+            throw new Error("ClickUp did not return a Chat List ID")
+        }
+
+        const clickupChannel = await createClickUpLocationChatChannel({
+            locationId: clickupChatListId,
+            locationType: "list",
             description: `Client communication channel for ${clientName}.`,
             topic: "Client fulfilment communication",
             visibility: "PUBLIC",
@@ -108,11 +171,13 @@ export async function ensureClientClickUpChannel(clientId: string) {
         await addActivity(
             client.id,
             "clickup_channel_created",
-            "ClickUp Chat channel created"
+            `ClickUp Space and Chat channel created: ${dashboardSpaceName} / ${chatListName}`
         )
 
         return {
             ok: true,
+            spaceId: clickupSpaceId,
+            listId: clickupChatListId,
             channelId: clickupChannelId,
         }
     } catch (error) {

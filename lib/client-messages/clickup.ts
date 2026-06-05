@@ -40,7 +40,6 @@ type CreateClickUpFolderlessListInput = {
     spaceId: string
     name: string
     content?: string
-    status?: string
 }
 
 type ClickUpAuthorizedWorkspace = {
@@ -185,7 +184,6 @@ export async function createClickUpFolderlessList({
     spaceId,
     name,
     content,
-    status,
 }: CreateClickUpFolderlessListInput) {
     const response = await fetch(
         `https://api.clickup.com/api/v2/space/${spaceId}/list`,
@@ -199,7 +197,6 @@ export async function createClickUpFolderlessList({
             body: JSON.stringify({
                 name,
                 content,
-                status,
             }),
         }
     )

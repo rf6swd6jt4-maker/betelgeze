@@ -132,16 +132,23 @@ export async function ensureClientClickUpChannel(clientId: string) {
             throw new Error("ClickUp did not return a Space ID")
         }
 
-        const clickupChatList = await createClickUpFolderlessList({
-            spaceId: clickupSpaceId,
-            name: chatListName,
-            content: `WhatsApp communication hub for ${clientName}.`,
-            status: spaceColor,
-        })
-        const clickupChatListId = getEntityId(clickupChatList)
+        let clickupChatListId: string | null = null
+        let listCreationError: string | null = null
 
-        if (!clickupChatListId) {
-            throw new Error("ClickUp did not return a Chat List ID")
+        try {
+            const clickupChatList = await createClickUpFolderlessList({
+                spaceId: clickupSpaceId,
+                name: chatListName,
+                content: `WhatsApp communication hub for ${clientName}.`,
+            })
+
+            clickupChatListId = getEntityId(clickupChatList)
+
+            if (!clickupChatListId) {
+                listCreationError = "ClickUp did not return a Chat List ID"
+            }
+        } catch (error) {
+            listCreationError = getErrorMessage(error)
         }
 
         let clickupChannelId: string | null = null
@@ -149,18 +156,20 @@ export async function ensureClientClickUpChannel(clientId: string) {
         let listChannelError: string | null = null
         let spaceChannelError: string | null = null
 
-        try {
-            const clickupChannel = await createClickUpLocationChatChannel({
-                locationId: clickupChatListId,
-                locationType: "list",
-                description: `Client communication channel for ${clientName}.`,
-                topic: "Client fulfilment communication",
-                visibility: "PUBLIC",
-            })
+        if (clickupChatListId) {
+            try {
+                const clickupChannel = await createClickUpLocationChatChannel({
+                    locationId: clickupChatListId,
+                    locationType: "list",
+                    description: `Client communication channel for ${clientName}.`,
+                    topic: "Client fulfilment communication",
+                    visibility: "PUBLIC",
+                })
 
-            clickupChannelId = getChannelId(clickupChannel)
-        } catch (error) {
-            listChannelError = getErrorMessage(error)
+                clickupChannelId = getChannelId(clickupChannel)
+            } catch (error) {
+                listChannelError = getErrorMessage(error)
+            }
         }
 
         if (!clickupChannelId) {
@@ -196,6 +205,9 @@ export async function ensureClientClickUpChannel(clientId: string) {
             throw new Error(
                 [
                     "ClickUp did not return a channel ID",
+                    listCreationError
+                        ? `List creation error: ${listCreationError}`
+                        : null,
                     listChannelError
                         ? `List channel error: ${listChannelError}`
                         : null,

@@ -36,12 +36,6 @@ type CreateClickUpSpaceInput = {
     color: string
 }
 
-type CreateClickUpFolderlessListInput = {
-    spaceId: string
-    name: string
-    content?: string
-}
-
 type ClickUpAuthorizedWorkspace = {
     id?: string | number
     name?: string
@@ -171,42 +165,6 @@ export async function createClickUpSpace({
         throw new Error(
             getClickUpErrorMessage({
                 action: "ClickUp Space",
-                status: response.status,
-                body: responseBody,
-            })
-        )
-    }
-
-    return responseBody ? JSON.parse(responseBody) : null
-}
-
-export async function createClickUpFolderlessList({
-    spaceId,
-    name,
-    content,
-}: CreateClickUpFolderlessListInput) {
-    const response = await fetch(
-        `https://api.clickup.com/api/v2/space/${spaceId}/list`,
-        {
-            method: "POST",
-            headers: {
-                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
-                "Content-Type": "application/json",
-                accept: "application/json",
-            },
-            body: JSON.stringify({
-                name,
-                content,
-            }),
-        }
-    )
-
-    const responseBody = await response.text()
-
-    if (!response.ok) {
-        throw new Error(
-            getClickUpErrorMessage({
-                action: "ClickUp List",
                 status: response.status,
                 body: responseBody,
             })

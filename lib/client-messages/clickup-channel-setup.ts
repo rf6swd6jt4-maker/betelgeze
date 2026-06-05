@@ -3,7 +3,6 @@ import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 import {
     AuthorizedClickUpWorkspace,
     createClickUpChatChannel,
-    createClickUpFolderlessList,
     createClickUpLocationChatChannel,
     createClickUpSpace,
     getClickUpWorkspaceId,
@@ -119,11 +118,10 @@ export async function ensureClientClickUpChannel(clientId: string) {
 
     try {
         const clientName = client.name?.trim() || "Client"
-        const dashboardSpaceName = `${clientName} - Dashboard`
-        const chatListName = `${clientName} - Chat`
+        const clientSpaceName = clientName
         const spaceColor = getClientSpaceColor(client.id)
         const clickupSpace = await createClickUpSpace({
-            name: dashboardSpaceName,
+            name: clientSpaceName,
             color: spaceColor,
         })
         const clickupSpaceId = getEntityId(clickupSpace)
@@ -132,66 +130,27 @@ export async function ensureClientClickUpChannel(clientId: string) {
             throw new Error("ClickUp did not return a Space ID")
         }
 
-        let clickupChatListId: string | null = null
-        let listCreationError: string | null = null
-
-        try {
-            const clickupChatList = await createClickUpFolderlessList({
-                spaceId: clickupSpaceId,
-                name: chatListName,
-                content: `WhatsApp communication hub for ${clientName}.`,
-            })
-
-            clickupChatListId = getEntityId(clickupChatList)
-
-            if (!clickupChatListId) {
-                listCreationError = "ClickUp did not return a Chat List ID"
-            }
-        } catch (error) {
-            listCreationError = getErrorMessage(error)
-        }
-
         let clickupChannelId: string | null = null
-        let channelLocation = "list"
-        let listChannelError: string | null = null
+        let channelLocation = "space"
         let spaceChannelError: string | null = null
 
-        if (clickupChatListId) {
-            try {
-                const clickupChannel = await createClickUpLocationChatChannel({
-                    locationId: clickupChatListId,
-                    locationType: "list",
-                    description: `Client communication channel for ${clientName}.`,
-                    topic: "Client fulfilment communication",
-                    visibility: "PUBLIC",
-                })
+        try {
+            const clickupChannel = await createClickUpLocationChatChannel({
+                locationId: clickupSpaceId,
+                locationType: "space",
+                description: `Client communication channel for ${clientName}.`,
+                topic: "Client fulfilment communication",
+                visibility: "PUBLIC",
+            })
 
-                clickupChannelId = getChannelId(clickupChannel)
-            } catch (error) {
-                listChannelError = getErrorMessage(error)
-            }
-        }
-
-        if (!clickupChannelId) {
-            try {
-                const clickupChannel = await createClickUpLocationChatChannel({
-                    locationId: clickupSpaceId,
-                    locationType: "space",
-                    description: `Client communication channel for ${clientName}.`,
-                    topic: "Client fulfilment communication",
-                    visibility: "PUBLIC",
-                })
-
-                clickupChannelId = getChannelId(clickupChannel)
-                channelLocation = "space"
-            } catch (error) {
-                spaceChannelError = getErrorMessage(error)
-            }
+            clickupChannelId = getChannelId(clickupChannel)
+        } catch (error) {
+            spaceChannelError = getErrorMessage(error)
         }
 
         if (!clickupChannelId) {
             const clickupChannel = await createClickUpChatChannel({
-                name: chatListName,
+                name: clientSpaceName,
                 description: `Client communication channel for ${clientName}.`,
                 topic: "Client fulfilment communication",
                 visibility: "PUBLIC",
@@ -205,12 +164,6 @@ export async function ensureClientClickUpChannel(clientId: string) {
             throw new Error(
                 [
                     "ClickUp did not return a channel ID",
-                    listCreationError
-                        ? `List creation error: ${listCreationError}`
-                        : null,
-                    listChannelError
-                        ? `List channel error: ${listChannelError}`
-                        : null,
                     spaceChannelError
                         ? `Space channel error: ${spaceChannelError}`
                         : null,
@@ -238,13 +191,12 @@ export async function ensureClientClickUpChannel(clientId: string) {
         await addActivity(
             client.id,
             "clickup_channel_created",
-            `ClickUp Space and Chat channel created: ${dashboardSpaceName} / ${chatListName}. Channel location: ${channelLocation}.`
+            `ClickUp Space and Chat channel created: ${clientSpaceName}. Channel location: ${channelLocation}.`
         )
 
         return {
             ok: true,
             spaceId: clickupSpaceId,
-            listId: clickupChatListId,
             channelId: clickupChannelId,
             channelLocation,
         }

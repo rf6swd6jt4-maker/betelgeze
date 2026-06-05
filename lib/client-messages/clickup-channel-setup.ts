@@ -76,6 +76,83 @@ async function addActivity(
     })
 }
 
+async function saveClientCommunicationChannel({
+    clientId,
+    externalAddress,
+    clickupWorkspaceId,
+    clickupSpaceId,
+    clickupChannelId,
+}: {
+    clientId: string
+    externalAddress: string
+    clickupWorkspaceId: string
+    clickupSpaceId: string
+    clickupChannelId: string
+}) {
+    const channelRecord = {
+        client_id: clientId,
+        provider: "meta_whatsapp",
+        external_address: externalAddress,
+        clickup_workspace_id: clickupWorkspaceId,
+        clickup_space_id: clickupSpaceId,
+        clickup_channel_id: clickupChannelId,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+    }
+
+    let { error } = await supabaseAdmin
+        .from("client_communication_channels")
+        .upsert(channelRecord, {
+            onConflict: "client_id",
+        })
+
+    if (!error) return
+
+    if (
+        error.message.toLowerCase().includes("external_address") ||
+        error.message.toLowerCase().includes("duplicate key")
+    ) {
+        await supabaseAdmin
+            .from("client_communication_channels")
+            .delete()
+            .eq("provider", "meta_whatsapp")
+            .eq("external_address", externalAddress)
+            .neq("client_id", clientId)
+
+        const retry = await supabaseAdmin
+            .from("client_communication_channels")
+            .upsert(channelRecord, {
+                onConflict: "client_id",
+            })
+
+        error = retry.error
+    }
+
+    if (error?.message.toLowerCase().includes("clickup_space_id")) {
+        const fallbackRecord: Omit<typeof channelRecord, "clickup_space_id"> =
+            {
+                client_id: channelRecord.client_id,
+                provider: channelRecord.provider,
+                external_address: channelRecord.external_address,
+                clickup_workspace_id: channelRecord.clickup_workspace_id,
+                clickup_channel_id: channelRecord.clickup_channel_id,
+                is_active: channelRecord.is_active,
+                updated_at: channelRecord.updated_at,
+            }
+        const retry = await supabaseAdmin
+            .from("client_communication_channels")
+            .upsert(fallbackRecord, {
+                onConflict: "client_id",
+            })
+
+        error = retry.error
+    }
+
+    if (error) {
+        throw new Error(`Could not save bridge record: ${error.message}`)
+    }
+}
+
 export async function ensureClientClickUpChannel(clientId: string) {
     if (!hasClickUpConfig()) {
         await addActivity(
@@ -175,21 +252,13 @@ export async function ensureClientClickUpChannel(clientId: string) {
             )
         }
 
-        await supabaseAdmin.from("client_communication_channels").upsert(
-            {
-                client_id: client.id,
-                provider: "meta_whatsapp",
-                external_address: externalAddress,
-                clickup_workspace_id: getClickUpWorkspaceId(),
-                clickup_space_id: clickupSpaceId,
-                clickup_channel_id: clickupChannelId,
-                is_active: true,
-                updated_at: new Date().toISOString(),
-            },
-            {
-                onConflict: "client_id",
-            }
-        )
+        await saveClientCommunicationChannel({
+            clientId: client.id,
+            externalAddress,
+            clickupWorkspaceId: getClickUpWorkspaceId(),
+            clickupSpaceId,
+            clickupChannelId,
+        })
 
         await addActivity(
             client.id,

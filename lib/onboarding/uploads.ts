@@ -60,10 +60,6 @@ function encodeStoragePath(path: string) {
 }
 
 export function createClientMessageMediaUrl(path: string) {
-    const publicR2Url = getPublicR2Url(path)
-
-    if (publicR2Url) return publicR2Url
-
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/g, "")
 
     if (!siteUrl) return null
@@ -123,6 +119,22 @@ export async function createUploadSignedUrl(
 
     if (publicUrl) return publicUrl
 
+    return getSignedUrl(
+        getR2Client(),
+        new GetObjectCommand({
+            Bucket: getR2BucketName(),
+            Key: path,
+        }),
+        {
+            expiresIn,
+        }
+    )
+}
+
+export async function createPrivateUploadSignedUrl(
+    path: string,
+    expiresIn = R2_SIGNED_URL_TTL_SECONDS
+) {
     return getSignedUrl(
         getR2Client(),
         new GetObjectCommand({

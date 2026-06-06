@@ -1,4 +1,4 @@
-import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
+import { createPrivateUploadSignedUrl } from "@/lib/onboarding/uploads"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -18,7 +18,7 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     try {
-        const signedUrl = await createUploadSignedUrl(storagePath)
+        const signedUrl = await createPrivateUploadSignedUrl(storagePath)
         const mediaResponse = await fetch(signedUrl)
 
         if (!mediaResponse.ok) {
@@ -30,6 +30,7 @@ export async function GET(_request: Request, context: RouteContext) {
         return new Response(mediaResponse.body, {
             headers: {
                 "Cache-Control": "public, max-age=31536000, immutable",
+                "Content-Disposition": "inline",
                 "Content-Type":
                     mediaResponse.headers.get("content-type") ??
                     "application/octet-stream",

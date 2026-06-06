@@ -77,6 +77,36 @@ type InboundMessageContent = {
     }
 }
 
+async function logWebhookError({
+    message,
+    payload,
+    fromAddress,
+    toAddress,
+    providerMessageId,
+}: {
+    message: string
+    payload: unknown
+    fromAddress?: string | null
+    toAddress?: string | null
+    providerMessageId?: string | null
+}) {
+    try {
+        await supabaseAdmin.from("client_messages").insert({
+            direction: "inbound",
+            provider: "meta_whatsapp",
+            provider_message_id: providerMessageId ?? null,
+            from_address: fromAddress ?? null,
+            to_address: toAddress ?? null,
+            body: "[Webhook error]",
+            status: "webhook_failed",
+            error: message,
+            raw_payload: payload,
+        })
+    } catch {
+        // Meta webhooks must still be acknowledged even if diagnostics fail.
+    }
+}
+
 function getMessageTimestampMs(message: WhatsAppMessage) {
     const timestamp = Number(message.timestamp)
 
@@ -245,13 +275,17 @@ async function handleInboundMessage({
         .single()
 
     if (!channel) {
+        const unmatchedBody =
+            message.text?.body?.trim() ||
+            `[Unsupported ${message.type ?? "message"}]`
+
         await supabaseAdmin.from("client_messages").insert({
             direction: "inbound",
             provider: "meta_whatsapp",
             provider_message_id: messageId,
             from_address: from,
             to_address: to,
-            body: `[Unsupported ${message.type ?? "message"}]`,
+            body: unmatchedBody,
             status: "unmatched",
             raw_payload: payload,
         })
@@ -283,6 +317,8 @@ async function handleInboundMessage({
             error instanceof Error
                 ? error.message
                 : "Unknown WhatsApp media error"
+        const fallbackBody =
+            message.text?.body?.trim() || `[${titleCase(message.type ?? "media")}]`
 
         await supabaseAdmin.from("client_messages").insert({
             client_id: channel.client_id,
@@ -292,7 +328,7 @@ async function handleInboundMessage({
             provider_message_id: messageId,
             from_address: from,
             to_address: to,
-            body: `[${titleCase(message.type ?? "media")}]`,
+            body: fallbackBody,
             status: "media_failed",
             error: errorMessage,
             raw_payload: payload,
@@ -424,11 +460,25 @@ export async function POST(request: NextRequest) {
                     appBaseUrl,
                 })
             } catch (error) {
-                errors.push(
+                const messageText =
                     error instanceof Error
                         ? error.message
                         : "Unknown inbound WhatsApp error"
-                )
+                errors.push(messageText)
+
+                await logWebhookError({
+                    message: messageText,
+                    payload,
+                    fromAddress: message.from
+                        ? normalizeMessageAddress(`whatsapp:${message.from}`)
+                        : null,
+                    toAddress: value.metadata?.display_phone_number
+                        ? normalizeMessageAddress(
+                              `whatsapp:${value.metadata.display_phone_number}`
+                          )
+                        : null,
+                    providerMessageId: message.id ?? null,
+                })
             }
         }
 
@@ -438,13 +488,20 @@ export async function POST(request: NextRequest) {
             errors,
         })
     } catch (error) {
+        const message =
+            error instanceof Error
+                ? error.message
+                : "Unknown WhatsApp webhook error"
+
+        await logWebhookError({
+            message,
+            payload: {},
+        })
+
         return Response.json({
             ok: true,
             ignored: true,
-            error:
-                error instanceof Error
-                    ? error.message
-                    : "Unknown WhatsApp webhook error",
+            error: message,
         })
     }
 }

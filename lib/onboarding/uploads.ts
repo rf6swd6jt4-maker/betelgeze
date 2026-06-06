@@ -52,6 +52,25 @@ function getPublicR2Url(path: string) {
     return `${publicBaseUrl}/${encodedPath}`
 }
 
+function encodeStoragePath(path: string) {
+    return path
+        .split("/")
+        .map((segment) => encodeURIComponent(segment))
+        .join("/")
+}
+
+export function createClientMessageMediaUrl(path: string) {
+    const publicR2Url = getPublicR2Url(path)
+
+    if (publicR2Url) return publicR2Url
+
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/g, "")
+
+    if (!siteUrl) return null
+
+    return `${siteUrl}/api/client-messages/media/${encodeStoragePath(path)}`
+}
+
 export async function createSignedOnboardingUpload(
     clientId: string,
     stepKey: string,
@@ -177,9 +196,11 @@ export async function storeClientMessageMedia({
 
     return {
         path,
-        url: await createUploadSignedUrl(
-            path,
-            R2_BRIDGE_MEDIA_SIGNED_URL_TTL_SECONDS
-        ),
+        url:
+            createClientMessageMediaUrl(path) ??
+            (await createUploadSignedUrl(
+                path,
+                R2_BRIDGE_MEDIA_SIGNED_URL_TTL_SECONDS
+            )),
     }
 }

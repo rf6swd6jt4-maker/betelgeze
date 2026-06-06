@@ -127,23 +127,26 @@ function titleCase(value: string) {
 
 function formatMediaMessageForClickUp({
     type,
-    fileName,
     url,
     caption,
 }: {
     type: string
-    fileName: string
     url: string
     caption?: string
 }) {
-    const label = `${titleCase(type)}: [${fileName}](${url})`
+    const mediaName = titleCase(type)
+    const label = `[Open ${type}](${url})`
     const preview =
         type === "image" || type === "sticker"
-            ? [`![${fileName}](${url})`, label]
-            : [label]
+            ? [`![${mediaName}](${url})`]
+            : [`${mediaName}: ${label}`]
     const captionLines = caption?.trim()
-        ? ["", `Caption: ${caption.trim()}`]
+        ? ["", caption.trim()]
         : []
+
+    if (type === "image" || type === "sticker") {
+        return [...preview, ...captionLines, "", label].join("\n")
+    }
 
     return [...preview, ...captionLines].join("\n")
 }
@@ -199,7 +202,6 @@ async function getInboundMessageContent({
     const caption = mediaPayload.media.caption?.trim()
     const clickupBody = formatMediaMessageForClickUp({
         type: mediaPayload.type,
-        fileName,
         url: storedMedia.url,
         caption,
     })

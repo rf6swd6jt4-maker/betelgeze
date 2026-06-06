@@ -86,8 +86,8 @@ videos do not pass through the Next.js server. Admin previews use signed
 download URLs.
 
 `R2_PUBLIC_BASE_URL` is optional. When set to a public R2 custom domain, media
-forwarded from WhatsApp to ClickUp uses durable public links. When omitted, the
-bridge uses signed download URLs.
+forwarded from WhatsApp to ClickUp uses that domain directly. When omitted, the
+bridge uses stable app media URLs that stream files from private R2 storage.
 
 Important constraints:
 

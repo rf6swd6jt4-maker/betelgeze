@@ -138,15 +138,11 @@ function formatMediaMessageForClickUp({
     const label = `[Open ${type}](${url})`
     const preview =
         type === "image" || type === "sticker"
-            ? [`![${mediaName}](${url})`]
+            ? [`[![${mediaName}](${url})](${url})`]
             : [`${mediaName}: ${label}`]
     const captionLines = caption?.trim()
         ? ["", caption.trim()]
         : []
-
-    if (type === "image" || type === "sticker") {
-        return [...preview, ...captionLines, "", label].join("\n")
-    }
 
     return [...preview, ...captionLines].join("\n")
 }

@@ -9,7 +9,6 @@ import {
     downloadMetaWhatsAppMedia,
     getMetaWhatsAppMedia,
 } from "@/lib/client-messages/meta-whatsapp"
-import { formatMediaMessageForClickUp } from "@/lib/client-messages/media-format"
 import { storeClientMessageMedia } from "@/lib/onboarding/uploads"
 
 export const runtime = "nodejs"
@@ -124,6 +123,32 @@ function getExtensionFromMimeType(mimeType: string) {
 
 function titleCase(value: string) {
     return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function formatMediaMessageForClickUp({
+    type,
+    url,
+    caption,
+}: {
+    type: string
+    url: string
+    caption?: string
+}) {
+    const mediaName = titleCase(type)
+    const label = `[Open ${type}](${url})`
+    const preview =
+        type === "image" || type === "sticker"
+            ? [`![${mediaName}](${url})`]
+            : [`${mediaName}: ${label}`]
+    const captionLines = caption?.trim()
+        ? ["", caption.trim()]
+        : []
+
+    if (type === "image" || type === "sticker") {
+        return [...preview, ...captionLines, "", label].join("\n")
+    }
+
+    return [...preview, ...captionLines].join("\n")
 }
 
 async function getInboundMessageContent({

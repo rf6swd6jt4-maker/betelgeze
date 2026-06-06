@@ -2,7 +2,6 @@ import { randomUUID } from "crypto"
 import {
     DeleteObjectsCommand,
     GetObjectCommand,
-    HeadObjectCommand,
     PutObjectCommand,
     S3Client,
 } from "@aws-sdk/client-s3"
@@ -64,9 +63,7 @@ export function createClientMessageMediaUrl(
     path: string,
     appBaseUrl = process.env.NEXT_PUBLIC_SITE_URL
 ) {
-    const siteUrl = [process.env.NEXT_PUBLIC_SITE_URL, appBaseUrl]
-        .find((value) => value?.trim())
-        ?.replace(/\/+$/g, "")
+    const siteUrl = appBaseUrl?.replace(/\/+$/g, "")
 
     if (!siteUrl) return null
 
@@ -153,15 +150,6 @@ export async function createPrivateUploadSignedUrl(
     )
 }
 
-export async function getPrivateUploadMetadata(path: string) {
-    return getR2Client().send(
-        new HeadObjectCommand({
-            Bucket: getR2BucketName(),
-            Key: path,
-        })
-    )
-}
-
 export async function createUploadSignedUrls(paths: string[]) {
     if (paths.length === 0) {
         return new Map<string, string>()
@@ -226,7 +214,6 @@ export async function storeClientMessageMedia({
     return {
         path,
         url:
-            getPublicR2Url(path) ??
             createClientMessageMediaUrl(path, appBaseUrl) ??
             (await createUploadSignedUrl(
                 path,

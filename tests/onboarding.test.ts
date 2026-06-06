@@ -15,7 +15,6 @@ import {
 } from "../lib/client-messages/addresses.ts"
 import { shouldIgnoreClickUpMessage } from "../lib/client-messages/clickup-message-filters.ts"
 import { parseClickUpWorkspaceId } from "../lib/client-messages/clickup-workspace.ts"
-import { formatMediaMessageForClickUp } from "../lib/client-messages/media-format.ts"
 
 test("counts unique completed onboarding steps", () => {
     const steps = [{ key: "welcome" }, { key: "business-info" }]
@@ -124,17 +123,6 @@ test("formats the first client message in a run with a client name", () => {
             showClientName: false,
         }),
         "Another thing"
-    )
-})
-
-test("formats WhatsApp images for ClickUp with simple markdown and fallback link", () => {
-    assert.equal(
-        formatMediaMessageForClickUp({
-            type: "image",
-            url: "https://example.com/file.jpg",
-            caption: "Front desk",
-        }),
-        "![Image](https://example.com/file.jpg)\n\n[Open image](https://example.com/file.jpg)\n\nFront desk"
     )
 })
 

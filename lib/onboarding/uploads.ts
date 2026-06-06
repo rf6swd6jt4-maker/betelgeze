@@ -12,6 +12,7 @@ import { getUploadKind, StoredUpload } from "@/lib/onboarding/forms"
 export const MAX_ONBOARDING_UPLOAD_SIZE = 500 * 1024 * 1024
 
 const R2_SIGNED_URL_TTL_SECONDS = 60 * 60
+const R2_BRIDGE_MEDIA_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60
 const R2_UPLOAD_URL_TTL_SECONDS = 15 * 60
 
 function getR2Client() {
@@ -36,6 +37,19 @@ function sanitizeFileName(name: string) {
         .replace(/[^a-z0-9._-]+/g, "-")
         .replace(/^-+|-+$/g, "")
         .slice(0, 120)
+}
+
+function getPublicR2Url(path: string) {
+    const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.replace(/\/+$/g, "")
+
+    if (!publicBaseUrl) return null
+
+    const encodedPath = path
+        .split("/")
+        .map((segment) => encodeURIComponent(segment))
+        .join("/")
+
+    return `${publicBaseUrl}/${encodedPath}`
 }
 
 export async function createSignedOnboardingUpload(
@@ -82,7 +96,14 @@ export async function createSignedOnboardingUpload(
     }
 }
 
-export async function createUploadSignedUrl(path: string) {
+export async function createUploadSignedUrl(
+    path: string,
+    expiresIn = R2_SIGNED_URL_TTL_SECONDS
+) {
+    const publicUrl = getPublicR2Url(path)
+
+    if (publicUrl) return publicUrl
+
     return getSignedUrl(
         getR2Client(),
         new GetObjectCommand({
@@ -90,7 +111,7 @@ export async function createUploadSignedUrl(path: string) {
             Key: path,
         }),
         {
-            expiresIn: R2_SIGNED_URL_TTL_SECONDS,
+            expiresIn,
         }
     )
 }
@@ -126,5 +147,39 @@ export async function deleteOnboardingUploads(paths: string[]) {
                 },
             })
         )
+    }
+}
+
+export async function storeClientMessageMedia({
+    clientId,
+    mediaId,
+    fileName,
+    contentType,
+    body,
+}: {
+    clientId: string
+    mediaId: string
+    fileName: string
+    contentType: string
+    body: Uint8Array
+}) {
+    const safeFileName = sanitizeFileName(fileName) || "whatsapp-media"
+    const path = `${clientId}/client-messages/${randomUUID()}-${mediaId}-${safeFileName}`
+
+    await getR2Client().send(
+        new PutObjectCommand({
+            Bucket: getR2BucketName(),
+            Key: path,
+            Body: body,
+            ContentType: contentType || "application/octet-stream",
+        })
+    )
+
+    return {
+        path,
+        url: await createUploadSignedUrl(
+            path,
+            R2_BRIDGE_MEDIA_SIGNED_URL_TTL_SECONDS
+        ),
     }
 }

@@ -57,6 +57,7 @@ R2_ACCOUNT_ID=
 R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
 R2_BUCKET_NAME=
+R2_PUBLIC_BASE_URL=
 ADMIN_PASSWORD=
 ADMIN_SESSION_SECRET=
 NEXT_PUBLIC_SITE_URL=
@@ -83,6 +84,10 @@ Uploaded onboarding files are stored in a private Cloudflare R2 bucket. The
 browser uploads directly to R2 with short-lived signed upload URLs, so large
 videos do not pass through the Next.js server. Admin previews use signed
 download URLs.
+
+`R2_PUBLIC_BASE_URL` is optional. When set to a public R2 custom domain, media
+forwarded from WhatsApp to ClickUp uses durable public links. When omitted, the
+bridge uses signed download URLs.
 
 Important constraints:
 

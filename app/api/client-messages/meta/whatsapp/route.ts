@@ -5,11 +5,24 @@ import {
     normalizeMessageAddress,
 } from "@/lib/client-messages/addresses"
 import { createClickUpChatMessage } from "@/lib/client-messages/clickup"
+import {
+    downloadMetaWhatsAppMedia,
+    getMetaWhatsAppMedia,
+} from "@/lib/client-messages/meta-whatsapp"
+import { storeClientMessageMedia } from "@/lib/onboarding/uploads"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-type WhatsAppTextMessage = {
+type WhatsAppMediaPayload = {
+    id?: string
+    mime_type?: string
+    sha256?: string
+    caption?: string
+    filename?: string
+}
+
+type WhatsAppMessage = {
     from?: string
     id?: string
     timestamp?: string
@@ -17,13 +30,18 @@ type WhatsAppTextMessage = {
     text?: {
         body?: string
     }
+    image?: WhatsAppMediaPayload
+    video?: WhatsAppMediaPayload
+    audio?: WhatsAppMediaPayload
+    document?: WhatsAppMediaPayload
+    sticker?: WhatsAppMediaPayload
 }
 
 type WhatsAppChangeValue = {
     metadata?: {
         display_phone_number?: string
     }
-    messages?: WhatsAppTextMessage[]
+    messages?: WhatsAppMessage[]
 }
 
 type WhatsAppWebhookPayload = {
@@ -46,10 +64,160 @@ function getClickUpMessageId(response: unknown): string | null {
     return value.id ?? value.data?.id ?? value.message?.id ?? null
 }
 
-function getMessageTimestampMs(message: WhatsAppTextMessage) {
+type InboundMessageContent = {
+    body: string
+    clickupBody: string
+    media?: {
+        id: string
+        type: string
+        fileName: string
+        mimeType: string
+        storagePath: string
+        url: string
+    }
+}
+
+function getMessageTimestampMs(message: WhatsAppMessage) {
     const timestamp = Number(message.timestamp)
 
     return Number.isFinite(timestamp) ? timestamp * 1000 : Date.now()
+}
+
+function getMediaPayload(message: WhatsAppMessage) {
+    switch (message.type) {
+        case "image":
+            return message.image ? { type: "image", media: message.image } : null
+        case "video":
+            return message.video ? { type: "video", media: message.video } : null
+        case "audio":
+            return message.audio ? { type: "audio", media: message.audio } : null
+        case "document":
+            return message.document
+                ? { type: "document", media: message.document }
+                : null
+        case "sticker":
+            return message.sticker
+                ? { type: "sticker", media: message.sticker }
+                : null
+        default:
+            return null
+    }
+}
+
+function getExtensionFromMimeType(mimeType: string) {
+    const extensionByMimeType: Record<string, string> = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+        "video/mp4": "mp4",
+        "audio/aac": "aac",
+        "audio/mp4": "m4a",
+        "audio/mpeg": "mp3",
+        "audio/ogg": "ogg",
+        "application/pdf": "pdf",
+        "text/plain": "txt",
+    }
+
+    return extensionByMimeType[mimeType.toLowerCase()] ?? "bin"
+}
+
+function titleCase(value: string) {
+    return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function formatMediaMessageForClickUp({
+    type,
+    fileName,
+    url,
+    caption,
+}: {
+    type: string
+    fileName: string
+    url: string
+    caption?: string
+}) {
+    const label = `${titleCase(type)}: [${fileName}](${url})`
+    const preview =
+        type === "image" || type === "sticker"
+            ? [`![${fileName}](${url})`, label]
+            : [label]
+    const captionLines = caption?.trim()
+        ? ["", `Caption: ${caption.trim()}`]
+        : []
+
+    return [...preview, ...captionLines].join("\n")
+}
+
+async function getInboundMessageContent({
+    clientId,
+    message,
+}: {
+    clientId: string
+    message: WhatsAppMessage
+}): Promise<InboundMessageContent | null> {
+    const textBody = message.text?.body?.trim()
+
+    if (message.type === "text" && textBody) {
+        return {
+            body: textBody,
+            clickupBody: textBody,
+        }
+    }
+
+    const mediaPayload = getMediaPayload(message)
+
+    if (!mediaPayload?.media.id) return null
+
+    const mediaInfo = await getMetaWhatsAppMedia(mediaPayload.media.id)
+    const mediaUrl =
+        typeof mediaInfo?.url === "string" ? mediaInfo.url : null
+    const mimeType =
+        mediaPayload.media.mime_type ??
+        (typeof mediaInfo?.mime_type === "string"
+            ? mediaInfo.mime_type
+            : "application/octet-stream")
+
+    if (!mediaUrl) {
+        throw new Error("Meta WhatsApp media lookup did not return a URL")
+    }
+
+    const downloadedMedia = await downloadMetaWhatsAppMedia(mediaUrl)
+    const contentType =
+        downloadedMedia.contentType === "application/octet-stream"
+            ? mimeType
+            : downloadedMedia.contentType
+    const fileName =
+        mediaPayload.media.filename ??
+        `whatsapp-${mediaPayload.type}-${mediaPayload.media.id}.${getExtensionFromMimeType(contentType)}`
+    const storedMedia = await storeClientMessageMedia({
+        clientId,
+        mediaId: mediaPayload.media.id,
+        fileName,
+        contentType,
+        body: downloadedMedia.bytes,
+    })
+    const caption = mediaPayload.media.caption?.trim()
+    const clickupBody = formatMediaMessageForClickUp({
+        type: mediaPayload.type,
+        fileName,
+        url: storedMedia.url,
+        caption,
+    })
+
+    return {
+        body: caption
+            ? `[${titleCase(mediaPayload.type)}] ${caption}`
+            : `[${titleCase(mediaPayload.type)}] ${fileName}`,
+        clickupBody,
+        media: {
+            id: mediaPayload.media.id,
+            type: mediaPayload.type,
+            fileName,
+            mimeType: contentType,
+            storagePath: storedMedia.path,
+            url: storedMedia.url,
+        },
+    }
 }
 
 async function handleInboundMessage({
@@ -57,7 +225,7 @@ async function handleInboundMessage({
     value,
     payload,
 }: {
-    message: WhatsAppTextMessage
+    message: WhatsAppMessage
     value: WhatsAppChangeValue
     payload: WhatsAppWebhookPayload
 }) {
@@ -65,10 +233,9 @@ async function handleInboundMessage({
     const to = value.metadata?.display_phone_number
         ? normalizeMessageAddress(`whatsapp:${value.metadata.display_phone_number}`)
         : null
-    const messageBody = message.text?.body?.trim()
     const messageId = message.id ?? null
 
-    if (!from || !messageBody) return
+    if (!from) return
 
     const { data: channel } = await supabaseAdmin
         .from("client_communication_channels")
@@ -85,7 +252,7 @@ async function handleInboundMessage({
             provider_message_id: messageId,
             from_address: from,
             to_address: to,
-            body: messageBody,
+            body: `[Unsupported ${message.type ?? "message"}]`,
             status: "unmatched",
             raw_payload: payload,
         })
@@ -103,6 +270,38 @@ async function handleInboundMessage({
         : { data: null }
 
     if (existingMessage) return
+
+    let content: InboundMessageContent | null = null
+
+    try {
+        content = await getInboundMessageContent({
+            clientId: channel.client_id,
+            message,
+        })
+    } catch (error) {
+        const errorMessage =
+            error instanceof Error
+                ? error.message
+                : "Unknown WhatsApp media error"
+
+        await supabaseAdmin.from("client_messages").insert({
+            client_id: channel.client_id,
+            communication_channel_id: channel.id,
+            direction: "inbound",
+            provider: "meta_whatsapp",
+            provider_message_id: messageId,
+            from_address: from,
+            to_address: to,
+            body: `[${titleCase(message.type ?? "media")}]`,
+            status: "media_failed",
+            error: errorMessage,
+            raw_payload: payload,
+        })
+
+        return
+    }
+
+    if (!content) return
 
     const { data: client } = await supabaseAdmin
         .from("clients")
@@ -135,9 +334,12 @@ async function handleInboundMessage({
             provider_message_id: messageId,
             from_address: from,
             to_address: to,
-            body: messageBody,
+            body: content.body,
             status: "received",
-            raw_payload: payload,
+            raw_payload: {
+                ...payload,
+                bridge_media: content.media ?? null,
+            },
         })
         .select("id")
         .single()
@@ -148,7 +350,7 @@ async function handleInboundMessage({
             channelId: channel.clickup_channel_id,
             content: formatClientInboundMessage({
                 clientName,
-                body: messageBody,
+                body: content.clickupBody,
                 showClientName,
             }),
         })

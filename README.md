@@ -85,9 +85,10 @@ browser uploads directly to R2 with short-lived signed upload URLs, so large
 videos do not pass through the Next.js server. Admin previews use signed
 download URLs.
 
-`R2_PUBLIC_BASE_URL` is optional and only affects admin/onboarding file links.
-WhatsApp media sent to ClickUp uses stable app media URLs that stream files from
-private R2 storage.
+`R2_PUBLIC_BASE_URL` is optional. When configured, admin/onboarding file links
+and WhatsApp media sent to ClickUp use that public R2 base URL. Otherwise,
+WhatsApp media uses stable app media URLs that stream files from private R2
+storage.
 
 Important constraints:
 

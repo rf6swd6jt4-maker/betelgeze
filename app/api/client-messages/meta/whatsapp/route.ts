@@ -154,9 +154,11 @@ function formatMediaMessageForClickUp({
 async function getInboundMessageContent({
     clientId,
     message,
+    appBaseUrl,
 }: {
     clientId: string
     message: WhatsAppMessage
+    appBaseUrl: string
 }): Promise<InboundMessageContent | null> {
     const textBody = message.text?.body?.trim()
 
@@ -198,6 +200,7 @@ async function getInboundMessageContent({
         fileName,
         contentType,
         body: downloadedMedia.bytes,
+        appBaseUrl,
     })
     const caption = mediaPayload.media.caption?.trim()
     const clickupBody = formatMediaMessageForClickUp({
@@ -226,10 +229,12 @@ async function handleInboundMessage({
     message,
     value,
     payload,
+    appBaseUrl,
 }: {
     message: WhatsAppMessage
     value: WhatsAppChangeValue
     payload: WhatsAppWebhookPayload
+    appBaseUrl: string
 }) {
     const from = normalizeMessageAddress(`whatsapp:${message.from ?? ""}`)
     const to = value.metadata?.display_phone_number
@@ -279,6 +284,7 @@ async function handleInboundMessage({
         content = await getInboundMessageContent({
             clientId: channel.client_id,
             message,
+            appBaseUrl,
         })
     } catch (error) {
         const errorMessage =
@@ -396,6 +402,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+    const appBaseUrl = new URL(request.url).origin
     const payload = (await request.json()) as WhatsAppWebhookPayload
     const inboundMessages =
         payload.entry
@@ -418,6 +425,7 @@ export async function POST(request: NextRequest) {
             message,
             value,
             payload,
+            appBaseUrl,
         })
     }
 

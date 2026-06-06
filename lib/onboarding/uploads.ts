@@ -59,8 +59,11 @@ function encodeStoragePath(path: string) {
         .join("/")
 }
 
-export function createClientMessageMediaUrl(path: string) {
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/g, "")
+export function createClientMessageMediaUrl(
+    path: string,
+    appBaseUrl = process.env.NEXT_PUBLIC_SITE_URL
+) {
+    const siteUrl = appBaseUrl?.replace(/\/+$/g, "")
 
     if (!siteUrl) return null
 
@@ -187,12 +190,14 @@ export async function storeClientMessageMedia({
     fileName,
     contentType,
     body,
+    appBaseUrl,
 }: {
     clientId: string
     mediaId: string
     fileName: string
     contentType: string
     body: Uint8Array
+    appBaseUrl?: string
 }) {
     const safeFileName = sanitizeFileName(fileName) || "whatsapp-media"
     const path = `${clientId}/client-messages/${randomUUID()}-${mediaId}-${safeFileName}`
@@ -209,7 +214,7 @@ export async function storeClientMessageMedia({
     return {
         path,
         url:
-            createClientMessageMediaUrl(path) ??
+            createClientMessageMediaUrl(path, appBaseUrl) ??
             (await createUploadSignedUrl(
                 path,
                 R2_BRIDGE_MEDIA_SIGNED_URL_TTL_SECONDS

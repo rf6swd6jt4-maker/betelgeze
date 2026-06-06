@@ -135,20 +135,12 @@ function formatMediaMessageForClickUp({
     caption?: string
 }) {
     const mediaName = titleCase(type)
-    const label = `[Open ${type}](${url})`
-    const preview =
-        type === "image" || type === "sticker"
-            ? [`![${mediaName}](${url})`]
-            : [`${mediaName}: ${label}`]
+    const mediaLink = `${mediaName}: [open ${type}](${url})`
     const captionLines = caption?.trim()
         ? ["", caption.trim()]
         : []
 
-    if (type === "image" || type === "sticker") {
-        return [...preview, ...captionLines, "", label].join("\n")
-    }
-
-    return [...preview, ...captionLines].join("\n")
+    return [mediaLink, ...captionLines].join("\n")
 }
 
 async function getInboundMessageContent({
@@ -402,32 +394,57 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-    const appBaseUrl = new URL(request.url).origin
-    const payload = (await request.json()) as WhatsAppWebhookPayload
-    const inboundMessages =
-        payload.entry
-            ?.flatMap((entry) => entry.changes ?? [])
-            .flatMap((change) =>
-                (change.value?.messages ?? []).map((message) => ({
+    try {
+        const appBaseUrl = new URL(request.url).origin
+        const payload = (await request.json()) as WhatsAppWebhookPayload
+        const inboundMessages =
+            payload.entry
+                ?.flatMap((entry) => entry.changes ?? [])
+                .flatMap((change) =>
+                    (change.value?.messages ?? []).map((message) => ({
+                        message,
+                        value: change.value ?? {},
+                    }))
+                ) ?? []
+
+        inboundMessages.sort(
+            (left, right) =>
+                getMessageTimestampMs(left.message) -
+                getMessageTimestampMs(right.message)
+        )
+
+        const errors: string[] = []
+
+        for (const { message, value } of inboundMessages) {
+            try {
+                await handleInboundMessage({
                     message,
-                    value: change.value ?? {},
-                }))
-            ) ?? []
+                    value,
+                    payload,
+                    appBaseUrl,
+                })
+            } catch (error) {
+                errors.push(
+                    error instanceof Error
+                        ? error.message
+                        : "Unknown inbound WhatsApp error"
+                )
+            }
+        }
 
-    inboundMessages.sort(
-        (left, right) =>
-            getMessageTimestampMs(left.message) -
-            getMessageTimestampMs(right.message)
-    )
-
-    for (const { message, value } of inboundMessages) {
-        await handleInboundMessage({
-            message,
-            value,
-            payload,
-            appBaseUrl,
+        return Response.json({
+            ok: true,
+            processed: inboundMessages.length,
+            errors,
+        })
+    } catch (error) {
+        return Response.json({
+            ok: true,
+            ignored: true,
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Unknown WhatsApp webhook error",
         })
     }
-
-    return Response.json({ ok: true })
 }

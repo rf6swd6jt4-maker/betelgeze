@@ -200,6 +200,11 @@ export async function sendLoggedClickUpMessageToWhatsApp({
                 status: "sent",
                 provider_message_id: messageId ?? whatsappMessageId ?? null,
                 clickup_message_id: messageId ?? null,
+                whatsapp_message_id: whatsappMessageId ?? null,
+                raw_payload: {
+                    ...rawPayload,
+                    bridge_whatsapp_message_id: whatsappMessageId ?? null,
+                },
             })
             .eq("id", messageLog?.id)
 

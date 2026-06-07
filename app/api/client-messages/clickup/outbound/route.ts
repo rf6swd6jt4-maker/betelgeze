@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
             .update({
                 status: "sent",
                 provider_message_id: messageId,
+                whatsapp_message_id: messageId,
             })
             .eq("id", messageLog?.id)
 

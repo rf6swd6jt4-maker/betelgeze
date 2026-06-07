@@ -5,7 +5,10 @@ import {
     getEquivalentMessageAddresses,
     normalizeMessageAddress,
 } from "@/lib/client-messages/addresses"
-import { createClickUpChatMessage } from "@/lib/client-messages/clickup"
+import {
+    createClickUpChatMessage,
+    createClickUpChatReply,
+} from "@/lib/client-messages/clickup"
 import {
     downloadMetaWhatsAppMedia,
     getMetaWhatsAppMedia,
@@ -28,6 +31,10 @@ type WhatsAppMessage = {
     id?: string
     timestamp?: string
     type?: string
+    context?: {
+        id?: string
+        from?: string
+    }
     text?: {
         body?: string
     }
@@ -444,6 +451,7 @@ async function handleInboundMessage({
         ? normalizeMessageAddress(`whatsapp:${value.metadata.display_phone_number}`)
         : null
     const messageId = message.id ?? null
+    const replyToWhatsAppMessageId = message.context?.id ?? null
 
     if (!from) return
 
@@ -469,6 +477,8 @@ async function handleInboundMessage({
             direction: "inbound",
             provider: "meta_whatsapp",
             provider_message_id: messageId,
+            whatsapp_message_id: messageId,
+            reply_to_whatsapp_message_id: replyToWhatsAppMessageId,
             from_address: from,
             to_address: to,
             body: unmatchedBody,
@@ -499,6 +509,17 @@ async function handleInboundMessage({
             .limit(1)
             .maybeSingle(),
     ])
+    const { data: repliedToMessage } = replyToWhatsAppMessageId
+        ? await supabaseAdmin
+              .from("client_messages")
+              .select("clickup_message_id")
+              .eq("client_id", channel.client_id)
+              .eq("whatsapp_message_id", replyToWhatsAppMessageId)
+              .not("clickup_message_id", "is", null)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle()
+        : { data: null }
     const clientName = client?.name ?? "Client"
     const tenMinutesAgo = Date.now() - 10 * 60 * 1000
     const showClientName =
@@ -516,6 +537,8 @@ async function handleInboundMessage({
             direction: "inbound",
             provider: "meta_whatsapp",
             provider_message_id: messageId,
+            whatsapp_message_id: messageId,
+            reply_to_whatsapp_message_id: replyToWhatsAppMessageId,
             from_address: from,
             to_address: to,
             body: initialBody,
@@ -585,20 +608,29 @@ async function handleInboundMessage({
         .eq("id", insertedMessage.id)
 
     try {
-        const clickupMessage = await createClickUpChatMessage({
-            workspaceId: channel.clickup_workspace_id,
-            channelId: channel.clickup_channel_id,
-            content: formatClientInboundMessage({
-                clientName,
-                body: content.clickupBody,
-                showClientName,
-            }),
+        const clickupContent = formatClientInboundMessage({
+            clientName,
+            body: content.clickupBody,
+            showClientName,
         })
+        const clickupMessage = repliedToMessage?.clickup_message_id
+            ? await createClickUpChatReply({
+                  workspaceId: channel.clickup_workspace_id,
+                  messageId: repliedToMessage.clickup_message_id,
+                  content: clickupContent,
+              })
+            : await createClickUpChatMessage({
+                  workspaceId: channel.clickup_workspace_id,
+                  channelId: channel.clickup_channel_id,
+                  content: clickupContent,
+              })
 
         await supabaseAdmin
             .from("client_messages")
             .update({
-                status: "posted_to_clickup",
+                status: repliedToMessage?.clickup_message_id
+                    ? "posted_to_clickup_reply"
+                    : "posted_to_clickup",
                 clickup_message_id: getClickUpMessageId(clickupMessage),
             })
             .eq("id", insertedMessage.id)

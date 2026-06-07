@@ -112,8 +112,9 @@ export async function wasClickUpMessageProcessed(messageId: string) {
     const { data: duplicate } = await supabaseAdmin
         .from("client_messages")
         .select("id")
-        .eq("provider", "clickup_chat")
-        .eq("provider_message_id", messageId)
+        .or(
+            `provider_message_id.eq.${messageId},clickup_message_id.eq.${messageId}`
+        )
         .maybeSingle()
 
     return Boolean(duplicate)
@@ -128,7 +129,7 @@ export async function isRecentInboundEcho({
 }) {
     const { data: lastInbound } = await supabaseAdmin
         .from("client_messages")
-        .select("body, created_at")
+        .select("body, raw_payload, created_at")
         .eq("client_id", clientId)
         .eq("direction", "inbound")
         .eq("provider", "meta_whatsapp")
@@ -146,10 +147,20 @@ export async function isRecentInboundEcho({
 
     const normalizedBody = body.trim()
     const normalizedBodyWithoutHeader = stripBoldHeader(normalizedBody)
+    const bridgeMedia = getByPath(lastInbound.raw_payload, "bridge_media")
+    const bridgeMediaUrl =
+        bridgeMedia && typeof bridgeMedia === "object" && !Array.isArray(bridgeMedia)
+            ? (bridgeMedia.url as JsonValue)
+            : null
 
     return (
         normalizedBody === lastInbound.body ||
-        normalizedBodyWithoutHeader === lastInbound.body
+        normalizedBodyWithoutHeader === lastInbound.body ||
+        Boolean(
+            typeof bridgeMediaUrl === "string" &&
+                bridgeMediaUrl &&
+                normalizedBody.includes(bridgeMediaUrl)
+        )
     )
 }
 

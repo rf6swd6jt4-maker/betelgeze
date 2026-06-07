@@ -24,6 +24,7 @@ export function shouldIgnoreClickUpMessage({
         normalizedBody.startsWith("**update**") ||
         normalizedBody.startsWith("**error**") ||
         normalizedBody.startsWith("**client") ||
+        isBridgeMediaMessage(normalizedBody) ||
         normalizedBody.includes("[bridge-skip]") ||
         normalizedBody.includes("<!-- bridge-skip -->")
     )
@@ -36,5 +37,14 @@ function isClientProxyMessage(normalizedBody: string) {
         normalizedBody.includes("_from whatsapp:") ||
         normalizedBody.includes("from whatsapp:") ||
         normalizedBody.includes(" via whatsapp")
+    )
+}
+
+function isBridgeMediaMessage(normalizedBody: string) {
+    return (
+        /^[a-z]+:\s*\[open\s+[a-z]+\]\(https?:\/\/[^)]+\/api\/client-messages\/media\//iu.test(
+            normalizedBody
+        ) ||
+        normalizedBody.includes("/api/client-messages/media/")
     )
 }

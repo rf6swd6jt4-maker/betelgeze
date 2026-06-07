@@ -176,6 +176,22 @@ test("ignores ClickUp messages that were posted by the bridge", () => {
         }),
         false
     )
+    assert.equal(
+        shouldIgnoreClickUpMessage({
+            body: "Video: [open video](https://onboarding.scaylup.com/api/client-messages/media/client/video.mp4)",
+            authorId: null,
+            authorName: "Sarah",
+        }),
+        true
+    )
+    assert.equal(
+        shouldIgnoreClickUpMessage({
+            body: "Could you send a video of the finished room?",
+            authorId: null,
+            authorName: "Sarah",
+        }),
+        false
+    )
 })
 
 test("extracts numeric ClickUp workspace IDs from plain IDs or URLs", () => {

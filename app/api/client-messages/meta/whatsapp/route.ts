@@ -80,6 +80,13 @@ type InboundMessageContent = {
     }
 }
 
+function logDiagnosticInsertError(context: string, error: unknown) {
+    console.error(
+        `Meta WhatsApp bridge diagnostic failed: ${context}`,
+        error instanceof Error ? error.message : error
+    )
+}
+
 async function logWebhookError({
     message,
     payload,
@@ -94,7 +101,7 @@ async function logWebhookError({
     providerMessageId?: string | null
 }) {
     try {
-        await supabaseAdmin.from("client_messages").insert({
+        const { error } = await supabaseAdmin.from("client_messages").insert({
             direction: "inbound",
             provider: "meta_whatsapp",
             provider_message_id: providerMessageId ?? null,
@@ -105,7 +112,10 @@ async function logWebhookError({
             error: message,
             raw_payload: payload,
         })
-    } catch {
+
+        if (error) logDiagnosticInsertError("webhook_failed insert", error)
+    } catch (error) {
+        logDiagnosticInsertError("webhook_failed insert threw", error)
         // Meta webhooks must still be acknowledged even if diagnostics fail.
     }
 }
@@ -113,21 +123,62 @@ async function logWebhookError({
 async function logWebhookNotice({
     message,
     payload,
+    fromAddress,
+    toAddress,
 }: {
     message: string
     payload: unknown
+    fromAddress?: string | null
+    toAddress?: string | null
 }) {
     try {
-        await supabaseAdmin.from("client_messages").insert({
+        const { error } = await supabaseAdmin.from("client_messages").insert({
             direction: "inbound",
             provider: "meta_whatsapp",
+            from_address: fromAddress ?? null,
+            to_address: toAddress ?? null,
             body: message,
             status: "webhook_ignored",
             raw_payload: payload,
         })
-    } catch {
+
+        if (error) logDiagnosticInsertError("webhook_ignored insert", error)
+    } catch (error) {
+        logDiagnosticInsertError("webhook_ignored insert threw", error)
         // Meta webhooks must still be acknowledged even if diagnostics fail.
     }
+}
+
+function getFirstStatusRecipientAddress(payload: WhatsAppWebhookPayload) {
+    const statuses =
+        payload.entry
+            ?.flatMap((entry) => entry.changes ?? [])
+            .flatMap((change) => change.value?.statuses ?? []) ?? []
+
+    for (const status of statuses) {
+        if (!status || typeof status !== "object") continue
+
+        const recipientId = (status as { recipient_id?: unknown }).recipient_id
+
+        if (typeof recipientId === "string") {
+            return normalizeMessageAddress(`whatsapp:${recipientId}`)
+        }
+    }
+
+    return null
+}
+
+function getFirstBusinessAddress(payload: WhatsAppWebhookPayload) {
+    const metadata =
+        payload.entry
+            ?.flatMap((entry) => entry.changes ?? [])
+            .map((change) => change.value?.metadata)
+            .find(Boolean) ?? null
+    const displayPhoneNumber = metadata?.display_phone_number
+
+    return displayPhoneNumber
+        ? normalizeMessageAddress(`whatsapp:${displayPhoneNumber}`)
+        : null
 }
 
 function getMessageTimestampMs(message: WhatsAppMessage) {
@@ -313,7 +364,7 @@ async function handleInboundMessage({
             message.text?.body?.trim() ||
             `[Unsupported ${message.type ?? "message"}]`
 
-        await supabaseAdmin.from("client_messages").insert({
+        const { error } = await supabaseAdmin.from("client_messages").insert({
             direction: "inbound",
             provider: "meta_whatsapp",
             provider_message_id: messageId,
@@ -323,6 +374,12 @@ async function handleInboundMessage({
             status: "unmatched",
             raw_payload: payload,
         })
+
+        if (error) {
+            throw new Error(
+                `Could not record unmatched WhatsApp message: ${error.message}`
+            )
+        }
 
         return
     }
@@ -501,10 +558,29 @@ export async function POST(request: NextRequest) {
                     ?.flatMap((entry) => entry.changes ?? [])
                     .map((change) => change.field ?? "unknown")
                     .join(", ") || "none"
+            const statusCount =
+                payload.entry
+                    ?.flatMap((entry) => entry.changes ?? [])
+                    .reduce(
+                        (total, change) =>
+                            total + (change.value?.statuses?.length ?? 0),
+                        0
+                    ) ?? 0
+            const notice =
+                statusCount > 0
+                    ? `[Webhook received status update, not a client message: ${changeFields}]`
+                    : `[Webhook received without WhatsApp messages: ${changeFields}]`
+
+            console.info("Meta WhatsApp webhook had no messages", {
+                changeFields,
+                statusCount,
+            })
 
             await logWebhookNotice({
-                message: `[Webhook received without WhatsApp messages: ${changeFields}]`,
+                message: notice,
                 payload,
+                fromAddress: getFirstBusinessAddress(payload),
+                toAddress: getFirstStatusRecipientAddress(payload),
             })
         }
 

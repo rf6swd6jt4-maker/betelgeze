@@ -44,6 +44,7 @@ export default async function AdminPage() {
         { data: progressRows, error: progressError },
         { data: moduleRows, error: modulesError },
         { data: communicationRows, error: communicationError },
+        { data: diagnosticRows, error: diagnosticError },
     ] = await Promise.all([
         supabaseAdmin
             .from("client_progress")
@@ -52,9 +53,24 @@ export default async function AdminPage() {
         supabaseAdmin
             .from("client_communication_channels")
             .select("client_id, clickup_channel_id, is_active"),
+        supabaseAdmin
+            .from("client_messages")
+            .select(
+                "id, direction, from_address, to_address, body, status, error, created_at"
+            )
+            .eq("provider", "meta_whatsapp")
+            .is("client_id", null)
+            .order("created_at", { ascending: false })
+            .limit(6),
     ])
 
-    if (clientsError || progressError || modulesError || communicationError) {
+    if (
+        clientsError ||
+        progressError ||
+        modulesError ||
+        communicationError ||
+        diagnosticError
+    ) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-6 text-white">
                 <p>Could not load admin dashboard.</p>
@@ -204,6 +220,76 @@ export default async function AdminPage() {
                         </div>
                     ))}
                 </div>
+
+                {(diagnosticRows ?? []).length > 0 && (
+                    <section className="mt-5 rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
+                        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wide text-amber-200/80">
+                                    Unmatched bridge diagnostics
+                                </p>
+
+                                <p className="mt-1 text-sm text-amber-50/80">
+                                    These webhook events reached the app but
+                                    were not attached to a client.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="mt-3 grid gap-2">
+                            {diagnosticRows?.map((message) => (
+                                <div
+                                    key={message.id}
+                                    className="rounded-lg bg-neutral-950 p-3"
+                                >
+                                    <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                                        <div>
+                                            <p className="whitespace-pre-wrap text-sm text-neutral-100">
+                                                {message.body}
+                                            </p>
+
+                                            {(message.from_address ||
+                                                message.to_address) && (
+                                                <p className="mt-1 break-all text-xs text-neutral-500">
+                                                    {message.from_address
+                                                        ? `From ${displayMessageAddress(message.from_address)}`
+                                                        : null}
+                                                    {message.from_address &&
+                                                    message.to_address
+                                                        ? " · "
+                                                        : null}
+                                                    {message.to_address
+                                                        ? `To ${displayMessageAddress(message.to_address)}`
+                                                        : null}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <span className="w-fit rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-100">
+                                            {message.direction} ·{" "}
+                                            {message.status}
+                                        </span>
+                                    </div>
+
+                                    {message.error && (
+                                        <p className="mt-2 text-xs text-red-200">
+                                            {message.error}
+                                        </p>
+                                    )}
+
+                                    <p className="mt-3 text-xs text-neutral-500">
+                                        {new Date(
+                                            message.created_at
+                                        ).toLocaleString("en-IE", {
+                                            dateStyle: "medium",
+                                            timeStyle: "short",
+                                        })}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
 
                 <div className="mt-5 grid gap-3 md:hidden">
                     {clientSummaries.map(

@@ -26,6 +26,13 @@ type SendLoggedClickUpMessageToWhatsAppInput = {
     replyToWhatsAppMessageId?: string | null
 }
 
+type SendClickUpMessageEditToWhatsAppInput = {
+    channel: BridgeChannel
+    messageId: string
+    body: string
+    rawPayload: JsonObject
+}
+
 type BridgeRequest = {
     headers: {
         get(name: string): string | null
@@ -119,6 +126,12 @@ export async function wasClickUpMessageProcessed(messageId: string) {
         .maybeSingle()
 
     return Boolean(duplicate)
+}
+
+function asJsonObject(value: JsonValue | undefined) {
+    return value && typeof value === "object" && !Array.isArray(value)
+        ? value
+        : {}
 }
 
 export async function isRecentInboundEcho({
@@ -254,6 +267,102 @@ export async function sendLoggedClickUpMessageToWhatsApp({
         return {
             ok: false,
             messageLogId: messageLog?.id,
+            error,
+        }
+    }
+}
+
+export async function sendClickUpMessageEditToWhatsApp({
+    channel,
+    messageId,
+    body,
+    rawPayload,
+}: SendClickUpMessageEditToWhatsAppInput) {
+    const { data: existingMessage } = await supabaseAdmin
+        .from("client_messages")
+        .select("id, body, whatsapp_message_id, raw_payload")
+        .eq("client_id", channel.client_id)
+        .eq("direction", "outbound")
+        .eq("provider", "clickup_chat")
+        .or(
+            `provider_message_id.eq.${messageId},clickup_message_id.eq.${messageId}`
+        )
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+    if (!existingMessage) {
+        return {
+            handled: false,
+            ok: false,
+            reason: "not_previously_sent",
+        }
+    }
+
+    if (existingMessage.body === body) {
+        return {
+            handled: true,
+            ok: true,
+            sent: false,
+            reason: "unchanged",
+        }
+    }
+
+    if (!existingMessage.whatsapp_message_id) {
+        return {
+            handled: true,
+            ok: false,
+            sent: false,
+            reason: "missing_whatsapp_message_id",
+        }
+    }
+
+    try {
+        const whatsappMessage = await sendMetaWhatsAppMessage({
+            to: channel.external_address,
+            body: `${body} *`,
+            replyToMessageId: existingMessage.whatsapp_message_id,
+        })
+        const editWhatsAppMessageId = whatsappMessage?.messages?.[0]?.id ?? null
+
+        await supabaseAdmin
+            .from("client_messages")
+            .update({
+                body,
+                status: "sent",
+                error: null,
+                raw_payload: {
+                    ...asJsonObject(existingMessage.raw_payload),
+                    bridge_last_edit_payload: rawPayload,
+                    bridge_last_edit_sent_body: body,
+                    bridge_last_edit_whatsapp_message_id:
+                        editWhatsAppMessageId,
+                },
+            })
+            .eq("id", existingMessage.id)
+
+        return {
+            handled: true,
+            ok: true,
+            sent: true,
+            editWhatsAppMessageId,
+        }
+    } catch (error) {
+        await supabaseAdmin
+            .from("client_messages")
+            .update({
+                status: "edit_send_failed",
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : "Unknown Meta WhatsApp edit send error",
+            })
+            .eq("id", existingMessage.id)
+
+        return {
+            handled: true,
+            ok: false,
+            sent: false,
             error,
         }
     }

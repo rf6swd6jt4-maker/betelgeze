@@ -11,6 +11,7 @@ import {
     isBridgeRequestAuthorized,
     isRecentInboundEcho,
     JsonObject,
+    sendClickUpMessageEditToWhatsApp,
     sendLoggedClickUpMessageToWhatsApp,
     shouldIgnoreClickUpMessage,
     wasClickUpMessageProcessed,
@@ -74,19 +75,15 @@ async function pollMessageReplies(channel: ActiveChannel, parentMessageId: strin
         await getWhatsAppMessageIdForClickUpMessage({
             clientId: channel.client_id,
             clickupMessageId: parentMessageId,
-        })
+    })
     let sent = 0
     let ignored = 0
+    const errors: string[] = []
 
     for (const rawReply of orderedReplies) {
         const reply = extractMessage(rawReply)
 
         if (!reply.id || !reply.body) {
-            ignored += 1
-            continue
-        }
-
-        if (await wasClickUpMessageProcessed(reply.id)) {
             ignored += 1
             continue
         }
@@ -112,6 +109,28 @@ async function pollMessageReplies(channel: ActiveChannel, parentMessageId: strin
             continue
         }
 
+        if (await wasClickUpMessageProcessed(reply.id)) {
+            const editResult = await sendClickUpMessageEditToWhatsApp({
+                channel,
+                messageId: reply.id,
+                body: reply.body,
+                rawPayload: rawReply,
+            })
+
+            if (editResult.sent) {
+                sent += 1
+            } else if (editResult.handled && !editResult.ok) {
+                errors.push(
+                    editResult.error instanceof Error
+                        ? editResult.error.message
+                        : editResult.reason ?? "Unknown ClickUp edit send error"
+                )
+            }
+
+            ignored += 1
+            continue
+        }
+
         const result = await sendLoggedClickUpMessageToWhatsApp({
             channel,
             messageId: reply.id,
@@ -128,6 +147,7 @@ async function pollMessageReplies(channel: ActiveChannel, parentMessageId: strin
     return {
         sent,
         ignored,
+        errors,
     }
 }
 
@@ -155,6 +175,7 @@ async function pollChannel(channel: ActiveChannel) {
             const replyResult = await pollMessageReplies(channel, message.id)
             sent += replyResult.sent
             ignored += replyResult.ignored
+            errors.push(...replyResult.errors)
         } catch (error) {
             errors.push(
                 error instanceof Error
@@ -164,11 +185,6 @@ async function pollChannel(channel: ActiveChannel) {
         }
 
         if (!message.body) {
-            ignored += 1
-            continue
-        }
-
-        if (await wasClickUpMessageProcessed(message.id)) {
             ignored += 1
             continue
         }
@@ -190,6 +206,28 @@ async function pollChannel(channel: ActiveChannel) {
                 body: message.body,
             })
         ) {
+            ignored += 1
+            continue
+        }
+
+        if (await wasClickUpMessageProcessed(message.id)) {
+            const editResult = await sendClickUpMessageEditToWhatsApp({
+                channel,
+                messageId: message.id,
+                body: message.body,
+                rawPayload: rawMessage,
+            })
+
+            if (editResult.sent) {
+                sent += 1
+            } else if (editResult.handled && !editResult.ok) {
+                errors.push(
+                    editResult.error instanceof Error
+                        ? editResult.error.message
+                        : editResult.reason ?? "Unknown ClickUp edit send error"
+                )
+            }
+
             ignored += 1
             continue
         }

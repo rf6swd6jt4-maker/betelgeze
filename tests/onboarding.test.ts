@@ -10,6 +10,7 @@ import { maskToken } from "../lib/security/tokens.ts"
 import {
     displayMessageAddress,
     formatClientInboundMessage,
+    getEquivalentMessageAddresses,
     normalizeMessageAddress,
     toMetaWhatsAppRecipient,
 } from "../lib/client-messages/addresses.ts"
@@ -90,6 +91,37 @@ test("normalizes WhatsApp bridge addresses", () => {
     assert.equal(
         normalizeMessageAddress("whatsapp:15551234567"),
         "whatsapp:+15551234567"
+    )
+    assert.equal(
+        normalizeMessageAddress("+353 089 983 1234"),
+        "whatsapp:+353899831234"
+    )
+    assert.equal(
+        normalizeMessageAddress("089 983 1234"),
+        "whatsapp:+353899831234"
+    )
+    assert.equal(
+        normalizeMessageAddress("00353 089 983 1234"),
+        "whatsapp:+353899831234"
+    )
+    assert.equal(
+        normalizeMessageAddress("+353-089-983-1234 x99"),
+        "whatsapp:+353899831234"
+    )
+    assert.equal(
+        normalizeMessageAddress("whatsapp:+44 (0) 7700 900123"),
+        "whatsapp:+447700900123"
+    )
+})
+
+test("matches legacy Irish WhatsApp number variants", () => {
+    assert.deepEqual(
+        getEquivalentMessageAddresses("whatsapp:+353899831234"),
+        ["whatsapp:+353899831234", "whatsapp:+3530899831234"]
+    )
+    assert.deepEqual(
+        getEquivalentMessageAddresses("whatsapp:+3530899831234"),
+        ["whatsapp:+353899831234", "whatsapp:+3530899831234"]
     )
 })
 

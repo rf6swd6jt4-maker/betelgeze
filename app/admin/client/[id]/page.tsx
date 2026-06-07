@@ -70,23 +70,6 @@ export default async function ClientDetailPage({
         )
     }
 
-    const messageRowsQuery = supabaseAdmin
-        .from("client_messages")
-        .select(
-            "id, direction, provider, from_address, to_address, body, status, error, created_at"
-        )
-        .or(
-            [
-                `client_id.eq.${client.id}`,
-                client.phone ? `from_address.eq.${client.phone}` : null,
-                client.phone ? `to_address.eq.${client.phone}` : null,
-            ]
-                .filter(Boolean)
-                .join(",")
-        )
-        .order("created_at", { ascending: false })
-        .limit(8)
-
     const [
         { data: moduleRows },
         { data: progressRows },
@@ -94,7 +77,6 @@ export default async function ClientDetailPage({
         { data: activityRows },
         { data: formResponseRows },
         { data: communicationChannel },
-        { data: messageRows },
     ] = await Promise.all([
         supabaseAdmin
             .from("client_modules")
@@ -127,7 +109,6 @@ export default async function ClientDetailPage({
             )
             .eq("client_id", client.id)
             .maybeSingle(),
-        messageRowsQuery,
     ])
 
     const assignedModuleKeys = moduleRows?.map((row) => row.module_key) ?? []
@@ -490,57 +471,15 @@ export default async function ClientDetailPage({
 
                     <div className="mt-5">
                         <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                            Recent bridged messages
+                            Bridge debugging
                         </p>
 
-                        <div className="mt-3 space-y-2">
-                            {(messageRows ?? []).length > 0 ? (
-                                messageRows?.map((message) => (
-                                    <div
-                                        key={message.id}
-                                        className="rounded-lg bg-neutral-950 p-3"
-                                    >
-                                        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
-                                            <p className="whitespace-pre-wrap text-sm text-neutral-200">
-                                                {message.body}
-                                            </p>
-
-                                            <span
-                                                className={`w-fit rounded-md px-2 py-1 text-xs ${
-                                                    message.status.includes(
-                                                        "failed"
-                                                    )
-                                                        ? "bg-red-500/10 text-red-200"
-                                                        : "bg-neutral-800 text-neutral-300"
-                                                }`}
-                                            >
-                                                {message.direction} ·{" "}
-                                                {message.status}
-                                            </span>
-                                        </div>
-
-                                        {message.error && (
-                                            <p className="mt-2 text-xs text-red-200">
-                                                {message.error}
-                                            </p>
-                                        )}
-
-                                        <p className="mt-3 text-xs text-neutral-500">
-                                            {new Date(
-                                                message.created_at
-                                            ).toLocaleString("en-IE", {
-                                                dateStyle: "medium",
-                                                timeStyle: "short",
-                                            })}
-                                        </p>
-                                    </div>
-                                ))
-                            ) : (
-                                <p className="text-sm text-neutral-500">
-                                    No bridged messages yet.
-                                </p>
-                            )}
-                        </div>
+                        <Link
+                            href={`/admin?bridgeClient=${client.id}`}
+                            className="mt-3 inline-flex rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:border-neutral-500"
+                        >
+                            View this client&apos;s bridge messages
+                        </Link>
                     </div>
                 </section>
 

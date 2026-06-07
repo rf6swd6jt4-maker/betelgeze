@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import {
     formatClientInboundMessage,
+    getEquivalentMessageAddresses,
     normalizeMessageAddress,
 } from "@/lib/client-messages/addresses"
 import { createClickUpChatMessage } from "@/lib/client-messages/clickup"
@@ -96,13 +97,14 @@ function logDiagnosticInsertError(context: string, error: unknown) {
 }
 
 async function resolveInboundChannel(fromAddress: string) {
+    const equivalentAddresses = getEquivalentMessageAddresses(fromAddress)
     const { data: exactChannel, error: exactChannelError } = await supabaseAdmin
         .from("client_communication_channels")
         .select(
             "id, client_id, external_address, clickup_workspace_id, clickup_channel_id"
         )
         .eq("provider", "meta_whatsapp")
-        .eq("external_address", fromAddress)
+        .in("external_address", equivalentAddresses)
         .eq("is_active", true)
         .maybeSingle()
 
@@ -113,13 +115,16 @@ async function resolveInboundChannel(fromAddress: string) {
     }
 
     if (exactChannel) {
-        return exactChannel as ClientCommunicationChannel
+        return await repairChannelAddress(
+            exactChannel as ClientCommunicationChannel,
+            fromAddress
+        )
     }
 
     const { data: client, error: clientError } = await supabaseAdmin
         .from("clients")
         .select("id")
-        .eq("phone", fromAddress)
+        .in("phone", equivalentAddresses)
         .is("archived_at", null)
         .maybeSingle()
 
@@ -150,27 +155,37 @@ async function resolveInboundChannel(fromAddress: string) {
 
     if (!clientChannel) return null
 
-    if (clientChannel.external_address !== fromAddress) {
-        const { error: updateError } = await supabaseAdmin
-            .from("client_communication_channels")
-            .update({
-                external_address: fromAddress,
-                updated_at: new Date().toISOString(),
-            })
-            .eq("id", clientChannel.id)
+    return await repairChannelAddress(
+        clientChannel as ClientCommunicationChannel,
+        fromAddress
+    )
+}
 
-        if (updateError) {
-            console.error(
-                "Meta WhatsApp bridge could not repair channel address",
-                updateError.message
-            )
-        }
+async function repairChannelAddress(
+    channel: ClientCommunicationChannel,
+    normalizedAddress: string
+) {
+    if (channel.external_address === normalizedAddress) return channel
+
+    const { error: updateError } = await supabaseAdmin
+        .from("client_communication_channels")
+        .update({
+            external_address: normalizedAddress,
+            updated_at: new Date().toISOString(),
+        })
+        .eq("id", channel.id)
+
+    if (updateError) {
+        console.error(
+            "Meta WhatsApp bridge could not repair channel address",
+            updateError.message
+        )
     }
 
     return {
-        ...clientChannel,
-        external_address: fromAddress,
-    } as ClientCommunicationChannel
+        ...channel,
+        external_address: normalizedAddress,
+    }
 }
 
 async function logWebhookError({

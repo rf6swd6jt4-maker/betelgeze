@@ -103,6 +103,12 @@ export default async function EditClientPage({
                         className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
                     />
 
+                    <p className="mt-2 text-xs text-neutral-500">
+                        Saved in international WhatsApp format. Formatting
+                        marks, 00 prefixes, and Irish/UK trunk zeros are cleaned
+                        automatically.
+                    </p>
+
                     <label className="mt-6 block text-sm text-neutral-300">
                         Client email
                     </label>

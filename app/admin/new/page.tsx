@@ -67,7 +67,9 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                     />
 
                     <p className="mt-2 text-xs text-neutral-500">
-                        Use the mobile number they use for WhatsApp.
+                        Use the mobile number they use for WhatsApp. Spaces,
+                        brackets, hyphens, 00 prefixes, and Irish/UK trunk
+                        zeros are cleaned automatically.
                     </p>
 
                     <label className="mt-6 block text-sm text-neutral-300">

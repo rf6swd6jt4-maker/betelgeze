@@ -6,6 +6,13 @@ import { getProgressPercentage } from "@/lib/onboarding/progress"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 export const dynamic = "force-dynamic"
 
+type PageProps = {
+    searchParams: Promise<{
+        bridgeClient?: string
+        bridgeStatus?: string
+    }>
+}
+
 const BASE_STEPS = [
     {
         key: "welcome-video",
@@ -13,8 +20,22 @@ const BASE_STEPS = [
     },
 ]
 
-export default async function AdminPage() {
+const BRIDGE_STATUS_FILTERS = [
+    "posted_to_clickup",
+    "unmatched",
+    "clickup_failed",
+    "media_failed",
+    "unsupported",
+    "webhook_ignored",
+    "webhook_failed",
+    "send_failed",
+    "sent",
+]
+
+export default async function AdminPage({ searchParams }: PageProps) {
     await requireAdmin()
+
+    const { bridgeClient = "all", bridgeStatus = "all" } = await searchParams
 
     const clientsResponse = await supabaseAdmin
         .from("clients")
@@ -40,11 +61,30 @@ export default async function AdminPage() {
         clientsError = fallbackClientsResponse.error
     }
 
+    let bridgeMessagesQuery = supabaseAdmin
+        .from("client_messages")
+        .select(
+            "id, client_id, direction, from_address, to_address, body, status, error, created_at"
+        )
+        .eq("provider", "meta_whatsapp")
+        .order("created_at", { ascending: false })
+        .limit(40)
+
+    if (bridgeClient === "unmatched") {
+        bridgeMessagesQuery = bridgeMessagesQuery.is("client_id", null)
+    } else if (bridgeClient !== "all") {
+        bridgeMessagesQuery = bridgeMessagesQuery.eq("client_id", bridgeClient)
+    }
+
+    if (bridgeStatus !== "all") {
+        bridgeMessagesQuery = bridgeMessagesQuery.eq("status", bridgeStatus)
+    }
+
     const [
         { data: progressRows, error: progressError },
         { data: moduleRows, error: modulesError },
         { data: communicationRows, error: communicationError },
-        { data: diagnosticRows, error: diagnosticError },
+        { data: bridgeMessageRows, error: bridgeMessagesError },
     ] = await Promise.all([
         supabaseAdmin
             .from("client_progress")
@@ -53,15 +93,7 @@ export default async function AdminPage() {
         supabaseAdmin
             .from("client_communication_channels")
             .select("client_id, clickup_channel_id, is_active"),
-        supabaseAdmin
-            .from("client_messages")
-            .select(
-                "id, direction, from_address, to_address, body, status, error, created_at"
-            )
-            .eq("provider", "meta_whatsapp")
-            .is("client_id", null)
-            .order("created_at", { ascending: false })
-            .limit(6),
+        bridgeMessagesQuery,
     ])
 
     if (
@@ -69,7 +101,7 @@ export default async function AdminPage() {
         progressError ||
         modulesError ||
         communicationError ||
-        diagnosticError
+        bridgeMessagesError
     ) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-6 text-white">
@@ -116,6 +148,10 @@ export default async function AdminPage() {
             is_active: row.is_active,
         })
     }
+
+    const clientNameById = new Map(
+        (clients ?? []).map((client) => [client.id, client.name ?? "Unnamed client"])
+    )
 
     const clientSummaries = (clients ?? []).map((client) => {
         const completedKeys = progressByClient.get(client.id) ?? []
@@ -221,75 +257,161 @@ export default async function AdminPage() {
                     ))}
                 </div>
 
-                {(diagnosticRows ?? []).length > 0 && (
-                    <section className="mt-5 rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
-                        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
-                            <div>
-                                <p className="text-xs font-medium uppercase tracking-wide text-amber-200/80">
-                                    Unmatched bridge diagnostics
-                                </p>
+                <section className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                    <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                                Bridge messages
+                            </p>
 
-                                <p className="mt-1 text-sm text-amber-50/80">
-                                    These webhook events reached the app but
-                                    were not attached to a client.
-                                </p>
-                            </div>
+                            <p className="mt-1 text-sm text-neutral-400">
+                                Recent WhatsApp and ClickUp bridge events in one
+                                place.
+                            </p>
                         </div>
 
-                        <div className="mt-3 grid gap-2">
-                            {diagnosticRows?.map((message) => (
-                                <div
-                                    key={message.id}
-                                    className="rounded-lg bg-neutral-950 p-3"
-                                >
-                                    <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
-                                        <div>
-                                            <p className="whitespace-pre-wrap text-sm text-neutral-100">
-                                                {message.body}
-                                            </p>
+                        <form className="grid gap-2 sm:grid-cols-3" action="/admin">
+                            <div>
+                                <label className="text-xs text-neutral-500">
+                                    Client
+                                </label>
 
-                                            {(message.from_address ||
-                                                message.to_address) && (
-                                                <p className="mt-1 break-all text-xs text-neutral-500">
-                                                    {message.from_address
-                                                        ? `From ${displayMessageAddress(message.from_address)}`
-                                                        : null}
-                                                    {message.from_address &&
-                                                    message.to_address
-                                                        ? " · "
-                                                        : null}
-                                                    {message.to_address
-                                                        ? `To ${displayMessageAddress(message.to_address)}`
-                                                        : null}
+                                <select
+                                    name="bridgeClient"
+                                    defaultValue={bridgeClient}
+                                    className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white"
+                                >
+                                    <option value="all">All clients</option>
+                                    <option value="unmatched">
+                                        Unmatched only
+                                    </option>
+
+                                    {(clients ?? []).map((client) => (
+                                        <option
+                                            key={client.id}
+                                            value={client.id}
+                                        >
+                                            {client.name ?? "Unnamed client"}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-xs text-neutral-500">
+                                    Status
+                                </label>
+
+                                <select
+                                    name="bridgeStatus"
+                                    defaultValue={bridgeStatus}
+                                    className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white"
+                                >
+                                    <option value="all">All statuses</option>
+
+                                    {BRIDGE_STATUS_FILTERS.map((status) => (
+                                        <option key={status} value={status}>
+                                            {status}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="flex items-end gap-2">
+                                <button className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-black">
+                                    Filter
+                                </button>
+
+                                <Link
+                                    href="/admin"
+                                    className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-300"
+                                >
+                                    Reset
+                                </Link>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div className="mt-4 grid gap-2">
+                        {(bridgeMessageRows ?? []).length > 0 ? (
+                            bridgeMessageRows?.map((message) => {
+                                const clientName = message.client_id
+                                    ? clientNameById.get(message.client_id) ??
+                                      "Archived or unknown client"
+                                    : "Unmatched"
+                                const isProblem =
+                                    message.status.includes("failed") ||
+                                    message.status === "unmatched" ||
+                                    message.status === "unsupported"
+
+                                return (
+                                    <div
+                                        key={message.id}
+                                        className="rounded-lg bg-neutral-950 p-3"
+                                    >
+                                        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                                            <div>
+                                                <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                                                    {clientName}
                                                 </p>
-                                            )}
+
+                                                <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-100">
+                                                    {message.body}
+                                                </p>
+
+                                                {(message.from_address ||
+                                                    message.to_address) && (
+                                                    <p className="mt-2 break-all text-xs text-neutral-500">
+                                                        {message.from_address
+                                                            ? `From ${displayMessageAddress(message.from_address)}`
+                                                            : null}
+                                                        {message.from_address &&
+                                                        message.to_address
+                                                            ? " · "
+                                                            : null}
+                                                        {message.to_address
+                                                            ? `To ${displayMessageAddress(message.to_address)}`
+                                                            : null}
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            <span
+                                                className={`w-fit rounded-md px-2 py-1 text-xs ${
+                                                    isProblem
+                                                        ? "bg-red-500/10 text-red-200"
+                                                        : "bg-neutral-800 text-neutral-300"
+                                                }`}
+                                            >
+                                                {message.direction} ·{" "}
+                                                {message.status}
+                                            </span>
                                         </div>
 
-                                        <span className="w-fit rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-100">
-                                            {message.direction} ·{" "}
-                                            {message.status}
-                                        </span>
-                                    </div>
+                                        {message.error && (
+                                            <p className="mt-2 text-xs text-red-200">
+                                                {message.error}
+                                            </p>
+                                        )}
 
-                                    {message.error && (
-                                        <p className="mt-2 text-xs text-red-200">
-                                            {message.error}
+                                        <p className="mt-3 text-xs text-neutral-500">
+                                            {new Date(
+                                                message.created_at
+                                            ).toLocaleString("en-IE", {
+                                                dateStyle: "medium",
+                                                timeStyle: "short",
+                                            })}
                                         </p>
-                                    )}
-
-                                    <p className="mt-3 text-xs text-neutral-500">
-                                        {new Date(
-                                            message.created_at
-                                        ).toLocaleString("en-IE", {
-                                            dateStyle: "medium",
-                                            timeStyle: "short",
-                                        })}
-                                    </p>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-                )}
+                                    </div>
+                                )
+                            })
+                        ) : (
+                            <p className="rounded-lg bg-neutral-950 p-3 text-sm text-neutral-500">
+                                No bridge messages match this filter.
+                            </p>
+                        )}
+                    </div>
+                </section>
 
                 <div className="mt-5 grid gap-3 md:hidden">
                     {clientSummaries.map(

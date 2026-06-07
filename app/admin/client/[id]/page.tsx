@@ -19,6 +19,7 @@ import { ClientActionsMenu } from "./ClientActionsMenu"
 import {
     addClientNote,
     archiveClient,
+    clearClientBridgeMessages,
     clearClientProgress,
     deleteClientNote,
     deleteClient,
@@ -36,6 +37,7 @@ type PageProps = {
     }>
     searchParams: Promise<{
         bridgeError?: string
+        clearError?: string
         deleteError?: string
     }>
 }
@@ -55,7 +57,7 @@ export default async function ClientDetailPage({
     await requireAdmin()
 
     const { id } = await params
-    const { bridgeError, deleteError } = await searchParams
+    const { bridgeError, clearError, deleteError } = await searchParams
 
     const { data: client } = await supabaseAdmin
         .from("clients")
@@ -267,6 +269,14 @@ export default async function ClientDetailPage({
                     <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
                         Client deletion was stopped because the ClickUp Space
                         or channel could not be removed. Check the timeline for
+                        the ClickUp error.
+                    </div>
+                )}
+
+                {clearError === "clickup-clear" && (
+                    <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                        Messages were not cleared because the ClickUp Chat
+                        channel could not be cleared. Check the timeline for
                         the ClickUp error.
                     </div>
                 )}
@@ -666,6 +676,34 @@ export default async function ClientDetailPage({
                     <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-neutral-500">
                         Recent bridged messages
                     </summary>
+
+                    <div className="mt-4 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+                        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                            <div>
+                                <p className="text-sm font-medium text-neutral-200">
+                                    Clear message history
+                                </p>
+
+                                <p className="mt-1 text-xs text-neutral-500">
+                                    Clears this admin bridge log and deletes
+                                    messages from the linked ClickUp Chat
+                                    channel. The client&apos;s WhatsApp app
+                                    history cannot be cleared remotely.
+                                </p>
+                            </div>
+
+                            <form
+                                action={async () => {
+                                    "use server"
+                                    await clearClientBridgeMessages(client.id)
+                                }}
+                            >
+                                <button className="w-full rounded-lg border border-red-500/40 px-3 py-2 text-sm font-medium text-red-200 hover:bg-red-950/40 sm:w-auto">
+                                    Clear messages
+                                </button>
+                            </form>
+                        </div>
+                    </div>
 
                     <div className="mt-4 space-y-2">
                         {(messageRows ?? []).length > 0 ? (

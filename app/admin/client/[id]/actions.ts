@@ -11,6 +11,7 @@ import {
     deleteClientClickUpResources,
     ensureClientClickUpChannel,
 } from "@/lib/client-messages/clickup-channel-setup"
+import { clearClickUpChatChannelMessages } from "@/lib/client-messages/clickup"
 import { checkMetaWhatsAppAccess } from "@/lib/client-messages/meta-whatsapp"
 
 async function addActivity(
@@ -180,6 +181,52 @@ export async function checkMetaWhatsAppConnection(clientId: string) {
                 ? `Meta WhatsApp connection failed: ${error.message}`
                 : "Meta WhatsApp connection failed"
         )
+    }
+
+    redirect(`/admin/client/${clientId}`)
+}
+
+export async function clearClientBridgeMessages(clientId: string) {
+    await requireAdmin()
+
+    const { data: channel } = await supabaseAdmin
+        .from("client_communication_channels")
+        .select("id, clickup_workspace_id, clickup_channel_id")
+        .eq("client_id", clientId)
+        .eq("provider", "meta_whatsapp")
+        .maybeSingle()
+
+    try {
+        let deletedClickUpMessages = 0
+
+        if (channel?.clickup_channel_id) {
+            const result = await clearClickUpChatChannelMessages({
+                workspaceId: channel.clickup_workspace_id,
+                channelId: channel.clickup_channel_id,
+            })
+            deletedClickUpMessages = result.deleted
+        }
+
+        await supabaseAdmin
+            .from("client_messages")
+            .delete()
+            .eq("client_id", clientId)
+
+        await addActivity(
+            clientId,
+            "client_messages_cleared",
+            `Bridge message log cleared. Deleted ${deletedClickUpMessages} ClickUp Chat messages. WhatsApp client chats cannot be cleared remotely.`
+        )
+    } catch (error) {
+        await addActivity(
+            clientId,
+            "client_messages_clear_failed",
+            error instanceof Error
+                ? `Message clear failed: ${error.message}`
+                : "Message clear failed"
+        )
+
+        redirect(`/admin/client/${clientId}?clearError=clickup-clear`)
     }
 
     redirect(`/admin/client/${clientId}`)

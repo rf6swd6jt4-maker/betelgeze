@@ -17,17 +17,24 @@ type RetrieveClickUpChannelMessagesInput = {
     workspaceId?: string | null
     channelId: string
     limit?: number
+    cursor?: string | null
 }
 
 type RetrieveClickUpMessageRepliesInput = {
     workspaceId?: string | null
     messageId: string
     limit?: number
+    cursor?: string | null
 }
 
 type DeleteClickUpChannelInput = {
     workspaceId?: string | null
     channelId: string
+}
+
+type DeleteClickUpMessageInput = {
+    workspaceId?: string | null
+    messageId: string
 }
 
 type DeleteClickUpSpaceInput = {
@@ -153,6 +160,77 @@ function getClickUpErrorMessage({
     }
 
     return `${action} failed with ${status}: ${body}`
+}
+
+function getClickUpResponseMessages(response: unknown) {
+    const payload = response as {
+        data?: unknown
+        messages?: unknown
+    } | null
+    const candidates = [response, payload?.data, payload?.messages]
+
+    for (const candidate of candidates) {
+        if (Array.isArray(candidate)) {
+            return candidate.filter(
+                (item): item is Record<string, unknown> =>
+                    Boolean(item) &&
+                    typeof item === "object" &&
+                    !Array.isArray(item)
+            )
+        }
+    }
+
+    return []
+}
+
+function getClickUpResponseCursor(response: unknown) {
+    if (!response || typeof response !== "object" || Array.isArray(response)) {
+        return null
+    }
+
+    const payload = response as {
+        cursor?: unknown
+        next_cursor?: unknown
+        nextCursor?: unknown
+        pagination?: {
+            cursor?: unknown
+            next_cursor?: unknown
+            nextCursor?: unknown
+        }
+    }
+    const cursor =
+        payload.next_cursor ??
+        payload.nextCursor ??
+        payload.cursor ??
+        payload.pagination?.next_cursor ??
+        payload.pagination?.nextCursor ??
+        payload.pagination?.cursor
+
+    return typeof cursor === "string" && cursor.trim() ? cursor.trim() : null
+}
+
+function getClickUpMessageId(message: Record<string, unknown>) {
+    const id = message.id ?? message.message_id
+
+    if (typeof id === "string" && id.trim()) {
+        return id.trim()
+    }
+
+    if (typeof id === "number") {
+        return String(id)
+    }
+
+    const nestedMessage = message.message
+
+    if (
+        nestedMessage &&
+        typeof nestedMessage === "object" &&
+        !Array.isArray(nestedMessage)
+    ) {
+        return getClickUpMessageId(nestedMessage as Record<string, unknown>)
+    }
+
+    return null
 }
 
 export async function createClickUpSpace({
@@ -420,12 +498,14 @@ export async function retrieveClickUpChannelMessages({
     workspaceId,
     channelId,
     limit = 20,
+    cursor,
 }: RetrieveClickUpChannelMessagesInput) {
     const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
     const params = new URLSearchParams({
         limit: String(limit),
         content_format: "text/md",
     })
+    if (cursor) params.set("cursor", cursor)
 
     const response = await fetch(
         `https://api.clickup.com/api/v3/workspaces/${resolvedWorkspaceId}/chat/channels/${channelId}/messages?${params.toString()}`,
@@ -456,12 +536,14 @@ export async function retrieveClickUpMessageReplies({
     workspaceId,
     messageId,
     limit = 20,
+    cursor,
 }: RetrieveClickUpMessageRepliesInput) {
     const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
     const params = new URLSearchParams({
         limit: String(limit),
         content_format: "text/md",
     })
+    if (cursor) params.set("cursor", cursor)
 
     const response = await fetch(
         `https://api.clickup.com/api/v3/workspaces/${resolvedWorkspaceId}/chat/messages/${messageId}/replies?${params.toString()}`,
@@ -486,4 +568,107 @@ export async function retrieveClickUpMessageReplies({
     }
 
     return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function deleteClickUpChatMessage({
+    workspaceId,
+    messageId,
+}: DeleteClickUpMessageInput) {
+    const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
+
+    const response = await fetch(
+        `https://api.clickup.com/api/v3/workspaces/${resolvedWorkspaceId}/chat/messages/${messageId}`,
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                accept: "application/json",
+            },
+        }
+    )
+    const responseBody = await response.text()
+
+    if (!response.ok && response.status !== 404) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp message deletion",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+}
+
+export async function clearClickUpChatChannelMessages({
+    workspaceId,
+    channelId,
+}: DeleteClickUpChannelInput) {
+    let deleted = 0
+    let cursor: string | null = null
+    const seenCursors = new Set<string>()
+
+    do {
+        const response = await retrieveClickUpChannelMessages({
+            workspaceId,
+            channelId,
+            limit: 100,
+            cursor,
+        })
+        const messages = getClickUpResponseMessages(response)
+
+        for (const message of messages) {
+            const messageId = getClickUpMessageId(message)
+
+            if (!messageId) continue
+
+            let replyCursor: string | null = null
+            const seenReplyCursors = new Set<string>()
+
+            do {
+                const replyResponse = await retrieveClickUpMessageReplies({
+                    workspaceId,
+                    messageId,
+                    limit: 100,
+                    cursor: replyCursor,
+                })
+                const replies = getClickUpResponseMessages(replyResponse)
+
+                for (const reply of replies) {
+                    const replyId = getClickUpMessageId(reply)
+
+                    if (!replyId) continue
+
+                    await deleteClickUpChatMessage({
+                        workspaceId,
+                        messageId: replyId,
+                    })
+                    deleted += 1
+                }
+
+                replyCursor = getClickUpResponseCursor(replyResponse)
+
+                if (replyCursor && seenReplyCursors.has(replyCursor)) {
+                    replyCursor = null
+                } else if (replyCursor) {
+                    seenReplyCursors.add(replyCursor)
+                }
+            } while (replyCursor)
+
+            await deleteClickUpChatMessage({
+                workspaceId,
+                messageId,
+            })
+            deleted += 1
+        }
+
+        cursor = getClickUpResponseCursor(response)
+
+        if (cursor && seenCursors.has(cursor)) {
+            cursor = null
+        } else if (cursor) {
+            seenCursors.add(cursor)
+        }
+    } while (cursor)
+
+    return { deleted }
 }

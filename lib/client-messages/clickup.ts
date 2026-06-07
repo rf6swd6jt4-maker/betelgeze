@@ -50,6 +50,7 @@ type CreateClickUpChannelInput = {
     name: string
     description?: string
     topic?: string
+    userIds?: string[]
     visibility?: "PUBLIC" | "PRIVATE"
 }
 
@@ -59,6 +60,7 @@ type CreateClickUpLocationChannelInput = {
     locationType: "space" | "folder" | "list"
     description?: string
     topic?: string
+    userIds?: string[]
     visibility?: "PUBLIC" | "PRIVATE"
 }
 
@@ -71,16 +73,27 @@ type CreateClickUpSpaceInput = {
 type CreateClickUpFolderInput = {
     spaceId: string
     name: string
+    color?: string
+}
+
+type CreateClickUpListInput = {
+    folderId: string
+    name: string
+    content?: string
+    markdownContent?: string
+    status?: string
 }
 
 type ClickUpAuthorizedWorkspace = {
     id?: string | number
     name?: string
+    members?: unknown[]
 }
 
 export type AuthorizedClickUpWorkspace = {
     id: string
     name: string
+    memberIds: string[]
 }
 
 export function hasClickUpConfig() {
@@ -119,7 +132,45 @@ export async function getAuthorizedClickUpWorkspaces(): Promise<
     return teams.map((team: ClickUpAuthorizedWorkspace) => ({
         id: String(team.id ?? ""),
         name: team.name ?? "Unnamed workspace",
+        memberIds: getClickUpWorkspaceMemberIdsFromTeam(team),
     }))
+}
+
+function getClickUpWorkspaceMemberIdsFromTeam(team: ClickUpAuthorizedWorkspace) {
+    const members = Array.isArray(team.members) ? team.members : []
+    const memberIds = new Set<string>()
+
+    for (const member of members) {
+        if (!member || typeof member !== "object" || Array.isArray(member)) {
+            continue
+        }
+
+        const value = member as {
+            id?: unknown
+            user?: {
+                id?: unknown
+            }
+        }
+        const id = value.user?.id ?? value.id
+
+        if (typeof id === "string" && id.trim()) {
+            memberIds.add(id.trim())
+        } else if (typeof id === "number") {
+            memberIds.add(String(id))
+        }
+    }
+
+    return [...memberIds]
+}
+
+export async function getClickUpWorkspaceMemberIds(workspaceId?: string | null) {
+    const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
+    const workspaces = await getAuthorizedClickUpWorkspaces()
+    const workspace = workspaces.find(
+        (candidate) => candidate.id === resolvedWorkspaceId
+    )
+
+    return workspace?.memberIds ?? []
 }
 
 export function getClickUpWorkspaceId(value?: string | null) {
@@ -317,9 +368,64 @@ export async function deleteClickUpSpace({
 export async function createClickUpFolder({
     spaceId,
     name,
+    color,
 }: CreateClickUpFolderInput) {
+    const createFolder = async (body: Record<string, unknown>) => {
+        const response = await fetch(
+            `https://api.clickup.com/api/v2/space/${spaceId}/folder`,
+            {
+                method: "POST",
+                headers: {
+                    Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                    "Content-Type": "application/json",
+                    accept: "application/json",
+                },
+                body: JSON.stringify(body),
+            }
+        )
+        const responseBody = await response.text()
+
+        if (!response.ok) {
+            throw new Error(
+                getClickUpErrorMessage({
+                    action: "ClickUp Folder",
+                    status: response.status,
+                    body: responseBody,
+                })
+            )
+        }
+
+        return responseBody ? JSON.parse(responseBody) : null
+    }
+
+    if (color) {
+        try {
+            return await createFolder({
+                name,
+                color,
+            })
+        } catch (error) {
+            console.warn(
+                "ClickUp Folder color was not applied; retrying without color.",
+                error instanceof Error ? error.message : error
+            )
+        }
+    }
+
+    return createFolder({
+        name,
+    })
+}
+
+export async function createClickUpList({
+    folderId,
+    name,
+    content,
+    markdownContent,
+    status,
+}: CreateClickUpListInput) {
     const response = await fetch(
-        `https://api.clickup.com/api/v2/space/${spaceId}/folder`,
+        `https://api.clickup.com/api/v2/folder/${folderId}/list`,
         {
             method: "POST",
             headers: {
@@ -329,6 +435,9 @@ export async function createClickUpFolder({
             },
             body: JSON.stringify({
                 name,
+                content,
+                markdown_content: markdownContent,
+                status,
             }),
         }
     )
@@ -338,7 +447,7 @@ export async function createClickUpFolder({
     if (!response.ok) {
         throw new Error(
             getClickUpErrorMessage({
-                action: "ClickUp Folder",
+                action: "ClickUp List",
                 status: response.status,
                 body: responseBody,
             })
@@ -379,6 +488,7 @@ export async function createClickUpChatChannel({
     name,
     description,
     topic,
+    userIds,
     visibility = "PUBLIC",
 }: CreateClickUpChannelInput) {
     const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
@@ -396,6 +506,7 @@ export async function createClickUpChatChannel({
                 name,
                 description,
                 topic,
+                user_ids: userIds?.slice(0, 100),
                 visibility,
             }),
         }
@@ -451,6 +562,7 @@ export async function createClickUpLocationChatChannel({
     locationType,
     description,
     topic,
+    userIds,
     visibility = "PUBLIC",
 }: CreateClickUpLocationChannelInput) {
     const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
@@ -467,6 +579,7 @@ export async function createClickUpLocationChatChannel({
             body: JSON.stringify({
                 description,
                 topic,
+                user_ids: userIds?.slice(0, 100),
                 visibility,
                 location: {
                     id: locationId,

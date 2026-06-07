@@ -4,11 +4,13 @@ import {
     AuthorizedClickUpWorkspace,
     createClickUpChatChannel,
     createClickUpFolder,
+    createClickUpList,
     createClickUpLocationChatChannel,
     deleteClickUpChatChannel,
     deleteClickUpFolder,
     deleteClickUpSpace,
     getClickUpClientsSpaceId,
+    getClickUpWorkspaceMemberIds,
     getClickUpWorkspaceId,
     getAuthorizedClickUpWorkspaces,
     hasClickUpConfig,
@@ -49,6 +51,17 @@ function getEntityId(response: unknown): string | null {
 function getErrorMessage(error: unknown) {
     return error instanceof Error ? error.message : "Unknown ClickUp error"
 }
+
+const CLIENT_FOLDER_COLOR = "#e50000"
+
+const CLIENT_FOLDER_LISTS = [
+    "01 Client Overview",
+    "02 Onboarding information",
+    "03 Project",
+    "04 Meetings & Calls",
+    "05 Goals & KPIs",
+    "06 Strategy",
+]
 
 async function addActivity(
     clientId: string,
@@ -213,6 +226,7 @@ export async function ensureClientClickUpChannel(clientId: string) {
         const clickupFolder = await createClickUpFolder({
             spaceId: clickupClientsSpaceId,
             name: clientFolderName,
+            color: CLIENT_FOLDER_COLOR,
         })
         const clickupFolderId = getEntityId(clickupFolder)
 
@@ -220,6 +234,17 @@ export async function ensureClientClickUpChannel(clientId: string) {
             throw new Error("ClickUp did not return a Folder ID")
         }
 
+        await Promise.all(
+            CLIENT_FOLDER_LISTS.map((listName) =>
+                createClickUpList({
+                    folderId: clickupFolderId,
+                    name: listName,
+                    status: "red",
+                })
+            )
+        )
+
+        const workspaceUserIds = await getClickUpWorkspaceMemberIds()
         let clickupChannelId: string | null = null
         let channelLocation = "folder"
         let folderChannelError: string | null = null
@@ -230,6 +255,7 @@ export async function ensureClientClickUpChannel(clientId: string) {
                 locationType: "folder",
                 description: `Client communication channel for ${clientName}.`,
                 topic: "Client fulfilment communication",
+                userIds: workspaceUserIds,
                 visibility: "PUBLIC",
             })
 
@@ -243,6 +269,7 @@ export async function ensureClientClickUpChannel(clientId: string) {
                 name: clientFolderName,
                 description: `Client communication channel for ${clientName}.`,
                 topic: "Client fulfilment communication",
+                userIds: workspaceUserIds,
                 visibility: "PUBLIC",
             })
 

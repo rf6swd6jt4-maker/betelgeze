@@ -334,18 +334,23 @@ function formatMediaMessageForClickUp({
     type,
     url,
     caption,
+    fileName,
 }: {
     type: string
     url: string
     caption?: string
+    fileName?: string
 }) {
     const mediaName = titleCase(type)
-    const mediaLink = `${mediaName}: [open ${type}](${url})`
+    const mediaLink =
+        type === "image"
+            ? `![${caption?.trim() || mediaName}](${url})\n[Open image](${url})`
+            : `${mediaName}: [${fileName || `open ${type}`}](${url})`
     const captionLines = caption?.trim()
         ? ["", caption.trim()]
         : []
 
-    return [mediaLink, ...captionLines].join("\n")
+    return [mediaLink, ...captionLines, "<!-- bridge-skip -->"].join("\n")
 }
 
 async function getInboundMessageContent({
@@ -404,6 +409,7 @@ async function getInboundMessageContent({
         type: mediaPayload.type,
         url: storedMedia.url,
         caption,
+        fileName,
     })
 
     return {

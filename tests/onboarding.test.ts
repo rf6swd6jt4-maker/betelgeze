@@ -186,6 +186,14 @@ test("ignores ClickUp messages that were posted by the bridge", () => {
     )
     assert.equal(
         shouldIgnoreClickUpMessage({
+            body: "![Image](https://onboarding.scaylup.com/api/client-messages/media/client/image.jpg)\n[Open image](https://onboarding.scaylup.com/api/client-messages/media/client/image.jpg)",
+            authorId: null,
+            authorName: "Sarah",
+        }),
+        true
+    )
+    assert.equal(
+        shouldIgnoreClickUpMessage({
             body: "Could you send a video of the finished room?",
             authorId: null,
             authorName: "Sarah",

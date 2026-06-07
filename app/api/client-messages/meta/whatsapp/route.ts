@@ -80,11 +80,97 @@ type InboundMessageContent = {
     }
 }
 
+type ClientCommunicationChannel = {
+    id: string
+    client_id: string
+    external_address: string
+    clickup_workspace_id: string | null
+    clickup_channel_id: string
+}
+
 function logDiagnosticInsertError(context: string, error: unknown) {
     console.error(
         `Meta WhatsApp bridge diagnostic failed: ${context}`,
         error instanceof Error ? error.message : error
     )
+}
+
+async function resolveInboundChannel(fromAddress: string) {
+    const { data: exactChannel, error: exactChannelError } = await supabaseAdmin
+        .from("client_communication_channels")
+        .select(
+            "id, client_id, external_address, clickup_workspace_id, clickup_channel_id"
+        )
+        .eq("provider", "meta_whatsapp")
+        .eq("external_address", fromAddress)
+        .eq("is_active", true)
+        .maybeSingle()
+
+    if (exactChannelError) {
+        throw new Error(
+            `Could not look up WhatsApp channel: ${exactChannelError.message}`
+        )
+    }
+
+    if (exactChannel) {
+        return exactChannel as ClientCommunicationChannel
+    }
+
+    const { data: client, error: clientError } = await supabaseAdmin
+        .from("clients")
+        .select("id")
+        .eq("phone", fromAddress)
+        .is("archived_at", null)
+        .maybeSingle()
+
+    if (clientError) {
+        throw new Error(
+            `Could not look up client by WhatsApp phone: ${clientError.message}`
+        )
+    }
+
+    if (!client) return null
+
+    const { data: clientChannel, error: clientChannelError } =
+        await supabaseAdmin
+            .from("client_communication_channels")
+            .select(
+                "id, client_id, external_address, clickup_workspace_id, clickup_channel_id"
+            )
+            .eq("client_id", client.id)
+            .eq("provider", "meta_whatsapp")
+            .eq("is_active", true)
+            .maybeSingle()
+
+    if (clientChannelError) {
+        throw new Error(
+            `Could not look up client WhatsApp channel: ${clientChannelError.message}`
+        )
+    }
+
+    if (!clientChannel) return null
+
+    if (clientChannel.external_address !== fromAddress) {
+        const { error: updateError } = await supabaseAdmin
+            .from("client_communication_channels")
+            .update({
+                external_address: fromAddress,
+                updated_at: new Date().toISOString(),
+            })
+            .eq("id", clientChannel.id)
+
+        if (updateError) {
+            console.error(
+                "Meta WhatsApp bridge could not repair channel address",
+                updateError.message
+            )
+        }
+    }
+
+    return {
+        ...clientChannel,
+        external_address: fromAddress,
+    } as ClientCommunicationChannel
 }
 
 async function logWebhookError({
@@ -351,13 +437,7 @@ async function handleInboundMessage({
 
     if (existingMessage) return
 
-    const { data: channel } = await supabaseAdmin
-        .from("client_communication_channels")
-        .select("id, client_id, clickup_workspace_id, clickup_channel_id")
-        .eq("provider", "meta_whatsapp")
-        .eq("external_address", from)
-        .eq("is_active", true)
-        .maybeSingle()
+    const channel = await resolveInboundChannel(from)
 
     if (!channel) {
         const unmatchedBody =

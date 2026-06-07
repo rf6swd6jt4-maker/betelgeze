@@ -1,8 +1,12 @@
 import { NextRequest } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { retrieveClickUpChannelMessages } from "@/lib/client-messages/clickup"
+import {
+    retrieveClickUpChannelMessages,
+    retrieveClickUpMessageReplies,
+} from "@/lib/client-messages/clickup"
 import {
     firstString,
+    getWhatsAppMessageIdForClickUpMessage,
     getMessagesFromResponse,
     isBridgeRequestAuthorized,
     isRecentInboundEcho,
@@ -58,6 +62,75 @@ function extractMessage(message: JsonObject) {
     }
 }
 
+async function pollMessageReplies(channel: ActiveChannel, parentMessageId: string) {
+    const response = await retrieveClickUpMessageReplies({
+        workspaceId: channel.clickup_workspace_id,
+        messageId: parentMessageId,
+        limit: 20,
+    })
+    const replies = getMessagesFromResponse(response)
+    const orderedReplies = [...replies].reverse()
+    const replyToWhatsAppMessageId =
+        await getWhatsAppMessageIdForClickUpMessage({
+            clientId: channel.client_id,
+            clickupMessageId: parentMessageId,
+        })
+    let sent = 0
+    let ignored = 0
+
+    for (const rawReply of orderedReplies) {
+        const reply = extractMessage(rawReply)
+
+        if (!reply.id || !reply.body) {
+            ignored += 1
+            continue
+        }
+
+        if (await wasClickUpMessageProcessed(reply.id)) {
+            ignored += 1
+            continue
+        }
+
+        if (
+            shouldIgnoreClickUpMessage({
+                body: reply.body,
+                authorId: reply.authorId,
+                authorName: reply.authorName,
+            })
+        ) {
+            ignored += 1
+            continue
+        }
+
+        if (
+            await isRecentInboundEcho({
+                clientId: channel.client_id,
+                body: reply.body,
+            })
+        ) {
+            ignored += 1
+            continue
+        }
+
+        const result = await sendLoggedClickUpMessageToWhatsApp({
+            channel,
+            messageId: reply.id,
+            body: reply.body,
+            rawPayload: rawReply,
+            replyToWhatsAppMessageId,
+        })
+
+        if (result.ok) {
+            sent += 1
+        }
+    }
+
+    return {
+        sent,
+        ignored,
+    }
+}
+
 async function pollChannel(channel: ActiveChannel) {
     const response = await retrieveClickUpChannelMessages({
         workspaceId: channel.clickup_workspace_id,
@@ -68,11 +141,29 @@ async function pollChannel(channel: ActiveChannel) {
     const orderedMessages = [...messages].reverse()
     let sent = 0
     let ignored = 0
+    const errors: string[] = []
 
     for (const rawMessage of orderedMessages) {
         const message = extractMessage(rawMessage)
 
-        if (!message.id || !message.body) {
+        if (!message.id) {
+            ignored += 1
+            continue
+        }
+
+        try {
+            const replyResult = await pollMessageReplies(channel, message.id)
+            sent += replyResult.sent
+            ignored += replyResult.ignored
+        } catch (error) {
+            errors.push(
+                error instanceof Error
+                    ? error.message
+                    : "Unknown ClickUp reply polling error"
+            )
+        }
+
+        if (!message.body) {
             ignored += 1
             continue
         }
@@ -118,6 +209,7 @@ async function pollChannel(channel: ActiveChannel) {
     return {
         sent,
         ignored,
+        errors,
     }
 }
 
@@ -151,6 +243,7 @@ export async function GET(request: NextRequest) {
             const result = await pollChannel(channel)
             sent += result.sent
             ignored += result.ignored
+            errors.push(...result.errors)
         } catch (error) {
             errors.push(
                 error instanceof Error

@@ -23,6 +23,7 @@ type SendLoggedClickUpMessageToWhatsAppInput = {
     messageId?: string | null
     body: string
     rawPayload: JsonObject
+    replyToWhatsAppMessageId?: string | null
 }
 
 type BridgeRequest = {
@@ -164,11 +165,32 @@ export async function isRecentInboundEcho({
     )
 }
 
+export async function getWhatsAppMessageIdForClickUpMessage({
+    clientId,
+    clickupMessageId,
+}: {
+    clientId: string
+    clickupMessageId: string
+}) {
+    const { data: message } = await supabaseAdmin
+        .from("client_messages")
+        .select("whatsapp_message_id")
+        .eq("client_id", clientId)
+        .eq("clickup_message_id", clickupMessageId)
+        .not("whatsapp_message_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+    return message?.whatsapp_message_id ?? null
+}
+
 export async function sendLoggedClickUpMessageToWhatsApp({
     channel,
     messageId,
     body,
     rawPayload,
+    replyToWhatsAppMessageId,
 }: SendLoggedClickUpMessageToWhatsAppInput) {
     const { data: messageLog } = await supabaseAdmin
         .from("client_messages")
@@ -182,6 +204,7 @@ export async function sendLoggedClickUpMessageToWhatsApp({
             to_address: channel.external_address,
             body,
             status: "sending",
+            reply_to_whatsapp_message_id: replyToWhatsAppMessageId ?? null,
             raw_payload: rawPayload,
         })
         .select("id")
@@ -191,6 +214,7 @@ export async function sendLoggedClickUpMessageToWhatsApp({
         const whatsappMessage = await sendMetaWhatsAppMessage({
             to: channel.external_address,
             body,
+            replyToMessageId: replyToWhatsAppMessageId,
         })
         const whatsappMessageId = whatsappMessage?.messages?.[0]?.id
 
@@ -204,6 +228,8 @@ export async function sendLoggedClickUpMessageToWhatsApp({
                 raw_payload: {
                     ...rawPayload,
                     bridge_whatsapp_message_id: whatsappMessageId ?? null,
+                    bridge_reply_to_whatsapp_message_id:
+                        replyToWhatsAppMessageId ?? null,
                 },
             })
             .eq("id", messageLog?.id)

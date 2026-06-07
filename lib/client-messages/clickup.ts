@@ -19,6 +19,12 @@ type RetrieveClickUpChannelMessagesInput = {
     limit?: number
 }
 
+type RetrieveClickUpMessageRepliesInput = {
+    workspaceId?: string | null
+    messageId: string
+    limit?: number
+}
+
 type DeleteClickUpChannelInput = {
     workspaceId?: string | null
     channelId: string
@@ -437,6 +443,42 @@ export async function retrieveClickUpChannelMessages({
         throw new Error(
             getClickUpErrorMessage({
                 action: "ClickUp message retrieval",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function retrieveClickUpMessageReplies({
+    workspaceId,
+    messageId,
+    limit = 20,
+}: RetrieveClickUpMessageRepliesInput) {
+    const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
+    const params = new URLSearchParams({
+        limit: String(limit),
+        content_format: "text/md",
+    })
+
+    const response = await fetch(
+        `https://api.clickup.com/api/v3/workspaces/${resolvedWorkspaceId}/chat/messages/${messageId}/replies?${params.toString()}`,
+        {
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                accept: "application/json",
+            },
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp reply retrieval",
                 status: response.status,
                 body: responseBody,
             })

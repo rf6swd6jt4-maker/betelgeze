@@ -5,6 +5,7 @@ import { formatMetaWhatsAppApiError } from "@/lib/client-messages/meta-whatsapp-
 type SendMetaWhatsAppMessageInput = {
     to: string
     body: string
+    replyToMessageId?: string | null
 }
 
 export function hasMetaWhatsAppConfig() {
@@ -17,6 +18,7 @@ export function hasMetaWhatsAppConfig() {
 export async function sendMetaWhatsAppMessage({
     to,
     body,
+    replyToMessageId,
 }: SendMetaWhatsAppMessageInput) {
     const phoneNumberId = getRequiredEnv("META_WHATSAPP_PHONE_NUMBER_ID")
     const accessToken = getRequiredEnv("META_WHATSAPP_ACCESS_TOKEN")
@@ -33,6 +35,11 @@ export async function sendMetaWhatsAppMessage({
                 messaging_product: "whatsapp",
                 recipient_type: "individual",
                 to: toMetaWhatsAppRecipient(to),
+                context: replyToMessageId
+                    ? {
+                          message_id: replyToMessageId,
+                      }
+                    : undefined,
                 type: "text",
                 text: {
                     preview_url: false,

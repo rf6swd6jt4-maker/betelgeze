@@ -350,7 +350,7 @@ function formatMediaMessageForClickUp({
         ? ["", caption.trim()]
         : []
 
-    return [mediaLink, ...captionLines, "<!-- bridge-skip -->"].join("\n")
+    return [mediaLink, ...captionLines].join("\n")
 }
 
 async function getInboundMessageContent({

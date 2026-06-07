@@ -77,6 +77,7 @@ export default async function ClientDetailPage({
         { data: activityRows },
         { data: formResponseRows },
         { data: communicationChannel },
+        { data: messageRows },
     ] = await Promise.all([
         supabaseAdmin
             .from("client_modules")
@@ -109,6 +110,14 @@ export default async function ClientDetailPage({
             )
             .eq("client_id", client.id)
             .maybeSingle(),
+        supabaseAdmin
+            .from("client_messages")
+            .select(
+                "id, direction, provider, from_address, to_address, body, status, error, created_at"
+            )
+            .eq("client_id", client.id)
+            .order("created_at", { ascending: false })
+            .limit(8),
     ])
 
     const assignedModuleKeys = moduleRows?.map((row) => row.module_key) ?? []
@@ -469,18 +478,6 @@ export default async function ClientDetailPage({
                         </form>
                     </div>
 
-                    <div className="mt-5">
-                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                            Bridge debugging
-                        </p>
-
-                        <Link
-                            href={`/admin?bridgeClient=${client.id}`}
-                            className="mt-3 inline-flex rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:border-neutral-500"
-                        >
-                            View this client&apos;s bridge messages
-                        </Link>
-                    </div>
                 </section>
 
                 <section className="mt-3 grid gap-3 lg:grid-cols-2">
@@ -652,6 +649,79 @@ export default async function ClientDetailPage({
                         </tbody>
                     </table>
                 </div>
+
+                <details className="mt-6 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                    <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-neutral-500">
+                        Recent bridged messages
+                    </summary>
+
+                    <div className="mt-4 space-y-2">
+                        {(messageRows ?? []).length > 0 ? (
+                            messageRows?.map((message) => (
+                                <div
+                                    key={message.id}
+                                    className="rounded-lg bg-neutral-950 p-3"
+                                >
+                                    <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                                        <div>
+                                            <p className="whitespace-pre-wrap text-sm text-neutral-200">
+                                                {message.body}
+                                            </p>
+
+                                            {(message.from_address ||
+                                                message.to_address) && (
+                                                <p className="mt-1 break-all text-xs text-neutral-500">
+                                                    {message.from_address
+                                                        ? `From ${displayMessageAddress(message.from_address)}`
+                                                        : null}
+                                                    {message.from_address &&
+                                                    message.to_address
+                                                        ? " · "
+                                                        : null}
+                                                    {message.to_address
+                                                        ? `To ${displayMessageAddress(message.to_address)}`
+                                                        : null}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <span
+                                            className={`w-fit rounded-md px-2 py-1 text-xs ${
+                                                message.status.includes(
+                                                    "failed"
+                                                )
+                                                    ? "bg-red-500/10 text-red-200"
+                                                    : "bg-neutral-800 text-neutral-300"
+                                            }`}
+                                        >
+                                            {message.direction} ·{" "}
+                                            {message.status}
+                                        </span>
+                                    </div>
+
+                                    {message.error && (
+                                        <p className="mt-2 text-xs text-red-200">
+                                            {message.error}
+                                        </p>
+                                    )}
+
+                                    <p className="mt-3 text-xs text-neutral-500">
+                                        {new Date(
+                                            message.created_at
+                                        ).toLocaleString("en-IE", {
+                                            dateStyle: "medium",
+                                            timeStyle: "short",
+                                        })}
+                                    </p>
+                                </div>
+                            ))
+                        ) : (
+                            <p className="rounded-lg bg-neutral-950 p-3 text-sm text-neutral-500">
+                                No bridged messages yet.
+                            </p>
+                        )}
+                    </div>
+                </details>
 
                 <div className="mt-6 rounded-lg border border-red-900/60 bg-red-950/30 p-4">
                     <p className="text-sm font-medium text-red-200">

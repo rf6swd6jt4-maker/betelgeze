@@ -25,6 +25,7 @@ import {
     updateClientCommunication,
     createClientClickUpChannel,
     checkClickUpConnection,
+    checkMetaWhatsAppConnection,
 } from "./actions"
 
 export const dynamic = "force-dynamic"
@@ -453,6 +454,17 @@ export default async function ClientDetailPage({
                     </form>
 
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                        <form
+                            action={async () => {
+                                "use server"
+                                await checkMetaWhatsAppConnection(client.id)
+                            }}
+                        >
+                            <button className="rounded-lg border border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-200 hover:border-neutral-500 hover:text-white">
+                                Check Meta WhatsApp connection
+                            </button>
+                        </form>
+
                         <form
                             action={async () => {
                                 "use server"

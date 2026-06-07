@@ -16,6 +16,7 @@ import {
 } from "../lib/client-messages/addresses.ts"
 import { shouldIgnoreClickUpMessage } from "../lib/client-messages/clickup-message-filters.ts"
 import { parseClickUpWorkspaceId } from "../lib/client-messages/clickup-workspace.ts"
+import { formatMetaWhatsAppApiError } from "../lib/client-messages/meta-whatsapp-errors.ts"
 
 test("counts unique completed onboarding steps", () => {
     const steps = [{ key: "welcome" }, { key: "business-info" }]
@@ -183,4 +184,21 @@ test("extracts numeric ClickUp workspace IDs from plain IDs or URLs", () => {
         parseClickUpWorkspaceId("https://app.clickup.com/9012345678/v/c/abc"),
         "9012345678"
     )
+})
+
+test("explains Meta WhatsApp token authentication failures", () => {
+    const message = formatMetaWhatsAppApiError({
+        action: "Meta WhatsApp message",
+        status: 401,
+        responseBody: JSON.stringify({
+            error: {
+                message: "Authentication Error",
+                code: 190,
+                type: "OAuthException",
+            },
+        }),
+    })
+
+    assert.match(message, /Meta code 190/u)
+    assert.match(message, /META_WHATSAPP_ACCESS_TOKEN/u)
 })

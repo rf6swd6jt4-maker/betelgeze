@@ -105,19 +105,24 @@ export async function POST(request: NextRequest) {
 
         return Response.json({ ok: true, id: messageId })
     } catch (error) {
+        const errorMessage =
+            error instanceof Error
+                ? error.message
+                : "Unknown Meta WhatsApp error"
+
         await supabaseAdmin
             .from("client_messages")
             .update({
                 status: "send_failed",
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Unknown Meta WhatsApp error",
+                error: errorMessage,
             })
             .eq("id", messageLog?.id)
 
         return Response.json(
-            { error: "Meta WhatsApp send failed" },
+            {
+                error: "Meta WhatsApp send failed",
+                detail: errorMessage,
+            },
             { status: 502 }
         )
     }

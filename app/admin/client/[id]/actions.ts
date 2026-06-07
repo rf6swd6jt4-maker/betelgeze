@@ -11,6 +11,7 @@ import {
     deleteClientClickUpResources,
     ensureClientClickUpChannel,
 } from "@/lib/client-messages/clickup-channel-setup"
+import { checkMetaWhatsAppAccess } from "@/lib/client-messages/meta-whatsapp"
 
 async function addActivity(
     clientId: string,
@@ -148,6 +149,38 @@ export async function checkClickUpConnection(clientId: string) {
     await requireAdmin()
 
     await checkClientClickUpConnection(clientId)
+
+    redirect(`/admin/client/${clientId}`)
+}
+
+export async function checkMetaWhatsAppConnection(clientId: string) {
+    await requireAdmin()
+
+    try {
+        const result = await checkMetaWhatsAppAccess()
+        const displayNumber =
+            typeof result?.display_phone_number === "string"
+                ? result.display_phone_number
+                : "configured phone number"
+        const verifiedName =
+            typeof result?.verified_name === "string"
+                ? ` (${result.verified_name})`
+                : ""
+
+        await addActivity(
+            clientId,
+            "meta_whatsapp_connection_ok",
+            `Meta WhatsApp connection ok for ${displayNumber}${verifiedName}.`
+        )
+    } catch (error) {
+        await addActivity(
+            clientId,
+            "meta_whatsapp_connection_failed",
+            error instanceof Error
+                ? `Meta WhatsApp connection failed: ${error.message}`
+                : "Meta WhatsApp connection failed"
+        )
+    }
 
     redirect(`/admin/client/${clientId}`)
 }

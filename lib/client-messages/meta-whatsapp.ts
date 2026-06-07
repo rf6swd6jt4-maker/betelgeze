@@ -1,5 +1,6 @@
 import { getRequiredEnv } from "@/lib/env"
 import { toMetaWhatsAppRecipient } from "@/lib/client-messages/addresses"
+import { formatMetaWhatsAppApiError } from "@/lib/client-messages/meta-whatsapp-errors"
 
 type SendMetaWhatsAppMessageInput = {
     to: string
@@ -45,7 +46,11 @@ export async function sendMetaWhatsAppMessage({
 
     if (!response.ok) {
         throw new Error(
-            `Meta WhatsApp message failed with ${response.status}: ${responseBody}`
+            formatMetaWhatsAppApiError({
+                action: "Meta WhatsApp message",
+                status: response.status,
+                responseBody,
+            })
         )
     }
 
@@ -72,7 +77,11 @@ export async function getMetaWhatsAppMedia(mediaId: string) {
 
     if (!response.ok) {
         throw new Error(
-            `Meta WhatsApp media lookup failed with ${response.status}: ${responseBody}`
+            formatMetaWhatsAppApiError({
+                action: "Meta WhatsApp media lookup",
+                status: response.status,
+                responseBody,
+            })
         )
     }
 
@@ -88,8 +97,14 @@ export async function downloadMetaWhatsAppMedia(mediaUrl: string) {
     })
 
     if (!response.ok) {
+        const responseBody = await response.text()
+
         throw new Error(
-            `Meta WhatsApp media download failed with ${response.status}: ${await response.text()}`
+            formatMetaWhatsAppApiError({
+                action: "Meta WhatsApp media download",
+                status: response.status,
+                responseBody,
+            })
         )
     }
 
@@ -99,4 +114,34 @@ export async function downloadMetaWhatsAppMedia(mediaUrl: string) {
             response.headers.get("content-type") ??
             "application/octet-stream",
     }
+}
+
+export async function checkMetaWhatsAppAccess() {
+    const phoneNumberId = getRequiredEnv("META_WHATSAPP_PHONE_NUMBER_ID")
+    const accessToken = getRequiredEnv("META_WHATSAPP_ACCESS_TOKEN")
+    const params = new URLSearchParams({
+        fields: "id,display_phone_number,verified_name",
+    })
+    const response = await fetch(
+        `https://graph.facebook.com/v25.0/${phoneNumberId}?${params.toString()}`,
+        {
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                accept: "application/json",
+            },
+        }
+    )
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            formatMetaWhatsAppApiError({
+                action: "Meta WhatsApp connection check",
+                status: response.status,
+                responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
 }

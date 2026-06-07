@@ -70,6 +70,23 @@ export default async function ClientDetailPage({
         )
     }
 
+    const messageRowsQuery = supabaseAdmin
+        .from("client_messages")
+        .select(
+            "id, direction, provider, from_address, to_address, body, status, error, created_at"
+        )
+        .or(
+            [
+                `client_id.eq.${client.id}`,
+                client.phone ? `from_address.eq.${client.phone}` : null,
+                client.phone ? `to_address.eq.${client.phone}` : null,
+            ]
+                .filter(Boolean)
+                .join(",")
+        )
+        .order("created_at", { ascending: false })
+        .limit(8)
+
     const [
         { data: moduleRows },
         { data: progressRows },
@@ -110,14 +127,7 @@ export default async function ClientDetailPage({
             )
             .eq("client_id", client.id)
             .maybeSingle(),
-        supabaseAdmin
-            .from("client_messages")
-            .select(
-                "id, direction, provider, from_address, to_address, body, status, error, created_at"
-            )
-            .eq("client_id", client.id)
-            .order("created_at", { ascending: false })
-            .limit(8),
+        messageRowsQuery,
     ])
 
     const assignedModuleKeys = moduleRows?.map((row) => row.module_key) ?? []

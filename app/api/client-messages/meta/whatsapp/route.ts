@@ -40,13 +40,16 @@ type WhatsAppMessage = {
 type WhatsAppChangeValue = {
     metadata?: {
         display_phone_number?: string
+        phone_number_id?: string
     }
     messages?: WhatsAppMessage[]
+    statuses?: unknown[]
 }
 
 type WhatsAppWebhookPayload = {
     entry?: Array<{
         changes?: Array<{
+            field?: string
             value?: WhatsAppChangeValue
         }>
     }>
@@ -100,6 +103,26 @@ async function logWebhookError({
             body: "[Webhook error]",
             status: "webhook_failed",
             error: message,
+            raw_payload: payload,
+        })
+    } catch {
+        // Meta webhooks must still be acknowledged even if diagnostics fail.
+    }
+}
+
+async function logWebhookNotice({
+    message,
+    payload,
+}: {
+    message: string
+    payload: unknown
+}) {
+    try {
+        await supabaseAdmin.from("client_messages").insert({
+            direction: "inbound",
+            provider: "meta_whatsapp",
+            body: message,
+            status: "webhook_ignored",
             raw_payload: payload,
         })
     } catch {
@@ -266,13 +289,24 @@ async function handleInboundMessage({
 
     if (!from) return
 
+    const { data: existingMessage } = messageId
+        ? await supabaseAdmin
+              .from("client_messages")
+              .select("id")
+              .eq("provider", "meta_whatsapp")
+              .eq("provider_message_id", messageId)
+              .maybeSingle()
+        : { data: null }
+
+    if (existingMessage) return
+
     const { data: channel } = await supabaseAdmin
         .from("client_communication_channels")
         .select("id, client_id, clickup_workspace_id, clickup_channel_id")
         .eq("provider", "meta_whatsapp")
         .eq("external_address", from)
         .eq("is_active", true)
-        .single()
+        .maybeSingle()
 
     if (!channel) {
         const unmatchedBody =
@@ -293,16 +327,53 @@ async function handleInboundMessage({
         return
     }
 
-    const { data: existingMessage } = messageId
-        ? await supabaseAdmin
-              .from("client_messages")
-              .select("id")
-              .eq("provider", "meta_whatsapp")
-              .eq("provider_message_id", messageId)
-              .maybeSingle()
-        : { data: null }
+    const [{ data: client }, { data: lastMessage }] = await Promise.all([
+        supabaseAdmin
+            .from("clients")
+            .select("name")
+            .eq("id", channel.client_id)
+            .single(),
+        supabaseAdmin
+            .from("client_messages")
+            .select("direction, provider, created_at")
+            .eq("client_id", channel.client_id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+    ])
+    const clientName = client?.name ?? "Client"
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000
+    const showClientName =
+        !lastMessage ||
+        lastMessage.direction !== "inbound" ||
+        lastMessage.provider !== "meta_whatsapp" ||
+        new Date(lastMessage.created_at).getTime() < tenMinutesAgo
+    const initialBody =
+        message.text?.body?.trim() || `[${titleCase(message.type ?? "message")}]`
+    const { data: insertedMessage, error: insertError } = await supabaseAdmin
+        .from("client_messages")
+        .insert({
+            client_id: channel.client_id,
+            communication_channel_id: channel.id,
+            direction: "inbound",
+            provider: "meta_whatsapp",
+            provider_message_id: messageId,
+            from_address: from,
+            to_address: to,
+            body: initialBody,
+            status: "received",
+            raw_payload: payload,
+        })
+        .select("id")
+        .single()
 
-    if (existingMessage) return
+    if (insertError || !insertedMessage) {
+        throw new Error(
+            insertError
+                ? `Could not record inbound WhatsApp message: ${insertError.message}`
+                : "Could not record inbound WhatsApp message"
+        )
+    }
 
     let content: InboundMessageContent | null = null
 
@@ -320,65 +391,40 @@ async function handleInboundMessage({
         const fallbackBody =
             message.text?.body?.trim() || `[${titleCase(message.type ?? "media")}]`
 
-        await supabaseAdmin.from("client_messages").insert({
-            client_id: channel.client_id,
-            communication_channel_id: channel.id,
-            direction: "inbound",
-            provider: "meta_whatsapp",
-            provider_message_id: messageId,
-            from_address: from,
-            to_address: to,
-            body: fallbackBody,
-            status: "media_failed",
-            error: errorMessage,
-            raw_payload: payload,
-        })
+        await supabaseAdmin
+            .from("client_messages")
+            .update({
+                body: fallbackBody,
+                status: "media_failed",
+                error: errorMessage,
+            })
+            .eq("id", insertedMessage.id)
 
         return
     }
 
-    if (!content) return
+    if (!content) {
+        await supabaseAdmin
+            .from("client_messages")
+            .update({
+                status: "unsupported",
+                error: `Unsupported WhatsApp message type: ${message.type ?? "unknown"}`,
+            })
+            .eq("id", insertedMessage.id)
 
-    const { data: client } = await supabaseAdmin
-        .from("clients")
-        .select("name")
-        .eq("id", channel.client_id)
-        .single()
+        return
+    }
 
-    const clientName = client?.name ?? "Client"
-    const { data: lastMessage } = await supabaseAdmin
+    await supabaseAdmin
         .from("client_messages")
-        .select("direction, provider, created_at")
-        .eq("client_id", channel.client_id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-    const tenMinutesAgo = Date.now() - 10 * 60 * 1000
-    const showClientName =
-        !lastMessage ||
-        lastMessage.direction !== "inbound" ||
-        lastMessage.provider !== "meta_whatsapp" ||
-        new Date(lastMessage.created_at).getTime() < tenMinutesAgo
-
-    const { data: insertedMessage } = await supabaseAdmin
-        .from("client_messages")
-        .insert({
-            client_id: channel.client_id,
-            communication_channel_id: channel.id,
-            direction: "inbound",
-            provider: "meta_whatsapp",
-            provider_message_id: messageId,
-            from_address: from,
-            to_address: to,
+        .update({
             body: content.body,
-            status: "received",
             raw_payload: {
                 ...payload,
                 bridge_media: content.media ?? null,
             },
         })
-        .select("id")
-        .single()
+        .eq("id", insertedMessage.id)
 
     try {
         const clickupMessage = await createClickUpChatMessage({
@@ -397,7 +443,7 @@ async function handleInboundMessage({
                 status: "posted_to_clickup",
                 clickup_message_id: getClickUpMessageId(clickupMessage),
             })
-            .eq("id", insertedMessage?.id)
+            .eq("id", insertedMessage.id)
     } catch (error) {
         await supabaseAdmin
             .from("client_messages")
@@ -408,7 +454,7 @@ async function handleInboundMessage({
                         ? error.message
                         : "Unknown ClickUp error",
             })
-            .eq("id", insertedMessage?.id)
+            .eq("id", insertedMessage.id)
     }
 }
 
@@ -448,6 +494,19 @@ export async function POST(request: NextRequest) {
                 getMessageTimestampMs(left.message) -
                 getMessageTimestampMs(right.message)
         )
+
+        if (inboundMessages.length === 0) {
+            const changeFields =
+                payload.entry
+                    ?.flatMap((entry) => entry.changes ?? [])
+                    .map((change) => change.field ?? "unknown")
+                    .join(", ") || "none"
+
+            await logWebhookNotice({
+                message: `[Webhook received without WhatsApp messages: ${changeFields}]`,
+                payload,
+            })
+        }
 
         const errors: string[] = []
 

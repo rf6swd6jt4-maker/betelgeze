@@ -3,10 +3,12 @@ import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 import {
     AuthorizedClickUpWorkspace,
     createClickUpChatChannel,
+    createClickUpFolder,
     createClickUpLocationChatChannel,
-    createClickUpSpace,
     deleteClickUpChatChannel,
+    deleteClickUpFolder,
     deleteClickUpSpace,
+    getClickUpClientsSpaceId,
     getClickUpWorkspaceId,
     getAuthorizedClickUpWorkspaces,
     hasClickUpConfig,
@@ -31,33 +33,17 @@ function getEntityId(response: unknown): string | null {
         id?: string | number
         data?: { id?: string | number }
         space?: { id?: string | number }
+        folder?: { id?: string | number }
         list?: { id?: string | number }
     }
-    const id = value.id ?? value.data?.id ?? value.space?.id ?? value.list?.id
+    const id =
+        value.id ??
+        value.data?.id ??
+        value.space?.id ??
+        value.folder?.id ??
+        value.list?.id
 
     return id ? String(id) : null
-}
-
-const SPACE_COLORS = [
-    "#1abc9c",
-    "#2ecd6f",
-    "#3498db",
-    "#9b59b6",
-    "#f1c40f",
-    "#e67e22",
-    "#e74c3c",
-    "#ff6b81",
-    "#7f8c8d",
-]
-
-function getClientSpaceColor(seed: string) {
-    const colorIndex =
-        [...seed].reduce(
-            (total, character) => total + character.charCodeAt(0),
-            0
-        ) % SPACE_COLORS.length
-
-    return SPACE_COLORS[colorIndex]
 }
 
 function getErrorMessage(error: unknown) {
@@ -81,12 +67,14 @@ async function saveClientCommunicationChannel({
     externalAddress,
     clickupWorkspaceId,
     clickupSpaceId,
+    clickupFolderId,
     clickupChannelId,
 }: {
     clientId: string
     externalAddress: string
     clickupWorkspaceId: string
     clickupSpaceId: string
+    clickupFolderId: string
     clickupChannelId: string
 }) {
     const channelRecord = {
@@ -95,6 +83,7 @@ async function saveClientCommunicationChannel({
         external_address: externalAddress,
         clickup_workspace_id: clickupWorkspaceId,
         clickup_space_id: clickupSpaceId,
+        clickup_folder_id: clickupFolderId,
         clickup_channel_id: clickupChannelId,
         is_active: true,
         updated_at: new Date().toISOString(),
@@ -135,6 +124,28 @@ async function saveClientCommunicationChannel({
                 provider: channelRecord.provider,
                 external_address: channelRecord.external_address,
                 clickup_workspace_id: channelRecord.clickup_workspace_id,
+                clickup_folder_id: channelRecord.clickup_folder_id,
+                clickup_channel_id: channelRecord.clickup_channel_id,
+                is_active: channelRecord.is_active,
+                updated_at: channelRecord.updated_at,
+            }
+        const retry = await supabaseAdmin
+            .from("client_communication_channels")
+            .upsert(fallbackRecord, {
+                onConflict: "client_id",
+            })
+
+        error = retry.error
+    }
+
+    if (error?.message.toLowerCase().includes("clickup_folder_id")) {
+        const fallbackRecord: Omit<typeof channelRecord, "clickup_folder_id"> =
+            {
+                client_id: channelRecord.client_id,
+                provider: channelRecord.provider,
+                external_address: channelRecord.external_address,
+                clickup_workspace_id: channelRecord.clickup_workspace_id,
+                clickup_space_id: channelRecord.clickup_space_id,
                 clickup_channel_id: channelRecord.clickup_channel_id,
                 is_active: channelRecord.is_active,
                 updated_at: channelRecord.updated_at,
@@ -163,7 +174,7 @@ export async function ensureClientClickUpChannel(clientId: string) {
 
         return {
             ok: false,
-            error: "Missing CLICKUP_API_TOKEN or CLICKUP_WORKSPACE_ID",
+            error: "Missing CLICKUP_API_TOKEN, CLICKUP_WORKSPACE_ID, or CLICKUP_CLIENTS_SPACE_ID",
         }
     }
 
@@ -197,26 +208,26 @@ export async function ensureClientClickUpChannel(clientId: string) {
 
     try {
         const clientName = client.name?.trim() || "Client"
-        const clientSpaceName = clientName
-        const spaceColor = getClientSpaceColor(client.id)
-        const clickupSpace = await createClickUpSpace({
-            name: clientSpaceName,
-            color: spaceColor,
+        const clientFolderName = clientName
+        const clickupClientsSpaceId = getClickUpClientsSpaceId()
+        const clickupFolder = await createClickUpFolder({
+            spaceId: clickupClientsSpaceId,
+            name: clientFolderName,
         })
-        const clickupSpaceId = getEntityId(clickupSpace)
+        const clickupFolderId = getEntityId(clickupFolder)
 
-        if (!clickupSpaceId) {
-            throw new Error("ClickUp did not return a Space ID")
+        if (!clickupFolderId) {
+            throw new Error("ClickUp did not return a Folder ID")
         }
 
         let clickupChannelId: string | null = null
-        let channelLocation = "space"
-        let spaceChannelError: string | null = null
+        let channelLocation = "folder"
+        let folderChannelError: string | null = null
 
         try {
             const clickupChannel = await createClickUpLocationChatChannel({
-                locationId: clickupSpaceId,
-                locationType: "space",
+                locationId: clickupFolderId,
+                locationType: "folder",
                 description: `Client communication channel for ${clientName}.`,
                 topic: "Client fulfilment communication",
                 visibility: "PUBLIC",
@@ -224,12 +235,12 @@ export async function ensureClientClickUpChannel(clientId: string) {
 
             clickupChannelId = getChannelId(clickupChannel)
         } catch (error) {
-            spaceChannelError = getErrorMessage(error)
+            folderChannelError = getErrorMessage(error)
         }
 
         if (!clickupChannelId) {
             const clickupChannel = await createClickUpChatChannel({
-                name: clientSpaceName,
+                name: clientFolderName,
                 description: `Client communication channel for ${clientName}.`,
                 topic: "Client fulfilment communication",
                 visibility: "PUBLIC",
@@ -243,8 +254,8 @@ export async function ensureClientClickUpChannel(clientId: string) {
             throw new Error(
                 [
                     "ClickUp did not return a channel ID",
-                    spaceChannelError
-                        ? `Space channel error: ${spaceChannelError}`
+                    folderChannelError
+                        ? `Folder channel error: ${folderChannelError}`
                         : null,
                 ]
                     .filter(Boolean)
@@ -256,19 +267,21 @@ export async function ensureClientClickUpChannel(clientId: string) {
             clientId: client.id,
             externalAddress,
             clickupWorkspaceId: getClickUpWorkspaceId(),
-            clickupSpaceId,
+            clickupSpaceId: clickupClientsSpaceId,
+            clickupFolderId,
             clickupChannelId,
         })
 
         await addActivity(
             client.id,
             "clickup_channel_created",
-            `ClickUp Space and Chat channel created: ${clientSpaceName}. Channel location: ${channelLocation}.`
+            `ClickUp client Folder and Chat channel created: ${clientFolderName}. Channel location: ${channelLocation}.`
         )
 
         return {
             ok: true,
-            spaceId: clickupSpaceId,
+            spaceId: clickupClientsSpaceId,
+            folderId: clickupFolderId,
             channelId: clickupChannelId,
             channelLocation,
         }
@@ -292,13 +305,13 @@ export async function deleteClientClickUpResources(clientId: string) {
     if (!hasClickUpConfig()) {
         return {
             ok: false,
-            error: "Missing CLICKUP_API_TOKEN or CLICKUP_WORKSPACE_ID",
+            error: "Missing CLICKUP_API_TOKEN, CLICKUP_WORKSPACE_ID, or CLICKUP_CLIENTS_SPACE_ID",
         }
     }
 
     const { data: channel } = await supabaseAdmin
         .from("client_communication_channels")
-        .select("clickup_workspace_id, clickup_space_id, clickup_channel_id")
+        .select("clickup_workspace_id, clickup_space_id, clickup_folder_id, clickup_channel_id")
         .eq("client_id", clientId)
         .eq("provider", "meta_whatsapp")
         .maybeSingle()
@@ -307,15 +320,27 @@ export async function deleteClientClickUpResources(clientId: string) {
         return {
             ok: true,
             deletedChannel: false,
-            deletedSpace: false,
+            deletedFolder: false,
+            deletedLegacySpace: false,
         }
     }
 
     try {
-        if (channel.clickup_space_id) {
+        const clickupClientsSpaceId = getClickUpClientsSpaceId()
+        let deletedLegacySpace = false
+
+        if (channel.clickup_folder_id) {
+            await deleteClickUpFolder({
+                folderId: channel.clickup_folder_id,
+            })
+        } else if (
+            channel.clickup_space_id &&
+            channel.clickup_space_id !== clickupClientsSpaceId
+        ) {
             await deleteClickUpSpace({
                 spaceId: channel.clickup_space_id,
             })
+            deletedLegacySpace = true
         }
 
         if (channel.clickup_channel_id) {
@@ -328,7 +353,8 @@ export async function deleteClientClickUpResources(clientId: string) {
         return {
             ok: true,
             deletedChannel: Boolean(channel.clickup_channel_id),
-            deletedSpace: Boolean(channel.clickup_space_id),
+            deletedFolder: Boolean(channel.clickup_folder_id),
+            deletedLegacySpace,
         }
     } catch (error) {
         return {

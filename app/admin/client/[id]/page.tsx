@@ -109,7 +109,7 @@ export default async function ClientDetailPage({
         supabaseAdmin
             .from("client_communication_channels")
             .select(
-                "id, external_address, clickup_workspace_id, clickup_space_id, clickup_channel_id, is_active, updated_at"
+                "id, external_address, clickup_workspace_id, clickup_space_id, clickup_folder_id, clickup_channel_id, is_active, updated_at"
             )
             .eq("client_id", client.id)
             .maybeSingle(),
@@ -267,7 +267,7 @@ export default async function ClientDetailPage({
 
                 {deleteError === "clickup-cleanup" && (
                     <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-                        Client deletion was stopped because the ClickUp Space
+                        Client deletion was stopped because the ClickUp folder
                         or channel could not be removed. Check the timeline for
                         the ClickUp error.
                     </div>
@@ -433,10 +433,23 @@ export default async function ClientDetailPage({
                         </label>
 
                         <label className="block text-sm text-neutral-300">
-                            ClickUp Space ID
+                            ClickUp Clients Space ID
                             <input
                                 value={
                                     communicationChannel?.clickup_space_id ??
+                                    ""
+                                }
+                                readOnly
+                                placeholder="Created automatically"
+                                className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-400 outline-none"
+                            />
+                        </label>
+
+                        <label className="block text-sm text-neutral-300">
+                            ClickUp client folder ID
+                            <input
+                                value={
+                                    communicationChannel?.clickup_folder_id ??
                                     ""
                                 }
                                 readOnly

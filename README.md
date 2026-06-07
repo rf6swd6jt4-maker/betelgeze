@@ -137,6 +137,7 @@ Required environment variables:
 
 - `CLICKUP_API_TOKEN`
 - `CLICKUP_WORKSPACE_ID`
+- `CLICKUP_CLIENTS_SPACE_ID`
 - `META_WHATSAPP_ACCESS_TOKEN`
 - `META_WHATSAPP_PHONE_NUMBER_ID`
 - `META_WHATSAPP_BUSINESS_ACCOUNT_ID`
@@ -148,17 +149,20 @@ Required environment variables:
 Setup:
 
 1. Run the Supabase migrations.
-2. Add clients with their WhatsApp number as the primary contact. If ClickUp
-   credentials are configured, the app creates a ClickUp Chat channel and stores
-   the WhatsApp bridge mapping.
-3. In Meta, point the WhatsApp webhook callback URL to:
+2. Create a ClickUp Space for clients manually, then set
+   `CLICKUP_CLIENTS_SPACE_ID` to that Space ID.
+3. Add clients with their WhatsApp number as the primary contact. If ClickUp
+   credentials are configured, the app creates a client Folder inside the
+   Clients Space, creates a ClickUp Chat channel for that Folder, and stores the
+   WhatsApp bridge mapping.
+4. In Meta, point the WhatsApp webhook callback URL to:
    `/api/client-messages/meta/whatsapp`
-4. To send a team reply back to the client manually, post JSON to:
+5. To send a team reply back to the client manually, post JSON to:
    `/api/client-messages/clickup/outbound`
-5. To send team ClickUp Chat replies back to WhatsApp, create a ClickUp Chat
+6. To send team ClickUp Chat replies back to WhatsApp, create a ClickUp Chat
    webhook Automation for "Message is posted" and send it to:
    `/api/client-messages/clickup/chat`
-6. If ClickUp Chat webhooks are not available on your plan, use an external
+7. If ClickUp Chat webhooks are not available on your plan, use an external
    scheduler to call:
    `/api/client-messages/clickup/poll`
 

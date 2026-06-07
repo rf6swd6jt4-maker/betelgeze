@@ -41,6 +41,10 @@ type DeleteClickUpSpaceInput = {
     spaceId: string
 }
 
+type DeleteClickUpFolderInput = {
+    folderId: string
+}
+
 type CreateClickUpChannelInput = {
     workspaceId?: string | null
     name: string
@@ -64,6 +68,11 @@ type CreateClickUpSpaceInput = {
     color: string
 }
 
+type CreateClickUpFolderInput = {
+    spaceId: string
+    name: string
+}
+
 type ClickUpAuthorizedWorkspace = {
     id?: string | number
     name?: string
@@ -76,7 +85,9 @@ export type AuthorizedClickUpWorkspace = {
 
 export function hasClickUpConfig() {
     return Boolean(
-        process.env.CLICKUP_API_TOKEN && process.env.CLICKUP_WORKSPACE_ID
+        process.env.CLICKUP_API_TOKEN &&
+            process.env.CLICKUP_WORKSPACE_ID &&
+            process.env.CLICKUP_CLIENTS_SPACE_ID
     )
 }
 
@@ -114,6 +125,10 @@ export async function getAuthorizedClickUpWorkspaces(): Promise<
 export function getClickUpWorkspaceId(value?: string | null) {
     const rawValue = value || getRequiredEnv("CLICKUP_WORKSPACE_ID")
     return parseClickUpWorkspaceId(rawValue)
+}
+
+export function getClickUpClientsSpaceId(value?: string | null) {
+    return (value || getRequiredEnv("CLICKUP_CLIENTS_SPACE_ID")).trim()
 }
 
 const DEFAULT_SPACE_FEATURES = {
@@ -292,6 +307,66 @@ export async function deleteClickUpSpace({
         throw new Error(
             getClickUpErrorMessage({
                 action: "ClickUp Space deletion",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+}
+
+export async function createClickUpFolder({
+    spaceId,
+    name,
+}: CreateClickUpFolderInput) {
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/space/${spaceId}/folder`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                "Content-Type": "application/json",
+                accept: "application/json",
+            },
+            body: JSON.stringify({
+                name,
+            }),
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Folder",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function deleteClickUpFolder({
+    folderId,
+}: DeleteClickUpFolderInput) {
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/folder/${folderId}`,
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                accept: "application/json",
+            },
+        }
+    )
+    const responseBody = await response.text()
+
+    if (!response.ok && response.status !== 404) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Folder deletion",
                 status: response.status,
                 body: responseBody,
             })

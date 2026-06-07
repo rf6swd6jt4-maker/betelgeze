@@ -114,12 +114,21 @@ export async function updateClientCommunication(
         redirect(`/admin/client/${clientId}?bridgeError=missing-fields`)
     }
 
+    const { data: existingChannel } = await supabaseAdmin
+        .from("client_communication_channels")
+        .select("clickup_space_id, clickup_folder_id")
+        .eq("client_id", clientId)
+        .eq("provider", "meta_whatsapp")
+        .maybeSingle()
+
     await supabaseAdmin.from("client_communication_channels").upsert(
         {
             client_id: clientId,
             provider: "meta_whatsapp",
             external_address: externalAddress,
             clickup_workspace_id: clickupWorkspaceId || null,
+            clickup_space_id: existingChannel?.clickup_space_id ?? null,
+            clickup_folder_id: existingChannel?.clickup_folder_id ?? null,
             clickup_channel_id: clickupChannelId,
             is_active: isActive,
             updated_at: new Date().toISOString(),

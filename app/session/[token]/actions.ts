@@ -7,6 +7,7 @@ import {
     getOnboardingForm,
 } from "@/lib/onboarding/forms"
 import { createSignedOnboardingUpload } from "@/lib/onboarding/uploads"
+import { syncClientOnboardingStepToClickUp } from "@/lib/client-messages/clickup-channel-setup"
 
 export async function completeStep(token: string, stepKey: string) {
     const { data: client, error: clientError } = await supabaseAdmin
@@ -24,6 +25,11 @@ export async function completeStep(token: string, stepKey: string) {
     if (error) {
         throw new Error("Could not save progress")
     }
+
+    await syncClientOnboardingStepToClickUp({
+        clientId: client.id,
+        stepKey,
+    })
 
     revalidatePath(`/session/${token}`)
 }

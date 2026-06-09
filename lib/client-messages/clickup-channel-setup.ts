@@ -1,19 +1,29 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
+import { MODULES } from "@/lib/onboarding/modules"
+import {
+    FormResponse,
+    FormResponseValue,
+    getOnboardingForm,
+    StoredUpload,
+} from "@/lib/onboarding/forms"
 import {
     AuthorizedClickUpWorkspace,
     createClickUpChatChannel,
-    createClickUpFolder,
-    createClickUpList,
+    createClickUpFolderFromTemplate,
     createClickUpLocationChatChannel,
+    createClickUpTask,
     deleteClickUpChatChannel,
     deleteClickUpFolder,
     deleteClickUpSpace,
+    getClickUpClientFolderTemplateId,
     getClickUpClientsSpaceId,
     getClickUpWorkspaceMemberIds,
     getClickUpWorkspaceId,
     getAuthorizedClickUpWorkspaces,
     hasClickUpConfig,
+    retrieveClickUpFolderLists,
+    updateClickUpTask,
 } from "@/lib/client-messages/clickup"
 
 function getChannelId(response: unknown): string | null {
@@ -54,14 +64,8 @@ function getErrorMessage(error: unknown) {
 
 const CLIENT_FOLDER_COLOR = "#e50000"
 
-const CLIENT_FOLDER_LISTS = [
-    "01 Client Overview",
-    "02 Onboarding information",
-    "03 Project",
-    "04 Meetings & Calls",
-    "05 Goals & KPIs",
-    "06 Strategy",
-]
+const ONBOARDING_INFORMATION_LIST_NAME = "Onboarding Information"
+const CLIENT_WORK_LIST_NAME = "Client Work"
 
 async function addActivity(
     clientId: string,
@@ -73,6 +77,275 @@ async function addActivity(
         activity_type: activityType,
         activity_text: activityText,
     })
+}
+
+function normalizeClickUpName(value: string) {
+    return value
+        .trim()
+        .replace(/^\d+\s*[-.)]?\s*/u, "")
+        .replace(/\s+/g, " ")
+        .toLowerCase()
+}
+
+function getListIdByName(response: unknown, name: string) {
+    const payload = response as {
+        lists?: unknown
+        data?: {
+            lists?: unknown
+        }
+    } | null
+    const lists = Array.isArray(payload?.lists)
+        ? payload.lists
+        : Array.isArray(payload?.data?.lists)
+          ? payload.data.lists
+          : []
+    const normalizedName = normalizeClickUpName(name)
+
+    for (const list of lists) {
+        if (!list || typeof list !== "object" || Array.isArray(list)) {
+            continue
+        }
+
+        const value = list as {
+            id?: string | number
+            name?: string
+        }
+
+        if (
+            value.name &&
+            normalizeClickUpName(value.name) === normalizedName
+        ) {
+            return value.id ? String(value.id) : null
+        }
+    }
+
+    return null
+}
+
+function wait(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function getTemplateListIds(folderId: string) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+        const folderLists = await retrieveClickUpFolderLists({
+            folderId,
+        })
+        const onboardingInformationListId = getListIdByName(
+            folderLists,
+            ONBOARDING_INFORMATION_LIST_NAME
+        )
+        const clientWorkListId = getListIdByName(
+            folderLists,
+            CLIENT_WORK_LIST_NAME
+        )
+
+        if (onboardingInformationListId && clientWorkListId) {
+            return {
+                onboardingInformationListId,
+                clientWorkListId,
+            }
+        }
+
+        await wait(1000)
+    }
+
+    return {
+        onboardingInformationListId: null,
+        clientWorkListId: null,
+    }
+}
+
+async function saveClickUpItem({
+    clientId,
+    itemKey,
+    itemType,
+    clickupId,
+    clickupParentId,
+    stepKey,
+}: {
+    clientId: string
+    itemKey: string
+    itemType: string
+    clickupId: string
+    clickupParentId?: string | null
+    stepKey?: string | null
+}) {
+    await supabaseAdmin.from("client_clickup_items").upsert(
+        {
+            client_id: clientId,
+            item_key: itemKey,
+            item_type: itemType,
+            clickup_id: clickupId,
+            clickup_parent_id: clickupParentId ?? null,
+            step_key: stepKey ?? null,
+            updated_at: new Date().toISOString(),
+        },
+        {
+            onConflict: "client_id,item_key",
+        }
+    )
+}
+
+async function getClickUpItem(clientId: string, itemKey: string) {
+    const { data } = await supabaseAdmin
+        .from("client_clickup_items")
+        .select("clickup_id")
+        .eq("client_id", clientId)
+        .eq("item_key", itemKey)
+        .maybeSingle()
+
+    return data?.clickup_id ?? null
+}
+
+function getTaskId(response: unknown) {
+    return getEntityId(response)
+}
+
+async function getClientOnboardingSteps(clientId: string) {
+    const { data: clientModules } = await supabaseAdmin
+        .from("client_modules")
+        .select("module_key")
+        .eq("client_id", clientId)
+
+    return (
+        clientModules?.flatMap((row) => {
+            const moduleDefinition = MODULES[row.module_key]
+
+            if (!moduleDefinition) return []
+
+            return moduleDefinition.steps.map((step) => ({
+                ...step,
+                moduleTitle: moduleDefinition.title,
+            }))
+        }) ?? []
+    )
+}
+
+function formatUpload(upload: StoredUpload) {
+    return [
+        `- ${upload.name}`,
+        `  - Type: ${upload.type}`,
+        `  - Size: ${upload.size} bytes`,
+        `  - Storage path: ${upload.path}`,
+    ].join("\n")
+}
+
+function formatResponseValue(value: FormResponseValue) {
+    if (typeof value === "string") {
+        return value.trim() || "_Blank_"
+    }
+
+    if (Array.isArray(value)) {
+        return value.length > 0
+            ? value.map(formatUpload).join("\n")
+            : "_No files uploaded_"
+    }
+
+    return "_Blank_"
+}
+
+function formatStepResponse({
+    clientName,
+    stepTitle,
+    formKey,
+    response,
+}: {
+    clientName: string
+    stepTitle: string
+    formKey?: string | null
+    response?: FormResponse | null
+}) {
+    const form = getOnboardingForm(formKey ?? undefined)
+    const lines = [
+        `# ${stepTitle}`,
+        "",
+        `Client: ${clientName}`,
+        `Submitted via onboarding portal: ${new Date().toISOString()}`,
+    ]
+
+    if (!form || !response) {
+        return [
+            ...lines,
+            "",
+            "This step has been marked complete in the onboarding portal.",
+        ].join("\n")
+    }
+
+    for (const field of form.fields) {
+        lines.push("", `## ${field.label}`)
+        lines.push(formatResponseValue(response[field.name] ?? ""))
+    }
+
+    return lines.join("\n")
+}
+
+export async function syncClientOnboardingStepToClickUp({
+    clientId,
+    stepKey,
+}: {
+    clientId: string
+    stepKey: string
+}) {
+    if (!process.env.CLICKUP_API_TOKEN) return
+
+    try {
+        const [stepTaskId, onboardingTaskId, { data: client }, { data: response }] =
+            await Promise.all([
+                getClickUpItem(clientId, `step:${stepKey}`),
+                getClickUpItem(clientId, "task:onboarding"),
+                supabaseAdmin
+                    .from("clients")
+                    .select("name")
+                    .eq("id", clientId)
+                    .single(),
+                supabaseAdmin
+                    .from("client_form_responses")
+                    .select("response")
+                    .eq("client_id", clientId)
+                    .eq("step_key", stepKey)
+                    .maybeSingle(),
+            ])
+
+        if (!stepTaskId && !onboardingTaskId) return
+
+        const step = (await getClientOnboardingSteps(clientId)).find(
+            (candidate) => candidate.key === stepKey
+        )
+
+        await Promise.all([
+            stepTaskId
+                ? updateClickUpTask({
+                      taskId: stepTaskId,
+                      status: "Submitted",
+                      markdownDescription: formatStepResponse({
+                          clientName: client?.name ?? "Client",
+                          stepTitle: step?.title ?? stepKey,
+                          formKey: step?.formKey,
+                          response:
+                              response?.response &&
+                              typeof response.response === "object"
+                                  ? (response.response as FormResponse)
+                                  : null,
+                      }),
+                  })
+                : Promise.resolve(),
+            onboardingTaskId
+                ? updateClickUpTask({
+                      taskId: onboardingTaskId,
+                      status: "In progress",
+                  })
+                : Promise.resolve(),
+        ])
+    } catch (error) {
+        await addActivity(
+            clientId,
+            "clickup_step_sync_failed",
+            error instanceof Error
+                ? `ClickUp onboarding step sync failed: ${error.message}`
+                : "ClickUp onboarding step sync failed"
+        )
+    }
 }
 
 async function saveClientCommunicationChannel({
@@ -187,7 +460,7 @@ export async function ensureClientClickUpChannel(clientId: string) {
 
         return {
             ok: false,
-            error: "Missing CLICKUP_API_TOKEN, CLICKUP_WORKSPACE_ID, or CLICKUP_CLIENTS_SPACE_ID",
+            error: "Missing CLICKUP_API_TOKEN, CLICKUP_WORKSPACE_ID, CLICKUP_CLIENTS_SPACE_ID, or CLICKUP_CLIENT_FOLDER_TEMPLATE_ID",
         }
     }
 
@@ -223,8 +496,9 @@ export async function ensureClientClickUpChannel(clientId: string) {
         const clientName = client.name?.trim() || "Client"
         const clientFolderName = clientName
         const clickupClientsSpaceId = getClickUpClientsSpaceId()
-        const clickupFolder = await createClickUpFolder({
+        const clickupFolder = await createClickUpFolderFromTemplate({
             spaceId: clickupClientsSpaceId,
+            templateId: getClickUpClientFolderTemplateId(),
             name: clientFolderName,
             color: CLIENT_FOLDER_COLOR,
         })
@@ -234,14 +508,92 @@ export async function ensureClientClickUpChannel(clientId: string) {
             throw new Error("ClickUp did not return a Folder ID")
         }
 
-        await Promise.all(
-            CLIENT_FOLDER_LISTS.map((listName) =>
-                createClickUpList({
-                    folderId: clickupFolderId,
-                    name: listName,
-                    status: "red",
-                })
+        await saveClickUpItem({
+            clientId: client.id,
+            itemKey: "folder",
+            itemType: "folder",
+            clickupId: clickupFolderId,
+            clickupParentId: clickupClientsSpaceId,
+        })
+
+        const { onboardingInformationListId, clientWorkListId } =
+            await getTemplateListIds(clickupFolderId)
+
+        if (!onboardingInformationListId || !clientWorkListId) {
+            throw new Error(
+                `ClickUp Folder template must include "${ONBOARDING_INFORMATION_LIST_NAME}" and "${CLIENT_WORK_LIST_NAME}" Lists`
             )
+        }
+
+        await Promise.all([
+            saveClickUpItem({
+                clientId: client.id,
+                itemKey: "list:onboarding-information",
+                itemType: "list",
+                clickupId: onboardingInformationListId,
+                clickupParentId: clickupFolderId,
+            }),
+            saveClickUpItem({
+                clientId: client.id,
+                itemKey: "list:client-work",
+                itemType: "list",
+                clickupId: clientWorkListId,
+                clickupParentId: clickupFolderId,
+            }),
+        ])
+
+        const onboardingTask = await createClickUpTask({
+            listId: clientWorkListId,
+            name: "Onboarding",
+            status: "Not started",
+            markdownDescription:
+                "Tracks the overall onboarding lifecycle for this client.",
+        })
+        const onboardingTaskId = getTaskId(onboardingTask)
+
+        if (!onboardingTaskId) {
+            throw new Error("ClickUp did not return an Onboarding task ID")
+        }
+
+        await saveClickUpItem({
+            clientId: client.id,
+            itemKey: "task:onboarding",
+            itemType: "task",
+            clickupId: onboardingTaskId,
+            clickupParentId: clientWorkListId,
+        })
+
+        const onboardingSteps = await getClientOnboardingSteps(client.id)
+
+        await Promise.all(
+            onboardingSteps.map(async (step) => {
+                const clickupTask = await createClickUpTask({
+                    listId: onboardingInformationListId,
+                    name: step.title,
+                    status: "Unsubmitted",
+                    markdownDescription: [
+                        `Module: ${step.moduleTitle}`,
+                        "",
+                        step.description,
+                    ].join("\n"),
+                })
+                const clickupTaskId = getTaskId(clickupTask)
+
+                if (!clickupTaskId) {
+                    throw new Error(
+                        `ClickUp did not return a task ID for ${step.title}`
+                    )
+                }
+
+                await saveClickUpItem({
+                    clientId: client.id,
+                    itemKey: `step:${step.key}`,
+                    itemType: "task",
+                    clickupId: clickupTaskId,
+                    clickupParentId: onboardingInformationListId,
+                    stepKey: step.key,
+                })
+            })
         )
 
         const workspaceUserIds = await getClickUpWorkspaceMemberIds()
@@ -332,7 +684,7 @@ export async function deleteClientClickUpResources(clientId: string) {
     if (!hasClickUpConfig()) {
         return {
             ok: false,
-            error: "Missing CLICKUP_API_TOKEN, CLICKUP_WORKSPACE_ID, or CLICKUP_CLIENTS_SPACE_ID",
+            error: "Missing CLICKUP_API_TOKEN, CLICKUP_WORKSPACE_ID, CLICKUP_CLIENTS_SPACE_ID, or CLICKUP_CLIENT_FOLDER_TEMPLATE_ID",
         }
     }
 

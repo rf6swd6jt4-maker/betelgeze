@@ -138,6 +138,7 @@ Required environment variables:
 - `CLICKUP_API_TOKEN`
 - `CLICKUP_WORKSPACE_ID`
 - `CLICKUP_CLIENTS_SPACE_ID`
+- `CLICKUP_CLIENT_FOLDER_TEMPLATE_ID`
 - `META_WHATSAPP_ACCESS_TOKEN`
 - `META_WHATSAPP_PHONE_NUMBER_ID`
 - `META_WHATSAPP_BUSINESS_ACCOUNT_ID`
@@ -150,11 +151,14 @@ Setup:
 
 1. Run the Supabase migrations.
 2. Create a ClickUp Space for clients manually, then set
-   `CLICKUP_CLIENTS_SPACE_ID` to that Space ID.
+   `CLICKUP_CLIENTS_SPACE_ID` to that Space ID. Create a client Folder
+   template with `Onboarding Information` and `Client Work` Lists, then set
+   `CLICKUP_CLIENT_FOLDER_TEMPLATE_ID` to that template ID.
 3. Add clients with their WhatsApp number as the primary contact. If ClickUp
-   credentials are configured, the app creates a client Folder inside the
-   Clients Space, creates a ClickUp Chat channel for that Folder, and stores the
-   WhatsApp bridge mapping.
+   credentials are configured, the app creates a client Folder from the
+   template inside the Clients Space, creates initial onboarding tasks, creates
+   a ClickUp Chat channel for that Folder, and stores the WhatsApp bridge
+   mapping.
 4. In Meta, point the WhatsApp webhook callback URL to:
    `/api/client-messages/meta/whatsapp`
 5. To send a team reply back to the client manually, post JSON to:

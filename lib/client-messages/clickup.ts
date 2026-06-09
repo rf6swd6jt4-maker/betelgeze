@@ -45,6 +45,13 @@ type DeleteClickUpFolderInput = {
     folderId: string
 }
 
+type CreateClickUpFolderFromTemplateInput = {
+    spaceId: string
+    templateId: string
+    name: string
+    color?: string
+}
+
 type CreateClickUpChannelInput = {
     workspaceId?: string | null
     name: string
@@ -84,6 +91,25 @@ type CreateClickUpListInput = {
     status?: string
 }
 
+type RetrieveClickUpFolderListsInput = {
+    folderId: string
+}
+
+type CreateClickUpTaskInput = {
+    listId: string
+    name: string
+    description?: string
+    markdownDescription?: string
+    status?: string
+}
+
+type UpdateClickUpTaskInput = {
+    taskId: string
+    description?: string
+    markdownDescription?: string
+    status?: string
+}
+
 type ClickUpAuthorizedWorkspace = {
     id?: string | number
     name?: string
@@ -100,7 +126,8 @@ export function hasClickUpConfig() {
     return Boolean(
         process.env.CLICKUP_API_TOKEN &&
             process.env.CLICKUP_WORKSPACE_ID &&
-            process.env.CLICKUP_CLIENTS_SPACE_ID
+            process.env.CLICKUP_CLIENTS_SPACE_ID &&
+            process.env.CLICKUP_CLIENT_FOLDER_TEMPLATE_ID
     )
 }
 
@@ -180,6 +207,10 @@ export function getClickUpWorkspaceId(value?: string | null) {
 
 export function getClickUpClientsSpaceId(value?: string | null) {
     return (value || getRequiredEnv("CLICKUP_CLIENTS_SPACE_ID")).trim()
+}
+
+export function getClickUpClientFolderTemplateId(value?: string | null) {
+    return (value || getRequiredEnv("CLICKUP_CLIENT_FOLDER_TEMPLATE_ID")).trim()
 }
 
 const DEFAULT_SPACE_FEATURES = {
@@ -417,6 +448,59 @@ export async function createClickUpFolder({
     })
 }
 
+export async function createClickUpFolderFromTemplate({
+    spaceId,
+    templateId,
+    name,
+    color,
+}: CreateClickUpFolderFromTemplateInput) {
+    const createFolder = async (body: Record<string, unknown>) => {
+        const response = await fetch(
+            `https://api.clickup.com/api/v2/space/${spaceId}/folder_template/${templateId}`,
+            {
+                method: "POST",
+                headers: {
+                    Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                    "Content-Type": "application/json",
+                    accept: "application/json",
+                },
+                body: JSON.stringify(body),
+            }
+        )
+        const responseBody = await response.text()
+
+        if (!response.ok) {
+            throw new Error(
+                getClickUpErrorMessage({
+                    action: "ClickUp Folder template",
+                    status: response.status,
+                    body: responseBody,
+                })
+            )
+        }
+
+        return responseBody ? JSON.parse(responseBody) : null
+    }
+
+    if (color) {
+        try {
+            return await createFolder({
+                name,
+                color,
+            })
+        } catch (error) {
+            console.warn(
+                "ClickUp Folder template color was not applied; retrying without color.",
+                error instanceof Error ? error.message : error
+            )
+        }
+    }
+
+    return createFolder({
+        name,
+    })
+}
+
 export async function createClickUpList({
     folderId,
     name,
@@ -448,6 +532,112 @@ export async function createClickUpList({
         throw new Error(
             getClickUpErrorMessage({
                 action: "ClickUp List",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function retrieveClickUpFolderLists({
+    folderId,
+}: RetrieveClickUpFolderListsInput) {
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/folder/${folderId}/list`,
+        {
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                accept: "application/json",
+            },
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Folder lists",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function createClickUpTask({
+    listId,
+    name,
+    description,
+    markdownDescription,
+    status,
+}: CreateClickUpTaskInput) {
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/list/${listId}/task`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                "Content-Type": "application/json",
+                accept: "application/json",
+            },
+            body: JSON.stringify({
+                name,
+                description,
+                markdown_description: markdownDescription,
+                status,
+            }),
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Task",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function updateClickUpTask({
+    taskId,
+    description,
+    markdownDescription,
+    status,
+}: UpdateClickUpTaskInput) {
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/task/${taskId}`,
+        {
+            method: "PUT",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                "Content-Type": "application/json",
+                accept: "application/json",
+            },
+            body: JSON.stringify({
+                description,
+                markdown_description: markdownDescription,
+                status,
+            }),
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Task update",
                 status: response.status,
                 body: responseBody,
             })

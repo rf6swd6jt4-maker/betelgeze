@@ -68,6 +68,10 @@ const CLIENT_FOLDER_COLOR = "#e50000"
 
 const ONBOARDING_INFORMATION_LIST_NAME = "Onboarding Information"
 const CLIENT_WORK_LIST_NAME = "Client Work"
+const ONBOARDING_TASK_STATUS_NOT_STARTED = "NOT STARTED"
+const ONBOARDING_TASK_STATUS_IN_PROGRESS = "IN PROGRESS"
+const STEP_TASK_STATUS_UNSUBMITTED = "UNSUBMITTED"
+const STEP_TASK_STATUS_SUBMITTED_FOR_REVIEW = "SUBMITTED | FOR REVIEW"
 
 async function addActivity(
     clientId: string,
@@ -255,9 +259,7 @@ function formatResponseValue(value: FormResponseValue) {
 
         return [
             "Uploaded media/files can be found in attachments below.",
-            "",
             `${value.length} file${value.length === 1 ? "" : "s"} uploaded (${formatFileSize(totalSize)} total).`,
-            "",
             value.map((upload) => `- ${formatUpload(upload)}`).join("\n"),
         ].join("\n")
     }
@@ -276,8 +278,7 @@ function formatStepResponse({
 }) {
     const form = getOnboardingForm(formKey ?? undefined)
     const lines = [
-        "## Form Submissions",
-        "",
+        "Form Submissions",
         `Client: ${clientName}`,
         `Submitted via onboarding portal: ${new Date().toISOString()}`,
     ]
@@ -285,13 +286,12 @@ function formatStepResponse({
     if (!form || !response) {
         return [
             ...lines,
-            "",
             "This step has been marked complete in the onboarding portal.",
         ].join("\n")
     }
 
     for (const field of form.fields) {
-        lines.push("", `### ${field.label}`)
+        lines.push("", field.label)
         lines.push(formatResponseValue(response[field.name] ?? ""))
     }
 
@@ -409,7 +409,7 @@ export async function syncClientOnboardingStepToClickUp({
             stepTaskId
                 ? updateClickUpTask({
                       taskId: stepTaskId,
-                      status: "Submitted",
+                      status: STEP_TASK_STATUS_SUBMITTED_FOR_REVIEW,
                       markdownDescription: formatStepResponse({
                           clientName: client?.name ?? "Client",
                           formKey: step?.formKey,
@@ -420,7 +420,7 @@ export async function syncClientOnboardingStepToClickUp({
             onboardingTaskId
                 ? updateClickUpTask({
                       taskId: onboardingTaskId,
-                      status: "In progress",
+                      status: ONBOARDING_TASK_STATUS_IN_PROGRESS,
                   })
                 : Promise.resolve(),
         ])
@@ -458,7 +458,7 @@ export async function resetClientOnboardingClickUpTasks(clientId: string) {
             onboardingTaskId
                 ? updateClickUpTask({
                       taskId: onboardingTaskId,
-                      status: "Not Started",
+                      status: ONBOARDING_TASK_STATUS_NOT_STARTED,
                       markdownDescription:
                           "Tracks the overall onboarding lifecycle for this client.",
                   })
@@ -473,7 +473,7 @@ export async function resetClientOnboardingClickUpTasks(clientId: string) {
 
                 await updateClickUpTask({
                     taskId: stepTaskId,
-                    status: "Unsubmitted",
+                    status: STEP_TASK_STATUS_UNSUBMITTED,
                     markdownDescription: formatInitialStepDescription({
                         moduleTitle: step.moduleTitle,
                         description: step.description,
@@ -695,7 +695,7 @@ export async function ensureClientClickUpChannel(clientId: string) {
         const onboardingTask = await createClickUpTask({
             listId: clientWorkListId,
             name: "Onboarding",
-            status: "Not Started",
+            status: ONBOARDING_TASK_STATUS_NOT_STARTED,
             markdownDescription:
                 "Tracks the overall onboarding lifecycle for this client.",
         })
@@ -719,7 +719,7 @@ export async function ensureClientClickUpChannel(clientId: string) {
             const clickupTask = await createClickUpTask({
                 listId: onboardingInformationListId,
                 name: getNumberedOnboardingStepTitle(index, step.title),
-                status: "Unsubmitted",
+                status: STEP_TASK_STATUS_UNSUBMITTED,
                 markdownDescription: formatInitialStepDescription({
                     moduleTitle: step.moduleTitle,
                     description: step.description,

@@ -129,18 +129,18 @@ export function FileUploadField({
                                     (url ? "light" : "dark")
 
                                 return (
-                            <button
-                                type="button"
-                                onClick={() => removeFile(index)}
-                                aria-label={`Remove ${file.name}`}
-                                className={`absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center text-3xl font-medium leading-none transition focus:outline-none focus:ring-4 focus:ring-white/40 ${
-                                    removeIconTone === "light"
-                                        ? "text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] hover:text-red-100"
-                                        : "text-black drop-shadow-[0_1px_2px_rgba(255,255,255,0.9)] hover:text-red-700"
-                                }`}
-                            >
-                                ×
-                            </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => removeFile(index)}
+                                        aria-label={`Remove ${file.name}`}
+                                        className={`absolute right-1.5 top-1.5 z-20 flex h-8 w-8 items-center justify-center text-3xl font-medium leading-none focus:outline-none ${
+                                            removeIconTone === "light"
+                                                ? "text-white"
+                                                : "text-black"
+                                        }`}
+                                    >
+                                        ×
+                                    </button>
                                 )
                             })()}
 

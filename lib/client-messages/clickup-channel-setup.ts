@@ -225,12 +225,19 @@ async function getClientOnboardingSteps(clientId: string) {
 }
 
 function formatUpload(upload: StoredUpload) {
-    return [
-        `- ${upload.name}`,
-        `  - Type: ${upload.type}`,
-        `  - Size: ${upload.size} bytes`,
-        `  - Storage path: ${upload.path}`,
-    ].join("\n")
+    return upload.name
+}
+
+function formatFileSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} bytes`
+
+    const megabytes = bytes / 1024 / 1024
+
+    if (megabytes >= 1) {
+        return `${megabytes.toFixed(1)} MB`
+    }
+
+    return `${(bytes / 1024).toFixed(1)} KB`
 }
 
 function formatResponseValue(value: FormResponseValue) {
@@ -239,9 +246,20 @@ function formatResponseValue(value: FormResponseValue) {
     }
 
     if (Array.isArray(value)) {
-        return value.length > 0
-            ? value.map(formatUpload).join("\n")
-            : "_No files uploaded_"
+        if (value.length === 0) return "_No files uploaded_"
+
+        const totalSize = value.reduce(
+            (total, upload) => total + upload.size,
+            0
+        )
+
+        return [
+            "Uploaded media/files can be found in attachments below.",
+            "",
+            `${value.length} file${value.length === 1 ? "" : "s"} uploaded (${formatFileSize(totalSize)} total).`,
+            "",
+            value.map((upload) => `- ${formatUpload(upload)}`).join("\n"),
+        ].join("\n")
     }
 
     return "_Blank_"
@@ -249,18 +267,16 @@ function formatResponseValue(value: FormResponseValue) {
 
 function formatStepResponse({
     clientName,
-    stepTitle,
     formKey,
     response,
 }: {
     clientName: string
-    stepTitle: string
     formKey?: string | null
     response?: FormResponse | null
 }) {
     const form = getOnboardingForm(formKey ?? undefined)
     const lines = [
-        `# ${stepTitle}`,
+        "## Form Submissions",
         "",
         `Client: ${clientName}`,
         `Submitted via onboarding portal: ${new Date().toISOString()}`,
@@ -275,7 +291,7 @@ function formatStepResponse({
     }
 
     for (const field of form.fields) {
-        lines.push("", `## ${field.label}`)
+        lines.push("", `### ${field.label}`)
         lines.push(formatResponseValue(response[field.name] ?? ""))
     }
 
@@ -290,6 +306,10 @@ function formatInitialStepDescription({
     description: string
 }) {
     return [`Module: ${moduleTitle}`, "", description].join("\n")
+}
+
+function getNumberedOnboardingStepTitle(index: number, title: string) {
+    return `${String(index + 1).padStart(2, "0")} ${title}`
 }
 
 function getUploadsFromResponse(response?: FormResponse | null) {
@@ -392,7 +412,6 @@ export async function syncClientOnboardingStepToClickUp({
                       status: "Submitted",
                       markdownDescription: formatStepResponse({
                           clientName: client?.name ?? "Client",
-                          stepTitle: step?.title ?? stepKey,
                           formKey: step?.formKey,
                           response: responseValue,
                       }),
@@ -696,35 +715,33 @@ export async function ensureClientClickUpChannel(clientId: string) {
 
         const onboardingSteps = await getClientOnboardingSteps(client.id)
 
-        await Promise.all(
-            onboardingSteps.map(async (step) => {
-                const clickupTask = await createClickUpTask({
-                    listId: onboardingInformationListId,
-                    name: step.title,
-                    status: "Unsubmitted",
-                    markdownDescription: formatInitialStepDescription({
-                        moduleTitle: step.moduleTitle,
-                        description: step.description,
-                    }),
-                })
-                const clickupTaskId = getTaskId(clickupTask)
-
-                if (!clickupTaskId) {
-                    throw new Error(
-                        `ClickUp did not return a task ID for ${step.title}`
-                    )
-                }
-
-                await saveClickUpItem({
-                    clientId: client.id,
-                    itemKey: `step:${step.key}`,
-                    itemType: "task",
-                    clickupId: clickupTaskId,
-                    clickupParentId: onboardingInformationListId,
-                    stepKey: step.key,
-                })
+        for (const [index, step] of onboardingSteps.entries()) {
+            const clickupTask = await createClickUpTask({
+                listId: onboardingInformationListId,
+                name: getNumberedOnboardingStepTitle(index, step.title),
+                status: "Unsubmitted",
+                markdownDescription: formatInitialStepDescription({
+                    moduleTitle: step.moduleTitle,
+                    description: step.description,
+                }),
             })
-        )
+            const clickupTaskId = getTaskId(clickupTask)
+
+            if (!clickupTaskId) {
+                throw new Error(
+                    `ClickUp did not return a task ID for ${step.title}`
+                )
+            }
+
+            await saveClickUpItem({
+                clientId: client.id,
+                itemKey: `step:${step.key}`,
+                itemType: "task",
+                clickupId: clickupTaskId,
+                clickupParentId: onboardingInformationListId,
+                stepKey: step.key,
+            })
+        }
 
         const workspaceUserIds = await getClickUpWorkspaceMemberIds()
         let clickupChannelId: string | null = null

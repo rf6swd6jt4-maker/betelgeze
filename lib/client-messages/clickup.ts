@@ -110,6 +110,13 @@ type UpdateClickUpTaskInput = {
     status?: string
 }
 
+type CreateClickUpTaskAttachmentInput = {
+    taskId: string
+    fileName: string
+    contentType: string
+    bytes: Uint8Array
+}
+
 type ClickUpAuthorizedWorkspace = {
     id?: string | number
     name?: string
@@ -638,6 +645,48 @@ export async function updateClickUpTask({
         throw new Error(
             getClickUpErrorMessage({
                 action: "ClickUp Task update",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function createClickUpTaskAttachment({
+    taskId,
+    fileName,
+    contentType,
+    bytes,
+}: CreateClickUpTaskAttachmentInput) {
+    const formData = new FormData()
+    const arrayBuffer = new ArrayBuffer(bytes.byteLength)
+    new Uint8Array(arrayBuffer).set(bytes)
+    const file = new File([arrayBuffer], fileName, {
+        type: contentType || "application/octet-stream",
+    })
+
+    formData.append("attachment", file)
+
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/task/${taskId}/attachment`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                accept: "application/json",
+            },
+            body: formData,
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Task attachment",
                 status: response.status,
                 body: responseBody,
             })

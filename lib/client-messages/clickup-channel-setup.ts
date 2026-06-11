@@ -13,6 +13,7 @@ import {
     createClickUpFolderFromTemplate,
     createClickUpLocationChatChannel,
     createClickUpTask,
+    createClickUpTaskAttachment,
     deleteClickUpChatChannel,
     deleteClickUpFolder,
     deleteClickUpSpace,
@@ -25,6 +26,7 @@ import {
     retrieveClickUpFolderLists,
     updateClickUpTask,
 } from "@/lib/client-messages/clickup"
+import { downloadOnboardingUpload } from "@/lib/onboarding/uploads"
 
 function getChannelId(response: unknown): string | null {
     if (!response || typeof response !== "object") return null
@@ -280,6 +282,61 @@ function formatStepResponse({
     return lines.join("\n")
 }
 
+function getUploadsFromResponse(response?: FormResponse | null) {
+    if (!response) return []
+
+    return Object.values(response).flatMap((value) =>
+        Array.isArray(value) ? (value as StoredUpload[]) : []
+    )
+}
+
+async function attachUploadsToClickUpTask({
+    clientId,
+    stepKey,
+    taskId,
+    uploads,
+}: {
+    clientId: string
+    stepKey: string
+    taskId: string
+    uploads: StoredUpload[]
+}) {
+    for (const upload of uploads) {
+        const itemKey = `attachment:${stepKey}:${upload.path}`
+        const existingAttachment = await getClickUpItem(clientId, itemKey)
+
+        if (existingAttachment) continue
+
+        try {
+            const downloaded = await downloadOnboardingUpload(upload.path)
+            const attachment = await createClickUpTaskAttachment({
+                taskId,
+                fileName: upload.name,
+                contentType: downloaded.contentType || upload.type,
+                bytes: downloaded.bytes,
+            })
+            const attachmentId = getEntityId(attachment) ?? upload.path
+
+            await saveClickUpItem({
+                clientId,
+                itemKey,
+                itemType: "attachment",
+                clickupId: attachmentId,
+                clickupParentId: taskId,
+                stepKey,
+            })
+        } catch (error) {
+            await addActivity(
+                clientId,
+                "clickup_attachment_failed",
+                error instanceof Error
+                    ? `ClickUp attachment failed for ${upload.name}: ${error.message}`
+                    : `ClickUp attachment failed for ${upload.name}`
+            )
+        }
+    }
+}
+
 export async function syncClientOnboardingStepToClickUp({
     clientId,
     stepKey,
@@ -313,6 +370,11 @@ export async function syncClientOnboardingStepToClickUp({
             (candidate) => candidate.key === stepKey
         )
 
+        const responseValue =
+            response?.response && typeof response.response === "object"
+                ? (response.response as FormResponse)
+                : null
+
         await Promise.all([
             stepTaskId
                 ? updateClickUpTask({
@@ -322,11 +384,7 @@ export async function syncClientOnboardingStepToClickUp({
                           clientName: client?.name ?? "Client",
                           stepTitle: step?.title ?? stepKey,
                           formKey: step?.formKey,
-                          response:
-                              response?.response &&
-                              typeof response.response === "object"
-                                  ? (response.response as FormResponse)
-                                  : null,
+                          response: responseValue,
                       }),
                   })
                 : Promise.resolve(),
@@ -337,6 +395,15 @@ export async function syncClientOnboardingStepToClickUp({
                   })
                 : Promise.resolve(),
         ])
+
+        if (stepTaskId) {
+            await attachUploadsToClickUpTask({
+                clientId,
+                stepKey,
+                taskId: stepTaskId,
+                uploads: getUploadsFromResponse(responseValue),
+            })
+        }
     } catch (error) {
         await addActivity(
             clientId,

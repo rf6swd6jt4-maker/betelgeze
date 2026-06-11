@@ -15,6 +15,8 @@ type FileUploadFieldProps = {
     multiple?: boolean
     required?: boolean
     existingFiles?: StoredUpload[]
+    files: File[]
+    onFilesChange: (files: File[]) => void
 }
 
 export function FileUploadField({
@@ -23,8 +25,10 @@ export function FileUploadField({
     multiple,
     required,
     existingFiles = [],
+    files,
+    onFilesChange,
 }: FileUploadFieldProps) {
-    const [files, setFiles] = useState<File[]>([])
+    const [inputKey, setInputKey] = useState(0)
 
     const previews = useMemo(
         () =>
@@ -37,6 +41,15 @@ export function FileUploadField({
         [files]
     )
 
+    function removeFile(indexToRemove: number) {
+        onFilesChange(files.filter((_, index) => index !== indexToRemove))
+        setInputKey((value) => value + 1)
+    }
+
+    function handleFilesChange(selectedFiles: File[]) {
+        onFilesChange(multiple ? selectedFiles : selectedFiles.slice(0, 1))
+    }
+
     return (
         <div>
             <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-center transition hover:border-[#1E3A5F] hover:bg-blue-50/30">
@@ -48,25 +61,40 @@ export function FileUploadField({
                     and show progress.
                 </span>
                 <input
-                    name={name}
+                    key={`${name}-${inputKey}`}
                     type="file"
                     accept={getFileAcceptValue(accept)}
                     multiple={multiple}
-                    required={required && existingFiles.length === 0}
+                    required={
+                        required &&
+                        existingFiles.length === 0 &&
+                        files.length === 0
+                    }
                     className="sr-only"
                     onChange={(event) =>
-                        setFiles(Array.from(event.currentTarget.files ?? []))
+                        handleFilesChange(
+                            Array.from(event.currentTarget.files ?? [])
+                        )
                     }
                 />
             </label>
 
             {files.length > 0 && (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {previews.map(({ file, url }) => (
+                    {previews.map(({ file, url }, index) => (
                         <div
                             key={`${file.name}-${file.size}`}
-                            className="overflow-hidden rounded-xl border border-slate-200 bg-white"
+                            className="relative overflow-hidden rounded-xl border border-slate-200 bg-white"
                         >
+                            <button
+                                type="button"
+                                onClick={() => removeFile(index)}
+                                aria-label={`Remove ${file.name}`}
+                                className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-lg leading-none text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-red-50 hover:text-red-700"
+                            >
+                                ×
+                            </button>
+
                             {url ? (
                                 <img
                                     src={url}

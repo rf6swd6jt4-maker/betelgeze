@@ -81,6 +81,16 @@ export function OnboardingForm({
     const [uploadLabel, setUploadLabel] = useState<string | null>(null)
     const [uploadProgress, setUploadProgress] = useState(0)
     const [saving, setSaving] = useState(false)
+    const [selectedFilesByField, setSelectedFilesByField] = useState<
+        Record<string, File[]>
+    >({})
+
+    function updateSelectedFiles(fieldName: string, files: File[]) {
+        setSelectedFilesByField((current) => ({
+            ...current,
+            [fieldName]: files,
+        }))
+    }
 
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault()
@@ -97,14 +107,10 @@ export function OnboardingForm({
                         initialResponse,
                         field.name
                     )
-                    const files = formData
-                        .getAll(field.name)
-                        .filter(
-                            (value): value is File =>
-                                value instanceof File &&
-                                value.size > 0 &&
-                                Boolean(value.name)
-                        )
+                    const files =
+                        selectedFilesByField[field.name]?.filter(
+                            (file) => file.size > 0 && Boolean(file.name)
+                        ) ?? []
 
                     const uploadedFiles: StoredUpload[] = []
 
@@ -207,6 +213,10 @@ export function OnboardingForm({
                                     initialResponse,
                                     field.name
                                 )}
+                                files={selectedFilesByField[field.name] ?? []}
+                                onFilesChange={(files) =>
+                                    updateSelectedFiles(field.name, files)
+                                }
                             />
                         </div>
                     ) : (

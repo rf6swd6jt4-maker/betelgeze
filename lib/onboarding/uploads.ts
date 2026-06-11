@@ -150,6 +150,32 @@ export async function createPrivateUploadSignedUrl(
     )
 }
 
+export async function downloadOnboardingUpload(path: string) {
+    const response = await getR2Client().send(
+        new GetObjectCommand({
+            Bucket: getR2BucketName(),
+            Key: path,
+        })
+    )
+
+    if (!response.Body) {
+        throw new Error(`Could not download upload: ${path}`)
+    }
+
+    const body = response.Body as {
+        transformToByteArray?: () => Promise<Uint8Array>
+    }
+
+    if (!body.transformToByteArray) {
+        throw new Error(`Upload body is not readable: ${path}`)
+    }
+
+    return {
+        bytes: await body.transformToByteArray(),
+        contentType: response.ContentType ?? "application/octet-stream",
+    }
+}
+
 export async function createUploadSignedUrls(paths: string[]) {
     if (paths.length === 0) {
         return new Map<string, string>()

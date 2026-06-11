@@ -68,6 +68,8 @@ export function ClientActionsMenu({
                 >
                     <Link
                         href={onboardingPath}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="block px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800"
                         role="menuitem"
                     >

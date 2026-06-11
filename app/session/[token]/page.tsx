@@ -221,6 +221,7 @@ export default async function SessionPage({ params }: PageProps) {
                 {!isFinalStep && currentStep.kind === "form" && (
                     currentForm ? (
                         <OnboardingForm
+                            key={currentStep.key}
                             token={token}
                             stepKey={currentStep.key}
                             form={currentForm}

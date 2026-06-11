@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
     FileAccept,
     getFileAcceptValue,
@@ -41,13 +41,24 @@ export function FileUploadField({
         [files]
     )
 
+    useEffect(() => {
+        return () => {
+            previews.forEach((preview) => {
+                if (preview.url) URL.revokeObjectURL(preview.url)
+            })
+        }
+    }, [previews])
+
     function removeFile(indexToRemove: number) {
         onFilesChange(files.filter((_, index) => index !== indexToRemove))
         setInputKey((value) => value + 1)
     }
 
     function handleFilesChange(selectedFiles: File[]) {
-        onFilesChange(multiple ? selectedFiles : selectedFiles.slice(0, 1))
+        onFilesChange(
+            multiple ? [...files, ...selectedFiles] : selectedFiles.slice(0, 1)
+        )
+        setInputKey((value) => value + 1)
     }
 
     return (
@@ -90,7 +101,7 @@ export function FileUploadField({
                                 type="button"
                                 onClick={() => removeFile(index)}
                                 aria-label={`Remove ${file.name}`}
-                                className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-lg leading-none text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-red-50 hover:text-red-700"
+                                className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-white text-2xl font-semibold leading-none text-red-700 shadow-md transition hover:bg-red-50 focus:outline-none focus:ring-4 focus:ring-red-100"
                             >
                                 ×
                             </button>

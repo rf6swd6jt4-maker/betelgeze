@@ -152,6 +152,10 @@ export function OnboardingForm({
             setSaving(true)
 
             await submitPreparedFormStep(token, stepKey, form.key, response)
+            setUploadLabel(null)
+            setUploadProgress(0)
+            setSaving(false)
+            setSelectedFilesByField({})
             router.refresh()
         } catch (caughtError) {
             setUploadLabel(null)

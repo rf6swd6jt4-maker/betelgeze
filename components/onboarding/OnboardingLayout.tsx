@@ -26,7 +26,7 @@ export function OnboardingLayout({
     client,
 }: OnboardingLayoutProps) {
     return (
-        <main className="flex min-h-screen flex-col bg-[#F8F7F3] text-slate-900 lg:h-[100dvh] lg:min-h-0 lg:overflow-hidden">
+        <main className="flex min-h-screen flex-col bg-[#F8F7F3] text-slate-900 lg:fixed lg:inset-0 lg:h-auto lg:min-h-0 lg:w-full lg:overflow-hidden">
             <header className="h-16 shrink-0 border-b border-slate-200 bg-white px-4 sm:px-6">
                 <div className="mx-auto flex h-full max-w-7xl items-center justify-between">
                     <p className="text-xl font-semibold text-[#1E3A5F]">

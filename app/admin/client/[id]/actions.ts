@@ -10,6 +10,7 @@ import {
     checkClientClickUpConnection,
     deleteClientClickUpResources,
     ensureClientClickUpChannel,
+    resetClientOnboardingClickUpTasks,
 } from "@/lib/client-messages/clickup-channel-setup"
 import { clearClickUpChatChannelMessages } from "@/lib/client-messages/clickup"
 import { checkMetaWhatsAppAccess } from "@/lib/client-messages/meta-whatsapp"
@@ -57,6 +58,8 @@ export async function clearClientProgress(clientId: string) {
         formResponses?.flatMap((row) =>
             getUploadPathsFromResponse(row.response)
         ) ?? []
+
+    await resetClientOnboardingClickUpTasks(clientId)
 
     await deleteOnboardingUploads(uploadPaths)
 

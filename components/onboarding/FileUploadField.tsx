@@ -29,6 +29,9 @@ export function FileUploadField({
     onFilesChange,
 }: FileUploadFieldProps) {
     const [inputKey, setInputKey] = useState(0)
+    const [removeIconByKey, setRemoveIconByKey] = useState<
+        Record<string, "light" | "dark">
+    >({})
 
     const previews = useMemo(
         () =>
@@ -59,6 +62,29 @@ export function FileUploadField({
             multiple ? [...files, ...selectedFiles] : selectedFiles.slice(0, 1)
         )
         setInputKey((value) => value + 1)
+    }
+
+    function getFileKey(file: File) {
+        return `${file.name}-${file.size}-${file.lastModified}`
+    }
+
+    function updateImageRemoveIcon(file: File, image: HTMLImageElement) {
+        const canvas = document.createElement("canvas")
+        const context = canvas.getContext("2d")
+
+        if (!context) return
+
+        canvas.width = 1
+        canvas.height = 1
+        context.drawImage(image, 0, 0, 1, 1)
+
+        const [red, green, blue] = context.getImageData(0, 0, 1, 1).data
+        const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+        setRemoveIconByKey((current) => ({
+            ...current,
+            [getFileKey(file)]: luminance > 150 ? "dark" : "light",
+        }))
     }
 
     return (
@@ -94,22 +120,40 @@ export function FileUploadField({
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     {previews.map(({ file, url }, index) => (
                         <div
-                            key={`${file.name}-${file.size}`}
+                            key={getFileKey(file)}
                             className="relative overflow-hidden rounded-xl border border-slate-200 bg-white"
                         >
+                            {(() => {
+                                const removeIconTone =
+                                    removeIconByKey[getFileKey(file)] ??
+                                    (url ? "light" : "dark")
+
+                                return (
                             <button
                                 type="button"
                                 onClick={() => removeFile(index)}
                                 aria-label={`Remove ${file.name}`}
-                                className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-white text-2xl font-semibold leading-none text-red-700 shadow-md transition hover:bg-red-50 focus:outline-none focus:ring-4 focus:ring-red-100"
+                                className={`absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center text-3xl font-medium leading-none transition focus:outline-none focus:ring-4 focus:ring-white/40 ${
+                                    removeIconTone === "light"
+                                        ? "text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] hover:text-red-100"
+                                        : "text-black drop-shadow-[0_1px_2px_rgba(255,255,255,0.9)] hover:text-red-700"
+                                }`}
                             >
                                 ×
                             </button>
+                                )
+                            })()}
 
                             {url ? (
                                 <img
                                     src={url}
                                     alt=""
+                                    onLoad={(event) =>
+                                        updateImageRemoveIcon(
+                                            file,
+                                            event.currentTarget
+                                        )
+                                    }
                                     className="h-36 w-full object-cover"
                                 />
                             ) : (

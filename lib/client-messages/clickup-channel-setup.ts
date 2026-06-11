@@ -282,6 +282,16 @@ function formatStepResponse({
     return lines.join("\n")
 }
 
+function formatInitialStepDescription({
+    moduleTitle,
+    description,
+}: {
+    moduleTitle: string
+    description: string
+}) {
+    return [`Module: ${moduleTitle}`, "", description].join("\n")
+}
+
 function getUploadsFromResponse(response?: FormResponse | null) {
     if (!response) return []
 
@@ -411,6 +421,60 @@ export async function syncClientOnboardingStepToClickUp({
             error instanceof Error
                 ? `ClickUp onboarding step sync failed: ${error.message}`
                 : "ClickUp onboarding step sync failed"
+        )
+    }
+}
+
+export async function resetClientOnboardingClickUpTasks(clientId: string) {
+    if (!process.env.CLICKUP_API_TOKEN) return
+
+    try {
+        const onboardingTaskId = await getClickUpItem(
+            clientId,
+            "task:onboarding"
+        )
+        const onboardingSteps = await getClientOnboardingSteps(clientId)
+
+        await Promise.all([
+            onboardingTaskId
+                ? updateClickUpTask({
+                      taskId: onboardingTaskId,
+                      status: "Not Started",
+                      markdownDescription:
+                          "Tracks the overall onboarding lifecycle for this client.",
+                  })
+                : Promise.resolve(),
+            ...onboardingSteps.map(async (step) => {
+                const stepTaskId = await getClickUpItem(
+                    clientId,
+                    `step:${step.key}`
+                )
+
+                if (!stepTaskId) return
+
+                await updateClickUpTask({
+                    taskId: stepTaskId,
+                    status: "Unsubmitted",
+                    markdownDescription: formatInitialStepDescription({
+                        moduleTitle: step.moduleTitle,
+                        description: step.description,
+                    }),
+                })
+            }),
+        ])
+
+        await addActivity(
+            clientId,
+            "clickup_onboarding_reset",
+            "ClickUp onboarding tasks reset to unsubmitted"
+        )
+    } catch (error) {
+        await addActivity(
+            clientId,
+            "clickup_onboarding_reset_failed",
+            error instanceof Error
+                ? `ClickUp onboarding reset failed: ${error.message}`
+                : "ClickUp onboarding reset failed"
         )
     }
 }
@@ -612,7 +676,7 @@ export async function ensureClientClickUpChannel(clientId: string) {
         const onboardingTask = await createClickUpTask({
             listId: clientWorkListId,
             name: "Onboarding",
-            status: "Not started",
+            status: "Not Started",
             markdownDescription:
                 "Tracks the overall onboarding lifecycle for this client.",
         })
@@ -638,11 +702,10 @@ export async function ensureClientClickUpChannel(clientId: string) {
                     listId: onboardingInformationListId,
                     name: step.title,
                     status: "Unsubmitted",
-                    markdownDescription: [
-                        `Module: ${step.moduleTitle}`,
-                        "",
-                        step.description,
-                    ].join("\n"),
+                    markdownDescription: formatInitialStepDescription({
+                        moduleTitle: step.moduleTitle,
+                        description: step.description,
+                    }),
                 })
                 const clickupTaskId = getTaskId(clickupTask)
 

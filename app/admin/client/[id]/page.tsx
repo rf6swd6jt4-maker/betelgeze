@@ -16,6 +16,7 @@ import {
 import { maskToken } from "@/lib/security/tokens"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { AdminCopyButton } from "@/components/admin/AdminCopyButton"
+import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 import { FormResponsesSummary } from "@/components/admin/FormResponsesSummary"
 import { ClientActionsMenu } from "./ClientActionsMenu"
 import {
@@ -454,6 +455,8 @@ export default async function ClientDetailPage({
                         }}
                         className="mt-4 grid gap-3 md:grid-cols-2"
                     >
+                        <FormPendingOverlay />
+
                         <label className="block text-sm text-neutral-300">
                             Client WhatsApp number
                             <input
@@ -546,6 +549,8 @@ export default async function ClientDetailPage({
                                 await checkMetaWhatsAppConnection(client.id)
                             }}
                         >
+                            <FormPendingOverlay />
+
                             <button className="rounded-lg border border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-200 hover:border-neutral-500 hover:text-white">
                                 Check Meta WhatsApp connection
                             </button>
@@ -557,6 +562,8 @@ export default async function ClientDetailPage({
                                 await checkClickUpConnection(client.id)
                             }}
                         >
+                            <FormPendingOverlay />
+
                             <button className="rounded-lg border border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-200 hover:border-neutral-500 hover:text-white">
                                 Check ClickUp connection
                             </button>
@@ -568,6 +575,8 @@ export default async function ClientDetailPage({
                                 await createClientClickUpChannel(client.id)
                             }}
                         >
+                            <FormPendingOverlay />
+
                             <button className="rounded-lg border border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-200 hover:border-neutral-500 hover:text-white">
                                 {communicationChannel?.clickup_channel_id
                                     ? "Refresh ClickUp Chat channel"
@@ -591,6 +600,8 @@ export default async function ClientDetailPage({
                             }}
                             className="mt-4"
                         >
+                            <FormPendingOverlay />
+
                             <textarea
                                 name="note"
                                 required
@@ -624,6 +635,8 @@ export default async function ClientDetailPage({
                                                     )
                                                 }}
                                             >
+                                                <FormPendingOverlay />
+
                                                 <button
                                                     className="rounded-md border border-neutral-800 px-2 py-1 text-xs text-neutral-500 hover:border-red-500/40 hover:bg-red-950/30 hover:text-red-200"
                                                     aria-label="Delete note"
@@ -774,6 +787,8 @@ export default async function ClientDetailPage({
                                     await clearClientBridgeMessages(client.id)
                                 }}
                             >
+                                <FormPendingOverlay />
+
                                 <button className="w-full rounded-lg border border-red-500/40 px-3 py-2 text-sm font-medium text-red-200 hover:bg-red-950/40 sm:w-auto">
                                     Clear messages
                                 </button>
@@ -867,6 +882,8 @@ export default async function ClientDetailPage({
                                 await archiveClient(client.id)
                             }}
                         >
+                            <FormPendingOverlay />
+
                             <button className="w-full rounded-lg border border-red-500/40 px-3 py-2 text-sm font-medium text-red-200 sm:w-auto">
                                 Archive client
                             </button>
@@ -878,6 +895,8 @@ export default async function ClientDetailPage({
                                 await deleteClient(client.id)
                             }}
                         >
+                            <FormPendingOverlay />
+
                             <button className="w-full rounded-lg bg-red-500 px-3 py-2 text-sm font-medium text-white sm:w-auto">
                                 Delete client permanently
                             </button>

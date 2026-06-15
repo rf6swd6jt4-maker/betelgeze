@@ -5,6 +5,7 @@ import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
 import { splitProjectTimeframeDays } from "@/lib/onboarding/project-timeframe"
 import { requireAdmin } from "@/lib/admin/auth"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
+import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 import { updateClient } from "./actions"
 
 type PageProps = {
@@ -82,6 +83,8 @@ export default async function EditClientPage({
                     }}
                     className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6"
                 >
+                    <FormPendingOverlay />
+
                     <label className="block text-sm text-neutral-300">
                         Client name
                     </label>

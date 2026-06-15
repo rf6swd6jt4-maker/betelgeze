@@ -7,6 +7,7 @@ import {
     getAdminSessionSecret,
     isValidAdminPassword,
 } from "@/lib/admin/auth"
+import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 export const dynamic = "force-dynamic"
 
 async function login(formData: FormData) {
@@ -54,6 +55,8 @@ export default async function AdminLoginPage({ searchParams }: PageProps) {
                 action={login}
                 className="w-full max-w-sm rounded-2xl border border-neutral-800 bg-neutral-900 p-6"
             >
+                <FormPendingOverlay />
+
                 <p className="text-sm text-neutral-400">Agency Onboarding</p>
 
                 <h1 className="mt-3 text-2xl font-semibold">Admin login</h1>

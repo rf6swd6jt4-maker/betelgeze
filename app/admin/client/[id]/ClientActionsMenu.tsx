@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 
 type ClientActionsMenuProps = {
     onboardingPath: string
@@ -86,6 +87,8 @@ export function ClientActionsMenu({
                     </button>
 
                     <form action={clearProgressAction}>
+                        <FormPendingOverlay />
+
                         <button
                             className="block w-full px-4 py-3 text-left text-sm text-red-300 hover:bg-red-950/50"
                             role="menuitem"

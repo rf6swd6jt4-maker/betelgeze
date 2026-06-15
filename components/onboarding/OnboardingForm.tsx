@@ -13,6 +13,7 @@ import {
     StoredUpload,
 } from "@/lib/onboarding/forms"
 import { FileUploadField } from "@/components/onboarding/FileUploadField"
+import { LoadingOverlay } from "@/components/LoadingOverlay"
 
 type OnboardingFormProps = {
     token: string
@@ -172,7 +173,13 @@ export function OnboardingForm({
     const submitting = saving || Boolean(uploadLabel)
 
     return (
-        <form onSubmit={handleSubmit} className="mt-8 space-y-6">
+        <form
+            onSubmit={handleSubmit}
+            data-global-loading="false"
+            className="mt-8 space-y-6"
+        >
+            {submitting && <LoadingOverlay label="Saving your answers..." />}
+
             <div className="rounded-2xl border border-slate-200 bg-[#F8F7F3] p-5">
                 <p className="font-semibold text-slate-950">{form.title}</p>
                 <p className="mt-2 text-sm leading-6 text-slate-600">

@@ -6,6 +6,7 @@ import { WhyWeAskCard } from "@/components/onboarding/WhyWeAskCard"
 import { ScrollToTopOnStepChange } from "@/components/onboarding/ScrollToTopOnStepChange"
 import { OnboardingForm } from "@/components/onboarding/OnboardingForm"
 import { TestClientMenu } from "@/components/onboarding/TestClientMenu"
+import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 import {
     FormResponse,
     getOnboardingForm,
@@ -299,6 +300,8 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
                             await completeStep(token, currentStep.key)
                         }}
                     >
+                        <FormPendingOverlay />
+
                         <button className="mt-8 w-full rounded-xl bg-[#1E3A5F] px-5 py-4 font-medium text-white transition active:scale-[0.99] active:opacity-80">
                             Complete and continue
                         </button>

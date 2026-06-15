@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { SERVICES } from "@/lib/onboarding/services"
 import { requireAdmin } from "@/lib/admin/auth"
+import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 import { createClient } from "./actions"
 export const dynamic = "force-dynamic"
 
@@ -53,6 +54,8 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                     action={createClient}
                     className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6"
                 >
+                    <FormPendingOverlay />
+
                     <label className="block text-sm text-neutral-300">
                         Client name
                     </label>

@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 
 type TestClientMenuProps = {
     currentStepTitle: string
@@ -30,6 +31,8 @@ export function TestClientMenu({
                 </p>
 
                 <form action={skipAction} className="mt-4">
+                    <FormPendingOverlay />
+
                     <button className="w-full rounded-lg bg-[#1E3A5F] px-3 py-2 text-sm font-semibold text-white">
                         Skip this step
                     </button>

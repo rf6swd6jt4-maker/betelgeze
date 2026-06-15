@@ -3,6 +3,10 @@
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
+import {
+    getProjectTimeframeDays,
+    ProjectTimeframeUnit,
+} from "@/lib/onboarding/project-timeframe"
 import { requireAdmin } from "@/lib/admin/auth"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 
@@ -12,8 +16,14 @@ export async function updateClient(clientId: string, formData: FormData) {
     const name = String(formData.get("name") ?? "").trim()
     const email = String(formData.get("email") ?? "").trim().toLowerCase()
     const phone = normalizeMessageAddress(String(formData.get("phone") ?? ""))
-    const projectTimeframe = String(formData.get("project_timeframe") ?? "")
-        .trim()
+    const timeframeAmount = Number(formData.get("project_timeframe_amount"))
+    const timeframeUnit = String(
+        formData.get("project_timeframe_unit") ?? "days"
+    ) as ProjectTimeframeUnit
+    const projectTimeframeDays = getProjectTimeframeDays(
+        timeframeAmount,
+        timeframeUnit
+    )
     const selectedServices = formData
         .getAll("services")
         .map(String)
@@ -32,7 +42,7 @@ export async function updateClient(clientId: string, formData: FormData) {
             email: email || null,
             phone,
             is_test: isTest,
-            project_timeframe: projectTimeframe || null,
+            project_timeframe_days: projectTimeframeDays,
         })
         .eq("id", clientId)
 

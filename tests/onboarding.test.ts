@@ -20,8 +20,9 @@ import { formatMetaWhatsAppApiError } from "../lib/client-messages/meta-whatsapp
 import { getModuleKeysForServices } from "../lib/onboarding/services.ts"
 import { isOnboardingStuck } from "../lib/onboarding/stuck.ts"
 import {
+    getProjectTimeframeDays,
     getProjectDeadlineTimestamp,
-    parseProjectTimeframeDays,
+    splitProjectTimeframeDays,
 } from "../lib/onboarding/project-timeframe.ts"
 
 test("counts unique completed onboarding steps", () => {
@@ -62,14 +63,19 @@ test("maps fulfilment services to required onboarding modules", () => {
     )
 })
 
-test("parses project timeframes for fulfilment deadlines", () => {
-    assert.equal(parseProjectTimeframeDays("30 days"), 30)
-    assert.equal(parseProjectTimeframeDays("2 weeks"), 14)
-    assert.equal(parseProjectTimeframeDays("soon"), null)
+test("converts project timeframe units for fulfilment deadlines", () => {
+    assert.equal(getProjectTimeframeDays(30, "days"), 30)
+    assert.equal(getProjectTimeframeDays(2, "weeks"), 14)
+    assert.equal(getProjectTimeframeDays(1, "months"), 30)
+    assert.equal(getProjectTimeframeDays(0, "days"), null)
+    assert.deepEqual(splitProjectTimeframeDays(14), {
+        amount: 2,
+        unit: "weeks",
+    })
 
     assert.equal(
         getProjectDeadlineTimestamp({
-            timeframe: "2 weeks",
+            days: 14,
             from: new Date("2026-06-15T00:00:00.000Z"),
         }),
         new Date("2026-06-29T00:00:00.000Z").getTime()

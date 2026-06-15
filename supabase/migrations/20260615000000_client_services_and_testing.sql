@@ -2,7 +2,7 @@ alter table public.clients
     add column if not exists is_test boolean not null default false;
 
 alter table public.clients
-    add column if not exists project_timeframe text;
+    add column if not exists project_timeframe_days integer;
 
 create table if not exists public.client_services (
     id uuid primary key default gen_random_uuid(),

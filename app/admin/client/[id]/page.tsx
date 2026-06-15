@@ -63,7 +63,7 @@ export default async function ClientDetailPage({
 
     const { data: client } = await supabaseAdmin
         .from("clients")
-        .select("id, name, email, phone, session_token, created_at, archived_at, is_test, project_timeframe")
+        .select("id, name, email, phone, session_token, created_at, archived_at, is_test, project_timeframe_days")
         .eq("id", id)
         .single()
 
@@ -364,7 +364,9 @@ export default async function ClientDetailPage({
 
                     <p className="mt-2 text-sm text-neutral-400">
                         Project timeframe:{" "}
-                        {client.project_timeframe ?? "No timeframe set"}
+                        {client.project_timeframe_days
+                            ? `${client.project_timeframe_days} days`
+                            : "No timeframe set"}
                     </p>
 
                     <div className="mt-3 flex flex-wrap gap-2">

@@ -584,7 +584,7 @@ async function ensureClientServiceTasks(clientId: string) {
         getClientServices(clientId),
         supabaseAdmin
             .from("clients")
-            .select("project_timeframe")
+            .select("project_timeframe_days")
             .eq("id", clientId)
             .single(),
     ])
@@ -592,7 +592,7 @@ async function ensureClientServiceTasks(clientId: string) {
     if (!clientWorkListId || services.length === 0) return
 
     const serviceDueDate = getProjectDeadlineTimestamp({
-        timeframe: client?.project_timeframe,
+        days: client?.project_timeframe_days,
     })
 
     if (onboardingTaskId) {

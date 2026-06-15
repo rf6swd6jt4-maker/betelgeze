@@ -1,32 +1,57 @@
 const DAY_MS = 24 * 60 * 60 * 1000
 
-export function parseProjectTimeframeDays(value?: string | null) {
-    const normalized = value?.trim().toLowerCase()
+export type ProjectTimeframeUnit = "days" | "weeks" | "months"
 
-    if (!normalized) return null
-
-    const match = normalized.match(/^(\d+(?:\.\d+)?)\s*(day|days|week|weeks)$/)
-
-    if (!match) return null
-
-    const amount = Number(match[1])
-
+export function getProjectTimeframeDays(
+    amount: number,
+    unit: ProjectTimeframeUnit
+) {
     if (!Number.isFinite(amount) || amount <= 0) return null
 
-    const unit = match[2]
+    if (unit === "weeks") return Math.round(amount * 7)
+    if (unit === "months") return Math.round(amount * 30)
 
-    return unit.startsWith("week") ? Math.round(amount * 7) : Math.round(amount)
+    return Math.round(amount)
+}
+
+export function splitProjectTimeframeDays(days?: number | null): {
+    amount: number | ""
+    unit: ProjectTimeframeUnit
+} {
+    if (!days || days <= 0) {
+        return {
+            amount: "",
+            unit: "days",
+        }
+    }
+
+    if (days % 30 === 0) {
+        return {
+            amount: days / 30,
+            unit: "months",
+        }
+    }
+
+    if (days % 7 === 0) {
+        return {
+            amount: days / 7,
+            unit: "weeks",
+        }
+    }
+
+    return {
+        amount: days,
+        unit: "days",
+    }
 }
 
 export function getProjectDeadlineTimestamp({
-    timeframe,
+    days,
     from = new Date(),
 }: {
-    timeframe?: string | null
+    days?: number | null
     from?: Date
 }) {
-    const days = parseProjectTimeframeDays(timeframe)
-
     if (!days) return undefined
 
     return from.getTime() + days * DAY_MS

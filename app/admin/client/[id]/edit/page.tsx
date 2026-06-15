@@ -2,6 +2,7 @@ import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
 import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
+import { splitProjectTimeframeDays } from "@/lib/onboarding/project-timeframe"
 import { requireAdmin } from "@/lib/admin/auth"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { updateClient } from "./actions"
@@ -46,6 +47,9 @@ export default async function EditClientPage({
     const assignedServiceKeys =
         serviceRows?.map((row) => row.service_key) ?? []
     const assignedModuleKeys = getModuleKeysForServices(assignedServiceKeys)
+    const projectTimeframe = splitProjectTimeframeDays(
+        client.project_timeframe_days
+    )
 
     return (
         <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
@@ -127,17 +131,32 @@ export default async function EditClientPage({
                         Project timeframe
                     </label>
 
-                    <input
-                        name="project_timeframe"
-                        type="text"
-                        defaultValue={client.project_timeframe ?? ""}
-                        className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
-                        placeholder="30 days or 2 weeks"
-                    />
+                    <div className="mt-2 grid grid-cols-[1fr_auto] gap-3">
+                        <input
+                            name="project_timeframe_amount"
+                            type="number"
+                            min="1"
+                            step="1"
+                            defaultValue={projectTimeframe.amount}
+                            className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
+                            placeholder="e.g. 30"
+                        />
+
+                        <select
+                            name="project_timeframe_unit"
+                            defaultValue={projectTimeframe.unit}
+                            className="rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
+                        >
+                            <option value="days">Days</option>
+                            <option value="weeks">Weeks</option>
+                            <option value="months">Months</option>
+                        </select>
+                    </div>
 
                     <p className="mt-2 text-xs text-neutral-500">
                         Fulfilment task deadlines are calculated from the date
-                        the tasks are created, after onboarding is complete.
+                        the tasks are created. Weeks convert to days × 7;
+                        months convert to days × 30.
                     </p>
 
                     <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">

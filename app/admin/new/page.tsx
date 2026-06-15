@@ -14,6 +14,18 @@ export default async function NewClientPage({ searchParams }: PageProps) {
     await requireAdmin()
 
     const { error } = await searchParams
+    const errorMessage =
+        error === "schema-missing"
+            ? "The database is missing the latest client services/test client migration. Apply the Supabase migration, then try again."
+            : error === "phone-schema-missing"
+              ? "The database is missing the client phone column migration. Apply the Supabase migrations, then try again."
+              : error === "modules-failed"
+                ? "The client was created, but onboarding modules could not be assigned."
+                : error === "services-failed"
+                  ? "The client was created, but fulfilment services could not be saved. Check the client_services table migration."
+                  : error
+                    ? "Could not create client. Check that name, phone, and required fields are filled in."
+                    : null
 
     return (
         <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
@@ -31,10 +43,9 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                     or custom-proposal clients.
                 </p>
 
-                {error && (
+                {errorMessage && (
                     <div className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                        Could not create client. Check that name, phone, and at
-                        least the required fields are filled in.
+                        {errorMessage}
                     </div>
                 )}
 
@@ -87,16 +98,31 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                         Project timeframe
                     </label>
 
-                    <input
-                        name="project_timeframe"
-                        type="text"
-                        className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
-                        placeholder="30 days or 2 weeks"
-                    />
+                    <div className="mt-2 grid grid-cols-[1fr_auto] gap-3">
+                        <input
+                            name="project_timeframe_amount"
+                            type="number"
+                            min="1"
+                            step="1"
+                            className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
+                            placeholder="e.g. 30"
+                        />
+
+                        <select
+                            name="project_timeframe_unit"
+                            defaultValue="days"
+                            className="rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
+                        >
+                            <option value="days">Days</option>
+                            <option value="weeks">Weeks</option>
+                            <option value="months">Months</option>
+                        </select>
+                    </div>
 
                     <p className="mt-2 text-xs text-neutral-500">
                         Fulfilment task deadlines are calculated from the date
-                        the tasks are created, after onboarding is complete.
+                        the tasks are created. Weeks convert to days × 7;
+                        months convert to days × 30.
                     </p>
 
                     <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">

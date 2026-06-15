@@ -1,7 +1,9 @@
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
+import { SERVICES } from "@/lib/onboarding/services"
 import { requireAdmin } from "@/lib/admin/auth"
+import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import {
     FormResponse,
     getOnboardingForm,
@@ -61,7 +63,7 @@ export default async function ClientDetailPage({
 
     const { data: client } = await supabaseAdmin
         .from("clients")
-        .select("id, name, email, phone, session_token, created_at, archived_at")
+        .select("id, name, email, phone, session_token, created_at, archived_at, is_test")
         .eq("id", id)
         .single()
 
@@ -75,6 +77,7 @@ export default async function ClientDetailPage({
 
     const [
         { data: moduleRows },
+        { data: serviceRows },
         { data: progressRows },
         { data: noteRows },
         { data: activityRows },
@@ -85,6 +88,10 @@ export default async function ClientDetailPage({
         supabaseAdmin
             .from("client_modules")
             .select("id, client_id, module_key")
+            .eq("client_id", client.id),
+        supabaseAdmin
+            .from("client_services")
+            .select("service_key, due_date")
             .eq("client_id", client.id),
         supabaseAdmin
             .from("client_progress")
@@ -124,6 +131,14 @@ export default async function ClientDetailPage({
     ])
 
     const assignedModuleKeys = moduleRows?.map((row) => row.module_key) ?? []
+    const assignedServices =
+        serviceRows
+            ?.map((row) => ({
+                key: row.service_key,
+                definition: SERVICES[row.service_key],
+                dueDate: row.due_date as string | null,
+            }))
+            .filter((service) => service.definition) ?? []
     const completedKeys = new Set(
         progressRows?.map((row) => row.step_key) ?? []
     )
@@ -174,6 +189,11 @@ export default async function ClientDetailPage({
                 ? latestProgressActivity
                 : latestAdminActivity
             : latestProgressActivity ?? latestAdminActivity
+    const stuck = isOnboardingStuck({
+        percentage,
+        createdAt: client.created_at,
+        lastActivityAt: latestActivity,
+    })
 
     const baseUrl =
         process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
@@ -219,6 +239,20 @@ export default async function ClientDetailPage({
                         <h1 className="mt-2 text-2xl font-semibold tracking-tight">
                             {client.name ?? "Unnamed client"}
                         </h1>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {client.is_test && (
+                                <span className="rounded-full bg-amber-400/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-amber-200">
+                                    Test client
+                                </span>
+                            )}
+
+                            {stuck && (
+                                <span className="rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-red-200">
+                                    Stuck
+                                </span>
+                            )}
+                        </div>
 
                         <p className="mt-1 text-sm text-neutral-300">
                             {client.phone
@@ -323,6 +357,30 @@ export default async function ClientDetailPage({
                         </div>
                     </section>
                 </div>
+
+                <section className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                    <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                        Fulfilment services
+                    </p>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        {assignedServices.length > 0 ? (
+                            assignedServices.map(({ key, definition, dueDate }) => (
+                                <span
+                                    key={key}
+                                    className="rounded-md bg-blue-500/10 px-2 py-1 text-xs text-blue-200"
+                                >
+                                    {definition.title}
+                                    {dueDate ? ` · due ${dueDate}` : ""}
+                                </span>
+                            ))
+                        ) : (
+                            <span className="text-sm text-neutral-500">
+                                No fulfilment services assigned.
+                            </span>
+                        )}
+                    </div>
+                </section>
 
                 <section className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
                     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">

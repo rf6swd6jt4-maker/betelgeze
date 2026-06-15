@@ -95,12 +95,30 @@ type RetrieveClickUpFolderListsInput = {
     folderId: string
 }
 
+type SearchClickUpDocsInput = {
+    workspaceId?: string | null
+    parentId?: string
+    parentType?: "SPACE" | "FOLDER" | "LIST" | "EVERYTHING" | "WORKSPACE"
+    limit?: number
+}
+
+type CreateClickUpDocInput = {
+    workspaceId?: string | null
+    name: string
+    parentId: string
+    parentType: "SPACE" | "FOLDER" | "LIST" | "EVERYTHING" | "WORKSPACE"
+    visibility?: "PUBLIC" | "PRIVATE" | "PERSONAL" | "HIDDEN"
+}
+
 type CreateClickUpTaskInput = {
     listId: string
     name: string
     description?: string
     markdownDescription?: string
     status?: string
+    tags?: string[]
+    dueDate?: number
+    parentTaskId?: string
 }
 
 type UpdateClickUpTaskInput = {
@@ -108,6 +126,7 @@ type UpdateClickUpTaskInput = {
     description?: string
     markdownDescription?: string
     status?: string
+    dueDate?: number
 }
 
 type CreateClickUpTaskAttachmentInput = {
@@ -115,6 +134,11 @@ type CreateClickUpTaskAttachmentInput = {
     fileName: string
     contentType: string
     bytes: Uint8Array
+}
+
+type UpdateClickUpTaskTagInput = {
+    taskId: string
+    tagName: string
 }
 
 type ClickUpAuthorizedWorkspace = {
@@ -576,12 +600,98 @@ export async function retrieveClickUpFolderLists({
     return responseBody ? JSON.parse(responseBody) : null
 }
 
+export async function searchClickUpDocs({
+    workspaceId,
+    parentId,
+    parentType,
+    limit = 50,
+}: SearchClickUpDocsInput) {
+    const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
+    const params = new URLSearchParams({
+        limit: String(limit),
+    })
+
+    if (parentId) params.set("parent_id", parentId)
+    if (parentType) params.set("parent_type", parentType)
+
+    const response = await fetch(
+        `https://api.clickup.com/api/v3/workspaces/${resolvedWorkspaceId}/docs?${params.toString()}`,
+        {
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                accept: "application/json",
+            },
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Docs search",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function createClickUpDoc({
+    workspaceId,
+    name,
+    parentId,
+    parentType,
+    visibility = "PUBLIC",
+}: CreateClickUpDocInput) {
+    const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
+    const response = await fetch(
+        `https://api.clickup.com/api/v3/workspaces/${resolvedWorkspaceId}/docs`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                "Content-Type": "application/json",
+                accept: "application/json",
+            },
+            body: JSON.stringify({
+                name,
+                parent: {
+                    id: parentId,
+                    type: parentType,
+                },
+                visibility,
+                create_page: true,
+            }),
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Doc",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
 export async function createClickUpTask({
     listId,
     name,
     description,
     markdownDescription,
     status,
+    tags,
+    dueDate,
+    parentTaskId,
 }: CreateClickUpTaskInput) {
     const response = await fetch(
         `https://api.clickup.com/api/v2/list/${listId}/task`,
@@ -597,6 +707,10 @@ export async function createClickUpTask({
                 description,
                 markdown_description: markdownDescription,
                 status,
+                tags,
+                due_date: dueDate,
+                due_date_time: false,
+                parent: parentTaskId,
             }),
         }
     )
@@ -621,6 +735,7 @@ export async function updateClickUpTask({
     description,
     markdownDescription,
     status,
+    dueDate,
 }: UpdateClickUpTaskInput) {
     const response = await fetch(
         `https://api.clickup.com/api/v2/task/${taskId}`,
@@ -635,6 +750,8 @@ export async function updateClickUpTask({
                 description,
                 markdown_description: markdownDescription,
                 status,
+                due_date: dueDate,
+                due_date_time: false,
             }),
         }
     )
@@ -645,6 +762,68 @@ export async function updateClickUpTask({
         throw new Error(
             getClickUpErrorMessage({
                 action: "ClickUp Task update",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function addClickUpTaskTag({
+    taskId,
+    tagName,
+}: UpdateClickUpTaskTagInput) {
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/task/${taskId}/tag/${encodeURIComponent(tagName)}`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                "Content-Type": "application/json",
+                accept: "application/json",
+            },
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Task tag",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function removeClickUpTaskTag({
+    taskId,
+    tagName,
+}: UpdateClickUpTaskTagInput) {
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/task/${taskId}/tag/${encodeURIComponent(tagName)}`,
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                "Content-Type": "application/json",
+                accept: "application/json",
+            },
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Task tag removal",
                 status: response.status,
                 body: responseBody,
             })

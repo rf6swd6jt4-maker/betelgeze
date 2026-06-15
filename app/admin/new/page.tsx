@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { MODULES } from "@/lib/onboarding/modules"
+import { SERVICES } from "@/lib/onboarding/services"
 import { requireAdmin } from "@/lib/admin/auth"
 import { createClient } from "./actions"
 export const dynamic = "force-dynamic"
@@ -83,6 +84,25 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                         placeholder="client@example.com (optional)"
                     />
 
+                    <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
+                        <input
+                            type="checkbox"
+                            name="is_test"
+                            className="mt-1"
+                        />
+
+                        <span>
+                            <span className="block text-sm font-medium text-amber-100">
+                                Test client
+                            </span>
+
+                            <span className="mt-1 block text-sm text-amber-100/70">
+                                Shows a test label in admin and unlocks
+                                step-jumping in the onboarding portal.
+                            </span>
+                        </span>
+                    </label>
+
                     <div className="mt-8">
                         <p className="text-sm font-medium text-neutral-300">
                             Services / modules
@@ -111,6 +131,55 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                                             steps
                                         </span>
                                     </span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="mt-8">
+                        <p className="text-sm font-medium text-neutral-300">
+                            Fulfilment services
+                        </p>
+
+                        <p className="mt-2 text-sm text-neutral-500">
+                            These become employee-facing tasks in Client Work
+                            when onboarding is complete.
+                        </p>
+
+                        <div className="mt-4 space-y-3">
+                            {Object.values(SERVICES).map((service) => (
+                                <label
+                                    key={service.key}
+                                    className="block cursor-pointer rounded-xl border border-neutral-800 bg-neutral-950 p-4"
+                                >
+                                    <span className="flex items-start gap-3">
+                                        <input
+                                            type="checkbox"
+                                            name="services"
+                                            value={service.key}
+                                            className="mt-1"
+                                        />
+
+                                        <span>
+                                            <span className="block font-medium">
+                                                {service.title}
+                                            </span>
+
+                                            <span className="mt-1 block text-sm text-neutral-500">
+                                                {service.description}
+                                            </span>
+                                        </span>
+                                    </span>
+
+                                    <span className="mt-4 block text-sm text-neutral-300">
+                                        Due date
+                                    </span>
+
+                                    <input
+                                        type="date"
+                                        name={`service_due_date:${service.key}`}
+                                        className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white outline-none"
+                                    />
                                 </label>
                             ))}
                         </div>

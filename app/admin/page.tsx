@@ -1,8 +1,10 @@
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
+import { SERVICES } from "@/lib/onboarding/services"
 import { requireAdmin } from "@/lib/admin/auth"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
+import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 export const dynamic = "force-dynamic"
 
@@ -18,7 +20,7 @@ export default async function AdminPage() {
 
     const clientsResponse = await supabaseAdmin
         .from("clients")
-        .select("id, name, email, phone, created_at, archived_at")
+        .select("id, name, email, phone, created_at, archived_at, is_test")
         .is("archived_at", null)
         .order("created_at", { ascending: false })
 
@@ -28,7 +30,7 @@ export default async function AdminPage() {
     if (clientsResponse.error?.message.toLowerCase().includes("phone")) {
         const fallbackClientsResponse = await supabaseAdmin
             .from("clients")
-            .select("id, name, email, created_at, archived_at")
+            .select("id, name, email, created_at, archived_at, is_test")
             .is("archived_at", null)
             .order("created_at", { ascending: false })
 
@@ -43,6 +45,7 @@ export default async function AdminPage() {
     const [
         { data: progressRows, error: progressError },
         { data: moduleRows, error: modulesError },
+        { data: serviceRows, error: servicesError },
         { data: communicationRows, error: communicationError },
         { data: diagnosticRows, error: diagnosticError },
     ] = await Promise.all([
@@ -50,6 +53,7 @@ export default async function AdminPage() {
             .from("client_progress")
             .select("client_id, step_key, completed_at, created_at"),
         supabaseAdmin.from("client_modules").select("client_id, module_key"),
+        supabaseAdmin.from("client_services").select("client_id, service_key"),
         supabaseAdmin
             .from("client_communication_channels")
             .select("client_id, clickup_channel_id, is_active"),
@@ -68,6 +72,7 @@ export default async function AdminPage() {
         clientsError ||
         progressError ||
         modulesError ||
+        servicesError ||
         communicationError ||
         diagnosticError
     ) {
@@ -99,6 +104,7 @@ export default async function AdminPage() {
     }
 
     const modulesByClient = new Map<string, string[]>()
+    const servicesByClient = new Map<string, string[]>()
     const communicationByClient = new Map<
         string,
         { clickup_channel_id: string | null; is_active: boolean | null }
@@ -108,6 +114,12 @@ export default async function AdminPage() {
         const existing = modulesByClient.get(row.client_id) ?? []
         existing.push(row.module_key)
         modulesByClient.set(row.client_id, existing)
+    }
+
+    for (const row of serviceRows ?? []) {
+        const existing = servicesByClient.get(row.client_id) ?? []
+        existing.push(row.service_key)
+        servicesByClient.set(row.client_id, existing)
     }
 
     for (const row of communicationRows ?? []) {
@@ -120,6 +132,7 @@ export default async function AdminPage() {
     const clientSummaries = (clients ?? []).map((client) => {
         const completedKeys = progressByClient.get(client.id) ?? []
         const assignedModuleKeys = modulesByClient.get(client.id) ?? []
+        const assignedServiceKeys = servicesByClient.get(client.id) ?? []
         const communication = communicationByClient.get(client.id) ?? null
 
         const moduleSteps = assignedModuleKeys.flatMap((moduleKey) => {
@@ -149,14 +162,21 @@ export default async function AdminPage() {
             }
 
         const lastActivity = activityByClient.get(client.id)
+        const stuck = isOnboardingStuck({
+            percentage,
+            createdAt: client.created_at,
+            lastActivityAt: lastActivity,
+        })
 
         return {
             client,
             assignedModuleKeys,
+            assignedServiceKeys,
             percentage,
             currentStep,
             lastActivity,
             communication,
+            stuck,
         }
     })
     const totalClients = clientSummaries.length
@@ -226,10 +246,12 @@ export default async function AdminPage() {
                         ({
                             client,
                             assignedModuleKeys,
+                            assignedServiceKeys,
                             percentage,
                             currentStep,
                             lastActivity,
                             communication,
+                            stuck,
                         }) => (
                             <Link
                                 key={client.id}
@@ -241,6 +263,20 @@ export default async function AdminPage() {
                                         <h2 className="font-medium">
                                             {client.name ?? "Unnamed client"}
                                         </h2>
+
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {client.is_test && (
+                                                <span className="rounded-full bg-amber-400/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-200">
+                                                    Test
+                                                </span>
+                                            )}
+
+                                            {stuck && (
+                                                <span className="rounded-full bg-red-500/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-red-200">
+                                                    Stuck
+                                                </span>
+                                            )}
+                                        </div>
 
                                         <p className="mt-1 text-sm text-neutral-300">
                                             {client.phone
@@ -293,6 +329,24 @@ export default async function AdminPage() {
                                     )}
                                 </div>
 
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {assignedServiceKeys.length > 0 ? (
+                                        assignedServiceKeys.map((serviceKey) => (
+                                            <span
+                                                key={serviceKey}
+                                                className="rounded-full bg-blue-500/10 px-2.5 py-1 text-xs text-blue-200"
+                                            >
+                                                {SERVICES[serviceKey]?.title ??
+                                                    serviceKey}
+                                            </span>
+                                        ))
+                                    ) : (
+                                        <span className="text-sm text-neutral-500">
+                                            No services
+                                        </span>
+                                    )}
+                                </div>
+
                                 <div className="mt-4 grid gap-3 text-sm">
                                     <div>
                                         <p className="text-neutral-500">
@@ -341,6 +395,9 @@ export default async function AdminPage() {
                                     Modules
                                 </th>
                                 <th className="px-3 py-2 font-medium">
+                                    Services
+                                </th>
+                                <th className="px-3 py-2 font-medium">
                                     Progress
                                 </th>
                                 <th className="px-3 py-2 font-medium">
@@ -357,10 +414,12 @@ export default async function AdminPage() {
                                 ({
                                     client,
                                     assignedModuleKeys,
+                                    assignedServiceKeys,
                                     percentage,
                                     currentStep,
                                     lastActivity,
                                     communication,
+                                    stuck,
                                 }) => (
                                     <tr
                                         key={client.id}
@@ -374,6 +433,20 @@ export default async function AdminPage() {
                                                 {client.name ??
                                                     "Unnamed client"}
                                             </Link>
+
+                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                                {client.is_test && (
+                                                    <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                                                        Test
+                                                    </span>
+                                                )}
+
+                                                {stuck && (
+                                                    <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-200">
+                                                        Stuck
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
 
                                         <td className="px-3 py-3">
@@ -440,6 +513,31 @@ export default async function AdminPage() {
                                                 ) : (
                                                     <span className="text-neutral-500">
                                                         No modules
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+
+                                        <td className="px-3 py-3">
+                                            <div className="flex flex-wrap gap-2">
+                                                {assignedServiceKeys.length >
+                                                0 ? (
+                                                    assignedServiceKeys.map(
+                                                        (serviceKey) => (
+                                                            <span
+                                                                key={serviceKey}
+                                                                className="rounded-md bg-blue-500/10 px-2 py-1 text-xs text-blue-200"
+                                                            >
+                                                                {SERVICES[
+                                                                    serviceKey
+                                                                ]?.title ??
+                                                                    serviceKey}
+                                                            </span>
+                                                        )
+                                                    )
+                                                ) : (
+                                                    <span className="text-neutral-500">
+                                                        No services
                                                     </span>
                                                 )}
                                             </div>

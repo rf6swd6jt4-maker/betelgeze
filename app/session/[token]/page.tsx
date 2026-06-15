@@ -16,6 +16,9 @@ type PageProps = {
     params: Promise<{
         token: string
     }>
+    searchParams: Promise<{
+        step?: string
+    }>
 }
 
 type SessionStep = {
@@ -56,12 +59,13 @@ const FINAL_STEP: SessionStep = {
     kind: "final",
 }
 
-export default async function SessionPage({ params }: PageProps) {
+export default async function SessionPage({ params, searchParams }: PageProps) {
     const { token } = await params
+    const { step: requestedStepKey } = await searchParams
 
     const { data: client, error } = await supabaseAdmin
         .from("clients")
-        .select("id, name, email, phone, session_token")
+        .select("id, name, email, phone, session_token, is_test")
         .eq("session_token", token)
         .single()
 
@@ -108,9 +112,13 @@ export default async function SessionPage({ params }: PageProps) {
         progressRows?.map((row) => row.step_key) ?? []
     )
 
-    const currentStep =
+    const linearCurrentStep =
         completableSteps.find((step) => !completedKeys.has(step.key)) ??
         FINAL_STEP
+    const requestedStep = client.is_test
+        ? steps.find((step) => step.key === requestedStepKey)
+        : null
+    const currentStep = requestedStep ?? linearCurrentStep
 
     const isFinalStep = currentStep.key === "final"
 
@@ -119,7 +127,7 @@ export default async function SessionPage({ params }: PageProps) {
         title: step.title,
         complete:
             step.key === "final"
-                ? isFinalStep
+                ? linearCurrentStep.key === "final"
                 : completedKeys.has(step.key),
         current: step.key === currentStep.key,
     }))
@@ -179,6 +187,30 @@ export default async function SessionPage({ params }: PageProps) {
                 <div className="mt-5 inline-flex rounded-full bg-amber-50 px-3 py-1 text-sm font-medium text-[#1E3A5F]">
                     Estimated time: {currentStep.estimatedTime}
                 </div>
+
+                {client.is_test && (
+                    <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                        <p className="text-sm font-semibold uppercase tracking-wide text-amber-900">
+                            Test client
+                        </p>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {steps.map((step) => (
+                                <a
+                                    key={step.key}
+                                    href={`/session/${token}?step=${step.key}`}
+                                    className={`rounded-full px-3 py-1 text-sm font-medium ${
+                                        step.key === currentStep.key
+                                            ? "bg-amber-400 text-slate-950"
+                                            : "bg-white text-amber-950"
+                                    }`}
+                                >
+                                    {step.title}
+                                </a>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {currentStep.key === "welcome-video" && (
                     <div className="mt-8 rounded-2xl bg-[#F8F7F3] p-5">

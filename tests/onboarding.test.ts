@@ -17,6 +17,8 @@ import {
 import { shouldIgnoreClickUpMessage } from "../lib/client-messages/clickup-message-filters.ts"
 import { parseClickUpWorkspaceId } from "../lib/client-messages/clickup-workspace.ts"
 import { formatMetaWhatsAppApiError } from "../lib/client-messages/meta-whatsapp-errors.ts"
+import { getDefaultServiceKeysForModules } from "../lib/onboarding/services.ts"
+import { isOnboardingStuck } from "../lib/onboarding/stuck.ts"
 
 test("counts unique completed onboarding steps", () => {
     const steps = [{ key: "welcome" }, { key: "business-info" }]
@@ -43,6 +45,41 @@ test("calculates rounded progress percentage", () => {
 
 test("empty step lists are treated as complete", () => {
     assert.equal(getProgressPercentage([], []), 100)
+})
+
+test("maps onboarding modules to default fulfilment services", () => {
+    assert.deepEqual(
+        getDefaultServiceKeysForModules([
+            "general-info",
+            "google-search-ads",
+            "website-lp",
+        ]),
+        ["google-ads", "landing-page"]
+    )
+})
+
+test("marks incomplete inactive onboarding as stuck", () => {
+    assert.equal(
+        isOnboardingStuck({
+            percentage: 75,
+            createdAt: "2026-06-01T00:00:00.000Z",
+            lastActivityAt: "2026-06-10T00:00:00.000Z",
+            now: new Date("2026-06-15T00:00:00.000Z"),
+            stuckAfterDays: 3,
+        }),
+        true
+    )
+
+    assert.equal(
+        isOnboardingStuck({
+            percentage: 100,
+            createdAt: "2026-06-01T00:00:00.000Z",
+            lastActivityAt: "2026-06-10T00:00:00.000Z",
+            now: new Date("2026-06-15T00:00:00.000Z"),
+            stuckAfterDays: 3,
+        }),
+        false
+    )
 })
 
 test("masks session tokens while preserving enough characters for debugging", () => {

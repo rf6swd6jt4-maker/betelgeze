@@ -1,6 +1,8 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 import { MODULES } from "@/lib/onboarding/modules"
+import { SERVICES } from "@/lib/onboarding/services"
+import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import {
     FormResponse,
     FormResponseValue,
@@ -8,8 +10,10 @@ import {
     StoredUpload,
 } from "@/lib/onboarding/forms"
 import {
+    addClickUpTaskTag,
     AuthorizedClickUpWorkspace,
     createClickUpChatChannel,
+    createClickUpDoc,
     createClickUpFolderFromTemplate,
     createClickUpLocationChatChannel,
     createClickUpTask,
@@ -23,7 +27,9 @@ import {
     getClickUpWorkspaceId,
     getAuthorizedClickUpWorkspaces,
     hasClickUpConfig,
+    removeClickUpTaskTag,
     retrieveClickUpFolderLists,
+    searchClickUpDocs,
     updateClickUpTask,
 } from "@/lib/client-messages/clickup"
 import { downloadOnboardingUpload } from "@/lib/onboarding/uploads"
@@ -72,6 +78,9 @@ const ONBOARDING_TASK_STATUS_NOT_STARTED = "NOT STARTED"
 const ONBOARDING_TASK_STATUS_IN_PROGRESS = "IN PROGRESS"
 const STEP_TASK_STATUS_UNSUBMITTED = "UNSUBMITTED"
 const STEP_TASK_STATUS_SUBMITTED_FOR_REVIEW = "SUBMITTED | FOR REVIEW"
+const ONBOARDING_STUCK_TAG = "stuck"
+const TEST_CLIENT_TAG = "test-client"
+const CLIENT_CONTEXT_DOC_BASENAME = "Client Context"
 
 async function addActivity(
     clientId: string,
@@ -208,6 +217,43 @@ function getTaskId(response: unknown) {
     return getEntityId(response)
 }
 
+function getDocId(response: unknown) {
+    if (!response || typeof response !== "object") return null
+
+    const value = response as {
+        id?: string | number
+        data?: { id?: string | number }
+        doc?: { id?: string | number }
+    }
+    const id = value.id ?? value.data?.id ?? value.doc?.id
+
+    return id ? String(id) : null
+}
+
+function getDocsFromResponse(response: unknown) {
+    if (!response || typeof response !== "object") return []
+
+    const value = response as {
+        docs?: unknown
+        data?: unknown
+    }
+
+    if (Array.isArray(value.docs)) return value.docs
+    if (Array.isArray(value.data)) return value.data
+
+    const data = value.data as { docs?: unknown } | undefined
+
+    return Array.isArray(data?.docs) ? data.docs : []
+}
+
+function getDateAsClickUpTimestamp(value?: string | null) {
+    if (!value) return undefined
+
+    const timestamp = new Date(`${value}T23:59:59.999Z`).getTime()
+
+    return Number.isFinite(timestamp) ? timestamp : undefined
+}
+
 async function getClientOnboardingSteps(clientId: string) {
     const { data: clientModules } = await supabaseAdmin
         .from("client_modules")
@@ -225,6 +271,22 @@ async function getClientOnboardingSteps(clientId: string) {
                 moduleTitle: moduleDefinition.title,
             }))
         }) ?? []
+    )
+}
+
+async function getClientServices(clientId: string) {
+    const { data } = await supabaseAdmin
+        .from("client_services")
+        .select("service_key, due_date")
+        .eq("client_id", clientId)
+
+    return (
+        data
+            ?.map((row) => ({
+                definition: SERVICES[row.service_key],
+                dueDate: row.due_date as string | null,
+            }))
+            .filter((row) => row.definition) ?? []
     )
 }
 
@@ -369,6 +431,236 @@ async function attachUploadsToClickUpTask({
     }
 }
 
+async function ensureClientContextDoc({
+    clientId,
+    clientName,
+    folderId,
+}: {
+    clientId: string
+    clientName: string
+    folderId: string
+}) {
+    try {
+        const targetName = `${CLIENT_CONTEXT_DOC_BASENAME} - ${clientName}`
+        const docs = await searchClickUpDocs({
+            parentId: folderId,
+            parentType: "FOLDER",
+            limit: 100,
+        })
+        const existingDoc = getDocsFromResponse(docs).find((doc) => {
+            if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+                return false
+            }
+
+            const value = doc as { name?: string; title?: string }
+            const name = value.name ?? value.title
+
+            return (
+                name === targetName ||
+                normalizeClickUpName(name ?? "") ===
+                    normalizeClickUpName(CLIENT_CONTEXT_DOC_BASENAME)
+            )
+        })
+        const existingDocId = getDocId(existingDoc)
+
+        if (existingDocId) {
+            await saveClickUpItem({
+                clientId,
+                itemKey: "doc:client-context",
+                itemType: "doc",
+                clickupId: existingDocId,
+                clickupParentId: folderId,
+            })
+
+            if (
+                existingDoc &&
+                typeof existingDoc === "object" &&
+                !Array.isArray(existingDoc)
+            ) {
+                const existingName =
+                    (existingDoc as { name?: string; title?: string }).name ??
+                    (existingDoc as { name?: string; title?: string }).title
+
+                if (existingName !== targetName) {
+                    await addActivity(
+                        clientId,
+                        "clickup_client_context_doc_found",
+                        `ClickUp Client Context doc found but could not be renamed through the available public Docs API. Rename it manually to "${targetName}".`
+                    )
+                }
+            }
+
+            return
+        }
+
+        const createdDoc = await createClickUpDoc({
+            name: targetName,
+            parentId: folderId,
+            parentType: "FOLDER",
+        })
+        const createdDocId = getDocId(createdDoc)
+
+        if (!createdDocId) {
+            throw new Error("ClickUp did not return a Client Context Doc ID")
+        }
+
+        await saveClickUpItem({
+            clientId,
+            itemKey: "doc:client-context",
+            itemType: "doc",
+            clickupId: createdDocId,
+            clickupParentId: folderId,
+        })
+    } catch (error) {
+        await addActivity(
+            clientId,
+            "clickup_client_context_doc_failed",
+            error instanceof Error
+                ? `ClickUp Client Context doc setup failed: ${error.message}`
+                : "ClickUp Client Context doc setup failed"
+        )
+    }
+}
+
+async function syncOnboardingStuckTag({
+    clientId,
+    onboardingTaskId,
+}: {
+    clientId: string
+    onboardingTaskId: string | null
+}) {
+    if (!onboardingTaskId) return
+
+    const [onboardingSteps, { data: client }, { data: progressRows }] =
+        await Promise.all([
+            getClientOnboardingSteps(clientId),
+            supabaseAdmin
+                .from("clients")
+                .select("created_at")
+                .eq("id", clientId)
+                .single(),
+            supabaseAdmin
+                .from("client_progress")
+                .select("step_key, completed_at, created_at")
+                .eq("client_id", clientId),
+        ])
+
+    if (!client?.created_at) return
+
+    const completedKeys = progressRows?.map((row) => row.step_key) ?? []
+    const percentage =
+        onboardingSteps.length === 0
+            ? 100
+            : Math.round(
+                  (new Set(completedKeys).size / onboardingSteps.length) * 100
+              )
+    const lastActivityAt =
+        progressRows
+            ?.map((row) => row.completed_at ?? row.created_at)
+            .filter(Boolean)
+            .sort(
+                (a, b) => new Date(b).getTime() - new Date(a).getTime()
+            )[0] ?? null
+    const stuck = isOnboardingStuck({
+        percentage,
+        createdAt: client.created_at,
+        lastActivityAt,
+    })
+
+    if (stuck) {
+        await addClickUpTaskTag({
+            taskId: onboardingTaskId,
+            tagName: ONBOARDING_STUCK_TAG,
+        })
+    } else {
+        await removeClickUpTaskTag({
+            taskId: onboardingTaskId,
+            tagName: ONBOARDING_STUCK_TAG,
+        }).catch(() => undefined)
+    }
+}
+
+async function ensureClientServiceTasks(clientId: string) {
+    const [clientWorkListId, onboardingTaskId, services] = await Promise.all([
+        getClickUpItem(clientId, "list:client-work"),
+        getClickUpItem(clientId, "task:onboarding"),
+        getClientServices(clientId),
+    ])
+
+    if (!clientWorkListId || services.length === 0) return
+
+    if (onboardingTaskId) {
+        await updateClickUpTask({
+            taskId: onboardingTaskId,
+            dueDate: Date.now(),
+        })
+    }
+
+    for (const { definition, dueDate } of services) {
+        const taskKey = `service:${definition.key}`
+        let serviceTaskId = await getClickUpItem(clientId, taskKey)
+
+        if (!serviceTaskId) {
+            const clickupTask = await createClickUpTask({
+                listId: clientWorkListId,
+                name: definition.title,
+                dueDate: getDateAsClickUpTimestamp(dueDate),
+                markdownDescription: [
+                    `Fulfilment task for ${definition.title}.`,
+                    "",
+                    "SOP subtasks will be created under this task when they are configured in the onboarding system.",
+                ].join("\n"),
+            })
+            serviceTaskId = getTaskId(clickupTask)
+
+            if (!serviceTaskId) {
+                throw new Error(
+                    `ClickUp did not return a task ID for ${definition.title}`
+                )
+            }
+
+            await saveClickUpItem({
+                clientId,
+                itemKey: taskKey,
+                itemType: "task",
+                clickupId: serviceTaskId,
+                clickupParentId: clientWorkListId,
+            })
+        }
+
+        for (const [index, sopStep] of definition.sopSteps.entries()) {
+            const subtaskKey = `service:${definition.key}:sop:${sopStep.key}`
+            const existingSubtaskId = await getClickUpItem(clientId, subtaskKey)
+
+            if (existingSubtaskId) continue
+
+            const clickupSubtask = await createClickUpTask({
+                listId: clientWorkListId,
+                name: `${String(index + 1).padStart(2, "0")} ${sopStep.title}`,
+                parentTaskId: serviceTaskId,
+                markdownDescription:
+                    sopStep.description ??
+                    `SOP step for ${definition.title}.`,
+            })
+            const subtaskId = getTaskId(clickupSubtask)
+
+            if (!subtaskId) {
+                throw new Error(
+                    `ClickUp did not return a subtask ID for ${sopStep.title}`
+                )
+            }
+
+            await saveClickUpItem({
+                clientId,
+                itemKey: subtaskKey,
+                itemType: "subtask",
+                clickupId: subtaskId,
+                clickupParentId: serviceTaskId,
+            })
+        }
+    }
+}
+
 export async function syncClientOnboardingStepToClickUp({
     clientId,
     stepKey,
@@ -434,6 +726,27 @@ export async function syncClientOnboardingStepToClickUp({
                 taskId: stepTaskId,
                 uploads: getUploadsFromResponse(responseValue),
             })
+        }
+
+        await syncOnboardingStuckTag({
+            clientId,
+            onboardingTaskId,
+        })
+
+        const onboardingSteps = await getClientOnboardingSteps(clientId)
+        const { data: progressRows } = await supabaseAdmin
+            .from("client_progress")
+            .select("step_key")
+            .eq("client_id", clientId)
+        const completedStepKeys = new Set(
+            progressRows?.map((row) => row.step_key) ?? []
+        )
+        const isOnboardingComplete =
+            onboardingSteps.length > 0 &&
+            onboardingSteps.every((step) => completedStepKeys.has(step.key))
+
+        if (isOnboardingComplete) {
+            await ensureClientServiceTasks(clientId)
         }
     } catch (error) {
         await addActivity(
@@ -618,7 +931,7 @@ export async function ensureClientClickUpChannel(clientId: string) {
 
     const { data: client } = await supabaseAdmin
         .from("clients")
-        .select("id, name, phone")
+        .select("id, name, phone, is_test")
         .eq("id", clientId)
         .single()
 
@@ -694,10 +1007,17 @@ export async function ensureClientClickUpChannel(clientId: string) {
             }),
         ])
 
+        await ensureClientContextDoc({
+            clientId: client.id,
+            clientName,
+            folderId: clickupFolderId,
+        })
+
         const onboardingTask = await createClickUpTask({
             listId: clientWorkListId,
             name: "Onboarding",
             status: ONBOARDING_TASK_STATUS_NOT_STARTED,
+            tags: client.is_test ? [TEST_CLIENT_TAG] : undefined,
             markdownDescription:
                 "Tracks the overall onboarding lifecycle for this client.",
         })

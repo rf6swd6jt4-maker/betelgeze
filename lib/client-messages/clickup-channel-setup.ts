@@ -278,7 +278,7 @@ function formatStepResponse({
 }) {
     const form = getOnboardingForm(formKey ?? undefined)
     const lines = [
-        "## Form Submissions",
+        "**Form Submissions**",
         `**Client:** ${clientName}`,
         `**Submitted via onboarding portal:** ${new Date().toISOString()}`,
     ]
@@ -291,8 +291,10 @@ function formatStepResponse({
     }
 
     for (const field of form.fields) {
-        lines.push("", `### ${field.label}:`)
-        lines.push(formatResponseValue(response[field.name] ?? ""))
+        lines.push(
+            "",
+            `**${field.label}:**  \n${formatResponseValue(response[field.name] ?? "")}`
+        )
     }
 
     return lines.join("\n")

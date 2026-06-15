@@ -22,9 +22,17 @@ function normalizePhoneNumber(value: string): string {
 
     if (!compactAddress) return ""
 
+    const digitsOnly = compactAddress.replace(/[^\d]/g, "")
+
+    if (compactAddress.startsWith("+") && /^\d{10}$/.test(digitsOnly)) {
+        compactAddress = `+1${digitsOnly}`
+    }
+
     if (!compactAddress.startsWith("+")) {
-        if (/^08\d{7,9}$/.test(compactAddress)) {
-            compactAddress = `+353${compactAddress.slice(1)}`
+        if (/^\d{10}$/.test(compactAddress)) {
+            compactAddress = `+1${compactAddress}`
+        } else if (/^1\d{10}$/.test(compactAddress)) {
+            compactAddress = `+${compactAddress}`
         } else {
             compactAddress = `+${compactAddress}`
         }
@@ -70,6 +78,10 @@ export function getEquivalentMessageAddresses(value: string): string[] {
     const { channel, address } = getChannelAndAddress(normalizedAddress)
     const addresses = new Set([normalizedAddress])
 
+    if (/^\+1\d{10}$/.test(address)) {
+        addresses.add(`${channel}:+${address.slice(2)}`)
+    }
+
     for (const countryCode of TRUNK_ZERO_COUNTRY_CODES) {
         const countryPrefix = `+${countryCode}`
 
@@ -101,9 +113,12 @@ export function getMessageAddressFormatHint(value: string): string | null {
 }
 
 export function toMetaWhatsAppRecipient(value: string): string {
-    if (!value.includes(":")) return value.replace(/[^\d]/g, "")
+    const normalizedAddress = normalizeMessageAddress(value)
+    const source = normalizedAddress || value
 
-    const [, address] = value.split(":", 2)
+    if (!source.includes(":")) return source.replace(/[^\d]/g, "")
+
+    const [, address] = source.split(":", 2)
 
     return address.replace(/[^\d]/g, "")
 }

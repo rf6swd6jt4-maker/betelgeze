@@ -155,12 +155,20 @@ test("normalizes WhatsApp bridge addresses", () => {
         "whatsapp:+15551234567"
     )
     assert.equal(
+        normalizeMessageAddress("214 973 2742"),
+        "whatsapp:+12149732742"
+    )
+    assert.equal(
+        normalizeMessageAddress("+2149732742"),
+        "whatsapp:+12149732742"
+    )
+    assert.equal(
         normalizeMessageAddress("+353 089 983 1234"),
         "whatsapp:+353899831234"
     )
     assert.equal(
         normalizeMessageAddress("089 983 1234"),
-        "whatsapp:+353899831234"
+        "whatsapp:+10899831234"
     )
     assert.equal(
         normalizeMessageAddress("00353 089 983 1234"),
@@ -187,12 +195,20 @@ test("matches legacy Irish WhatsApp number variants", () => {
     )
 })
 
+test("matches legacy US WhatsApp numbers missing the country code", () => {
+    assert.deepEqual(
+        getEquivalentMessageAddresses("whatsapp:+12149732742"),
+        ["whatsapp:+12149732742", "whatsapp:+2149732742"]
+    )
+})
+
 test("converts normalized bridge addresses for Meta WhatsApp sends", () => {
     assert.equal(toMetaWhatsAppRecipient("+1 (555) 123-4567"), "15551234567")
     assert.equal(
         toMetaWhatsAppRecipient("whatsapp:+15551234567"),
         "15551234567"
     )
+    assert.equal(toMetaWhatsAppRecipient("+2149732742"), "12149732742")
 })
 
 test("shows phone numbers without the bridge channel prefix", () => {

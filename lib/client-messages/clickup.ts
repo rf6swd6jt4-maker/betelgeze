@@ -45,6 +45,11 @@ type DeleteClickUpFolderInput = {
     folderId: string
 }
 
+type UpdateClickUpFolderInput = {
+    folderId: string
+    name: string
+}
+
 type CreateClickUpFolderFromTemplateInput = {
     spaceId: string
     templateId: string
@@ -522,6 +527,39 @@ export async function createClickUpFolderFromTemplate({
     return createFolder({
         name,
     })
+}
+
+export async function updateClickUpFolder({
+    folderId,
+    name,
+}: UpdateClickUpFolderInput) {
+    const response = await fetch(
+        `https://api.clickup.com/api/v2/folder/${folderId}`,
+        {
+            method: "PUT",
+            headers: {
+                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
+                "Content-Type": "application/json",
+                accept: "application/json",
+            },
+            body: JSON.stringify({
+                name,
+            }),
+        }
+    )
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            getClickUpErrorMessage({
+                action: "ClickUp Folder update",
+                status: response.status,
+                body: responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
 }
 
 export async function createClickUpList({

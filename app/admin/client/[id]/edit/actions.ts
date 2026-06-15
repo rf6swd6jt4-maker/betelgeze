@@ -9,6 +9,7 @@ import {
 } from "@/lib/onboarding/project-timeframe"
 import { requireAdmin } from "@/lib/admin/auth"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
+import { updateClickUpFolder } from "@/lib/client-messages/clickup"
 
 export async function updateClient(clientId: string, formData: FormData) {
     await requireAdmin()
@@ -54,6 +55,27 @@ export async function updateClient(clientId: string, formData: FormData) {
         })
         .eq("client_id", clientId)
         .eq("provider", "meta_whatsapp")
+
+    const { data: clickupFolderItem } = await supabaseAdmin
+        .from("client_clickup_items")
+        .select("clickup_id")
+        .eq("client_id", clientId)
+        .eq("item_key", "folder")
+        .maybeSingle()
+
+    if (clickupFolderItem?.clickup_id) {
+        try {
+            await updateClickUpFolder({
+                folderId: clickupFolderItem.clickup_id,
+                name,
+            })
+        } catch (error) {
+            console.warn(
+                "Could not update ClickUp client Folder name.",
+                error instanceof Error ? error.message : error
+            )
+        }
+    }
 
     await supabaseAdmin.from("client_modules").delete().eq("client_id", clientId)
 

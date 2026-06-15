@@ -14,7 +14,10 @@ import {
     getProgressPercentage,
 } from "@/lib/onboarding/progress"
 import { maskToken } from "@/lib/security/tokens"
-import { displayMessageAddress } from "@/lib/client-messages/addresses"
+import {
+    displayMessageAddress,
+    normalizeMessageAddress,
+} from "@/lib/client-messages/addresses"
 import { AdminCopyButton } from "@/components/admin/AdminCopyButton"
 import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 import { FormResponsesSummary } from "@/components/admin/FormResponsesSummary"
@@ -464,9 +467,11 @@ export default async function ClientDetailPage({
                                 placeholder="+15551234567"
                                 defaultValue={
                                     displayMessageAddress(
-                                        communicationChannel?.external_address ??
-                                            client.phone ??
-                                            ""
+                                        normalizeMessageAddress(
+                                            communicationChannel?.external_address ??
+                                                client.phone ??
+                                                ""
+                                        )
                                     )
                                 }
                                 className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white outline-none"

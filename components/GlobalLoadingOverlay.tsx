@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { LoadingOverlay } from "@/components/LoadingOverlay"
 
@@ -42,6 +42,7 @@ export function GlobalLoadingOverlay() {
     const searchParams = useSearchParams()
     const currentRouteKey = `${pathname}?${searchParams.toString()}`
     const [loadingRouteKey, setLoadingRouteKey] = useState<string | null>(null)
+    const previousRouteKey = useRef(currentRouteKey)
 
     useEffect(() => {
         function handleClick(event: MouseEvent) {
@@ -62,6 +63,23 @@ export function GlobalLoadingOverlay() {
             window.removeEventListener("pageshow", handlePageShow)
         }
     }, [currentRouteKey])
+
+    useEffect(() => {
+        if (previousRouteKey.current !== currentRouteKey) {
+            previousRouteKey.current = currentRouteKey
+            setLoadingRouteKey(null)
+        }
+    }, [currentRouteKey])
+
+    useEffect(() => {
+        if (!loadingRouteKey) return
+
+        const timeout = window.setTimeout(() => {
+            setLoadingRouteKey(null)
+        }, 8000)
+
+        return () => window.clearTimeout(timeout)
+    }, [loadingRouteKey])
 
     return loadingRouteKey === currentRouteKey ? <LoadingOverlay /> : null
 }

@@ -88,7 +88,7 @@ export function getMessageAddressFormatHint(value: string): string | null {
     const trimmed = value.trim()
 
     if (!trimmed) return "Add a WhatsApp phone number."
-    if (!normalizedAddress) return "Use digits with a country code, like +353899831234."
+    if (!normalizedAddress) return "Use digits with a country code, like +15551234567."
 
     const displayedNormalizedAddress = displayMessageAddress(normalizedAddress)
     const displayedInputAddress = displayMessageAddress(trimmed)

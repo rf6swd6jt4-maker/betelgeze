@@ -115,7 +115,7 @@ export default async function EditClientPage({
 
                     <p className="mt-2 text-xs text-neutral-500">
                         Saved in international WhatsApp format. Formatting
-                        marks, 00 prefixes, and Irish/UK trunk zeros are cleaned
+                        marks and international dialing prefixes are cleaned
                         automatically.
                     </p>
 

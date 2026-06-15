@@ -470,40 +470,10 @@ async function ensureClientContextDoc({
                 clickupParentId: folderId,
             })
 
-            if (
-                existingDoc &&
-                typeof existingDoc === "object" &&
-                !Array.isArray(existingDoc)
-            ) {
-                const existingName =
-                    (existingDoc as { name?: string; title?: string }).name ??
-                    (existingDoc as { name?: string; title?: string }).title
-
-                if (existingName !== targetName) {
-                    await addActivity(
-                        clientId,
-                        "clickup_client_context_doc_found",
-                        `ClickUp Client Context doc found but could not be renamed through the available public Docs API. Rename it manually to "${targetName}".`
-                    )
-                }
-            }
-
             return
         }
-
-        await addActivity(
-            clientId,
-            "clickup_client_context_doc_manual",
-            `Create a ClickUp Doc named "${targetName}" manually. ClickUp does not support creating Docs under this client Folder through the current API.`
-        )
-    } catch (error) {
-        await addActivity(
-            clientId,
-            "clickup_client_context_doc_failed",
-            error instanceof Error
-                ? `ClickUp Client Context doc setup failed. ${error.message}`
-                : "ClickUp Client Context doc setup failed"
-        )
+    } catch {
+        return
     }
 }
 

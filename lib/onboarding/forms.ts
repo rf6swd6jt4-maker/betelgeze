@@ -95,7 +95,7 @@ export const ONBOARDING_FORMS: Record<string, OnboardingFormDefinition> = {
                 label: "Main location",
                 type: "text",
                 required: true,
-                placeholder: "Town, city, county, or region",
+                placeholder: "City, state, county, or region",
             },
             {
                 name: "service_areas",
@@ -103,7 +103,7 @@ export const ONBOARDING_FORMS: Record<string, OnboardingFormDefinition> = {
                 type: "textarea",
                 required: true,
                 placeholder:
-                    "List towns, counties, postcodes, or the radius you are happy to travel.",
+                    "List cities, counties, ZIP codes, or the radius you are happy to travel.",
             },
             {
                 name: "services",
@@ -111,7 +111,7 @@ export const ONBOARDING_FORMS: Record<string, OnboardingFormDefinition> = {
                 type: "textarea",
                 required: true,
                 placeholder:
-                    "Example: emergency plumbing, boiler installs, bathroom fitting...",
+                    "Example: emergency plumbing, water heater installs, bathroom remodeling...",
             },
             {
                 name: "ideal_customer",
@@ -140,11 +140,11 @@ export const ONBOARDING_FORMS: Record<string, OnboardingFormDefinition> = {
                 name: "phone",
                 label: "Best phone number",
                 type: "tel",
-                placeholder: "+353...",
+                placeholder: "+1...",
             },
             {
                 name: "email",
-                label: "Best enquiry email",
+                label: "Best inquiry email",
                 type: "email",
             },
             {
@@ -234,7 +234,7 @@ export const ONBOARDING_FORMS: Record<string, OnboardingFormDefinition> = {
         key: "process",
         title: "Your process",
         intro:
-            "Explain what usually happens from the first customer enquiry to a completed job.",
+            "Explain what usually happens from the first customer inquiry to a completed job.",
         fields: [
             {
                 name: "process",
@@ -316,7 +316,7 @@ export const ONBOARDING_FORMS: Record<string, OnboardingFormDefinition> = {
                 label: "What do these images show?",
                 type: "textarea",
                 placeholder:
-                    "Example: kitchen renovation in Cork, driveway cleaning in Dublin...",
+                    "Example: kitchen remodel in Austin, driveway cleaning in Phoenix...",
             },
         ],
     },

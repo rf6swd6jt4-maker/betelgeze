@@ -128,25 +128,6 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                         months convert to days × 30.
                     </p>
 
-                    <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
-                        <input
-                            type="checkbox"
-                            name="is_test"
-                            className="mt-1"
-                        />
-
-                        <span>
-                            <span className="block text-sm font-medium text-amber-100">
-                                Test client
-                            </span>
-
-                            <span className="mt-1 block text-sm text-amber-100/70">
-                                Shows a test label in admin and unlocks the
-                                test menu in the onboarding portal.
-                            </span>
-                        </span>
-                    </label>
-
                     <div className="mt-8">
                         <p className="text-sm font-medium text-neutral-300">
                             Services
@@ -190,6 +171,25 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                             selected, the client only gets General Info.
                         </p>
                     </div>
+
+                    <label className="mt-8 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
+                        <input
+                            type="checkbox"
+                            name="is_test"
+                            className="mt-1"
+                        />
+
+                        <span>
+                            <span className="block text-sm font-medium text-amber-100">
+                                Test client
+                            </span>
+
+                            <span className="mt-1 block text-sm text-amber-100/70">
+                                Shows a test label in admin and unlocks the
+                                test menu in the onboarding portal.
+                            </span>
+                        </span>
+                    </label>
 
                     <button className="mt-8 w-full rounded-xl bg-white px-5 py-4 font-medium text-black">
                         Create client

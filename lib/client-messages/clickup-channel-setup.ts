@@ -14,7 +14,6 @@ import {
     addClickUpTaskTag,
     AuthorizedClickUpWorkspace,
     createClickUpChatChannel,
-    createClickUpDoc,
     createClickUpFolderFromTemplate,
     createClickUpLocationChatChannel,
     createClickUpTask,
@@ -434,11 +433,18 @@ async function ensureClientContextDoc({
 }) {
     try {
         const targetName = `${CLIENT_CONTEXT_DOC_BASENAME} - ${clientName}`
-        const docs = await searchClickUpDocs({
-            parentId: folderId,
-            parentType: "FOLDER",
-            limit: 100,
-        })
+        let docs: unknown = null
+
+        try {
+            docs = await searchClickUpDocs({
+                parentId: folderId,
+                parentType: "FOLDER",
+                limit: 100,
+            })
+        } catch {
+            docs = null
+        }
+
         const existingDoc = getDocsFromResponse(docs).find((doc) => {
             if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
                 return false
@@ -485,30 +491,17 @@ async function ensureClientContextDoc({
             return
         }
 
-        const createdDoc = await createClickUpDoc({
-            name: targetName,
-            parentId: folderId,
-            parentType: "FOLDER",
-        })
-        const createdDocId = getDocId(createdDoc)
-
-        if (!createdDocId) {
-            throw new Error("ClickUp did not return a Client Context Doc ID")
-        }
-
-        await saveClickUpItem({
+        await addActivity(
             clientId,
-            itemKey: "doc:client-context",
-            itemType: "doc",
-            clickupId: createdDocId,
-            clickupParentId: folderId,
-        })
+            "clickup_client_context_doc_manual",
+            `Create a ClickUp Doc named "${targetName}" manually. ClickUp does not support creating Docs under this client Folder through the current API.`
+        )
     } catch (error) {
         await addActivity(
             clientId,
             "clickup_client_context_doc_failed",
             error instanceof Error
-                ? `ClickUp Client Context doc setup failed: ${error.message}`
+                ? `ClickUp Client Context doc setup failed. ${error.message}`
                 : "ClickUp Client Context doc setup failed"
         )
     }

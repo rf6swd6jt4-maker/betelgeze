@@ -102,14 +102,6 @@ type SearchClickUpDocsInput = {
     limit?: number
 }
 
-type CreateClickUpDocInput = {
-    workspaceId?: string | null
-    name: string
-    parentId: string
-    parentType: "SPACE" | "FOLDER" | "LIST" | "EVERYTHING" | "WORKSPACE"
-    visibility?: "PUBLIC" | "PRIVATE" | "PERSONAL" | "HIDDEN"
-}
-
 type CreateClickUpTaskInput = {
     listId: string
     name: string
@@ -630,50 +622,6 @@ export async function searchClickUpDocs({
         throw new Error(
             getClickUpErrorMessage({
                 action: "ClickUp Docs search",
-                status: response.status,
-                body: responseBody,
-            })
-        )
-    }
-
-    return responseBody ? JSON.parse(responseBody) : null
-}
-
-export async function createClickUpDoc({
-    workspaceId,
-    name,
-    parentId,
-    parentType,
-    visibility = "PUBLIC",
-}: CreateClickUpDocInput) {
-    const resolvedWorkspaceId = getClickUpWorkspaceId(workspaceId)
-    const response = await fetch(
-        `https://api.clickup.com/api/v3/workspaces/${resolvedWorkspaceId}/docs`,
-        {
-            method: "POST",
-            headers: {
-                Authorization: getRequiredEnv("CLICKUP_API_TOKEN"),
-                "Content-Type": "application/json",
-                accept: "application/json",
-            },
-            body: JSON.stringify({
-                name,
-                parent: {
-                    id: parentId,
-                    type: parentType,
-                },
-                visibility,
-                create_page: true,
-            }),
-        }
-    )
-
-    const responseBody = await response.text()
-
-    if (!response.ok) {
-        throw new Error(
-            getClickUpErrorMessage({
-                action: "ClickUp Doc",
                 status: response.status,
                 body: responseBody,
             })

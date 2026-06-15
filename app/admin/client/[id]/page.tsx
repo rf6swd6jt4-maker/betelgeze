@@ -675,9 +675,9 @@ export default async function ClientDetailPage({
                                 timelineItems.map((item) => (
                                     <div
                                         key={item.id}
-                                        className="border-l border-neutral-700 pl-4"
+                                        className="min-w-0 border-l border-neutral-700 pl-4"
                                     >
-                                        <p className="text-sm text-neutral-200">
+                                        <p className="break-words text-sm text-neutral-200">
                                             {item.label}
                                         </p>
 

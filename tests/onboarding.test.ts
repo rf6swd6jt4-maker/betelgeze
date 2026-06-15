@@ -17,8 +17,12 @@ import {
 import { shouldIgnoreClickUpMessage } from "../lib/client-messages/clickup-message-filters.ts"
 import { parseClickUpWorkspaceId } from "../lib/client-messages/clickup-workspace.ts"
 import { formatMetaWhatsAppApiError } from "../lib/client-messages/meta-whatsapp-errors.ts"
-import { getDefaultServiceKeysForModules } from "../lib/onboarding/services.ts"
+import { getModuleKeysForServices } from "../lib/onboarding/services.ts"
 import { isOnboardingStuck } from "../lib/onboarding/stuck.ts"
+import {
+    getProjectDeadlineTimestamp,
+    parseProjectTimeframeDays,
+} from "../lib/onboarding/project-timeframe.ts"
 
 test("counts unique completed onboarding steps", () => {
     const steps = [{ key: "welcome" }, { key: "business-info" }]
@@ -47,14 +51,28 @@ test("empty step lists are treated as complete", () => {
     assert.equal(getProgressPercentage([], []), 100)
 })
 
-test("maps onboarding modules to default fulfilment services", () => {
+test("maps fulfilment services to required onboarding modules", () => {
     assert.deepEqual(
-        getDefaultServiceKeysForModules([
-            "general-info",
-            "google-search-ads",
-            "website-lp",
+        getModuleKeysForServices([
+            "seo",
+            "google-ads",
+            "landing-page-creation",
         ]),
-        ["google-ads", "landing-page"]
+        ["general-info", "google-search-ads", "website-lp"]
+    )
+})
+
+test("parses project timeframes for fulfilment deadlines", () => {
+    assert.equal(parseProjectTimeframeDays("30 days"), 30)
+    assert.equal(parseProjectTimeframeDays("2 weeks"), 14)
+    assert.equal(parseProjectTimeframeDays("soon"), null)
+
+    assert.equal(
+        getProjectDeadlineTimestamp({
+            timeframe: "2 weeks",
+            from: new Date("2026-06-15T00:00:00.000Z"),
+        }),
+        new Date("2026-06-29T00:00:00.000Z").getTime()
     )
 })
 

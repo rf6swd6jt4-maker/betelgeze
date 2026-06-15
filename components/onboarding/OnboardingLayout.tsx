@@ -17,13 +17,16 @@ type OnboardingLayoutProps = {
         name: string | null
         email: string | null
         phone: string | null
+        isTest?: boolean
     }
+    headerActions?: React.ReactNode
 }
 
 export function OnboardingLayout({
     children,
     roadmapSteps,
     client,
+    headerActions,
 }: OnboardingLayoutProps) {
     return (
         <main className="flex min-h-screen flex-col bg-[#F8F7F3] text-slate-900 lg:fixed lg:inset-0 lg:h-auto lg:min-h-0 lg:w-full lg:overflow-hidden">
@@ -33,11 +36,16 @@ export function OnboardingLayout({
                         ScaylUp
                     </p>
 
-                    <ProfileMenu
-                        name={client.name}
-                        email={client.email}
-                        phone={client.phone}
-                    />
+                    <div className="flex items-center gap-3">
+                        {headerActions}
+
+                        <ProfileMenu
+                            name={client.name}
+                            email={client.email}
+                            phone={client.phone}
+                            isTest={client.isTest}
+                        />
+                    </div>
                 </div>
             </header>
 

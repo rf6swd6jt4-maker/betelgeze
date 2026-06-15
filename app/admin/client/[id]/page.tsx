@@ -63,7 +63,7 @@ export default async function ClientDetailPage({
 
     const { data: client } = await supabaseAdmin
         .from("clients")
-        .select("id, name, email, phone, session_token, created_at, archived_at, is_test")
+        .select("id, name, email, phone, session_token, created_at, archived_at, is_test, project_timeframe")
         .eq("id", id)
         .single()
 
@@ -91,7 +91,7 @@ export default async function ClientDetailPage({
             .eq("client_id", client.id),
         supabaseAdmin
             .from("client_services")
-            .select("service_key, due_date")
+            .select("service_key")
             .eq("client_id", client.id),
         supabaseAdmin
             .from("client_progress")
@@ -136,7 +136,6 @@ export default async function ClientDetailPage({
             ?.map((row) => ({
                 key: row.service_key,
                 definition: SERVICES[row.service_key],
-                dueDate: row.due_date as string | null,
             }))
             .filter((service) => service.definition) ?? []
     const completedKeys = new Set(
@@ -363,15 +362,19 @@ export default async function ClientDetailPage({
                         Fulfilment services
                     </p>
 
+                    <p className="mt-2 text-sm text-neutral-400">
+                        Project timeframe:{" "}
+                        {client.project_timeframe ?? "No timeframe set"}
+                    </p>
+
                     <div className="mt-3 flex flex-wrap gap-2">
                         {assignedServices.length > 0 ? (
-                            assignedServices.map(({ key, definition, dueDate }) => (
+                            assignedServices.map(({ key, definition }) => (
                                 <span
                                     key={key}
                                     className="rounded-md bg-blue-500/10 px-2 py-1 text-xs text-blue-200"
                                 >
                                     {definition.title}
-                                    {dueDate ? ` · due ${dueDate}` : ""}
                                 </span>
                             ))
                         ) : (

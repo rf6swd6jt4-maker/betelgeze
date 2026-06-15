@@ -3,6 +3,7 @@ import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 import { MODULES } from "@/lib/onboarding/modules"
 import { SERVICES } from "@/lib/onboarding/services"
 import { isOnboardingStuck } from "@/lib/onboarding/stuck"
+import { getProjectDeadlineTimestamp } from "@/lib/onboarding/project-timeframe"
 import {
     FormResponse,
     FormResponseValue,
@@ -246,14 +247,6 @@ function getDocsFromResponse(response: unknown) {
     return Array.isArray(data?.docs) ? data.docs : []
 }
 
-function getDateAsClickUpTimestamp(value?: string | null) {
-    if (!value) return undefined
-
-    const timestamp = new Date(`${value}T23:59:59.999Z`).getTime()
-
-    return Number.isFinite(timestamp) ? timestamp : undefined
-}
-
 async function getClientOnboardingSteps(clientId: string) {
     const { data: clientModules } = await supabaseAdmin
         .from("client_modules")
@@ -277,14 +270,13 @@ async function getClientOnboardingSteps(clientId: string) {
 async function getClientServices(clientId: string) {
     const { data } = await supabaseAdmin
         .from("client_services")
-        .select("service_key, due_date")
+        .select("service_key")
         .eq("client_id", clientId)
 
     return (
         data
             ?.map((row) => ({
                 definition: SERVICES[row.service_key],
-                dueDate: row.due_date as string | null,
             }))
             .filter((row) => row.definition) ?? []
     )
@@ -581,13 +573,27 @@ async function syncOnboardingStuckTag({
 }
 
 async function ensureClientServiceTasks(clientId: string) {
-    const [clientWorkListId, onboardingTaskId, services] = await Promise.all([
+    const [
+        clientWorkListId,
+        onboardingTaskId,
+        services,
+        { data: client },
+    ] = await Promise.all([
         getClickUpItem(clientId, "list:client-work"),
         getClickUpItem(clientId, "task:onboarding"),
         getClientServices(clientId),
+        supabaseAdmin
+            .from("clients")
+            .select("project_timeframe")
+            .eq("id", clientId)
+            .single(),
     ])
 
     if (!clientWorkListId || services.length === 0) return
+
+    const serviceDueDate = getProjectDeadlineTimestamp({
+        timeframe: client?.project_timeframe,
+    })
 
     if (onboardingTaskId) {
         await updateClickUpTask({
@@ -596,7 +602,7 @@ async function ensureClientServiceTasks(clientId: string) {
         })
     }
 
-    for (const { definition, dueDate } of services) {
+    for (const { definition } of services) {
         const taskKey = `service:${definition.key}`
         let serviceTaskId = await getClickUpItem(clientId, taskKey)
 
@@ -604,7 +610,7 @@ async function ensureClientServiceTasks(clientId: string) {
             const clickupTask = await createClickUpTask({
                 listId: clientWorkListId,
                 name: definition.title,
-                dueDate: getDateAsClickUpTimestamp(dueDate),
+                dueDate: serviceDueDate,
                 markdownDescription: [
                     `Fulfilment task for ${definition.title}.`,
                     "",

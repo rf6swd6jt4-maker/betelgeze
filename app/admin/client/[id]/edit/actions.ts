@@ -2,8 +2,7 @@
 
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { MODULES } from "@/lib/onboarding/modules"
-import { SERVICES, getDefaultServiceKeysForModules } from "@/lib/onboarding/services"
+import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
 import { requireAdmin } from "@/lib/admin/auth"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 
@@ -13,19 +12,13 @@ export async function updateClient(clientId: string, formData: FormData) {
     const name = String(formData.get("name") ?? "").trim()
     const email = String(formData.get("email") ?? "").trim().toLowerCase()
     const phone = normalizeMessageAddress(String(formData.get("phone") ?? ""))
-
-    const selectedModules = formData
-        .getAll("modules")
-        .map(String)
-        .filter((moduleKey) => moduleKey in MODULES)
+    const projectTimeframe = String(formData.get("project_timeframe") ?? "")
+        .trim()
     const selectedServices = formData
         .getAll("services")
         .map(String)
         .filter((serviceKey) => serviceKey in SERVICES)
-    const serviceKeys =
-        selectedServices.length > 0
-            ? selectedServices
-            : getDefaultServiceKeysForModules(selectedModules)
+    const moduleKeys = getModuleKeysForServices(selectedServices)
     const isTest = formData.get("is_test") === "on"
 
     if (!name || !phone) {
@@ -39,6 +32,7 @@ export async function updateClient(clientId: string, formData: FormData) {
             email: email || null,
             phone,
             is_test: isTest,
+            project_timeframe: projectTimeframe || null,
         })
         .eq("id", clientId)
 
@@ -53,26 +47,20 @@ export async function updateClient(clientId: string, formData: FormData) {
 
     await supabaseAdmin.from("client_modules").delete().eq("client_id", clientId)
 
-    if (selectedModules.length > 0) {
-        await supabaseAdmin.from("client_modules").insert(
-            selectedModules.map((moduleKey) => ({
-                client_id: clientId,
-                module_key: moduleKey,
-            }))
-        )
-    }
+    await supabaseAdmin.from("client_modules").insert(
+        moduleKeys.map((moduleKey) => ({
+            client_id: clientId,
+            module_key: moduleKey,
+        }))
+    )
 
     await supabaseAdmin.from("client_services").delete().eq("client_id", clientId)
 
-    if (serviceKeys.length > 0) {
+    if (selectedServices.length > 0) {
         await supabaseAdmin.from("client_services").insert(
-            serviceKeys.map((serviceKey) => ({
+            selectedServices.map((serviceKey) => ({
                 client_id: clientId,
                 service_key: serviceKey,
-                due_date:
-                    String(
-                        formData.get(`service_due_date:${serviceKey}`) ?? ""
-                    ).trim() || null,
             }))
         )
     }

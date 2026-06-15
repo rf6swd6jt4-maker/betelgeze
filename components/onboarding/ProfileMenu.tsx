@@ -7,9 +7,10 @@ type ProfileMenuProps = {
     name: string | null
     email: string | null
     phone: string | null
+    isTest?: boolean
 }
 
-export function ProfileMenu({ name, email, phone }: ProfileMenuProps) {
+export function ProfileMenu({ name, email, phone, isTest = false }: ProfileMenuProps) {
     const [open, setOpen] = useState(false)
     const menuRef = useRef<HTMLDivElement>(null)
 
@@ -67,6 +68,11 @@ export function ProfileMenu({ name, email, phone }: ProfileMenuProps) {
                     <p className="mt-2 font-semibold text-slate-950">
                         {displayName}
                     </p>
+                    {isTest && (
+                        <span className="mt-2 inline-flex rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-amber-800">
+                            Test client
+                        </span>
+                    )}
                     <p className="mt-1 break-all text-sm text-slate-600">
                         {phone ? displayMessageAddress(phone) : "No phone saved"}
                     </p>

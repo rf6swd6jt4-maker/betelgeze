@@ -1,10 +1,11 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES, StepKind } from "@/lib/onboarding/modules"
-import { completeStep } from "./actions"
+import { completeStep, skipTestStep } from "./actions"
 import { OnboardingLayout } from "@/components/onboarding/OnboardingLayout"
 import { WhyWeAskCard } from "@/components/onboarding/WhyWeAskCard"
 import { ScrollToTopOnStepChange } from "@/components/onboarding/ScrollToTopOnStepChange"
 import { OnboardingForm } from "@/components/onboarding/OnboardingForm"
+import { TestClientMenu } from "@/components/onboarding/TestClientMenu"
 import {
     FormResponse,
     getOnboardingForm,
@@ -121,6 +122,11 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
     const currentStep = requestedStep ?? linearCurrentStep
 
     const isFinalStep = currentStep.key === "final"
+    const currentStepIndex = steps.findIndex(
+        (step) => step.key === currentStep.key
+    )
+    const previousStep =
+        currentStepIndex > 0 ? steps[currentStepIndex - 1] : null
 
     const roadmapSteps = steps.map((step) => ({
         key: step.key,
@@ -165,7 +171,28 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
                 name: client.name,
                 email: client.email,
                 phone: client.phone,
+                isTest: client.is_test,
             }}
+            headerActions={
+                client.is_test && !isFinalStep ? (
+                    <TestClientMenu
+                        currentStepTitle={currentStep.title}
+                        previousStepHref={
+                            previousStep
+                                ? `/session/${token}?step=${previousStep.key}`
+                                : null
+                        }
+                        skipAction={async () => {
+                            "use server"
+                            await skipTestStep(
+                                token,
+                                currentStep.key,
+                                currentStep.formKey
+                            )
+                        }}
+                    />
+                ) : null
+            }
         >
             <ScrollToTopOnStepChange stepKey={currentStep.key} />
 
@@ -188,34 +215,10 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
                     Estimated time: {currentStep.estimatedTime}
                 </div>
 
-                {client.is_test && (
-                    <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                        <p className="text-sm font-semibold uppercase tracking-wide text-amber-900">
-                            Test client
-                        </p>
-
-                        <div className="mt-3 flex flex-wrap gap-2">
-                            {steps.map((step) => (
-                                <a
-                                    key={step.key}
-                                    href={`/session/${token}?step=${step.key}`}
-                                    className={`rounded-full px-3 py-1 text-sm font-medium ${
-                                        step.key === currentStep.key
-                                            ? "bg-amber-400 text-slate-950"
-                                            : "bg-white text-amber-950"
-                                    }`}
-                                >
-                                    {step.title}
-                                </a>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
                 {currentStep.key === "welcome-video" && (
                     <div className="mt-8 rounded-2xl bg-[#F8F7F3] p-5">
                         <p className="font-semibold text-slate-950">
-                            Your project includes:
+                            Your onboarding includes:
                         </p>
 
                         <div className="mt-4 flex flex-wrap gap-2">
@@ -230,7 +233,7 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
                                 ))
                             ) : (
                                 <span className="text-sm text-slate-500">
-                                    No services assigned yet.
+                                    No onboarding modules assigned yet.
                                 </span>
                             )}
                         </div>

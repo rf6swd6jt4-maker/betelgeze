@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
-import { SERVICES } from "@/lib/onboarding/services"
+import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
 import { requireAdmin } from "@/lib/admin/auth"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { updateClient } from "./actions"
@@ -38,21 +38,14 @@ export default async function EditClientPage({
         )
     }
 
-    const { data: moduleRows } = await supabaseAdmin
-        .from("client_modules")
-        .select("module_key")
-        .eq("client_id", client.id)
     const { data: serviceRows } = await supabaseAdmin
         .from("client_services")
-        .select("service_key, due_date")
+        .select("service_key")
         .eq("client_id", client.id)
 
-    const assignedModuleKeys = moduleRows?.map((row) => row.module_key) ?? []
     const assignedServiceKeys =
         serviceRows?.map((row) => row.service_key) ?? []
-    const serviceDueDates = new Map(
-        serviceRows?.map((row) => [row.service_key, row.due_date ?? ""]) ?? []
-    )
+    const assignedModuleKeys = getModuleKeysForServices(assignedServiceKeys)
 
     return (
         <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
@@ -69,7 +62,7 @@ export default async function EditClientPage({
                 </h1>
 
                 <p className="mt-3 text-neutral-400">
-                    Update client details and assigned onboarding modules.
+                    Update client details and assigned services.
                 </p>
 
                 {error && (
@@ -130,6 +123,23 @@ export default async function EditClientPage({
                         className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
                     />
 
+                    <label className="mt-6 block text-sm text-neutral-300">
+                        Project timeframe
+                    </label>
+
+                    <input
+                        name="project_timeframe"
+                        type="text"
+                        defaultValue={client.project_timeframe ?? ""}
+                        className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
+                        placeholder="30 days or 2 weeks"
+                    />
+
+                    <p className="mt-2 text-xs text-neutral-500">
+                        Fulfilment task deadlines are calculated from the date
+                        the tasks are created, after onboarding is complete.
+                    </p>
+
                     <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
                         <input
                             type="checkbox"
@@ -144,100 +154,75 @@ export default async function EditClientPage({
                             </span>
 
                             <span className="mt-1 block text-sm text-amber-100/70">
-                                Shows a test label in admin and unlocks
-                                step-jumping in the onboarding portal.
+                                Shows a test label in admin and unlocks the
+                                test menu in the onboarding portal.
                             </span>
                         </span>
                     </label>
 
                     <div className="mt-8">
                         <p className="text-sm font-medium text-neutral-300">
-                            Assigned modules
-                        </p>
-
-                        <div className="mt-4 space-y-3">
-                            {Object.values(MODULES).map((module) => (
-                                <label
-                                    key={module.key}
-                                    className="flex cursor-pointer items-start gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        name="modules"
-                                        value={module.key}
-                                        defaultChecked={assignedModuleKeys.includes(
-                                            module.key
-                                        )}
-                                        className="mt-1"
-                                    />
-
-                                    <span>
-                                        <span className="block font-medium">
-                                            {module.title}
-                                        </span>
-
-                                        <span className="mt-1 block text-sm text-neutral-500">
-                                            {module.steps.length} onboarding
-                                            steps
-                                        </span>
-                                    </span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="mt-8">
-                        <p className="text-sm font-medium text-neutral-300">
-                            Fulfilment services
+                            Services
                         </p>
 
                         <p className="mt-2 text-sm text-neutral-500">
-                            These become employee-facing tasks in Client Work
-                            when onboarding is complete.
+                            Pick the services the client bought. Onboarding
+                            modules are assigned automatically from this.
                         </p>
 
                         <div className="mt-4 space-y-3">
                             {Object.values(SERVICES).map((service) => (
                                 <label
                                     key={service.key}
-                                    className="block cursor-pointer rounded-xl border border-neutral-800 bg-neutral-950 p-4"
+                                    className="flex cursor-pointer items-start gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4"
                                 >
-                                    <span className="flex items-start gap-3">
-                                        <input
-                                            type="checkbox"
-                                            name="services"
-                                            value={service.key}
-                                            defaultChecked={assignedServiceKeys.includes(
-                                                service.key
-                                            )}
-                                            className="mt-1"
-                                        />
+                                    <input
+                                        type="checkbox"
+                                        name="services"
+                                        value={service.key}
+                                        defaultChecked={assignedServiceKeys.includes(
+                                            service.key
+                                        )}
+                                        className="mt-1"
+                                    />
 
-                                        <span>
-                                            <span className="block font-medium">
-                                                {service.title}
-                                            </span>
+                                    <span>
+                                        <span className="block font-medium">
+                                            {service.title}
+                                        </span>
 
-                                            <span className="mt-1 block text-sm text-neutral-500">
-                                                {service.description}
-                                            </span>
+                                        <span className="mt-1 block text-sm text-neutral-500">
+                                            {service.description}
                                         </span>
                                     </span>
-
-                                    <span className="mt-4 block text-sm text-neutral-300">
-                                        Due date
-                                    </span>
-
-                                    <input
-                                        type="date"
-                                        name={`service_due_date:${service.key}`}
-                                        defaultValue={
-                                            serviceDueDates.get(service.key) ??
-                                            ""
-                                        }
-                                        className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white outline-none"
-                                    />
                                 </label>
+                            ))}
+                        </div>
+
+                        <p className="mt-3 text-xs text-neutral-500">
+                            General Info is always assigned. If no services are
+                            selected, the client only gets General Info.
+                        </p>
+                    </div>
+
+                    <div className="mt-8">
+                        <p className="text-sm font-medium text-neutral-300">
+                            Derived onboarding modules
+                        </p>
+
+                        <p className="mt-2 text-sm text-neutral-500">
+                            These are read-only here because they are calculated
+                            from the selected services.
+                        </p>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                            {assignedModuleKeys.map((moduleKey) => (
+                                <span
+                                    key={moduleKey}
+                                    className="rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-300"
+                                >
+                                    {MODULES[moduleKey]?.title ?? moduleKey}
+                                </span>
                             ))}
                         </div>
                     </div>

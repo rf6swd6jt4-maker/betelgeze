@@ -67,7 +67,6 @@ STRIPE_DEFAULT_CURRENCY=eur
 STRIPE_INVOICE_DAYS_UNTIL_DUE=7
 META_WHATSAPP_CONSENT_TEMPLATE_NAME=
 META_WHATSAPP_CONSENT_TEMPLATE_LANGUAGE=en
-META_WHATSAPP_CONSENT_BUTTON_PAYLOAD=CONFIRM
 ```
 
 `ADMIN_SESSION_SECRET` should be a long random value. `SUPABASE_SERVICE_ROLE_KEY`
@@ -155,7 +154,6 @@ Required environment variables:
 - `CLICKUP_BRIDGE_USER_NAME`, optional, defaults to `ScaylUp`
 - `CLICKUP_BRIDGE_USER_ID`, optional, used to ignore bot-authored Chat messages
 - `META_WHATSAPP_CONSENT_TEMPLATE_LANGUAGE`, optional, defaults to `en`
-- `META_WHATSAPP_CONSENT_BUTTON_PAYLOAD`, optional, defaults to `CONFIRM`
 
 Setup:
 
@@ -243,7 +241,6 @@ Required environment variables:
 - `STRIPE_INVOICE_DAYS_UNTIL_DUE`, optional, defaults to `7`
 - `META_WHATSAPP_CONSENT_TEMPLATE_NAME`
 - `META_WHATSAPP_CONSENT_TEMPLATE_LANGUAGE`, optional, defaults to `en`
-- `META_WHATSAPP_CONSENT_BUTTON_PAYLOAD`, optional, defaults to `CONFIRM`
 
 Flow:
 

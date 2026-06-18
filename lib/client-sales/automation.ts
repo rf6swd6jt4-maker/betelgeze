@@ -89,8 +89,6 @@ export async function sendSaleConsentTemplate(saleId: string) {
         process.env.META_WHATSAPP_CONSENT_TEMPLATE_LANGUAGE ??
         process.env.META_WHATSAPP_ONBOARDING_TEMPLATE_LANGUAGE ??
         "en"
-    const buttonPayload =
-        process.env.META_WHATSAPP_CONSENT_BUTTON_PAYLOAD ?? "CONFIRM"
 
     if (!templateName) {
         await supabaseAdmin
@@ -129,19 +127,6 @@ export async function sendSaleConsentTemplate(saleId: string) {
             to: sale.client_phone,
             templateName,
             languageCode,
-            components: [
-                {
-                    type: "button",
-                    sub_type: "quick_reply",
-                    index: "0",
-                    parameters: [
-                        {
-                            type: "payload",
-                            payload: buttonPayload,
-                        },
-                    ],
-                },
-            ],
         })
         const whatsappMessageId = getWhatsAppMessageId(templateMessage)
 
@@ -156,7 +141,6 @@ export async function sendSaleConsentTemplate(saleId: string) {
                         client_sale_id: saleId,
                         template_name: templateName,
                         template_language: languageCode,
-                        template_button_payload: buttonPayload,
                         meta_response: templateMessage,
                     },
                 })

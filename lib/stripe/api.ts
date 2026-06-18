@@ -152,24 +152,10 @@ export async function createAndSendStripeInvoice({
     })
     const customerId = asStripeId(customer, "customer")
 
-    const invoice = await stripeRequest("/invoices", {
-        params: {
-            customer: customerId,
-            collection_method: "send_invoice",
-            days_until_due: daysUntilDue,
-            "metadata[client_sale_id]": saleId,
-            "metadata[service_keys]": serviceKeys.join(","),
-            "metadata[project_timeframe_days]":
-                projectTimeframeDays ?? undefined,
-        },
-    })
-    const draftInvoiceId = asStripeId(invoice, "invoice")
-
     for (const lineItem of lineItems) {
         await stripeRequest("/invoiceitems", {
             params: {
                 customer: customerId,
-                invoice: draftInvoiceId,
                 amount: lineItem.amount,
                 currency,
                 description: lineItem.description,
@@ -178,6 +164,20 @@ export async function createAndSendStripeInvoice({
             },
         })
     }
+
+    const invoice = await stripeRequest("/invoices", {
+        params: {
+            customer: customerId,
+            collection_method: "send_invoice",
+            days_until_due: daysUntilDue,
+            pending_invoice_items_behavior: "include",
+            "metadata[client_sale_id]": saleId,
+            "metadata[service_keys]": serviceKeys.join(","),
+            "metadata[project_timeframe_days]":
+                projectTimeframeDays ?? undefined,
+        },
+    })
+    const draftInvoiceId = asStripeId(invoice, "invoice")
 
     const finalizedInvoice = await stripeRequest(
         `/invoices/${encodeURIComponent(draftInvoiceId)}/finalize`

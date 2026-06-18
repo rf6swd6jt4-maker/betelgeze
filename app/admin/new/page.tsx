@@ -31,18 +31,25 @@ export default async function NewClientPage({ searchParams }: PageProps) {
     return (
         <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
             <div className="mx-auto max-w-2xl">
-                <Link href="/admin" className="text-sm text-neutral-400">
-                    ← Back to dashboard
-                </Link>
+                <div className="flex items-center gap-4 text-sm text-neutral-400">
+                    <Link href="/admin">← Back to clients</Link>
+                    <Link href="/admin/invoices">Invoices</Link>
+                </div>
 
                 <h1 className="mt-6 text-3xl font-semibold tracking-tight">
-                    Add client
+                    Add manual client
                 </h1>
 
                 <p className="mt-3 text-neutral-400">
-                    Create a manual onboarding session for development, testing,
-                    or custom-proposal clients.
+                    Create onboarding directly for exceptions, imports, or
+                    clients who should not go through Stripe invoice automation.
                 </p>
+
+                <div className="mt-5 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+                    This bypasses Stripe invoices, WhatsApp consent templates,
+                    and automatic payment-triggered setup. Use Create invoice
+                    for the standard sales flow.
+                </div>
 
                 {errorMessage && (
                     <div className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -124,8 +131,8 @@ export default async function NewClientPage({ searchParams }: PageProps) {
 
                     <p className="mt-2 text-xs text-neutral-500">
                         Fulfilment task deadlines are calculated from the date
-                        the tasks are created. Weeks convert to days × 7;
-                        months convert to days × 30.
+                        tasks are created. Weeks convert to days × 7; months
+                        convert to days × 30.
                     </p>
 
                     <div className="mt-8">
@@ -192,7 +199,7 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                     </label>
 
                     <button className="mt-8 w-full rounded-xl bg-white px-5 py-4 font-medium text-black">
-                        Create client
+                        Create manual client
                     </button>
                 </form>
             </div>

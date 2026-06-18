@@ -10,7 +10,6 @@ import {
     ProjectTimeframeUnit,
 } from "@/lib/onboarding/project-timeframe"
 import { createAndSendStripeInvoice } from "@/lib/stripe/api"
-import { sendSaleConsentTemplate } from "@/lib/client-sales/automation"
 
 const DEFAULT_CURRENCY = "usd"
 
@@ -67,7 +66,6 @@ export async function createSaleInvoice(formData: FormData) {
         .getAll("services")
         .map(String)
         .filter((serviceKey) => serviceKey in SERVICES)
-    const isTestAutomation = formData.get("is_test_automation") === "on"
     const lineItems = selectedServices
         .map((serviceKey) => {
             const service = SERVICES[serviceKey]
@@ -81,7 +79,7 @@ export async function createSaleInvoice(formData: FormData) {
                 amount,
             }
         })
-        .filter((lineItem) => isTestAutomation || lineItem.amount > 0)
+        .filter((lineItem) => lineItem.amount > 0)
     const billableServiceKeys = lineItems.map((lineItem) => lineItem.serviceKey)
 
     if (!name || !email || !phone || billableServiceKeys.length === 0) {
@@ -93,7 +91,7 @@ export async function createSaleInvoice(formData: FormData) {
         0
     )
 
-    if (!isTestAutomation && currency === "usd" && totalAmount < 50) {
+    if (currency === "usd" && totalAmount < 50) {
         redirect("/admin/sales/new?error=amount-too-low")
     }
 
@@ -108,24 +106,14 @@ export async function createSaleInvoice(formData: FormData) {
             project_timeframe_days: projectTimeframeDays,
             currency,
             total_amount: totalAmount,
-            status: isTestAutomation ? "test_paid" : "invoice_creating",
-            raw_payload: isTestAutomation
-                ? {
-                      test_automation: true,
-                      note: "Stripe invoice creation skipped by admin.",
-                  }
-                : {},
+            status: "invoice_creating",
+            raw_payload: {},
         })
         .select("id")
         .single()
 
     if (saleError || !sale) {
         redirect("/admin/sales/new?error=schema-missing")
-    }
-
-    if (isTestAutomation) {
-        await sendSaleConsentTemplate(sale.id)
-        redirect(`/admin?testSale=${sale.id}`)
     }
 
     let invoiceId: string
@@ -172,5 +160,5 @@ export async function createSaleInvoice(formData: FormData) {
         redirect(`/admin/sales/new?error=${getSaleErrorCode(error)}`)
     }
 
-    redirect(`/admin?invoice=${invoiceId}`)
+    redirect(`/admin/invoices?invoice=${invoiceId}`)
 }

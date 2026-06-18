@@ -22,11 +22,11 @@ export default async function NewSalePage({ searchParams }: PageProps) {
         error === "schema-missing"
             ? "The database is missing the Stripe sales automation migration."
             : error === "stripe-failed"
-              ? "Stripe could not create or send the invoice. Check Stripe environment variables and the timeline/logs."
+              ? "Stripe could not create or send the invoice. Check the invoice diagnostics tab and Stripe logs."
               : error === "missing-fields"
                 ? "Add a name, email, WhatsApp number, and at least one service amount."
                 : error === "amount-too-low"
-                  ? "Stripe requires live USD invoices to be at least $0.50. Use $1.00 for a simple live test, or use test automation without Stripe."
+                  ? "Stripe requires live USD invoices to be at least $0.50. Use $1.00 or more."
                   : error
                     ? "Could not create invoice."
                     : null
@@ -34,18 +34,19 @@ export default async function NewSalePage({ searchParams }: PageProps) {
     return (
         <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
             <div className="mx-auto max-w-2xl">
-                <Link href="/admin" className="text-sm text-neutral-400">
-                    ← Back to dashboard
-                </Link>
+                <div className="flex items-center gap-4 text-sm text-neutral-400">
+                    <Link href="/admin/invoices">← Back to invoices</Link>
+                    <Link href="/admin">Clients</Link>
+                </div>
 
                 <h1 className="mt-6 text-3xl font-semibold tracking-tight">
                     Create Stripe invoice
                 </h1>
 
                 <p className="mt-3 text-neutral-400">
-                    Send a Stripe invoice now. When it is paid, the system sends
-                    the approved WhatsApp confirmation template. After the
-                    client replies CONFIRM, onboarding and ClickUp setup begin.
+                    Send a Stripe invoice now. After payment, the system sends
+                    the approved WhatsApp consent template, waits for CONFIRM,
+                    then creates onboarding and ClickUp resources.
                 </p>
 
                 {errorMessage && (
@@ -115,36 +116,14 @@ export default async function NewSalePage({ searchParams }: PageProps) {
 
                     <input type="hidden" name="currency" value={currency} />
 
-                    <label className="mt-8 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
-                        <input
-                            type="checkbox"
-                            name="is_test_automation"
-                            className="mt-1"
-                        />
-
-                        <span>
-                            <span className="block text-sm font-medium text-amber-100">
-                                Test automation without Stripe
-                            </span>
-
-                            <span className="mt-1 block text-sm text-amber-100/70">
-                                Skips Stripe invoice creation and immediately
-                                sends the approved WhatsApp confirmation
-                                template. Use this to test CONFIRM, onboarding
-                                client creation, ClickUp setup, and onboarding
-                                link delivery without taking payment.
-                            </span>
-                        </span>
-                    </label>
-
                     <div className="mt-8">
                         <p className="text-sm font-medium text-neutral-300">
                             Services and invoice amounts
                         </p>
                         <p className="mt-2 text-sm text-neutral-500">
                             Tick each bought service and enter the amount to
-                            show as its Stripe invoice line item. Amounts may
-                            be left at 0 only when using test automation.
+                            show as its Stripe invoice line item. Services with
+                            no amount are ignored.
                         </p>
 
                         <div className="mt-4 space-y-3">

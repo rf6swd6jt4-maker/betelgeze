@@ -68,7 +68,22 @@ type WhatsAppChangeValue = {
         phone_number_id?: string
     }
     messages?: WhatsAppMessage[]
-    statuses?: unknown[]
+    statuses?: WhatsAppStatus[]
+}
+
+type WhatsAppStatus = {
+    id?: string
+    status?: string
+    timestamp?: string
+    recipient_id?: string
+    errors?: Array<{
+        code?: number
+        title?: string
+        message?: string
+        error_data?: {
+            details?: string
+        }
+    }>
 }
 
 type WhatsAppWebhookPayload = {
@@ -291,6 +306,81 @@ function getFirstStatusRecipientAddress(payload: WhatsAppWebhookPayload) {
     }
 
     return null
+}
+
+function getStatusError(status: WhatsAppStatus) {
+    const error = status.errors?.[0]
+
+    if (!error) return null
+
+    return [
+        error.title,
+        error.message,
+        error.error_data?.details,
+        error.code ? `Meta code ${error.code}` : null,
+    ]
+        .filter(Boolean)
+        .join(": ")
+}
+
+async function handleStatusUpdate({
+    status,
+    payload,
+}: {
+    status: WhatsAppStatus
+    payload: WhatsAppWebhookPayload
+}) {
+    const messageId = status.id
+
+    if (!messageId) return
+
+    const messageStatus = status.status ?? "status_update"
+    const errorMessage = getStatusError(status)
+    const { data: message } = await supabaseAdmin
+        .from("client_messages")
+        .select("id, raw_payload")
+        .or(
+            `provider_message_id.eq.${messageId},whatsapp_message_id.eq.${messageId}`
+        )
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+    if (message) {
+        await supabaseAdmin
+            .from("client_messages")
+            .update({
+                status:
+                    messageStatus === "failed"
+                        ? "delivery_failed"
+                        : `whatsapp_${messageStatus}`,
+                error: errorMessage,
+                raw_payload: {
+                    ...(message.raw_payload &&
+                    typeof message.raw_payload === "object" &&
+                    !Array.isArray(message.raw_payload)
+                        ? message.raw_payload
+                        : {}),
+                    meta_status: status,
+                    meta_status_payload: payload,
+                },
+            })
+            .eq("id", message.id)
+    }
+
+    if (messageStatus === "failed") {
+        await supabaseAdmin
+            .from("client_sales")
+            .update({
+                status: "paid_consent_template_failed",
+                raw_payload: {
+                    meta_status: status,
+                    meta_status_payload: payload,
+                },
+                updated_at: new Date().toISOString(),
+            })
+            .eq("consent_template_message_id", messageId)
+    }
 }
 
 function getFirstBusinessAddress(payload: WhatsAppWebhookPayload) {
@@ -742,6 +832,18 @@ export async function POST(request: NextRequest) {
         )
 
         if (inboundMessages.length === 0) {
+            const statusUpdates =
+                payload.entry
+                    ?.flatMap((entry) => entry.changes ?? [])
+                    .flatMap((change) => change.value?.statuses ?? []) ?? []
+
+            for (const status of statusUpdates) {
+                await handleStatusUpdate({
+                    status,
+                    payload,
+                })
+            }
+
             const changeFields =
                 payload.entry
                     ?.flatMap((entry) => entry.changes ?? [])

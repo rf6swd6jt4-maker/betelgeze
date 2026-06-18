@@ -17,7 +17,7 @@ import {
 import { shouldIgnoreClickUpMessage } from "../lib/client-messages/clickup-message-filters.ts"
 import { parseClickUpWorkspaceId } from "../lib/client-messages/clickup-workspace.ts"
 import { formatMetaWhatsAppApiError } from "../lib/client-messages/meta-whatsapp-errors.ts"
-import { getModuleKeysForServices } from "../lib/onboarding/services.ts"
+import { SERVICES, getModuleKeysForServices } from "../lib/onboarding/services.ts"
 import { isOnboardingStuck } from "../lib/onboarding/stuck.ts"
 import {
     getProjectTimeframeDays,
@@ -61,6 +61,44 @@ test("maps fulfilment services to required onboarding modules", () => {
         ]),
         ["general-info", "google-search-ads", "website-lp"]
     )
+})
+
+test("defines SEO SOP subtasks in ClickUp execution order", () => {
+    assert.deepEqual(
+        SERVICES.seo.sopSteps.map((step) => step.key),
+        [
+            "confirm-access-and-pre-sale-groundwork",
+            "run-benchmark-heatmap",
+            "easy-win-audit",
+            "pick-main-keyword-and-competitive-analysis",
+            "optimize-gbp-categories-and-profile",
+            "optimize-gbp-services-and-descriptions",
+            "optimize-gbp-bookings-and-faq",
+            "on-page-seo-basic",
+            "citations-basic",
+            "on-page-seo-advanced-content-and-structure",
+            "citations-advanced",
+            "weekly-maintenance-and-client-habits",
+            "report-fake-black-hat-competitor-listing",
+        ]
+    )
+
+    assert.match(SERVICES.seo.sopSteps[0].description ?? "", /Stage: Setup/u)
+    assert.match(
+        SERVICES.seo.sopSteps[9].description ?? "",
+        /Stage: Advanced - skip on first run/u
+    )
+})
+
+test("service SOP step keys are unique within each service", () => {
+    for (const service of Object.values(SERVICES)) {
+        const keys = service.sopSteps.map((step) => step.key)
+        assert.deepEqual(
+            keys,
+            [...new Set(keys)],
+            `${service.key} has duplicate SOP step keys`
+        )
+    }
 })
 
 test("converts project timeframe units for fulfilment deadlines", () => {

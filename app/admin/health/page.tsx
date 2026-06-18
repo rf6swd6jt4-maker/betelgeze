@@ -129,8 +129,8 @@ function checkEnvGroup({
             id,
             provider,
             name,
-            status: "warning",
-            summary: "Core config is present; optional monitoring is incomplete",
+            status: "unknown",
+            summary: "Core config is present; extended monitoring is not connected",
             detail: `Missing optional: ${missingOptional.join(", ")}`,
         }
     }
@@ -152,6 +152,20 @@ function isRecent(dateValue: string | null | undefined, hours: number) {
 
 function plural(count: number, singular: string, pluralValue = `${singular}s`) {
     return `${count} ${count === 1 ? singular : pluralValue}`
+}
+
+function getProviderGroups(checks: HealthCheck[]) {
+    const groups = new Map<string, HealthCheck[]>()
+
+    for (const check of checks) {
+        groups.set(check.provider, [...(groups.get(check.provider) ?? []), check])
+    }
+
+    return [...groups.entries()].map(([provider, providerChecks]) => ({
+        provider,
+        checks: providerChecks,
+        status: getWorstStatus(providerChecks),
+    }))
 }
 
 export default async function AdminHealthPage() {
@@ -403,7 +417,13 @@ export default async function AdminHealthPage() {
     const warningCount = countByStatus(checks, "warning")
     const criticalCount = countByStatus(checks, "critical")
     const unknownCount = countByStatus(checks, "unknown")
-    const score = Math.round((okCount / checks.length) * 100)
+    const scoredChecks = checks.length - unknownCount
+    const score =
+        scoredChecks > 0 ? Math.round((okCount / scoredChecks) * 100) : 0
+    const attentionChecks = checks.filter((check) =>
+        ["critical", "warning"].includes(check.status)
+    )
+    const providerGroups = getProviderGroups(checks)
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
@@ -458,10 +478,10 @@ export default async function AdminHealthPage() {
                 </div>
 
                 <section
-                    className={`mt-5 rounded-lg border ${styles.border} bg-neutral-900 p-4`}
+                    className={`mt-5 overflow-hidden rounded-lg border ${styles.border} bg-neutral-900`}
                 >
-                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                        <div>
+                    <div className="grid gap-0 lg:grid-cols-[1.25fr_0.75fr]">
+                        <div className="p-4 sm:p-5">
                             <div className="flex items-center gap-2">
                                 <span
                                     className={`h-2.5 w-2.5 rounded-full ${styles.dot}`}
@@ -472,114 +492,284 @@ export default async function AdminHealthPage() {
                                     {formatStatus(worstStatus)}
                                 </span>
                             </div>
-                            <h2 className="mt-3 text-xl font-semibold">
+
+                            <h2 className="mt-4 text-2xl font-semibold tracking-tight">
                                 {criticalCount > 0
                                     ? "Action needed"
                                     : warningCount > 0
                                       ? "Mostly healthy"
                                       : "System is healthy"}
                             </h2>
+
                             <p className="mt-2 max-w-2xl text-sm text-neutral-400">
-                                This page uses cached database signals and
-                                lightweight configuration checks. It does not
-                                live-poll every provider on each page load.
+                                Cached database signals and lightweight
+                                configuration checks. No expensive provider
+                                polling runs when this page loads.
                             </p>
+
+                            <div className="mt-5 grid gap-2 sm:grid-cols-4">
+                                {(
+                                    [
+                                        ["Healthy", okCount, "ok"],
+                                        ["Warnings", warningCount, "warning"],
+                                        ["Critical", criticalCount, "critical"],
+                                        ["Not connected", unknownCount, "unknown"],
+                                    ] satisfies Array<
+                                        [string, number, HealthStatus]
+                                    >
+                                ).map(([label, value, status]) => {
+                                    const itemStyles = statusStyles(status)
+
+                                    return (
+                                        <div
+                                            key={label}
+                                            className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span
+                                                    className={`h-2 w-2 rounded-full ${itemStyles.dot}`}
+                                                />
+                                                <p className="text-xs text-neutral-500">
+                                                    {label}
+                                                </p>
+                                            </div>
+                                            <p className="mt-1 text-lg font-semibold">
+                                                {value}
+                                            </p>
+                                        </div>
+                                    )
+                                })}
+                            </div>
                         </div>
 
-                        <div className="min-w-48">
+                        <div className="border-t border-neutral-800 bg-neutral-950/45 p-4 sm:p-5 lg:border-l lg:border-t-0">
                             <div className="flex items-end justify-between">
                                 <span className="text-sm text-neutral-500">
-                                    Health score
+                                    Operational score
                                 </span>
-                                <span className="text-3xl font-semibold">
+                                <span className="text-4xl font-semibold">
                                     {score}%
                                 </span>
                             </div>
-                            <div className="mt-2 h-2 overflow-hidden rounded-full bg-neutral-800">
+
+                            <div className="mt-3 h-2 overflow-hidden rounded-full bg-neutral-800">
                                 <div
                                     className={`h-full rounded-full ${styles.bar}`}
                                     style={{ width: `${score}%` }}
                                 />
                             </div>
+
+                            <div className="mt-5 grid gap-3 text-sm">
+                                <div className="flex justify-between gap-4">
+                                    <span className="text-neutral-500">
+                                        Active clients
+                                    </span>
+                                    <span className="font-medium">
+                                        {activeClients}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between gap-4">
+                                    <span className="text-neutral-500">
+                                        Active channels
+                                    </span>
+                                    <span className="font-medium">
+                                        {activeChannels}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between gap-4">
+                                    <span className="text-neutral-500">
+                                        Pending invoices
+                                    </span>
+                                    <span className="font-medium">
+                                        {pendingSales.length}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </section>
 
-                <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-                    {(
-                        [
-                            ["Healthy", okCount, "ok"],
-                            ["Warnings", warningCount, "warning"],
-                            ["Critical", criticalCount, "critical"],
-                            ["Unknown", unknownCount, "unknown"],
-                        ] satisfies Array<[string, number, HealthStatus]>
-                    ).map(([label, value, status]) => {
-                        const itemStyles = statusStyles(status)
+                <section className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                    <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                                Triage
+                            </p>
+                            <h2 className="mt-1 text-lg font-semibold">
+                                Needs attention
+                            </h2>
+                        </div>
+                        <span className="text-sm text-neutral-500">
+                            {plural(attentionChecks.length, "item")}
+                        </span>
+                    </div>
 
-                        return (
-                            <div
-                                key={label}
-                                className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2"
-                            >
-                                <div className="flex items-center gap-2">
-                                    <span
-                                        className={`h-2 w-2 rounded-full ${itemStyles.dot}`}
-                                    />
-                                    <p className="text-xs text-neutral-500">
-                                        {label}
-                                    </p>
-                                </div>
-                                <p className="mt-1 text-lg font-semibold">
-                                    {value}
-                                </p>
-                            </div>
-                        )
-                    })}
-                </div>
+                    <div className="mt-4 grid gap-2">
+                        {attentionChecks.length > 0 ? (
+                            attentionChecks.map((check) => {
+                                const checkStyles = statusStyles(check.status)
 
-                <section className="mt-5 grid gap-3 lg:grid-cols-2">
-                    {checks.map((check) => {
-                        const checkStyles = statusStyles(check.status)
-
-                        return (
-                            <article
-                                key={check.id}
-                                className={`rounded-lg border ${checkStyles.border} bg-neutral-900 p-4`}
-                            >
-                                <div className="flex items-start justify-between gap-4">
-                                    <div>
-                                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                                            {check.provider}
-                                        </p>
-                                        <h3 className="mt-1 font-medium text-neutral-100">
-                                            {check.name}
-                                        </h3>
-                                    </div>
-                                    <span
-                                        className={`rounded-md px-2 py-1 text-xs font-medium capitalize ${checkStyles.badge}`}
+                                return (
+                                    <div
+                                        key={check.id}
+                                        className="rounded-lg border border-neutral-800 bg-neutral-950 p-3"
                                     >
-                                        {formatStatus(check.status)}
-                                    </span>
-                                </div>
-
-                                <p className="mt-3 text-sm text-neutral-300">
-                                    {check.summary}
-                                </p>
-
-                                {(check.detail || check.value) && (
-                                    <div className="mt-3 grid gap-2 text-xs text-neutral-500">
-                                        {check.value && <p>{check.value}</p>}
-                                        {check.detail && (
-                                            <p className="break-words">
-                                                {check.detail}
-                                            </p>
-                                        )}
+                                        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                                            <div>
+                                                <p className="text-sm font-medium text-neutral-100">
+                                                    {check.provider}:{" "}
+                                                    {check.name}
+                                                </p>
+                                                <p className="mt-1 text-sm text-neutral-400">
+                                                    {check.summary}
+                                                </p>
+                                                {check.detail && (
+                                                    <p className="mt-2 break-words text-xs text-neutral-500">
+                                                        {check.detail}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <span
+                                                className={`w-fit rounded-md px-2 py-1 text-xs font-medium capitalize ${checkStyles.badge}`}
+                                            >
+                                                {formatStatus(check.status)}
+                                            </span>
+                                        </div>
                                     </div>
-                                )}
-                            </article>
-                        )
-                    })}
+                                )
+                            })
+                        ) : (
+                            <p className="rounded-lg bg-neutral-950 p-3 text-sm text-neutral-400">
+                                No critical or warning items right now.
+                            </p>
+                        )}
+                    </div>
                 </section>
+
+                <section className="mt-5">
+                    <div className="mb-3 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                                Platforms
+                            </p>
+                            <h2 className="mt-1 text-lg font-semibold">
+                                Provider overview
+                            </h2>
+                        </div>
+                        <p className="text-sm text-neutral-500">
+                            {plural(providerGroups.length, "platform")}
+                        </p>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {providerGroups.map((group) => {
+                            const groupStyles = statusStyles(group.status)
+                            const groupOk = countByStatus(group.checks, "ok")
+
+                            return (
+                                <article
+                                    key={group.provider}
+                                    className={`rounded-lg border ${groupStyles.border} bg-neutral-900 p-4`}
+                                >
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <span
+                                                    className={`h-2.5 w-2.5 rounded-full ${groupStyles.dot}`}
+                                                />
+                                                <h3 className="font-medium">
+                                                    {group.provider}
+                                                </h3>
+                                            </div>
+                                            <p className="mt-2 text-xs text-neutral-500">
+                                                {groupOk}/{group.checks.length}{" "}
+                                                checks healthy
+                                            </p>
+                                        </div>
+                                        <span
+                                            className={`rounded-md px-2 py-1 text-xs font-medium capitalize ${groupStyles.badge}`}
+                                        >
+                                            {formatStatus(group.status)}
+                                        </span>
+                                    </div>
+
+                                    <div className="mt-4 space-y-2">
+                                        {group.checks.map((check) => {
+                                            const checkStyles =
+                                                statusStyles(check.status)
+
+                                            return (
+                                                <div
+                                                    key={check.id}
+                                                    className="flex items-center justify-between gap-3 text-sm"
+                                                >
+                                                    <span className="min-w-0 truncate text-neutral-300">
+                                                        {check.name}
+                                                    </span>
+                                                    <span
+                                                        className={`h-2 w-2 shrink-0 rounded-full ${checkStyles.dot}`}
+                                                    />
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </article>
+                            )
+                        })}
+                    </div>
+                </section>
+
+                <details className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                    <summary className="cursor-pointer text-sm font-medium text-neutral-200">
+                        Detailed checks
+                    </summary>
+
+                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                        {checks.map((check) => {
+                            const checkStyles = statusStyles(check.status)
+
+                            return (
+                                <article
+                                    key={check.id}
+                                    className={`rounded-lg border ${checkStyles.border} bg-neutral-950 p-4`}
+                                >
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div>
+                                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                                                {check.provider}
+                                            </p>
+                                            <h3 className="mt-1 font-medium text-neutral-100">
+                                                {check.name}
+                                            </h3>
+                                        </div>
+                                        <span
+                                            className={`rounded-md px-2 py-1 text-xs font-medium capitalize ${checkStyles.badge}`}
+                                        >
+                                            {formatStatus(check.status)}
+                                        </span>
+                                    </div>
+
+                                    <p className="mt-3 text-sm text-neutral-300">
+                                        {check.summary}
+                                    </p>
+
+                                    {(check.detail || check.value) && (
+                                        <div className="mt-3 grid gap-2 text-xs text-neutral-500">
+                                            {check.value && (
+                                                <p>{check.value}</p>
+                                            )}
+                                            {check.detail && (
+                                                <p className="break-words">
+                                                    {check.detail}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                </article>
+                            )
+                        })}
+                    </div>
+                </details>
 
                 <section className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
                     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">

@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/admin/auth"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
 import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
+import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
 export const dynamic = "force-dynamic"
 
 const BASE_STEPS = [
@@ -204,7 +205,7 @@ export default async function AdminPage() {
                         </p>
                     </div>
 
-                    <div className="flex flex-col gap-3 sm:flex-row">
+                    <div className="flex items-center gap-2">
                         <Link
                             href="/admin/sales/new"
                             className="inline-flex justify-center rounded-lg bg-white px-3 py-2 text-sm font-medium text-black"
@@ -212,26 +213,7 @@ export default async function AdminPage() {
                             Create invoice
                         </Link>
 
-                        <Link
-                            href="/admin/invoices"
-                            className="inline-flex justify-center rounded-lg border border-neutral-700 px-3 py-2 text-sm font-medium text-white"
-                        >
-                            Invoices
-                        </Link>
-
-                        <Link
-                            href="/admin/new"
-                            className="inline-flex justify-center rounded-lg border border-amber-400/40 px-3 py-2 text-sm font-medium text-amber-100"
-                        >
-                            Add manual client
-                        </Link>
-
-                        <Link
-                            href="/admin/logout"
-                            className="inline-flex justify-center rounded-lg border border-neutral-700 px-3 py-2 text-sm font-medium text-white"
-                        >
-                            Log out
-                        </Link>
+                        <AdminActionsMenu />
                     </div>
                 </div>
 
@@ -610,7 +592,10 @@ export default async function AdminPage() {
                     </table>
                 </div>
 
-                <details className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                <details
+                    id="unmatched-diagnostics"
+                    className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-4"
+                >
                     <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-neutral-500">
                         Unmatched bridge diagnostics
                     </summary>

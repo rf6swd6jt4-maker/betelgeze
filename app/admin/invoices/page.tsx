@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { requireAdmin } from "@/lib/admin/auth"
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
 
 export const dynamic = "force-dynamic"
 
@@ -127,7 +128,7 @@ export default async function AdminInvoicesPage() {
                         </p>
                     </div>
 
-                    <div className="flex flex-col gap-3 sm:flex-row">
+                    <div className="flex items-center gap-2">
                         <Link
                             href="/admin/sales/new"
                             className="inline-flex justify-center rounded-lg bg-white px-3 py-2 text-sm font-medium text-black"
@@ -135,19 +136,7 @@ export default async function AdminInvoicesPage() {
                             Create invoice
                         </Link>
 
-                        <Link
-                            href="/admin/new"
-                            className="inline-flex justify-center rounded-lg border border-amber-400/40 px-3 py-2 text-sm font-medium text-amber-100"
-                        >
-                            Add manual client
-                        </Link>
-
-                        <Link
-                            href="/admin"
-                            className="inline-flex justify-center rounded-lg border border-neutral-700 px-3 py-2 text-sm font-medium text-white"
-                        >
-                            Clients
-                        </Link>
+                        <AdminActionsMenu />
                     </div>
                 </div>
 

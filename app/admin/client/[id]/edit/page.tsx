@@ -162,7 +162,7 @@ export default async function EditClientPage({
                         months convert to days × 30.
                     </p>
 
-                    <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
+                    <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4">
                         <input
                             type="checkbox"
                             name="is_test"
@@ -171,11 +171,11 @@ export default async function EditClientPage({
                         />
 
                         <span>
-                            <span className="block text-sm font-medium text-amber-100">
+                            <span className="block text-sm font-medium text-neutral-200">
                                 Test client
                             </span>
 
-                            <span className="mt-1 block text-sm text-amber-100/70">
+                            <span className="mt-1 block text-sm text-neutral-500">
                                 Shows a test label in admin and unlocks the
                                 test menu in the onboarding portal.
                             </span>

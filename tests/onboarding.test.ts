@@ -21,6 +21,7 @@ import { formatMetaWhatsAppApiError } from "../lib/client-messages/meta-whatsapp
 import { isConsentConfirmationText } from "../lib/client-sales/consent.ts"
 import { SERVICES, getModuleKeysForServices } from "../lib/onboarding/services.ts"
 import { verifyStripeWebhookSignature } from "../lib/stripe/signature.ts"
+import { getStripeCustomerPhone } from "../lib/stripe/format.ts"
 import { isOnboardingStuck } from "../lib/onboarding/stuck.ts"
 import {
     getProjectTimeframeDays,
@@ -375,4 +376,12 @@ test("verifies Stripe webhook signatures", () => {
         }),
         false
     )
+})
+
+test("formats WhatsApp bridge numbers for Stripe customers", () => {
+    assert.equal(
+        getStripeCustomerPhone("whatsapp:+12149732742"),
+        "+12149732742"
+    )
+    assert.equal(getStripeCustomerPhone("+12149732742"), "+12149732742")
 })

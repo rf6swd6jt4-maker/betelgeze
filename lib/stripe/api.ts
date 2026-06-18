@@ -1,5 +1,6 @@
 import { getRequiredEnv } from "@/lib/env"
 import { verifyStripeWebhookSignature } from "@/lib/stripe/signature"
+import { getStripeCustomerPhone } from "@/lib/stripe/format"
 
 const STRIPE_API_BASE = "https://api.stripe.com/v1"
 
@@ -145,7 +146,7 @@ export async function createAndSendStripeInvoice({
         params: {
             name,
             email: email || undefined,
-            phone: phone || undefined,
+            phone: getStripeCustomerPhone(phone),
             "metadata[client_sale_id]": saleId,
         },
     })

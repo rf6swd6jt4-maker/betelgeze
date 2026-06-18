@@ -71,14 +71,18 @@ async function stripeRequest(
     for (const [key, value] of Object.entries(params)) {
         appendStripeParam(body, key, value)
     }
+    const encodedParams = body.toString()
+    const requestUrl = `${STRIPE_API_BASE}${path}${
+        method === "GET" && encodedParams ? `?${encodedParams}` : ""
+    }`
 
-    const response = await fetch(`${STRIPE_API_BASE}${path}`, {
+    const response = await fetch(requestUrl, {
         method,
         headers: {
             Authorization: `Bearer ${getStripeSecretKey()}`,
             "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: method === "POST" ? body.toString() : undefined,
+        body: method === "POST" ? encodedParams : undefined,
     })
     const responseBody = await response.text()
 
@@ -112,6 +116,8 @@ function getInvoiceFields(invoice: unknown) {
                   status?: unknown
                   hosted_invoice_url?: unknown
                   invoice_pdf?: unknown
+                  amount_due?: unknown
+                  total?: unknown
               })
             : {}
 
@@ -128,6 +134,9 @@ function getInvoiceFields(invoice: unknown) {
                 : null,
         invoicePdf:
             typeof value.invoice_pdf === "string" ? value.invoice_pdf : null,
+        amountDue:
+            typeof value.amount_due === "number" ? value.amount_due : null,
+        total: typeof value.total === "number" ? value.total : null,
     }
 }
 
@@ -152,25 +161,11 @@ export async function createAndSendStripeInvoice({
     })
     const customerId = asStripeId(customer, "customer")
 
-    for (const lineItem of lineItems) {
-        await stripeRequest("/invoiceitems", {
-            params: {
-                customer: customerId,
-                amount: lineItem.amount,
-                currency,
-                description: lineItem.description,
-                "metadata[client_sale_id]": saleId,
-                "metadata[service_key]": lineItem.serviceKey,
-            },
-        })
-    }
-
     const invoice = await stripeRequest("/invoices", {
         params: {
             customer: customerId,
             collection_method: "send_invoice",
             days_until_due: daysUntilDue,
-            pending_invoice_items_behavior: "include",
             "metadata[client_sale_id]": saleId,
             "metadata[service_keys]": serviceKeys.join(","),
             "metadata[project_timeframe_days]":
@@ -178,6 +173,51 @@ export async function createAndSendStripeInvoice({
         },
     })
     const draftInvoiceId = asStripeId(invoice, "invoice")
+
+    for (const lineItem of lineItems) {
+        const invoiceItem = await stripeRequest("/invoiceitems", {
+            params: {
+                customer: customerId,
+                invoice: draftInvoiceId,
+                amount: lineItem.amount,
+                currency,
+                description: lineItem.description,
+                "metadata[client_sale_id]": saleId,
+                "metadata[service_key]": lineItem.serviceKey,
+            },
+        })
+        const attachedInvoice =
+            invoiceItem &&
+            typeof invoiceItem === "object" &&
+            !Array.isArray(invoiceItem)
+                ? (invoiceItem as { invoice?: unknown }).invoice
+                : null
+
+        if (attachedInvoice !== draftInvoiceId) {
+            throw new Error(
+                `Stripe invoice item for ${lineItem.description} was not attached to draft invoice ${draftInvoiceId}`
+            )
+        }
+    }
+
+    const expectedTotal = lineItems.reduce(
+        (total, lineItem) => total + lineItem.amount,
+        0
+    )
+    const draftInvoice = await stripeRequest(
+        `/invoices/${encodeURIComponent(draftInvoiceId)}`,
+        {
+            method: "GET",
+        }
+    )
+    const draftFields = getInvoiceFields(draftInvoice)
+    const actualTotal = draftFields.total ?? draftFields.amountDue
+
+    if (actualTotal !== expectedTotal) {
+        throw new Error(
+            `Stripe draft invoice total mismatch. Expected ${expectedTotal}, got ${actualTotal ?? "unknown"}. Invoice was not sent.`
+        )
+    }
 
     const finalizedInvoice = await stripeRequest(
         `/invoices/${encodeURIComponent(draftInvoiceId)}/finalize`

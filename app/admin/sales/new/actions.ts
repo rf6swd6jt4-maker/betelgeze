@@ -12,7 +12,7 @@ import {
 import { createAndSendStripeInvoice } from "@/lib/stripe/api"
 import { sendSaleConsentTemplate } from "@/lib/client-sales/automation"
 
-const DEFAULT_CURRENCY = "eur"
+const DEFAULT_CURRENCY = "usd"
 
 function getInvoiceDaysUntilDue() {
     const value = Number(process.env.STRIPE_INVOICE_DAYS_UNTIL_DUE ?? "7")
@@ -92,6 +92,11 @@ export async function createSaleInvoice(formData: FormData) {
         (total, lineItem) => total + lineItem.amount,
         0
     )
+
+    if (!isTestAutomation && currency === "usd" && totalAmount < 50) {
+        redirect("/admin/sales/new?error=amount-too-low")
+    }
+
     const { data: sale, error: saleError } = await supabaseAdmin
         .from("client_sales")
         .insert({

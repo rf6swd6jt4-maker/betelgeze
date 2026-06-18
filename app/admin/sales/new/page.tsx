@@ -12,7 +12,7 @@ type PageProps = {
     }>
 }
 
-const currency = process.env.STRIPE_DEFAULT_CURRENCY ?? "eur"
+const currency = process.env.STRIPE_DEFAULT_CURRENCY ?? "usd"
 
 export default async function NewSalePage({ searchParams }: PageProps) {
     await requireAdmin()
@@ -25,9 +25,11 @@ export default async function NewSalePage({ searchParams }: PageProps) {
               ? "Stripe could not create or send the invoice. Check Stripe environment variables and the timeline/logs."
               : error === "missing-fields"
                 ? "Add a name, email, WhatsApp number, and at least one service amount."
-                : error
-                  ? "Could not create invoice."
-                  : null
+                : error === "amount-too-low"
+                  ? "Stripe requires live USD invoices to be at least $0.50. Use $1.00 for a simple live test, or use test automation without Stripe."
+                  : error
+                    ? "Could not create invoice."
+                    : null
 
     return (
         <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">

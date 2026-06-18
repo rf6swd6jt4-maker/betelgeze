@@ -61,6 +61,12 @@ R2_PUBLIC_BASE_URL=
 ADMIN_PASSWORD=
 ADMIN_SESSION_SECRET=
 NEXT_PUBLIC_SITE_URL=
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_DEFAULT_CURRENCY=eur
+STRIPE_INVOICE_DAYS_UNTIL_DUE=7
+META_WHATSAPP_CONSENT_TEMPLATE_NAME=
+META_WHATSAPP_CONSENT_TEMPLATE_LANGUAGE=en
 ```
 
 `ADMIN_SESSION_SECRET` should be a long random value. `SUPABASE_SERVICE_ROLE_KEY`
@@ -144,8 +150,10 @@ Required environment variables:
 - `META_WHATSAPP_BUSINESS_ACCOUNT_ID`
 - `META_WHATSAPP_WEBHOOK_VERIFY_TOKEN`
 - `CLIENT_MESSAGES_BRIDGE_SECRET`
+- `META_WHATSAPP_CONSENT_TEMPLATE_NAME`
 - `CLICKUP_BRIDGE_USER_NAME`, optional, defaults to `ScaylUp`
 - `CLICKUP_BRIDGE_USER_ID`, optional, used to ignore bot-authored Chat messages
+- `META_WHATSAPP_CONSENT_TEMPLATE_LANGUAGE`, optional, defaults to `en`
 
 Setup:
 
@@ -220,3 +228,34 @@ or, only when your scheduler cannot send headers:
 ```text
 /api/client-messages/clickup/poll?secret=CLIENT_MESSAGES_BRIDGE_SECRET
 ```
+
+## Stripe Invoice Automation
+
+Admins can create and send Stripe invoices from `/admin/sales/new`.
+
+Required environment variables:
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_DEFAULT_CURRENCY`, optional, defaults to `eur`
+- `STRIPE_INVOICE_DAYS_UNTIL_DUE`, optional, defaults to `7`
+- `META_WHATSAPP_CONSENT_TEMPLATE_NAME`
+- `META_WHATSAPP_CONSENT_TEMPLATE_LANGUAGE`, optional, defaults to `en`
+
+Flow:
+
+1. Admin creates a Stripe invoice with client details, WhatsApp number, project
+   timeframe, selected services, and service line amounts.
+2. Stripe emails the invoice to the client.
+3. Stripe posts paid invoice events to `/api/stripe/webhook`.
+4. The app sends the approved WhatsApp consent template.
+5. When the client replies `CONFIRM`, the app creates the onboarding client,
+   ClickUp folder/tasks/chat channel, and sends the onboarding link by WhatsApp.
+
+Configure the Stripe webhook endpoint to send at least:
+
+- `invoice.paid`
+- `invoice.payment_succeeded`
+- `invoice.payment_failed`
+- `invoice.voided`
+- `invoice.marked_uncollectible`

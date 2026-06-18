@@ -1,0 +1,110 @@
+import { NextRequest } from "next/server"
+import { getRequiredEnv } from "@/lib/env"
+import { supabaseAdmin } from "@/lib/supabase/admin"
+import {
+    StripeWebhookEvent,
+    verifyStripeWebhookSignature,
+} from "@/lib/stripe/api"
+import { handlePaidStripeInvoice } from "@/lib/client-sales/automation"
+
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
+
+function isPaidInvoiceEvent(type: string) {
+    return type === "invoice.paid" || type === "invoice.payment_succeeded"
+}
+
+export async function POST(request: NextRequest) {
+    const payload = await request.text()
+    const signature = request.headers.get("stripe-signature")
+    const secret = getRequiredEnv("STRIPE_WEBHOOK_SECRET")
+
+    if (
+        !verifyStripeWebhookSignature({
+            payload,
+            signatureHeader: signature,
+            secret,
+        })
+    ) {
+        return Response.json({ error: "Invalid signature" }, { status: 400 })
+    }
+
+    const event = JSON.parse(payload) as StripeWebhookEvent
+    const { error: eventInsertError } = await supabaseAdmin
+        .from("stripe_events")
+        .insert({
+            id: event.id,
+            event_type: event.type,
+            raw_payload: event,
+        })
+
+    if (eventInsertError) {
+        if (eventInsertError.message.toLowerCase().includes("duplicate")) {
+            return Response.json({ ok: true, duplicate: true })
+        }
+
+        return Response.json(
+            { error: `Could not record Stripe event: ${eventInsertError.message}` },
+            { status: 500 }
+        )
+    }
+
+    if (isPaidInvoiceEvent(event.type)) {
+        const invoice = event.data?.object
+
+        if (!invoice) {
+            return Response.json(
+                { error: "Paid invoice event missing invoice object" },
+                { status: 400 }
+            )
+        }
+
+        const result = await handlePaidStripeInvoice(invoice)
+
+        if (!result?.ok) {
+            const error =
+                result && "error" in result
+                    ? result.error
+                    : "Could not process paid invoice"
+
+            return Response.json(
+                {
+                    error,
+                },
+                { status: 202 }
+            )
+        }
+    } else if (
+        event.type === "invoice.payment_failed" ||
+        event.type === "invoice.voided" ||
+        event.type === "invoice.marked_uncollectible"
+    ) {
+        const invoice = event.data?.object as
+            | {
+                  id?: unknown
+                  status?: unknown
+              }
+            | undefined
+        const invoiceId = typeof invoice?.id === "string" ? invoice.id : null
+
+        if (invoiceId) {
+            await supabaseAdmin
+                .from("client_sales")
+                .update({
+                    status:
+                        event.type === "invoice.payment_failed"
+                            ? "payment_failed"
+                            : "invoice_inactive",
+                    stripe_invoice_status:
+                        typeof invoice?.status === "string"
+                            ? invoice.status
+                            : null,
+                    raw_payload: event,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq("stripe_invoice_id", invoiceId)
+        }
+    }
+
+    return Response.json({ ok: true })
+}

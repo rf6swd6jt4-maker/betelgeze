@@ -8,6 +8,13 @@ type SendMetaWhatsAppMessageInput = {
     replyToMessageId?: string | null
 }
 
+type SendMetaWhatsAppTemplateInput = {
+    to: string
+    templateName: string
+    languageCode: string
+    components?: unknown[]
+}
+
 export function hasMetaWhatsAppConfig() {
     return Boolean(
         process.env.META_WHATSAPP_ACCESS_TOKEN &&
@@ -55,6 +62,57 @@ export async function sendMetaWhatsAppMessage({
         throw new Error(
             formatMetaWhatsAppApiError({
                 action: "Meta WhatsApp message",
+                status: response.status,
+                responseBody,
+            })
+        )
+    }
+
+    return responseBody ? JSON.parse(responseBody) : null
+}
+
+export async function sendMetaWhatsAppTemplate({
+    to,
+    templateName,
+    languageCode,
+    components,
+}: SendMetaWhatsAppTemplateInput) {
+    const phoneNumberId = getRequiredEnv("META_WHATSAPP_PHONE_NUMBER_ID")
+    const accessToken = getRequiredEnv("META_WHATSAPP_ACCESS_TOKEN")
+
+    const response = await fetch(
+        `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                messaging_product: "whatsapp",
+                recipient_type: "individual",
+                to: toMetaWhatsAppRecipient(to),
+                type: "template",
+                template: {
+                    name: templateName,
+                    language: {
+                        code: languageCode,
+                    },
+                    components:
+                        components && components.length > 0
+                            ? components
+                            : undefined,
+                },
+            }),
+        }
+    )
+
+    const responseBody = await response.text()
+
+    if (!response.ok) {
+        throw new Error(
+            formatMetaWhatsAppApiError({
+                action: "Meta WhatsApp template message",
                 status: response.status,
                 responseBody,
             })

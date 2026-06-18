@@ -14,6 +14,7 @@ import {
     getMetaWhatsAppMedia,
 } from "@/lib/client-messages/meta-whatsapp"
 import { storeClientMessageMedia } from "@/lib/onboarding/uploads"
+import { handleSaleConsentConfirmation } from "@/lib/client-sales/automation"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -37,6 +38,18 @@ type WhatsAppMessage = {
     }
     text?: {
         body?: string
+    }
+    interactive?: {
+        type?: string
+        button_reply?: {
+            id?: string
+            title?: string
+        }
+        list_reply?: {
+            id?: string
+            title?: string
+            description?: string
+        }
     }
     image?: WhatsAppMediaPayload
     video?: WhatsAppMediaPayload
@@ -316,6 +329,30 @@ function getMediaPayload(message: WhatsAppMessage) {
     }
 }
 
+function getInboundText(message: WhatsAppMessage) {
+    const textBody = message.text?.body?.trim()
+
+    if (textBody) return textBody
+
+    const buttonReply =
+        message.interactive?.button_reply?.title ??
+        message.interactive?.button_reply?.id
+
+    if (typeof buttonReply === "string" && buttonReply.trim()) {
+        return buttonReply.trim()
+    }
+
+    const listReply =
+        message.interactive?.list_reply?.title ??
+        message.interactive?.list_reply?.id
+
+    if (typeof listReply === "string" && listReply.trim()) {
+        return listReply.trim()
+    }
+
+    return null
+}
+
 function getExtensionFromMimeType(mimeType: string) {
     const extensionByMimeType: Record<string, string> = {
         "image/jpeg": "jpg",
@@ -466,11 +503,20 @@ async function handleInboundMessage({
 
     if (existingMessage) return
 
+    const pendingSaleConfirmation = await handleSaleConsentConfirmation({
+        fromAddress: from,
+        messageId,
+        body: getInboundText(message) ?? "",
+        rawPayload: payload,
+    })
+
+    if (pendingSaleConfirmation.handled) return
+
     const channel = await resolveInboundChannel(from)
 
     if (!channel) {
         const unmatchedBody =
-            message.text?.body?.trim() ||
+            getInboundText(message) ||
             `[Unsupported ${message.type ?? "message"}]`
 
         const { error } = await supabaseAdmin.from("client_messages").insert({
@@ -528,7 +574,7 @@ async function handleInboundMessage({
         lastMessage.provider !== "meta_whatsapp" ||
         new Date(lastMessage.created_at).getTime() < tenMinutesAgo
     const initialBody =
-        message.text?.body?.trim() || `[${titleCase(message.type ?? "message")}]`
+        getInboundText(message) || `[${titleCase(message.type ?? "message")}]`
     const { data: insertedMessage, error: insertError } = await supabaseAdmin
         .from("client_messages")
         .insert({

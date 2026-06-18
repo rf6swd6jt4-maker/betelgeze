@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { createHmac } from "node:crypto"
 import test from "node:test"
 import { getCompletedStepCount, getProgressPercentage } from "../lib/onboarding/progress.ts"
 import {
@@ -17,7 +18,9 @@ import {
 import { shouldIgnoreClickUpMessage } from "../lib/client-messages/clickup-message-filters.ts"
 import { parseClickUpWorkspaceId } from "../lib/client-messages/clickup-workspace.ts"
 import { formatMetaWhatsAppApiError } from "../lib/client-messages/meta-whatsapp-errors.ts"
+import { isConsentConfirmationText } from "../lib/client-sales/consent.ts"
 import { SERVICES, getModuleKeysForServices } from "../lib/onboarding/services.ts"
+import { verifyStripeWebhookSignature } from "../lib/stripe/signature.ts"
 import { isOnboardingStuck } from "../lib/onboarding/stuck.ts"
 import {
     getProjectTimeframeDays,
@@ -340,4 +343,36 @@ test("explains Meta WhatsApp token authentication failures", () => {
 
     assert.match(message, /Meta code 190/u)
     assert.match(message, /META_WHATSAPP_ACCESS_TOKEN/u)
+})
+
+test("detects WhatsApp consent confirmation replies", () => {
+    assert.equal(isConsentConfirmationText("CONFIRM"), true)
+    assert.equal(isConsentConfirmationText(" confirm "), true)
+    assert.equal(isConsentConfirmationText("yes"), false)
+})
+
+test("verifies Stripe webhook signatures", () => {
+    const payload = JSON.stringify({ id: "evt_test", type: "invoice.paid" })
+    const secret = "whsec_test"
+    const timestamp = String(Math.floor(Date.now() / 1000))
+    const signature = createHmac("sha256", secret)
+        .update(`${timestamp}.${payload}`)
+        .digest("hex")
+
+    assert.equal(
+        verifyStripeWebhookSignature({
+            payload,
+            secret,
+            signatureHeader: `t=${timestamp},v1=${signature}`,
+        }),
+        true
+    )
+    assert.equal(
+        verifyStripeWebhookSignature({
+            payload,
+            secret,
+            signatureHeader: `t=${timestamp},v1=bad`,
+        }),
+        false
+    )
 })

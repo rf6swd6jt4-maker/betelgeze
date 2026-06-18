@@ -153,6 +153,12 @@ export default async function AdminInvoicesPage() {
                     >
                         Invoices
                     </Link>
+                    <Link
+                        href="/admin/health"
+                        className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300"
+                    >
+                        System health
+                    </Link>
                 </div>
 
                 <div className="mt-5 grid gap-3 sm:grid-cols-3">

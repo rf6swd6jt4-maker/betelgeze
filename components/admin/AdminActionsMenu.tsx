@@ -37,12 +37,16 @@ export function AdminActionsMenu() {
             <button
                 type="button"
                 onClick={() => setOpen((value) => !value)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-700 text-lg font-semibold leading-none text-white hover:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-white/30"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-700 text-white hover:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-white/30"
                 aria-label="Open admin actions"
                 aria-expanded={open}
                 aria-haspopup="menu"
             >
-                ...
+                <span className="flex items-center gap-0.5" aria-hidden="true">
+                    <span className="h-1 w-1 rounded-full bg-current" />
+                    <span className="h-1 w-1 rounded-full bg-current" />
+                    <span className="h-1 w-1 rounded-full bg-current" />
+                </span>
             </button>
 
             {open && (
@@ -59,11 +63,11 @@ export function AdminActionsMenu() {
                     </Link>
 
                     <Link
-                        href="/admin#unmatched-diagnostics"
+                        href="/admin/health"
                         className="block px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800"
                         role="menuitem"
                     >
-                        Open unmatched message diagnostics
+                        System health
                     </Link>
 
                     <Link

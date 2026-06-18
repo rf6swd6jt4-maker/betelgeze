@@ -48,7 +48,6 @@ export default async function AdminPage() {
         { data: moduleRows, error: modulesError },
         { data: serviceRows, error: servicesError },
         { data: communicationRows, error: communicationError },
-        { data: diagnosticRows, error: diagnosticError },
     ] = await Promise.all([
         supabaseAdmin
             .from("client_progress")
@@ -58,15 +57,6 @@ export default async function AdminPage() {
         supabaseAdmin
             .from("client_communication_channels")
             .select("client_id, clickup_channel_id, is_active"),
-        supabaseAdmin
-            .from("client_messages")
-            .select(
-                "id, direction, from_address, to_address, body, status, error, created_at"
-            )
-            .eq("provider", "meta_whatsapp")
-            .is("client_id", null)
-            .order("created_at", { ascending: false })
-            .limit(12),
     ])
 
     if (
@@ -74,8 +64,7 @@ export default async function AdminPage() {
         progressError ||
         modulesError ||
         servicesError ||
-        communicationError ||
-        diagnosticError
+        communicationError
     ) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-6 text-white">
@@ -229,6 +218,12 @@ export default async function AdminPage() {
                         className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300"
                     >
                         Invoices
+                    </Link>
+                    <Link
+                        href="/admin/health"
+                        className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300"
+                    >
+                        System health
                     </Link>
                 </div>
 
@@ -592,87 +587,6 @@ export default async function AdminPage() {
                     </table>
                 </div>
 
-                <details
-                    id="unmatched-diagnostics"
-                    className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-4"
-                >
-                    <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-neutral-500">
-                        Unmatched bridge diagnostics
-                    </summary>
-
-                    <p className="mt-2 text-sm text-neutral-400">
-                        Webhook events that reached the app but were not
-                        attached to a client.
-                    </p>
-
-                    <div className="mt-4 grid gap-2">
-                        {(diagnosticRows ?? []).length > 0 ? (
-                            diagnosticRows?.map((message) => (
-                                <div
-                                    key={message.id}
-                                    className="rounded-lg bg-neutral-950 p-3"
-                                >
-                                    <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
-                                        <div>
-                                            <p className="whitespace-pre-wrap text-sm text-neutral-100">
-                                                {message.body}
-                                            </p>
-
-                                            {(message.from_address ||
-                                                message.to_address) && (
-                                                <p className="mt-1 break-all text-xs text-neutral-500">
-                                                    {message.from_address
-                                                        ? `From ${displayMessageAddress(message.from_address)}`
-                                                        : null}
-                                                    {message.from_address &&
-                                                    message.to_address
-                                                        ? " · "
-                                                        : null}
-                                                    {message.to_address
-                                                        ? `To ${displayMessageAddress(message.to_address)}`
-                                                        : null}
-                                                </p>
-                                            )}
-                                        </div>
-
-                                        <span
-                                            className={`w-fit rounded-md px-2 py-1 text-xs ${
-                                                message.status.includes(
-                                                    "failed"
-                                                ) ||
-                                                message.status === "unmatched"
-                                                    ? "bg-red-500/10 text-red-200"
-                                                    : "bg-neutral-800 text-neutral-300"
-                                            }`}
-                                        >
-                                            {message.direction} ·{" "}
-                                            {message.status}
-                                        </span>
-                                    </div>
-
-                                    {message.error && (
-                                        <p className="mt-2 text-xs text-red-200">
-                                            {message.error}
-                                        </p>
-                                    )}
-
-                                    <p className="mt-3 text-xs text-neutral-500">
-                                        {new Date(
-                                            message.created_at
-                                        ).toLocaleString("en-IE", {
-                                            dateStyle: "medium",
-                                            timeStyle: "short",
-                                        })}
-                                    </p>
-                                </div>
-                            ))
-                        ) : (
-                            <p className="rounded-lg bg-neutral-950 p-3 text-sm text-neutral-500">
-                                No unmatched bridge diagnostics.
-                            </p>
-                        )}
-                    </div>
-                </details>
             </div>
         </main>
     )

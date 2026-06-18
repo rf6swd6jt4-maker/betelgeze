@@ -70,7 +70,7 @@ export default async function AdminPage() {
         supabaseAdmin
             .from("client_sales")
             .select(
-                "id, client_id, client_name, client_email, client_phone, status, total_amount, currency, stripe_invoice_id, stripe_hosted_invoice_url, created_at, updated_at"
+                "id, client_id, client_name, client_email, client_phone, status, total_amount, currency, stripe_invoice_id, stripe_hosted_invoice_url, consent_template_sent_at, onboarding_link_sent_at, created_at, updated_at"
             )
             .order("created_at", { ascending: false })
             .limit(8),
@@ -337,6 +337,13 @@ export default async function AdminPage() {
                                                         " "
                                                     )}
                                                 </span>
+                                                <p className="mt-2 text-xs text-neutral-500">
+                                                    {sale.onboarding_link_sent_at
+                                                        ? "Onboarding link sent"
+                                                        : sale.consent_template_sent_at
+                                                          ? "Consent template sent"
+                                                          : "Consent template not sent"}
+                                                </p>
                                             </td>
                                             <td className="px-3 py-2 text-neutral-300">
                                                 {(

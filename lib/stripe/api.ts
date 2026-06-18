@@ -152,19 +152,6 @@ export async function createAndSendStripeInvoice({
     })
     const customerId = asStripeId(customer, "customer")
 
-    for (const lineItem of lineItems) {
-        await stripeRequest("/invoiceitems", {
-            params: {
-                customer: customerId,
-                amount: lineItem.amount,
-                currency,
-                description: lineItem.description,
-                "metadata[client_sale_id]": saleId,
-                "metadata[service_key]": lineItem.serviceKey,
-            },
-        })
-    }
-
     const invoice = await stripeRequest("/invoices", {
         params: {
             customer: customerId,
@@ -177,6 +164,21 @@ export async function createAndSendStripeInvoice({
         },
     })
     const draftInvoiceId = asStripeId(invoice, "invoice")
+
+    for (const lineItem of lineItems) {
+        await stripeRequest("/invoiceitems", {
+            params: {
+                customer: customerId,
+                invoice: draftInvoiceId,
+                amount: lineItem.amount,
+                currency,
+                description: lineItem.description,
+                "metadata[client_sale_id]": saleId,
+                "metadata[service_key]": lineItem.serviceKey,
+            },
+        })
+    }
+
     const finalizedInvoice = await stripeRequest(
         `/invoices/${encodeURIComponent(draftInvoiceId)}/finalize`
     )

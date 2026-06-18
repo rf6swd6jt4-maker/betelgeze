@@ -39,6 +39,10 @@ type WhatsAppMessage = {
     text?: {
         body?: string
     }
+    button?: {
+        text?: string
+        payload?: string
+    }
     interactive?: {
         type?: string
         button_reply?: {
@@ -333,6 +337,12 @@ function getInboundText(message: WhatsAppMessage) {
     const textBody = message.text?.body?.trim()
 
     if (textBody) return textBody
+
+    const buttonText = message.button?.text ?? message.button?.payload
+
+    if (typeof buttonText === "string" && buttonText.trim()) {
+        return buttonText.trim()
+    }
 
     const buttonReply =
         message.interactive?.button_reply?.title ??

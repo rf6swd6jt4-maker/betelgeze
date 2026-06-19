@@ -52,6 +52,15 @@ function getAutomationDiagnostic(rawPayload: unknown) {
         .join(": ")
 }
 
+function isManualMigration(rawPayload: unknown) {
+    return (
+        rawPayload &&
+        typeof rawPayload === "object" &&
+        !Array.isArray(rawPayload) &&
+        (rawPayload as { flow?: unknown }).flow === "manual_migration"
+    )
+}
+
 function getWhatsAppState(sale: {
     consent_template_sent_at: string | null
     consent_confirmed_at: string | null
@@ -221,6 +230,9 @@ export default async function AdminInvoicesPage() {
                                 </thead>
                                 <tbody>
                                     {sales.map((sale) => {
+                                        const manualMigration = isManualMigration(
+                                            sale.raw_payload
+                                        )
                                         const diagnostic =
                                             getAutomationDiagnostic(
                                                 sale.raw_payload
@@ -251,13 +263,17 @@ export default async function AdminInvoicesPage() {
                                                 </td>
                                                 <td className="px-3 py-3 align-top">
                                                     <span className="rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-300">
-                                                        {formatStatus(
-                                                            sale.status
-                                                        )}
+                                                        {manualMigration
+                                                            ? "manual client migration"
+                                                            : formatStatus(
+                                                                  sale.status
+                                                              )}
                                                     </span>
                                                     <p className="mt-2 font-mono text-xs text-neutral-500">
-                                                        {sale.stripe_invoice_id ??
-                                                            "No Stripe invoice yet"}
+                                                        {manualMigration
+                                                            ? "No Stripe invoice"
+                                                            : (sale.stripe_invoice_id ??
+                                                              "No Stripe invoice yet")}
                                                     </p>
                                                     {diagnostic && (
                                                         <p className="mt-2 max-w-sm text-xs text-red-300">
@@ -276,10 +292,12 @@ export default async function AdminInvoicesPage() {
                                                     </p>
                                                 </td>
                                                 <td className="px-3 py-3 align-top text-neutral-300">
-                                                    {formatMoney(
-                                                        sale.total_amount,
-                                                        sale.currency
-                                                    )}
+                                                    {manualMigration
+                                                        ? "-"
+                                                        : formatMoney(
+                                                              sale.total_amount,
+                                                              sale.currency
+                                                          )}
                                                 </td>
                                                 <td className="px-3 py-3 align-top text-neutral-400">
                                                     {new Date(

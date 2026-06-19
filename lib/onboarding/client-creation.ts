@@ -11,13 +11,15 @@ type CreateOnboardingClientInput = {
     projectTimeframeDays?: number | null
     isTest?: boolean
     createClickUpResources?: boolean
+    createOnboardingModules?: boolean
+    createOnboardingWork?: boolean
     activitySource?: string
 }
 
 export type CreateOnboardingClientResult = {
     id: string
     sessionToken: string
-    onboardingUrl: string
+    onboardingUrl: string | null
 }
 
 async function addActivity(
@@ -62,12 +64,16 @@ export async function createOnboardingClient({
     projectTimeframeDays,
     isTest = false,
     createClickUpResources = true,
+    createOnboardingModules = true,
+    createOnboardingWork = true,
     activitySource,
 }: CreateOnboardingClientInput): Promise<CreateOnboardingClientResult> {
     const selectedServices = serviceKeys.filter(
         (serviceKey) => serviceKey in SERVICES
     )
-    const moduleKeys = getModuleKeysForServices(selectedServices)
+    const moduleKeys = createOnboardingModules
+        ? getModuleKeysForServices(selectedServices)
+        : []
     const sessionToken = randomBytes(32).toString("hex")
 
     const { data: client, error: clientError } = await supabaseAdmin
@@ -87,17 +93,19 @@ export async function createOnboardingClient({
         throw new Error(getCreateClientErrorCode(clientError))
     }
 
-    const { error: modulesError } = await supabaseAdmin
-        .from("client_modules")
-        .insert(
-            moduleKeys.map((moduleKey) => ({
-                client_id: client.id,
-                module_key: moduleKey,
-            }))
-        )
+    if (moduleKeys.length > 0) {
+        const { error: modulesError } = await supabaseAdmin
+            .from("client_modules")
+            .insert(
+                moduleKeys.map((moduleKey) => ({
+                    client_id: client.id,
+                    module_key: moduleKey,
+                }))
+            )
 
-    if (modulesError) {
-        throw new Error("modules-failed")
+        if (modulesError) {
+            throw new Error("modules-failed")
+        }
     }
 
     if (selectedServices.length > 0) {
@@ -116,18 +124,22 @@ export async function createOnboardingClient({
     }
 
     if (createClickUpResources) {
-        await ensureClientClickUpChannel(client.id)
+        await ensureClientClickUpChannel(client.id, { createOnboardingWork })
     }
 
-    const onboardingUrl = getOnboardingUrl(client.session_token)
+    const onboardingUrl = createOnboardingModules
+        ? getOnboardingUrl(client.session_token)
+        : null
 
-    await addActivity(
-        client.id,
-        "onboarding_link_created",
-        activitySource
-            ? `Onboarding link created from ${activitySource}: ${onboardingUrl}`
-            : `Onboarding link created: ${onboardingUrl}`
-    )
+    if (onboardingUrl) {
+        await addActivity(
+            client.id,
+            "onboarding_link_created",
+            activitySource
+                ? `Onboarding link created from ${activitySource}: ${onboardingUrl}`
+                : `Onboarding link created: ${onboardingUrl}`
+        )
+    }
 
     return {
         id: client.id,

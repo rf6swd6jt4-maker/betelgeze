@@ -884,7 +884,10 @@ async function saveClientCommunicationChannel({
     }
 }
 
-export async function ensureClientClickUpChannel(clientId: string) {
+export async function ensureClientClickUpChannel(
+    clientId: string,
+    { createOnboardingWork = true }: { createOnboardingWork?: boolean } = {}
+) {
     if (!hasClickUpConfig()) {
         await addActivity(
             clientId,
@@ -982,56 +985,58 @@ export async function ensureClientClickUpChannel(clientId: string) {
             folderId: clickupFolderId,
         })
 
-        const onboardingTask = await createClickUpTask({
-            listId: clientWorkListId,
-            name: "Onboarding",
-            status: ONBOARDING_TASK_STATUS_NOT_STARTED,
-            tags: client.is_test ? [TEST_CLIENT_TAG] : undefined,
-            markdownDescription:
-                "Tracks the overall onboarding lifecycle for this client.",
-        })
-        const onboardingTaskId = getTaskId(onboardingTask)
-
-        if (!onboardingTaskId) {
-            throw new Error("ClickUp did not return an Onboarding task ID")
-        }
-
-        await saveClickUpItem({
-            clientId: client.id,
-            itemKey: "task:onboarding",
-            itemType: "task",
-            clickupId: onboardingTaskId,
-            clickupParentId: clientWorkListId,
-        })
-
-        const onboardingSteps = await getClientOnboardingSteps(client.id)
-
-        for (const [index, step] of onboardingSteps.entries()) {
-            const clickupTask = await createClickUpTask({
-                listId: onboardingInformationListId,
-                name: getNumberedOnboardingStepTitle(index, step.title),
-                status: STEP_TASK_STATUS_UNSUBMITTED,
-                markdownDescription: formatInitialStepDescription({
-                    moduleTitle: step.moduleTitle,
-                    description: step.description,
-                }),
+        if (createOnboardingWork) {
+            const onboardingTask = await createClickUpTask({
+                listId: clientWorkListId,
+                name: "Onboarding",
+                status: ONBOARDING_TASK_STATUS_NOT_STARTED,
+                tags: client.is_test ? [TEST_CLIENT_TAG] : undefined,
+                markdownDescription:
+                    "Tracks the overall onboarding lifecycle for this client.",
             })
-            const clickupTaskId = getTaskId(clickupTask)
+            const onboardingTaskId = getTaskId(onboardingTask)
 
-            if (!clickupTaskId) {
-                throw new Error(
-                    `ClickUp did not return a task ID for ${step.title}`
-                )
+            if (!onboardingTaskId) {
+                throw new Error("ClickUp did not return an Onboarding task ID")
             }
 
             await saveClickUpItem({
                 clientId: client.id,
-                itemKey: `step:${step.key}`,
+                itemKey: "task:onboarding",
                 itemType: "task",
-                clickupId: clickupTaskId,
-                clickupParentId: onboardingInformationListId,
-                stepKey: step.key,
+                clickupId: onboardingTaskId,
+                clickupParentId: clientWorkListId,
             })
+
+            const onboardingSteps = await getClientOnboardingSteps(client.id)
+
+            for (const [index, step] of onboardingSteps.entries()) {
+                const clickupTask = await createClickUpTask({
+                    listId: onboardingInformationListId,
+                    name: getNumberedOnboardingStepTitle(index, step.title),
+                    status: STEP_TASK_STATUS_UNSUBMITTED,
+                    markdownDescription: formatInitialStepDescription({
+                        moduleTitle: step.moduleTitle,
+                        description: step.description,
+                    }),
+                })
+                const clickupTaskId = getTaskId(clickupTask)
+
+                if (!clickupTaskId) {
+                    throw new Error(
+                        `ClickUp did not return a task ID for ${step.title}`
+                    )
+                }
+
+                await saveClickUpItem({
+                    clientId: client.id,
+                    itemKey: `step:${step.key}`,
+                    itemType: "task",
+                    clickupId: clickupTaskId,
+                    clickupParentId: onboardingInformationListId,
+                    stepKey: step.key,
+                })
+            }
         }
 
         const workspaceUserIds = await getClickUpWorkspaceMemberIds()

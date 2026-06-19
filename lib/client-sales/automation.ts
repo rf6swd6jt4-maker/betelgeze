@@ -17,6 +17,7 @@ type ClientSale = {
     service_keys: unknown
     project_timeframe_days: number | null
     status: string
+    raw_payload: unknown
 }
 
 type StripeInvoiceLike = {
@@ -36,6 +37,48 @@ type ConfirmationInput = {
     messageId?: string | null
     body: string
     rawPayload: unknown
+}
+
+const CONSENT_TEMPLATE_TERMINAL_STATUSES = new Set([
+    "paid_consent_template_sending",
+    "paid_awaiting_whatsapp_confirm",
+    "whatsapp_confirmed",
+    "onboarding_created",
+    "onboarding_link_sent",
+    "manual_consent_template_sending",
+    "manual_awaiting_whatsapp_confirm",
+    "manual_workspace_created",
+])
+
+type SaleFlow = "paid" | "manual_migration"
+
+function getSaleFlow(rawPayload: unknown): SaleFlow {
+    if (
+        rawPayload &&
+        typeof rawPayload === "object" &&
+        !Array.isArray(rawPayload) &&
+        (rawPayload as { flow?: unknown }).flow === "manual_migration"
+    ) {
+        return "manual_migration"
+    }
+
+    return "paid"
+}
+
+function getConsentStatus(flow: SaleFlow, state: "sending" | "awaiting" | "failed") {
+    if (flow === "manual_migration") {
+        return {
+            sending: "manual_consent_template_sending",
+            awaiting: "manual_awaiting_whatsapp_confirm",
+            failed: "manual_consent_template_failed",
+        }[state]
+    }
+
+    return {
+        sending: "paid_consent_template_sending",
+        awaiting: "paid_awaiting_whatsapp_confirm",
+        failed: "paid_consent_template_failed",
+    }[state]
 }
 
 function asStringArray(value: unknown) {
@@ -75,12 +118,18 @@ async function addSaleActivity(
 export async function sendSaleConsentTemplate(saleId: string) {
     const { data: sale } = await supabaseAdmin
         .from("client_sales")
-        .select("id, client_phone, status, consent_template_sent_at")
+        .select("id, client_phone, status, consent_template_sent_at, raw_payload")
         .eq("id", saleId)
         .single()
 
     if (!sale) return { ok: false, error: "Sale not found" }
-    if (sale.consent_template_sent_at) return { ok: true, skipped: true }
+    const flow = getSaleFlow(sale.raw_payload)
+    if (
+        sale.consent_template_sent_at ||
+        CONSENT_TEMPLATE_TERMINAL_STATUSES.has(sale.status)
+    ) {
+        return { ok: true, skipped: true }
+    }
 
     const templateName =
         process.env.META_WHATSAPP_CONSENT_TEMPLATE_NAME ??
@@ -94,7 +143,7 @@ export async function sendSaleConsentTemplate(saleId: string) {
         await supabaseAdmin
             .from("client_sales")
             .update({
-                status: "paid_consent_template_failed",
+                status: getConsentStatus(flow, "failed"),
                 updated_at: new Date().toISOString(),
             })
             .eq("id", saleId)
@@ -103,6 +152,30 @@ export async function sendSaleConsentTemplate(saleId: string) {
             ok: false,
             error: "Missing META_WHATSAPP_CONSENT_TEMPLATE_NAME",
         }
+    }
+
+    const { data: claimedSale, error: claimError } = await supabaseAdmin
+        .from("client_sales")
+        .update({
+            status: getConsentStatus(flow, "sending"),
+            updated_at: new Date().toISOString(),
+        })
+        .eq("id", saleId)
+        .is("consent_template_sent_at", null)
+        .not(
+            "status",
+            "in",
+            "(paid_consent_template_sending,paid_awaiting_whatsapp_confirm,whatsapp_confirmed,onboarding_created,onboarding_link_sent,manual_consent_template_sending,manual_awaiting_whatsapp_confirm,manual_workspace_created)"
+        )
+        .select("id")
+        .maybeSingle()
+
+    if (claimError) {
+        return { ok: false, error: claimError.message }
+    }
+
+    if (!claimedSale) {
+        return { ok: true, skipped: true }
     }
 
     const { data: messageLog } = await supabaseAdmin
@@ -148,7 +221,7 @@ export async function sendSaleConsentTemplate(saleId: string) {
             supabaseAdmin
                 .from("client_sales")
                 .update({
-                    status: "paid_awaiting_whatsapp_confirm",
+                    status: getConsentStatus(flow, "awaiting"),
                     consent_template_sent_at: new Date().toISOString(),
                     consent_template_message_id: whatsappMessageId,
                     updated_at: new Date().toISOString(),
@@ -177,7 +250,7 @@ export async function sendSaleConsentTemplate(saleId: string) {
             supabaseAdmin
                 .from("client_sales")
                 .update({
-                    status: "paid_consent_template_failed",
+                    status: getConsentStatus(flow, "failed"),
                     updated_at: new Date().toISOString(),
                 })
                 .eq("id", saleId),
@@ -212,11 +285,7 @@ export async function handlePaidStripeInvoice(invoice: StripeInvoiceLike) {
 
     if (!sale) return { ok: false, error: "Sale not found for invoice" }
 
-    if (
-        sale.status === "whatsapp_confirmed" ||
-        sale.status === "onboarding_created" ||
-        sale.status === "onboarding_link_sent"
-    ) {
+    if (CONSENT_TEMPLATE_TERMINAL_STATUSES.has(sale.status)) {
         return { ok: true, skipped: true }
     }
 
@@ -249,7 +318,7 @@ async function findPendingConfirmedSale(fromAddress: string) {
     const { data: sales } = await supabaseAdmin
         .from("client_sales")
         .select(
-            "id, client_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status"
+            "id, client_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload"
         )
         .in("client_phone", equivalentAddresses)
         .in("status", [
@@ -260,6 +329,9 @@ async function findPendingConfirmedSale(fromAddress: string) {
             "whatsapp_confirmed",
             "onboarding_created",
             "onboarding_link_failed",
+            "manual_consent_pending",
+            "manual_consent_template_failed",
+            "manual_awaiting_whatsapp_confirm",
         ])
         .order("created_at", { ascending: false })
         .limit(1)
@@ -281,6 +353,8 @@ export async function handleSaleConsentConfirmation({
 
     if (!sale) return { handled: false }
 
+    const flow = getSaleFlow(sale.raw_payload)
+
     let clientId = sale.client_id
     let onboardingUrl: string | null = null
 
@@ -289,12 +363,20 @@ export async function handleSaleConsentConfirmation({
             name: sale.client_name,
             email: sale.client_email,
             phone: fromAddress,
-            serviceKeys: asStringArray(sale.service_keys).filter(
-                (serviceKey) => serviceKey in SERVICES
-            ),
+            serviceKeys:
+                flow === "manual_migration"
+                    ? []
+                    : asStringArray(sale.service_keys).filter(
+                          (serviceKey) => serviceKey in SERVICES
+                      ),
             projectTimeframeDays: sale.project_timeframe_days,
             createClickUpResources: true,
-            activitySource: `Stripe sale ${sale.id}`,
+            createOnboardingModules: flow !== "manual_migration",
+            createOnboardingWork: flow !== "manual_migration",
+            activitySource:
+                flow === "manual_migration"
+                    ? "Manual client migration"
+                    : `Stripe sale ${sale.id}`,
         })
         clientId = client.id
         onboardingUrl = client.onboardingUrl
@@ -304,7 +386,10 @@ export async function handleSaleConsentConfirmation({
             .update({
                 client_id: client.id,
                 client_phone: fromAddress,
-                status: "onboarding_created",
+                status:
+                    flow === "manual_migration"
+                        ? "manual_workspace_created"
+                        : "onboarding_created",
                 consent_confirmed_at: new Date().toISOString(),
                 consent_confirmed_message_id: messageId ?? null,
                 updated_at: new Date().toISOString(),
@@ -324,7 +409,10 @@ export async function handleSaleConsentConfirmation({
         await supabaseAdmin
             .from("client_sales")
             .update({
-                status: "onboarding_created",
+                status:
+                    flow === "manual_migration"
+                        ? "manual_workspace_created"
+                        : "onboarding_created",
                 consent_confirmed_at: new Date().toISOString(),
                 consent_confirmed_message_id: messageId ?? null,
                 updated_at: new Date().toISOString(),
@@ -343,6 +431,14 @@ export async function handleSaleConsentConfirmation({
         status: "whatsapp_consent_confirmed",
         raw_payload: rawPayload,
     })
+
+    if (flow === "manual_migration") {
+        await addSaleActivity(
+            sale.id,
+            "WhatsApp confirmed; ClickUp folder and chat channel created for manual client migration"
+        )
+        return { handled: true, ok: true }
+    }
 
     if (!onboardingUrl) {
         await addSaleActivity(sale.id, "WhatsApp confirmed but onboarding URL missing")

@@ -11,7 +11,7 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 function isPaidInvoiceEvent(type: string) {
-    return type === "invoice.paid" || type === "invoice.payment_succeeded"
+    return type === "invoice.paid"
 }
 
 export async function POST(request: NextRequest) {

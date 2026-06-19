@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { SERVICES } from "@/lib/onboarding/services"
 import { requireAdmin } from "@/lib/admin/auth"
 import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 import { createClient } from "./actions"
@@ -8,25 +7,24 @@ export const dynamic = "force-dynamic"
 type PageProps = {
     searchParams: Promise<{
         error?: string
+        created?: string
     }>
 }
 
 export default async function NewClientPage({ searchParams }: PageProps) {
     await requireAdmin()
 
-    const { error } = await searchParams
+    const { error, created } = await searchParams
     const errorMessage =
         error === "schema-missing"
-            ? "The database is missing the latest client services/test client migration. Apply the Supabase migration, then try again."
-            : error === "phone-schema-missing"
-              ? "The database is missing the client phone column migration. Apply the Supabase migrations, then try again."
-              : error === "modules-failed"
-                ? "The client was created, but onboarding modules could not be assigned."
-                : error === "services-failed"
-                  ? "The client was created, but fulfilment services could not be saved. Check the client_services table migration."
+            ? "The database is missing the sales automation migration. Apply the latest Supabase migrations, then try again."
+            : error === "consent-template-failed"
+              ? "The migration request was saved, but the WhatsApp consent template could not be sent. Check System health and try again."
                   : error
                     ? "Could not create client. Check that name, phone, and required fields are filled in."
                     : null
+
+    const showSuccess = created === "consent-sent"
 
     return (
         <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
@@ -41,15 +39,23 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                 </h1>
 
                 <p className="mt-3 text-neutral-400">
-                    Create onboarding directly for exceptions, imports, or
-                    clients who should not go through Stripe invoice automation.
+                    Move an existing client into the shared WhatsApp and ClickUp
+                    workspace without creating an invoice or onboarding portal.
                 </p>
 
                 <div className="mt-5 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm text-neutral-300">
-                    This bypasses Stripe invoices, WhatsApp consent templates,
-                    and automatic payment-triggered setup. Use Create invoice
-                    for the standard sales flow.
+                    We will send the approved WhatsApp consent template first.
+                    After they reply CONFIRM, the system creates their ClickUp
+                    folder and chat channel. The onboarding list stays empty so
+                    you can move their Notion information into Client Context.
                 </div>
+
+                {showSuccess && (
+                    <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+                        Consent template sent. ClickUp setup will begin when the
+                        client replies CONFIRM.
+                    </div>
+                )}
 
                 {errorMessage && (
                     <div className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -104,102 +110,8 @@ export default async function NewClientPage({ searchParams }: PageProps) {
                         placeholder="client@example.com (optional)"
                     />
 
-                    <label className="mt-6 block text-sm text-neutral-300">
-                        Project timeframe
-                    </label>
-
-                    <div className="mt-2 grid grid-cols-[1fr_auto] gap-3">
-                        <input
-                            name="project_timeframe_amount"
-                            type="number"
-                            min="1"
-                            step="1"
-                            className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
-                            placeholder="e.g. 30"
-                        />
-
-                        <select
-                            name="project_timeframe_unit"
-                            defaultValue="days"
-                            className="rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
-                        >
-                            <option value="days">Days</option>
-                            <option value="weeks">Weeks</option>
-                            <option value="months">Months</option>
-                        </select>
-                    </div>
-
-                    <p className="mt-2 text-xs text-neutral-500">
-                        Fulfilment task deadlines are calculated from the date
-                        tasks are created. Weeks convert to days × 7; months
-                        convert to days × 30.
-                    </p>
-
-                    <div className="mt-8">
-                        <p className="text-sm font-medium text-neutral-300">
-                            Services
-                        </p>
-
-                        <p className="mt-2 text-sm text-neutral-500">
-                            Pick the services the client bought. Onboarding
-                            modules are assigned automatically from this.
-                        </p>
-
-                        <div className="mt-4 space-y-3">
-                            {Object.values(SERVICES).map((service) => (
-                                <label
-                                    key={service.key}
-                                    className="block cursor-pointer rounded-xl border border-neutral-800 bg-neutral-950 p-4"
-                                >
-                                    <span className="flex items-start gap-3">
-                                        <input
-                                            type="checkbox"
-                                            name="services"
-                                            value={service.key}
-                                            className="mt-1"
-                                        />
-
-                                        <span>
-                                            <span className="block font-medium">
-                                                {service.title}
-                                            </span>
-
-                                            <span className="mt-1 block text-sm text-neutral-500">
-                                                {service.description}
-                                            </span>
-                                        </span>
-                                    </span>
-                                </label>
-                            ))}
-                        </div>
-
-                        <p className="mt-3 text-xs text-neutral-500">
-                            General Info is always assigned. If no services are
-                            selected, the client only gets General Info.
-                        </p>
-                    </div>
-
-                    <label className="mt-8 flex cursor-pointer items-start gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4">
-                        <input
-                            type="checkbox"
-                            name="is_test"
-                            className="mt-1"
-                        />
-
-                        <span>
-                            <span className="block text-sm font-medium text-neutral-200">
-                                Test client
-                            </span>
-
-                            <span className="mt-1 block text-sm text-neutral-500">
-                                Shows a test label in admin and unlocks the
-                                test menu in the onboarding portal.
-                            </span>
-                        </span>
-                    </label>
-
                     <button className="mt-8 w-full rounded-xl bg-white px-5 py-4 font-medium text-black">
-                        Create manual client
+                        Send WhatsApp consent request
                     </button>
                 </form>
             </div>

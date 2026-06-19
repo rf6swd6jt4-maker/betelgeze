@@ -12,6 +12,8 @@ export type LiveMetric = {
     status: LiveMetricStatus
     value: string
     detail: string
+    chartValue?: number
+    chartLimit?: number
 }
 
 const MEBIBYTE = 1024 * 1024
@@ -84,6 +86,8 @@ async function getSupabaseMetric(): Promise<LiveMetric> {
         status: ratio >= 0.9 ? "critical" : ratio >= 0.75 ? "warning" : "ok",
         value: `${formatBytes(bytes)} / ${limitMb} MB`,
         detail: `${Math.round(ratio * 100)}% of the configured database limit`,
+        chartValue: bytes,
+        chartLimit: limitBytes,
     }
 }
 
@@ -158,6 +162,8 @@ async function getR2Metric(): Promise<LiveMetric> {
         status: ratio >= 0.9 ? "critical" : ratio >= 0.75 ? "warning" : "ok",
         value: `${formatBytes(bytes)} / 10 GB`,
         detail: `${storage.objectCount ?? 0} objects. Cloudflare analytics can be delayed.`,
+        chartValue: bytes,
+        chartLimit: freeBytes,
     }
 }
 
@@ -181,6 +187,7 @@ async function getMetaMetrics(): Promise<LiveMetric[]> {
         detail: sentTemplates.error
             ? sentTemplates.error.message
             : "Exact count of successful template sends initiated by this system.",
+        chartValue: sentTemplates.count ?? 0,
     }
 
     if (!hasMetaWhatsAppConfig()) {
@@ -240,6 +247,7 @@ async function getStripeMetric(): Promise<LiveMetric> {
             status: "ok",
             value: formatter.format(available / 100),
             detail: `${formatter.format(pending / 100)} pending settlement`,
+            chartValue: available,
         }
     } catch (error) {
         return {
@@ -267,6 +275,7 @@ async function getClickUpMetric(): Promise<LiveMetric> {
             status: workspaces.length > 0 ? "ok" : "warning",
             value: `${workspaces.length} workspace${workspaces.length === 1 ? "" : "s"}`,
             detail: "Live ClickUp API access check.",
+            chartValue: workspaces.length,
         }
     } catch (error) {
         return {
@@ -353,7 +362,11 @@ export async function getLiveHealthMetrics() {
         getVercelMetric(),
     ])
 
-    const failedMetric = (provider: string, name: string, result: PromiseRejectedResult) => ({
+    const failedMetric = (
+        provider: string,
+        name: string,
+        result: PromiseRejectedResult
+    ): LiveMetric => ({
         id: `${provider}-${name}`.toLowerCase().replace(/\s+/g, "-"),
         provider,
         name,

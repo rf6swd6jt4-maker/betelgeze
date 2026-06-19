@@ -4,6 +4,10 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
 import { getLiveHealthMetrics } from "@/lib/system-health/live-metrics"
+import {
+    getHealthMetricHistories,
+    recordHealthMetricSnapshots,
+} from "@/lib/system-health/snapshots"
 
 export const dynamic = "force-dynamic"
 
@@ -228,6 +232,10 @@ export default async function AdminHealthPage() {
 
     const diagnostics =
         (recentDiagnosticsResult.data as DiagnosticMessage[] | null) ?? []
+    await recordHealthMetricSnapshots(liveMetrics)
+    const metricHistories = await getHealthMetricHistories(
+        liveMetrics.map((metric) => metric.id)
+    )
     const sales = saleRowsResult.data ?? []
     const failedSales = sales.filter((sale) => sale.status.includes("failed"))
     const staleSales = sales.filter(
@@ -620,6 +628,13 @@ export default async function AdminHealthPage() {
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                         {liveMetrics.map((metric) => {
                             const metricStyles = statusStyles(metric.status)
+                            const history = metricHistories.get(metric.id) ?? []
+                            const maximum = Math.max(
+                                metric.chartLimit ?? 0,
+                                ...history.map((point) => point.numeric_value),
+                                metric.chartValue ?? 0,
+                                1
+                            )
 
                             return (
                                 <article
@@ -645,6 +660,33 @@ export default async function AdminHealthPage() {
                                     <p className="mt-2 text-sm text-neutral-500">
                                         {metric.detail}
                                     </p>
+
+                                    {typeof metric.chartValue === "number" && (
+                                        <div className="mt-4">
+                                            <div className="flex items-center justify-between text-xs text-neutral-500">
+                                                <span>Last 5 checks</span>
+                                                <span>{history.length}/5</span>
+                                            </div>
+                                            <div className="mt-2 grid h-12 grid-cols-5 items-end gap-1.5">
+                                                {history.length > 0 ? (
+                                                    history.map((point) => (
+                                                        <span
+                                                            key={point.captured_at}
+                                                            className={`block min-h-1 rounded-sm ${metricStyles.bar}`}
+                                                            style={{
+                                                                height: `${Math.max(6, (point.numeric_value / maximum) * 100)}%`,
+                                                            }}
+                                                            title={`${new Date(point.captured_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}: ${point.numeric_value.toLocaleString("en-US")}`}
+                                                        />
+                                                    ))
+                                                ) : (
+                                                    <span className="col-span-5 text-xs text-neutral-600">
+                                                        Trend data will appear after this migration is applied.
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </article>
                             )
                         })}

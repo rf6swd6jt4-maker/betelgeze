@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin/auth"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
+import { MetricTrendChart } from "@/components/admin/MetricTrendChart"
 import { getLiveHealthMetrics } from "@/lib/system-health/live-metrics"
 import {
     getHealthMetricHistories,
@@ -629,12 +630,6 @@ export default async function AdminHealthPage() {
                         {liveMetrics.map((metric) => {
                             const metricStyles = statusStyles(metric.status)
                             const history = metricHistories.get(metric.id) ?? []
-                            const maximum = Math.max(
-                                metric.chartLimit ?? 0,
-                                ...history.map((point) => point.numeric_value),
-                                metric.chartValue ?? 0,
-                                1
-                            )
 
                             return (
                                 <article
@@ -667,24 +662,15 @@ export default async function AdminHealthPage() {
                                                 <span>Last 5 checks</span>
                                                 <span>{history.length}/5</span>
                                             </div>
-                                            <div className="mt-2 grid h-12 grid-cols-5 items-end gap-1.5">
-                                                {history.length > 0 ? (
-                                                    history.map((point) => (
-                                                        <span
-                                                            key={point.captured_at}
-                                                            className={`block min-h-1 rounded-sm ${metricStyles.bar}`}
-                                                            style={{
-                                                                height: `${Math.max(6, (point.numeric_value / maximum) * 100)}%`,
-                                                            }}
-                                                            title={`${new Date(point.captured_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}: ${point.numeric_value.toLocaleString("en-US")}`}
-                                                        />
-                                                    ))
-                                                ) : (
-                                                    <span className="col-span-5 text-xs text-neutral-600">
-                                                        Trend data will appear after this migration is applied.
-                                                    </span>
-                                                )}
-                                            </div>
+                                            <MetricTrendChart
+                                                metricId={metric.id}
+                                                status={metric.status}
+                                                limit={metric.chartLimit}
+                                                points={history.map((point) => ({
+                                                    capturedAt: point.captured_at,
+                                                    value: point.numeric_value,
+                                                }))}
+                                            />
                                         </div>
                                     )}
                                 </article>

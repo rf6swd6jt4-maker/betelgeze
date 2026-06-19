@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin/auth"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
+import { getLiveHealthMetrics } from "@/lib/system-health/live-metrics"
 
 export const dynamic = "force-dynamic"
 
@@ -180,6 +181,7 @@ export default async function AdminHealthPage() {
         recentDiagnosticsResult,
         saleRowsResult,
         stripeEventsResult,
+        liveMetrics,
     ] = await Promise.all([
         supabaseAdmin
             .from("clients")
@@ -221,6 +223,7 @@ export default async function AdminHealthPage() {
             .select("id, event_type, processed_at")
             .order("processed_at", { ascending: false })
             .limit(1),
+        getLiveHealthMetrics(),
     ])
 
     const diagnostics =
@@ -411,19 +414,29 @@ export default async function AdminHealthPage() {
         }),
     ]
 
-    const worstStatus = getWorstStatus(checks)
+    const liveChecks: HealthCheck[] = liveMetrics.map((metric) => ({
+        id: metric.id,
+        provider: metric.provider,
+        name: metric.name,
+        status: metric.status,
+        summary: metric.value,
+        detail: metric.detail,
+        value: metric.value,
+    }))
+    const allChecks = [...liveChecks, ...checks]
+    const worstStatus = getWorstStatus(allChecks)
     const styles = statusStyles(worstStatus)
-    const okCount = countByStatus(checks, "ok")
-    const warningCount = countByStatus(checks, "warning")
-    const criticalCount = countByStatus(checks, "critical")
-    const unknownCount = countByStatus(checks, "unknown")
-    const scoredChecks = checks.length - unknownCount
+    const okCount = countByStatus(allChecks, "ok")
+    const warningCount = countByStatus(allChecks, "warning")
+    const criticalCount = countByStatus(allChecks, "critical")
+    const unknownCount = countByStatus(allChecks, "unknown")
+    const scoredChecks = allChecks.length - unknownCount
     const score =
         scoredChecks > 0 ? Math.round((okCount / scoredChecks) * 100) : 0
-    const attentionChecks = checks.filter((check) =>
+    const attentionChecks = allChecks.filter((check) =>
         ["critical", "warning"].includes(check.status)
     )
-    const providerGroups = getProviderGroups(checks)
+    const providerGroups = getProviderGroups(allChecks)
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
@@ -502,9 +515,9 @@ export default async function AdminHealthPage() {
                             </h2>
 
                             <p className="mt-2 max-w-2xl text-sm text-neutral-400">
-                                Cached database signals and lightweight
-                                configuration checks. No expensive provider
-                                polling runs when this page loads.
+                                Live provider checks are time-bounded and run in
+                                parallel. Usage data is shown only when the
+                                relevant provider access is connected.
                             </p>
 
                             <div className="mt-5 grid gap-2 sm:grid-cols-4">
@@ -586,6 +599,55 @@ export default async function AdminHealthPage() {
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </section>
+
+                <section className="mt-5">
+                    <div className="mb-3 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                                Live usage
+                            </p>
+                            <h2 className="mt-1 text-lg font-semibold">
+                                Limits and connected services
+                            </h2>
+                        </div>
+                        <p className="text-sm text-neutral-500">
+                            Fresh server-side checks, maximum 4 seconds each
+                        </p>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {liveMetrics.map((metric) => {
+                            const metricStyles = statusStyles(metric.status)
+
+                            return (
+                                <article
+                                    key={metric.id}
+                                    className={`rounded-lg border ${metricStyles.border} bg-neutral-900 p-4`}
+                                >
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                                                {metric.provider}
+                                            </p>
+                                            <h3 className="mt-1 font-medium text-neutral-100">
+                                                {metric.name}
+                                            </h3>
+                                        </div>
+                                        <span
+                                            className={`h-2.5 w-2.5 rounded-full ${metricStyles.dot}`}
+                                        />
+                                    </div>
+                                    <p className="mt-5 text-2xl font-semibold tracking-tight">
+                                        {metric.value}
+                                    </p>
+                                    <p className="mt-2 text-sm text-neutral-500">
+                                        {metric.detail}
+                                    </p>
+                                </article>
+                            )
+                        })}
                     </div>
                 </section>
 
@@ -725,7 +787,7 @@ export default async function AdminHealthPage() {
                     </summary>
 
                     <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                        {checks.map((check) => {
+                        {allChecks.map((check) => {
                             const checkStyles = statusStyles(check.status)
 
                             return (

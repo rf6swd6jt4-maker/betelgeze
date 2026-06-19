@@ -52,6 +52,30 @@ export function hasStripeConfig() {
     return Boolean(process.env.STRIPE_SECRET_KEY)
 }
 
+export async function getStripeBalance() {
+    const balance = await stripeRequest("/balance", { method: "GET" })
+
+    const value = balance as {
+        available?: Array<{ amount?: unknown; currency?: unknown }>
+        pending?: Array<{ amount?: unknown; currency?: unknown }>
+    }
+    const normalize = (entries: unknown) =>
+        Array.isArray(entries)
+            ? entries.flatMap((entry) => {
+                  if (!entry || typeof entry !== "object") return []
+                  const item = entry as { amount?: unknown; currency?: unknown }
+                  return typeof item.amount === "number" && typeof item.currency === "string"
+                      ? [{ amount: item.amount, currency: item.currency }]
+                      : []
+              })
+            : []
+
+    return {
+        available: normalize(value.available),
+        pending: normalize(value.pending),
+    }
+}
+
 function appendStripeParam(
     params: URLSearchParams,
     key: string,

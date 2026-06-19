@@ -344,7 +344,7 @@ async function getVercelMetric(): Promise<LiveMetric> {
 }
 
 export async function getLiveHealthMetrics() {
-    const [supabase, r2, meta, stripe, clickup, vercel] = await Promise.all([
+    const [supabaseResult, r2Result, metaResult, stripeResult, clickupResult, vercelResult] = await Promise.allSettled([
         getSupabaseMetric(),
         getR2Metric(),
         getMetaMetrics(),
@@ -352,6 +352,43 @@ export async function getLiveHealthMetrics() {
         getClickUpMetric(),
         getVercelMetric(),
     ])
+
+    const failedMetric = (provider: string, name: string, result: PromiseRejectedResult) => ({
+        id: `${provider}-${name}`.toLowerCase().replace(/\s+/g, "-"),
+        provider,
+        name,
+        status: "critical" as const,
+        value: "Check failed",
+        detail:
+            result.reason instanceof Error
+                ? result.reason.message
+                : "Unknown provider monitoring error",
+    })
+
+    const supabase =
+        supabaseResult.status === "fulfilled"
+            ? supabaseResult.value
+            : failedMetric("Supabase", "Database capacity", supabaseResult)
+    const r2 =
+        r2Result.status === "fulfilled"
+            ? r2Result.value
+            : failedMetric("Cloudflare R2", "Bucket capacity", r2Result)
+    const meta =
+        metaResult.status === "fulfilled"
+            ? metaResult.value
+            : [failedMetric("Meta WhatsApp", "Provider access", metaResult)]
+    const stripe =
+        stripeResult.status === "fulfilled"
+            ? stripeResult.value
+            : failedMetric("Stripe", "Available balance", stripeResult)
+    const clickup =
+        clickupResult.status === "fulfilled"
+            ? clickupResult.value
+            : failedMetric("ClickUp", "Workspace access", clickupResult)
+    const vercel =
+        vercelResult.status === "fulfilled"
+            ? vercelResult.value
+            : failedMetric("Vercel", "Production deployment", vercelResult)
 
     return [supabase, r2, ...meta, stripe, clickup, vercel]
 }

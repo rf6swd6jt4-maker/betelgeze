@@ -121,10 +121,10 @@ export default async function AdminInvoicesPage() {
     )
 
     return (
-        <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
+        <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
             <div className="mx-auto max-w-7xl">
                 <WorkspaceBanner bannerPath={workspace.banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.banner_height} position={workspace.banner_position} />
-                <div className="mt-2 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight">
                             {workspace.banner_path || workspace.logo_path ? workspace.name : "Invoices"}
@@ -136,10 +136,10 @@ export default async function AdminInvoicesPage() {
                         </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
                         <Link
                             href="/admin/sales/new"
-                            className="inline-flex justify-center rounded-lg bg-white px-3 py-2 text-sm font-medium text-black"
+                            className="inline-flex min-h-11 justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black sm:min-h-10 sm:px-3"
                         >
                             Create invoice
                         </Link>
@@ -148,28 +148,28 @@ export default async function AdminInvoicesPage() {
                     </div>
                 </div>
 
-                <div className="mt-5 flex flex-wrap gap-2 text-sm">
+                <div className="mt-5 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
                     <Link
                         href="/admin"
-                        className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300"
+                        className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2"
                     >
                         Clients
                     </Link>
                     <Link
                         href="/admin/invoices"
-                        className="rounded-lg bg-white px-3 py-2 font-medium text-black"
+                        className="shrink-0 rounded-lg bg-white px-3 py-2.5 font-medium text-black sm:py-2"
                     >
                         Invoices
                     </Link>
                     <Link
                         href="/admin/health"
-                        className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300"
+                        className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2"
                     >
                         System health
                     </Link>
                     <Link
                         href={`/dashboard/${workspace.slug}/settings`}
-                        className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300"
+                        className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2"
                     >
                         Settings
                     </Link>

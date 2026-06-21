@@ -17,7 +17,7 @@ export async function WorkspaceBanner({ bannerPath, logoPath, name, height, posi
         logoPath ? createUploadSignedUrl(logoPath) : null,
     ])
 
-    if (!bannerSrc) return <div className="mb-5 flex h-20 items-end"><img src={logoSrc!} alt={`${name} logo`} className="h-20 w-20 rounded-full border-4 border-neutral-950 bg-neutral-900 object-cover" /></div>
+    if (!bannerSrc) return <div className="mb-5 flex h-[112px] items-end sm:h-[108px]"><img src={logoSrc!} alt={`${name} logo`} className="h-[112px] w-[112px] rounded-full border-4 border-neutral-950 bg-neutral-900 object-cover sm:h-[108px] sm:w-[108px]" /></div>
 
-    return <div className="relative mb-12 overflow-visible rounded-2xl border border-neutral-800 bg-neutral-900" style={{ height }}><img src={bannerSrc} alt={`${name} dashboard banner`} className="h-full w-full rounded-2xl object-cover" style={{ objectPosition: `50% ${position}%` }} />{logoSrc && <img src={logoSrc} alt={`${name} logo`} className="absolute bottom-0 left-5 h-20 w-20 translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 object-cover sm:left-7" />}</div>
+    return <div className="relative mb-16 overflow-visible rounded-xl border border-neutral-800 bg-neutral-900 sm:rounded-2xl" style={{ height }}><img src={bannerSrc} alt={`${name} dashboard banner`} className="h-full w-full rounded-xl object-cover sm:rounded-2xl" style={{ objectPosition: `50% ${position}%` }} />{logoSrc && <img src={logoSrc} alt={`${name} logo`} className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 object-cover sm:left-7 sm:h-[108px] sm:w-[108px]" />}</div>
 }

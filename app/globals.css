@@ -29,3 +29,17 @@ body {
 .break-words {
   overflow-wrap: anywhere;
 }
+
+@media (max-width: 639px) {
+  button,
+  input:not([type="range"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+  select {
+    min-height: 44px;
+  }
+
+  main nav a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}

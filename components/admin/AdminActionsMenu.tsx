@@ -37,7 +37,7 @@ export function AdminActionsMenu() {
             <button
                 type="button"
                 onClick={() => setOpen((value) => !value)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-700 text-white hover:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-white/30"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-neutral-700 text-white hover:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-white/30 sm:h-10 sm:w-10"
                 aria-label="Open operational actions"
                 aria-expanded={open}
                 aria-haspopup="menu"
@@ -51,12 +51,12 @@ export function AdminActionsMenu() {
 
             {open && (
                 <div
-                    className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900 shadow-xl"
+                    className="absolute right-0 z-20 mt-2 w-[calc(100vw-2rem)] max-w-72 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900 shadow-xl"
                     role="menu"
                 >
                     <Link
                         href="/admin/new"
-                        className="block px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800"
+                        className="block min-h-11 px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800"
                         role="menuitem"
                     >
                         Create manual client
@@ -64,7 +64,7 @@ export function AdminActionsMenu() {
 
                     <Link
                         href="/admin/health"
-                        className="block px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800"
+                        className="block min-h-11 px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800"
                         role="menuitem"
                     >
                         System health

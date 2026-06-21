@@ -74,7 +74,7 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
         .single()
 
     const { data: workspace } = client && workspaceSlug
-        ? await supabaseAdmin.from("workspaces").select("id").eq("id", client.workspace_id).eq("slug", workspaceSlug).eq("status", "active").maybeSingle()
+        ? await supabaseAdmin.from("workspaces").select("id, name").eq("id", client.workspace_id).eq("slug", workspaceSlug).eq("status", "active").maybeSingle()
         : { data: null }
 
     if (error || !client || !workspace) {
@@ -180,6 +180,7 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
                 phone: client.phone,
                 isTest: client.is_test,
             }}
+            workspaceName={workspace.name}
             headerActions={
                 client.is_test && !isFinalStep ? (
                     <TestClientMenu

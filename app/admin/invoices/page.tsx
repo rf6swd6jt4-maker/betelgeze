@@ -2,6 +2,7 @@ import Link from "next/link"
 import { requireAdmin } from "@/lib/admin/auth"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { DashboardMenus } from "@/components/admin/DashboardMenus"
+import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 
 export const dynamic = "force-dynamic"
 
@@ -122,10 +123,6 @@ export default async function AdminInvoicesPage() {
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
             <div className="mx-auto max-w-7xl">
-                <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                    Agency Onboarding
-                </p>
-
                 <div className="mt-2 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight">
@@ -150,6 +147,8 @@ export default async function AdminInvoicesPage() {
                     </div>
                 </div>
 
+                <WorkspaceBanner path={workspace.banner_path} name={workspace.name} />
+
                 <div className="mt-5 flex flex-wrap gap-2 text-sm">
                     <Link
                         href="/admin"
@@ -170,10 +169,10 @@ export default async function AdminInvoicesPage() {
                         System health
                     </Link>
                     <Link
-                        href="/admin/users"
+                        href={`/dashboard/${workspace.slug}/settings`}
                         className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300"
                     >
-                        Users
+                        Settings
                     </Link>
                 </div>
 
@@ -352,6 +351,7 @@ export default async function AdminInvoicesPage() {
                         dashboard yet.
                     </p>
                 )}
+                <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
             </div>
         </main>
     )

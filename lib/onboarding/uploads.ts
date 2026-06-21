@@ -115,6 +115,24 @@ export async function createSignedOnboardingUpload(
     }
 }
 
+export async function storeWorkspaceBanner(
+    workspaceId: string,
+    file: { name: string; size: number; type: string; bytes: Uint8Array }
+) {
+    if (file.size > 10 * 1024 * 1024) throw new Error("Dashboard banners must be 10MB or smaller.")
+    const bytes = file.bytes
+    const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+    const isGif = bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38
+    const isWebp = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
+    if (!isPng && !isJpeg && !isGif && !isWebp) throw new Error("Dashboard banners must be PNG, JPEG, GIF, or WebP images.")
+    const fileName = sanitizeFileName(file.name) || "dashboard-banner"
+    const path = `${workspaceId}/workspace/banner/${randomUUID()}-${fileName}`
+    const contentType = isPng ? "image/png" : isJpeg ? "image/jpeg" : isGif ? "image/gif" : "image/webp"
+    await getR2Client().send(new PutObjectCommand({ Bucket: getR2BucketName(), Key: path, Body: bytes, ContentType: contentType }))
+    return path
+}
+
 export async function createUploadSignedUrl(
     path: string,
     expiresIn = R2_SIGNED_URL_TTL_SECONDS

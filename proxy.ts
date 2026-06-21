@@ -21,7 +21,7 @@ export function proxy(request: NextRequest) {
     if (dashboardMatch) {
         const workspaceSlug = dashboardMatch[1]
         const suffix = dashboardMatch[2] ?? ""
-        if (suffix !== "users") {
+        if (suffix !== "users" && suffix !== "settings") {
             const legacyDestination = suffix
                 .replace(/^clients\/new$/, "new")
                 .replace(/^clients\/(.+)$/, "client/$1")

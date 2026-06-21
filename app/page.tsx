@@ -7,7 +7,7 @@ export default function Home() {
                 <p className="text-sm text-neutral-400">Betelgeze</p>
 
                 <h1 className="mt-4 text-4xl font-semibold tracking-tight">
-                    Business automation that keeps moving
+                    Business automation, made calmer
                 </h1>
 
                 <p className="mt-4 text-neutral-300">

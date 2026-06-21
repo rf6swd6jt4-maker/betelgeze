@@ -69,7 +69,7 @@ export default async function ClientDetailPage({
 
     const { data: client } = await supabaseAdmin
         .from("clients")
-        .select("id, name, email, phone, session_token, created_at, archived_at, is_test, project_timeframe_days")
+        .select("id, name, email, phone, session_token, created_at, archived_at, is_test, project_timeframe_days, created_by")
         .eq("id", id)
         .eq("workspace_id", workspace.id)
         .single()
@@ -81,6 +81,11 @@ export default async function ClientDetailPage({
             </main>
         )
     }
+
+    const { data: clientCreator } = client.created_by
+        ? await supabaseAdmin.from("user_profiles").select("username, avatar_path").eq("user_id", client.created_by).maybeSingle()
+        : { data: null }
+    const clientCreatorAvatar = clientCreator?.avatar_path ? await createUploadSignedUrls([clientCreator.avatar_path]) : new Map<string, string>()
 
     const [
         { data: moduleRows },
@@ -278,6 +283,10 @@ export default async function ClientDetailPage({
                                 {client.email}
                             </p>
                         )}
+
+                        <div className="mt-3 flex items-center gap-2 text-sm text-neutral-400">
+                            {clientCreator ? <><Avatar src={clientCreator.avatar_path ? clientCreatorAvatar.get(clientCreator.avatar_path) : null} name={clientCreator.username} className="h-9 w-9 shrink-0" /><p>Created by <span className="font-medium text-neutral-200">@{clientCreator.username}</span><br /><span className="text-xs">{new Date(client.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })}</span></p></> : <p>Created {new Date(client.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })}</p>}
+                        </div>
 
                         <p className="mt-1 text-xs text-neutral-500">
                             Last activity:{" "}

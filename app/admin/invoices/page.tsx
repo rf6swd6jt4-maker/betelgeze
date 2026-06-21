@@ -7,6 +7,7 @@ import { Avatar } from "@/components/account/Avatar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { RemoveInvoiceForm } from "@/components/admin/RemoveInvoiceForm"
 import { removeInvoice } from "./actions"
+import { ListToolbar } from "@/components/admin/ListToolbar"
 
 export const dynamic = "force-dynamic"
 
@@ -87,8 +88,9 @@ function isAttentionStatus(status: string) {
     )
 }
 
-export default async function AdminInvoicesPage() {
+export default async function AdminInvoicesPage({ searchParams }: { searchParams: Promise<{ sort?: string; filter?: string }> }) {
     const { workspace, user } = await requireAdmin()
+    const { sort = "created-new", filter = "all" } = await searchParams
 
     const { data: saleRows, error: saleError } = await supabaseAdmin
         .from("client_sales")
@@ -130,6 +132,26 @@ export default async function AdminInvoicesPage() {
         (total, sale) => total + sale.total_amount,
         0
     )
+    const matchesInvoiceFilter = (sale: (typeof sales)[number]) => {
+        if (filter === "all") return true
+        if (filter === "attention") return isAttentionStatus(sale.status)
+        if (filter === "paid") return ["paid", "paid_awaiting_whatsapp_confirm", "onboarding_created", "onboarding_link_sent"].includes(sale.status)
+        if (filter.startsWith("creator:")) return sale.created_by === filter.slice("creator:".length)
+        return true
+    }
+    const sortedSales = sales
+        .map((sale) => ({ ...sale, isFilterMatch: matchesInvoiceFilter(sale) }))
+        .sort((left, right) => {
+            const time = (value: string | null | undefined) => value ? new Date(value).getTime() : 0
+            if (left.isFilterMatch !== right.isFilterMatch) return left.isFilterMatch ? -1 : 1
+            if (sort === "name-az") return left.client_name.localeCompare(right.client_name)
+            if (sort === "amount-low") return left.total_amount - right.total_amount
+            if (sort === "amount-high") return right.total_amount - left.total_amount
+            if (sort === "created-old") return time(left.created_at) - time(right.created_at)
+            if (sort === "updated-recent") return time(right.updated_at ?? right.created_at) - time(left.updated_at ?? left.created_at)
+            return time(right.created_at) - time(left.created_at)
+        })
+    const invoiceCreators = (creators ?? []).map((creator) => ({ value: `creator:${creator.user_id}`, label: `@${creator.username}`, avatarSrc: creator.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) ?? null : null }))
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
@@ -213,6 +235,8 @@ export default async function AdminInvoicesPage() {
                     </p>
                 </div>
 
+                <ListToolbar sortOptions={[{ value: "created-new", label: "Created: newest" }, { value: "created-old", label: "Created: oldest" }, { value: "name-az", label: "Client name: A–Z" }, { value: "amount-low", label: "Amount: low to high" }, { value: "amount-high", label: "Amount: high to low" }, { value: "updated-recent", label: "Last updated: recent" }]} filterGroups={[{ label: "Status", options: [{ value: "attention", label: "Needs attention" }, { value: "paid", label: "Paid" }] }, { label: "Created by", options: invoiceCreators }]} />
+
                 {missingMigration ? (
                     <p className="mt-5 rounded-lg bg-neutral-900 p-4 text-sm text-neutral-400">
                         Apply the Stripe sales automation migration to show
@@ -245,7 +269,7 @@ export default async function AdminInvoicesPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {sales.map((sale) => {
+                                    {sortedSales.map((sale) => {
                                         const manualMigration = isManualMigration(
                                             sale.raw_payload
                                         )
@@ -258,7 +282,7 @@ export default async function AdminInvoicesPage() {
                                         return (
                                             <tr
                                                 key={sale.id}
-                                                className="border-t border-neutral-800 bg-neutral-950/40"
+                                                className={`border-t border-neutral-800 bg-neutral-950/40 ${sale.isFilterMatch ? "" : "opacity-35"}`}
                                             >
                                                 <td className="px-3 py-3 align-top">
                                                     <p className="font-medium text-neutral-100">

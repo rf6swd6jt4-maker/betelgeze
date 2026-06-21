@@ -8,6 +8,7 @@ import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { DashboardMenus } from "@/components/admin/DashboardMenus"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
+import { ListToolbar } from "@/components/admin/ListToolbar"
 import { Avatar } from "@/components/account/Avatar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 export const dynamic = "force-dynamic"
@@ -19,8 +20,9 @@ const BASE_STEPS = [
     },
 ]
 
-export default async function AdminPage() {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ sort?: string; filter?: string }> }) {
     const { workspace, user } = await requireWorkspaceMember()
+    const { sort = "created-new", filter = "all" } = await searchParams
 
     const clientsResponse = await supabaseAdmin
         .from("clients")
@@ -188,6 +190,28 @@ export default async function AdminPage() {
         ({ percentage }) => percentage === 100
     ).length
     const activeClients = totalClients - completedClients
+    const matchesClientFilter = (summary: (typeof clientSummaries)[number]) => {
+        if (filter === "all") return true
+        if (filter === "stuck") return summary.stuck
+        if (filter === "test") return Boolean(summary.client.is_test)
+        if (filter.startsWith("creator:")) return summary.client.created_by === filter.slice("creator:".length)
+        if (filter.startsWith("service:")) return summary.assignedServiceKeys.includes(filter.slice("service:".length))
+        return true
+    }
+    const sortedClientSummaries = clientSummaries
+        .map((summary) => ({ ...summary, isFilterMatch: matchesClientFilter(summary) }))
+        .sort((left, right) => {
+            const time = (value: string | null | undefined) => value ? new Date(value).getTime() : 0
+            if (left.isFilterMatch !== right.isFilterMatch) return left.isFilterMatch ? -1 : 1
+            if (sort === "name-az") return (left.client.name ?? "").localeCompare(right.client.name ?? "")
+            if (sort === "progress-low") return left.percentage - right.percentage
+            if (sort === "progress-high") return right.percentage - left.percentage
+            if (sort === "created-old") return time(left.client.created_at) - time(right.client.created_at)
+            if (sort === "activity-recent") return time(right.lastActivity) - time(left.lastActivity)
+            return time(right.client.created_at) - time(left.client.created_at)
+        })
+    const toolbarCreators = (clientCreators ?? []).map((creator) => ({ value: `creator:${creator.user_id}`, label: `@${creator.username}`, avatarSrc: creator.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) ?? null : null }))
+    const toolbarServices = [...new Set(clientSummaries.flatMap((summary) => summary.assignedServiceKeys))].map((serviceKey) => ({ value: `service:${serviceKey}`, label: SERVICES[serviceKey]?.title ?? serviceKey }))
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
@@ -264,8 +288,10 @@ export default async function AdminPage() {
                     ))}
                 </div>
 
+                <ListToolbar sortOptions={[{ value: "created-new", label: "Date added: newest" }, { value: "created-old", label: "Date added: oldest" }, { value: "name-az", label: "Client name: A–Z" }, { value: "progress-low", label: "Progress: low to high" }, { value: "progress-high", label: "Progress: high to low" }, { value: "activity-recent", label: "Last activity: recent" }]} filterGroups={[{ label: "Status", options: [{ value: "stuck", label: "Stuck" }, { value: "test", label: "Test client" }] }, { label: "Added by", options: toolbarCreators }, { label: "Services", options: toolbarServices }]} />
+
                 <div className="mt-5 grid gap-3 md:hidden">
-                    {clientSummaries.map(
+                    {sortedClientSummaries.map(
                         ({
                             client,
                             assignedModuleKeys,
@@ -275,15 +301,16 @@ export default async function AdminPage() {
                             lastActivity,
                             communication,
                             stuck,
+                            isFilterMatch,
                         }) => (
                             <Link
                                 key={client.id}
                                 href={`/admin/client/${client.id}`}
-                                className="rounded-lg border border-neutral-800 bg-neutral-900 p-4"
+                                className={`rounded-lg border border-neutral-800 bg-neutral-900 p-4 transition-opacity ${isFilterMatch ? "" : "opacity-35"}`}
                             >
                                 <div className="flex items-start justify-between gap-4">
                                     <div>
-                                        <div className="flex items-center gap-2"><h2 className="font-medium">{client.name ?? "Unnamed client"}</h2>{client.created_by && clientCreatorById.get(client.created_by) && <Avatar src={clientCreatorById.get(client.created_by)?.avatar_path ? clientCreatorAvatarUrls.get(clientCreatorById.get(client.created_by)!.avatar_path!) : null} name={clientCreatorById.get(client.created_by)!.username} className="h-5 w-5" />}</div>
+                                        <h2 className="font-medium">{client.name ?? "Unnamed client"}</h2>
 
                                         <div className="mt-2 flex flex-wrap gap-2">
                                             {client.is_test && (
@@ -395,7 +422,7 @@ export default async function AdminPage() {
                         </thead>
 
                         <tbody>
-                            {clientSummaries.map(
+                            {sortedClientSummaries.map(
                                 ({
                                     client,
                                     assignedModuleKeys,
@@ -405,13 +432,14 @@ export default async function AdminPage() {
                                     lastActivity,
                                     communication,
                                     stuck,
+                                    isFilterMatch,
                                 }) => (
                                     <tr
                                         key={client.id}
-                                        className="border-t border-neutral-800 hover:bg-neutral-900/70"
+                                        className={`border-t border-neutral-800 hover:bg-neutral-900/70 ${isFilterMatch ? "" : "opacity-35"}`}
                                     >
                                         <td className="px-3 py-3">
-                                            <div className="flex items-center gap-2"><Link href={`/admin/client/${client.id}`} className="font-medium text-white underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>{client.created_by && clientCreatorById.get(client.created_by) && <Avatar src={clientCreatorById.get(client.created_by)?.avatar_path ? clientCreatorAvatarUrls.get(clientCreatorById.get(client.created_by)!.avatar_path!) : null} name={clientCreatorById.get(client.created_by)!.username} className="h-5 w-5" />}</div>
+                                            <Link href={`/admin/client/${client.id}`} className="font-medium text-white underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
 
                                             <div className="mt-2 flex flex-wrap gap-1.5">
                                                 {client.is_test && (

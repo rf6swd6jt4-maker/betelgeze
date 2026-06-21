@@ -125,10 +125,13 @@ export async function storeWorkspaceImage(
     const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
     const isGif = bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38
     const isWebp = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
-    if (!isPng && !isJpeg && !isGif && !isWebp) throw new Error("Workspace images must be PNG, JPEG, GIF, or WebP images.")
+    const brand = String.fromCharCode(...bytes.slice(8, 12))
+    const isAvif = bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70 && (brand === "avif" || brand === "avis")
+    const isHeic = bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70 && ["heic", "heix", "hevc", "hevx", "mif1", "msf1"].includes(brand)
+    if (!isPng && !isJpeg && !isGif && !isWebp && !isAvif && !isHeic) throw new Error("Images must be PNG, JPEG, GIF, WebP, AVIF, or HEIC.")
     const fileName = sanitizeFileName(file.name) || "dashboard-banner"
     const path = `${workspaceId}/workspace/${randomUUID()}-${fileName}`
-    const contentType = isPng ? "image/png" : isJpeg ? "image/jpeg" : isGif ? "image/gif" : "image/webp"
+    const contentType = isPng ? "image/png" : isJpeg ? "image/jpeg" : isGif ? "image/gif" : isWebp ? "image/webp" : isAvif ? "image/avif" : "image/heic"
     await getR2Client().send(new PutObjectCommand({ Bucket: getR2BucketName(), Key: path, Body: bytes, ContentType: contentType }))
     return path
 }

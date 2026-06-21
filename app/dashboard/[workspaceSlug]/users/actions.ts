@@ -29,11 +29,13 @@ export async function inviteWorkspaceUser(slug: string, formData: FormData) {
     const existingUser = listed.users.find(
         (user) => user.email?.toLowerCase() === email
     )
-    const user = existingUser ?? (
-        await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+    const inviteResult = existingUser
+        ? null
+        : await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
             redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/sign-up?invited=1`,
         })
-    ).data.user
+    if (inviteResult?.error) throw new Error(`Invitation email was not sent: ${inviteResult.error.message}`)
+    const user = existingUser ?? inviteResult?.data.user
 
     if (!user) throw new Error("Could not invite user")
     const { error } = await supabaseAdmin.from("workspace_memberships").upsert({

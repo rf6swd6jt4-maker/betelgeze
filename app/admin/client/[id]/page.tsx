@@ -2,7 +2,7 @@ import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
 import { SERVICES } from "@/lib/onboarding/services"
-import { requireAdmin } from "@/lib/admin/auth"
+import { requireWorkspaceMember } from "@/lib/admin/auth"
 import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import {
     FormResponse,
@@ -60,7 +60,7 @@ export default async function ClientDetailPage({
     params,
     searchParams,
 }: PageProps) {
-    const { workspace } = await requireAdmin()
+    const { workspace } = await requireWorkspaceMember()
 
     const { id } = await params
     const { bridgeError, clearError, deleteError } = await searchParams

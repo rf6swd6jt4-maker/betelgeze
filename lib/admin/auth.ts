@@ -33,3 +33,9 @@ export async function requireAdmin() {
     if (!workspaceSlug) redirect("/login")
     return requireWorkspace(workspaceSlug, "admin")
 }
+
+export async function requireWorkspaceMember() {
+    const workspaceSlug = (await headers()).get("x-betelgeze-workspace-slug")
+    if (!workspaceSlug) redirect("/login")
+    return requireWorkspace(workspaceSlug, "member")
+}

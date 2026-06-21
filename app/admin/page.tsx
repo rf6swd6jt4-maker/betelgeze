@@ -2,7 +2,7 @@ import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { MODULES } from "@/lib/onboarding/modules"
 import { SERVICES } from "@/lib/onboarding/services"
-import { requireAdmin } from "@/lib/admin/auth"
+import { requireWorkspaceMember } from "@/lib/admin/auth"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
 import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
@@ -18,7 +18,7 @@ const BASE_STEPS = [
 ]
 
 export default async function AdminPage() {
-    const { workspace, user } = await requireAdmin()
+    const { workspace, user } = await requireWorkspaceMember()
 
     const clientsResponse = await supabaseAdmin
         .from("clients")

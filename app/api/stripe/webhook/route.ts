@@ -32,12 +32,30 @@ export async function POST(request: NextRequest) {
     }
 
     const event = JSON.parse(payload) as StripeWebhookEvent
+    const invoice = event.data?.object
+    const saleId =
+        invoice && typeof invoice === "object" && !Array.isArray(invoice) &&
+        typeof (invoice as { metadata?: { client_sale_id?: unknown } }).metadata?.client_sale_id === "string"
+            ? (invoice as { metadata: { client_sale_id: string } }).metadata.client_sale_id
+            : null
+    const { data: sale } = saleId
+        ? await supabaseAdmin.from("client_sales").select("workspace_id").eq("id", saleId).maybeSingle()
+        : { data: null }
+    const { data: scaylupWorkspace } = sale?.workspace_id
+        ? { data: null }
+        : await supabaseAdmin.from("workspaces").select("id").eq("slug", "scaylup").maybeSingle()
+    const workspaceId = sale?.workspace_id ?? scaylupWorkspace?.id
+
+    if (!workspaceId) {
+        return Response.json({ error: "Could not resolve workspace for Stripe event" }, { status: 500 })
+    }
     const { error: eventInsertError } = await supabaseAdmin
         .from("stripe_events")
         .insert({
             id: event.id,
             event_type: event.type,
             raw_payload: event,
+            workspace_id: workspaceId,
         })
 
     if (eventInsertError) {
@@ -52,8 +70,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (isPaidInvoiceEvent(event.type)) {
-        const invoice = event.data?.object
-
         if (!invoice) {
             return Response.json(
                 { error: "Paid invoice event missing invoice object" },

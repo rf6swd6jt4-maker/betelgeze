@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { storeWorkspaceImage } from "@/lib/onboarding/uploads"
+import { INTEGRATION_PROVIDERS, IntegrationProvider, saveWorkspaceIntegration } from "@/lib/workspace-integrations"
 
 function refresh(slug: string) {
     revalidatePath(`/dashboard/${slug}`)
@@ -57,5 +58,19 @@ export async function removeWorkspaceInvitation(slug: string, invitationId: stri
         .eq("workspace_id", workspace.id)
         .is("accepted_at", null)
     if (error) throw new Error("Could not remove this invitation.")
+    refresh(slug)
+}
+
+export async function saveWorkspaceConnection(slug: string, provider: IntegrationProvider, formData: FormData) {
+    if (!INTEGRATION_PROVIDERS.includes(provider)) throw new Error("Unknown connection.")
+    const { workspace, user } = await requireWorkspace(slug, "admin")
+    const config = Object.fromEntries([...formData.entries()].filter(([, value]) => typeof value === "string")) as Record<string, string>
+    const required: Record<IntegrationProvider, string[]> = {
+        stripe: ["secret_key", "webhook_secret"],
+        meta_whatsapp: ["access_token", "phone_number_id", "webhook_verify_token"],
+        clickup: ["api_token", "workspace_id", "clients_space_id", "client_folder_template_id"],
+    }
+    if (required[provider].some((key) => !config[key]?.trim())) throw new Error("Fill in all required connection details before saving.")
+    await saveWorkspaceIntegration(workspace.id, provider, config, user.id)
     refresh(slug)
 }

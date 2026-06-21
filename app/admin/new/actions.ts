@@ -5,9 +5,11 @@ import { requireAdmin } from "@/lib/admin/auth"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { sendSaleConsentTemplate } from "@/lib/client-sales/automation"
+import { requireLegacyProviderAccess } from "@/lib/workspace-integrations"
 
 export async function createClient(formData: FormData) {
     const { workspace, user } = await requireAdmin()
+    await requireLegacyProviderAccess(workspace.id, "meta_whatsapp")
 
     const name = String(formData.get("name") ?? "").trim()
     const email = String(formData.get("email") ?? "").trim().toLowerCase()

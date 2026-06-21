@@ -15,6 +15,7 @@ import {
 } from "@/lib/client-messages/clickup-channel-setup"
 import { clearClickUpChatChannelMessages } from "@/lib/client-messages/clickup"
 import { checkMetaWhatsAppAccess } from "@/lib/client-messages/meta-whatsapp"
+import { requireLegacyProviderAccess } from "@/lib/workspace-integrations"
 
 async function requireScopedClient(clientId: string) {
     const { workspace } = await requireAdmin()
@@ -191,7 +192,8 @@ export async function updateClientCommunication(
 }
 
 export async function createClientClickUpChannel(clientId: string) {
-    await requireScopedClient(clientId)
+    const workspace = await requireScopedClient(clientId)
+    await requireLegacyProviderAccess(workspace.id, "clickup")
 
     await ensureClientClickUpChannel(clientId)
 
@@ -199,7 +201,8 @@ export async function createClientClickUpChannel(clientId: string) {
 }
 
 export async function checkClickUpConnection(clientId: string) {
-    await requireScopedClient(clientId)
+    const workspace = await requireScopedClient(clientId)
+    await requireLegacyProviderAccess(workspace.id, "clickup")
 
     await checkClientClickUpConnection(clientId)
 

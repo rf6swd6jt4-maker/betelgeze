@@ -1,5 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 
+import type { CSSProperties } from "react"
+
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 
 type Props = {
@@ -19,5 +21,5 @@ export async function WorkspaceBanner({ bannerPath, logoPath, name, height, posi
 
     if (!bannerSrc) return <div className="mb-5 flex h-[112px] items-end sm:h-[108px]"><img src={logoSrc!} alt={`${name} logo`} className="h-[112px] w-[112px] rounded-full border-4 border-neutral-950 bg-neutral-900 object-cover sm:h-[108px] sm:w-[108px]" /></div>
 
-    return <div className="relative mb-16 overflow-visible rounded-xl border border-neutral-800 bg-neutral-900 sm:rounded-2xl" style={{ height }}><img src={bannerSrc} alt={`${name} dashboard banner`} className="h-full w-full rounded-xl object-cover sm:rounded-2xl" style={{ objectPosition: `50% ${position}%` }} />{logoSrc && <img src={logoSrc} alt={`${name} logo`} className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 object-cover sm:left-7 sm:h-[108px] sm:w-[108px]" />}</div>
+    return <div className="relative mb-16 h-[calc(var(--workspace-banner-height)*0.6)] overflow-visible rounded-xl border border-neutral-800 bg-neutral-900 sm:h-[var(--workspace-banner-height)] sm:rounded-2xl" style={{ "--workspace-banner-height": `${height}px` } as CSSProperties}><img src={bannerSrc} alt={`${name} dashboard banner`} className="h-full w-full rounded-xl object-cover sm:rounded-2xl" style={{ objectPosition: `50% ${position}%` }} />{logoSrc && <img src={logoSrc} alt={`${name} logo`} className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 object-cover sm:left-7 sm:h-[108px] sm:w-[108px]" />}</div>
 }

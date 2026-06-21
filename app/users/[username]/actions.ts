@@ -43,9 +43,17 @@ export async function acceptWorkspaceInvitation(username: string, formData: Form
 
 export async function uploadProfileAvatar(username: string, formData: FormData) {
     const user = await getCurrentUser(); if (!user) redirect("/login")
-    const file = formData.get("avatar"); if (!(file instanceof File) || !file.size) throw new Error("Choose an image.")
-    const avatarPath = await storeProfileAvatar(user.id, { name: file.name, size: file.size, type: file.type, bytes: new Uint8Array(await file.arrayBuffer()) })
-    await supabaseAdmin.from("user_profiles").update({ avatar_path: avatarPath }).eq("user_id", user.id)
+    const file = formData.get("avatar")
+    if (!file || typeof file !== "object" || !("arrayBuffer" in file) || !("size" in file) || !file.size) throw new Error("Choose an image.")
+    const upload = file as File
+    const { data: existingProfile } = await supabaseAdmin.from("user_profiles").select("avatar_path").eq("user_id", user.id).maybeSingle()
+    const avatarPath = await storeProfileAvatar(user.id, { name: upload.name, size: upload.size, type: upload.type, bytes: new Uint8Array(await upload.arrayBuffer()) })
+    const { error } = await supabaseAdmin.from("user_profiles").update({ avatar_path: avatarPath }).eq("user_id", user.id)
+    if (error) {
+        await deleteOnboardingUploads([avatarPath])
+        throw new Error("Your profile picture uploaded, but could not be saved. Please try again.")
+    }
+    if (existingProfile?.avatar_path) await deleteOnboardingUploads([existingProfile.avatar_path])
     redirect(`/users/${username}/edit`)
 }
 

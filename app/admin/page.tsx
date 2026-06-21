@@ -208,7 +208,7 @@ export default async function AdminPage() {
                     <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
                         <Link
                             href="/admin/sales/new"
-                            className="inline-flex min-h-11 justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black sm:min-h-10 sm:px-3"
+                            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3"
                         >
                             Create invoice
                         </Link>
@@ -313,11 +313,8 @@ export default async function AdminPage() {
                                             </p>
                                         )}
 
-                                        <p className="mt-2 break-all font-mono text-xs text-neutral-500">
-                                            {communication?.clickup_channel_id
-                                                ? `ClickUp: ${communication.clickup_channel_id}`
-                                                : "No ClickUp channel"}
-                                        </p>
+                                        {client.created_by && clientCreatorById.get(client.created_by) && (() => { const creator = clientCreatorById.get(client.created_by)!; return <div className="mt-3 flex items-center gap-2"><Avatar src={creator.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) : null} name={creator.username} className="h-9 w-9 shrink-0" /><div><p className="text-xs text-neutral-500">Created by</p><p className="text-sm text-neutral-200">@{creator.username} <span className="text-xs text-neutral-500">· {new Date(client.created_at).toLocaleDateString("en-IE", { dateStyle: "medium" })}</span></p></div></div> })()}
+
                                     </div>
 
                                     <span className="rounded-full bg-neutral-800 px-3 py-1 text-xs text-neutral-300">
@@ -330,24 +327,6 @@ export default async function AdminPage() {
                                         className="h-full rounded-full bg-white"
                                         style={{ width: `${percentage}%` }}
                                     />
-                                </div>
-
-                                <div className="mt-4 flex flex-wrap gap-2">
-                                    {assignedModuleKeys.length > 0 ? (
-                                        assignedModuleKeys.map((moduleKey) => (
-                                            <span
-                                                key={moduleKey}
-                                                className="rounded-full bg-neutral-800 px-2.5 py-1 text-xs text-neutral-300"
-                                            >
-                                                {MODULES[moduleKey]?.title ??
-                                                    moduleKey}
-                                            </span>
-                                        ))
-                                    ) : (
-                                        <span className="text-sm text-neutral-500">
-                                            No modules
-                                        </span>
-                                    )}
                                 </div>
 
                                 <div className="mt-3 flex flex-wrap gap-2">
@@ -369,15 +348,6 @@ export default async function AdminPage() {
                                 </div>
 
                                 <div className="mt-4 grid gap-3 text-sm">
-                                    <div>
-                                        <p className="text-neutral-500">
-                                            Current step
-                                        </p>
-                                        <p className="mt-1 text-neutral-200">
-                                            {currentStep.title}
-                                        </p>
-                                    </div>
-
                                     <div>
                                         <p className="text-neutral-500">
                                             Last activity
@@ -409,20 +379,14 @@ export default async function AdminPage() {
                                 <th className="px-3 py-2 font-medium">
                                     Contact
                                 </th>
-                                <th className="px-3 py-2 font-medium">
-                                    ClickUp channel
-                                </th>
-                                <th className="px-3 py-2 font-medium">
-                                    Modules
-                                </th>
-                                <th className="px-3 py-2 font-medium">
-                                    Services
+                                        <th className="px-3 py-2 font-medium">
+                                            Services
                                 </th>
                                 <th className="px-3 py-2 font-medium">
                                     Progress
                                 </th>
-                                <th className="px-3 py-2 font-medium">
-                                    Current step
+                                        <th className="px-3 py-2 font-medium">
+                                            Created by
                                 </th>
                                 <th className="px-3 py-2 font-medium">
                                     Last activity
@@ -481,59 +445,6 @@ export default async function AdminPage() {
                                         </td>
 
                                         <td className="px-3 py-3">
-                                            {communication?.clickup_channel_id ? (
-                                                <div>
-                                                    <p className="break-all font-mono text-xs text-neutral-300">
-                                                        {
-                                                            communication.clickup_channel_id
-                                                        }
-                                                    </p>
-
-                                                    <p
-                                                        className={`mt-1 text-xs ${
-                                                            communication.is_active
-                                                                ? "text-green-300"
-                                                                : "text-neutral-500"
-                                                        }`}
-                                                    >
-                                                        {communication.is_active
-                                                            ? "Active"
-                                                            : "Inactive"}
-                                                    </p>
-                                                </div>
-                                            ) : (
-                                                <span className="text-neutral-500">
-                                                    Not created
-                                                </span>
-                                            )}
-                                        </td>
-
-                                        <td className="px-3 py-3">
-                                            <div className="flex flex-wrap gap-2">
-                                                {assignedModuleKeys.length >
-                                                0 ? (
-                                                    assignedModuleKeys.map(
-                                                        (moduleKey) => (
-                                                            <span
-                                                                key={moduleKey}
-                                                                className="rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-300"
-                                                            >
-                                                                {MODULES[
-                                                                    moduleKey
-                                                                ]?.title ??
-                                                                    moduleKey}
-                                                            </span>
-                                                        )
-                                                    )
-                                                ) : (
-                                                    <span className="text-neutral-500">
-                                                        No modules
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </td>
-
-                                        <td className="px-3 py-3">
                                             <div className="flex flex-wrap gap-2">
                                                 {assignedServiceKeys.length >
                                                 0 ? (
@@ -575,8 +486,8 @@ export default async function AdminPage() {
                                             </div>
                                         </td>
 
-                                        <td className="px-3 py-3 text-neutral-300">
-                                            {currentStep.title}
+                                        <td className="px-3 py-3">
+                                            {client.created_by && clientCreatorById.get(client.created_by) ? (() => { const creator = clientCreatorById.get(client.created_by)!; return <div className="flex items-center gap-2"><Avatar src={creator.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) : null} name={creator.username} className="h-9 w-9 shrink-0" /><div><p className="text-sm text-neutral-200">@{creator.username}</p><p className="mt-0.5 text-xs text-neutral-500">{new Date(client.created_at).toLocaleDateString("en-IE", { dateStyle: "medium" })}</p></div></div> })() : <p className="text-sm text-neutral-500">Legacy client</p>}
                                         </td>
 
                                         <td className="px-3 py-3 text-neutral-400">

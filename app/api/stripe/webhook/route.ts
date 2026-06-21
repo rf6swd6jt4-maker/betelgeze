@@ -11,7 +11,9 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 function isPaidInvoiceEvent(type: string) {
-    return type === "invoice.paid"
+    // Stripe can emit either event for a successful invoice payment. Both
+    // contain the invoice object and must advance the same sale workflow.
+    return type === "invoice.paid" || type === "invoice.payment_succeeded"
 }
 
 export async function POST(request: NextRequest) {

@@ -47,3 +47,15 @@ export async function uploadWorkspaceLogo(slug: string, formData: FormData) {
     if (error) throw new Error("The logo uploaded, but could not be saved to this workspace.")
     refresh(slug)
 }
+
+export async function removeWorkspaceInvitation(slug: string, invitationId: string) {
+    const { workspace } = await requireWorkspace(slug, "admin")
+    const { error } = await supabaseAdmin
+        .from("workspace_invitations")
+        .delete()
+        .eq("id", invitationId)
+        .eq("workspace_id", workspace.id)
+        .is("accepted_at", null)
+    if (error) throw new Error("Could not remove this invitation.")
+    refresh(slug)
+}

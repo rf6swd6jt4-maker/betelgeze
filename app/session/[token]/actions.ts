@@ -44,6 +44,8 @@ export async function completeStep(token: string, stepKey: string) {
     })
 
     revalidatePath(`/onboarding/${workspaceSlug}/${token}`)
+    revalidatePath(`/dashboard/${workspaceSlug}`)
+    revalidatePath("/admin")
 }
 
 function createFillerResponse(form: OnboardingFormDefinition): FormResponse {
@@ -201,5 +203,7 @@ export async function skipTestStep(
     })
 
     revalidatePath(`/onboarding/${workspaceSlug}/${token}`)
+    revalidatePath(`/dashboard/${workspaceSlug}`)
+    revalidatePath("/admin")
     redirect(`/onboarding/${workspaceSlug}/${token}`)
 }

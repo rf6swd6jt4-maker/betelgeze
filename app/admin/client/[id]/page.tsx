@@ -62,7 +62,7 @@ export default async function ClientDetailPage({
     params,
     searchParams,
 }: PageProps) {
-    const { workspace } = await requireWorkspaceMember()
+    const { workspace, user, role } = await requireWorkspaceMember()
 
     const { id } = await params
     const { bridgeError, clearError, deleteError } = await searchParams
@@ -656,7 +656,7 @@ export default async function ClientDetailPage({
                                                 </p>
                                             </div>
 
-                                            <form
+                                            {(role !== "member" || note.author_id === user.id) && <form
                                                 action={async () => {
                                                     "use server"
                                                     await deleteClientNote(
@@ -674,7 +674,7 @@ export default async function ClientDetailPage({
                                                 >
                                                     Delete
                                                 </button>
-                                            </form>
+                                            </form>}
                                         </div>
 
                                         <p className="mt-3 text-xs text-neutral-500">

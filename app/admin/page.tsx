@@ -11,6 +11,7 @@ import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { ListToolbar } from "@/components/admin/ListToolbar"
 import { Avatar } from "@/components/account/Avatar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
+import { DashboardAutoRefresh } from "@/components/admin/DashboardAutoRefresh"
 export const dynamic = "force-dynamic"
 
 const BASE_STEPS = [
@@ -216,6 +217,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
             <div className="mx-auto max-w-7xl">
+                <DashboardAutoRefresh />
                 <WorkspaceBanner bannerPath={workspace.banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.banner_height} position={workspace.banner_position} />
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>

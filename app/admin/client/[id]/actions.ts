@@ -1,9 +1,9 @@
 "use server"
 
 import { redirect } from "next/navigation"
+import { revalidatePath } from "next/cache"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { requireAdmin } from "@/lib/admin/auth"
-import { getCurrentUser } from "@/lib/workspaces"
+import { requireAdmin, requireWorkspaceMember } from "@/lib/admin/auth"
 import { getUploadPathsFromResponse } from "@/lib/onboarding/response-files"
 import { deleteOnboardingUploads } from "@/lib/onboarding/uploads"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
@@ -28,6 +28,18 @@ async function requireScopedClient(clientId: string) {
     return workspace
 }
 
+async function requireScopedMemberClient(clientId: string) {
+    const { workspace, role, user } = await requireWorkspaceMember()
+    const { data: client } = await supabaseAdmin
+        .from("clients")
+        .select("id")
+        .eq("id", clientId)
+        .eq("workspace_id", workspace.id)
+        .maybeSingle()
+    if (!client) redirect("/admin")
+    return { workspace, role, user }
+}
+
 async function addActivity(
     clientId: string,
     activityType: string,
@@ -41,7 +53,7 @@ async function addActivity(
 }
 
 export async function addClientNote(clientId: string, formData: FormData) {
-    await requireScopedClient(clientId)
+    const { user } = await requireScopedMemberClient(clientId)
 
     const note = String(formData.get("note") ?? "").trim()
 
@@ -49,7 +61,6 @@ export async function addClientNote(clientId: string, formData: FormData) {
         redirect(`/admin/client/${clientId}`)
     }
 
-    const user = await getCurrentUser()
     await supabaseAdmin.from("client_notes").insert({
         client_id: clientId,
         note,
@@ -58,6 +69,8 @@ export async function addClientNote(clientId: string, formData: FormData) {
 
     await addActivity(clientId, "note_added", "Note added")
 
+    revalidatePath("/admin")
+    revalidatePath(`/admin/client/${clientId}`)
     redirect(`/admin/client/${clientId}`)
 }
 
@@ -95,11 +108,21 @@ export async function clearClientProgress(clientId: string) {
         "Client progress and form submissions cleared"
     )
 
+    revalidatePath("/admin")
     redirect(`/admin/client/${clientId}`)
 }
 
 export async function deleteClientNote(clientId: string, noteId: string) {
-    await requireScopedClient(clientId)
+    const { role, user } = await requireScopedMemberClient(clientId)
+    const { data: note } = await supabaseAdmin
+        .from("client_notes")
+        .select("author_id")
+        .eq("id", noteId)
+        .eq("client_id", clientId)
+        .maybeSingle()
+    if (!note || (role === "member" && note.author_id !== user.id)) {
+        throw new Error("You can only delete notes you created.")
+    }
 
     await supabaseAdmin
         .from("client_notes")
@@ -109,6 +132,8 @@ export async function deleteClientNote(clientId: string, noteId: string) {
 
     await addActivity(clientId, "note_deleted", "Note deleted")
 
+    revalidatePath("/admin")
+    revalidatePath(`/admin/client/${clientId}`)
     redirect(`/admin/client/${clientId}`)
 }
 

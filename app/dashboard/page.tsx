@@ -10,7 +10,7 @@ export default async function DashboardIndex() {
     const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
     if (assurance?.currentLevel !== "aal2") redirect("/mfa")
 
-    const { data: memberships } = await supabase
+    const { data: memberships } = await supabaseAdmin
         .from("workspace_memberships")
         .select("workspaces!inner(slug, status)")
         .eq("user_id", userData.user.id)

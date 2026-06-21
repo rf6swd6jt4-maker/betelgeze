@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { supabaseAdmin } from "@/lib/supabase/admin"
 
 export const WORKSPACE_ROLES = ["owner", "admin", "member"] as const
 export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number]
@@ -32,7 +33,7 @@ export async function requireWorkspace(
     const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
     if (assurance?.currentLevel !== "aal2") redirect("/mfa")
 
-    const { data: membership } = await supabase
+    const { data: membership } = await supabaseAdmin
         .from("workspace_memberships")
         .select("role, workspaces!inner(id, name, slug, status, banner_path, logo_path, banner_height, banner_position)")
         .eq("user_id", user.id)

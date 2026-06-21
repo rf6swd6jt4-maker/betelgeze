@@ -7,7 +7,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { sendSaleConsentTemplate } from "@/lib/client-sales/automation"
 
 export async function createClient(formData: FormData) {
-    await requireAdmin()
+    const { workspace } = await requireAdmin()
 
     const name = String(formData.get("name") ?? "").trim()
     const email = String(formData.get("email") ?? "").trim().toLowerCase()
@@ -19,6 +19,7 @@ export async function createClient(formData: FormData) {
     const { data: sale, error: saleError } = await supabaseAdmin
         .from("client_sales")
         .insert({
+            workspace_id: workspace.id,
             client_name: name,
             client_email: email || null,
             client_phone: phone,

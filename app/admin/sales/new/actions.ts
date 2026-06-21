@@ -46,7 +46,7 @@ function getSaleErrorCode(error: unknown) {
 }
 
 export async function createSaleInvoice(formData: FormData) {
-    await requireAdmin()
+    const { workspace } = await requireAdmin()
 
     const name = String(formData.get("name") ?? "").trim()
     const email = String(formData.get("email") ?? "").trim().toLowerCase()
@@ -98,6 +98,7 @@ export async function createSaleInvoice(formData: FormData) {
     const { data: sale, error: saleError } = await supabaseAdmin
         .from("client_sales")
         .insert({
+            workspace_id: workspace.id,
             client_name: name,
             client_email: email,
             client_phone: phone,

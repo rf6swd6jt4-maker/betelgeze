@@ -21,7 +21,7 @@ export default async function EditClientPage({
     params,
     searchParams,
 }: PageProps) {
-    await requireAdmin()
+    const { workspace } = await requireAdmin()
 
     const { id } = await params
     const { error } = await searchParams
@@ -30,6 +30,7 @@ export default async function EditClientPage({
         .from("clients")
         .select("*")
         .eq("id", id)
+        .eq("workspace_id", workspace.id)
         .single()
 
     if (!client) {

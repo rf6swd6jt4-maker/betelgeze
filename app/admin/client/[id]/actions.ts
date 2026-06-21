@@ -15,6 +15,18 @@ import {
 import { clearClickUpChatChannelMessages } from "@/lib/client-messages/clickup"
 import { checkMetaWhatsAppAccess } from "@/lib/client-messages/meta-whatsapp"
 
+async function requireScopedClient(clientId: string) {
+    const { workspace } = await requireAdmin()
+    const { data: client } = await supabaseAdmin
+        .from("clients")
+        .select("id")
+        .eq("id", clientId)
+        .eq("workspace_id", workspace.id)
+        .maybeSingle()
+    if (!client) redirect("/admin")
+    return workspace
+}
+
 async function addActivity(
     clientId: string,
     activityType: string,
@@ -28,7 +40,7 @@ async function addActivity(
 }
 
 export async function addClientNote(clientId: string, formData: FormData) {
-    await requireAdmin()
+    await requireScopedClient(clientId)
 
     const note = String(formData.get("note") ?? "").trim()
 
@@ -47,7 +59,7 @@ export async function addClientNote(clientId: string, formData: FormData) {
 }
 
 export async function clearClientProgress(clientId: string) {
-    await requireAdmin()
+    await requireScopedClient(clientId)
 
     const { data: formResponses } = await supabaseAdmin
         .from("client_form_responses")
@@ -84,7 +96,7 @@ export async function clearClientProgress(clientId: string) {
 }
 
 export async function deleteClientNote(clientId: string, noteId: string) {
-    await requireAdmin()
+    await requireScopedClient(clientId)
 
     await supabaseAdmin
         .from("client_notes")
@@ -101,7 +113,7 @@ export async function updateClientCommunication(
     clientId: string,
     formData: FormData
 ) {
-    await requireAdmin()
+    await requireScopedClient(clientId)
 
     const externalAddress = normalizeMessageAddress(
         String(formData.get("external_address") ?? "")
@@ -151,7 +163,7 @@ export async function updateClientCommunication(
 }
 
 export async function createClientClickUpChannel(clientId: string) {
-    await requireAdmin()
+    await requireScopedClient(clientId)
 
     await ensureClientClickUpChannel(clientId)
 
@@ -159,7 +171,7 @@ export async function createClientClickUpChannel(clientId: string) {
 }
 
 export async function checkClickUpConnection(clientId: string) {
-    await requireAdmin()
+    await requireScopedClient(clientId)
 
     await checkClientClickUpConnection(clientId)
 
@@ -167,7 +179,7 @@ export async function checkClickUpConnection(clientId: string) {
 }
 
 export async function checkMetaWhatsAppConnection(clientId: string) {
-    await requireAdmin()
+    await requireScopedClient(clientId)
 
     try {
         const result = await checkMetaWhatsAppAccess()
@@ -199,7 +211,7 @@ export async function checkMetaWhatsAppConnection(clientId: string) {
 }
 
 export async function clearClientBridgeMessages(clientId: string) {
-    await requireAdmin()
+    await requireScopedClient(clientId)
 
     const { data: channel } = await supabaseAdmin
         .from("client_communication_channels")
@@ -245,7 +257,7 @@ export async function clearClientBridgeMessages(clientId: string) {
 }
 
 export async function archiveClient(clientId: string) {
-    await requireAdmin()
+    const workspace = await requireScopedClient(clientId)
 
     await supabaseAdmin
         .from("clients")
@@ -253,6 +265,7 @@ export async function archiveClient(clientId: string) {
             archived_at: new Date().toISOString(),
         })
         .eq("id", clientId)
+        .eq("workspace_id", workspace.id)
 
     await addActivity(clientId, "client_archived", "Client archived")
 
@@ -260,7 +273,7 @@ export async function archiveClient(clientId: string) {
 }
 
 export async function deleteClient(clientId: string) {
-    await requireAdmin()
+    await requireScopedClient(clientId)
 
     const clickUpCleanup = await deleteClientClickUpResources(clientId)
 

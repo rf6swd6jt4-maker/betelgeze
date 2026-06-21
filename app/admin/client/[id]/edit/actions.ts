@@ -12,7 +12,7 @@ import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 import { updateClickUpFolder } from "@/lib/client-messages/clickup"
 
 export async function updateClient(clientId: string, formData: FormData) {
-    await requireAdmin()
+    const { workspace } = await requireAdmin()
 
     const name = String(formData.get("name") ?? "").trim()
     const email = String(formData.get("email") ?? "").trim().toLowerCase()
@@ -46,6 +46,7 @@ export async function updateClient(clientId: string, formData: FormData) {
             project_timeframe_days: projectTimeframeDays,
         })
         .eq("id", clientId)
+        .eq("workspace_id", workspace.id)
 
     await supabaseAdmin
         .from("client_communication_channels")

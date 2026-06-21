@@ -60,7 +60,7 @@ export default async function ClientDetailPage({
     params,
     searchParams,
 }: PageProps) {
-    await requireAdmin()
+    const { workspace } = await requireAdmin()
 
     const { id } = await params
     const { bridgeError, clearError, deleteError } = await searchParams
@@ -69,6 +69,7 @@ export default async function ClientDetailPage({
         .from("clients")
         .select("id, name, email, phone, session_token, created_at, archived_at, is_test, project_timeframe_days")
         .eq("id", id)
+        .eq("workspace_id", workspace.id)
         .single()
 
     if (!client) {
@@ -201,7 +202,7 @@ export default async function ClientDetailPage({
     const baseUrl =
         process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
 
-    const onboardingPath = `/session/${client.session_token}`
+    const onboardingPath = `/onboarding/${workspace.slug}/${client.session_token}`
     const onboardingUrl = `${baseUrl}${onboardingPath}`
 
     const timelineItems = [

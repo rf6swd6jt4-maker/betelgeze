@@ -83,13 +83,14 @@ function isAttentionStatus(status: string) {
 }
 
 export default async function AdminInvoicesPage() {
-    await requireAdmin()
+    const { workspace } = await requireAdmin()
 
     const { data: saleRows, error: saleError } = await supabaseAdmin
         .from("client_sales")
         .select(
             "id, client_id, client_name, client_email, client_phone, status, total_amount, currency, stripe_invoice_id, stripe_hosted_invoice_url, consent_template_sent_at, consent_confirmed_at, onboarding_link_sent_at, raw_payload, created_at, updated_at"
         )
+        .eq("workspace_id", workspace.id)
         .order("created_at", { ascending: false })
         .limit(50)
 

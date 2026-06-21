@@ -56,11 +56,45 @@ export function GlobalLoadingOverlay() {
         }
 
         document.addEventListener("click", handleClick, true)
+        const handleSubmit = (event: SubmitEvent) => {
+            const form = event.target as HTMLFormElement | null
+            if (
+                form?.dataset.globalLoading !== "false" &&
+                form?.getAttribute("action")
+            ) {
+                setLoadingRouteKey(currentRouteKey)
+            }
+        }
+        document.addEventListener("submit", handleSubmit, true)
         window.addEventListener("pageshow", handlePageShow)
 
         return () => {
             document.removeEventListener("click", handleClick, true)
+            document.removeEventListener("submit", handleSubmit, true)
             window.removeEventListener("pageshow", handlePageShow)
+        }
+    }, [currentRouteKey])
+
+    useEffect(() => {
+        const originalFetch = window.fetch
+        window.fetch = async (...args) => {
+            const [input, init] = args
+            const headers = new Headers(
+                init?.headers ?? (input instanceof Request ? input.headers : undefined)
+            )
+            const isServerAction = headers.has("Next-Action")
+
+            if (isServerAction) setLoadingRouteKey(currentRouteKey)
+
+            try {
+                return await originalFetch(...args)
+            } finally {
+                if (isServerAction) setLoadingRouteKey(null)
+            }
+        }
+
+        return () => {
+            window.fetch = originalFetch
         }
     }, [currentRouteKey])
 

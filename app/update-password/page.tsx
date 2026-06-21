@@ -12,10 +12,30 @@ export default function UpdatePasswordPage() {
 
     useEffect(() => {
         const supabase = createSupabaseBrowserClient()
-        void supabase.auth.getUser().then(({ data }) => {
-            if (!data.user) setError("This reset link is invalid or has expired. Request a new one.")
+        const code = new URLSearchParams(window.location.search).get("code")
+
+        void (async () => {
+            if (!code) {
+                setError("This reset link is invalid or has expired. Request a new one.")
+                setReady(true)
+                return
+            }
+
+            const { error: exchangeError } =
+                await supabase.auth.exchangeCodeForSession(code)
+            if (exchangeError) {
+                setError("This reset link is invalid or has expired. Request a new one.")
+                setReady(true)
+                return
+            }
+
+            window.history.replaceState({}, "", "/update-password")
+            const { data } = await supabase.auth.getUser()
+            if (!data.user) {
+                setError("This reset link is invalid or has expired. Request a new one.")
+            }
             setReady(true)
-        })
+        })()
     }, [])
 
     async function submit(event: FormEvent<HTMLFormElement>) {

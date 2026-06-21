@@ -10,16 +10,21 @@ function refresh(slug: string) {
     revalidatePath(`/dashboard/${slug}/settings`)
 }
 
-export async function updateWorkspaceBranding(slug: string, formData: FormData) {
+export async function updateWorkspaceName(slug: string, formData: FormData) {
     const { workspace } = await requireWorkspace(slug, "admin")
     const name = String(formData.get("name") ?? "").trim()
     if (name.length < 2 || name.length > 100) throw new Error("Workspace names must be between 2 and 100 characters.")
-    const bannerHeight = Number(formData.get("bannerHeight"))
-    const bannerPosition = Number(formData.get("bannerPosition"))
+    const { error } = await supabaseAdmin.from("workspaces").update({ name }).eq("id", workspace.id)
+    if (error) throw new Error("Could not update workspace name.")
+    refresh(slug)
+}
+
+export async function updateWorkspaceCoverLayout(slug: string, bannerHeight: number, bannerPosition: number) {
+    const { workspace } = await requireWorkspace(slug, "admin")
     if (!Number.isInteger(bannerHeight) || bannerHeight < 192 || bannerHeight > 288) throw new Error("Banner height must be between 192px and 288px.")
     if (!Number.isInteger(bannerPosition) || bannerPosition < 0 || bannerPosition > 100) throw new Error("Banner position must be between 0 and 100.")
-    const { error } = await supabaseAdmin.from("workspaces").update({ name, banner_height: bannerHeight, banner_position: bannerPosition }).eq("id", workspace.id)
-    if (error) throw new Error("Could not update workspace branding.")
+    const { error } = await supabaseAdmin.from("workspaces").update({ banner_height: bannerHeight, banner_position: bannerPosition }).eq("id", workspace.id)
+    if (error) throw new Error("Could not update workspace cover.")
     refresh(slug)
 }
 

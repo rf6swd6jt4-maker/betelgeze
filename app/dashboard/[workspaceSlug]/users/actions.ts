@@ -33,7 +33,7 @@ export async function inviteWorkspaceUser(slug: string, formData: FormData) {
     const { data: invitation, error } = await supabaseAdmin.from("workspace_invitations").upsert({ workspace_id: workspace.id, email, role: requestedRole, invited_by: (await requireUserManager(slug)).user.id, expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), accepted_at: null }, { onConflict: "workspace_id,email" }).select("id").single()
     if (error) throw new Error(error.message)
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL!.replace(/\/$/, "")
-    const inviteUrl = existingUser ? `${baseUrl}/login?invite=${invitation.id}` : `${baseUrl}/sign-up?invite=${invitation.id}&email=${encodeURIComponent(email)}`
+    const inviteUrl = `${baseUrl}/invitation?token=${invitation.id}&email=${encodeURIComponent(email)}`
     await sendWorkspaceInvitation({ to: email, workspaceName: workspace.name, inviteUrl })
     revalidatePath(`/dashboard/${slug}/settings`)
 }

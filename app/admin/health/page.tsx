@@ -497,6 +497,12 @@ export default async function AdminHealthPage() {
                     >
                         System health
                     </Link>
+                    <Link
+                        href="/admin/users"
+                        className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300"
+                    >
+                        Users
+                    </Link>
                 </div>
 
                 <section

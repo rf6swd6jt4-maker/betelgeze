@@ -230,6 +230,12 @@ export default async function AdminPage() {
                     >
                         System health
                     </Link>
+                    <Link
+                        href="/admin/users"
+                        className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300"
+                    >
+                        Users
+                    </Link>
                 </div>
 
                 <div className="mt-5 grid grid-cols-3 gap-3">

@@ -28,6 +28,18 @@ export async function createWorkspace(username: string, formData: FormData) {
     redirect(`/dashboard/${workspace.slug}`)
 }
 
+export async function acceptWorkspaceInvitation(username: string, formData: FormData) {
+    const user = await getCurrentUser()
+    if (!user?.email) redirect("/login")
+    const token = String(formData.get("token") ?? "")
+    const { data: invite } = await supabaseAdmin.from("workspace_invitations").select("id, workspace_id, email, role, expires_at, accepted_at").eq("id", token).maybeSingle()
+    if (!invite || invite.accepted_at || new Date(invite.expires_at) < new Date() || invite.email.toLowerCase() !== user.email.toLowerCase()) throw new Error("This invitation is no longer available.")
+    const { error } = await supabaseAdmin.from("workspace_memberships").upsert({ workspace_id: invite.workspace_id, user_id: user.id, role: invite.role })
+    if (error) throw new Error(error.message)
+    await supabaseAdmin.from("workspace_invitations").update({ accepted_at: new Date().toISOString() }).eq("id", invite.id)
+    redirect(`/users/${username}`)
+}
+
 export async function leaveWorkspace(username: string, formData: FormData) {
     const user = await getCurrentUser()
     if (!user) redirect("/login")

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { FormEvent, useState } from "react"
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
+import { createSupabaseRecoveryClient } from "@/lib/supabase/recovery"
 
 export default function ForgotPasswordPage() {
     const [sent, setSent] = useState(false)
@@ -16,7 +16,7 @@ export default function ForgotPasswordPage() {
         const email = String(new FormData(event.currentTarget).get("email") ?? "")
             .trim()
             .toLowerCase()
-        const supabase = createSupabaseBrowserClient()
+        const supabase = createSupabaseRecoveryClient()
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
             redirectTo: `${window.location.origin}/update-password`,
         })

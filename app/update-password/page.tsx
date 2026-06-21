@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
+import { createSupabaseRecoveryClient } from "@/lib/supabase/recovery"
 
 export default function UpdatePasswordPage() {
     const router = useRouter()
@@ -11,27 +11,11 @@ export default function UpdatePasswordPage() {
     const [loading, setLoading] = useState(false)
 
     useEffect(() => {
-        const supabase = createSupabaseBrowserClient()
-        const code = new URLSearchParams(window.location.search).get("code")
+        const supabase = createSupabaseRecoveryClient()
 
         void (async () => {
-            if (!code) {
-                setError("This reset link is invalid or has expired. Request a new one.")
-                setReady(true)
-                return
-            }
-
-            const { error: exchangeError } =
-                await supabase.auth.exchangeCodeForSession(code)
-            if (exchangeError) {
-                setError("This reset link is invalid or has expired. Request a new one.")
-                setReady(true)
-                return
-            }
-
-            window.history.replaceState({}, "", "/update-password")
-            const { data } = await supabase.auth.getUser()
-            if (!data.user) {
+            const { data } = await supabase.auth.getSession()
+            if (!data.session) {
                 setError("This reset link is invalid or has expired. Request a new one.")
             }
             setReady(true)
@@ -43,7 +27,7 @@ export default function UpdatePasswordPage() {
         const password = String(new FormData(event.currentTarget).get("password") ?? "")
         setLoading(true)
         setError(null)
-        const supabase = createSupabaseBrowserClient()
+        const supabase = createSupabaseRecoveryClient()
         const { error } = await supabase.auth.updateUser({ password })
         if (error) {
             setError(error.message)

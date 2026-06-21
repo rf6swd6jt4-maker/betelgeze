@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { supabaseAdmin } from "@/lib/supabase/admin"
 
 export default async function DashboardIndex() {
     const supabase = await createSupabaseServerClient()
@@ -24,5 +25,10 @@ export default async function DashboardIndex() {
             `/dashboard/${(active[0].workspaces as unknown as { slug: string }).slug}`
         )
     }
-    redirect("/workspaces")
+    const { data: profile } = await supabaseAdmin
+        .from("user_profiles")
+        .select("username")
+        .eq("user_id", userData.user.id)
+        .maybeSingle()
+    redirect(profile ? `/users/${profile.username}` : "/login")
 }

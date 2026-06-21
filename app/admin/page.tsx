@@ -184,13 +184,13 @@ export default async function AdminPage() {
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
             <div className="mx-auto max-w-7xl">
                 <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                    Agency Onboarding
+                    Betelgeze
                 </p>
 
                 <div className="mt-2 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight">
-                            Admin dashboard
+                            {workspace.name} dashboard
                         </h1>
 
                         <p className="mt-2 text-sm text-neutral-400">

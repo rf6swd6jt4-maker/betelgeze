@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useState } from "react"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
 
 const slugPattern = /^[a-z0-9](?:[a-z0-9-]{1,48}[a-z0-9])?$/
+const usernamePattern = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])?$/
 const RESEND_COOLDOWN_SECONDS = 60
 
 export default function SignUpPage() {
@@ -41,11 +42,18 @@ export default function SignUpPage() {
         const emailAddress = String(values.get("email") ?? "")
             .trim()
             .toLowerCase()
+        const username = String(values.get("username") ?? "")
+            .trim()
+            .toLowerCase()
 
         if (!slugPattern.test(slug)) {
             setError(
                 "Use 3–50 lowercase letters, numbers, or hyphens for the dashboard URL."
             )
+            return
+        }
+        if (!usernamePattern.test(username)) {
+            setError("Use 3–30 lowercase letters, numbers, or hyphens for your username.")
             return
         }
 
@@ -59,6 +67,7 @@ export default function SignUpPage() {
                 data: {
                     business_name: String(values.get("businessName") ?? "").trim(),
                     workspace_slug: slug,
+                    username,
                 },
                 emailRedirectTo: `${window.location.origin}/login`,
             },
@@ -159,6 +168,10 @@ export default function SignUpPage() {
                 <label className="mt-4 block text-sm">
                     Dashboard URL
                     <input name="workspaceSlug" required placeholder="scaylup" className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-3" />
+                </label>
+                <label className="mt-4 block text-sm">
+                    Username
+                    <input name="username" required placeholder="your-name" className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-3" />
                 </label>
                 <label className="mt-4 block text-sm">
                     Email

@@ -38,14 +38,12 @@ export function AdminActionsMenu() {
                 type="button"
                 onClick={() => setOpen((value) => !value)}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-700 text-white hover:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-white/30"
-                aria-label="Open admin actions"
+                aria-label="Open account menu"
                 aria-expanded={open}
                 aria-haspopup="menu"
             >
-                <span className="flex items-center gap-0.5" aria-hidden="true">
-                    <span className="h-1 w-1 rounded-full bg-current" />
-                    <span className="h-1 w-1 rounded-full bg-current" />
-                    <span className="h-1 w-1 rounded-full bg-current" />
+                <span aria-hidden="true" className="text-lg leading-none">
+                    ◉
                 </span>
             </button>
 
@@ -55,23 +53,15 @@ export function AdminActionsMenu() {
                     role="menu"
                 >
                     <Link
-                        href="/admin/new"
+                        href="/workspaces"
                         className="block px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800"
                         role="menuitem"
                     >
-                        Add manual client
+                        Your account & workspaces
                     </Link>
 
                     <Link
-                        href="/admin/health"
-                        className="block px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800"
-                        role="menuitem"
-                    >
-                        System health
-                    </Link>
-
-                    <Link
-                        href="/admin/logout"
+                        href="/logout"
                         className="block px-4 py-3 text-sm text-red-300 hover:bg-neutral-800"
                         role="menuitem"
                     >

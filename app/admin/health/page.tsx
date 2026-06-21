@@ -451,10 +451,11 @@ export default async function AdminHealthPage() {
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
             <div className="mx-auto max-w-7xl">
+                <WorkspaceBanner bannerPath={workspace.banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.banner_height} position={workspace.banner_position} />
                 <div className="mt-2 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight">
-                            System health
+                            {workspace.banner_path || workspace.logo_path ? workspace.name : "System health"}
                         </h1>
 
                         <p className="mt-2 text-sm text-neutral-400">
@@ -474,8 +475,6 @@ export default async function AdminHealthPage() {
                         <DashboardMenus userId={user.id} workspace={workspace} />
                     </div>
                 </div>
-
-                <WorkspaceBanner path={workspace.banner_path} name={workspace.name} />
 
                 <div className="mt-5 flex flex-wrap gap-2 text-sm">
                     <Link

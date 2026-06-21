@@ -34,7 +34,7 @@ export async function requireWorkspace(
 
     const { data: membership } = await supabase
         .from("workspace_memberships")
-        .select("role, workspaces!inner(id, name, slug, status, banner_path)")
+        .select("role, workspaces!inner(id, name, slug, status, banner_path, logo_path, banner_height, banner_position)")
         .eq("user_id", user.id)
         .eq("workspaces.slug", slug)
         .maybeSingle()
@@ -45,6 +45,9 @@ export async function requireWorkspace(
         slug: string
         status: "active" | "suspended"
         banner_path: string | null
+        logo_path: string | null
+        banner_height: number
+        banner_position: number
     } | null
 
     if (

@@ -291,7 +291,10 @@ export async function handlePaidStripeInvoice(invoice: StripeInvoiceLike) {
         return { ok: true, skipped: true }
     }
 
-    await supabaseAdmin
+    // Stripe commonly delivers invoice.paid and invoice.payment_succeeded at
+    // nearly the same time. Claim the pre-payment state atomically so the
+    // second event cannot reset consent_template_sending back to paid.
+    const { data: claimedPaidSale, error: claimPaidError } = await supabaseAdmin
         .from("client_sales")
         .update({
             status: "paid",
@@ -311,6 +314,18 @@ export async function handlePaidStripeInvoice(invoice: StripeInvoiceLike) {
             updated_at: new Date().toISOString(),
         })
         .eq("id", sale.id)
+
+        .eq("status", "invoice_sent")
+        .select("id")
+        .maybeSingle()
+
+    if (claimPaidError) {
+        return { ok: false, error: claimPaidError.message }
+    }
+
+    if (!claimedPaidSale) {
+        return { ok: true, skipped: true }
+    }
 
     return sendSaleConsentTemplate(sale.id)
 }

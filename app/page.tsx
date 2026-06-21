@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { InviteCodeHandoff } from "@/components/auth/InviteCodeHandoff"
 
 export default function Home() {
     return (
@@ -17,6 +18,7 @@ export default function Home() {
                     <Link href="/login" className="rounded-xl bg-white px-5 py-3 font-medium text-black">Log in</Link>
                     <Link href="/sign-up" className="rounded-xl border border-neutral-700 px-5 py-3 font-medium text-white">Sign up</Link>
                 </div>
+                <InviteCodeHandoff />
             </div>
         </main>
     )

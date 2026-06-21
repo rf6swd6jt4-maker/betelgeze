@@ -33,14 +33,11 @@ export async function requireWorkspace(
     const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
     if (assurance?.currentLevel !== "aal2") redirect("/mfa")
 
-    const { data: membership } = await supabaseAdmin
-        .from("workspace_memberships")
-        .select("role, workspaces!inner(id, name, slug, status, banner_path, logo_path, banner_height, banner_position)")
-        .eq("user_id", user.id)
-        .eq("workspaces.slug", slug)
-        .maybeSingle()
-
-    const workspace = membership?.workspaces as unknown as {
+    const { data: workspace } = await supabaseAdmin
+        .from("workspaces")
+        .select("id, name, slug, status, banner_path, logo_path, banner_height, banner_position")
+        .eq("slug", slug)
+        .maybeSingle() as { data: {
         id: string
         name: string
         slug: string
@@ -49,7 +46,16 @@ export async function requireWorkspace(
         logo_path: string | null
         banner_height: number
         banner_position: number
-    } | null
+    } | null }
+
+    const { data: membership } = workspace
+        ? await supabaseAdmin
+              .from("workspace_memberships")
+              .select("role")
+              .eq("workspace_id", workspace.id)
+              .eq("user_id", user.id)
+              .maybeSingle()
+        : { data: null }
 
     if (
         !membership ||

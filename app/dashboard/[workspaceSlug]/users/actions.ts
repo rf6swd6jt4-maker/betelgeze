@@ -31,7 +31,7 @@ export async function inviteWorkspaceUser(slug: string, formData: FormData) {
     )
     const user = existingUser ?? (
         await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-            redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/update-password`,
+            redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/sign-up?invited=1`,
         })
     ).data.user
 
@@ -42,7 +42,7 @@ export async function inviteWorkspaceUser(slug: string, formData: FormData) {
         role: requestedRole,
     })
     if (error) throw new Error(error.message)
-    revalidatePath(`/dashboard/${slug}/users`)
+    revalidatePath(`/dashboard/${slug}/settings`)
 }
 
 export async function updateWorkspaceUserRole(slug: string, formData: FormData) {

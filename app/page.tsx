@@ -11,12 +11,11 @@ export default function Home() {
                 </h1>
 
                 <p className="mt-4 text-neutral-300">
-                    Create a private dashboard for client onboarding and the
-                    operational work around it.
+                    A private home for client onboarding and operational work.
                 </p>
                 <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-                    <Link href="/login" className="rounded-xl bg-white px-5 py-3 font-medium text-black">Log in to your dashboard</Link>
-                    <Link href="/sign-up" className="rounded-xl border border-neutral-700 px-5 py-3 font-medium text-white">Create new dashboard</Link>
+                    <Link href="/login" className="rounded-xl bg-white px-5 py-3 font-medium text-black">Log in</Link>
+                    <Link href="/sign-up" className="rounded-xl border border-neutral-700 px-5 py-3 font-medium text-white">Sign up</Link>
                 </div>
             </div>
         </main>

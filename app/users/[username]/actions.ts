@@ -16,6 +16,18 @@ export async function updateUsername(_: { error?: string; username?: string }, f
     return { username }
 }
 
+export async function createWorkspace(username: string, formData: FormData) {
+    const user = await getCurrentUser()
+    if (!user) redirect("/login")
+    const name = String(formData.get("name") ?? "").trim()
+    const slug = String(formData.get("slug") ?? "").trim().toLowerCase()
+    if (name.length < 2 || !/^[a-z0-9](?:[a-z0-9-]{1,48}[a-z0-9])?$/.test(slug)) throw new Error("Choose a workspace name and a valid URL slug.")
+    const { data: workspace, error } = await supabaseAdmin.from("workspaces").insert({ name, slug }).select("id, slug").single()
+    if (error || !workspace) throw new Error(error?.code === "23505" ? "That dashboard URL is already taken." : "Could not create dashboard.")
+    await supabaseAdmin.from("workspace_memberships").insert({ workspace_id: workspace.id, user_id: user.id, role: "owner" })
+    redirect(`/dashboard/${workspace.slug}`)
+}
+
 export async function leaveWorkspace(username: string, formData: FormData) {
     const user = await getCurrentUser()
     if (!user) redirect("/login")

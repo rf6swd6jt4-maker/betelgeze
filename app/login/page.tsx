@@ -25,7 +25,8 @@ export default function LoginPage() {
             setLoading(false)
             return
         }
-        router.replace("/dashboard")
+        const invite = new URLSearchParams(window.location.search).get("invite")
+        router.replace(invite ? `/invites/accept?token=${invite}` : "/dashboard")
         router.refresh()
     }
 

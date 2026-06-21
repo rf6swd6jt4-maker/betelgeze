@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace, type WorkspaceRole } from "@/lib/workspaces"
+import { sendWorkspaceInvitation } from "@/lib/email"
 
 function invitedRole(value: FormDataEntryValue | null) {
     if (value === "member" || value === "admin") return value
@@ -29,21 +30,11 @@ export async function inviteWorkspaceUser(slug: string, formData: FormData) {
     const existingUser = listed.users.find(
         (user) => user.email?.toLowerCase() === email
     )
-    const inviteResult = existingUser
-        ? null
-        : await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-            redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/sign-up?invited=1`,
-        })
-    if (inviteResult?.error) throw new Error(`Invitation email was not sent: ${inviteResult.error.message}`)
-    const user = existingUser ?? inviteResult?.data.user
-
-    if (!user) throw new Error("Could not invite user")
-    const { error } = await supabaseAdmin.from("workspace_memberships").upsert({
-        workspace_id: workspace.id,
-        user_id: user.id,
-        role: requestedRole,
-    })
+    const { data: invitation, error } = await supabaseAdmin.from("workspace_invitations").upsert({ workspace_id: workspace.id, email, role: requestedRole, invited_by: (await requireUserManager(slug)).user.id, expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), accepted_at: null }, { onConflict: "workspace_id,email" }).select("id").single()
     if (error) throw new Error(error.message)
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL!.replace(/\/$/, "")
+    const inviteUrl = existingUser ? `${baseUrl}/login?invite=${invitation.id}` : `${baseUrl}/sign-up?invite=${invitation.id}&email=${encodeURIComponent(email)}`
+    await sendWorkspaceInvitation({ to: email, workspaceName: workspace.name, inviteUrl })
     revalidatePath(`/dashboard/${slug}/settings`)
 }
 

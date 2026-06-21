@@ -1,0 +1,19 @@
+{"timestamp":"18:47:50.185","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.187","source":"Server","level":"ERROR","message":"⨯ \"unhandledRejection:\" Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.188","source":"Server","level":"ERROR","message":"⨯ \"unhandledRejection: \" Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.196","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.198","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.206","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.208","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.215","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.216","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.224","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.225","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.227","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.228","source":"Server","level":"ERROR","message":"⨯ \"unhandledRejection:\" Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.228","source":"Server","level":"ERROR","message":"⨯ \"unhandledRejection: \" Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.230","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.230","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.233","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.234","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/jedryszczyk/Documents/GitHub/agency-onboarding/app'"}
+{"timestamp":"18:47:50.271","source":"Server","level":"ERROR","message":"⨯ Module not found: Error: Can't resolve 'next-flight-client-entry-loader' in '/Users/jedryszczyk/Documents/GitHub/agency-onboarding'"}

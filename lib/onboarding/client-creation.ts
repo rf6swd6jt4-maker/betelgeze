@@ -7,7 +7,8 @@ import { getOnboardingUrl as getPublicOnboardingUrl } from "@/lib/onboarding/cus
 type CreateOnboardingClientInput = {
     workspaceId: string
     workspaceSlug: string
-    customOnboardingDomain?: string | null
+    customOnboardingDomain?: string | null,
+    customOnboardingDomainVerified?: boolean
     name: string
     email?: string | null
     phone: string
@@ -60,12 +61,14 @@ export function getCreateClientErrorCode(error: { message?: string } | null) {
 export function getOnboardingUrl(
     workspaceSlug: string,
     sessionToken: string,
-    customOnboardingDomain?: string | null
+    customOnboardingDomain?: string | null,
+    customOnboardingDomainVerified?: boolean
 ) {
     return getPublicOnboardingUrl({
         workspaceSlug,
         sessionToken,
         customDomain: customOnboardingDomain,
+        customDomainVerified: customOnboardingDomainVerified,
     })
 }
 
@@ -73,6 +76,7 @@ export async function createOnboardingClient({
     workspaceId,
     workspaceSlug,
     customOnboardingDomain,
+    customOnboardingDomainVerified,
     name,
     email,
     phone,
@@ -149,7 +153,7 @@ export async function createOnboardingClient({
     }
 
     const onboardingUrl = createOnboardingModules
-        ? getOnboardingUrl(workspaceSlug, client.session_token, customOnboardingDomain)
+        ? getOnboardingUrl(workspaceSlug, client.session_token, customOnboardingDomain, customOnboardingDomainVerified)
         : null
 
     if (onboardingUrl) {

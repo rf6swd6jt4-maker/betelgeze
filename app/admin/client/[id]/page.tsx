@@ -218,7 +218,8 @@ export default async function ClientDetailPage({
     const onboardingUrl = getOnboardingUrl(
         workspace.slug,
         client.session_token,
-        workspace.custom_onboarding_domain
+        workspace.custom_onboarding_domain,
+        workspace.custom_onboarding_domain_status === "verified"
     )
 
     const timelineItems = [
@@ -313,7 +314,7 @@ export default async function ClientDetailPage({
                         </Link>
 
                         <ClientActionsMenu
-                            onboardingPath={workspace.custom_onboarding_domain ? onboardingUrl : onboardingPath}
+                            onboardingPath={workspace.custom_onboarding_domain_status === "verified" ? onboardingUrl : onboardingPath}
                             onboardingUrl={onboardingUrl}
                             clearProgressAction={async () => {
                                 "use server"

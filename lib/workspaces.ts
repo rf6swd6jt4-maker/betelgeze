@@ -35,7 +35,7 @@ export async function requireWorkspace(
 
     const { data: workspace } = await supabaseAdmin
         .from("workspaces")
-        .select("id, name, slug, status, banner_path, logo_path, banner_height, banner_position, custom_onboarding_domain")
+        .select("id, name, slug, status, banner_path, logo_path, banner_height, banner_position, custom_onboarding_domain, custom_onboarding_domain_status, custom_onboarding_domain_records")
         .eq("slug", slug)
         .maybeSingle() as { data: {
         id: string
@@ -47,6 +47,8 @@ export async function requireWorkspace(
         banner_height: number
         banner_position: number
         custom_onboarding_domain: string | null
+        custom_onboarding_domain_status: "none" | "pending_dns" | "verified"
+        custom_onboarding_domain_records: Array<{ type: "A" | "CNAME" | "TXT"; name: string; value: string }>
     } | null }
 
     const { data: membership } = workspace

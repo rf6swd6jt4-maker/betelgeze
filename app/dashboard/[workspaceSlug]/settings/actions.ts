@@ -7,6 +7,7 @@ import { storeWorkspaceImage } from "@/lib/onboarding/uploads"
 import { INTEGRATION_PROVIDERS, IntegrationProvider, saveWorkspaceIntegration } from "@/lib/workspace-integrations"
 import { verifyWorkspaceIntegration } from "@/lib/workspace-integrations"
 import { normalizeOnboardingDomain } from "@/lib/onboarding/custom-domain"
+import { attachOnboardingDomain, removeOnboardingDomain, verifyOnboardingDomain } from "@/lib/onboarding/vercel-domains"
 
 function refresh(slug: string) {
     revalidatePath(`/dashboard/${slug}`)
@@ -109,11 +110,58 @@ export async function saveWorkspaceOnboardingDomain(slug: string, formData: Form
         : null
     if (domain && domain === platformHost) throw new Error("Use a separate custom domain, not the Betelgeze application domain.")
 
+    if (domain && domain !== workspace.custom_onboarding_domain) {
+        const { data: assignedWorkspace } = await supabaseAdmin
+            .from("workspaces")
+            .select("id")
+            .ilike("custom_onboarding_domain", domain)
+            .neq("id", workspace.id)
+            .maybeSingle()
+        if (assignedWorkspace) throw new Error("That onboarding domain is already assigned to another workspace.")
+    }
+
+    if (!domain) {
+        if (workspace.custom_onboarding_domain) await removeOnboardingDomain(workspace.custom_onboarding_domain)
+        const { error } = await supabaseAdmin
+            .from("workspaces")
+            .update({ custom_onboarding_domain: null, custom_onboarding_domain_status: "none", custom_onboarding_domain_records: [], custom_onboarding_domain_verified_at: null })
+            .eq("id", workspace.id)
+        if (error) throw new Error("Could not remove the onboarding domain.")
+        refresh(slug)
+        return
+    }
+
+    const provisioned = await attachOnboardingDomain(domain)
+
     const { error } = await supabaseAdmin
         .from("workspaces")
-        .update({ custom_onboarding_domain: domain })
+        .update({
+            custom_onboarding_domain: domain,
+            custom_onboarding_domain_status: provisioned.verified ? "verified" : "pending_dns",
+            custom_onboarding_domain_records: provisioned.records,
+            custom_onboarding_domain_verified_at: provisioned.verified ? new Date().toISOString() : null,
+        })
         .eq("id", workspace.id)
     if (error?.code === "23505") throw new Error("That onboarding domain is already assigned to another workspace.")
     if (error) throw new Error("Could not save the onboarding domain.")
+    if (workspace.custom_onboarding_domain && workspace.custom_onboarding_domain !== domain) {
+        await removeOnboardingDomain(workspace.custom_onboarding_domain)
+    }
+    refresh(slug)
+}
+
+export async function verifyWorkspaceOnboardingDomain(slug: string) {
+    const { workspace } = await requireWorkspace(slug, "owner")
+    if (!workspace.custom_onboarding_domain) throw new Error("Add a domain before verifying it.")
+    const verified = await verifyOnboardingDomain(workspace.custom_onboarding_domain)
+    const { error } = await supabaseAdmin
+        .from("workspaces")
+        .update({
+            custom_onboarding_domain_status: verified.verified ? "verified" : "pending_dns",
+            custom_onboarding_domain_records: verified.records,
+            custom_onboarding_domain_verified_at: verified.verified ? new Date().toISOString() : null,
+        })
+        .eq("id", workspace.id)
+    if (error) throw new Error("Could not save the domain verification result.")
     refresh(slug)
 }

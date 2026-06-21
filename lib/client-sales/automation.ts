@@ -378,7 +378,7 @@ export async function handleSaleConsentConfirmation({
     if (!clientId) {
         const { data: workspace } = await supabaseAdmin
             .from("workspaces")
-            .select("slug, custom_onboarding_domain")
+            .select("slug, custom_onboarding_domain, custom_onboarding_domain_status")
             .eq("id", sale.workspace_id)
             .single()
         if (!workspace) return { handled: false }
@@ -386,6 +386,7 @@ export async function handleSaleConsentConfirmation({
             workspaceId: sale.workspace_id,
             workspaceSlug: workspace.slug,
             customOnboardingDomain: workspace.custom_onboarding_domain,
+            customOnboardingDomainVerified: workspace.custom_onboarding_domain_status === "verified",
             name: sale.client_name,
             email: sale.client_email,
             phone: fromAddress,
@@ -430,10 +431,10 @@ export async function handleSaleConsentConfirmation({
             .single()
 
         const { data: workspace } = client
-            ? await supabaseAdmin.from("workspaces").select("slug, custom_onboarding_domain").eq("id", client.workspace_id).single()
+            ? await supabaseAdmin.from("workspaces").select("slug, custom_onboarding_domain, custom_onboarding_domain_status").eq("id", client.workspace_id).single()
             : { data: null }
         onboardingUrl = client?.session_token && workspace
-            ? getOnboardingUrl(workspace.slug, client.session_token, workspace.custom_onboarding_domain)
+            ? getOnboardingUrl(workspace.slug, client.session_token, workspace.custom_onboarding_domain, workspace.custom_onboarding_domain_status === "verified")
             : null
 
         await supabaseAdmin

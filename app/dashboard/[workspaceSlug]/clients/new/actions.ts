@@ -13,6 +13,7 @@ export async function createWorkspaceClient(slug: string, formData: FormData) {
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
         customOnboardingDomain: workspace.custom_onboarding_domain,
+        customOnboardingDomainVerified: workspace.custom_onboarding_domain_status === "verified",
         name,
         email,
         phone: "",

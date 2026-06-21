@@ -1,11 +1,11 @@
 import { NextRequest } from "next/server"
-import { getRequiredEnv } from "@/lib/env"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import {
     StripeWebhookEvent,
     verifyStripeWebhookSignature,
 } from "@/lib/stripe/api"
 import { handlePaidStripeInvoice } from "@/lib/client-sales/automation"
+import { getStripeWebhookCandidates } from "@/lib/workspace-integrations"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -19,15 +19,9 @@ function isPaidInvoiceEvent(type: string) {
 export async function POST(request: NextRequest) {
     const payload = await request.text()
     const signature = request.headers.get("stripe-signature")
-    const secret = getRequiredEnv("STRIPE_WEBHOOK_SECRET")
-
-    if (
-        !verifyStripeWebhookSignature({
-            payload,
-            signatureHeader: signature,
-            secret,
-        })
-    ) {
+    const candidates = await getStripeWebhookCandidates()
+    const matchedCandidate = candidates.find((candidate) => verifyStripeWebhookSignature({ payload, signatureHeader: signature, secret: candidate.webhookSecret }))
+    if (!matchedCandidate) {
         return Response.json({ error: "Invalid signature" }, { status: 400 })
     }
 
@@ -41,12 +35,9 @@ export async function POST(request: NextRequest) {
     const { data: sale } = saleId
         ? await supabaseAdmin.from("client_sales").select("workspace_id").eq("id", saleId).maybeSingle()
         : { data: null }
-    const { data: scaylupWorkspace } = sale?.workspace_id
-        ? { data: null }
-        : await supabaseAdmin.from("workspaces").select("id").eq("slug", "scaylup").maybeSingle()
-    const workspaceId = sale?.workspace_id ?? scaylupWorkspace?.id
+    const workspaceId = sale?.workspace_id ?? matchedCandidate.workspaceId
 
-    if (!workspaceId) {
+    if (!workspaceId || workspaceId !== matchedCandidate.workspaceId) {
         return Response.json({ error: "Could not resolve workspace for Stripe event" }, { status: 500 })
     }
     const { error: eventInsertError } = await supabaseAdmin

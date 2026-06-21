@@ -60,7 +60,7 @@ export default async function AdminLoginPage({ searchParams }: PageProps) {
             >
                 <FormPendingOverlay />
 
-                <p className="text-sm text-neutral-400">Agency Onboarding</p>
+                <p className="text-sm text-neutral-400">Betelgeze</p>
 
                 <h1 className="mt-3 text-2xl font-semibold">Admin login</h1>
 

@@ -64,3 +64,36 @@ export async function requireLegacyProviderAccess(workspaceId: string, provider:
     if (data?.enabled && data.mode === "platform_legacy") return
     throw new Error(`${provider} is not connected for this workspace yet.`)
 }
+
+export async function getWorkspaceProviderConfig(workspaceId: string, provider: IntegrationProvider) {
+    const { data } = await supabaseAdmin
+        .from("workspace_integrations")
+        .select("enabled, mode, config_encrypted")
+        .eq("workspace_id", workspaceId)
+        .eq("provider", provider)
+        .maybeSingle()
+    if (!data?.enabled) throw new Error(`${provider} is not connected for this workspace.`)
+    if (data.mode === "connected" && data.config_encrypted) return decryptWorkspaceIntegration(data.config_encrypted)
+    if (data.mode === "platform_legacy" && provider === "stripe") return { secret_key: getRequiredEnv("STRIPE_SECRET_KEY"), webhook_secret: getRequiredEnv("STRIPE_WEBHOOK_SECRET"), default_currency: process.env.STRIPE_DEFAULT_CURRENCY ?? "usd" }
+    throw new Error(`${provider} is not connected for this workspace.`)
+}
+
+export async function getStripeWebhookCandidates() {
+    const { data } = await supabaseAdmin
+        .from("workspace_integrations")
+        .select("workspace_id, mode, enabled, config_encrypted")
+        .eq("provider", "stripe")
+        .eq("enabled", true)
+    return (data ?? []).flatMap((item) => {
+        try {
+            if (item.mode === "platform_legacy") return [{ workspaceId: item.workspace_id, webhookSecret: getRequiredEnv("STRIPE_WEBHOOK_SECRET") }]
+            if (item.mode === "connected" && item.config_encrypted) {
+                const config = decryptWorkspaceIntegration(item.config_encrypted)
+                return config.webhook_secret ? [{ workspaceId: item.workspace_id, webhookSecret: config.webhook_secret }] : []
+            }
+        } catch {
+            return []
+        }
+        return []
+    })
+}

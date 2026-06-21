@@ -10,7 +10,7 @@ import {
     ProjectTimeframeUnit,
 } from "@/lib/onboarding/project-timeframe"
 import { createAndSendStripeInvoice } from "@/lib/stripe/api"
-import { requireLegacyProviderAccess } from "@/lib/workspace-integrations"
+import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 
 const DEFAULT_CURRENCY = "usd"
 
@@ -48,8 +48,7 @@ function getSaleErrorCode(error: unknown) {
 
 export async function createSaleInvoice(formData: FormData) {
     const { workspace, user } = await requireAdmin()
-    await requireLegacyProviderAccess(workspace.id, "stripe")
-    await requireLegacyProviderAccess(workspace.id, "meta_whatsapp")
+    const stripeConfig = await getWorkspaceProviderConfig(workspace.id, "stripe")
 
     const name = String(formData.get("name") ?? "").trim()
     const email = String(formData.get("email") ?? "").trim().toLowerCase()
@@ -134,6 +133,7 @@ export async function createSaleInvoice(formData: FormData) {
             serviceKeys: billableServiceKeys,
             projectTimeframeDays,
             daysUntilDue: getInvoiceDaysUntilDue(),
+            secretKey: stripeConfig.secret_key,
         })
 
         await supabaseAdmin

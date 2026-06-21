@@ -2,9 +2,9 @@ import Link from "next/link"
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-    title: "Privacy Policy | ScaylUp",
+    title: "Privacy Policy | Betelgeze",
     description:
-        "Privacy policy for ScaylUp onboarding and client communication.",
+        "Privacy policy for the Betelgeze automation platform.",
 }
 
 const SECTIONS = [
@@ -71,7 +71,7 @@ export default function PrivacyPage() {
                     href="/"
                     className="text-sm font-medium text-[#1E3A5F] hover:underline"
                 >
-                    ScaylUp
+                    Betelgeze
                 </Link>
 
                 <h1 className="mt-6 text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -83,7 +83,7 @@ export default function PrivacyPage() {
                 </p>
 
                 <p className="mt-6 leading-7 text-slate-700">
-                    This Privacy Policy explains how ScaylUp collects, uses,
+                    This Privacy Policy explains how Betelgeze collects, uses,
                     stores, and shares information when clients use our
                     onboarding portal, communicate with our team, or receive
                     agency services.
@@ -116,7 +116,7 @@ export default function PrivacyPage() {
                     </h2>
 
                     <p className="mt-3 leading-7 text-slate-700">
-                        For privacy questions or requests, contact ScaylUp using
+                        For privacy questions or requests, contact Betelgeze using
                         the contact details provided to you as a client, or
                         message our team through your active project
                         communication channel.

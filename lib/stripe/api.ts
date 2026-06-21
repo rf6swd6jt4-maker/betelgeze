@@ -25,6 +25,7 @@ export type CreateStripeInvoiceInput = {
     serviceKeys: string[]
     projectTimeframeDays?: number | null
     daysUntilDue: number
+    secretKey?: string
 }
 
 export type StripeInvoiceResult = {
@@ -88,7 +89,8 @@ function appendStripeParam(
 
 async function stripeRequest(
     path: string,
-    { method = "POST", params = {} }: StripeRequestOptions = {}
+    { method = "POST", params = {} }: StripeRequestOptions = {},
+    secretKey = getStripeSecretKey()
 ) {
     const body = new URLSearchParams()
 
@@ -103,7 +105,7 @@ async function stripeRequest(
     const response = await fetch(requestUrl, {
         method,
         headers: {
-            Authorization: `Bearer ${getStripeSecretKey()}`,
+            Authorization: `Bearer ${secretKey}`,
             "Content-Type": "application/x-www-form-urlencoded",
         },
         body: method === "POST" ? encodedParams : undefined,
@@ -174,7 +176,9 @@ export async function createAndSendStripeInvoice({
     serviceKeys,
     projectTimeframeDays,
     daysUntilDue,
+    secretKey,
 }: CreateStripeInvoiceInput): Promise<StripeInvoiceResult> {
+    const key = secretKey ?? getStripeSecretKey()
     const customer = await stripeRequest("/customers", {
         params: {
             name,
@@ -182,7 +186,7 @@ export async function createAndSendStripeInvoice({
             phone: getStripeCustomerPhone(phone),
             "metadata[client_sale_id]": saleId,
         },
-    })
+    }, key)
     const customerId = asStripeId(customer, "customer")
 
     const invoice = await stripeRequest("/invoices", {
@@ -195,7 +199,7 @@ export async function createAndSendStripeInvoice({
             "metadata[project_timeframe_days]":
                 projectTimeframeDays ?? undefined,
         },
-    })
+    }, key)
     const draftInvoiceId = asStripeId(invoice, "invoice")
 
     for (const lineItem of lineItems) {
@@ -209,7 +213,7 @@ export async function createAndSendStripeInvoice({
                 "metadata[client_sale_id]": saleId,
                 "metadata[service_key]": lineItem.serviceKey,
             },
-        })
+        }, key)
         const attachedInvoice =
             invoiceItem &&
             typeof invoiceItem === "object" &&
@@ -232,7 +236,7 @@ export async function createAndSendStripeInvoice({
         `/invoices/${encodeURIComponent(draftInvoiceId)}`,
         {
             method: "GET",
-        }
+        }, key
     )
     const draftFields = getInvoiceFields(draftInvoice)
     const actualTotal = draftFields.total ?? draftFields.amountDue
@@ -244,7 +248,7 @@ export async function createAndSendStripeInvoice({
     }
 
     const finalizedInvoice = await stripeRequest(
-        `/invoices/${encodeURIComponent(draftInvoiceId)}/finalize`
+        `/invoices/${encodeURIComponent(draftInvoiceId)}/finalize`, {}, key
     )
     const { invoiceId } = getInvoiceFields(finalizedInvoice)
 
@@ -253,7 +257,7 @@ export async function createAndSendStripeInvoice({
     }
 
     const sentInvoice = await stripeRequest(
-        `/invoices/${encodeURIComponent(invoiceId)}/send`
+        `/invoices/${encodeURIComponent(invoiceId)}/send`, {}, key
     )
     const sentFields = getInvoiceFields(sentInvoice)
 

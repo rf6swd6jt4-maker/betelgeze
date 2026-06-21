@@ -1,6 +1,33 @@
 import { NextResponse, type NextRequest } from "next/server"
 
 export function proxy(request: NextRequest) {
+    const legacyPath = request.nextUrl.pathname
+    const legacyMatch = legacyPath.match(/^\/admin(?:\/(.*))?$/)
+    if (legacyMatch) {
+        const suffix = legacyMatch[1] ?? ""
+        const destination = suffix
+            .replace(/^new$/, "clients/new")
+            .replace(/^client\/(.+)$/, "clients/$1")
+        const url = request.nextUrl.clone()
+        url.pathname = `/dashboard/scaylup${destination ? `/${destination}` : ""}`
+        return NextResponse.redirect(url)
+    }
+
+    const dashboardMatch = legacyPath.match(/^\/dashboard\/([^/]+)(?:\/(.*))?$/)
+    if (dashboardMatch?.[1] === "scaylup") {
+        const suffix = dashboardMatch[2] ?? ""
+        if (suffix !== "users") {
+            const legacyDestination = suffix
+                .replace(/^clients\/new$/, "new")
+                .replace(/^clients\/(.+)$/, "client/$1")
+            const headers = new Headers(request.headers)
+            headers.set("x-betelgeze-workspace-slug", "scaylup")
+            const url = request.nextUrl.clone()
+            url.pathname = `/admin${legacyDestination ? `/${legacyDestination}` : ""}`
+            return NextResponse.rewrite(url, { request: { headers } })
+        }
+    }
+
     const match = request.nextUrl.pathname.match(
         /^\/onboarding\/([a-z0-9][a-z0-9-]*)\/([a-f0-9]+)$/i
     )
@@ -14,5 +41,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-    matcher: "/onboarding/:path*",
+    matcher: ["/onboarding/:path*", "/admin/:path*", "/dashboard/:path*"],
 }

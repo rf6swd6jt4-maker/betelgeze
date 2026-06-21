@@ -17,11 +17,12 @@ const BASE_STEPS = [
 ]
 
 export default async function AdminPage() {
-    await requireAdmin()
+    const { workspace } = await requireAdmin()
 
     const clientsResponse = await supabaseAdmin
         .from("clients")
         .select("id, name, email, phone, created_at, archived_at, is_test")
+        .eq("workspace_id", workspace.id)
         .is("archived_at", null)
         .order("created_at", { ascending: false })
 
@@ -32,6 +33,7 @@ export default async function AdminPage() {
         const fallbackClientsResponse = await supabaseAdmin
             .from("clients")
             .select("id, name, email, created_at, archived_at, is_test")
+            .eq("workspace_id", workspace.id)
             .is("archived_at", null)
             .order("created_at", { ascending: false })
 
@@ -43,6 +45,7 @@ export default async function AdminPage() {
         clientsError = fallbackClientsResponse.error
     }
 
+    const clientIds = (clients ?? []).map((client) => client.id)
     const [
         { data: progressRows, error: progressError },
         { data: moduleRows, error: modulesError },
@@ -51,12 +54,14 @@ export default async function AdminPage() {
     ] = await Promise.all([
         supabaseAdmin
             .from("client_progress")
-            .select("client_id, step_key, completed_at, created_at"),
-        supabaseAdmin.from("client_modules").select("client_id, module_key"),
-        supabaseAdmin.from("client_services").select("client_id, service_key"),
+            .select("client_id, step_key, completed_at, created_at")
+            .in("client_id", clientIds),
+        supabaseAdmin.from("client_modules").select("client_id, module_key").in("client_id", clientIds),
+        supabaseAdmin.from("client_services").select("client_id, service_key").in("client_id", clientIds),
         supabaseAdmin
             .from("client_communication_channels")
-            .select("client_id, clickup_channel_id, is_active"),
+            .select("client_id, clickup_channel_id, is_active")
+            .in("client_id", clientIds),
     ])
 
     if (

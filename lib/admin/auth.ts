@@ -1,6 +1,8 @@
 import { timingSafeEqual } from "crypto"
 import { redirect } from "next/navigation"
+import { headers } from "next/headers"
 import { getRequiredEnv } from "@/lib/env"
+import { requireWorkspace } from "@/lib/workspaces"
 
 export const ADMIN_SESSION_COOKIE = "admin_session"
 export const ADMIN_COOKIE_PATH = "/"
@@ -27,7 +29,7 @@ export function getAdminSessionSecret() {
 }
 
 export async function requireAdmin() {
-    // Legacy /admin routes are deliberately retired. Authorization now happens
-    // through a user, MFA, and workspace membership in lib/workspaces.
-    redirect("/login")
+    const workspaceSlug = (await headers()).get("x-betelgeze-workspace-slug")
+    if (!workspaceSlug) redirect("/login")
+    return requireWorkspace(workspaceSlug, "admin")
 }

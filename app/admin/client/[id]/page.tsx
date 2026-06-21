@@ -24,6 +24,7 @@ import { FormResponsesSummary } from "@/components/admin/FormResponsesSummary"
 import { ClientActionsMenu } from "./ClientActionsMenu"
 import { Avatar } from "@/components/account/Avatar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
+import { getOnboardingUrl } from "@/lib/onboarding/client-creation"
 import {
     addClientNote,
     archiveClient,
@@ -213,11 +214,12 @@ export default async function ClientDetailPage({
         lastActivityAt: latestActivity,
     })
 
-    const baseUrl =
-        process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
-
     const onboardingPath = `/onboarding/${workspace.slug}/${client.session_token}`
-    const onboardingUrl = `${baseUrl}${onboardingPath}`
+    const onboardingUrl = getOnboardingUrl(
+        workspace.slug,
+        client.session_token,
+        workspace.custom_onboarding_domain
+    )
 
     const timelineItems = [
         ...(progressRows ?? []).map((row) => {
@@ -311,7 +313,7 @@ export default async function ClientDetailPage({
                         </Link>
 
                         <ClientActionsMenu
-                            onboardingPath={onboardingPath}
+                            onboardingPath={workspace.custom_onboarding_domain ? onboardingUrl : onboardingPath}
                             onboardingUrl={onboardingUrl}
                             clearProgressAction={async () => {
                                 "use server"

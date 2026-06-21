@@ -12,6 +12,7 @@ export async function createWorkspaceClient(slug: string, formData: FormData) {
     await createOnboardingClient({
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
+        customOnboardingDomain: workspace.custom_onboarding_domain,
         name,
         email,
         phone: "",

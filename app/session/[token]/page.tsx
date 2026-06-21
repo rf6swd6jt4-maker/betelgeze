@@ -65,7 +65,9 @@ const FINAL_STEP: SessionStep = {
 export default async function SessionPage({ params, searchParams }: PageProps) {
     const { token } = await params
     const { step: requestedStepKey } = await searchParams
-    const workspaceSlug = (await headers()).get("x-betelgeze-workspace-slug")
+    const requestHeaders = await headers()
+    const workspaceSlug = requestHeaders.get("x-betelgeze-workspace-slug")
+    const customOnboardingDomain = requestHeaders.get("x-betelgeze-custom-onboarding-domain")
 
     const { data: client, error } = await supabaseAdmin
         .from("clients")
@@ -187,7 +189,9 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
                         currentStepTitle={currentStep.title}
                         previousStepHref={
                             previousStep
-                                ? `/onboarding/${workspaceSlug}/${token}?step=${previousStep.key}`
+                                ? customOnboardingDomain
+                                    ? `/${token}?step=${previousStep.key}`
+                                    : `/onboarding/${workspaceSlug}/${token}?step=${previousStep.key}`
                                 : null
                         }
                         skipAction={async () => {

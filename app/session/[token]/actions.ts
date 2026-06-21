@@ -29,6 +29,12 @@ async function getPublicSessionClient(token: string) {
     return { client, workspaceSlug }
 }
 
+async function getPublicSessionPath(workspaceSlug: string, token: string) {
+    return (await headers()).get("x-betelgeze-custom-onboarding-domain")
+        ? `/${token}`
+        : `/onboarding/${workspaceSlug}/${token}`
+}
+
 export async function completeStep(token: string, stepKey: string) {
     const { client, workspaceSlug } = await getPublicSessionClient(token)
 
@@ -205,5 +211,5 @@ export async function skipTestStep(
     revalidatePath(`/onboarding/${workspaceSlug}/${token}`)
     revalidatePath(`/dashboard/${workspaceSlug}`)
     revalidatePath("/admin")
-    redirect(`/onboarding/${workspaceSlug}/${token}`)
+    redirect(await getPublicSessionPath(workspaceSlug, token))
 }

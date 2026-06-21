@@ -5,10 +5,24 @@ import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { storeWorkspaceImage } from "@/lib/onboarding/uploads"
 import { INTEGRATION_PROVIDERS, IntegrationProvider, saveWorkspaceIntegration } from "@/lib/workspace-integrations"
+import { verifyWorkspaceIntegration } from "@/lib/workspace-integrations"
+import { normalizeOnboardingDomain } from "@/lib/onboarding/custom-domain"
 
 function refresh(slug: string) {
     revalidatePath(`/dashboard/${slug}`)
     revalidatePath(`/dashboard/${slug}/settings`)
+}
+
+async function assertWorkspaceConnectionIsEditable(workspaceId: string, provider: IntegrationProvider) {
+    const { data } = await supabaseAdmin
+        .from("workspace_integrations")
+        .select("mode")
+        .eq("workspace_id", workspaceId)
+        .eq("provider", provider)
+        .maybeSingle()
+    if (data?.mode === "platform_legacy") {
+        throw new Error("This managed platform connection cannot be changed from workspace settings.")
+    }
 }
 
 export async function updateWorkspaceName(slug: string, formData: FormData) {
@@ -63,7 +77,8 @@ export async function removeWorkspaceInvitation(slug: string, invitationId: stri
 
 export async function saveWorkspaceConnection(slug: string, provider: IntegrationProvider, formData: FormData) {
     if (!INTEGRATION_PROVIDERS.includes(provider)) throw new Error("Unknown connection.")
-    const { workspace, user } = await requireWorkspace(slug, "admin")
+    const { workspace, user } = await requireWorkspace(slug, "owner")
+    await assertWorkspaceConnectionIsEditable(workspace.id, provider)
     const config = Object.fromEntries([...formData.entries()].filter(([, value]) => typeof value === "string")) as Record<string, string>
     const required: Record<IntegrationProvider, string[]> = {
         stripe: ["secret_key", "webhook_secret"],
@@ -72,5 +87,33 @@ export async function saveWorkspaceConnection(slug: string, provider: Integratio
     }
     if (required[provider].some((key) => !config[key]?.trim())) throw new Error("Fill in all required connection details before saving.")
     await saveWorkspaceIntegration(workspace.id, provider, config, user.id)
+    refresh(slug)
+}
+
+export async function verifyWorkspaceConnection(slug: string, provider: IntegrationProvider) {
+    if (!INTEGRATION_PROVIDERS.includes(provider)) throw new Error("Unknown connection.")
+    const { workspace } = await requireWorkspace(slug, "owner")
+    await assertWorkspaceConnectionIsEditable(workspace.id, provider)
+    await verifyWorkspaceIntegration(workspace.id, provider)
+    refresh(slug)
+}
+
+export async function saveWorkspaceOnboardingDomain(slug: string, formData: FormData) {
+    const { workspace } = await requireWorkspace(slug, "owner")
+    const submitted = String(formData.get("domain") ?? "")
+    const domain = submitted ? normalizeOnboardingDomain(submitted) : null
+    if (submitted && !domain) throw new Error("Enter a valid hostname, such as onboarding.example.com.")
+
+    const platformHost = process.env.NEXT_PUBLIC_SITE_URL
+        ? new URL(process.env.NEXT_PUBLIC_SITE_URL).hostname.toLowerCase()
+        : null
+    if (domain && domain === platformHost) throw new Error("Use a separate custom domain, not the Betelgeze application domain.")
+
+    const { error } = await supabaseAdmin
+        .from("workspaces")
+        .update({ custom_onboarding_domain: domain })
+        .eq("id", workspace.id)
+    if (error?.code === "23505") throw new Error("That onboarding domain is already assigned to another workspace.")
+    if (error) throw new Error("Could not save the onboarding domain.")
     refresh(slug)
 }

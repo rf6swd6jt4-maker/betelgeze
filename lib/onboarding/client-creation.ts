@@ -2,10 +2,12 @@ import { randomBytes } from "crypto"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
 import { ensureClientClickUpChannel } from "@/lib/client-messages/clickup-channel-setup"
+import { getOnboardingUrl as getPublicOnboardingUrl } from "@/lib/onboarding/custom-domain"
 
 type CreateOnboardingClientInput = {
     workspaceId: string
     workspaceSlug: string
+    customOnboardingDomain?: string | null
     name: string
     email?: string | null
     phone: string
@@ -55,15 +57,22 @@ export function getCreateClientErrorCode(error: { message?: string } | null) {
     return "create-failed"
 }
 
-export function getOnboardingUrl(workspaceSlug: string, sessionToken: string) {
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
-
-    return `${baseUrl}/onboarding/${workspaceSlug}/${sessionToken}`
+export function getOnboardingUrl(
+    workspaceSlug: string,
+    sessionToken: string,
+    customOnboardingDomain?: string | null
+) {
+    return getPublicOnboardingUrl({
+        workspaceSlug,
+        sessionToken,
+        customDomain: customOnboardingDomain,
+    })
 }
 
 export async function createOnboardingClient({
     workspaceId,
     workspaceSlug,
+    customOnboardingDomain,
     name,
     email,
     phone,
@@ -140,7 +149,7 @@ export async function createOnboardingClient({
     }
 
     const onboardingUrl = createOnboardingModules
-        ? getOnboardingUrl(workspaceSlug, client.session_token)
+        ? getOnboardingUrl(workspaceSlug, client.session_token, customOnboardingDomain)
         : null
 
     if (onboardingUrl) {

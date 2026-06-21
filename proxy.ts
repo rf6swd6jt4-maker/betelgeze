@@ -7,18 +7,85 @@ async function refreshSession(request: NextRequest) {
     await supabase.auth.getUser()
     return response
 }
-function carryCookies(target: NextResponse, source: NextResponse) { source.cookies.getAll().forEach((cookie) => target.cookies.set(cookie)); return target }
+
+function carryCookies(target: NextResponse, source: NextResponse) {
+    source.cookies.getAll().forEach((cookie) => target.cookies.set(cookie))
+    return target
+}
+
+function requestHostname(request: NextRequest) {
+    return request.headers.get("host")?.split(":")[0]?.toLowerCase() ?? null
+}
+
+async function getCustomDomainWorkspaceSlug(domain: string) {
+    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (!baseUrl || !anonKey) return null
+
+    const response = await fetch(`${baseUrl}/rest/v1/rpc/resolve_workspace_onboarding_domain`, {
+        method: "POST",
+        headers: {
+            apikey: anonKey,
+            Authorization: `Bearer ${anonKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ requested_domain: domain }),
+        cache: "no-store",
+    })
+    if (!response.ok) return null
+
+    const result = await response.json() as Array<{ workspace_slug?: string }>
+    return result[0]?.workspace_slug ?? null
+}
 
 export async function proxy(request: NextRequest) {
-    const sessionResponse = await refreshSession(request)
     const path = request.nextUrl.pathname
+    const customToken = path.match(/^\/([a-f0-9]{64})$/i)
+    const domain = requestHostname(request)
+
+    if (customToken && domain) {
+        const workspaceSlug = await getCustomDomainWorkspaceSlug(domain)
+        if (workspaceSlug) {
+            const headers = new Headers(request.headers)
+            headers.set("x-betelgeze-workspace-slug", workspaceSlug)
+            headers.set("x-betelgeze-custom-onboarding-domain", domain)
+            const url = request.nextUrl.clone()
+            url.pathname = `/session/${customToken[1]}`
+            return NextResponse.rewrite(url, { request: { headers } })
+        }
+    }
+
+    const sessionResponse = await refreshSession(request)
     const legacyMatch = path.match(/^\/admin(?:\/(.*))?$/)
-    if (legacyMatch) { const referer = request.headers.get("referer"); const workspaceSlug = referer ? new URL(referer).pathname.match(/^\/dashboard\/([^/]+)/)?.[1] ?? "scaylup" : "scaylup"; const suffix = (legacyMatch[1] ?? "").replace(/^new$/, "clients/new").replace(/^client\/(.+)$/, "clients/$1"); const url = request.nextUrl.clone(); url.pathname = `/dashboard/${workspaceSlug}${suffix ? `/${suffix}` : ""}`; return carryCookies(NextResponse.redirect(url), sessionResponse) }
+    if (legacyMatch) {
+        const referer = request.headers.get("referer")
+        const workspaceSlug = referer ? new URL(referer).pathname.match(/^\/dashboard\/([^/]+)/)?.[1] ?? "scaylup" : "scaylup"
+        const suffix = (legacyMatch[1] ?? "").replace(/^new$/, "clients/new").replace(/^client\/(.+)$/, "clients/$1")
+        const url = request.nextUrl.clone()
+        url.pathname = `/dashboard/${workspaceSlug}${suffix ? `/${suffix}` : ""}`
+        return carryCookies(NextResponse.redirect(url), sessionResponse)
+    }
+
     const dashboardMatch = path.match(/^\/dashboard\/([^/]+)(?:\/(.*))?$/)
-    if (dashboardMatch) { const [, workspaceSlug, suffix = ""] = dashboardMatch; if (suffix !== "users" && suffix !== "settings") { const headers = new Headers(request.headers); headers.set("x-betelgeze-workspace-slug", workspaceSlug); const url = request.nextUrl.clone(); const legacyDestination = suffix.replace(/^clients\/new$/, "new").replace(/^clients\/(.+)$/, "client/$1"); url.pathname = `/admin${legacyDestination ? `/${legacyDestination}` : ""}`; return carryCookies(NextResponse.rewrite(url, { request: { headers } }), sessionResponse) } }
+    if (dashboardMatch) {
+        const [, workspaceSlug, suffix = ""] = dashboardMatch
+        if (suffix !== "users" && suffix !== "settings") {
+            const headers = new Headers(request.headers)
+            headers.set("x-betelgeze-workspace-slug", workspaceSlug)
+            const url = request.nextUrl.clone()
+            const legacyDestination = suffix.replace(/^clients\/new$/, "new").replace(/^clients\/(.+)$/, "client/$1")
+            url.pathname = `/admin${legacyDestination ? `/${legacyDestination}` : ""}`
+            return carryCookies(NextResponse.rewrite(url, { request: { headers } }), sessionResponse)
+        }
+    }
+
     const onboarding = path.match(/^\/onboarding\/([a-z0-9][a-z0-9-]*)\/([a-f0-9]+)$/i)
     if (!onboarding) return sessionResponse
-    const headers = new Headers(request.headers); headers.set("x-betelgeze-workspace-slug", onboarding[1].toLowerCase()); const url = request.nextUrl.clone(); url.pathname = `/session/${onboarding[2]}`
+    const headers = new Headers(request.headers)
+    headers.set("x-betelgeze-workspace-slug", onboarding[1].toLowerCase())
+    const url = request.nextUrl.clone()
+    url.pathname = `/session/${onboarding[2]}`
     return carryCookies(NextResponse.rewrite(url, { request: { headers } }), sessionResponse)
 }
-export const config = { matcher: ["/onboarding/:path*", "/admin/:path*", "/dashboard/:path*"] }
+
+export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"] }

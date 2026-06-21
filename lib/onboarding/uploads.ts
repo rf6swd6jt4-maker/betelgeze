@@ -71,6 +71,7 @@ export function createClientMessageMediaUrl(
 }
 
 export async function createSignedOnboardingUpload(
+    workspaceId: string,
     clientId: string,
     stepKey: string,
     file: {
@@ -84,7 +85,7 @@ export async function createSignedOnboardingUpload(
     }
 
     const fileName = sanitizeFileName(file.name) || "upload"
-    const path = `${clientId}/${stepKey}/${randomUUID()}-${fileName}`
+    const path = `${workspaceId}/${clientId}/${stepKey}/${randomUUID()}-${fileName}`
     const contentType = file.type || "application/octet-stream"
 
     const uploadUrl = await getSignedUrl(
@@ -212,6 +213,7 @@ export async function deleteOnboardingUploads(paths: string[]) {
 
 export async function storeClientMessageMedia({
     clientId,
+    workspaceId,
     mediaId,
     fileName,
     contentType,
@@ -219,6 +221,7 @@ export async function storeClientMessageMedia({
     appBaseUrl,
 }: {
     clientId: string
+    workspaceId?: string
     mediaId: string
     fileName: string
     contentType: string
@@ -226,7 +229,7 @@ export async function storeClientMessageMedia({
     appBaseUrl?: string
 }) {
     const safeFileName = sanitizeFileName(fileName) || "whatsapp-media"
-    const path = `${clientId}/client-messages/${randomUUID()}-${mediaId}-${safeFileName}`
+    const path = `${workspaceId ? `${workspaceId}/` : ""}${clientId}/client-messages/${randomUUID()}-${mediaId}-${safeFileName}`
 
     await getR2Client().send(
         new PutObjectCommand({

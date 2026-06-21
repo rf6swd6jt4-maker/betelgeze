@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agency Onboarding",
-  description: "Private client onboarding portal",
+  title: "Betelgeze",
+  description: "Business automation dashboards",
 };
 
 export default function RootLayout({

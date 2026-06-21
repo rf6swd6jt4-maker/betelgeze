@@ -1,13 +1,12 @@
-# Agency Onboarding
+# Betelgeze
 
-Private client onboarding portal for an agency. Admins create clients, assign
-the services/modules they purchased, and share a tokenized onboarding link.
-Clients use that link to complete the onboarding steps required for their
-project.
+Multi-business automation platform. Each business has a private workspace for
+client onboarding, team access, and later integrations.
 
 ## Current Features
 
-- Password-protected admin area.
+- Email/password dashboard accounts with authenticator-app MFA.
+- Isolated business workspaces with Owner, Admin, and Member roles.
 - Admin dashboard with active clients, assigned modules, progress, and activity.
 - Manual client creation without opening Supabase.
 - Client detail page with onboarding link, notes, timeline, progress, and
@@ -39,7 +38,7 @@ Create a local env file:
 cp .env.example .env.local
 ```
 
-Fill in the Supabase and admin values, then run:
+Fill in the Supabase values, then run:
 
 ```bash
 npm run dev
@@ -64,9 +63,7 @@ SYSTEM_HEALTH_SUPABASE_DATABASE_LIMIT_MB=500
 VERCEL_API_TOKEN=
 VERCEL_TEAM_ID=
 VERCEL_PROJECT_ID=
-ADMIN_PASSWORD=
-ADMIN_SESSION_SECRET=
-NEXT_PUBLIC_SITE_URL=
+NEXT_PUBLIC_SITE_URL=https://betelgeze.com
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 STRIPE_DEFAULT_CURRENCY=eur
@@ -75,8 +72,8 @@ META_WHATSAPP_CONSENT_TEMPLATE_NAME=
 META_WHATSAPP_CONSENT_TEMPLATE_LANGUAGE=en
 ```
 
-`ADMIN_SESSION_SECRET` should be a long random value. `SUPABASE_SERVICE_ROLE_KEY`
-must only be used server-side.
+`SUPABASE_SERVICE_ROLE_KEY` must only be used server-side. Do not put a
+business's Stripe, ClickUp, or Meta credentials in `NEXT_PUBLIC_*` variables.
 
 ## Supabase
 
@@ -108,17 +105,18 @@ Important constraints:
 - `client_modules` is unique per `client_id` and `module_key`.
 - `client_form_responses` is unique per `client_id` and `step_key`.
 
-## Admin Flow
+## Workspace Flow
 
-1. Log in at `/admin/login`.
-2. Add a client at `/admin/new`.
-3. Assign the modules included in the client's project.
-4. Copy the onboarding link from the client detail page.
-5. Track progress, notes, and activity from the admin dashboard.
+1. Create an account at `/sign-up`, verify the email, and enrol an authenticator
+   app at `/mfa`.
+2. Log in at `/login` and open `/dashboard/[workspaceSlug]`.
+3. Owners manage access at `/dashboard/[workspaceSlug]/users`.
+4. Add clients and share the generated onboarding link.
 
 ## Client Flow
 
-Clients open `/session/[token]`, where `[token]` is their private session token.
+Clients open `/onboarding/[workspaceSlug]/[token]`, where `[token]` is their
+private session token.
 The onboarding flow is generated from the modules assigned to that client.
 
 Form steps save structured answers to `client_form_responses`. Image, video,
@@ -139,6 +137,20 @@ npm run test
 
 The project is designed for Vercel. Configure the same environment variables in
 the Vercel project settings for the production deployment.
+
+### Betelgeze cutover checklist
+
+1. Add `betelgeze.com` and `www.betelgeze.com` to Vercel, then add the exact
+   A/CNAME records Vercel requests in Namecheap.
+2. Set `NEXT_PUBLIC_SITE_URL=https://betelgeze.com` for Production and redeploy.
+3. In Supabase Auth, add `https://betelgeze.com/login` to redirect URLs and
+   configure production email delivery before enabling public sign-up.
+4. Create a new Stripe webhook at `https://betelgeze.com/api/stripe/webhook`,
+   replace `STRIPE_WEBHOOK_SECRET`, and update Meta/ClickUp callback URLs.
+5. Apply `20260620000000_betelgeze_workspaces.sql` in staging first, verify the
+   ScaylUp backfill, then apply it in production.
+6. Regenerate active onboarding links. The old hostname is intentionally removed
+   and does not redirect.
 
 ## Client Messages Bridge
 

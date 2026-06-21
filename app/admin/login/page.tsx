@@ -13,6 +13,8 @@ export const dynamic = "force-dynamic"
 async function login(formData: FormData) {
     "use server"
 
+    redirect("/login")
+
     const password = String(formData.get("password") ?? "")
 
     if (!isValidAdminPassword(password)) {
@@ -47,6 +49,7 @@ type PageProps = {
 }
 
 export default async function AdminLoginPage({ searchParams }: PageProps) {
+    redirect("/login")
     const { error } = await searchParams
 
     return (

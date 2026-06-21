@@ -297,7 +297,7 @@ test("ignores ClickUp messages that were posted by the bridge", () => {
     )
     assert.equal(
         shouldIgnoreClickUpMessage({
-            body: "Video: [open video](https://onboarding.scaylup.com/api/client-messages/media/client/video.mp4)",
+            body: "Video: [open video](https://betelgeze.com/api/client-messages/media/client/video.mp4)",
             authorId: null,
             authorName: "Sarah",
         }),
@@ -305,7 +305,7 @@ test("ignores ClickUp messages that were posted by the bridge", () => {
     )
     assert.equal(
         shouldIgnoreClickUpMessage({
-            body: "![Image](https://onboarding.scaylup.com/api/client-messages/media/client/image.jpg)\n[Open image](https://onboarding.scaylup.com/api/client-messages/media/client/image.jpg)",
+            body: "![Image](https://betelgeze.com/api/client-messages/media/client/image.jpg)\n[Open image](https://betelgeze.com/api/client-messages/media/client/image.jpg)",
             authorId: null,
             authorName: "Sarah",
         }),

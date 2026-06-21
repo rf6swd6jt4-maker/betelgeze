@@ -3,6 +3,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
+import { headers } from "next/headers"
 import {
     FormResponse,
     getOnboardingForm,
@@ -11,16 +12,25 @@ import {
 import { createSignedOnboardingUpload } from "@/lib/onboarding/uploads"
 import { syncClientOnboardingStepToClickUp } from "@/lib/client-messages/clickup-channel-setup"
 
-export async function completeStep(token: string, stepKey: string) {
+async function getPublicSessionClient(token: string) {
+    const workspaceSlug = (await headers()).get("x-betelgeze-workspace-slug")
+    if (!workspaceSlug) throw new Error("Invalid onboarding session")
     const { data: client, error: clientError } = await supabaseAdmin
         .from("clients")
-        .select("id")
+        .select("id, workspace_id, is_test")
         .eq("session_token", token)
         .single()
-
-    if (clientError || !client) {
+    const { data: workspace } = client
+        ? await supabaseAdmin.from("workspaces").select("id").eq("id", client.workspace_id).eq("slug", workspaceSlug).eq("status", "active").maybeSingle()
+        : { data: null }
+    if (clientError || !client || !workspace) {
         throw new Error("Invalid onboarding session")
     }
+    return { client, workspaceSlug }
+}
+
+export async function completeStep(token: string, stepKey: string) {
+    const { client, workspaceSlug } = await getPublicSessionClient(token)
 
     const { error } = await saveStepCompletion(client.id, stepKey)
 
@@ -33,7 +43,7 @@ export async function completeStep(token: string, stepKey: string) {
         stepKey,
     })
 
-    revalidatePath(`/session/${token}`)
+    revalidatePath(`/onboarding/${workspaceSlug}/${token}`)
 }
 
 function createFillerResponse(form: OnboardingFormDefinition): FormResponse {
@@ -83,17 +93,9 @@ export async function prepareDirectUpload(
         type: string
     }
 ) {
-    const { data: client, error: clientError } = await supabaseAdmin
-        .from("clients")
-        .select("id")
-        .eq("session_token", token)
-        .single()
+    const { client } = await getPublicSessionClient(token)
 
-    if (clientError || !client) {
-        throw new Error("Invalid onboarding session")
-    }
-
-    return createSignedOnboardingUpload(client.id, stepKey, file)
+    return createSignedOnboardingUpload(client.workspace_id, client.id, stepKey, file)
 }
 
 export async function submitPreparedFormStep(
@@ -108,15 +110,7 @@ export async function submitPreparedFormStep(
         throw new Error("Unknown onboarding form")
     }
 
-    const { data: client, error: clientError } = await supabaseAdmin
-        .from("clients")
-        .select("id")
-        .eq("session_token", token)
-        .single()
-
-    if (clientError || !client) {
-        throw new Error("Invalid onboarding session")
-    }
+    const { client } = await getPublicSessionClient(token)
 
     const now = new Date().toISOString()
 
@@ -154,13 +148,9 @@ export async function skipTestStep(
     stepKey: string,
     formKey?: string
 ) {
-    const { data: client, error: clientError } = await supabaseAdmin
-        .from("clients")
-        .select("id, is_test")
-        .eq("session_token", token)
-        .single()
+    const { client, workspaceSlug } = await getPublicSessionClient(token)
 
-    if (clientError || !client || !client.is_test) {
+    if (!client.is_test) {
         throw new Error("Invalid test onboarding session")
     }
 
@@ -210,6 +200,6 @@ export async function skipTestStep(
         stepKey,
     })
 
-    revalidatePath(`/session/${token}`)
-    redirect(`/session/${token}`)
+    revalidatePath(`/onboarding/${workspaceSlug}/${token}`)
+    redirect(`/onboarding/${workspaceSlug}/${token}`)
 }

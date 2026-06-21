@@ -4,6 +4,8 @@ import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
 import { ensureClientClickUpChannel } from "@/lib/client-messages/clickup-channel-setup"
 
 type CreateOnboardingClientInput = {
+    workspaceId: string
+    workspaceSlug: string
     name: string
     email?: string | null
     phone: string
@@ -24,11 +26,13 @@ export type CreateOnboardingClientResult = {
 
 async function addActivity(
     clientId: string,
+    workspaceId: string,
     activityType: string,
     activityText: string
 ) {
     await supabaseAdmin.from("client_activity").insert({
         client_id: clientId,
+        workspace_id: workspaceId,
         activity_type: activityType,
         activity_text: activityText,
     })
@@ -50,13 +54,15 @@ export function getCreateClientErrorCode(error: { message?: string } | null) {
     return "create-failed"
 }
 
-export function getOnboardingUrl(sessionToken: string) {
+export function getOnboardingUrl(workspaceSlug: string, sessionToken: string) {
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
 
-    return `${baseUrl}/session/${sessionToken}`
+    return `${baseUrl}/onboarding/${workspaceSlug}/${sessionToken}`
 }
 
 export async function createOnboardingClient({
+    workspaceId,
+    workspaceSlug,
     name,
     email,
     phone,
@@ -79,6 +85,7 @@ export async function createOnboardingClient({
     const { data: client, error: clientError } = await supabaseAdmin
         .from("clients")
         .insert({
+            workspace_id: workspaceId,
             name,
             email: email || null,
             phone,
@@ -99,6 +106,7 @@ export async function createOnboardingClient({
             .insert(
                 moduleKeys.map((moduleKey) => ({
                     client_id: client.id,
+                    workspace_id: workspaceId,
                     module_key: moduleKey,
                 }))
             )
@@ -114,6 +122,7 @@ export async function createOnboardingClient({
             .insert(
                 selectedServices.map((serviceKey) => ({
                     client_id: client.id,
+                    workspace_id: workspaceId,
                     service_key: serviceKey,
                 }))
             )
@@ -128,12 +137,13 @@ export async function createOnboardingClient({
     }
 
     const onboardingUrl = createOnboardingModules
-        ? getOnboardingUrl(client.session_token)
+        ? getOnboardingUrl(workspaceSlug, client.session_token)
         : null
 
     if (onboardingUrl) {
         await addActivity(
             client.id,
+            workspaceId,
             "onboarding_link_created",
             activitySource
                 ? `Onboarding link created from ${activitySource}: ${onboardingUrl}`

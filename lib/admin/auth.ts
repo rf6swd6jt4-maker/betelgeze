@@ -1,5 +1,4 @@
 import { timingSafeEqual } from "crypto"
-import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { getRequiredEnv } from "@/lib/env"
 
@@ -28,10 +27,7 @@ export function getAdminSessionSecret() {
 }
 
 export async function requireAdmin() {
-    const cookieStore = await cookies()
-    const adminSession = cookieStore.get(ADMIN_SESSION_COOKIE)?.value
-
-    if (!constantTimeCompare(adminSession ?? "", getAdminSessionSecret())) {
-        redirect("/admin/login")
-    }
+    // Legacy /admin routes are deliberately retired. Authorization now happens
+    // through a user, MFA, and workspace membership in lib/workspaces.
+    redirect("/login")
 }

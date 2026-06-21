@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import { headers } from "next/headers"
 import { MODULES, StepKind } from "@/lib/onboarding/modules"
 import { completeStep, skipTestStep } from "./actions"
 import { OnboardingLayout } from "@/components/onboarding/OnboardingLayout"
@@ -64,14 +65,19 @@ const FINAL_STEP: SessionStep = {
 export default async function SessionPage({ params, searchParams }: PageProps) {
     const { token } = await params
     const { step: requestedStepKey } = await searchParams
+    const workspaceSlug = (await headers()).get("x-betelgeze-workspace-slug")
 
     const { data: client, error } = await supabaseAdmin
         .from("clients")
-        .select("id, name, email, phone, session_token, is_test")
+        .select("id, name, email, phone, session_token, is_test, workspace_id")
         .eq("session_token", token)
         .single()
 
-    if (error || !client) {
+    const { data: workspace } = client && workspaceSlug
+        ? await supabaseAdmin.from("workspaces").select("id").eq("id", client.workspace_id).eq("slug", workspaceSlug).eq("status", "active").maybeSingle()
+        : { data: null }
+
+    if (error || !client || !workspace) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-[#F8F7F3] px-6 text-slate-900">
                 <p>Invalid onboarding link.</p>
@@ -180,7 +186,7 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
                         currentStepTitle={currentStep.title}
                         previousStepHref={
                             previousStep
-                                ? `/session/${token}?step=${previousStep.key}`
+                                ? `/onboarding/${workspaceSlug}/${token}?step=${previousStep.key}`
                                 : null
                         }
                         skipAction={async () => {

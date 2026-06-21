@@ -499,10 +499,12 @@ function formatMediaMessageForClickUp({
 
 async function getInboundMessageContent({
     clientId,
+    workspaceId,
     message,
     appBaseUrl,
 }: {
     clientId: string
+    workspaceId: string
     message: WhatsAppMessage
     appBaseUrl: string
 }): Promise<InboundMessageContent | null> {
@@ -542,6 +544,7 @@ async function getInboundMessageContent({
         `whatsapp-${mediaPayload.type}-${mediaPayload.media.id}.${getExtensionFromMimeType(contentType)}`
     const storedMedia = await storeClientMessageMedia({
         clientId,
+        workspaceId,
         mediaId: mediaPayload.media.id,
         fileName,
         contentType,
@@ -644,7 +647,7 @@ async function handleInboundMessage({
     const [{ data: client }, { data: lastMessage }] = await Promise.all([
         supabaseAdmin
             .from("clients")
-            .select("name")
+            .select("name, workspace_id")
             .eq("id", channel.client_id)
             .single(),
         supabaseAdmin
@@ -707,6 +710,7 @@ async function handleInboundMessage({
     try {
         content = await getInboundMessageContent({
             clientId: channel.client_id,
+            workspaceId: client?.workspace_id ?? "",
             message,
             appBaseUrl,
         })

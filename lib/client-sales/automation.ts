@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { SERVICES } from "@/lib/onboarding/services"
-import { createOnboardingClient } from "@/lib/onboarding/client-creation"
+import { createOnboardingClient, getOnboardingUrl } from "@/lib/onboarding/client-creation"
 import { getEquivalentMessageAddresses } from "@/lib/client-messages/addresses"
 import {
     sendMetaWhatsAppMessage,
@@ -18,6 +18,7 @@ type ClientSale = {
     project_timeframe_days: number | null
     status: string
     raw_payload: unknown
+    workspace_id: string
 }
 
 type StripeInvoiceLike = {
@@ -318,7 +319,7 @@ async function findPendingConfirmedSale(fromAddress: string) {
     const { data: sales } = await supabaseAdmin
         .from("client_sales")
         .select(
-            "id, client_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload"
+            "id, client_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload, workspace_id"
         )
         .in("client_phone", equivalentAddresses)
         .in("status", [
@@ -359,7 +360,15 @@ export async function handleSaleConsentConfirmation({
     let onboardingUrl: string | null = null
 
     if (!clientId) {
+        const { data: workspace } = await supabaseAdmin
+            .from("workspaces")
+            .select("slug")
+            .eq("id", sale.workspace_id)
+            .single()
+        if (!workspace) return { handled: false }
         const client = await createOnboardingClient({
+            workspaceId: sale.workspace_id,
+            workspaceSlug: workspace.slug,
             name: sale.client_name,
             email: sale.client_email,
             phone: fromAddress,
@@ -398,12 +407,15 @@ export async function handleSaleConsentConfirmation({
     } else {
         const { data: client } = await supabaseAdmin
             .from("clients")
-            .select("session_token")
+            .select("session_token, workspace_id")
             .eq("id", clientId)
             .single()
 
-        onboardingUrl = client?.session_token
-            ? `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/session/${client.session_token}`
+        const { data: workspace } = client
+            ? await supabaseAdmin.from("workspaces").select("slug").eq("id", client.workspace_id).single()
+            : { data: null }
+        onboardingUrl = client?.session_token && workspace
+            ? getOnboardingUrl(workspace.slug, client.session_token)
             : null
 
         await supabaseAdmin

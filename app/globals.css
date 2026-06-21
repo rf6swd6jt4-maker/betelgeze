@@ -31,7 +31,7 @@ body {
 }
 
 @media (max-width: 639px) {
-  button,
+  button:not([data-icon-button]),
   input:not([type="range"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]),
   select {
     min-height: 44px;

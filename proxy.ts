@@ -4,24 +4,29 @@ export function proxy(request: NextRequest) {
     const legacyPath = request.nextUrl.pathname
     const legacyMatch = legacyPath.match(/^\/admin(?:\/(.*))?$/)
     if (legacyMatch) {
+        const referer = request.headers.get("referer")
+        const refererPath = referer ? new URL(referer).pathname : ""
+        const refererWorkspace = refererPath.match(/^\/dashboard\/([^/]+)/)?.[1]
+        const workspaceSlug = refererWorkspace ?? "scaylup"
         const suffix = legacyMatch[1] ?? ""
         const destination = suffix
             .replace(/^new$/, "clients/new")
             .replace(/^client\/(.+)$/, "clients/$1")
         const url = request.nextUrl.clone()
-        url.pathname = `/dashboard/scaylup${destination ? `/${destination}` : ""}`
+        url.pathname = `/dashboard/${workspaceSlug}${destination ? `/${destination}` : ""}`
         return NextResponse.redirect(url)
     }
 
     const dashboardMatch = legacyPath.match(/^\/dashboard\/([^/]+)(?:\/(.*))?$/)
-    if (dashboardMatch?.[1] === "scaylup") {
+    if (dashboardMatch) {
+        const workspaceSlug = dashboardMatch[1]
         const suffix = dashboardMatch[2] ?? ""
         if (suffix !== "users") {
             const legacyDestination = suffix
                 .replace(/^clients\/new$/, "new")
                 .replace(/^clients\/(.+)$/, "client/$1")
             const headers = new Headers(request.headers)
-            headers.set("x-betelgeze-workspace-slug", "scaylup")
+            headers.set("x-betelgeze-workspace-slug", workspaceSlug)
             const url = request.nextUrl.clone()
             url.pathname = `/admin${legacyDestination ? `/${legacyDestination}` : ""}`
             return NextResponse.rewrite(url, { request: { headers } })

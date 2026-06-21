@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireAdmin } from "@/lib/admin/auth"
+import { getCurrentUser } from "@/lib/workspaces"
 import { getUploadPathsFromResponse } from "@/lib/onboarding/response-files"
 import { deleteOnboardingUploads } from "@/lib/onboarding/uploads"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
@@ -48,9 +49,11 @@ export async function addClientNote(clientId: string, formData: FormData) {
         redirect(`/admin/client/${clientId}`)
     }
 
+    const user = await getCurrentUser()
     await supabaseAdmin.from("client_notes").insert({
         client_id: clientId,
         note,
+        author_id: user?.id ?? null,
     })
 
     await addActivity(clientId, "note_added", "Note added")

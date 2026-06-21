@@ -7,7 +7,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { sendSaleConsentTemplate } from "@/lib/client-sales/automation"
 
 export async function createClient(formData: FormData) {
-    const { workspace } = await requireAdmin()
+    const { workspace, user } = await requireAdmin()
 
     const name = String(formData.get("name") ?? "").trim()
     const email = String(formData.get("email") ?? "").trim().toLowerCase()
@@ -29,6 +29,7 @@ export async function createClient(formData: FormData) {
             total_amount: 0,
             status: "manual_consent_pending",
             raw_payload: { flow: "manual_migration" },
+            created_by: user.id,
         })
         .select("id")
         .single()

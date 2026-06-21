@@ -3,6 +3,10 @@ import { requireAdmin } from "@/lib/admin/auth"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { DashboardMenus } from "@/components/admin/DashboardMenus"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
+import { Avatar } from "@/components/account/Avatar"
+import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
+import { RemoveInvoiceForm } from "@/components/admin/RemoveInvoiceForm"
+import { removeInvoice } from "./actions"
 
 export const dynamic = "force-dynamic"
 
@@ -89,9 +93,10 @@ export default async function AdminInvoicesPage() {
     const { data: saleRows, error: saleError } = await supabaseAdmin
         .from("client_sales")
         .select(
-            "id, client_id, client_name, client_email, client_phone, status, total_amount, currency, stripe_invoice_id, stripe_hosted_invoice_url, consent_template_sent_at, consent_confirmed_at, onboarding_link_sent_at, raw_payload, created_at, updated_at"
+            "id, client_id, client_name, client_email, client_phone, status, total_amount, currency, stripe_invoice_id, stripe_hosted_invoice_url, consent_template_sent_at, consent_confirmed_at, onboarding_link_sent_at, raw_payload, created_at, updated_at, created_by"
         )
         .eq("workspace_id", workspace.id)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(50)
 
@@ -107,6 +112,12 @@ export default async function AdminInvoicesPage() {
     }
 
     const sales = saleRows ?? []
+    const creatorIds = [...new Set(sales.map((sale) => sale.created_by).filter(Boolean))] as string[]
+    const { data: creators } = creatorIds.length > 0
+        ? await supabaseAdmin.from("user_profiles").select("user_id, username, avatar_path").in("user_id", creatorIds)
+        : { data: [] as Array<{ user_id: string; username: string; avatar_path: string | null }> }
+    const creatorById = new Map((creators ?? []).map((creator) => [creator.user_id, creator]))
+    const creatorAvatarUrls = await createUploadSignedUrls((creators ?? []).map((creator) => creator.avatar_path).filter((path): path is string => Boolean(path)))
     const paidCount = sales.filter((sale) =>
         ["paid", "paid_awaiting_whatsapp_confirm", "onboarding_created", "onboarding_link_sent"].includes(
             sale.status
@@ -242,6 +253,7 @@ export default async function AdminInvoicesPage() {
                                             getAutomationDiagnostic(
                                                 sale.raw_payload
                                             )
+                                        const creator = sale.created_by ? creatorById.get(sale.created_by) : null
 
                                         return (
                                             <tr
@@ -265,6 +277,7 @@ export default async function AdminInvoicesPage() {
                                                         {sale.client_email ??
                                                             sale.client_phone}
                                                     </p>
+                                                    {creator && <div className="mt-2 flex items-center gap-1.5 text-xs text-neutral-500"><Avatar src={creator.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} name={creator.username} className="h-5 w-5" /><span>Created by @{creator.username}</span></div>}
                                                 </td>
                                                 <td className="px-3 py-3 align-top">
                                                     <span className="rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-300">
@@ -335,6 +348,7 @@ export default async function AdminInvoicesPage() {
                                                                 Open client
                                                             </Link>
                                                         )}
+                                                        <RemoveInvoiceForm action={removeInvoice.bind(null, sale.id)} />
                                                     </div>
                                                 </td>
                                             </tr>

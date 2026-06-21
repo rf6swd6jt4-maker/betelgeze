@@ -133,6 +133,10 @@ export async function storeWorkspaceImage(
     return path
 }
 
+export async function storeProfileAvatar(userId: string, file: { name: string; size: number; type: string; bytes: Uint8Array }) {
+    return storeWorkspaceImage(`profiles/${userId}`, file)
+}
+
 export async function createUploadSignedUrl(
     path: string,
     expiresIn = R2_SIGNED_URL_TTL_SECONDS

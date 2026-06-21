@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getCurrentUser } from "@/lib/workspaces"
+import { deleteOnboardingUploads, storeProfileAvatar } from "@/lib/onboarding/uploads"
 
 const usernamePattern = /^[a-z0-9][a-z0-9-]{1,27}[a-z0-9]$/
 
@@ -38,6 +39,27 @@ export async function acceptWorkspaceInvitation(username: string, formData: Form
     if (error) throw new Error(error.message)
     await supabaseAdmin.from("workspace_invitations").update({ accepted_at: new Date().toISOString() }).eq("id", invite.id)
     redirect(`/users/${username}`)
+}
+
+export async function uploadProfileAvatar(username: string, formData: FormData) {
+    const user = await getCurrentUser(); if (!user) redirect("/login")
+    const file = formData.get("avatar"); if (!(file instanceof File) || !file.size) throw new Error("Choose an image.")
+    const avatarPath = await storeProfileAvatar(user.id, { name: file.name, size: file.size, type: file.type, bytes: new Uint8Array(await file.arrayBuffer()) })
+    await supabaseAdmin.from("user_profiles").update({ avatar_path: avatarPath }).eq("user_id", user.id)
+    redirect(`/users/${username}/edit`)
+}
+
+export async function deleteAccount() {
+    const user = await getCurrentUser(); if (!user) redirect("/login")
+    const { data: profile } = await supabaseAdmin
+        .from("user_profiles")
+        .select("avatar_path")
+        .eq("user_id", user.id)
+        .maybeSingle()
+    if (profile?.avatar_path) await deleteOnboardingUploads([profile.avatar_path])
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(user.id)
+    if (error) throw new Error("Could not delete this account.")
+    redirect("/logout")
 }
 
 export async function leaveWorkspace(username: string, formData: FormData) {

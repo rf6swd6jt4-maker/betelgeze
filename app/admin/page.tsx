@@ -8,6 +8,8 @@ import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { DashboardMenus } from "@/components/admin/DashboardMenus"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
+import { Avatar } from "@/components/account/Avatar"
+import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 export const dynamic = "force-dynamic"
 
 const BASE_STEPS = [
@@ -22,7 +24,7 @@ export default async function AdminPage() {
 
     const clientsResponse = await supabaseAdmin
         .from("clients")
-        .select("id, name, email, phone, created_at, archived_at, is_test")
+        .select("id, name, email, phone, created_at, archived_at, is_test, created_by")
         .eq("workspace_id", workspace.id)
         .is("archived_at", null)
         .order("created_at", { ascending: false })
@@ -33,7 +35,7 @@ export default async function AdminPage() {
     if (clientsResponse.error?.message.toLowerCase().includes("phone")) {
         const fallbackClientsResponse = await supabaseAdmin
             .from("clients")
-            .select("id, name, email, created_at, archived_at, is_test")
+            .select("id, name, email, created_at, archived_at, is_test, created_by")
             .eq("workspace_id", workspace.id)
             .is("archived_at", null)
             .order("created_at", { ascending: false })
@@ -47,6 +49,12 @@ export default async function AdminPage() {
     }
 
     const clientIds = (clients ?? []).map((client) => client.id)
+    const creatorIds = [...new Set((clients ?? []).map((client) => client.created_by).filter(Boolean))] as string[]
+    const { data: clientCreators } = creatorIds.length > 0
+        ? await supabaseAdmin.from("user_profiles").select("user_id, username, avatar_path").in("user_id", creatorIds)
+        : { data: [] as Array<{ user_id: string; username: string; avatar_path: string | null }> }
+    const clientCreatorById = new Map((clientCreators ?? []).map((creator) => [creator.user_id, creator]))
+    const clientCreatorAvatarUrls = await createUploadSignedUrls((clientCreators ?? []).map((creator) => creator.avatar_path).filter((path): path is string => Boolean(path)))
     const [
         { data: progressRows, error: progressError },
         { data: moduleRows, error: modulesError },
@@ -275,9 +283,7 @@ export default async function AdminPage() {
                             >
                                 <div className="flex items-start justify-between gap-4">
                                     <div>
-                                        <h2 className="font-medium">
-                                            {client.name ?? "Unnamed client"}
-                                        </h2>
+                                        <div className="flex items-center gap-2"><h2 className="font-medium">{client.name ?? "Unnamed client"}</h2>{client.created_by && clientCreatorById.get(client.created_by) && <Avatar src={clientCreatorById.get(client.created_by)?.avatar_path ? clientCreatorAvatarUrls.get(clientCreatorById.get(client.created_by)!.avatar_path!) : null} name={clientCreatorById.get(client.created_by)!.username} className="h-5 w-5" />}</div>
 
                                         <div className="mt-2 flex flex-wrap gap-2">
                                             {client.is_test && (
@@ -441,13 +447,7 @@ export default async function AdminPage() {
                                         className="border-t border-neutral-800 hover:bg-neutral-900/70"
                                     >
                                         <td className="px-3 py-3">
-                                            <Link
-                                                href={`/admin/client/${client.id}`}
-                                                className="font-medium text-white underline-offset-4 hover:underline"
-                                            >
-                                                {client.name ??
-                                                    "Unnamed client"}
-                                            </Link>
+                                            <div className="flex items-center gap-2"><Link href={`/admin/client/${client.id}`} className="font-medium text-white underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>{client.created_by && clientCreatorById.get(client.created_by) && <Avatar src={clientCreatorById.get(client.created_by)?.avatar_path ? clientCreatorAvatarUrls.get(clientCreatorById.get(client.created_by)!.avatar_path!) : null} name={clientCreatorById.get(client.created_by)!.username} className="h-5 w-5" />}</div>
 
                                             <div className="mt-2 flex flex-wrap gap-1.5">
                                                 {client.is_test && (

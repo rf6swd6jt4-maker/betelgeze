@@ -16,6 +16,7 @@ type CreateOnboardingClientInput = {
     createOnboardingModules?: boolean
     createOnboardingWork?: boolean
     activitySource?: string
+    createdBy?: string | null
 }
 
 export type CreateOnboardingClientResult = {
@@ -73,6 +74,7 @@ export async function createOnboardingClient({
     createOnboardingModules = true,
     createOnboardingWork = true,
     activitySource,
+    createdBy,
 }: CreateOnboardingClientInput): Promise<CreateOnboardingClientResult> {
     const selectedServices = serviceKeys.filter(
         (serviceKey) => serviceKey in SERVICES
@@ -92,6 +94,7 @@ export async function createOnboardingClient({
             session_token: sessionToken,
             is_test: isTest,
             project_timeframe_days: projectTimeframeDays ?? null,
+            created_by: createdBy ?? null,
         })
         .select("id, session_token")
         .single()

@@ -1,0 +1,2 @@
+"use client"
+export function DeleteAccountForm({ action }: { action: () => void }) { return <form action={action} onSubmit={(event)=>{if(!window.confirm("Delete your Betelgeze account permanently? This removes your memberships and cannot be undone."))event.preventDefault()}}><button className="mt-3 rounded-lg border border-red-900 px-4 py-2 text-sm text-red-300">Delete account permanently</button></form> }

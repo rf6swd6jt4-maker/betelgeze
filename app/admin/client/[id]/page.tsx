@@ -22,6 +22,8 @@ import { AdminCopyButton } from "@/components/admin/AdminCopyButton"
 import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 import { FormResponsesSummary } from "@/components/admin/FormResponsesSummary"
 import { ClientActionsMenu } from "./ClientActionsMenu"
+import { Avatar } from "@/components/account/Avatar"
+import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import {
     addClientNote,
     archiveClient,
@@ -105,7 +107,7 @@ export default async function ClientDetailPage({
             .order("created_at", { ascending: false }),
         supabaseAdmin
             .from("client_notes")
-            .select("id, client_id, note, created_at")
+            .select("id, client_id, note, created_at, author_id")
             .eq("client_id", client.id)
             .order("created_at", { ascending: false }),
         supabaseAdmin
@@ -134,6 +136,13 @@ export default async function ClientDetailPage({
             .order("created_at", { ascending: false })
             .limit(8),
     ])
+
+    const noteAuthorIds = [...new Set((noteRows ?? []).map((note) => note.author_id).filter(Boolean))] as string[]
+    const { data: noteAuthors } = noteAuthorIds.length > 0
+        ? await supabaseAdmin.from("user_profiles").select("user_id, username, avatar_path").in("user_id", noteAuthorIds)
+        : { data: [] as Array<{ user_id: string; username: string; avatar_path: string | null }> }
+    const authorById = new Map((noteAuthors ?? []).map((author) => [author.user_id, author]))
+    const noteAvatarUrls = await createUploadSignedUrls((noteAuthors ?? []).map((author) => author.avatar_path).filter((path): path is string => Boolean(path)))
 
     const assignedModuleKeys = moduleRows?.map((row) => row.module_key) ?? []
     const assignedServices =
@@ -622,15 +631,21 @@ export default async function ClientDetailPage({
 
                         <div className="mt-4 space-y-2">
                             {(noteRows ?? []).length > 0 ? (
-                                noteRows?.map((note) => (
+                                noteRows?.map((note) => {
+                                    const author = note.author_id ? authorById.get(note.author_id) : null
+                                    const authorName = author?.username ?? "Unknown user"
+                                    return (
                                     <div
                                         key={note.id}
                                         className="rounded-lg bg-neutral-950 p-3"
                                     >
                                         <div className="flex items-start justify-between gap-3">
-                                            <p className="whitespace-pre-wrap text-sm text-neutral-200">
-                                                {note.note}
-                                            </p>
+                                            <div className="flex min-w-0 gap-3">
+                                                <Avatar src={author?.avatar_path ? noteAvatarUrls.get(author.avatar_path) : null} name={authorName} className="h-8 w-8 shrink-0" />
+                                                <p className="whitespace-pre-wrap text-sm text-neutral-200">
+                                                    <strong className="font-semibold text-white">@{authorName}</strong>{" — "}{note.note}
+                                                </p>
+                                            </div>
 
                                             <form
                                                 action={async () => {
@@ -662,7 +677,8 @@ export default async function ClientDetailPage({
                                             })}
                                         </p>
                                     </div>
-                                ))
+                                    )
+                                })
                             ) : (
                                 <p className="text-sm text-neutral-500">
                                     No notes yet.

@@ -19,6 +19,7 @@ type ClientSale = {
     status: string
     raw_payload: unknown
     workspace_id: string
+    created_by: string | null
 }
 
 type StripeInvoiceLike = {
@@ -319,7 +320,7 @@ async function findPendingConfirmedSale(fromAddress: string) {
     const { data: sales } = await supabaseAdmin
         .from("client_sales")
         .select(
-            "id, client_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload, workspace_id"
+            "id, client_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload, workspace_id, created_by"
         )
         .in("client_phone", equivalentAddresses)
         .in("status", [
@@ -386,6 +387,7 @@ export async function handleSaleConsentConfirmation({
                 flow === "manual_migration"
                     ? "Manual client migration"
                     : `Stripe sale ${sale.id}`,
+            createdBy: sale.created_by,
         })
         clientId = client.id
         onboardingUrl = client.onboardingUrl

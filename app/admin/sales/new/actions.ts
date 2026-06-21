@@ -46,7 +46,7 @@ function getSaleErrorCode(error: unknown) {
 }
 
 export async function createSaleInvoice(formData: FormData) {
-    const { workspace } = await requireAdmin()
+    const { workspace, user } = await requireAdmin()
 
     const name = String(formData.get("name") ?? "").trim()
     const email = String(formData.get("email") ?? "").trim().toLowerCase()
@@ -109,6 +109,7 @@ export async function createSaleInvoice(formData: FormData) {
             total_amount: totalAmount,
             status: "invoice_creating",
             raw_payload: {},
+            created_by: user.id,
         })
         .select("id")
         .single()

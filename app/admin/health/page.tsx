@@ -2,7 +2,7 @@ import Link from "next/link"
 import { requireAdmin } from "@/lib/admin/auth"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
-import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
+import { DashboardMenus } from "@/components/admin/DashboardMenus"
 import { MetricTrendChart } from "@/components/admin/MetricTrendChart"
 import { getLiveHealthMetrics } from "@/lib/system-health/live-metrics"
 import {
@@ -175,7 +175,7 @@ function getProviderGroups(checks: HealthCheck[]) {
 }
 
 export default async function AdminHealthPage() {
-    await requireAdmin()
+    const { workspace, user } = await requireAdmin()
 
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const [
@@ -474,7 +474,7 @@ export default async function AdminHealthPage() {
                             Create invoice
                         </Link>
 
-                        <AdminActionsMenu />
+                        <DashboardMenus userId={user.id} workspace={workspace} />
                     </div>
                 </div>
 

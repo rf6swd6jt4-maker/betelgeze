@@ -13,18 +13,10 @@ export default function ForgotPasswordPage() {
         event.preventDefault()
         setLoading(true)
         setError(null)
-        const email = String(new FormData(event.currentTarget).get("email") ?? "")
-            .trim()
-            .toLowerCase()
+        const email = String(new FormData(event.currentTarget).get("email") ?? "").trim().toLowerCase()
         const supabase = createSupabaseRecoveryClient()
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: `${window.location.origin}/update-password`,
-        })
-        if (error) {
-            setError(error.message)
-            setLoading(false)
-            return
-        }
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/update-password` })
+        if (error) { setError(error.message); setLoading(false); return }
         setSent(true)
         setLoading(false)
     }

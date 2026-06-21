@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/admin/auth"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
 import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
-import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
+import { DashboardMenus } from "@/components/admin/DashboardMenus"
 export const dynamic = "force-dynamic"
 
 const BASE_STEPS = [
@@ -17,7 +17,7 @@ const BASE_STEPS = [
 ]
 
 export default async function AdminPage() {
-    const { workspace } = await requireAdmin()
+    const { workspace, user } = await requireAdmin()
 
     const clientsResponse = await supabaseAdmin
         .from("clients")
@@ -207,7 +207,7 @@ export default async function AdminPage() {
                             Create invoice
                         </Link>
 
-                        <AdminActionsMenu />
+                        <DashboardMenus userId={user.id} workspace={workspace} />
                     </div>
                 </div>
 

@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { requireAdmin } from "@/lib/admin/auth"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
+import { DashboardMenus } from "@/components/admin/DashboardMenus"
 
 export const dynamic = "force-dynamic"
 
@@ -83,7 +83,7 @@ function isAttentionStatus(status: string) {
 }
 
 export default async function AdminInvoicesPage() {
-    const { workspace } = await requireAdmin()
+    const { workspace, user } = await requireAdmin()
 
     const { data: saleRows, error: saleError } = await supabaseAdmin
         .from("client_sales")
@@ -146,7 +146,7 @@ export default async function AdminInvoicesPage() {
                             Create invoice
                         </Link>
 
-                        <AdminActionsMenu />
+                        <DashboardMenus userId={user.id} workspace={workspace} />
                     </div>
                 </div>
 

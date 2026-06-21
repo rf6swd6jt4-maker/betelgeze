@@ -4,6 +4,18 @@ import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getCurrentUser } from "@/lib/workspaces"
 
+const usernamePattern = /^[a-z0-9][a-z0-9-]{1,27}[a-z0-9]$/
+
+export async function updateUsername(_: { error?: string; username?: string }, formData: FormData) {
+    const user = await getCurrentUser()
+    if (!user) redirect("/login")
+    const username = String(formData.get("username") ?? "").trim().toLowerCase()
+    if (!usernamePattern.test(username)) return { error: "Use 3–30 lowercase letters, numbers, or hyphens." }
+    const { error } = await supabaseAdmin.from("user_profiles").update({ username }).eq("user_id", user.id)
+    if (error) return { error: error.code === "23505" ? "That username is already taken." : "We could not update your username. Please try again." }
+    return { username }
+}
+
 export async function leaveWorkspace(username: string, formData: FormData) {
     const user = await getCurrentUser()
     if (!user) redirect("/login")

@@ -38,12 +38,14 @@ export function AdminActionsMenu() {
                 type="button"
                 onClick={() => setOpen((value) => !value)}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-700 text-white hover:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-white/30"
-                aria-label="Open account menu"
+                aria-label="Open operational actions"
                 aria-expanded={open}
                 aria-haspopup="menu"
             >
-                <span aria-hidden="true" className="text-lg leading-none">
-                    ◉
+                <span aria-hidden="true" className="flex items-center gap-0.5">
+                    <span className="h-1 w-1 rounded-full bg-current" />
+                    <span className="h-1 w-1 rounded-full bg-current" />
+                    <span className="h-1 w-1 rounded-full bg-current" />
                 </span>
             </button>
 
@@ -53,19 +55,19 @@ export function AdminActionsMenu() {
                     role="menu"
                 >
                     <Link
-                        href="/workspaces"
+                        href="/admin/new"
                         className="block px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800"
                         role="menuitem"
                     >
-                        Your account & workspaces
+                        Create manual client
                     </Link>
 
                     <Link
-                        href="/logout"
-                        className="block px-4 py-3 text-sm text-red-300 hover:bg-neutral-800"
+                        href="/admin/health"
+                        className="block px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800"
                         role="menuitem"
                     >
-                        Log out
+                        System health
                     </Link>
                 </div>
             )}

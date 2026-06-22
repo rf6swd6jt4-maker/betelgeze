@@ -19,6 +19,7 @@ function requestHostname(request: NextRequest) {
 
 const DASHBOARD_HOST = "dashboard.betelgeze.com"
 const ONBOARDING_HOST = "onboarding.betelgeze.com"
+const AUTH_HOST = "auth.betelgeze.com"
 
 function withRewrite(request: NextRequest, pathname: string, headers = request.headers) {
     const url = request.nextUrl.clone()
@@ -69,6 +70,10 @@ export async function proxy(request: NextRequest) {
     // The redirects also clean up legacy /dashboard links copied from old emails
     // or rendered by pages that have not yet been converted to relative links.
     if (domain === DASHBOARD_HOST) {
+        if (path === "/login") {
+            const next = `https://${DASHBOARD_HOST}${request.nextUrl.searchParams.get("next") ?? "/"}`
+            return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(next)}`, `https://${AUTH_HOST}`))
+        }
         if (path === "/dashboard") return withRedirect(request, "/")
         if (path.startsWith("/dashboard/")) return withRedirect(request, path.slice("/dashboard".length))
 
@@ -84,6 +89,8 @@ export async function proxy(request: NextRequest) {
         }
         if (path === "/") return withRewrite(request, "/dashboard")
     }
+
+    if (domain === AUTH_HOST && path === "/") return withRewrite(request, "/login")
 
     if (domain === ONBOARDING_HOST) {
         const canonicalOnboarding = path.match(/^\/onboarding\/[a-z0-9][a-z0-9-]*\/([a-f0-9]{64})$/i)

@@ -22,5 +22,5 @@ export function getOnboardingUrl({
     if (customDomain && customDomainVerified) return `https://${customDomain}/${sessionToken}`
 
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
-    return `${baseUrl}/onboarding/${workspaceSlug}/${sessionToken}`
+    return `${baseUrl}/${sessionToken}`
 }

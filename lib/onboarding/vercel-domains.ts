@@ -82,10 +82,18 @@ export async function verifyOnboardingDomain(domain: string) {
         headers: headers(),
         cache: "no-store",
     })
-    if (!response.ok) throw new Error("Vercel could not verify this domain yet. Check the DNS records and try again.")
+    if (!response.ok) {
+        const projectDomain = await getProjectDomain(domain)
+        const config = await getDomainConfig(domain)
+        return {
+            verified: false,
+            records: projectDomain ? recordsFrom(projectDomain, config, domain) : [],
+            error: "Vercel could not verify this domain yet. Check the DNS records and try again.",
+        }
+    }
     const projectDomain = await response.json() as VercelProjectDomain
     const config = await getDomainConfig(domain)
-    return { verified: Boolean(projectDomain.verified), records: recordsFrom(projectDomain, config, domain) }
+    return { verified: Boolean(projectDomain.verified), records: recordsFrom(projectDomain, config, domain), error: null }
 }
 
 export async function removeOnboardingDomain(domain: string) {

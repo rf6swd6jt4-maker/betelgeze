@@ -124,9 +124,17 @@ export async function saveWorkspaceOnboardingDomain(slug: string, formData: Form
         if (workspace.custom_onboarding_domain) await removeOnboardingDomain(workspace.custom_onboarding_domain)
         const { error } = await supabaseAdmin
             .from("workspaces")
-            .update({ custom_onboarding_domain: null, custom_onboarding_domain_status: "none", custom_onboarding_domain_records: [], custom_onboarding_domain_verified_at: null })
+            .update({ custom_onboarding_domain: null, custom_onboarding_domain_status: "none", custom_onboarding_domain_records: [], custom_onboarding_domain_verified_at: null, custom_onboarding_domain_error: null })
             .eq("id", workspace.id)
         if (error) throw new Error("Could not remove the onboarding domain.")
+        refresh(slug)
+        return
+    }
+
+    if (
+        domain === workspace.custom_onboarding_domain &&
+        workspace.custom_onboarding_domain_status === "verified"
+    ) {
         refresh(slug)
         return
     }
@@ -137,9 +145,10 @@ export async function saveWorkspaceOnboardingDomain(slug: string, formData: Form
         .from("workspaces")
         .update({
             custom_onboarding_domain: domain,
-            custom_onboarding_domain_status: provisioned.verified ? "verified" : "pending_dns",
+            custom_onboarding_domain_status: "pending_dns",
             custom_onboarding_domain_records: provisioned.records,
-            custom_onboarding_domain_verified_at: provisioned.verified ? new Date().toISOString() : null,
+            custom_onboarding_domain_verified_at: null,
+            custom_onboarding_domain_error: null,
         })
         .eq("id", workspace.id)
     if (error?.code === "23505") throw new Error("That onboarding domain is already assigned to another workspace.")
@@ -160,6 +169,7 @@ export async function verifyWorkspaceOnboardingDomain(slug: string) {
             custom_onboarding_domain_status: verified.verified ? "verified" : "pending_dns",
             custom_onboarding_domain_records: verified.records,
             custom_onboarding_domain_verified_at: verified.verified ? new Date().toISOString() : null,
+            custom_onboarding_domain_error: verified.error,
         })
         .eq("id", workspace.id)
     if (error) throw new Error("Could not save the domain verification result.")

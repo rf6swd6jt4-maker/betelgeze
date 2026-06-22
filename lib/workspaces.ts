@@ -5,6 +5,21 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 export const WORKSPACE_ROLES = ["owner", "admin", "member"] as const
 export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number]
 
+type Workspace = {
+    id: string
+    name: string
+    slug: string
+    status: "active" | "suspended"
+    banner_path: string | null
+    logo_path: string | null
+    banner_height: number
+    banner_position: number
+    custom_onboarding_domain: string | null
+    custom_onboarding_domain_status: "none" | "pending_dns" | "verified"
+    custom_onboarding_domain_records: Array<{ type: "A" | "CNAME" | "TXT"; name: string; value: string }>
+    custom_onboarding_domain_error: string | null
+}
+
 const roleRank: Record<WorkspaceRole, number> = {
     member: 1,
     admin: 2,
@@ -33,23 +48,23 @@ export async function requireWorkspace(
     const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
     if (assurance?.currentLevel !== "aal2") redirect("/mfa")
 
-    const { data: workspace } = await supabaseAdmin
+    const workspaceResult = await supabaseAdmin
         .from("workspaces")
-        .select("id, name, slug, status, banner_path, logo_path, banner_height, banner_position, custom_onboarding_domain, custom_onboarding_domain_status, custom_onboarding_domain_records")
+        .select("id, name, slug, status, banner_path, logo_path, banner_height, banner_position, custom_onboarding_domain, custom_onboarding_domain_status, custom_onboarding_domain_records, custom_onboarding_domain_error")
         .eq("slug", slug)
-        .maybeSingle() as { data: {
-        id: string
-        name: string
-        slug: string
-        status: "active" | "suspended"
-        banner_path: string | null
-        logo_path: string | null
-        banner_height: number
-        banner_position: number
-        custom_onboarding_domain: string | null
-        custom_onboarding_domain_status: "none" | "pending_dns" | "verified"
-        custom_onboarding_domain_records: Array<{ type: "A" | "CNAME" | "TXT"; name: string; value: string }>
-    } | null }
+        .maybeSingle() as { data: Workspace | null; error: { message: string } | null }
+
+    let workspace = workspaceResult.data
+    if (workspaceResult.error?.message.includes("custom_onboarding_domain")) {
+        const { data: legacyWorkspace } = await supabaseAdmin
+            .from("workspaces")
+            .select("id, name, slug, status, banner_path, logo_path, banner_height, banner_position")
+            .eq("slug", slug)
+            .maybeSingle()
+        workspace = legacyWorkspace
+            ? { ...legacyWorkspace, custom_onboarding_domain: null, custom_onboarding_domain_status: "none", custom_onboarding_domain_records: [], custom_onboarding_domain_error: null }
+            : null
+    }
 
     const { data: membership } = workspace
         ? await supabaseAdmin

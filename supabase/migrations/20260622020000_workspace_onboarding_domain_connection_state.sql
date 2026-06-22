@@ -1,6 +1,8 @@
 alter table public.workspaces
     add column if not exists custom_onboarding_domain_error text;
 
+drop function if exists public.resolve_workspace_onboarding_domain(text);
+
 create or replace function public.resolve_workspace_onboarding_domain(requested_domain text)
 returns table (workspace_slug text, domain_status text)
 language sql

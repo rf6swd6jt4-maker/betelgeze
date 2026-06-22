@@ -99,6 +99,19 @@ export async function proxy(request: NextRequest) {
         if (path === "/dashboard") return withRedirect(request, "/")
         if (path.startsWith("/dashboard/")) return withRedirect(request, path.slice("/dashboard".length))
 
+        // The mature dashboard is implemented under /admin. Translate both
+        // old internal links and the clean public workspace URLs before a
+        // request reaches the parallel, minimal /dashboard route tree.
+        const legacyAdminPath = path.match(/^\/admin(?:\/(.*))?$/)
+        if (legacyAdminPath) {
+            const referer = request.headers.get("referer")
+            const workspaceSlug = referer
+                ? new URL(referer).pathname.match(/^\/([a-z0-9][a-z0-9-]*)/i)?.[1] ?? "scaylup"
+                : "scaylup"
+            const suffix = (legacyAdminPath[1] ?? "").replace(/^new$/, "clients/new")
+            return withRedirect(request, `/${workspaceSlug}${suffix ? `/${suffix}` : ""}`)
+        }
+
         const publicDashboardPaths = [
             "/login", "/sign-up", "/forgot-password", "/update-password",
             "/mfa", "/logout", "/privacy", "/users", "/invites", "/auth", "/workspaces",
@@ -106,8 +119,16 @@ export async function proxy(request: NextRequest) {
         const isPublicDashboardPath = publicDashboardPaths.some(
             (publicPath) => path === publicPath || path.startsWith(`${publicPath}/`)
         )
-        if (!isPublicDashboardPath && !["/", "/favicon.ico"].includes(path)) {
-            return withRewrite(request, `/dashboard${path}`)
+        const workspacePath = path.match(/^\/([a-z0-9][a-z0-9-]*)(?:\/(.*))?$/i)
+        if (!isPublicDashboardPath && workspacePath) {
+            const [, workspaceSlug, suffix = ""] = workspacePath
+            const headers = new Headers(request.headers)
+            headers.set("x-betelgeze-workspace-slug", workspaceSlug)
+            if (suffix === "settings" || suffix === "users") {
+                return withRewrite(request, `/dashboard/${workspaceSlug}/${suffix}`, headers)
+            }
+            const adminSuffix = suffix.replace(/^clients\/new$/, "new")
+            return withRewrite(request, `/admin${adminSuffix ? `/${adminSuffix}` : ""}`, headers)
         }
         if (path === "/") return withRewrite(request, "/dashboard")
     }

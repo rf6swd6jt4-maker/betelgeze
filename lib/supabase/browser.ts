@@ -7,6 +7,9 @@ export function createSupabaseBrowserClient() {
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
+            cookieOptions: {
+                domain: process.env.NEXT_PUBLIC_SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com",
+            },
             auth: {
                 // Auth callback routes exchange one-time codes explicitly so a
                 // page never races getUser() before the exchange completes.

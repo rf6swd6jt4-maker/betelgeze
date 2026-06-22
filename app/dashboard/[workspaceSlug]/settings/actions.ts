@@ -8,6 +8,7 @@ import { INTEGRATION_PROVIDERS, IntegrationProvider, saveWorkspaceIntegration } 
 import { verifyWorkspaceIntegration } from "@/lib/workspace-integrations"
 import { normalizeOnboardingDomain } from "@/lib/onboarding/custom-domain"
 import { attachOnboardingDomain, removeOnboardingDomain, verifyOnboardingDomain } from "@/lib/onboarding/vercel-domains"
+import { allowDirectUploadsFromDomain } from "@/lib/onboarding/r2-cors"
 
 function refresh(slug: string) {
     revalidatePath(`/dashboard/${slug}`)
@@ -163,13 +164,21 @@ export async function verifyWorkspaceOnboardingDomain(slug: string) {
     const { workspace } = await requireWorkspace(slug, "admin")
     if (!workspace.custom_onboarding_domain) throw new Error("Add a domain before verifying it.")
     const verified = await verifyOnboardingDomain(workspace.custom_onboarding_domain)
+    let connectionError = verified.error
+    if (verified.verified) {
+        try {
+            await allowDirectUploadsFromDomain(workspace.custom_onboarding_domain)
+        } catch (error) {
+            connectionError = error instanceof Error ? error.message : "Could not configure browser uploads for this domain."
+        }
+    }
     const { error } = await supabaseAdmin
         .from("workspaces")
         .update({
-            custom_onboarding_domain_status: verified.verified ? "verified" : "pending_dns",
+            custom_onboarding_domain_status: verified.verified && !connectionError ? "verified" : "pending_dns",
             custom_onboarding_domain_records: verified.records,
-            custom_onboarding_domain_verified_at: verified.verified ? new Date().toISOString() : null,
-            custom_onboarding_domain_error: verified.error,
+            custom_onboarding_domain_verified_at: verified.verified && !connectionError ? new Date().toISOString() : null,
+            custom_onboarding_domain_error: connectionError,
         })
         .eq("id", workspace.id)
     if (error) throw new Error("Could not save the domain verification result.")

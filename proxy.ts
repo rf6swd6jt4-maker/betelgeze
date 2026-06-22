@@ -54,7 +54,8 @@ export async function proxy(request: NextRequest) {
         const workspace = await getCustomDomainWorkspace(domain)
         if (workspace) {
             const customToken = path.match(/^\/([a-f0-9]{64})$/i)
-            if (workspace.status !== "verified" || !customToken) {
+            const isDomainProbe = request.nextUrl.searchParams.has("__betelgeze_domain_probe")
+            if ((!isDomainProbe && workspace.status !== "verified") || !customToken) {
                 return new NextResponse("Not Found", { status: 404 })
             }
             const headers = new Headers(request.headers)

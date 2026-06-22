@@ -16,6 +16,24 @@ type VercelDomainConfig = {
     recommendedIPv4?: Array<{ rank?: number; value?: string[] }>
 }
 
+async function probeOnboardingSession(domain: string) {
+    const token = "0".repeat(64)
+    try {
+        const response = await fetch(`https://${domain}/${token}?__betelgeze_domain_probe=1`, {
+            cache: "no-store",
+            redirect: "manual",
+            signal: AbortSignal.timeout(12_000),
+        })
+        if (!response.ok) return "The domain did not reach an onboarding session. Check the DNS record and wait for it to propagate."
+        const body = await response.text()
+        return body.includes('data-betelgeze-onboarding-session="invalid"')
+            ? null
+            : "The domain reached a different site instead of Betelgeze’s onboarding session. Check the DNS record."
+    } catch {
+        return "Betelgeze could not reach this domain over HTTPS. Check the DNS record and try again after propagation."
+    }
+}
+
 function query() {
     const teamId = process.env.VERCEL_TEAM_ID?.trim()
     return teamId ? `?${new URLSearchParams({ teamId })}` : ""
@@ -93,7 +111,11 @@ export async function verifyOnboardingDomain(domain: string) {
     }
     const projectDomain = await response.json() as VercelProjectDomain
     const config = await getDomainConfig(domain)
-    return { verified: Boolean(projectDomain.verified), records: recordsFrom(projectDomain, config, domain), error: null }
+    if (!projectDomain.verified) {
+        return { verified: false, records: recordsFrom(projectDomain, config, domain), error: "Vercel has not verified this domain yet. Check the DNS records and try again." }
+    }
+    const probeError = await probeOnboardingSession(domain)
+    return { verified: !probeError, records: recordsFrom(projectDomain, config, domain), error: probeError }
 }
 
 export async function removeOnboardingDomain(domain: string) {

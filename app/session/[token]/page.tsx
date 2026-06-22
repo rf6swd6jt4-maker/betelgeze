@@ -81,7 +81,7 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
 
     if (error || !client || !workspace) {
         return (
-            <main className="flex min-h-screen items-center justify-center bg-[#F8F7F3] px-6 text-slate-900">
+            <main data-betelgeze-onboarding-session="invalid" className="flex min-h-screen items-center justify-center bg-[#F8F7F3] px-6 text-slate-900">
                 <p>Invalid onboarding link.</p>
             </main>
         )

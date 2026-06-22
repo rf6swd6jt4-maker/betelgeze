@@ -175,3 +175,22 @@ export async function verifyWorkspaceOnboardingDomain(slug: string) {
     if (error) throw new Error("Could not save the domain verification result.")
     refresh(slug)
 }
+
+export async function cancelWorkspaceOnboardingDomain(slug: string) {
+    const { workspace } = await requireWorkspace(slug, "owner")
+    if (!workspace.custom_onboarding_domain) return
+
+    await removeOnboardingDomain(workspace.custom_onboarding_domain)
+    const { error } = await supabaseAdmin
+        .from("workspaces")
+        .update({
+            custom_onboarding_domain: null,
+            custom_onboarding_domain_status: "none",
+            custom_onboarding_domain_records: [],
+            custom_onboarding_domain_verified_at: null,
+            custom_onboarding_domain_error: null,
+        })
+        .eq("id", workspace.id)
+    if (error) throw new Error("Could not cancel the onboarding domain setup.")
+    refresh(slug)
+}

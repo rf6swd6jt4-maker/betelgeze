@@ -17,6 +17,21 @@ function requestHostname(request: NextRequest) {
     return request.headers.get("host")?.split(":")[0]?.toLowerCase() ?? null
 }
 
+const DASHBOARD_HOST = "dashboard.betelgeze.com"
+const ONBOARDING_HOST = "onboarding.betelgeze.com"
+
+function withRewrite(request: NextRequest, pathname: string, headers = request.headers) {
+    const url = request.nextUrl.clone()
+    url.pathname = pathname
+    return NextResponse.rewrite(url, { request: { headers: new Headers(headers) } })
+}
+
+function withRedirect(request: NextRequest, pathname: string) {
+    const url = request.nextUrl.clone()
+    url.pathname = pathname
+    return NextResponse.redirect(url)
+}
+
 function isPlatformHost(domain: string) {
     if (!process.env.NEXT_PUBLIC_SITE_URL) return false
     return new URL(process.env.NEXT_PUBLIC_SITE_URL).hostname.toLowerCase() === domain
@@ -49,6 +64,38 @@ async function getCustomDomainWorkspace(domain: string) {
 export async function proxy(request: NextRequest) {
     const path = request.nextUrl.pathname
     const domain = requestHostname(request)
+
+    // Keep the existing route tree intact while presenting clean product URLs.
+    // The redirects also clean up legacy /dashboard links copied from old emails
+    // or rendered by pages that have not yet been converted to relative links.
+    if (domain === DASHBOARD_HOST) {
+        if (path === "/dashboard") return withRedirect(request, "/")
+        if (path.startsWith("/dashboard/")) return withRedirect(request, path.slice("/dashboard".length))
+
+        const publicDashboardPaths = [
+            "/login", "/sign-up", "/forgot-password", "/update-password",
+            "/mfa", "/logout", "/privacy", "/users", "/invites", "/auth",
+        ]
+        const isPublicDashboardPath = publicDashboardPaths.some(
+            (publicPath) => path === publicPath || path.startsWith(`${publicPath}/`)
+        )
+        if (!isPublicDashboardPath && !["/", "/favicon.ico"].includes(path)) {
+            return withRewrite(request, `/dashboard${path}`)
+        }
+        if (path === "/") return withRewrite(request, "/dashboard")
+    }
+
+    if (domain === ONBOARDING_HOST) {
+        const canonicalOnboarding = path.match(/^\/onboarding\/[a-z0-9][a-z0-9-]*\/([a-f0-9]{64})$/i)
+        if (canonicalOnboarding) return withRedirect(request, `/${canonicalOnboarding[1]}`)
+
+        const token = path.match(/^\/([a-f0-9]{64})$/i)
+        if (token) {
+            const headers = new Headers(request.headers)
+            headers.set("x-betelgeze-custom-onboarding-domain", domain)
+            return withRewrite(request, `/session/${token[1]}`, headers)
+        }
+    }
 
     if (domain && !isPlatformHost(domain)) {
         const workspace = await getCustomDomainWorkspace(domain)

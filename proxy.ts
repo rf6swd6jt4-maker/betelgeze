@@ -92,6 +92,10 @@ export async function proxy(request: NextRequest) {
 
     if (domain === AUTH_HOST && path === "/") return withRewrite(request, "/login")
 
+    if ((domain === "betelgeze.com" || domain === "www.betelgeze.com") && (path === "/login" || path === "/mfa")) {
+        return NextResponse.redirect(new URL(`${path}?next=${encodeURIComponent(`https://${DASHBOARD_HOST}/`)}`, `https://${AUTH_HOST}`))
+    }
+
     if (domain === ONBOARDING_HOST) {
         const canonicalOnboarding = path.match(/^\/onboarding\/[a-z0-9][a-z0-9-]*\/([a-f0-9]{64})$/i)
         if (canonicalOnboarding) return withRedirect(request, `/${canonicalOnboarding[1]}`)

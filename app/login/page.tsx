@@ -27,8 +27,12 @@ export default function LoginPage() {
             setLoading(false)
             return
         }
-        const invite = new URLSearchParams(window.location.search).get("invite")
-        router.replace(invite ? `/invites/accept?token=${invite}` : "/dashboard")
+        const params = new URLSearchParams(window.location.search)
+        const invite = params.get("invite")
+        const next = params.get("next")
+        const trustedNext = next && /^https:\/\/(dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(next)
+        if (trustedNext) window.location.assign(next)
+        else router.replace(invite ? `/invites/accept?token=${invite}` : "/dashboard")
         router.refresh()
     }
 

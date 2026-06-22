@@ -7,6 +7,16 @@ type CorsRule = {
     maxAgeSeconds?: number
 }
 
+async function cloudflareError(response: Response, fallback: string) {
+    try {
+        const body = await response.json() as { errors?: Array<{ message?: string }> }
+        const detail = body.errors?.map((error) => error.message).filter(Boolean).join(" ")
+        return detail ? `${fallback}: ${detail}` : fallback
+    } catch {
+        return fallback
+    }
+}
+
 export async function allowDirectUploadsFromDomain(domain: string) {
     const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim() || getRequiredEnv("R2_ACCOUNT_ID")
     const token = getRequiredEnv("CLOUDFLARE_API_TOKEN")
@@ -14,7 +24,7 @@ export async function allowDirectUploadsFromDomain(domain: string) {
     const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucket)}/cors`
     const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
     const current = await fetch(endpoint, { headers, cache: "no-store" })
-    if (!current.ok) throw new Error("Could not read the R2 upload CORS policy.")
+    if (!current.ok) throw new Error(await cloudflareError(current, "Could not read the R2 upload CORS policy"))
     const body = await current.json() as { result?: { rules?: CorsRule[] } }
     const id = `betelgeze-onboarding-${domain}`
     const rules = (body.result?.rules ?? []).filter((rule) => rule.id !== id)
@@ -25,5 +35,5 @@ export async function allowDirectUploadsFromDomain(domain: string) {
         maxAgeSeconds: 3600,
     })
     const saved = await fetch(endpoint, { method: "PUT", headers, body: JSON.stringify({ rules }), cache: "no-store" })
-    if (!saved.ok) throw new Error("Could not allow browser uploads from this custom domain.")
+    if (!saved.ok) throw new Error(await cloudflareError(saved, "Could not allow browser uploads from this custom domain"))
 }

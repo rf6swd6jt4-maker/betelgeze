@@ -27,8 +27,12 @@ export async function allowDirectUploadsFromDomain(domain: string) {
     const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucket)}/cors`
     const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
     const current = await fetch(endpoint, { headers, cache: "no-store" })
-    if (!current.ok) throw new Error(await cloudflareError(current, "Could not read the R2 upload CORS policy"))
-    const body = await current.json() as { result?: { rules?: CorsRule[] } }
+    const body = await current.json() as { result?: { rules?: CorsRule[] }; errors?: Array<{ message?: string }> }
+    const missingPolicy = !current.ok && body.errors?.some((error) => error.message?.toLowerCase().includes("cors configuration does not exist"))
+    if (!current.ok && !missingPolicy) {
+        const detail = body.errors?.map((error) => error.message).filter(Boolean).join(" ")
+        throw new Error(detail ? `Could not read the R2 upload CORS policy: ${detail}` : "Could not read the R2 upload CORS policy")
+    }
     const id = `betelgeze-onboarding-${domain}`
     const rules = (body.result?.rules ?? []).filter((rule) => rule.id !== id)
     rules.push({

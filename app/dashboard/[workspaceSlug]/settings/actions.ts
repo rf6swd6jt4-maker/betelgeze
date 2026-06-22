@@ -100,7 +100,7 @@ export async function verifyWorkspaceConnection(slug: string, provider: Integrat
 }
 
 export async function saveWorkspaceOnboardingDomain(slug: string, formData: FormData) {
-    const { workspace } = await requireWorkspace(slug, "owner")
+    const { workspace } = await requireWorkspace(slug, "admin")
     const submitted = String(formData.get("domain") ?? "")
     const domain = submitted ? normalizeOnboardingDomain(submitted) : null
     if (submitted && !domain) throw new Error("Enter a valid hostname, such as onboarding.example.com.")
@@ -160,7 +160,7 @@ export async function saveWorkspaceOnboardingDomain(slug: string, formData: Form
 }
 
 export async function verifyWorkspaceOnboardingDomain(slug: string) {
-    const { workspace } = await requireWorkspace(slug, "owner")
+    const { workspace } = await requireWorkspace(slug, "admin")
     if (!workspace.custom_onboarding_domain) throw new Error("Add a domain before verifying it.")
     const verified = await verifyOnboardingDomain(workspace.custom_onboarding_domain)
     const { error } = await supabaseAdmin
@@ -177,7 +177,7 @@ export async function verifyWorkspaceOnboardingDomain(slug: string) {
 }
 
 export async function cancelWorkspaceOnboardingDomain(slug: string) {
-    const { workspace } = await requireWorkspace(slug, "owner")
+    const { workspace } = await requireWorkspace(slug, "admin")
     if (!workspace.custom_onboarding_domain) return
 
     await removeOnboardingDomain(workspace.custom_onboarding_domain)

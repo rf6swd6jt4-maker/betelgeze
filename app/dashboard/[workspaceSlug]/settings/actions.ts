@@ -8,7 +8,7 @@ import { INTEGRATION_PROVIDERS, IntegrationProvider, saveWorkspaceIntegration } 
 import { verifyWorkspaceIntegration } from "@/lib/workspace-integrations"
 import { normalizeOnboardingDomain } from "@/lib/onboarding/custom-domain"
 import { attachOnboardingDomain, removeOnboardingDomain, verifyOnboardingDomain } from "@/lib/onboarding/vercel-domains"
-import { allowDirectUploadsFromDomain } from "@/lib/onboarding/r2-cors"
+import { allowDirectUploadsFromDomain, removeDirectUploadsFromDomain } from "@/lib/onboarding/r2-cors"
 
 function refresh(slug: string) {
     revalidatePath(`/dashboard/${slug}`)
@@ -122,7 +122,10 @@ export async function saveWorkspaceOnboardingDomain(slug: string, formData: Form
     }
 
     if (!domain) {
-        if (workspace.custom_onboarding_domain) await removeOnboardingDomain(workspace.custom_onboarding_domain)
+        if (workspace.custom_onboarding_domain) {
+            await removeOnboardingDomain(workspace.custom_onboarding_domain)
+            await removeDirectUploadsFromDomain(workspace.custom_onboarding_domain)
+        }
         const { error } = await supabaseAdmin
             .from("workspaces")
             .update({ custom_onboarding_domain: null, custom_onboarding_domain_status: "none", custom_onboarding_domain_records: [], custom_onboarding_domain_verified_at: null, custom_onboarding_domain_error: null })
@@ -156,6 +159,7 @@ export async function saveWorkspaceOnboardingDomain(slug: string, formData: Form
     if (error) throw new Error("Could not save the onboarding domain.")
     if (workspace.custom_onboarding_domain && workspace.custom_onboarding_domain !== domain) {
         await removeOnboardingDomain(workspace.custom_onboarding_domain)
+        await removeDirectUploadsFromDomain(workspace.custom_onboarding_domain)
     }
     refresh(slug)
 }
@@ -190,6 +194,7 @@ export async function cancelWorkspaceOnboardingDomain(slug: string) {
     if (!workspace.custom_onboarding_domain) return
 
     await removeOnboardingDomain(workspace.custom_onboarding_domain)
+    await removeDirectUploadsFromDomain(workspace.custom_onboarding_domain)
     const { error } = await supabaseAdmin
         .from("workspaces")
         .update({

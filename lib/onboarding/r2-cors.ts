@@ -17,7 +17,7 @@ async function cloudflareError(response: Response, fallback: string) {
     }
 }
 
-export async function allowDirectUploadsFromDomain(domain: string) {
+async function getCorsPolicy() {
     // The bucket is addressed through R2's account ID. Do not use the generic
     // Cloudflare account variable here: it is easy to accidentally populate it
     // with an API-token identifier (for example, one beginning with "cfat_").
@@ -33,14 +33,46 @@ export async function allowDirectUploadsFromDomain(domain: string) {
         const detail = body.errors?.map((error) => error.message).filter(Boolean).join(" ")
         throw new Error(detail ? `Could not read the R2 upload CORS policy: ${detail}` : "Could not read the R2 upload CORS policy")
     }
+    return { endpoint, headers, rules: body.result?.rules ?? [] }
+}
+
+async function saveCorsPolicy(endpoint: string, headers: Record<string, string>, rules: CorsRule[]) {
+    const saved = await fetch(endpoint, { method: "PUT", headers, body: JSON.stringify({ rules }), cache: "no-store" })
+    if (!saved.ok) throw new Error(await cloudflareError(saved, "Could not update the R2 upload CORS policy"))
+}
+
+function platformUploadRule(): CorsRule {
+    const origins = new Set(["https://www.betelgeze.com"])
+    if (process.env.NEXT_PUBLIC_SITE_URL) {
+        origins.add(new URL(process.env.NEXT_PUBLIC_SITE_URL).origin)
+    }
+    return {
+        id: "betelgeze-onboarding-platform",
+        allowed: { origins: [...origins], methods: ["PUT"], headers: ["content-type"] },
+        exposeHeaders: ["ETag"],
+        maxAgeSeconds: 3600,
+    }
+}
+
+function withPlatformUploadRule(rules: CorsRule[]) {
+    return [...rules.filter((rule) => rule.id !== "betelgeze-onboarding-platform"), platformUploadRule()]
+}
+
+export async function allowDirectUploadsFromDomain(domain: string) {
+    const { endpoint, headers, rules: existingRules } = await getCorsPolicy()
     const id = `betelgeze-onboarding-${domain}`
-    const rules = (body.result?.rules ?? []).filter((rule) => rule.id !== id)
+    const rules = existingRules.filter((rule) => rule.id !== id)
     rules.push({
         id,
         allowed: { origins: [`https://${domain}`], methods: ["PUT"], headers: ["content-type"] },
         exposeHeaders: ["ETag"],
         maxAgeSeconds: 3600,
     })
-    const saved = await fetch(endpoint, { method: "PUT", headers, body: JSON.stringify({ rules }), cache: "no-store" })
-    if (!saved.ok) throw new Error(await cloudflareError(saved, "Could not allow browser uploads from this custom domain"))
+    await saveCorsPolicy(endpoint, headers, withPlatformUploadRule(rules))
+}
+
+export async function removeDirectUploadsFromDomain(domain: string) {
+    const { endpoint, headers, rules: existingRules } = await getCorsPolicy()
+    const rules = existingRules.filter((rule) => rule.id !== `betelgeze-onboarding-${domain}`)
+    await saveCorsPolicy(endpoint, headers, withPlatformUploadRule(rules))
 }

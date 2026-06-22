@@ -8,6 +8,7 @@ export function createSupabaseBrowserClient() {
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
             cookieOptions: {
+                name: "betelgeze-auth",
                 domain: process.env.NEXT_PUBLIC_SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com",
             },
             auth: {

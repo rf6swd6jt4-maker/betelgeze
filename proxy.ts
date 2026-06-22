@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 
 async function refreshSession(request: NextRequest) {
     const response = NextResponse.next({ request: { headers: new Headers(request.headers) } })
-    const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { cookies: { getAll: () => request.cookies.getAll(), setAll: (items) => items.forEach(({ name, value, options }) => response.cookies.set(name, value, { ...options, domain: process.env.SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com" })) } })
+    const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { cookieOptions: { name: "betelgeze-auth", domain: process.env.SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com" }, cookies: { getAll: () => request.cookies.getAll(), setAll: (items) => items.forEach(({ name, value, options }) => response.cookies.set(name, value, { ...options, domain: process.env.SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com" })) } })
     await supabase.auth.getUser()
     return response
 }

@@ -21,6 +21,10 @@ const DASHBOARD_HOST = "dashboard.betelgeze.com"
 const ONBOARDING_HOST = "onboarding.betelgeze.com"
 const AUTH_HOST = "auth.betelgeze.com"
 const LEGACY_DASHBOARD_HOST = "dashboard.scaylup.com"
+const AUTH_PATHS = [
+    "/login", "/mfa", "/sign-up", "/forgot-password", "/update-password",
+    "/confirmed", "/invitation", "/auth", "/logout", "/privacy",
+]
 
 function withRewrite(request: NextRequest, pathname: string, headers = request.headers) {
     const url = request.nextUrl.clone()
@@ -77,6 +81,13 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(destination)
     }
 
+    const isCentralAuthRoute = AUTH_PATHS.some((authPath) => path === authPath || path.startsWith(`${authPath}/`))
+    if (domain === DASHBOARD_HOST && isCentralAuthRoute) {
+        const destination = new URL(`https://${AUTH_HOST}${path}`)
+        destination.search = request.nextUrl.search
+        return NextResponse.redirect(destination)
+    }
+
     // Keep the existing route tree intact while presenting clean product URLs.
     // The redirects also clean up legacy /dashboard links copied from old emails
     // or rendered by pages that have not yet been converted to relative links.
@@ -90,7 +101,7 @@ export async function proxy(request: NextRequest) {
 
         const publicDashboardPaths = [
             "/login", "/sign-up", "/forgot-password", "/update-password",
-            "/mfa", "/logout", "/privacy", "/users", "/invites", "/auth",
+            "/mfa", "/logout", "/privacy", "/users", "/invites", "/auth", "/workspaces",
         ]
         const isPublicDashboardPath = publicDashboardPaths.some(
             (publicPath) => path === publicPath || path.startsWith(`${publicPath}/`)
@@ -101,10 +112,20 @@ export async function proxy(request: NextRequest) {
         if (path === "/") return withRewrite(request, "/dashboard")
     }
 
-    if (domain === AUTH_HOST && path === "/") return withRewrite(request, "/login")
+    if (domain === AUTH_HOST) {
+        if (path === "/") return withRewrite(request, "/login")
+        const isAuthPath = AUTH_PATHS.some((authPath) => path === authPath || path.startsWith(`${authPath}/`))
+        if (!isAuthPath) {
+            const destination = new URL(`https://${DASHBOARD_HOST}${path}`)
+            destination.search = request.nextUrl.search
+            return NextResponse.redirect(destination)
+        }
+    }
 
-    if ((domain === "betelgeze.com" || domain === "www.betelgeze.com") && (path === "/login" || path === "/mfa")) {
-        return NextResponse.redirect(new URL(`${path}?next=${encodeURIComponent(`https://${DASHBOARD_HOST}/`)}`, `https://${AUTH_HOST}`))
+    if ((domain === "betelgeze.com" || domain === "www.betelgeze.com") && isCentralAuthRoute) {
+        const destination = new URL(`https://${AUTH_HOST}${path}`)
+        destination.search = request.nextUrl.search
+        return NextResponse.redirect(destination)
     }
 
     if (domain === ONBOARDING_HOST) {

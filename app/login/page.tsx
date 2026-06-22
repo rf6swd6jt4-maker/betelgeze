@@ -31,8 +31,11 @@ export default function LoginPage() {
         const invite = params.get("invite")
         const next = params.get("next")
         const trustedNext = next && /^https:\/\/(dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(next)
-        if (trustedNext) window.location.assign(next)
-        else router.replace(invite ? `/invites/accept?token=${invite}` : "/dashboard")
+        const destination = trustedNext ? next : invite ? `/invites/accept?token=${invite}` : "https://dashboard.betelgeze.com/"
+        // Password authentication establishes AAL1 only. Keep the second
+        // factor on the auth host and leave this app only after it upgrades
+        // the shared session to AAL2.
+        router.replace(`/mfa?next=${encodeURIComponent(destination)}`)
         router.refresh()
     }
 

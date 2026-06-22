@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 
 async function refreshSession(request: NextRequest) {
     const response = NextResponse.next({ request: { headers: new Headers(request.headers) } })
-    const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { cookies: { getAll: () => request.cookies.getAll(), setAll: (items) => items.forEach(({ name, value, options }) => response.cookies.set(name, value, options)) } })
+    const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { cookies: { getAll: () => request.cookies.getAll(), setAll: (items) => items.forEach(({ name, value, options }) => response.cookies.set(name, value, { ...options, domain: process.env.SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com" })) } })
     await supabase.auth.getUser()
     return response
 }
@@ -70,9 +70,9 @@ export async function proxy(request: NextRequest) {
     // The redirects also clean up legacy /dashboard links copied from old emails
     // or rendered by pages that have not yet been converted to relative links.
     if (domain === DASHBOARD_HOST) {
-        if (path === "/login") {
+        if (path === "/login" || path === "/mfa") {
             const next = `https://${DASHBOARD_HOST}${request.nextUrl.searchParams.get("next") ?? "/"}`
-            return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(next)}`, `https://${AUTH_HOST}`))
+            return NextResponse.redirect(new URL(`${path}?next=${encodeURIComponent(next)}`, `https://${AUTH_HOST}`))
         }
         if (path === "/dashboard") return withRedirect(request, "/")
         if (path.startsWith("/dashboard/")) return withRedirect(request, path.slice("/dashboard".length))

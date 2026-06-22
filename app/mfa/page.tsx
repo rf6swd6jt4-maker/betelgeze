@@ -39,7 +39,9 @@ export default function MfaPage() {
         const { error: verifyError } = await supabase.auth.mfa.verify({ factorId, challengeId: challenge.id, code })
         if (verifyError) { setError(verifyError.message); return }
         const next = new URLSearchParams(window.location.search).get("next")
-        router.replace(next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard")
+        const trustedNext = next && /^https:\/\/(dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(next)
+        if (trustedNext) window.location.assign(next)
+        else router.replace(next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard")
         router.refresh()
     }
 

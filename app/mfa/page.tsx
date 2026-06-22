@@ -40,8 +40,11 @@ export default function MfaPage() {
         if (verifyError) { setError(verifyError.message); return }
         const next = new URLSearchParams(window.location.search).get("next")
         const trustedNext = next && /^https:\/\/(dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(next)
-        if (trustedNext) window.location.assign(next)
-        else router.replace(next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard")
+        if (trustedNext) {
+            window.location.assign(next)
+            return
+        }
+        router.replace(next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard")
         router.refresh()
     }
 

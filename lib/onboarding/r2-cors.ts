@@ -18,7 +18,10 @@ async function cloudflareError(response: Response, fallback: string) {
 }
 
 export async function allowDirectUploadsFromDomain(domain: string) {
-    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim() || getRequiredEnv("R2_ACCOUNT_ID")
+    // The bucket is addressed through R2's account ID. Do not use the generic
+    // Cloudflare account variable here: it is easy to accidentally populate it
+    // with an API-token identifier (for example, one beginning with "cfat_").
+    const accountId = getRequiredEnv("R2_ACCOUNT_ID")
     const token = getRequiredEnv("CLOUDFLARE_API_TOKEN")
     const bucket = getRequiredEnv("R2_BUCKET_NAME")
     const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucket)}/cors`

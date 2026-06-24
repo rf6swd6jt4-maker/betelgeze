@@ -25,6 +25,11 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+@keyframes betelgeze-loader {
+  from { transform: rotate(45deg); }
+  to { transform: rotate(405deg); }
+}
+
 .whitespace-pre-wrap,
 .break-words {
   overflow-wrap: anywhere;

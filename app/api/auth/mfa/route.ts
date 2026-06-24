@@ -33,24 +33,32 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ factorId: data.id, qr: data.totp.qr_code, secret: data.totp.secret })
     }
 
+    if (action === "reset-setup") {
+        const pending = factorData?.all.find((factor) => factor.factor_type === "totp" && factor.status === "unverified")
+        if (!pending) return NextResponse.json({ cleared: true })
+        const { error } = await supabase.auth.mfa.unenroll({ factorId: pending.id })
+        if (error) return NextResponse.json({ error: "We could not clear the unfinished authenticator setup. Please try again." }, { status: 400 })
+        return NextResponse.json({ cleared: true })
+    }
+
     if (!/^\d{6}$/.test(code)) return NextResponse.json({ error: "Enter a valid six-digit authentication code." }, { status: 400 })
 
     const factor = factorId
-        ? factorData?.totp.find((item) => item.id === factorId)
+        ? factorData?.all.find((item) => item.id === factorId && item.factor_type === "totp")
         : factorData?.totp.find((item) => item.status === "verified")
     if (!factor) {
-        return NextResponse.json({ error: "Set up an authenticator before continuing." }, { status: 403 })
+        return NextResponse.json({ error: "Your unfinished authenticator setup could not be found. Start again with a new QR code." }, { status: 403 })
     }
 
     const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({ factorId: factor.id })
-    if (challengeError) return NextResponse.json({ error: challengeError.message }, { status: 400 })
+    if (challengeError) return NextResponse.json({ error: "We could not check that authenticator yet. Please try again." }, { status: 400 })
 
     const { error: verifyError } = await supabase.auth.mfa.verify({
         factorId: factor.id,
         challengeId: challenge.id,
         code,
     })
-    if (verifyError) return NextResponse.json({ error: verifyError.message }, { status: 401 })
+    if (verifyError) return NextResponse.json({ error: "That code did not match. Check your authenticator and try again, or start over with a new QR code." }, { status: 401 })
 
     return response
 }

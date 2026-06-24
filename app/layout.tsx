@@ -18,9 +18,9 @@ export const metadata: Metadata = {
   title: "Betelgeze",
   description: "Business automation dashboards",
   icons: {
-    icon: "/icon.svg",
-    shortcut: "/icon.svg",
-    apple: "/icon.svg",
+    icon: "/icon.svg?v=20260624",
+    shortcut: "/icon.svg?v=20260624",
+    apple: "/icon.svg?v=20260624",
   },
 };
 

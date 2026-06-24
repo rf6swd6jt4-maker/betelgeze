@@ -4,14 +4,30 @@ import { createSupabaseRouteClient } from "@/lib/supabase/route"
 export async function GET(request: NextRequest) {
     const url = request.nextUrl
     const code = url.searchParams.get("code")
+    const tokenHash = url.searchParams.get("token_hash")
+    const type = url.searchParams.get("type")
     const requestedNext = url.searchParams.get("next") || "/confirmed"
     const suiteNext = /^https:\/\/(dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(requestedNext)
     const next = suiteNext ? requestedNext : requestedNext.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/dashboard"
     const response = NextResponse.redirect(new URL(next, url.origin))
 
-    if (code) {
+    if (code || tokenHash) {
         const supabase = createSupabaseRouteClient(request, response)
-        await supabase.auth.exchangeCodeForSession(code)
+        const { error } = code
+            ? await supabase.auth.exchangeCodeForSession(code)
+            : type === "signup"
+                ? await supabase.auth.verifyOtp({ token_hash: tokenHash!, type: "signup" })
+                : { error: new Error("Unsupported confirmation link.") }
+
+        if (error) {
+            if (next === "/confirmed" || next.startsWith("/confirmed?")) {
+                const confirmed = new URL("/confirmed", url.origin)
+                confirmed.searchParams.set("error", "confirmation_failed")
+                response.headers.set("location", confirmed.toString())
+            }
+            return response
+        }
+
         const { data } = await supabase.auth.getUser()
         if (next === "/login" || next === "/confirmed" || next.startsWith("/confirmed?")) {
             const confirmed = new URL("/confirmed", url.origin)

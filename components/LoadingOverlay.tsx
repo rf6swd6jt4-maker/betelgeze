@@ -18,7 +18,10 @@ export function LoadingOverlay({
             aria-live="polite"
             aria-label={label}
         >
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-neutral-500/50 border-t-white" />
+            <div
+                className="h-8 w-8 rotate-45 bg-white shadow-[0_0_24px_rgba(255,255,255,0.22)] motion-reduce:animate-none"
+                style={{ animation: "betelgeze-loader 3s linear infinite" }}
+            />
         </div>,
         document.body
     )

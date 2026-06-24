@@ -20,6 +20,7 @@ function requestHostname(request: NextRequest) {
 const DASHBOARD_HOST = "dashboard.betelgeze.com"
 const ONBOARDING_HOST = "onboarding.betelgeze.com"
 const AUTH_HOST = "auth.betelgeze.com"
+const LEADGEN_HOST = "leadgen.betelgeze.com"
 const LEGACY_DASHBOARD_HOST = "dashboard.scaylup.com"
 const AUTH_PATHS = [
     "/login", "/mfa", "/sign-up", "/forgot-password", "/update-password",
@@ -39,7 +40,7 @@ function withRedirect(request: NextRequest, pathname: string) {
 }
 
 function isPlatformHost(domain: string) {
-    if (["betelgeze.com", "www.betelgeze.com", DASHBOARD_HOST, ONBOARDING_HOST, AUTH_HOST].includes(domain)) return true
+    if (["betelgeze.com", "www.betelgeze.com", DASHBOARD_HOST, ONBOARDING_HOST, AUTH_HOST, LEADGEN_HOST].includes(domain)) return true
     if (!process.env.NEXT_PUBLIC_SITE_URL) return false
     return new URL(process.env.NEXT_PUBLIC_SITE_URL).hostname.toLowerCase() === domain
 }
@@ -141,6 +142,18 @@ export async function proxy(request: NextRequest) {
             destination.search = request.nextUrl.search
             return NextResponse.redirect(destination)
         }
+    }
+
+    // Leadgen is being restarted in the canonical application. Keep the host
+    // out of custom-domain resolution and expose only its dedicated reset
+    // surface until the new evidence-led workflow is ready.
+    if (domain === LEADGEN_HOST) {
+        if (isCentralAuthRoute) {
+            const destination = new URL(`https://${AUTH_HOST}${path}`)
+            destination.search = request.nextUrl.search
+            return NextResponse.redirect(destination)
+        }
+        if (path === "/" || path === "/leadgen") return withRewrite(request, "/leadgen")
     }
 
     if ((domain === "betelgeze.com" || domain === "www.betelgeze.com") && isCentralAuthRoute) {

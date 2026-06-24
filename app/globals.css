@@ -26,10 +26,10 @@ body {
 }
 
 @keyframes betelgeze-loader {
-  0%, 20% { transform: rotate(45deg); }
-  25%, 45% { transform: rotate(135deg); }
-  50%, 70% { transform: rotate(225deg); }
-  75%, 95% { transform: rotate(315deg); }
+  0%, 15% { transform: rotate(45deg); }
+  25%, 40% { transform: rotate(135deg); }
+  50%, 65% { transform: rotate(225deg); }
+  75%, 90% { transform: rotate(315deg); }
   100% { transform: rotate(405deg); }
 }
 

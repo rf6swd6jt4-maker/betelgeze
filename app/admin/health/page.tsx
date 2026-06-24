@@ -467,7 +467,7 @@ export default async function AdminHealthPage() {
                     <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
                         <Link
                             href="/admin/sales/new"
-                            className="inline-flex min-h-11 justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black sm:min-h-10 sm:px-3"
+                            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3"
                         >
                             Create invoice
                         </Link>

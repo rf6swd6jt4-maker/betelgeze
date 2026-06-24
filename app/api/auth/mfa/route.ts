@@ -6,7 +6,8 @@ export async function GET(request: NextRequest) {
     const supabase = createSupabaseRouteClient(request, response)
     const { data, error } = await supabase.auth.mfa.listFactors()
     if (error) return NextResponse.json({ error: error.message }, { status: 401 })
-    return NextResponse.json({ verified: Boolean(data?.totp.some((factor) => factor.status === "verified")) })
+    const pending = data?.all.find((factor) => factor.factor_type === "totp" && factor.status === "unverified")
+    return NextResponse.json({ verified: Boolean(data?.totp.some((factor) => factor.status === "verified")), pendingFactorId: pending?.id ?? null })
 }
 
 export async function POST(request: NextRequest) {
@@ -25,8 +26,10 @@ export async function POST(request: NextRequest) {
     if (factorError) return NextResponse.json({ error: factorError.message }, { status: 401 })
 
     if (action === "setup") {
+        const pending = factorData?.all.find((factor) => factor.factor_type === "totp" && factor.status === "unverified")
+        if (pending) return NextResponse.json({ factorId: pending.id, pending: true })
         const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: "Betelgeze" })
-        if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+        if (error) return NextResponse.json({ error: "We could not start authenticator setup. If you already scanned a code, enter its current code to finish setup." }, { status: 400 })
         return NextResponse.json({ factorId: data.id, qr: data.totp.qr_code, secret: data.totp.secret })
     }
 

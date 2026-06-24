@@ -22,9 +22,10 @@ const ONBOARDING_HOST = "onboarding.betelgeze.com"
 const AUTH_HOST = "auth.betelgeze.com"
 const LEADGEN_HOST = "leadgen.betelgeze.com"
 const AUTH_PATHS = [
-    "/login", "/mfa", "/sign-up", "/forgot-password", "/update-password",
-    "/confirmed", "/invitation", "/auth", "/logout", "/privacy",
+    "/login", "/mfa", "/forgot-password", "/update-password",
+    "/confirmed", "/check-email", "/auth", "/logout", "/privacy",
 ]
+const APEX_ACCOUNT_PATHS = ["/sign-up", "/invitation"]
 
 function withRewrite(request: NextRequest, pathname: string, headers = request.headers) {
     const url = request.nextUrl.clone()
@@ -73,6 +74,13 @@ export async function proxy(request: NextRequest) {
     const domain = requestHostname(request)
 
     const isCentralAuthRoute = AUTH_PATHS.some((authPath) => path === authPath || path.startsWith(`${authPath}/`))
+    const isApexAccountRoute = APEX_ACCOUNT_PATHS.some((accountPath) => path === accountPath || path.startsWith(`${accountPath}/`))
+
+    if (domain && domain !== "betelgeze.com" && domain !== "www.betelgeze.com" && isApexAccountRoute) {
+        const destination = new URL(`https://betelgeze.com${path}`)
+        destination.search = request.nextUrl.search
+        return NextResponse.redirect(destination)
+    }
     if (domain === DASHBOARD_HOST && isCentralAuthRoute) {
         const destination = new URL(`https://${AUTH_HOST}${path}`)
         destination.search = request.nextUrl.search

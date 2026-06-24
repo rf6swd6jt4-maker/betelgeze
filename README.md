@@ -95,6 +95,9 @@ videos do not pass through the Next.js server. Admin previews use signed
 download URLs.
 
 `R2_PUBLIC_BASE_URL` is optional and only affects admin/onboarding file links.
+If you use it, set it to a Betelgeze-owned media hostname such as
+`https://media.betelgeze.com`; legacy `*.scaylup.com` values are deliberately
+ignored and the app uses secure signed R2 URLs instead.
 WhatsApp media sent to ClickUp uses stable app media URLs that stream files from
 private R2 storage.
 

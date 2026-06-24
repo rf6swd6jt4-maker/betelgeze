@@ -20,7 +20,6 @@ function requestHostname(request: NextRequest) {
 const DASHBOARD_HOST = "dashboard.betelgeze.com"
 const ONBOARDING_HOST = "onboarding.betelgeze.com"
 const AUTH_HOST = "auth.betelgeze.com"
-const LEGACY_DASHBOARD_HOST = "dashboard.scaylup.com"
 const AUTH_PATHS = [
     "/login", "/mfa", "/sign-up", "/forgot-password", "/update-password",
     "/confirmed", "/invitation", "/auth", "/logout", "/privacy",
@@ -71,15 +70,6 @@ async function getCustomDomainWorkspace(domain: string) {
 export async function proxy(request: NextRequest) {
     const path = request.nextUrl.pathname
     const domain = requestHostname(request)
-
-    // The legacy dashboard hostname must never participate in the new auth
-    // flow. Preserve its path and query string while moving it to the one
-    // canonical dashboard host.
-    if (domain === LEGACY_DASHBOARD_HOST) {
-        const destination = new URL(`https://${DASHBOARD_HOST}${path}`)
-        destination.search = request.nextUrl.search
-        return NextResponse.redirect(destination)
-    }
 
     const isCentralAuthRoute = AUTH_PATHS.some((authPath) => path === authPath || path.startsWith(`${authPath}/`))
     if (domain === DASHBOARD_HOST && isCentralAuthRoute) {

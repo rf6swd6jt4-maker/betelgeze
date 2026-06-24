@@ -44,6 +44,16 @@ function getPublicR2Url(path: string) {
 
     if (!publicBaseUrl) return null
 
+    // Legacy media.scaylup.com URLs are no longer part of the platform. When
+    // an old environment value remains in place, use a private R2 signed URL
+    // instead of emitting broken image links for existing workspace assets.
+    try {
+        const hostname = new URL(publicBaseUrl).hostname.toLowerCase()
+        if (hostname === "scaylup.com" || hostname.endsWith(".scaylup.com")) return null
+    } catch {
+        return null
+    }
+
     const encodedPath = path
         .split("/")
         .map((segment) => encodeURIComponent(segment))

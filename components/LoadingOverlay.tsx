@@ -20,7 +20,7 @@ export function LoadingOverlay({
         >
             <div
                 className="h-8 w-8 rotate-45 bg-white shadow-[0_0_24px_rgba(255,255,255,0.22)] motion-reduce:animate-none"
-                style={{ animation: "betelgeze-loader 3s linear infinite" }}
+                style={{ animation: "betelgeze-loader 4s cubic-bezier(0.22, 1, 0.36, 1) infinite" }}
             />
         </div>,
         document.body

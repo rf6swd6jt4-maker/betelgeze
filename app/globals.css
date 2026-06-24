@@ -26,8 +26,11 @@ body {
 }
 
 @keyframes betelgeze-loader {
-  from { transform: rotate(45deg); }
-  to { transform: rotate(405deg); }
+  0%, 20% { transform: rotate(45deg); }
+  25%, 45% { transform: rotate(135deg); }
+  50%, 70% { transform: rotate(225deg); }
+  75%, 95% { transform: rotate(315deg); }
+  100% { transform: rotate(405deg); }
 }
 
 .whitespace-pre-wrap,

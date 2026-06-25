@@ -24,7 +24,9 @@ type OsmElement = {
     tags?: Record<string, string>
 }
 
+const OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter"
 const OVERPASS_REQUEST_DELAY_MS = 900
+const OVERPASS_FETCH_TIMEOUT_MS = 35000
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -105,6 +107,34 @@ function overpassErrorMessage(status: number, body: string) {
         .trim()
     const detail = cleaned ? ` ${cleaned.slice(0, 420)}${cleaned.length > 420 ? "…" : ""}` : ""
     return `Overpass returned HTTP ${status}.${detail}`
+}
+
+async function fetchOverpass(query: string) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), OVERPASS_FETCH_TIMEOUT_MS)
+    try {
+        const response = await fetch(OVERPASS_ENDPOINT, {
+            method: "POST",
+            headers: {
+                Accept: "application/json",
+                "Content-Type": "text/plain; charset=UTF-8",
+                "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)",
+            },
+            body: query,
+            cache: "no-store",
+            signal: controller.signal,
+        })
+        const responseText = await response.text()
+        if (!response.ok) throw new Error(overpassErrorMessage(response.status, responseText))
+        return JSON.parse(responseText) as { elements?: OsmElement[] }
+    } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+            throw new Error(`Overpass timed out after ${Math.round(OVERPASS_FETCH_TIMEOUT_MS / 1000)} seconds.`)
+        }
+        throw error
+    } finally {
+        clearTimeout(timeout)
+    }
 }
 
 async function upsertOsmElement({ workspaceId, pollId, taskId, industryValue, locationValue, element }: { workspaceId: string; pollId: string; taskId: string; industryValue: string; locationValue: string; element: OsmElement }) {
@@ -239,15 +269,7 @@ export async function processOsmPoll(pollId: string, workspaceId: string) {
         try {
             const query = task.source_query as { query?: string }
             if (!query.query) throw new Error("Missing Overpass query.")
-            const response = await fetch("https://overpass-api.de/api/interpreter", {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: new URLSearchParams({ data: query.query }),
-                cache: "no-store",
-            })
-            const responseText = await response.text()
-            if (!response.ok) throw new Error(overpassErrorMessage(response.status, responseText))
-            const payload = JSON.parse(responseText) as { elements?: OsmElement[] }
+            const payload = await fetchOverpass(query.query)
             const elements = Array.isArray(payload?.elements) ? payload.elements as OsmElement[] : []
             let companyCount = 0
             for (const element of elements) {

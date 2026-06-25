@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
-import { LeadgenMenus } from "@/components/leadgen/LeadgenMenus"
+import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { requireWorkspace } from "@/lib/workspaces"
 
 export const dynamic = "force-dynamic"
@@ -10,23 +10,15 @@ type PageProps = { params: Promise<{ workspaceSlug: string }> }
 export default async function LeadgenWorkspacePage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
-    const dashboardHref = `https://dashboard.betelgeze.com/${workspace.slug}`
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
         <div className="mx-auto max-w-7xl">
-            <WorkspaceBanner bannerPath={workspace.banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.banner_height} position={workspace.banner_position} />
+            <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
+            <WorkspaceBanner bannerPath={workspace.leadgen_banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.leadgen_banner_height} position={workspace.leadgen_banner_position} />
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div>
-                    <p className="text-sm text-neutral-500">Betelgeze Leadgen</p>
-                    <h1 className="mt-1 text-2xl font-semibold tracking-tight">{workspace.name}</h1>
+                    <h1 className="text-2xl font-semibold tracking-tight">{workspace.name}</h1>
                     <p className="mt-2 text-sm text-neutral-400">Build, review, and qualify leads for this workspace. Signed in as {role}.</p>
-                </div>
-
-                <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-                    <Link href={dashboardHref} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">
-                        Client work
-                    </Link>
-                    <LeadgenMenus userId={user.id} workspace={workspace} />
                 </div>
             </div>
 
@@ -34,7 +26,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                 <Link href={`https://leadgen.betelgeze.com/${workspace.slug}`} className="shrink-0 rounded-lg bg-white px-3 py-2.5 font-medium text-black sm:py-2">Leads</Link>
                 <span className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-500 sm:py-2">ICP</span>
                 <span className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-500 sm:py-2">Sources</span>
-                <Link href={`https://dashboard.betelgeze.com/${workspace.slug}/settings`} className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2">Settings</Link>
+                <Link href={`https://leadgen.betelgeze.com/${workspace.slug}/settings`} className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2">Settings</Link>
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -70,6 +62,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                     </div>
                 </div>
             </section>
+            <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
         </div>
     </main>
 }

@@ -49,3 +49,20 @@ export async function uploadSharedWorkspaceLogo(slug: string, formData: FormData
     if (error) throw new Error("The logo uploaded, but could not be saved to this workspace.")
     refresh(slug)
 }
+
+export async function saveLeadgenSettings(slug: string, formData: FormData) {
+    const { workspace } = await requireWorkspace(slug, "admin")
+    const enabledSources = formData.getAll("sources").map((value) => String(value))
+    const pollIntervalHours = Number(formData.get("pollIntervalHours") ?? 168)
+    if (!Number.isInteger(pollIntervalHours) || pollIntervalHours < 1 || pollIntervalHours > 2160) throw new Error("Poll interval must be between 1 and 2160 hours.")
+    const { error } = await supabaseAdmin.from("leadgen_workspace_settings").upsert({
+        workspace_id: workspace.id,
+        poll_interval_hours: pollIntervalHours,
+        automatic_polls_enabled: formData.get("automaticPollsEnabled") === "on",
+        geography: String(formData.get("geography") ?? "").trim() || null,
+        icp_notes: String(formData.get("icpNotes") ?? "").trim() || null,
+        enabled_sources: enabledSources,
+    })
+    if (error) throw new Error("Could not save leadgen settings.")
+    refresh(slug)
+}

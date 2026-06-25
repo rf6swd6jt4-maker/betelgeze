@@ -81,6 +81,14 @@ export async function proxy(request: NextRequest) {
         destination.search = request.nextUrl.search
         return NextResponse.redirect(destination)
     }
+
+    if ((domain === "betelgeze.com" || domain === "www.betelgeze.com") && path === "/" && (request.nextUrl.searchParams.has("code") || request.nextUrl.searchParams.has("token_hash"))) {
+        const destination = new URL(`https://${AUTH_HOST}/auth/callback`)
+        request.nextUrl.searchParams.forEach((value, key) => destination.searchParams.set(key, value))
+        if (!destination.searchParams.has("next")) destination.searchParams.set("next", "/confirmed")
+        return NextResponse.redirect(destination)
+    }
+
     if (domain === DASHBOARD_HOST && isCentralAuthRoute) {
         const destination = new URL(`https://${AUTH_HOST}${path}`)
         destination.search = request.nextUrl.search

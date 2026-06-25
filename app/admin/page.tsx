@@ -6,8 +6,9 @@ import { requireWorkspaceMember } from "@/lib/admin/auth"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
 import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
-import { DashboardMenus } from "@/components/admin/DashboardMenus"
+import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
+import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { ListToolbar } from "@/components/admin/ListToolbar"
 import { Avatar } from "@/components/account/Avatar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
@@ -218,6 +219,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
             <div className="mx-auto max-w-7xl">
                 <DashboardAutoRefresh />
+                <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
                 <WorkspaceBanner bannerPath={workspace.banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.banner_height} position={workspace.banner_position} />
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
@@ -239,7 +241,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                             Create invoice
                         </Link>
 
-                        <DashboardMenus userId={user.id} workspace={workspace} />
+                        <AdminActionsMenu />
                     </div>
                 </div>
 

@@ -111,6 +111,11 @@ function compactErrorMessage(error: unknown) {
     return message.length > 900 ? `${message.slice(0, 900)}…` : message
 }
 
+function publicOverpassUnavailableMessage(error: unknown) {
+    const detail = error instanceof Error ? error.message : "OpenStreetMap/Overpass is temporarily unavailable."
+    return `OpenStreetMap/Overpass could not serve this request right now. This can happen because Betelgeze is currently using the free public Overpass service, which rate-limits shared traffic and is not guaranteed to be available on every poll. Try again later or add more lead sources so polling is not dependent on OSM alone. Technical detail: ${detail}`
+}
+
 function overpassErrorMessage(status: number, body: string) {
     const cleaned = body
         .replace(/<[^>]*>/g, " ")
@@ -320,7 +325,7 @@ export async function processOsmPoll(pollId: string, workspaceId: string) {
             if (isTransientOverpassError(error)) {
                 await supabaseAdmin
                     .from("leadgen_poll_tasks")
-                    .update({ status: "queued", started_at: null, completed_at: null, error: null })
+                    .update({ status: "failed", completed_at: new Date().toISOString(), error: compactErrorMessage(publicOverpassUnavailableMessage(error)) })
                     .eq("id", task.id)
                 break
             }
@@ -329,7 +334,7 @@ export async function processOsmPoll(pollId: string, workspaceId: string) {
         await sleep(OVERPASS_REQUEST_DELAY_MS)
     }
     await refreshPollCounts(pollId, workspaceId)
-    const [failedResult, queuedResult] = await Promise.all([
+    const [failedResult, companiesResult] = await Promise.all([
         supabaseAdmin
         .from("leadgen_poll_tasks")
         .select("industry_value, location_value, error")
@@ -337,23 +342,23 @@ export async function processOsmPoll(pollId: string, workspaceId: string) {
         .eq("status", "failed")
         .order("created_at", { ascending: true }),
         supabaseAdmin
-            .from("leadgen_poll_tasks")
+            .from("leadgen_companies")
             .select("id", { count: "exact", head: true })
-            .eq("poll_id", pollId)
-            .eq("status", "queued"),
+            .eq("first_seen_poll_id", pollId),
     ])
     const failedTasks = failedResult.error ? [] : failedResult.data ?? []
     const failedCount = failedTasks.length
-    const queuedCount = queuedResult.count ?? 0
+    const companyCount = companiesResult.count ?? 0
     const firstErrors = failedTasks
         .slice(0, 3)
         .map((task) => `${task.industry_value}/${task.location_value}: ${task.error || "Unknown error"}`)
         .join(" | ")
+    const emptyResultError = "The poll completed, but OpenStreetMap returned zero usable companies for this configuration. Treating this as failed so we do not hide an empty source result behind a green status. Try broader locations/industries or add more sources."
     await setPollStatus(
         pollId,
         workspaceId,
-        failedCount > 0 ? "failed" : queuedCount > 0 ? "queued" : "completed",
-        failedCount > 0 ? `${failedCount} OSM task${failedCount === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}` : null,
+        failedCount > 0 || companyCount === 0 ? "failed" : "completed",
+        failedCount > 0 ? `${failedCount} OSM task${failedCount === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}` : companyCount === 0 ? emptyResultError : null,
     )
     await refreshPollCounts(pollId, workspaceId)
 }

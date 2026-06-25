@@ -2,10 +2,11 @@ import { Fragment } from "react"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
+import { NewPollButton } from "@/components/leadgen/NewPollButton"
 import { PollDuration } from "@/components/leadgen/PollDuration"
 import { PollsAutoRefresh } from "@/components/leadgen/PollsAutoRefresh"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
-import { sourceLabel } from "@/lib/leadgen/sources"
+import { buildSourcePlan, sourceLabel, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
 import { cancelLeadgenPoll, createLeadgenPoll } from "../actions"
@@ -69,9 +70,23 @@ function shortError(error: string | null, maxLength = 180) {
     return error.length > maxLength ? `${error.slice(0, maxLength)}…` : error
 }
 
+function configObject(value: unknown): Partial<LeadgenSourceConfig> {
+    return value && typeof value === "object" ? value as Partial<LeadgenSourceConfig> : {}
+}
+
 export default async function LeadgenPollsPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
+    const settingsResult = await supabaseAdmin
+        .from("leadgen_workspace_settings")
+        .select("enabled_sources, source_config")
+        .eq("workspace_id", workspace.id)
+        .maybeSingle()
+    const settings = settingsResult.error ? null : settingsResult.data
+    const enabledSources = Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : []
+    const sourcePlan = buildSourcePlan(enabledSources, configObject(settings?.source_config))
+    const runnableSourcePlan = sourcePlan.filter((source) => source.industries.length > 0 && source.locations.length > 0)
+    const warnAboutOsmOnly = runnableSourcePlan.length === 1 && runnableSourcePlan[0]?.key === "osm"
     const pollsResult = await supabaseAdmin
         .from("leadgen_polls")
         .select("id, status, trigger, source_count, source_snapshot, candidate_count, normalised_count, deduped_count, enriched_count, qualified_count, created_at, started_at, completed_at, error")
@@ -104,7 +119,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                 </div>
                 <div className="flex w-full items-center justify-start gap-2 sm:w-auto sm:justify-end">
                     <form action={createLeadgenPoll.bind(null, workspace.slug)}>
-                        <button className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">New Poll</button>
+                        <NewPollButton warnAboutOsmOnly={warnAboutOsmOnly} />
                     </form>
                 </div>
             </div>

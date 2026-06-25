@@ -24,9 +24,20 @@ type OsmElement = {
     tags?: Record<string, string>
 }
 
-const OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter"
-const OVERPASS_REQUEST_DELAY_MS = 900
-const OVERPASS_FETCH_TIMEOUT_MS = 35000
+const OVERPASS_ENDPOINTS = [
+    "https://overpass.osm.ch/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+]
+const OVERPASS_REQUEST_DELAY_MS = 3000
+const OVERPASS_FETCH_TIMEOUT_MS = 18000
+const OVERPASS_MAX_ATTEMPTS = 2
+
+class OverpassTemporarilyUnavailableError extends Error {
+    constructor(message: string) {
+        super(message)
+        this.name = "OverpassTemporarilyUnavailableError"
+    }
+}
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -109,11 +120,19 @@ function overpassErrorMessage(status: number, body: string) {
     return `Overpass returned HTTP ${status}.${detail}`
 }
 
-async function fetchOverpass(query: string) {
+function isTransientOverpassStatus(status: number) {
+    return [408, 409, 425, 429, 500, 502, 503, 504].includes(status)
+}
+
+function isTransientOverpassError(error: unknown) {
+    return error instanceof OverpassTemporarilyUnavailableError
+}
+
+async function fetchOverpassFromEndpoint(endpoint: string, query: string) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), OVERPASS_FETCH_TIMEOUT_MS)
     try {
-        const response = await fetch(OVERPASS_ENDPOINT, {
+        const response = await fetch(endpoint, {
             method: "POST",
             headers: {
                 Accept: "application/json",
@@ -125,16 +144,36 @@ async function fetchOverpass(query: string) {
             signal: controller.signal,
         })
         const responseText = await response.text()
-        if (!response.ok) throw new Error(overpassErrorMessage(response.status, responseText))
+        if (!response.ok) {
+            const message = `${endpoint}: ${overpassErrorMessage(response.status, responseText)}`
+            if (isTransientOverpassStatus(response.status)) throw new OverpassTemporarilyUnavailableError(message)
+            throw new Error(message)
+        }
         return JSON.parse(responseText) as { elements?: OsmElement[] }
     } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
-            throw new Error(`Overpass timed out after ${Math.round(OVERPASS_FETCH_TIMEOUT_MS / 1000)} seconds.`)
+            throw new OverpassTemporarilyUnavailableError(`${endpoint}: Overpass timed out after ${Math.round(OVERPASS_FETCH_TIMEOUT_MS / 1000)} seconds.`)
         }
         throw error
     } finally {
         clearTimeout(timeout)
     }
+}
+
+async function fetchOverpass(query: string) {
+    let lastTransientError: Error | null = null
+    for (let attempt = 1; attempt <= OVERPASS_MAX_ATTEMPTS; attempt += 1) {
+        for (const endpoint of OVERPASS_ENDPOINTS) {
+            try {
+                return await fetchOverpassFromEndpoint(endpoint, query)
+            } catch (error) {
+                if (!isTransientOverpassError(error)) throw error
+                lastTransientError = error
+            }
+        }
+        if (attempt < OVERPASS_MAX_ATTEMPTS) await sleep(OVERPASS_REQUEST_DELAY_MS * attempt)
+    }
+    throw new OverpassTemporarilyUnavailableError(lastTransientError?.message ?? "Overpass is temporarily unavailable.")
 }
 
 async function upsertOsmElement({ workspaceId, pollId, taskId, industryValue, locationValue, element }: { workspaceId: string; pollId: string; taskId: string; industryValue: string; locationValue: string; element: OsmElement }) {
@@ -278,23 +317,43 @@ export async function processOsmPoll(pollId: string, workspaceId: string) {
             }
             await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "completed", raw_count: elements.length, company_count: companyCount, completed_at: new Date().toISOString(), error: null }).eq("id", task.id)
         } catch (error) {
+            if (isTransientOverpassError(error)) {
+                await supabaseAdmin
+                    .from("leadgen_poll_tasks")
+                    .update({ status: "queued", started_at: null, completed_at: null, error: null })
+                    .eq("id", task.id)
+                break
+            }
             await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "failed", completed_at: new Date().toISOString(), error: compactErrorMessage(error) }).eq("id", task.id)
         }
         await sleep(OVERPASS_REQUEST_DELAY_MS)
     }
     await refreshPollCounts(pollId, workspaceId)
-    const failedResult = await supabaseAdmin
+    const [failedResult, queuedResult] = await Promise.all([
+        supabaseAdmin
         .from("leadgen_poll_tasks")
         .select("industry_value, location_value, error")
         .eq("poll_id", pollId)
         .eq("status", "failed")
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: true }),
+        supabaseAdmin
+            .from("leadgen_poll_tasks")
+            .select("id", { count: "exact", head: true })
+            .eq("poll_id", pollId)
+            .eq("status", "queued"),
+    ])
     const failedTasks = failedResult.error ? [] : failedResult.data ?? []
     const failedCount = failedTasks.length
+    const queuedCount = queuedResult.count ?? 0
     const firstErrors = failedTasks
         .slice(0, 3)
         .map((task) => `${task.industry_value}/${task.location_value}: ${task.error || "Unknown error"}`)
         .join(" | ")
-    await setPollStatus(pollId, workspaceId, failedCount > 0 ? "failed" : "completed", failedCount > 0 ? `${failedCount} OSM task${failedCount === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}` : null)
+    await setPollStatus(
+        pollId,
+        workspaceId,
+        failedCount > 0 ? "failed" : queuedCount > 0 ? "queued" : "completed",
+        failedCount > 0 ? `${failedCount} OSM task${failedCount === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}` : null,
+    )
     await refreshPollCounts(pollId, workspaceId)
 }

@@ -59,8 +59,16 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
     const sourceConfig = leadgenSourceOptions.reduce<Partial<LeadgenSourceConfig>>((config, source) => {
         const industries = formData.getAll(`sourceConfig:${source.value}:industries`).map((value) => String(value))
         const locations = formData.getAll(`sourceConfig:${source.value}:locations`).map((value) => String(value))
+        const limit = Number(formData.get(`sourceConfig:${source.value}:limit`) ?? 10)
+        const radiusMeters = Number(formData.get(`sourceConfig:${source.value}:radiusMeters`) ?? 24000)
         const notes = String(formData.get(`sourceConfig:${source.value}:notes`) ?? "").trim()
-        config[source.value] = { industries, locations, notes }
+        config[source.value] = {
+            industries,
+            locations,
+            limit: Number.isFinite(limit) ? Math.min(50, Math.max(1, Math.floor(limit))) : 10,
+            radiusMeters: Number.isFinite(radiusMeters) ? Math.min(40000, Math.max(1000, Math.floor(radiusMeters))) : 24000,
+            notes,
+        }
         return config
     }, {
         icp: {

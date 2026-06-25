@@ -150,6 +150,12 @@ create trigger leadgen_companies_updated_at
 before update on public.leadgen_companies
 for each row execute function public.set_updated_at();
 
+delete from public.leadgen_source_category_mappings
+where source_key = 'yelp';
+
+delete from public.leadgen_source_options
+where source_key = 'yelp';
+
 insert into public.leadgen_geo_targets (value, label, country, region, locality, latitude, longitude, radius_meters, metadata)
 values
     ('atlanta_ga', 'Atlanta, GA', 'US', 'GA', 'Atlanta', 33.7490, -84.3880, 24000, '{"seed":"osm_v1"}'::jsonb),

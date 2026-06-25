@@ -5,7 +5,6 @@ import { SERVICES } from "@/lib/onboarding/services"
 import { requireWorkspaceMember } from "@/lib/admin/auth"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
 import { isOnboardingStuck } from "@/lib/onboarding/stuck"
-import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
@@ -13,6 +12,9 @@ import { ListToolbar } from "@/components/admin/ListToolbar"
 import { Avatar } from "@/components/account/Avatar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { DashboardAutoRefresh } from "@/components/admin/DashboardAutoRefresh"
+import { ListActionMenu } from "@/components/list/ListActionMenu"
+import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
+import { removeClientFromList } from "./actions"
 export const dynamic = "force-dynamic"
 
 const BASE_STEPS = [
@@ -294,250 +296,30 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
                 <ListToolbar sortOptions={[{ value: "created-new", label: "Date added: newest" }, { value: "created-old", label: "Date added: oldest" }, { value: "name-az", label: "Client name: A–Z" }, { value: "progress-low", label: "Progress: low to high" }, { value: "progress-high", label: "Progress: high to low" }, { value: "activity-recent", label: "Last activity: recent" }]} filterGroups={[{ label: "Status", options: [{ value: "stuck", label: "Stuck" }, { value: "test", label: "Test client" }] }, { label: "Added by", options: toolbarCreators }, { label: "Services", options: toolbarServices }]} />
 
-                <div className="mt-5 grid gap-3 md:hidden">
-                    {sortedClientSummaries.map(
-                        ({
-                            client,
-                            assignedModuleKeys,
-                            assignedServiceKeys,
-                            percentage,
-                            currentStep,
-                            lastActivity,
-                            communication,
-                            stuck,
-                            isFilterMatch,
-                        }) => (
-                            <Link
-                                key={client.id}
-                                href={`/admin/client/${client.id}`}
-                                className={`rounded-lg border border-neutral-800 bg-neutral-900 p-4 transition-opacity ${isFilterMatch ? "" : "opacity-35"}`}
-                            >
-                                <div className="flex items-start justify-between gap-4">
-                                    <div>
-                                        <h2 className="font-medium">{client.name ?? "Unnamed client"}</h2>
-
-                                        <div className="mt-2 flex flex-wrap gap-2">
-                                            {client.is_test && (
-                                                <span className="rounded-full bg-amber-400/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-200">
-                                                    Test
-                                                </span>
-                                            )}
-
-                                            {stuck && (
-                                                <span className="rounded-full bg-red-500/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-red-200">
-                                                    Stuck
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        <p className="mt-1 text-sm text-neutral-300">
-                                            {client.phone
-                                                ? displayMessageAddress(
-                                                      client.phone
-                                                  )
-                                                : "No phone saved"}
-                                        </p>
-
-                                        {client.email && (
-                                            <p className="mt-1 text-xs text-neutral-500">
-                                                {client.email}
-                                            </p>
-                                        )}
-
-                                        {client.created_by && clientCreatorById.get(client.created_by) && (() => { const creator = clientCreatorById.get(client.created_by)!; return <div className="mt-3 flex items-center gap-2"><Avatar src={creator.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) : null} name={creator.username} className="h-9 w-9 shrink-0" /><div><p className="text-xs text-neutral-500">Created by</p><p className="text-sm text-neutral-200">@{creator.username} <span className="text-xs text-neutral-500">· {new Date(client.created_at).toLocaleDateString("en-IE", { dateStyle: "medium" })}</span></p></div></div> })()}
-
-                                    </div>
-
-                                    <span className="rounded-full bg-neutral-800 px-3 py-1 text-xs text-neutral-300">
-                                        {percentage}%
-                                    </span>
+                <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+                    {sortedClientSummaries.map(({ client, assignedServiceKeys, percentage, lastActivity, stuck, isFilterMatch }) => {
+                        const creator = client.created_by ? clientCreatorById.get(client.created_by) : null
+                        const creatorAvatar = creator?.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) : null
+                        return <div key={client.id} className={`grid min-h-16 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[minmax(230px,1.3fr)_170px_minmax(220px,1fr)_130px_120px_32px] md:items-center ${isFilterMatch ? "" : "opacity-35"} ${stuck ? "bg-red-950/[0.08]" : ""}`}>
+                            <div className="min-w-0">
+                                <Link href={`/admin/client/${client.id}`} className="truncate text-sm font-medium text-neutral-100 underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
+                                <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">
+                                    {creator ? <Avatar src={creatorAvatar} name={creator.username} className="h-5 w-5 shrink-0" /> : null}
+                                    <span className="truncate">{creator ? `Added by @${creator.username}` : "Legacy client"}</span>
+                                    {client.is_test && <span className="rounded-md border border-amber-400/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">Test</span>}
                                 </div>
-
-                                <div className="mt-4 h-2 overflow-hidden rounded-full bg-neutral-800">
-                                    <div
-                                        className="h-full rounded-full bg-white"
-                                        style={{ width: `${percentage}%` }}
-                                    />
-                                </div>
-
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    {assignedServiceKeys.length > 0 ? (
-                                        assignedServiceKeys.map((serviceKey) => (
-                                            <span
-                                                key={serviceKey}
-                                                className="rounded-full bg-blue-500/10 px-2.5 py-1 text-xs text-blue-200"
-                                            >
-                                                {SERVICES[serviceKey]?.title ??
-                                                    serviceKey}
-                                            </span>
-                                        ))
-                                    ) : (
-                                        <span className="text-sm text-neutral-500">
-                                            No services
-                                        </span>
-                                    )}
-                                </div>
-
-                                <div className="mt-4 grid gap-3 text-sm">
-                                    <div>
-                                        <p className="text-neutral-500">
-                                            Last activity
-                                        </p>
-                                        <p className="mt-1 text-neutral-200">
-                                            {lastActivity
-                                                ? new Date(
-                                                      lastActivity
-                                                  ).toLocaleString("en-IE", {
-                                                      dateStyle: "medium",
-                                                      timeStyle: "short",
-                                                  })
-                                                : "No activity yet"}
-                                        </p>
-                                    </div>
-                                </div>
-                            </Link>
-                        )
-                    )}
-                </div>
-
-                <div className="mt-5 hidden overflow-hidden rounded-lg border border-neutral-800 md:block">
-                    <table className="w-full border-collapse text-left text-sm">
-                        <thead className="bg-neutral-900 text-xs uppercase tracking-wide text-neutral-500">
-                            <tr>
-                                <th className="px-3 py-2 font-medium">
-                                    Client
-                                </th>
-                                <th className="px-3 py-2 font-medium">
-                                    Contact
-                                </th>
-                                        <th className="px-3 py-2 font-medium">
-                                            Services
-                                </th>
-                                <th className="px-3 py-2 font-medium">
-                                    Progress
-                                </th>
-                                        <th className="px-3 py-2 font-medium">
-                                            Created by
-                                </th>
-                                <th className="px-3 py-2 font-medium">
-                                    Last activity
-                                </th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            {sortedClientSummaries.map(
-                                ({
-                                    client,
-                                    assignedModuleKeys,
-                                    assignedServiceKeys,
-                                    percentage,
-                                    currentStep,
-                                    lastActivity,
-                                    communication,
-                                    stuck,
-                                    isFilterMatch,
-                                }) => (
-                                    <tr
-                                        key={client.id}
-                                        className={`border-t border-neutral-800 hover:bg-neutral-900/70 ${isFilterMatch ? "" : "opacity-35"}`}
-                                    >
-                                        <td className="px-3 py-3">
-                                            <Link href={`/admin/client/${client.id}`} className="font-medium text-white underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
-
-                                            <div className="mt-2 flex flex-wrap gap-1.5">
-                                                {client.is_test && (
-                                                    <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-                                                        Test
-                                                    </span>
-                                                )}
-
-                                                {stuck && (
-                                                    <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-200">
-                                                        Stuck
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </td>
-
-                                        <td className="px-3 py-3">
-                                            <p className="text-neutral-300">
-                                                {client.phone
-                                                    ? displayMessageAddress(
-                                                          client.phone
-                                                      )
-                                                    : "No phone saved"}
-                                            </p>
-
-                                            {client.email && (
-                                                <p className="mt-1 text-xs text-neutral-500">
-                                                    {client.email}
-                                                </p>
-                                            )}
-                                        </td>
-
-                                        <td className="px-3 py-3">
-                                            <div className="flex flex-wrap gap-2">
-                                                {assignedServiceKeys.length >
-                                                0 ? (
-                                                    assignedServiceKeys.map(
-                                                        (serviceKey) => (
-                                                            <span
-                                                                key={serviceKey}
-                                                                className="rounded-md bg-blue-500/10 px-2 py-1 text-xs text-blue-200"
-                                                            >
-                                                                {SERVICES[
-                                                                    serviceKey
-                                                                ]?.title ??
-                                                                    serviceKey}
-                                                            </span>
-                                                        )
-                                                    )
-                                                ) : (
-                                                    <span className="text-neutral-500">
-                                                        No services
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </td>
-
-                                        <td className="px-3 py-3">
-                                            <div className="flex items-center gap-3">
-                                                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-neutral-800">
-                                                    <div
-                                                        className="h-full rounded-full bg-white"
-                                                        style={{
-                                                            width: `${percentage}%`,
-                                                        }}
-                                                    />
-                                                </div>
-
-                                                <span className="text-neutral-300">
-                                                    {percentage}%
-                                                </span>
-                                            </div>
-                                        </td>
-
-                                        <td className="px-3 py-3">
-                                            {client.created_by && clientCreatorById.get(client.created_by) ? (() => { const creator = clientCreatorById.get(client.created_by)!; return <div className="flex items-center gap-2"><Avatar src={creator.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) : null} name={creator.username} className="h-9 w-9 shrink-0" /><div><p className="text-sm text-neutral-200">@{creator.username}</p><p className="mt-0.5 text-xs text-neutral-500">{new Date(client.created_at).toLocaleDateString("en-IE", { dateStyle: "medium" })}</p></div></div> })() : <p className="text-sm text-neutral-500">Legacy client</p>}
-                                        </td>
-
-                                        <td className="px-3 py-3 text-neutral-400">
-                                            {lastActivity
-                                                ? new Date(
-                                                      lastActivity
-                                                  ).toLocaleString("en-IE", {
-                                                      dateStyle: "medium",
-                                                      timeStyle: "short",
-                                                  })
-                                                : "No activity yet"}
-                                        </td>
-                                    </tr>
-                                )
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                            </div>
+                            <span className={`inline-flex items-center gap-2 text-sm ${stuck ? "text-red-200" : percentage === 100 ? "text-emerald-200" : "text-yellow-200"}`}><span className={`h-2 w-2 rotate-45 ${stuck ? "bg-red-300" : percentage === 100 ? "bg-emerald-300" : "bg-yellow-300"}`} />{stuck ? "Stuck" : percentage === 100 ? "Complete" : "Active"} · {percentage}%</span>
+                            <p className="truncate text-sm text-neutral-400">{assignedServiceKeys.length ? assignedServiceKeys.map((serviceKey) => SERVICES[serviceKey]?.title ?? serviceKey).join(", ") : "No services"}</p>
+                            <p className="font-mono text-xs text-neutral-500">{shortId(client.id)}</p>
+                            <p className="whitespace-nowrap text-xs text-neutral-500">{formatRelativeTime(lastActivity ?? client.created_at)}</p>
+                            <ListActionMenu actions={[
+                                { label: "Open client", href: `/admin/client/${client.id}` },
+                                { label: "Remove", action: removeClientFromList.bind(null, client.id), danger: true, confirmMessage: "Remove this client from the dashboard? This archives the client instead of hard-deleting their records." },
+                            ]} />
+                        </div>
+                    })}
+                </section>
 
                 <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
             </div>

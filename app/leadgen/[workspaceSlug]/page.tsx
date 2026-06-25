@@ -1,8 +1,12 @@
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
+import { ListActionMenu } from "@/components/list/ListActionMenu"
+import { ListAutoRefresh } from "@/components/list/ListAutoRefresh"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
+import { removeLeadgenCompany } from "./actions"
 
 export const dynamic = "force-dynamic"
 
@@ -22,6 +26,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
     const withProfiles = companies.filter((company) => Boolean(company.profile_url || company.website_url)).length
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
+        <ListAutoRefresh />
         <div className="mx-auto max-w-7xl">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
             <WorkspaceBanner bannerPath={workspace.leadgen_banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.leadgen_banner_height} position={workspace.leadgen_banner_position} />
@@ -45,43 +50,27 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                 </div>)}
             </div>
 
-            <section className="mt-5 rounded-2xl border border-neutral-800 bg-neutral-900">
-                <div className="border-b border-neutral-800 px-5 py-4">
-                    <h2 className="font-semibold">Leads</h2>
-                    <p className="mt-1 text-sm text-neutral-500">Real companies collected from source polls. Enrichment, scoring, and CRM routing come later.</p>
-                </div>
-                {companies.length ? <div className="overflow-x-auto">
-                    <table className="w-full min-w-[980px] text-left text-sm">
-                        <thead className="text-xs uppercase tracking-wide text-neutral-500">
-                            <tr>
-                                <th className="px-5 py-3 font-medium">Company</th>
-                                <th className="px-5 py-3 font-medium">Phone</th>
-                                <th className="px-5 py-3 font-medium">Source</th>
-                                <th className="px-5 py-3 font-medium">Industry</th>
-                                <th className="px-5 py-3 font-medium">Location</th>
-                                <th className="px-5 py-3 font-medium">Rating</th>
-                                <th className="px-5 py-3 font-medium">Added</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {companies.map((company) => {
-                                const address = company.address && typeof company.address === "object" && "city" in company.address ? company.address as { city?: string; state?: string } : null
-                                return <tr key={company.id} className="border-t border-neutral-800">
-                                    <td className="px-5 py-3">
-                                        <p className="font-medium text-neutral-100">{company.display_name}</p>
-                                        {(company.website_url || company.profile_url) && <a href={company.website_url ?? company.profile_url ?? "#"} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-neutral-500 underline underline-offset-4 hover:text-white">Open source record</a>}
-                                    </td>
-                                    <td className="px-5 py-3 text-neutral-300">{company.phone || "—"}</td>
-                                    <td className="px-5 py-3 capitalize text-neutral-300">{company.source_key}</td>
-                                    <td className="px-5 py-3 text-neutral-300">{String(company.industry_value ?? "—").replace(/_/g, " ")}</td>
-                                    <td className="px-5 py-3 text-neutral-300">{[address?.city, address?.state].filter(Boolean).join(", ") || String(company.location_value ?? "—").replace(/_/g, " ")}</td>
-                                    <td className="px-5 py-3 text-neutral-300">{company.rating ? `${company.rating} (${company.review_count ?? 0})` : "—"}</td>
-                                    <td className="px-5 py-3 text-neutral-400">{new Date(company.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })}</td>
-                                </tr>
-                            })}
-                        </tbody>
-                    </table>
-                </div> : <div className="grid gap-4 p-5 lg:grid-cols-[1.1fr_0.9fr]">
+            <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+                {companies.length ? companies.map((company) => {
+                    const address = company.address && typeof company.address === "object" && "city" in company.address ? company.address as { city?: string; state?: string } : null
+                    const sourceUrl = company.website_url ?? company.profile_url ?? null
+                    return <div key={company.id} className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[minmax(250px,1.4fr)_150px_170px_150px_100px_120px_32px] md:items-center">
+                        <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-neutral-100">{company.display_name}</p>
+                            <p className="mt-1 truncate text-xs text-neutral-500">{sourceUrl ? "Source profile available" : "No source link"}</p>
+                        </div>
+                        <span className={`inline-flex items-center gap-2 text-sm ${company.phone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${company.phone ? "bg-emerald-300" : "bg-neutral-500"}`} />{company.phone ? "Callable" : "No phone"}</span>
+                        <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
+                        <p className="truncate text-sm text-neutral-400">{String(company.industry_value ?? "—").replace(/_/g, " ")}</p>
+                        <p className="font-mono text-xs text-neutral-500">{shortId(company.id)}</p>
+                        <p className="whitespace-nowrap text-xs text-neutral-500">{formatRelativeTime(company.created_at)}</p>
+                        <ListActionMenu actions={[
+                            sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
+                            { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },
+                        ]} />
+                        <p className="col-span-full truncate text-xs text-neutral-600">{[address?.city, address?.state].filter(Boolean).join(", ") || String(company.location_value ?? "—").replace(/_/g, " ")}</p>
+                    </div>
+                }) : <div className="grid gap-4 p-5 lg:grid-cols-[1.1fr_0.9fr]">
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Starting clean</p>
                         <h3 className="mt-3 text-xl font-semibold">No real companies have been collected yet.</h3>

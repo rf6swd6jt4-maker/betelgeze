@@ -6,8 +6,10 @@ import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { Avatar } from "@/components/account/Avatar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
-import { RemoveInvoiceForm } from "@/components/admin/RemoveInvoiceForm"
-import { removeInvoice } from "./actions"
+import { ListActionMenu } from "@/components/list/ListActionMenu"
+import { ListAutoRefresh } from "@/components/list/ListAutoRefresh"
+import { compactText, formatRelativeTime, shortId } from "@/lib/ui/relative-time"
+import { removeInvoice, retryInvoiceAutomation } from "./actions"
 import { ListToolbar } from "@/components/admin/ListToolbar"
 
 export const dynamic = "force-dynamic"
@@ -157,6 +159,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
             <div className="mx-auto max-w-7xl">
+                <ListAutoRefresh />
                 <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
                 <WorkspaceBanner bannerPath={workspace.banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.banner_height} position={workspace.banner_position} />
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -241,155 +244,69 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
 
                 {missingMigration ? (
                     <p className="mt-5 rounded-lg bg-neutral-900 p-4 text-sm text-neutral-400">
-                        Apply the Stripe sales automation migration to show
-                        invoice automation status here.
+                        Apply the Stripe sales automation migration to show invoice automation status here.
                     </p>
                 ) : sales.length > 0 ? (
-                    <div className="mt-5 overflow-hidden rounded-lg border border-neutral-800">
-                        <div className="overflow-x-auto">
-                            <table className="w-full min-w-[920px] border-collapse text-left text-sm">
-                                <thead className="bg-neutral-900 text-xs uppercase tracking-wide text-neutral-500">
-                                    <tr>
-                                        <th className="px-3 py-2 font-medium">
-                                            Client
-                                        </th>
-                                        <th className="px-3 py-2 font-medium">
-                                            Invoice
-                                        </th>
-                                        <th className="px-3 py-2 font-medium">
-                                            Automation
-                                        </th>
-                                        <th className="px-3 py-2 font-medium">
-                                            Amount
-                                        </th>
-                                        <th className="px-3 py-2 font-medium">
-                                            Updated
-                                        </th>
-                                        <th className="px-3 py-2 font-medium">
-                                            Options
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {sortedSales.map((sale) => {
-                                        const manualMigration = isManualMigration(
-                                            sale.raw_payload
-                                        )
-                                        const diagnostic =
-                                            getAutomationDiagnostic(
-                                                sale.raw_payload
-                                            )
-                                        const creator = sale.created_by ? creatorById.get(sale.created_by) : null
-
-                                        return (
-                                            <tr
-                                                key={sale.id}
-                                                className={`border-t border-neutral-800 bg-neutral-950/40 ${sale.isFilterMatch ? "" : "opacity-35"}`}
-                                            >
-                                                <td className="px-3 py-3 align-top">
-                                                    <p className="font-medium text-neutral-100">
-                                                        {sale.client_id ? (
-                                                            <Link
-                                                                href={`/admin/client/${sale.client_id}`}
-                                                                className="underline-offset-4 hover:underline"
-                                                            >
-                                                                {sale.client_name}
-                                                            </Link>
-                                                        ) : (
-                                                            sale.client_name
-                                                        )}
-                                                    </p>
-                                                    <p className="mt-1 text-xs text-neutral-500">
-                                                        {sale.client_email ??
-                                                            sale.client_phone}
-                                                    </p>
-                                                    {creator && <div className="mt-2 flex items-center gap-1.5 text-xs text-neutral-500"><Avatar src={creator.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} name={creator.username} className="h-5 w-5" /><span>Created by @{creator.username}</span></div>}
-                                                </td>
-                                                <td className="px-3 py-3 align-top">
-                                                    <span className="rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-300">
-                                                        {manualMigration
-                                                            ? "manual client migration"
-                                                            : formatStatus(
-                                                                  sale.status
-                                                              )}
-                                                    </span>
-                                                    <p className="mt-2 font-mono text-xs text-neutral-500">
-                                                        {manualMigration
-                                                            ? "No Stripe invoice"
-                                                            : (sale.stripe_invoice_id ??
-                                                              "No Stripe invoice yet")}
-                                                    </p>
-                                                    {diagnostic && (
-                                                        <p className="mt-2 max-w-sm text-xs text-red-300">
-                                                            {diagnostic}
-                                                        </p>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-3 align-top">
-                                                    <p className="text-neutral-300">
-                                                        {getWhatsAppState(sale)}
-                                                    </p>
-                                                    <p className="mt-1 text-xs text-neutral-500">
-                                                        {sale.client_id
-                                                            ? "Client created"
-                                                            : "Client not created yet"}
-                                                    </p>
-                                                </td>
-                                                <td className="px-3 py-3 align-top text-neutral-300">
-                                                    {manualMigration
-                                                        ? "-"
-                                                        : formatMoney(
-                                                              sale.total_amount,
-                                                              sale.currency
-                                                          )}
-                                                </td>
-                                                <td className="px-3 py-3 align-top text-neutral-400">
-                                                    {new Date(
-                                                        sale.updated_at ??
-                                                            sale.created_at
-                                                    ).toLocaleString("en-US", {
-                                                        dateStyle: "medium",
-                                                        timeStyle: "short",
-                                                    })}
-                                                </td>
-                                                <td className="px-3 py-3 align-top">
-                                                    <div className="flex flex-col gap-2">
-                                                        {sale.stripe_hosted_invoice_url && (
-                                                            <a
-                                                                href={
-                                                                    sale.stripe_hosted_invoice_url
-                                                                }
-                                                                className="rounded-lg border border-neutral-700 px-3 py-2 text-center text-xs font-medium text-neutral-200 hover:border-neutral-500 hover:text-white"
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                            >
-                                                                Open invoice
-                                                            </a>
-                                                        )}
-                                                        {sale.client_id && (
-                                                            <Link
-                                                                href={`/admin/client/${sale.client_id}`}
-                                                                className="rounded-lg border border-neutral-700 px-3 py-2 text-center text-xs font-medium text-neutral-200 hover:border-neutral-500 hover:text-white"
-                                                            >
-                                                                Open client
-                                                            </Link>
-                                                        )}
-                                                        <RemoveInvoiceForm action={removeInvoice.bind(null, sale.id)} />
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        )
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                    <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+                        {sortedSales.map((sale) => {
+                            const manualMigration = isManualMigration(sale.raw_payload)
+                            const diagnostic = getAutomationDiagnostic(sale.raw_payload)
+                            const creator = sale.created_by ? creatorById.get(sale.created_by) : null
+                            const invoiceStatus = manualMigration ? "Manual migration" : formatStatus(sale.status)
+                            const whatsappStatus = getWhatsAppState(sale)
+                            const invoiceAttention = isAttentionStatus(sale.status)
+                            return <div key={sale.id} className={`grid min-h-16 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[minmax(230px,1.25fr)_170px_190px_120px_100px_120px_32px] md:items-center ${sale.isFilterMatch ? "" : "opacity-35"} ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium text-neutral-100">
+                                        {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="underline-offset-4 hover:underline">{sale.client_name}</Link> : sale.client_name}
+                                    </p>
+                                    <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">
+                                        {creator ? <Avatar src={creator.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} name={creator.username} className="h-5 w-5 shrink-0" /> : null}
+                                        <span className="truncate">{creator ? `@${creator.username}` : sale.client_email ?? sale.client_phone}</span>
+                                        <span className="rounded-md border border-neutral-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">Manual</span>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className={`inline-flex items-center gap-2 text-sm ${invoiceAttention ? "text-yellow-200" : sale.status.includes("failed") ? "text-red-200" : "text-emerald-200"}`}><span className={`h-2 w-2 rotate-45 ${sale.status.includes("failed") ? "bg-red-300" : invoiceAttention ? "bg-yellow-300" : "bg-emerald-300"}`} />{invoiceStatus}</span>
+                                </div>
+                                <span className={`inline-flex items-center gap-2 text-sm ${sale.onboarding_link_sent_at ? "text-emerald-200" : sale.consent_template_sent_at ? "text-yellow-200" : "text-neutral-300"}`}><span className={`h-2 w-2 rotate-45 ${sale.onboarding_link_sent_at ? "bg-emerald-300" : sale.consent_template_sent_at ? "bg-yellow-300" : "bg-neutral-400"}`} />{whatsappStatus}</span>
+                                <p className="text-sm text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
+                                <p className="font-mono text-xs text-neutral-500">{shortId(sale.stripe_invoice_id ?? sale.id)}</p>
+                                <p className="whitespace-nowrap text-xs text-neutral-500">{formatRelativeTime(sale.created_at)}</p>
+                                <ListActionMenu actions={[
+                                    invoiceAttention ? { label: "Retry", action: retryInvoiceAutomation.bind(null, sale.id) } : {},
+                                    sale.stripe_hosted_invoice_url ? { label: "Open invoice", href: sale.stripe_hosted_invoice_url, external: true } : {},
+                                    sale.client_id ? { label: "Open client", href: `/admin/client/${sale.client_id}` } : {},
+                                    diagnostic ? { label: "Open console", href: `#invoice-console-${sale.id}` } : {},
+                                    { label: "Remove", action: removeInvoice.bind(null, sale.id), danger: true, confirmMessage: "Remove this invoice from Betelgeze? Stripe records will remain in Stripe." },
+                                ]} />
+                            </div>
+                        })}
+                    </section>
                 ) : (
                     <p className="mt-5 rounded-lg bg-neutral-900 p-4 text-sm text-neutral-400">
                         No Stripe invoices have been created from this
                         dashboard yet.
                     </p>
                 )}
+                {sortedSales.some((sale) => getAutomationDiagnostic(sale.raw_payload)) && <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+                    <div className="border-b border-neutral-800 px-5 py-4">
+                        <h2 className="font-semibold">Invoice console</h2>
+                        <p className="mt-1 text-sm text-neutral-500">Automation errors are collapsed by default. Open console from an invoice to jump here.</p>
+                    </div>
+                    {sortedSales.map((sale) => {
+                        const diagnostic = getAutomationDiagnostic(sale.raw_payload)
+                        if (!diagnostic) return null
+                        return <div id={`invoice-console-${sale.id}`} key={sale.id} className="grid min-h-14 gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[160px_minmax(0,1fr)_120px] md:items-center">
+                            <span className="inline-flex items-center gap-2 text-sm text-red-200"><span className="h-2 w-2 rotate-45 bg-red-300" />Automation error</span>
+                            <details className="min-w-0 text-sm">
+                                <summary className="cursor-pointer truncate text-red-300">{compactText(diagnostic, 220)}</summary>
+                                <p className="mt-2 whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-xs text-red-100">{diagnostic}</p>
+                            </details>
+                            <p className="font-mono text-xs text-neutral-500">{shortId(sale.stripe_invoice_id ?? sale.id)}</p>
+                        </div>
+                    })}
+                </section>}
                 <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
             </div>
         </main>

@@ -64,3 +64,34 @@ export async function cancelLeadgenPoll(slug: string, pollId: string) {
     if (error) throw new Error("Could not cancel this poll.")
     refreshPolls(slug)
 }
+
+export async function retryLeadgenPoll(slug: string, pollId: string) {
+    const { workspace } = await requireWorkspace(slug, "admin")
+    await supabaseAdmin
+        .from("leadgen_poll_tasks")
+        .update({ status: "queued", started_at: null, completed_at: null, error: null })
+        .eq("poll_id", pollId)
+        .eq("workspace_id", workspace.id)
+        .eq("status", "failed")
+    await supabaseAdmin
+        .from("leadgen_polls")
+        .update({ status: "queued", error: null, completed_at: null })
+        .eq("id", pollId)
+        .eq("workspace_id", workspace.id)
+    await processOsmPoll(pollId, workspace.id)
+    refreshPolls(slug)
+}
+
+export async function removeLeadgenPoll(slug: string, pollId: string) {
+    const { workspace } = await requireWorkspace(slug, "admin")
+    await supabaseAdmin.from("leadgen_source_records").delete().eq("poll_id", pollId).eq("workspace_id", workspace.id)
+    await supabaseAdmin.from("leadgen_poll_tasks").delete().eq("poll_id", pollId).eq("workspace_id", workspace.id)
+    await supabaseAdmin.from("leadgen_polls").delete().eq("id", pollId).eq("workspace_id", workspace.id)
+    refreshPolls(slug)
+}
+
+export async function removeLeadgenCompany(slug: string, companyId: string) {
+    const { workspace } = await requireWorkspace(slug, "admin")
+    await supabaseAdmin.from("leadgen_companies").delete().eq("id", companyId).eq("workspace_id", workspace.id)
+    revalidatePath(`/leadgen/${slug}`)
+}

@@ -1,7 +1,8 @@
 export type LeadgenSourceKey = "gbp_maps" | "state_licensing" | "secretary_of_state" | "aggregator_directories"
 
 export type LeadgenSourceConfig = Record<LeadgenSourceKey, {
-    targets?: string
+    industries?: string[]
+    locations?: string[]
     notes?: string
 }>
 
@@ -9,7 +10,8 @@ export type LeadgenSourcePlanItem = {
     key: LeadgenSourceKey
     label: string
     detail: string
-    targets: string | null
+    industries: string[]
+    locations: string[]
     notes: string | null
 }
 
@@ -67,8 +69,9 @@ export function buildSourcePlan(enabledSources: string[], sourceConfig: Partial<
                 key,
                 label: option.label,
                 detail: option.detail,
-                targets: config?.targets?.trim() || null,
-                notes: config?.notes?.trim() || null,
-            }
-        })
+            industries: Array.isArray(config?.industries) ? config.industries.map(String).filter(Boolean) : [],
+            locations: Array.isArray(config?.locations) ? config.locations.map(String).filter(Boolean) : [],
+            notes: config?.notes?.trim() || null,
+        }
+    })
 }

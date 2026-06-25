@@ -1,5 +1,6 @@
 import { WorkspaceIdentityEditor } from "@/components/admin/WorkspaceIdentityEditor"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
+import { SearchableMultiSelect } from "@/components/leadgen/SearchableMultiSelect"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -10,6 +11,7 @@ import { saveLeadgenSettings, updateLeadgenCoverLayout, updateLeadgenWorkspaceNa
 export const dynamic = "force-dynamic"
 
 type PageProps = { params: Promise<{ workspaceSlug: string }> }
+type SourceOption = { source_key: string; option_kind: "industry" | "location"; value: string; label: string }
 
 function sourceConfigValue(config: unknown): Partial<LeadgenSourceConfig> {
     return config && typeof config === "object" ? config as Partial<LeadgenSourceConfig> : {}
@@ -22,14 +24,28 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
         workspace.leadgen_banner_path ? createUploadSignedUrl(workspace.leadgen_banner_path) : null,
         workspace.logo_path ? createUploadSignedUrl(workspace.logo_path) : null,
     ])
-    const settingsResult = await supabaseAdmin
+    const [settingsResult, optionsResult] = await Promise.all([
+        supabaseAdmin
         .from("leadgen_workspace_settings")
         .select("poll_interval_hours, automatic_polls_enabled, geography, icp_notes, enabled_sources, source_config")
         .eq("workspace_id", workspace.id)
-        .maybeSingle()
+        .maybeSingle(),
+        supabaseAdmin
+            .from("leadgen_source_options")
+            .select("source_key, option_kind, value, label")
+            .eq("enabled", true)
+            .order("label", { ascending: true }),
+    ])
     const settings = settingsResult.error ? null : settingsResult.data
     const enabledSources = new Set(Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : [])
     const sourceConfig = sourceConfigValue(settings?.source_config)
+    const sourceOptions = (optionsResult.error ? [] : optionsResult.data ?? []) as SourceOption[]
+
+    function optionsFor(sourceKey: string, kind: SourceOption["option_kind"]) {
+        return sourceOptions
+            .filter((option) => option.source_key === sourceKey && option.option_kind === kind)
+            .map((option) => ({ value: option.value, label: option.label }))
+    }
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
         <div className="mx-auto max-w-7xl">
@@ -58,7 +74,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                     <h2 className="text-lg font-semibold">ICP</h2>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Fit scoring will compare each company against this profile before intent signals are layered on.</p>
                     <div className="mt-5 grid gap-4 md:grid-cols-2">
-                        <label className="block text-sm text-neutral-300">Target geography<input name="geography" defaultValue={settings?.geography ?? ""} placeholder="e.g. Texas HVAC contractors, Florida roofers" className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-white" /></label>
+                        <label className="block text-sm text-neutral-300">Target geography<input name="geography" defaultValue={settings?.geography ?? ""} placeholder="Internal notes only; source locations are selected below." className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-white" /><span className="mt-1 block text-xs text-neutral-500">Use this for human notes. Poll source locations come from the database-backed source selectors below.</span></label>
                         <label className="block text-sm text-neutral-300 md:col-span-2">ICP notes<textarea name="icpNotes" defaultValue={settings?.icp_notes ?? ""} rows={5} placeholder="Company size, services, revenue band, licensing requirements, review profile, and disqualifiers." className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-white" /></label>
                     </div>
                 </section>
@@ -68,18 +84,23 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                     <div className="mt-5 grid gap-3 lg:grid-cols-2">
                         {leadgenSourceOptions.map((source) => {
                             const config = sourceConfig[source.value]
+                            const locationOptions = optionsFor(source.value, "location")
+                            const industryOptions = optionsFor(source.value, "industry")
+                            const hasOptionDatabase = locationOptions.length > 0 || industryOptions.length > 0
                             return <div key={source.value} className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">
                                 <label className="flex items-start gap-3">
-                                    <input name="sources" value={source.value} type="checkbox" defaultChecked={enabledSources.has(source.value)} className="mt-1 h-4 w-4 accent-white" />
+                                    <input name="sources" value={source.value} type="checkbox" defaultChecked={enabledSources.has(source.value) && hasOptionDatabase} disabled={!hasOptionDatabase} className="mt-1 h-4 w-4 accent-white disabled:opacity-40" />
                                     <span>
                                         <span className="block font-medium text-white">{source.label}</span>
                                         <span className="mt-1 block text-sm leading-6 text-neutral-400">{source.detail}</span>
+                                        {!hasOptionDatabase && <span className="mt-2 block text-xs text-amber-200">Waiting for a verified option database before this source can be enabled.</span>}
                                     </span>
                                 </label>
-                                <div className="mt-4 grid gap-3">
-                                    <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">{source.targetsLabel}<textarea name={`sourceConfig:${source.value}:targets`} defaultValue={config?.targets ?? ""} rows={2} placeholder={source.targetsPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
+                                {hasOptionDatabase && <div className="mt-4 grid gap-3">
+                                    {locationOptions.length > 0 && <SearchableMultiSelect name={`sourceConfig:${source.value}:locations`} label="Locations" options={locationOptions} selectedValues={Array.isArray(config?.locations) ? config.locations : []} />}
+                                    {industryOptions.length > 0 && <SearchableMultiSelect name={`sourceConfig:${source.value}:industries`} label="Industries / record types" options={industryOptions} selectedValues={Array.isArray(config?.industries) ? config.industries : []} />}
                                     <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Notes<textarea name={`sourceConfig:${source.value}:notes`} defaultValue={config?.notes ?? ""} rows={2} placeholder={source.notesPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
-                                </div>
+                                </div>}
                             </div>
                         })}
                     </div>

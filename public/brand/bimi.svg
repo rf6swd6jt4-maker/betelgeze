@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 256 256" width="256" height="256">
+  <title>Betelgeze</title>
+  <desc>Betelgeze brand mark: a black circle with a white diamond on a white square background.</desc>
+  <rect width="256" height="256" fill="#ffffff"/>
+  <circle cx="128" cy="128" r="120" fill="#000000"/>
+  <rect width="88" height="88" x="84" y="84" fill="#ffffff" transform="rotate(45 128 128)"/>
+</svg>

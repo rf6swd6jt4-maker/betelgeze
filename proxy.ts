@@ -165,7 +165,7 @@ export async function proxy(request: NextRequest) {
         if (workspacePath) {
             const headers = new Headers(request.headers)
             headers.set("x-betelgeze-workspace-slug", workspacePath[1].toLowerCase())
-            const suffix = workspacePath[2] === "settings" ? "/settings" : ""
+            const suffix = workspacePath[2] ? `/${workspacePath[2]}` : ""
             return withRewrite(request, `/leadgen/${workspacePath[1].toLowerCase()}${suffix}`, headers)
         }
     }

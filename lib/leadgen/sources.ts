@@ -1,9 +1,11 @@
-export type LeadgenSourceKey = "gbp_maps" | "state_licensing" | "secretary_of_state" | "aggregator_directories"
+export type LeadgenSourceKey = "yelp" | "osm" | "state_licensing"
 export type LeadgenConfigKey = LeadgenSourceKey | "icp"
 
 export type LeadgenSourceConfig = Record<LeadgenConfigKey, {
     industries?: string[]
     locations?: string[]
+    limit?: number
+    radiusMeters?: number
     notes?: string
 }>
 
@@ -13,41 +15,35 @@ export type LeadgenSourcePlanItem = {
     detail: string
     industries: string[]
     locations: string[]
+    limit: number | null
+    radiusMeters: number | null
     notes: string | null
 }
 
 export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: string; detail: string; targetsLabel: string; targetsPlaceholder: string; notesPlaceholder: string }> = [
     {
-        value: "gbp_maps",
-        label: "GBP / Maps",
-        detail: "Research surface for local presence, reviews, categories, and listing quality.",
+        value: "yelp",
+        label: "Yelp",
+        detail: "Real business search for broad local service categories using Yelp Fusion.",
         targetsLabel: "Search targets",
         targetsPlaceholder: "e.g. HVAC contractors in Dallas, roofers near Tampa",
-        notesPlaceholder: "Categories, review thresholds, listing signals, or search exclusions.",
+        notesPlaceholder: "Review thresholds, sparse-profile signals, or search exclusions.",
+    },
+    {
+        value: "osm",
+        label: "OpenStreetMap",
+        detail: "Free supplemental business/location data through Overpass. Planned after Yelp.",
+        targetsLabel: "Directories / search targets",
+        targetsPlaceholder: "e.g. plumbers Austin, landscapers Phoenix",
+        notesPlaceholder: "OSM tags and fallback search terms to consider.",
     },
     {
         value: "state_licensing",
-        label: "State contractor licensing boards",
-        detail: "License status, trade category, owner/licensee names, and service geography.",
+        label: "State licensing boards",
+        detail: "Official licensing records for narrow regulated trades. Planned after Yelp.",
         targetsLabel: "Boards / states / trades",
-        targetsPlaceholder: "e.g. Texas HVAC, Florida roofing, California electrical",
+        targetsPlaceholder: "e.g. Texas HVAC, electrical, water well",
         notesPlaceholder: "License statuses, classifications, renewal windows, or exclusions.",
-    },
-    {
-        value: "secretary_of_state",
-        label: "Secretary of State registries",
-        detail: "Entity registration, legal name, age, officers, and addresses.",
-        targetsLabel: "Registries / entity targets",
-        targetsPlaceholder: "e.g. TX active LLCs, FL corporations, recently formed contractors",
-        notesPlaceholder: "Officer patterns, entity age, legal suffix handling, or disqualifiers.",
-    },
-    {
-        value: "aggregator_directories",
-        label: "Aggregator directories",
-        detail: "Angi, Yelp, and similar directories for coverage and reputation clues.",
-        targetsLabel: "Directories / search targets",
-        targetsPlaceholder: "e.g. Yelp plumbers Austin, Angi remodelers Phoenix",
-        notesPlaceholder: "Directories to include, rating/review signals, sparse-profile signals.",
     },
 ]
 
@@ -74,6 +70,8 @@ export function buildSourcePlan(enabledSources: string[], sourceConfig: Partial<
                 detail: option.detail,
                 industries: Array.isArray(config?.industries) ? config.industries.map(String).filter(Boolean) : [],
                 locations: Array.isArray(config?.locations) ? config.locations.map(String).filter(Boolean) : [],
+                limit: typeof sourceSpecificConfig?.limit === "number" ? sourceSpecificConfig.limit : null,
+                radiusMeters: typeof sourceSpecificConfig?.radiusMeters === "number" ? sourceSpecificConfig.radiusMeters : null,
                 notes: config?.notes?.trim() || sourceSpecificConfig?.notes?.trim() || null,
             }
         })

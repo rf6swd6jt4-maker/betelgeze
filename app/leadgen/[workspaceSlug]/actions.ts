@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { buildSourcePlan, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
+import { createYelpTasksForPoll, processYelpPoll } from "@/lib/leadgen/yelp-worker"
 
 function configObject(value: unknown): Partial<LeadgenSourceConfig> {
     return value && typeof value === "object" ? value as Partial<LeadgenSourceConfig> : {}
@@ -24,20 +25,31 @@ export async function createLeadgenPoll(slug: string) {
     const settings = settingsResult.error ? null : settingsResult.data
     const enabledSources = Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : []
     const sourcePlan = buildSourcePlan(enabledSources, configObject(settings?.source_config))
-    const readySourcePlan = sourcePlan.filter((source) => source.industries.length > 0 || source.locations.length > 0)
-    const hasRunnableSources = sourcePlan.length > 0
-    const { error } = await supabaseAdmin.from("leadgen_polls").insert({
+    const yelpPlan = sourcePlan.find((source) => source.key === "yelp")
+    const hasRunnableSources = Boolean(yelpPlan && yelpPlan.industries.length > 0 && yelpPlan.locations.length > 0)
+    const { data: poll, error } = await supabaseAdmin.from("leadgen_polls").insert({
         workspace_id: workspace.id,
         requested_by: user.id,
         trigger: "manual",
         status: hasRunnableSources ? "queued" : "failed",
         source_count: sourcePlan.length,
         source_snapshot: sourcePlan,
-        error: hasRunnableSources ? null : "No leadgen sources are enabled in Settings.",
+        error: hasRunnableSources ? null : "Enable Yelp and select at least one industry and one location in Settings.",
         completed_at: hasRunnableSources ? null : new Date().toISOString(),
-        ...(hasRunnableSources && readySourcePlan.length === 0 ? { error: "Sources are enabled, but no database-backed locations or industries have been selected yet." } : {}),
-    })
+    }).select("id").single()
     if (error) throw new Error("Could not queue a new leadgen poll.")
+    if (poll?.id && yelpPlan) {
+        const taskCount = await createYelpTasksForPoll({ workspaceId: workspace.id, pollId: poll.id, plan: yelpPlan })
+        if (taskCount === 0) {
+            await supabaseAdmin
+                .from("leadgen_polls")
+                .update({ status: "failed", completed_at: new Date().toISOString(), error: "No Yelp tasks could be generated. Check industry mappings and target locations." })
+                .eq("id", poll.id)
+                .eq("workspace_id", workspace.id)
+        } else {
+            await processYelpPoll(poll.id, workspace.id)
+        }
+    }
     refreshPolls(slug)
 }
 

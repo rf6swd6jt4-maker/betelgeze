@@ -24,6 +24,12 @@ type OsmElement = {
     tags?: Record<string, string>
 }
 
+const OVERPASS_REQUEST_DELAY_MS = 900
+
+function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function normalisePhone(value: string | null | undefined) {
     const digits = value?.replace(/[^\d+]/g, "") ?? ""
     return digits || null
@@ -70,12 +76,10 @@ async function setPollStatus(pollId: string, workspaceId: string, status: string
 }
 
 async function refreshPollCounts(pollId: string, workspaceId: string) {
-    const [recordsResult, companiesResult, tasksResult] = await Promise.all([
+    const [recordsResult, companiesResult] = await Promise.all([
         supabaseAdmin.from("leadgen_source_records").select("id", { count: "exact", head: true }).eq("poll_id", pollId),
         supabaseAdmin.from("leadgen_companies").select("id", { count: "exact", head: true }).eq("first_seen_poll_id", pollId),
-        supabaseAdmin.from("leadgen_poll_tasks").select("id", { count: "exact", head: true }).eq("poll_id", pollId).eq("status", "failed"),
     ])
-    const failedTasks = tasksResult.count ?? 0
     await supabaseAdmin
         .from("leadgen_polls")
         .update({
@@ -84,10 +88,23 @@ async function refreshPollCounts(pollId: string, workspaceId: string) {
             deduped_count: companiesResult.count ?? 0,
             enriched_count: 0,
             qualified_count: 0,
-            ...(failedTasks > 0 ? { error: `${failedTasks} source task${failedTasks === 1 ? "" : "s"} failed. Open task records for details.` } : { error: null }),
         })
         .eq("id", pollId)
         .eq("workspace_id", workspaceId)
+}
+
+function compactErrorMessage(error: unknown) {
+    const message = error instanceof Error ? error.message : "OSM task failed."
+    return message.length > 900 ? `${message.slice(0, 900)}…` : message
+}
+
+function overpassErrorMessage(status: number, body: string) {
+    const cleaned = body
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    const detail = cleaned ? ` ${cleaned.slice(0, 420)}${cleaned.length > 420 ? "…" : ""}` : ""
+    return `Overpass returned HTTP ${status}.${detail}`
 }
 
 async function upsertOsmElement({ workspaceId, pollId, taskId, industryValue, locationValue, element }: { workspaceId: string; pollId: string; taskId: string; industryValue: string; locationValue: string; element: OsmElement }) {
@@ -228,8 +245,9 @@ export async function processOsmPoll(pollId: string, workspaceId: string) {
                 body: new URLSearchParams({ data: query.query }),
                 cache: "no-store",
             })
-            const payload = await response.json().catch(() => ({}))
-            if (!response.ok) throw new Error(`Overpass returned ${response.status}.`)
+            const responseText = await response.text()
+            if (!response.ok) throw new Error(overpassErrorMessage(response.status, responseText))
+            const payload = JSON.parse(responseText) as { elements?: OsmElement[] }
             const elements = Array.isArray(payload?.elements) ? payload.elements as OsmElement[] : []
             let companyCount = 0
             for (const element of elements) {
@@ -238,11 +256,23 @@ export async function processOsmPoll(pollId: string, workspaceId: string) {
             }
             await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "completed", raw_count: elements.length, company_count: companyCount, completed_at: new Date().toISOString(), error: null }).eq("id", task.id)
         } catch (error) {
-            await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "failed", completed_at: new Date().toISOString(), error: error instanceof Error ? error.message : "OSM task failed." }).eq("id", task.id)
+            await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "failed", completed_at: new Date().toISOString(), error: compactErrorMessage(error) }).eq("id", task.id)
         }
+        await sleep(OVERPASS_REQUEST_DELAY_MS)
     }
     await refreshPollCounts(pollId, workspaceId)
-    const failedResult = await supabaseAdmin.from("leadgen_poll_tasks").select("id", { count: "exact", head: true }).eq("poll_id", pollId).eq("status", "failed")
-    await setPollStatus(pollId, workspaceId, (failedResult.count ?? 0) > 0 ? "failed" : "completed", (failedResult.count ?? 0) > 0 ? `${failedResult.count} OSM task${failedResult.count === 1 ? "" : "s"} failed.` : null)
+    const failedResult = await supabaseAdmin
+        .from("leadgen_poll_tasks")
+        .select("industry_value, location_value, error")
+        .eq("poll_id", pollId)
+        .eq("status", "failed")
+        .order("created_at", { ascending: true })
+    const failedTasks = failedResult.error ? [] : failedResult.data ?? []
+    const failedCount = failedTasks.length
+    const firstErrors = failedTasks
+        .slice(0, 3)
+        .map((task) => `${task.industry_value}/${task.location_value}: ${task.error || "Unknown error"}`)
+        .join(" | ")
+    await setPollStatus(pollId, workspaceId, failedCount > 0 ? "failed" : "completed", failedCount > 0 ? `${failedCount} OSM task${failedCount === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}` : null)
     await refreshPollCounts(pollId, workspaceId)
 }

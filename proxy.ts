@@ -86,6 +86,7 @@ export async function proxy(request: NextRequest) {
         const destination = new URL(`https://${AUTH_HOST}/auth/callback`)
         request.nextUrl.searchParams.forEach((value, key) => destination.searchParams.set(key, value))
         if (!destination.searchParams.has("next")) destination.searchParams.set("next", "/confirmed")
+        destination.searchParams.set("confirmed_redirect", "1")
         return NextResponse.redirect(destination)
     }
 

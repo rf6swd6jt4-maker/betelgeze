@@ -6,6 +6,7 @@ export async function GET(request: NextRequest) {
     const code = url.searchParams.get("code")
     const tokenHash = url.searchParams.get("token_hash")
     const type = url.searchParams.get("type")
+    const confirmedRedirect = url.searchParams.get("confirmed_redirect") === "1"
     const requestedNext = url.searchParams.get("next") || "/confirmed"
     const suiteNext = /^https:\/\/(dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(requestedNext)
     const next = suiteNext ? requestedNext : requestedNext.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/dashboard"
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
         if (error) {
             if (next === "/confirmed" || next.startsWith("/confirmed?")) {
                 const confirmed = new URL("/confirmed", url.origin)
-                confirmed.searchParams.set("error", "confirmation_failed")
+                confirmed.searchParams.set(confirmedRedirect ? "status" : "error", confirmedRedirect ? "confirmed" : "confirmation_failed")
                 response.headers.set("location", confirmed.toString())
             }
             return response

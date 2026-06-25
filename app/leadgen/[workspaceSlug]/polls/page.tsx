@@ -64,6 +64,11 @@ function readableValue(value: string | null) {
         .join(" ")
 }
 
+function shortError(error: string | null, maxLength = 180) {
+    if (!error) return null
+    return error.length > maxLength ? `${error.slice(0, maxLength)}…` : error
+}
+
 export default async function LeadgenPollsPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
@@ -126,7 +131,55 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     </div>
                     {livePolls.length > 0 && <p className="text-xs text-neutral-500">Auto-refreshing every 5s</p>}
                 </div>
-                {polls.length ? <div className="overflow-x-auto">
+                {polls.length ? <>
+                    <div className="grid gap-3 p-3 md:hidden">
+                        {polls.map((poll) => {
+                            const meta = statusMeta(poll.status)
+                            const live = ["queued", "running"].includes(poll.status)
+                            const tasks = tasksByPoll[poll.id] ?? []
+                            const visibleTasks = tasks.filter((task) => task.error || ["failed", "running", "queued"].includes(task.status))
+                            const failedTasks = tasks.filter((task) => task.status === "failed")
+                            return <article key={poll.id} className={`rounded-xl border border-neutral-800 bg-neutral-950 p-3 ${meta.row}`}>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${meta.badge}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
+                                        <p className="mt-2 text-xs text-neutral-500">{new Date(poll.started_at ?? poll.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })}</p>
+                                    </div>
+                                    <p className="shrink-0 font-mono text-xs text-neutral-300"><PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live} /></p>
+                                </div>
+                                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                    <div className="rounded-lg border border-neutral-800 bg-black/20 px-3 py-2">
+                                        <p className="text-neutral-500">Candidates</p>
+                                        <p className="mt-1 font-semibold text-neutral-100">{poll.candidate_count}</p>
+                                    </div>
+                                    <div className="rounded-lg border border-neutral-800 bg-black/20 px-3 py-2">
+                                        <p className="text-neutral-500">Normalised</p>
+                                        <p className="mt-1 font-semibold text-neutral-100">{poll.normalised_count}</p>
+                                    </div>
+                                </div>
+                                <p className="mt-3 break-words text-xs text-neutral-400">{sourceNames(poll.source_snapshot, poll.source_count)}</p>
+                                {poll.error && <p className="mt-2 break-words rounded-lg border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs leading-5 text-red-200">{shortError(poll.error, 220)}</p>}
+                                {visibleTasks.length > 0 && <details className="mt-3 rounded-lg border border-neutral-800 bg-black/20">
+                                    <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-neutral-300">{failedTasks.length ? `${failedTasks.length} failed task${failedTasks.length === 1 ? "" : "s"}` : "Task details"}</summary>
+                                    <div className="grid gap-2 border-t border-neutral-800 px-3 py-3">
+                                        {visibleTasks.map((task) => {
+                                            const taskMeta = statusMeta(task.status)
+                                            return <div key={task.id} className="min-w-0 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className={`inline-flex items-center gap-2 rounded-full border px-2 py-1 ${taskMeta.badge}`}><BetelgezeStatusMark className={taskMeta.mark} />{taskMeta.label}</span>
+                                                    <span className="min-w-0 break-words text-neutral-300">{sourceLabel(task.source_key)} · {readableValue(task.industry_value)} · {readableValue(task.location_value)}</span>
+                                                </div>
+                                                {task.error && <p className="mt-2 break-words text-red-300">{shortError(task.error, 260)}</p>}
+                                                <p className="mt-2 text-neutral-500">{task.raw_count ?? 0} raw · {task.company_count ?? 0} companies</p>
+                                            </div>
+                                        })}
+                                    </div>
+                                </details>}
+                                {live && <form className="mt-3" action={cancelLeadgenPoll.bind(null, workspace.slug, poll.id)}><button className="w-full rounded-lg border border-red-500/40 px-3 py-2 text-xs text-red-200 hover:bg-red-500/10">Cancel</button></form>}
+                            </article>
+                        })}
+                    </div>
+                    <div className="hidden overflow-x-auto md:block">
                     <table className="w-full min-w-[980px] text-left text-sm">
                         <thead className="text-xs uppercase tracking-wide text-neutral-500">
                             <tr>
@@ -153,7 +206,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                                     <tr className={`border-t border-neutral-800 ${meta.row}`}>
                                         <td className="px-5 py-3">
                                             <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${meta.badge}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
-                                            {poll.error && <p className="mt-2 max-w-80 text-xs leading-5 text-red-300">{poll.error}</p>}
+                                            {poll.error && <p className="mt-2 max-w-64 text-xs leading-5 text-red-300">{shortError(poll.error)}</p>}
                                         </td>
                                         <td className="px-5 py-3 text-neutral-300">{new Date(poll.started_at ?? poll.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })}</td>
                                         <td className="px-5 py-3 font-mono text-neutral-300"><PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live} /></td>
@@ -176,11 +229,14 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                                                 <div className="grid gap-2">
                                                     {visibleTasks.map((task) => {
                                                         const taskMeta = statusMeta(task.status)
-                                                        return <div key={task.id} className="grid gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-neutral-300 sm:grid-cols-[140px_1fr_90px_90px] sm:items-start">
+                                                        return <div key={task.id} className="grid min-w-0 gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-neutral-300 lg:grid-cols-[140px_minmax(0,1fr)_90px_90px] lg:items-start">
                                                             <span className={`inline-flex w-fit items-center gap-2 rounded-full border px-2 py-1 ${taskMeta.badge}`}><BetelgezeStatusMark className={taskMeta.mark} />{taskMeta.label}</span>
-                                                            <div>
+                                                            <div className="min-w-0">
                                                                 <p className="font-medium text-neutral-200">{sourceLabel(task.source_key)} · {readableValue(task.industry_value)} · {readableValue(task.location_value)}</p>
-                                                                {task.error ? <p className="mt-1 whitespace-pre-wrap break-words text-red-300">{task.error}</p> : <p className="mt-1 text-neutral-500">No error recorded.</p>}
+                                                                {task.error ? <details className="mt-1">
+                                                                    <summary className="cursor-pointer text-red-300">{shortError(task.error, 160)}</summary>
+                                                                    <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-red-400/10 p-2 text-red-200">{task.error}</p>
+                                                                </details> : <p className="mt-1 text-neutral-500">No error recorded.</p>}
                                                             </div>
                                                             <p className="text-neutral-500"><span className="text-neutral-300">{task.raw_count ?? 0}</span> raw</p>
                                                             <p className="text-neutral-500"><span className="text-neutral-300">{task.company_count ?? 0}</span> companies</p>
@@ -194,7 +250,8 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                             })}
                         </tbody>
                     </table>
-                </div> : <div className="grid gap-4 p-5 lg:grid-cols-[1.1fr_0.9fr]">
+                </div>
+                </> : <div className="grid gap-4 p-5 lg:grid-cols-[1.1fr_0.9fr]">
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">No polls yet</p>
                         <h3 className="mt-3 text-xl font-semibold">Run your first test poll.</h3>

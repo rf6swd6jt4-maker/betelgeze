@@ -1,6 +1,7 @@
 export type LeadgenSourceKey = "gbp_maps" | "state_licensing" | "secretary_of_state" | "aggregator_directories"
+export type LeadgenConfigKey = LeadgenSourceKey | "icp"
 
-export type LeadgenSourceConfig = Record<LeadgenSourceKey, {
+export type LeadgenSourceConfig = Record<LeadgenConfigKey, {
     industries?: string[]
     locations?: string[]
     notes?: string
@@ -59,19 +60,21 @@ export function sourceLabel(key: string) {
 }
 
 export function buildSourcePlan(enabledSources: string[], sourceConfig: Partial<LeadgenSourceConfig> | null | undefined): LeadgenSourcePlanItem[] {
+    const icpConfig = sourceConfig?.icp
     return enabledSources
         .map(normaliseLeadgenSourceKey)
         .filter((key): key is LeadgenSourceKey => Boolean(key))
         .map((key) => {
             const option = leadgenSourceOptions.find((source) => source.value === key)!
-            const config = sourceConfig?.[key]
+            const sourceSpecificConfig = sourceConfig?.[key]
+            const config = key === "state_licensing" ? sourceSpecificConfig : icpConfig
             return {
                 key,
                 label: option.label,
                 detail: option.detail,
-            industries: Array.isArray(config?.industries) ? config.industries.map(String).filter(Boolean) : [],
-            locations: Array.isArray(config?.locations) ? config.locations.map(String).filter(Boolean) : [],
-            notes: config?.notes?.trim() || null,
-        }
-    })
+                industries: Array.isArray(config?.industries) ? config.industries.map(String).filter(Boolean) : [],
+                locations: Array.isArray(config?.locations) ? config.locations.map(String).filter(Boolean) : [],
+                notes: config?.notes?.trim() || sourceSpecificConfig?.notes?.trim() || null,
+            }
+        })
 }

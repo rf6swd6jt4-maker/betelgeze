@@ -4,6 +4,7 @@ import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
 import { PollDuration } from "@/components/leadgen/PollDuration"
 import { PollsAutoRefresh } from "@/components/leadgen/PollsAutoRefresh"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
+import { advanceLeadgenPollQueue } from "@/lib/leadgen/poll-runner"
 import { sourceLabel } from "@/lib/leadgen/sources"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
@@ -43,6 +44,7 @@ function sourceNames(snapshot: unknown, count: number) {
 export default async function LeadgenPollsPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
+    await advanceLeadgenPollQueue(workspace.id)
     const pollsResult = await supabaseAdmin
         .from("leadgen_polls")
         .select("id, status, trigger, source_count, source_snapshot, candidate_count, normalised_count, deduped_count, enriched_count, qualified_count, created_at, started_at, completed_at, error")

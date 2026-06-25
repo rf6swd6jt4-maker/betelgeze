@@ -62,7 +62,13 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
         const notes = String(formData.get(`sourceConfig:${source.value}:notes`) ?? "").trim()
         config[source.value] = { industries, locations, notes }
         return config
-    }, {})
+    }, {
+        icp: {
+            industries: formData.getAll("sourceConfig:icp:industries").map((value) => String(value)),
+            locations: formData.getAll("sourceConfig:icp:locations").map((value) => String(value)),
+            notes: String(formData.get("sourceConfig:icp:notes") ?? "").trim(),
+        },
+    })
     const pollIntervalHours = Number(formData.get("pollIntervalHours") ?? 168)
     if (!Number.isInteger(pollIntervalHours) || pollIntervalHours < 1 || pollIntervalHours > 2160) throw new Error("Poll interval must be between 1 and 2160 hours.")
     const { error } = await supabaseAdmin.from("leadgen_workspace_settings").upsert({

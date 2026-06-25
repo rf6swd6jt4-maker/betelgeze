@@ -161,6 +161,12 @@ export async function proxy(request: NextRequest) {
             return NextResponse.redirect(destination)
         }
         if (path === "/" || path === "/leadgen") return withRewrite(request, "/leadgen")
+        const workspacePath = path.match(/^\/([a-z0-9][a-z0-9-]*)(?:\/)?$/i)
+        if (workspacePath) {
+            const headers = new Headers(request.headers)
+            headers.set("x-betelgeze-workspace-slug", workspacePath[1].toLowerCase())
+            return withRewrite(request, `/leadgen/${workspacePath[1].toLowerCase()}`, headers)
+        }
     }
 
     if ((domain === "betelgeze.com" || domain === "www.betelgeze.com") && isCentralAuthRoute) {

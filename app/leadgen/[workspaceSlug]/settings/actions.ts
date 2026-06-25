@@ -57,9 +57,10 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
         .map((value) => normaliseLeadgenSourceKey(String(value)))
         .filter((value): value is NonNullable<typeof value> => Boolean(value))
     const sourceConfig = leadgenSourceOptions.reduce<Partial<LeadgenSourceConfig>>((config, source) => {
-        const targets = String(formData.get(`sourceConfig:${source.value}:targets`) ?? "").trim()
+        const industries = formData.getAll(`sourceConfig:${source.value}:industries`).map((value) => String(value))
+        const locations = formData.getAll(`sourceConfig:${source.value}:locations`).map((value) => String(value))
         const notes = String(formData.get(`sourceConfig:${source.value}:notes`) ?? "").trim()
-        config[source.value] = { targets, notes }
+        config[source.value] = { industries, locations, notes }
         return config
     }, {})
     const pollIntervalHours = Number(formData.get("pollIntervalHours") ?? 168)

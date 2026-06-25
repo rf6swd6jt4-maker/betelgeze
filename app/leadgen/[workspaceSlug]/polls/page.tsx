@@ -29,7 +29,13 @@ function statusMeta(status: string) {
 function sourceNames(snapshot: unknown, count: number) {
     if (!Array.isArray(snapshot) || snapshot.length === 0) return count ? `${count} configured` : "—"
     return snapshot
-        .map((source) => source && typeof source === "object" && "key" in source ? sourceLabel(String(source.key)) : null)
+        .map((source) => {
+            if (!source || typeof source !== "object" || !("key" in source)) return null
+            const industries = "industries" in source && Array.isArray(source.industries) ? source.industries.length : 0
+            const locations = "locations" in source && Array.isArray(source.locations) ? source.locations.length : 0
+            const detail = [industries ? `${industries} industries` : null, locations ? `${locations} locations` : null].filter(Boolean).join(", ")
+            return `${sourceLabel(String(source.key))}${detail ? ` (${detail})` : ""}`
+        })
         .filter((label): label is string => Boolean(label))
         .join(", ") || `${count} configured`
 }

@@ -30,6 +30,16 @@ create table if not exists public.leadgen_polls (
 create index if not exists leadgen_polls_workspace_created_idx
 on public.leadgen_polls (workspace_id, created_at desc);
 
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+    new.updated_at = now();
+    return new;
+end;
+$$;
+
 drop trigger if exists leadgen_workspace_settings_updated_at on public.leadgen_workspace_settings;
 
 create trigger leadgen_workspace_settings_updated_at

@@ -4,17 +4,16 @@ import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
+import { leadgenSourceOptions, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
 import { saveLeadgenSettings, updateLeadgenCoverLayout, updateLeadgenWorkspaceName, uploadLeadgenBanner, uploadSharedWorkspaceLogo } from "./actions"
 
 export const dynamic = "force-dynamic"
 
 type PageProps = { params: Promise<{ workspaceSlug: string }> }
-const sourceOptions = [
-    { value: "gbp_maps", label: "GBP / Maps", detail: "Research surface for local presence, reviews, categories, and listing quality." },
-    { value: "state_licensing", label: "State contractor licensing boards", detail: "License status, trade category, owner/licensee names, and service geography." },
-    { value: "secretary_of_state", label: "Secretary of State registries", detail: "Entity registration, legal name, age, officers, and addresses." },
-    { value: "aggregator_directories", label: "Aggregator directories", detail: "Angi, Yelp, and similar directories for coverage and reputation clues." },
-]
+
+function sourceConfigValue(config: unknown): Partial<LeadgenSourceConfig> {
+    return config && typeof config === "object" ? config as Partial<LeadgenSourceConfig> : {}
+}
 
 export default async function LeadgenSettingsPage({ params }: PageProps) {
     const { workspaceSlug } = await params
@@ -25,11 +24,12 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
     ])
     const settingsResult = await supabaseAdmin
         .from("leadgen_workspace_settings")
-        .select("poll_interval_hours, automatic_polls_enabled, geography, icp_notes, enabled_sources")
+        .select("poll_interval_hours, automatic_polls_enabled, geography, icp_notes, enabled_sources, source_config")
         .eq("workspace_id", workspace.id)
         .maybeSingle()
     const settings = settingsResult.error ? null : settingsResult.data
     const enabledSources = new Set(Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : [])
+    const sourceConfig = sourceConfigValue(settings?.source_config)
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
         <div className="mx-auto max-w-7xl">
@@ -64,11 +64,24 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                 </section>
                 <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
                     <h2 className="text-lg font-semibold">Sources</h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Enable the source families this workspace should poll. Credentials and connector-specific controls will be added as each source comes online.</p>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Enable the source families this workspace should poll and give each source enough targeting context for the first worker pass. Credentials and connector-specific controls will be added as each source comes online.</p>
                     <div className="mt-5 grid gap-3 lg:grid-cols-2">
-                        {sourceOptions.map((source) => <label key={source.value} className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">
-                            <span className="flex items-start gap-3"><input name="sources" value={source.value} type="checkbox" defaultChecked={enabledSources.has(source.value)} className="mt-1 h-4 w-4 accent-white" /><span><span className="block font-medium text-white">{source.label}</span><span className="mt-1 block text-sm leading-6 text-neutral-400">{source.detail}</span></span></span>
-                        </label>)}
+                        {leadgenSourceOptions.map((source) => {
+                            const config = sourceConfig[source.value]
+                            return <div key={source.value} className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">
+                                <label className="flex items-start gap-3">
+                                    <input name="sources" value={source.value} type="checkbox" defaultChecked={enabledSources.has(source.value)} className="mt-1 h-4 w-4 accent-white" />
+                                    <span>
+                                        <span className="block font-medium text-white">{source.label}</span>
+                                        <span className="mt-1 block text-sm leading-6 text-neutral-400">{source.detail}</span>
+                                    </span>
+                                </label>
+                                <div className="mt-4 grid gap-3">
+                                    <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">{source.targetsLabel}<textarea name={`sourceConfig:${source.value}:targets`} defaultValue={config?.targets ?? ""} rows={2} placeholder={source.targetsPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
+                                    <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Notes<textarea name={`sourceConfig:${source.value}:notes`} defaultValue={config?.notes ?? ""} rows={2} placeholder={source.notesPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
+                                </div>
+                            </div>
+                        })}
                     </div>
                 </section>
                 <button className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">Save leadgen settings</button>

@@ -512,7 +512,7 @@ export default async function AdminHealthPage() {
                         <div className="p-4 sm:p-5">
                             <div className="flex items-center gap-2">
                                 <span
-                                    className={`h-2.5 w-2.5 rounded-full ${styles.dot}`}
+                                    className={`h-2.5 w-2.5 rotate-45 ${styles.dot}`}
                                 />
                                 <span
                                     className={`rounded-md px-2 py-1 text-xs font-medium capitalize ${styles.badge}`}
@@ -555,7 +555,7 @@ export default async function AdminHealthPage() {
                                         >
                                             <div className="flex items-center gap-2">
                                                 <span
-                                                    className={`h-2 w-2 rounded-full ${itemStyles.dot}`}
+                                                    className={`h-2 w-2 rotate-45 ${itemStyles.dot}`}
                                                 />
                                                 <p className="text-xs text-neutral-500">
                                                     {label}
@@ -652,7 +652,7 @@ export default async function AdminHealthPage() {
                                             </h3>
                                         </div>
                                         <span
-                                            className={`h-2.5 w-2.5 rounded-full ${metricStyles.dot}`}
+                                            className={`h-2.5 w-2.5 rotate-45 ${metricStyles.dot}`}
                                         />
                                     </div>
                                     <p className="mt-5 text-2xl font-semibold tracking-tight">
@@ -771,7 +771,7 @@ export default async function AdminHealthPage() {
                                         <div>
                                             <div className="flex items-center gap-2">
                                                 <span
-                                                    className={`h-2.5 w-2.5 rounded-full ${groupStyles.dot}`}
+                                                    className={`h-2.5 w-2.5 rotate-45 ${groupStyles.dot}`}
                                                 />
                                                 <h3 className="font-medium">
                                                     {group.provider}
@@ -803,7 +803,7 @@ export default async function AdminHealthPage() {
                                                         {check.name}
                                                     </span>
                                                     <span
-                                                        className={`h-2 w-2 shrink-0 rounded-full ${checkStyles.dot}`}
+                                                        className={`h-2 w-2 shrink-0 rotate-45 ${checkStyles.dot}`}
                                                     />
                                                 </div>
                                             )

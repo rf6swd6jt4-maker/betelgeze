@@ -1,8 +1,10 @@
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
+import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
 import { PollDuration } from "@/components/leadgen/PollDuration"
 import { PollsAutoRefresh } from "@/components/leadgen/PollsAutoRefresh"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
+import { sourceLabel } from "@/lib/leadgen/sources"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
 import { cancelLeadgenPoll, createLeadgenPoll } from "../actions"
@@ -12,16 +14,24 @@ export const dynamic = "force-dynamic"
 type PageProps = { params: Promise<{ workspaceSlug: string }> }
 type PollStatus = "queued" | "running" | "completed" | "failed" | "cancelled"
 
-const statusStyles: Record<PollStatus, { label: string; dot: string; badge: string; row: string }> = {
-    queued: { label: "Scheduled", dot: "bg-neutral-400", badge: "border-neutral-700 bg-neutral-800 text-neutral-200", row: "" },
-    running: { label: "In progress", dot: "bg-yellow-300", badge: "border-yellow-300/30 bg-yellow-300/10 text-yellow-200", row: "bg-yellow-300/[0.03]" },
-    completed: { label: "Successful", dot: "bg-emerald-300", badge: "border-emerald-300/30 bg-emerald-300/10 text-emerald-200", row: "" },
-    failed: { label: "Failed", dot: "bg-red-300", badge: "border-red-300/30 bg-red-300/10 text-red-200", row: "" },
-    cancelled: { label: "Cancelled", dot: "bg-red-300", badge: "border-red-300/30 bg-red-300/10 text-red-200", row: "" },
+const statusStyles: Record<PollStatus, { label: string; mark: string; badge: string; row: string }> = {
+    queued: { label: "Scheduled", mark: "bg-neutral-400", badge: "border-neutral-700 bg-neutral-800 text-neutral-200", row: "" },
+    running: { label: "In progress", mark: "bg-yellow-300", badge: "border-yellow-300/30 bg-yellow-300/10 text-yellow-200", row: "bg-yellow-300/[0.03]" },
+    completed: { label: "Successful", mark: "bg-emerald-300", badge: "border-emerald-300/30 bg-emerald-300/10 text-emerald-200", row: "" },
+    failed: { label: "Failed", mark: "bg-red-300", badge: "border-red-300/30 bg-red-300/10 text-red-200", row: "" },
+    cancelled: { label: "Cancelled", mark: "bg-red-300", badge: "border-red-300/30 bg-red-300/10 text-red-200", row: "" },
 }
 
 function statusMeta(status: string) {
     return statusStyles[(status as PollStatus) in statusStyles ? status as PollStatus : "queued"]
+}
+
+function sourceNames(snapshot: unknown, count: number) {
+    if (!Array.isArray(snapshot) || snapshot.length === 0) return count ? `${count} configured` : "—"
+    return snapshot
+        .map((source) => source && typeof source === "object" && "key" in source ? sourceLabel(String(source.key)) : null)
+        .filter((label): label is string => Boolean(label))
+        .join(", ") || `${count} configured`
 }
 
 export default async function LeadgenPollsPage({ params }: PageProps) {
@@ -29,7 +39,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
     const pollsResult = await supabaseAdmin
         .from("leadgen_polls")
-        .select("id, status, trigger, source_count, candidate_count, normalised_count, deduped_count, enriched_count, qualified_count, created_at, started_at, completed_at, error")
+        .select("id, status, trigger, source_count, source_snapshot, candidate_count, normalised_count, deduped_count, enriched_count, qualified_count, created_at, started_at, completed_at, error")
         .eq("workspace_id", workspace.id)
         .order("created_at", { ascending: false })
         .limit(40)
@@ -84,7 +94,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                                 <th className="px-5 py-3 font-medium">Started</th>
                                 <th className="px-5 py-3 font-medium">Duration</th>
                                 <th className="px-5 py-3 font-medium">Trigger</th>
-                                <th className="px-5 py-3 font-medium">Sources</th>
+                                <th className="px-5 py-3 font-medium">Source plan</th>
                                 <th className="px-5 py-3 font-medium">Candidates</th>
                                 <th className="px-5 py-3 font-medium">Normalised</th>
                                 <th className="px-5 py-3 font-medium">Deduped</th>
@@ -99,13 +109,13 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                                 const live = ["queued", "running"].includes(poll.status)
                                 return <tr key={poll.id} className={`border-t border-neutral-800 ${meta.row}`}>
                                     <td className="px-5 py-3">
-                                        <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${meta.badge}`}><span className={`h-2 w-2 rounded-full ${meta.dot}`} />{meta.label}</span>
+                                        <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${meta.badge}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
                                         {poll.error && <p className="mt-1 max-w-48 truncate text-xs text-red-300">{poll.error}</p>}
                                     </td>
                                     <td className="px-5 py-3 text-neutral-300">{new Date(poll.started_at ?? poll.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })}</td>
                                     <td className="px-5 py-3 font-mono text-neutral-300"><PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live} /></td>
                                     <td className="px-5 py-3 capitalize text-neutral-400">{poll.trigger}</td>
-                                    <td className="px-5 py-3 text-neutral-300">{poll.source_count}</td>
+                                    <td className="max-w-64 px-5 py-3 text-neutral-300"><span className="line-clamp-2">{sourceNames(poll.source_snapshot, poll.source_count)}</span></td>
                                     <td className="px-5 py-3 text-neutral-300">{poll.candidate_count}</td>
                                     <td className="px-5 py-3 text-neutral-300">{poll.normalised_count}</td>
                                     <td className="px-5 py-3 text-neutral-300">{poll.deduped_count}</td>
@@ -125,10 +135,10 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Status colours</p>
                         <ul className="mt-3 space-y-2 text-sm text-neutral-300">
-                            <li>• Grey: scheduled or initialising.</li>
-                            <li>• Yellow: in progress.</li>
-                            <li>• Green: successful.</li>
-                            <li>• Red: cancelled or failed.</li>
+                            <li className="flex items-center gap-2"><BetelgezeStatusMark className="bg-neutral-400" />Grey: scheduled or initialising.</li>
+                            <li className="flex items-center gap-2"><BetelgezeStatusMark className="bg-yellow-300" />Yellow: in progress.</li>
+                            <li className="flex items-center gap-2"><BetelgezeStatusMark className="bg-emerald-300" />Green: successful.</li>
+                            <li className="flex items-center gap-2"><BetelgezeStatusMark className="bg-red-300" />Red: cancelled or failed.</li>
                         </ul>
                     </div>
                 </div>}

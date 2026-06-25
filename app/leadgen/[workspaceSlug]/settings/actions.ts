@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { storeWorkspaceImage } from "@/lib/onboarding/uploads"
+import { leadgenSourceOptions, normaliseLeadgenSourceKey, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
 
 function refresh(slug: string) {
     revalidatePath(`/leadgen/${slug}`)
@@ -52,7 +53,15 @@ export async function uploadSharedWorkspaceLogo(slug: string, formData: FormData
 
 export async function saveLeadgenSettings(slug: string, formData: FormData) {
     const { workspace } = await requireWorkspace(slug, "admin")
-    const enabledSources = formData.getAll("sources").map((value) => String(value))
+    const enabledSources = formData.getAll("sources")
+        .map((value) => normaliseLeadgenSourceKey(String(value)))
+        .filter((value): value is NonNullable<typeof value> => Boolean(value))
+    const sourceConfig = leadgenSourceOptions.reduce<Partial<LeadgenSourceConfig>>((config, source) => {
+        const targets = String(formData.get(`sourceConfig:${source.value}:targets`) ?? "").trim()
+        const notes = String(formData.get(`sourceConfig:${source.value}:notes`) ?? "").trim()
+        config[source.value] = { targets, notes }
+        return config
+    }, {})
     const pollIntervalHours = Number(formData.get("pollIntervalHours") ?? 168)
     if (!Number.isInteger(pollIntervalHours) || pollIntervalHours < 1 || pollIntervalHours > 2160) throw new Error("Poll interval must be between 1 and 2160 hours.")
     const { error } = await supabaseAdmin.from("leadgen_workspace_settings").upsert({
@@ -62,6 +71,7 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
         geography: String(formData.get("geography") ?? "").trim() || null,
         icp_notes: String(formData.get("icpNotes") ?? "").trim() || null,
         enabled_sources: enabledSources,
+        source_config: sourceConfig,
     })
     if (error) throw new Error("Could not save leadgen settings.")
     refresh(slug)

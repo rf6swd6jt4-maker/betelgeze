@@ -1,4 +1,4 @@
-export type LeadgenSourceKey = "yelp" | "osm" | "state_licensing"
+export type LeadgenSourceKey = "osm" | "state_licensing"
 export type LeadgenConfigKey = LeadgenSourceKey | "icp"
 
 export type LeadgenSourceConfig = Record<LeadgenConfigKey, {
@@ -22,25 +22,17 @@ export type LeadgenSourcePlanItem = {
 
 export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: string; detail: string; targetsLabel: string; targetsPlaceholder: string; notesPlaceholder: string }> = [
     {
-        value: "yelp",
-        label: "Yelp",
-        detail: "Real business search for broad local service categories using Yelp Fusion.",
-        targetsLabel: "Search targets",
-        targetsPlaceholder: "e.g. HVAC contractors in Dallas, roofers near Tampa",
-        notesPlaceholder: "Review thresholds, sparse-profile signals, or search exclusions.",
-    },
-    {
         value: "osm",
         label: "OpenStreetMap",
-        detail: "Free supplemental business/location data through Overpass. Planned after Yelp.",
-        targetsLabel: "Directories / search targets",
-        targetsPlaceholder: "e.g. plumbers Austin, landscapers Phoenix",
+        detail: "Free structured business/location data through Overpass. No API key required.",
+        targetsLabel: "Search targets",
+        targetsPlaceholder: "e.g. HVAC contractors in Dallas, roofers near Tampa",
         notesPlaceholder: "OSM tags and fallback search terms to consider.",
     },
     {
         value: "state_licensing",
         label: "State licensing boards",
-        detail: "Official licensing records for narrow regulated trades. Planned after Yelp.",
+        detail: "Official licensing records for narrow regulated trades. Planned after OSM.",
         targetsLabel: "Boards / states / trades",
         targetsPlaceholder: "e.g. Texas HVAC, electrical, water well",
         notesPlaceholder: "License statuses, classifications, renewal windows, or exclusions.",

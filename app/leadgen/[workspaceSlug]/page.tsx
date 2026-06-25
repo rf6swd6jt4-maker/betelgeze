@@ -85,13 +85,12 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Starting clean</p>
                         <h3 className="mt-3 text-xl font-semibold">No real companies have been collected yet.</h3>
-                        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">Configure Yelp in Settings, add the Yelp API key in Vercel, then run a poll. Only actual stored source records appear here.</p>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">Configure OpenStreetMap in Settings, choose industries and locations, then run a poll. Only actual stored source records appear here.</p>
                     </div>
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Next action</p>
                         <ul className="mt-3 space-y-2 text-sm text-neutral-300">
-                            <li>• Select Yelp, industries, and locations in Settings.</li>
-                            <li>• Add <code className="rounded bg-neutral-900 px-1 py-0.5 text-xs">YELP_FUSION_API_KEY</code> in Vercel.</li>
+                            <li>• Select OpenStreetMap, industries, and locations in Settings.</li>
                             <li>• Run a test poll from the Polls tab.</li>
                             <li>• Review collected companies here.</li>
                         </ul>

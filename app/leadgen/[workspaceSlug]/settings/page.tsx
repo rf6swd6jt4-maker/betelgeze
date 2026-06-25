@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic"
 type PageProps = { params: Promise<{ workspaceSlug: string }> }
 type SourceOption = { source_key: string; option_kind: "industry" | "location"; value: string; label: string }
 type GeoTarget = { value: string; label: string }
-const runnableSources = new Set(["yelp"])
+const runnableSources = new Set(["osm"])
 
 function sourceConfigValue(config: unknown): Partial<LeadgenSourceConfig> {
     return config && typeof config === "object" ? config as Partial<LeadgenSourceConfig> : {}
@@ -103,7 +103,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                             const locationOptions = optionsFor(source.value, "location")
                             const industryOptions = optionsFor(source.value, "industry")
                             const implemented = runnableSources.has(source.value)
-                            const usesSharedIcp = source.value === "yelp" || source.value === "osm"
+                            const usesSharedIcp = source.value === "osm"
                             const hasOptionDatabase = implemented && (usesSharedIcp || locationOptions.length > 0 || industryOptions.length > 0)
                             const sourceSettings = sourceConfig[source.value]
                             return <div key={source.value} className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">
@@ -117,12 +117,12 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                                         {implemented && !hasOptionDatabase && <span className="mt-2 block text-xs text-amber-200">Waiting for verified target options before this source can run.</span>}
                                     </span>
                                 </label>
-                                {source.value === "yelp" && <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
-                                    <summary className="cursor-pointer text-sm font-medium text-neutral-300">Yelp execution settings</summary>
+                                {source.value === "osm" && <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
+                                    <summary className="cursor-pointer text-sm font-medium text-neutral-300">OSM execution settings</summary>
                                     <div className="mt-4 grid gap-3">
-                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Results per industry/location<input name="sourceConfig:yelp:limit" type="number" min={1} max={50} defaultValue={sourceSettings?.limit ?? 10} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
-                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Radius in metres<input name="sourceConfig:yelp:radiusMeters" type="number" min={1000} max={40000} defaultValue={sourceSettings?.radiusMeters ?? 24000} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
-                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Notes<textarea name="sourceConfig:yelp:notes" defaultValue={sourceSettings?.notes ?? ""} rows={2} placeholder={source.notesPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
+                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Max records per industry/location<input name="sourceConfig:osm:limit" type="number" min={1} max={50} defaultValue={sourceSettings?.limit ?? 25} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
+                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Radius in metres<input name="sourceConfig:osm:radiusMeters" type="number" min={1000} max={40000} defaultValue={sourceSettings?.radiusMeters ?? 24000} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
+                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Notes<textarea name="sourceConfig:osm:notes" defaultValue={sourceSettings?.notes ?? ""} rows={2} placeholder={source.notesPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
                                     </div>
                                 </details>}
                                 {hasOptionDatabase && !usesSharedIcp && <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">

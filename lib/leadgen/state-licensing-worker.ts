@@ -8,6 +8,16 @@ type SourceOption = {
     metadata: Record<string, unknown> | null
 }
 
+type SourceIndustryMapping = {
+    icp_industry_value: string
+    native_values: string[] | null
+}
+
+type SourceLocationMapping = {
+    icp_location_value: string
+    native_values: string[] | null
+}
+
 type TdlrResult = {
     licenseNumber: string
     expirationDate: string | null
@@ -81,6 +91,15 @@ function companyNameFromTdlrName(value: string) {
     const matches = [...value.matchAll(/\(([^()]+)\)/g)].map((match) => cleanText(match[1]))
     const parentheticalBusiness = matches.reverse().find((match) => match.length > 2)
     return parentheticalBusiness || value
+}
+
+function ownerNameFromTdlrName(value: string) {
+    if (!/\([^()]+\)/.test(value)) return null
+    const ownerCandidate = cleanText(value.replace(/\([^()]+\)/g, " "))
+    if (!ownerCandidate || ownerCandidate.length < 3) return null
+    if (/\b(LLC|INC|CORP|COMPANY|CO\.?|LTD|LP|LLP|DBA)\b/i.test(ownerCandidate)) return null
+    const words = ownerCandidate.split(/\s+/).filter(Boolean)
+    return words.length >= 2 ? ownerCandidate : null
 }
 
 function compactErrorMessage(error: unknown) {
@@ -192,6 +211,7 @@ async function upsertTdlrRecord({
     result: TdlrResult
 }) {
     const displayName = companyNameFromTdlrName(result.name)
+    const ownerName = ownerNameFromTdlrName(result.name)
     const sourceRecordId = result.profileUrl?.split("?")[1] || `${industryValue}:${locationValue}:${result.licenseNumber}`
     const address = {
         city: result.city,
@@ -212,6 +232,7 @@ async function upsertTdlrRecord({
         expiration_date: result.expirationDate,
         legal_name: result.name,
         parsed_company_name: displayName,
+        parsed_owner_name: ownerName,
         city: result.city,
         county: result.county,
         zip: result.zip,
@@ -260,6 +281,17 @@ async function upsertTdlrRecord({
             review_count: null,
             industry_value: industryValue,
             location_value: locationValue,
+            owner_name: ownerName,
+            owner_phone: ownerName ? result.phone : null,
+            owner_source_key: ownerName ? "state_licensing" : null,
+            owner_confidence: ownerName && result.phone ? 78 : null,
+            owner_evidence: ownerName ? {
+                source: "tdlr_license_search",
+                license_number: result.licenseNumber,
+                legal_name: result.name,
+                parsed_from: "tdlr_name_parenthetical",
+                phone_source: result.phone ? "tdlr_license_phone" : null,
+            } : {},
             first_seen_poll_id: pollId,
             last_seen_at: new Date().toISOString(),
         }, { onConflict: "workspace_id,source_key,source_record_id" })
@@ -269,6 +301,27 @@ async function upsertTdlrRecord({
 
 export async function createStateLicensingTasksForPoll({ workspaceId, pollId, plan }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem }) {
     if (plan.key !== "state_licensing") return 0
+    const [industryMappingsResult, locationMappingsResult] = await Promise.all([
+        supabaseAdmin
+            .from("leadgen_source_industry_mappings")
+            .select("icp_industry_value, native_values")
+            .eq("source_key", "state_licensing")
+            .eq("enabled", true)
+            .in("icp_industry_value", plan.industries),
+        supabaseAdmin
+            .from("leadgen_source_location_mappings")
+            .select("icp_location_value, native_values")
+            .eq("source_key", "state_licensing")
+            .eq("enabled", true)
+            .in("icp_location_value", plan.locations),
+    ])
+    if (industryMappingsResult.error) throw new Error(`Could not load state licensing industry mappings: ${industryMappingsResult.error.message}`)
+    if (locationMappingsResult.error) throw new Error(`Could not load state licensing location mappings: ${locationMappingsResult.error.message}`)
+    const industryMappings = (industryMappingsResult.data ?? []) as SourceIndustryMapping[]
+    const locationMappings = (locationMappingsResult.data ?? []) as SourceLocationMapping[]
+    const nativeIndustries = [...new Set(industryMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
+    const nativeLocations = [...new Set(locationMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
+    if (nativeIndustries.length === 0 || nativeLocations.length === 0) return 0
     const [industriesResult, locationsResult] = await Promise.all([
         supabaseAdmin
             .from("leadgen_source_options")
@@ -276,42 +329,52 @@ export async function createStateLicensingTasksForPoll({ workspaceId, pollId, pl
             .eq("source_key", "state_licensing")
             .eq("option_kind", "industry")
             .eq("enabled", true)
-            .in("value", plan.industries),
+            .in("value", nativeIndustries),
         supabaseAdmin
             .from("leadgen_source_options")
             .select("value, label, metadata")
             .eq("source_key", "state_licensing")
             .eq("option_kind", "location")
             .eq("enabled", true)
-            .in("value", plan.locations),
+            .in("value", nativeLocations),
     ])
     if (industriesResult.error) throw new Error(`Could not load state licensing industries: ${industriesResult.error.message}`)
     if (locationsResult.error) throw new Error(`Could not load state licensing locations: ${locationsResult.error.message}`)
     const industries = (industriesResult.data ?? []) as SourceOption[]
     const locations = (locationsResult.data ?? []) as SourceOption[]
+    const industryByValue = new Map(industries.map((industry) => [industry.value, industry]))
+    const locationByValue = new Map(locations.map((location) => [location.value, location]))
     const limit = Math.min(25, Math.max(1, plan.limit ?? 15))
-    const tasks = industries.flatMap((industry) => {
+    const tasks = industryMappings.flatMap((industryMapping) => (industryMapping.native_values ?? []).flatMap((nativeIndustry) => {
+        const industry = industryByValue.get(nativeIndustry)
+        if (!industry) return []
         const mapping = tdlrMapping(industry)
         if (!mapping) return []
-        return locations.map((location) => ({
-            poll_id: pollId,
-            workspace_id: workspaceId,
-            source_key: "state_licensing",
-            industry_value: industry.value,
-            location_value: location.value,
-            status: "queued",
-            source_query: {
-                board: "tdlr",
-                board_label: "Texas Department of Licensing and Regulation",
-                tdlr_status: mapping.status,
-                tdlr_endorsement: mapping.endorsement ?? null,
-                industry_label: industry.label,
-                county: tdlrCounty(location),
-                location_label: location.label,
-                limit,
-            },
+        return locationMappings.flatMap((locationMapping) => (locationMapping.native_values ?? []).flatMap((nativeLocation) => {
+            const location = locationByValue.get(nativeLocation)
+            if (!location) return []
+            return [{
+                poll_id: pollId,
+                workspace_id: workspaceId,
+                source_key: "state_licensing",
+                industry_value: industryMapping.icp_industry_value,
+                location_value: locationMapping.icp_location_value,
+                status: "queued",
+                source_query: {
+                    board: "tdlr",
+                    board_label: "Texas Department of Licensing and Regulation",
+                    native_industry_value: industry.value,
+                    native_location_value: location.value,
+                    tdlr_status: mapping.status,
+                    tdlr_endorsement: mapping.endorsement ?? null,
+                    industry_label: industry.label,
+                    county: tdlrCounty(location),
+                    location_label: location.label,
+                    limit,
+                },
+            }]
         }))
-    })
+    }))
     if (tasks.length === 0) return 0
     const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(tasks)
     if (error) throw error

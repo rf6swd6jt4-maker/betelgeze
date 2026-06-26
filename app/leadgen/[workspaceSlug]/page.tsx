@@ -18,12 +18,12 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
     const companiesResult = await supabaseAdmin
         .from("leadgen_companies")
-        .select("id, display_name, phone, website_url, profile_url, source_key, address, rating, review_count, industry_value, location_value, created_at")
+        .select("id, display_name, phone, owner_name, owner_phone, website_url, profile_url, source_key, address, rating, review_count, industry_value, location_value, created_at")
         .eq("workspace_id", workspace.id)
         .order("created_at", { ascending: false })
         .limit(100)
-    const companies = companiesResult.error ? [] : companiesResult.data ?? []
-    const callable = companies.filter((company) => Boolean(company.phone)).length
+    const companies = (companiesResult.error ? [] : companiesResult.data ?? []).filter((company) => Boolean(company.owner_name && (company.owner_phone || company.phone)))
+    const callable = companies.filter((company) => Boolean(company.owner_phone || company.phone)).length
     const withProfiles = companies.filter((company) => Boolean(company.profile_url || company.website_url)).length
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
@@ -54,7 +54,9 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
             <section className="mt-5 space-y-3 md:space-y-0 md:rounded-2xl md:border md:border-neutral-800 md:bg-black">
                 {companies.length ? companies.map((company) => {
                     const sourceUrl = company.website_url ?? company.profile_url ?? null
-                    const phoneStatus = <span className={`inline-flex items-center gap-2 text-sm ${company.phone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${company.phone ? "bg-emerald-300" : "bg-neutral-500"}`} />{company.phone ? "Callable" : "No phone"}</span>
+                    const bestPhone = company.owner_phone || company.phone
+                    const phoneStatus = <span className={`inline-flex items-center gap-2 text-sm ${bestPhone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${bestPhone ? "bg-emerald-300" : "bg-neutral-500"}`} />{bestPhone ? "Callable" : "No phone"}</span>
+                    const ownerStatus = <span className={`truncate text-sm ${company.owner_name ? "text-neutral-200" : "text-neutral-500"}`}>{company.owner_name ? `Owner: ${company.owner_name}${company.owner_phone ? ` · ${company.owner_phone}` : ""}` : "Owner not found"}</span>
                     const leadActions = [
                         sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
                         { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },
@@ -66,17 +68,19 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                             {phoneStatus}
                         </div>
                         <div className="flex items-center gap-3 px-3.5 py-2.5">
+                            {ownerStatus}
                             <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
                             <p className="min-w-0 truncate text-sm text-neutral-400">{String(company.industry_value ?? "—").replace(/_/g, " ")}</p>
                             <p className="font-mono text-sm text-neutral-500">{shortId(company.id)}</p>
                             <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(company.created_at)}</p>
                         </div>
                     </MobileCardActionSurface>
-                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(210px,1.1fr)_150px_170px_150px_100px_120px_32px] md:items-center">
+                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(210px,1.1fr)_150px_minmax(190px,0.9fr)_130px_140px_100px_120px_32px] md:items-center">
                         <div className="min-w-0">
                             <p className="truncate text-base font-medium text-neutral-100">{company.display_name}</p>
                         </div>
                         {phoneStatus}
+                        {ownerStatus}
                         <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
                         <p className="truncate text-sm text-neutral-400">{String(company.industry_value ?? "—").replace(/_/g, " ")}</p>
                         <p className="font-mono text-sm text-neutral-500">{shortId(company.id)}</p>

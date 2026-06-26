@@ -13,6 +13,11 @@ function refresh(slug: string) {
     revalidatePath(`/dashboard/${slug}/settings`)
 }
 
+function boundedInteger(value: FormDataEntryValue | null, fallback: number, min: number, max: number) {
+    const numeric = Number(value ?? fallback)
+    return Number.isFinite(numeric) ? Math.min(max, Math.max(min, Math.floor(numeric))) : fallback
+}
+
 export async function updateLeadgenWorkspaceName(slug: string, formData: FormData) {
     const { workspace } = await requireWorkspace(slug, "admin")
     const name = String(formData.get("name") ?? "").trim()
@@ -57,16 +62,20 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
         .map((value) => normaliseLeadgenSourceKey(String(value)))
         .filter((value): value is NonNullable<typeof value> => Boolean(value))
     const sourceConfig = leadgenSourceOptions.reduce<Partial<LeadgenSourceConfig>>((config, source) => {
-        const industries = formData.getAll(`sourceConfig:${source.value}:industries`).map((value) => String(value))
-        const locations = formData.getAll(`sourceConfig:${source.value}:locations`).map((value) => String(value))
         const limit = Number(formData.get(`sourceConfig:${source.value}:limit`) ?? 10)
         const radiusMeters = Number(formData.get(`sourceConfig:${source.value}:radiusMeters`) ?? 24000)
+        const crawlDepth = Number(formData.get(`sourceConfig:${source.value}:crawlDepth`) ?? 2)
+        const timeoutSeconds = Number(formData.get(`sourceConfig:${source.value}:timeoutSeconds`) ?? 10)
+        const release = String(formData.get(`sourceConfig:${source.value}:release`) ?? "").trim()
         const notes = String(formData.get(`sourceConfig:${source.value}:notes`) ?? "").trim()
         config[source.value] = {
-            industries,
-            locations,
+            enabled: enabledSources.includes(source.value),
             limit: Number.isFinite(limit) ? Math.min(50, Math.max(1, Math.floor(limit))) : 10,
             radiusMeters: Number.isFinite(radiusMeters) ? Math.min(40000, Math.max(1000, Math.floor(radiusMeters))) : 24000,
+            crawlDepth: Number.isFinite(crawlDepth) ? Math.min(5, Math.max(1, Math.floor(crawlDepth))) : 2,
+            timeoutSeconds: Number.isFinite(timeoutSeconds) ? Math.min(30, Math.max(3, Math.floor(timeoutSeconds))) : 10,
+            respectRobots: formData.get(`sourceConfig:${source.value}:respectRobots`) !== "off",
+            release,
             notes,
         }
         return config
@@ -74,6 +83,9 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
         icp: {
             industries: formData.getAll("sourceConfig:icp:industries").map((value) => String(value)),
             locations: formData.getAll("sourceConfig:icp:locations").map((value) => String(value)),
+            limit: boundedInteger(formData.get("sourceConfig:icp:limit"), 1000, 10, 5000),
+            maxEnrichmentDepth: boundedInteger(formData.get("sourceConfig:icp:maxEnrichmentDepth"), 4, 1, 8),
+            ownerRequired: formData.get("sourceConfig:icp:ownerRequired") !== "off",
             notes: String(formData.get("sourceConfig:icp:notes") ?? "").trim(),
         },
     })

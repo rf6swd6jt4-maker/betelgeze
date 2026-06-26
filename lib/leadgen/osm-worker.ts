@@ -10,9 +10,14 @@ type GeoTarget = {
 }
 
 type CategoryMapping = {
-    industry_value: string
-    source_search_term: string
-    source_category_aliases: string[] | null
+    icp_industry_value: string
+    native_values: string[] | null
+    metadata: Record<string, unknown> | null
+}
+
+type LocationMapping = {
+    icp_location_value: string
+    native_values: string[] | null
 }
 
 type OsmElement = {
@@ -71,7 +76,8 @@ function tagClauses(tags: string[], target: GeoTarget, radius: number) {
 }
 
 function buildOverpassQuery(target: GeoTarget, mapping: CategoryMapping, radius: number, limit: number) {
-    const tags = Array.isArray(mapping.source_category_aliases) ? mapping.source_category_aliases.filter(Boolean) : []
+    const tagsFromMetadata = Array.isArray(mapping.metadata?.osm_tags) ? mapping.metadata.osm_tags.map(String) : []
+    const tags = (tagsFromMetadata.length ? tagsFromMetadata : Array.isArray(mapping.native_values) ? mapping.native_values : []).filter(Boolean)
     const clauses = tagClauses(tags, target, radius)
     return `[out:json][timeout:25];
 (
@@ -93,6 +99,12 @@ export async function refreshLeadgenPollCounts(pollId: string, workspaceId: stri
         supabaseAdmin.from("leadgen_source_records").select("id", { count: "exact", head: true }).eq("poll_id", pollId),
         supabaseAdmin.from("leadgen_companies").select("id", { count: "exact", head: true }).eq("first_seen_poll_id", pollId),
     ])
+    const qualifiedResult = await supabaseAdmin
+        .from("leadgen_companies")
+        .select("id", { count: "exact", head: true })
+        .eq("first_seen_poll_id", pollId)
+        .not("owner_name", "is", null)
+        .or("owner_phone.not.is.null,phone.not.is.null")
     await supabaseAdmin
         .from("leadgen_polls")
         .update({
@@ -100,7 +112,7 @@ export async function refreshLeadgenPollCounts(pollId: string, workspaceId: stri
             normalised_count: companiesResult.count ?? 0,
             deduped_count: companiesResult.count ?? 0,
             enriched_count: 0,
-            qualified_count: 0,
+            qualified_count: qualifiedResult.count ?? 0,
         })
         .eq("id", pollId)
         .eq("workspace_id", workspaceId)
@@ -118,7 +130,9 @@ export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
         supabaseAdmin
             .from("leadgen_companies")
             .select("id", { count: "exact", head: true })
-            .eq("first_seen_poll_id", pollId),
+            .eq("first_seen_poll_id", pollId)
+            .not("owner_name", "is", null)
+            .or("owner_phone.not.is.null,phone.not.is.null"),
     ])
     if (tasksResult.error) {
         await setLeadgenPollStatus(pollId, workspaceId, "failed", `Could not read poll task results: ${tasksResult.error.message}`)
@@ -127,22 +141,21 @@ export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
     const tasks = tasksResult.data ?? []
     const failedTasks = tasks.filter((task) => task.status === "failed")
     const unfinishedTasks = tasks.filter((task) => ["queued", "running"].includes(task.status))
-    const companyCount = companiesResult.count ?? 0
+    const qualifiedCompanyCount = companiesResult.count ?? 0
     const firstErrors = failedTasks
         .slice(0, 3)
         .map((task) => `${task.source_key}/${task.industry_value ?? "unknown"}/${task.location_value ?? "unknown"}: ${task.error || "Unknown source error"}`)
         .join(" | ")
-    const emptyResultError = "The poll completed, but the enabled sources returned zero usable companies for this configuration. Treating this as failed so Betelgeze does not hide an empty collection run behind a green status. Try broader locations/industries or add another source."
     await setLeadgenPollStatus(
         pollId,
         workspaceId,
-        failedTasks.length > 0 || unfinishedTasks.length > 0 || companyCount === 0 ? "failed" : "completed",
+        failedTasks.length > 0 || unfinishedTasks.length > 0 || qualifiedCompanyCount === 0 ? "failed" : "completed",
         failedTasks.length > 0
             ? `${failedTasks.length} source task${failedTasks.length === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}`
             : unfinishedTasks.length > 0
                 ? `${unfinishedTasks.length} source task${unfinishedTasks.length === 1 ? " was" : "s were"} not processed. Retry the poll or check the enabled sources.`
-                : companyCount === 0
-                    ? emptyResultError
+                : qualifiedCompanyCount === 0
+                    ? "The poll completed, but no qualified leads had both an owner/principal and a callable phone number. Betelgeze stored any raw candidates/evidence internally, but the Leads tab only shows qualified leads."
                     : null,
     )
     await refreshLeadgenPollCounts(pollId, workspaceId)
@@ -296,22 +309,33 @@ export async function createOsmTasksForPoll({ workspaceId, pollId, plan }: { wor
     if (plan.key !== "osm") return 0
     const [targetsResult, mappingsResult] = await Promise.all([
         supabaseAdmin
-            .from("leadgen_geo_targets")
-            .select("value, label, latitude, longitude, radius_meters")
-            .in("value", plan.locations),
-        supabaseAdmin
-            .from("leadgen_source_category_mappings")
-            .select("industry_value, source_search_term, source_category_aliases")
+            .from("leadgen_source_location_mappings")
+            .select("icp_location_value, native_values")
             .eq("source_key", "osm")
             .eq("enabled", true)
-            .in("industry_value", plan.industries),
+            .in("icp_location_value", plan.locations),
+        supabaseAdmin
+            .from("leadgen_source_industry_mappings")
+            .select("icp_industry_value, native_values, native_label, metadata")
+            .eq("source_key", "osm")
+            .eq("enabled", true)
+            .in("icp_industry_value", plan.industries),
     ])
-    if (targetsResult.error) throw new Error(`Could not load OSM target locations: ${targetsResult.error.message}`)
+    if (targetsResult.error) throw new Error(`Could not load OSM target location mappings: ${targetsResult.error.message}`)
     if (mappingsResult.error) throw new Error(`Could not load OSM category mappings: ${mappingsResult.error.message}`)
-    const targets = (targetsResult.data ?? []) as GeoTarget[]
+    const locationMappings = (targetsResult.data ?? []) as LocationMapping[]
+    const mappedTargetValues = [...new Set(locationMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
+    if (mappedTargetValues.length === 0) return 0
+    const geoTargetsResult = await supabaseAdmin
+        .from("leadgen_geo_targets")
+        .select("value, label, latitude, longitude, radius_meters")
+        .in("value", mappedTargetValues)
+    if (geoTargetsResult.error) throw new Error(`Could not load OSM target locations: ${geoTargetsResult.error.message}`)
+    const targetsByValue = new Map(((geoTargetsResult.data ?? []) as GeoTarget[]).map((target) => [target.value, target]))
     const mappings = (mappingsResult.data ?? []) as CategoryMapping[]
-    const tasks = mappings.flatMap((mapping) => targets
-        .filter((target) => typeof target.latitude === "number" && typeof target.longitude === "number")
+    const tasks = mappings.flatMap((mapping) => locationMappings.flatMap((locationMapping) => (locationMapping.native_values ?? [])
+        .map((nativeLocation) => targetsByValue.get(nativeLocation))
+        .filter((target): target is GeoTarget => Boolean(target && typeof target.latitude === "number" && typeof target.longitude === "number"))
         .map((target) => {
             const radius = Math.min(40000, Math.max(1000, plan.radiusMeters ?? target.radius_meters ?? 24000))
             const limit = Math.min(50, Math.max(1, plan.limit ?? 25))
@@ -319,18 +343,19 @@ export async function createOsmTasksForPoll({ workspaceId, pollId, plan }: { wor
                 poll_id: pollId,
                 workspace_id: workspaceId,
                 source_key: "osm",
-                industry_value: mapping.industry_value,
-                location_value: target.value,
+                industry_value: mapping.icp_industry_value,
+                location_value: locationMapping.icp_location_value,
                 status: "queued",
                 source_query: {
                     query: buildOverpassQuery(target, mapping, radius, limit),
-                    tags: mapping.source_category_aliases ?? [],
+                    tags: (Array.isArray(mapping.metadata?.osm_tags) ? mapping.metadata.osm_tags : mapping.native_values) ?? [],
                     target: target.label,
+                    native_location: target.value,
                     radius_meters: radius,
                     limit,
                 },
             }
-        }))
+        })))
     if (tasks.length === 0) return 0
     const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(tasks)
     if (error) throw error

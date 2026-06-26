@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { buildSourcePlan, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
+import { buildSourcePlan, executableLeadgenSources, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
 import { createOsmTasksForPoll, finalizeLeadgenPoll, processOsmPoll } from "@/lib/leadgen/osm-worker"
 import { createStateLicensingTasksForPoll, processStateLicensingPoll } from "@/lib/leadgen/state-licensing-worker"
 
@@ -25,12 +25,13 @@ export async function createLeadgenPoll(slug: string) {
         .maybeSingle()
     const settings = settingsResult.error ? null : settingsResult.data
     const enabledSources = Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : []
-    const sourcePlan = buildSourcePlan(enabledSources, configObject(settings?.source_config))
+    const currentSourceConfig = configObject(settings?.source_config)
+    const sourcePlan = buildSourcePlan(enabledSources, currentSourceConfig)
     const osmPlan = sourcePlan.find((source) => source.key === "osm")
     const stateLicensingPlan = sourcePlan.find((source) => source.key === "state_licensing")
     const runnableOsmPlan = osmPlan && osmPlan.industries.length > 0 && osmPlan.locations.length > 0 ? osmPlan : null
     const runnableStateLicensingPlan = stateLicensingPlan && stateLicensingPlan.industries.length > 0 && stateLicensingPlan.locations.length > 0 ? stateLicensingPlan : null
-    const runnablePlans = sourcePlan.filter((source) => source.industries.length > 0 && source.locations.length > 0)
+    const runnablePlans = sourcePlan.filter((source) => executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
     const hasRunnableSources = runnablePlans.length > 0
     const { data: poll, error } = await supabaseAdmin.from("leadgen_polls").insert({
         workspace_id: workspace.id,
@@ -39,7 +40,15 @@ export async function createLeadgenPoll(slug: string) {
         status: hasRunnableSources ? "queued" : "failed",
         source_count: sourcePlan.length,
         source_snapshot: sourcePlan,
-        error: hasRunnableSources ? null : "Enable at least one source and select at least one industry and one location in Settings.",
+        icp_snapshot: {
+            industries: sourcePlan[0]?.industries ?? [],
+            locations: sourcePlan[0]?.locations ?? [],
+            candidate_target_count: currentSourceConfig.icp?.limit ?? null,
+            max_enrichment_depth: currentSourceConfig.icp?.maxEnrichmentDepth ?? null,
+            owner_required: currentSourceConfig.icp?.ownerRequired !== false,
+            captured_at: new Date().toISOString(),
+        },
+        error: hasRunnableSources ? null : "Enable at least one executable source and select at least one ICP industry and one ICP location in Settings.",
         completed_at: hasRunnableSources ? null : new Date().toISOString(),
     }).select("id").single()
     if (error) throw new Error("Could not queue a new leadgen poll.")

@@ -5,15 +5,14 @@ import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
-import { leadgenSourceOptions, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
+import { executableLeadgenSources, leadgenSourceOptions, type LeadgenSourceConfig, type LeadgenSourceKey } from "@/lib/leadgen/sources"
 import { saveLeadgenSettings, updateLeadgenCoverLayout, updateLeadgenWorkspaceName, uploadLeadgenBanner, uploadSharedWorkspaceLogo } from "./actions"
 
 export const dynamic = "force-dynamic"
 
 type PageProps = { params: Promise<{ workspaceSlug: string }> }
-type SourceOption = { source_key: string; option_kind: "industry" | "location"; value: string; label: string }
-type GeoTarget = { value: string; label: string }
-const runnableSources = new Set(["osm", "state_licensing"])
+type IcpOption = { value: string; label: string }
+type SourceMapping = { source_key: LeadgenSourceKey; icp_industry_value?: string | null; icp_location_value?: string | null; native_values?: string[] | null }
 
 function sourceConfigValue(config: unknown): Partial<LeadgenSourceConfig> {
     return config && typeof config === "object" ? config as Partial<LeadgenSourceConfig> : {}
@@ -26,33 +25,53 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
         workspace.leadgen_banner_path ? createUploadSignedUrl(workspace.leadgen_banner_path) : null,
         workspace.logo_path ? createUploadSignedUrl(workspace.logo_path) : null,
     ])
-    const [settingsResult, optionsResult, geoTargetsResult] = await Promise.all([
+    const [settingsResult, industriesResult, locationsResult, industryMappingsResult, locationMappingsResult] = await Promise.all([
         supabaseAdmin
         .from("leadgen_workspace_settings")
         .select("poll_interval_hours, automatic_polls_enabled, geography, icp_notes, enabled_sources, source_config")
         .eq("workspace_id", workspace.id)
         .maybeSingle(),
         supabaseAdmin
-            .from("leadgen_source_options")
-            .select("source_key, option_kind, value, label")
-            .eq("enabled", true)
-            .order("label", { ascending: true }),
-        supabaseAdmin
-            .from("leadgen_geo_targets")
+            .from("leadgen_icp_industries")
             .select("value, label")
             .eq("enabled", true)
             .order("label", { ascending: true }),
+        supabaseAdmin
+            .from("leadgen_icp_locations")
+            .select("value, label")
+            .eq("enabled", true)
+            .order("label", { ascending: true }),
+        supabaseAdmin
+            .from("leadgen_source_industry_mappings")
+            .select("source_key, icp_industry_value, native_values")
+            .eq("enabled", true),
+        supabaseAdmin
+            .from("leadgen_source_location_mappings")
+            .select("source_key, icp_location_value, native_values")
+            .eq("enabled", true),
     ])
     const settings = settingsResult.error ? null : settingsResult.data
     const enabledSources = new Set(Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : [])
     const sourceConfig = sourceConfigValue(settings?.source_config)
-    const sourceOptions = (optionsResult.error ? [] : optionsResult.data ?? []) as SourceOption[]
-    const geoTargets = (geoTargetsResult.error ? [] : geoTargetsResult.data ?? []) as GeoTarget[]
+    const icpIndustries = (industriesResult.error ? [] : industriesResult.data ?? []) as IcpOption[]
+    const icpLocations = (locationsResult.error ? [] : locationsResult.data ?? []) as IcpOption[]
+    const industryMappings = (industryMappingsResult.error ? [] : industryMappingsResult.data ?? []) as SourceMapping[]
+    const locationMappings = (locationMappingsResult.error ? [] : locationMappingsResult.data ?? []) as SourceMapping[]
+    const selectedIndustries = Array.isArray(sourceConfig.icp?.industries) ? sourceConfig.icp.industries : []
+    const selectedLocations = Array.isArray(sourceConfig.icp?.locations) ? sourceConfig.icp.locations : []
 
-    function optionsFor(sourceKey: string, kind: SourceOption["option_kind"]) {
-        return sourceOptions
-            .filter((option) => option.source_key === sourceKey && option.option_kind === kind)
-            .map((option) => ({ value: option.value, label: option.label }))
+    function mappingSummary(sourceKey: LeadgenSourceKey) {
+        const mappedIndustries = new Set(industryMappings.filter((mapping) => mapping.source_key === sourceKey && (mapping.native_values?.length ?? 0) > 0).map((mapping) => mapping.icp_industry_value).filter(Boolean))
+        const mappedLocations = new Set(locationMappings.filter((mapping) => mapping.source_key === sourceKey && (mapping.native_values?.length ?? 0) > 0).map((mapping) => mapping.icp_location_value).filter(Boolean))
+        const selectedIndustryCount = selectedIndustries.length
+        const selectedLocationCount = selectedLocations.length
+        const coveredIndustryCount = selectedIndustries.filter((value) => mappedIndustries.has(value)).length
+        const coveredLocationCount = selectedLocations.filter((value) => mappedLocations.has(value)).length
+        return {
+            industryText: selectedIndustryCount ? `${coveredIndustryCount}/${selectedIndustryCount} industries mapped` : "Choose ICP industries",
+            locationText: selectedLocationCount ? `${coveredLocationCount}/${selectedLocationCount} locations mapped` : "Choose ICP locations",
+            ready: selectedIndustryCount > 0 && selectedLocationCount > 0 && coveredIndustryCount > 0 && coveredLocationCount > 0,
+        }
     }
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
@@ -83,8 +102,11 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                         <h2 className="text-lg font-semibold">ICP targeting</h2>
                         <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Shared target categories for sources that use the same broad Betelgeze ICP taxonomy, such as GBP, directories, and business registries.</p>
                         <div className="mt-5 grid gap-4 md:grid-cols-2">
-                            <SearchableMultiSelect name="sourceConfig:icp:locations" label="Target locations" options={geoTargets.map((target) => ({ value: target.value, label: target.label }))} selectedValues={Array.isArray(sourceConfig.icp?.locations) ? sourceConfig.icp.locations : []} />
-                            <SearchableMultiSelect name="sourceConfig:icp:industries" label="Target industries" options={optionsFor("icp", "industry")} selectedValues={Array.isArray(sourceConfig.icp?.industries) ? sourceConfig.icp.industries : []} />
+                            <SearchableMultiSelect name="sourceConfig:icp:locations" label="Target locations" options={icpLocations.map((target) => ({ value: target.value, label: target.label }))} selectedValues={selectedLocations} />
+                            <SearchableMultiSelect name="sourceConfig:icp:industries" label="Target industries" options={icpIndustries.map((industry) => ({ value: industry.value, label: industry.label }))} selectedValues={selectedIndustries} />
+                            <label className="block text-sm text-neutral-300">Candidate target count<input name="sourceConfig:icp:limit" type="number" min={10} max={5000} defaultValue={sourceConfig.icp?.limit ?? 1000} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-white" /><span className="mt-1 block text-xs text-neutral-500">Upper bound for seed candidates before enrichment and qualification.</span></label>
+                            <label className="block text-sm text-neutral-300">Max enrichment depth<input name="sourceConfig:icp:maxEnrichmentDepth" type="number" min={1} max={8} defaultValue={sourceConfig.icp?.maxEnrichmentDepth ?? 4} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-white" /><span className="mt-1 block text-xs text-neutral-500">How far the pipeline may chase owner/phone evidence across supporting sources.</span></label>
+                            <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300 md:col-span-2"><input name="sourceConfig:icp:ownerRequired" type="checkbox" defaultChecked={sourceConfig.icp?.ownerRequired !== false} className="h-4 w-4 accent-white" />Only show qualified leads when owner/principal and phone evidence is found</label>
                             <label className="block text-sm text-neutral-300 md:col-span-2">ICP notes<textarea name="icpNotes" defaultValue={settings?.icp_notes ?? ""} rows={3} placeholder="Company size, services, revenue band, licensing requirements, review profile, and disqualifiers." className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-white" /></label>
                             <input type="hidden" name="geography" value={settings?.geography ?? ""} />
                         </div>
@@ -94,46 +116,44 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                         <div>
                             <h2 className="text-lg font-semibold">Sources</h2>
-                            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Enable source families. Common targeting comes from ICP above; source-specific taxonomies live under Advanced.</p>
+                            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Enable source families. Targeting comes only from the ICP above; source cards hold technical limits, credentials, health, and pacing.</p>
                         </div>
                     </div>
-                    <div className="mt-5 grid gap-3 xl:grid-cols-4">
+                    <div className="mt-5 grid gap-3 xl:grid-cols-3">
                         {leadgenSourceOptions.map((source) => {
-                            const config = sourceConfig[source.value]
-                            const locationOptions = optionsFor(source.value, "location")
-                            const industryOptions = optionsFor(source.value, "industry")
-                            const implemented = runnableSources.has(source.value)
-                            const usesSharedIcp = source.value === "osm"
-                            const hasOptionDatabase = implemented && (usesSharedIcp || locationOptions.length > 0 || industryOptions.length > 0)
+                            const implemented = executableLeadgenSources.has(source.value)
                             const sourceSettings = sourceConfig[source.value]
+                            const mapped = mappingSummary(source.value)
+                            const canRun = implemented && mapped.ready
+                            const apiKeyConfigured = source.value === "opencorporates" ? Boolean(process.env.OPENCORPORATES_API_KEY) : source.value === "sam_gov" ? Boolean(process.env.SAM_GOV_API_KEY) : true
                             return <div key={source.value} className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">
                                 <label className="flex min-h-24 items-start gap-3">
-                                    <input name="sources" value={source.value} type="checkbox" defaultChecked={enabledSources.has(source.value) && hasOptionDatabase} disabled={!hasOptionDatabase} className="mt-1 h-4 w-4 accent-white disabled:opacity-40" />
+                                    <input name="sources" value={source.value} type="checkbox" defaultChecked={enabledSources.has(source.value)} disabled={!canRun} className="mt-1 h-4 w-4 accent-white disabled:opacity-40" />
                                     <span>
                                         <span className="block font-medium text-white">{source.label}</span>
                                         <span className="mt-1 block text-sm leading-5 text-neutral-400">{source.detail}</span>
-                                        {implemented && usesSharedIcp && <span className="mt-2 block text-xs text-emerald-200">Uses the shared ICP selectors.</span>}
-                                        {!implemented && <span className="mt-2 block text-xs text-amber-200">Planned source. Worker not implemented yet.</span>}
-                                        {implemented && !hasOptionDatabase && <span className="mt-2 block text-xs text-amber-200">Waiting for verified target options before this source can run.</span>}
+                                        <span className={`mt-2 block text-xs ${canRun ? "text-emerald-200" : implemented ? "text-amber-200" : "text-neutral-500"}`}>{implemented ? source.statusLabel : "Planned source"}</span>
                                     </span>
                                 </label>
-                                {source.value === "osm" && <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
-                                    <summary className="cursor-pointer text-sm font-medium text-neutral-300">OSM execution settings</summary>
+                                <div className="mt-3 grid gap-2 rounded-lg border border-neutral-900 bg-black/40 p-3 text-xs text-neutral-400">
+                                    <div className="flex items-center justify-between gap-2"><span>Industry mapping</span><span className={mapped.industryText.includes("0/") ? "text-amber-200" : "text-neutral-300"}>{mapped.industryText}</span></div>
+                                    <div className="flex items-center justify-between gap-2"><span>Location mapping</span><span className={mapped.locationText.includes("0/") ? "text-amber-200" : "text-neutral-300"}>{mapped.locationText}</span></div>
+                                    {source.requiresApiKey && <div className="flex items-center justify-between gap-2"><span>API key</span><span className={apiKeyConfigured ? "text-emerald-200" : "text-amber-200"}>{apiKeyConfigured ? "Configured" : "Missing in Vercel"}</span></div>}
+                                </div>
+                                <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
+                                    <summary className="cursor-pointer text-sm font-medium text-neutral-300">Technical settings</summary>
                                     <div className="mt-4 grid gap-3">
-                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Max records per industry/location<input name="sourceConfig:osm:limit" type="number" min={1} max={50} defaultValue={sourceSettings?.limit ?? 25} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
-                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Radius in metres<input name="sourceConfig:osm:radiusMeters" type="number" min={1000} max={40000} defaultValue={sourceSettings?.radiusMeters ?? 24000} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
-                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Notes<textarea name="sourceConfig:osm:notes" defaultValue={sourceSettings?.notes ?? ""} rows={2} placeholder={source.notesPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
+                                        {source.value === "overture" && <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Release/version<input name="sourceConfig:overture:release" defaultValue={sourceSettings?.release ?? "2026-06-17.0"} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>}
+                                        {source.value === "website" && <>
+                                            <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Crawl depth<input name="sourceConfig:website:crawlDepth" type="number" min={1} max={5} defaultValue={sourceSettings?.crawlDepth ?? 2} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
+                                            <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Timeout seconds<input name="sourceConfig:website:timeoutSeconds" type="number" min={3} max={30} defaultValue={sourceSettings?.timeoutSeconds ?? 10} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
+                                            <label className="flex items-center gap-2 text-xs text-neutral-300"><input name="sourceConfig:website:respectRobots" type="checkbox" defaultChecked={sourceSettings?.respectRobots !== false} className="h-4 w-4 accent-white" />Respect robots controls</label>
+                                        </>}
+                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Max records per mapped task<input name={`sourceConfig:${source.value}:limit`} type="number" min={1} max={50} defaultValue={sourceSettings?.limit ?? (source.value === "state_licensing" ? 15 : 25)} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
+                                        {(source.value === "osm" || source.value === "overture") && <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Radius in metres<input name={`sourceConfig:${source.value}:radiusMeters`} type="number" min={1000} max={40000} defaultValue={sourceSettings?.radiusMeters ?? 24000} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>}
+                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Notes<textarea name={`sourceConfig:${source.value}:notes`} defaultValue={sourceSettings?.notes ?? ""} rows={2} placeholder={source.notesPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
                                     </div>
-                                </details>}
-                                {hasOptionDatabase && !usesSharedIcp && <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
-                                    <summary className="cursor-pointer text-sm font-medium text-neutral-300">Advanced filters</summary>
-                                    <div className="mt-4 grid gap-3">
-                                        {locationOptions.length > 0 && <SearchableMultiSelect name={`sourceConfig:${source.value}:locations`} label="Locations" options={locationOptions} selectedValues={Array.isArray(config?.locations) ? config.locations : []} />}
-                                        {industryOptions.length > 0 && <SearchableMultiSelect name={`sourceConfig:${source.value}:industries`} label="License / record types" options={industryOptions} selectedValues={Array.isArray(config?.industries) ? config.industries : []} />}
-                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Max records per license/county<input name={`sourceConfig:${source.value}:limit`} type="number" min={1} max={25} defaultValue={sourceSettings?.limit ?? 10} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
-                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Notes<textarea name={`sourceConfig:${source.value}:notes`} defaultValue={config?.notes ?? ""} rows={2} placeholder={source.notesPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
-                                    </div>
-                                </details>}
+                                </details>
                             </div>
                         })}
                     </div>

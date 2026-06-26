@@ -139,9 +139,9 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     const failedTasks = tasks.filter((task) => task.error || task.status === "failed")
                     const hasConsoleEntry = poll.status === "failed" || failedTasks.length > 0
                     const creator = poll.requested_by ? creatorById.get(poll.requested_by) : null
-                    return <div key={poll.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(240px,1.35fr)_100px_170px_160px_130px_100px_120px_32px] md:items-center ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>
+                    return <div key={poll.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(190px,1fr)_94px_170px_160px_130px_100px_120px_32px] md:items-center ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>
                         <div className="min-w-0">
-                            <p className="truncate text-base font-semibold text-neutral-100">{sourceNames(poll.source_snapshot, poll.source_count)} poll</p>
+                            <p className="truncate text-base font-medium text-neutral-100">{sourceNames(poll.source_snapshot, poll.source_count)} poll</p>
                         </div>
                         <span className="w-fit rounded-md border border-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-400">{poll.trigger === "manual" ? "Manual" : "Automated"}</span>
                         <div className="flex items-center justify-end gap-3 md:justify-start">

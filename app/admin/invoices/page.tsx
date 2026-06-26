@@ -272,9 +272,9 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                             const invoiceTone = toneClasses(invoiceStatus.tone)
                             const whatsappTone = toneClasses(whatsappStatus.tone)
                             const invoiceAttention = isAttentionStatus(sale.status)
-                            return <div key={sale.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(220px,1.25fr)_100px_120px_165px_190px_100px_120px_32px] md:items-center ${sale.isFilterMatch ? "" : "opacity-35"} ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
+                            return <div key={sale.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(180px,1fr)_92px_120px_165px_190px_100px_120px_32px] md:items-center ${sale.isFilterMatch ? "" : "opacity-35"} ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
                                 <div className="min-w-0">
-                                    <p className="truncate text-base font-semibold text-neutral-100">
+                                    <p className="truncate text-base font-medium text-neutral-100">
                                         {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="underline-offset-4 hover:underline">{sale.client_name}</Link> : sale.client_name}
                                     </p>
                                 </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useId, useRef, useState } from "react"
+import { useCallback, useEffect, useId, useRef, useState } from "react"
 import Link from "next/link"
 
 export type ListAction = {
@@ -16,12 +16,28 @@ const REMOVE_WARNING = "Remove this item from Betelgeze? This keeps the interfac
 
 export function ListActionMenu({ actions, label = "Open item actions" }: { actions: Array<Partial<ListAction> | null | undefined | false>; label?: string }) {
     const [open, setOpen] = useState(false)
+    const [position, setPosition] = useState<{ top: number; right: number } | null>(null)
     const menuId = useId()
     const menuRef = useRef<HTMLDivElement>(null)
+    const buttonRef = useRef<HTMLButtonElement>(null)
     const visibleActions = actions.filter((action): action is ListAction => {
         if (!action) return false
         return Boolean(action.label && (action.href || action.action))
     })
+
+    const updatePosition = useCallback(() => {
+        const rect = buttonRef.current?.getBoundingClientRect()
+        if (!rect) return
+        const estimatedHeight = Math.min(window.innerHeight - 32, visibleActions.length * 38 + 8)
+        const preferredTop = rect.bottom + 8
+        const top = preferredTop + estimatedHeight > window.innerHeight - 16
+            ? Math.max(16, rect.top - estimatedHeight - 8)
+            : preferredTop
+        setPosition({
+            top,
+            right: Math.max(16, window.innerWidth - rect.right),
+        })
+    }, [visibleActions.length])
 
     useEffect(() => {
         const close = (event: MouseEvent) => {
@@ -33,22 +49,29 @@ export function ListActionMenu({ actions, label = "Open item actions" }: { actio
         const closeForOtherDropdown = (event: Event) => {
             if ((event as CustomEvent<string>).detail !== menuId) setOpen(false)
         }
+        const reposition = () => {
+            if (open) updatePosition()
+        }
         document.addEventListener("mousedown", close)
         document.addEventListener("keydown", escape)
+        window.addEventListener("resize", reposition)
+        window.addEventListener("scroll", reposition, true)
         window.addEventListener("betelgeze:dropdown-open", closeForOtherDropdown)
         return () => {
             document.removeEventListener("mousedown", close)
             document.removeEventListener("keydown", escape)
+            window.removeEventListener("resize", reposition)
+            window.removeEventListener("scroll", reposition, true)
             window.removeEventListener("betelgeze:dropdown-open", closeForOtherDropdown)
         }
-    }, [menuId])
+    }, [menuId, open, updatePosition])
 
     if (visibleActions.length === 0) {
         return <span className="inline-flex h-8 w-8 items-center justify-center text-neutral-700">
-            <span aria-hidden="true" className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            <span aria-hidden="true" className="flex items-center gap-0.5">
+                <span className="h-1 w-1 rounded-full bg-current" />
+                <span className="h-1 w-1 rounded-full bg-current" />
+                <span className="h-1 w-1 rounded-full bg-current" />
             </span>
         </span>
     }
@@ -56,20 +79,23 @@ export function ListActionMenu({ actions, label = "Open item actions" }: { actio
     function toggle() {
         setOpen((value) => {
             const next = !value
-            if (next) window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: menuId }))
+            if (next) {
+                updatePosition()
+                window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: menuId }))
+            }
             return next
         })
     }
 
-    return <div ref={menuRef} className="relative z-30 shrink-0">
-        <button type="button" onClick={toggle} aria-label={label} aria-expanded={open} aria-haspopup="menu" className="inline-flex h-8 w-8 items-center justify-center text-white hover:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-white/30">
-            <span aria-hidden="true" className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+    return <div ref={menuRef} className="relative shrink-0">
+        <button ref={buttonRef} type="button" onClick={toggle} aria-label={label} aria-expanded={open} aria-haspopup="menu" className="inline-flex h-8 w-8 items-center justify-center text-white hover:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-white/30">
+            <span aria-hidden="true" className="flex items-center gap-0.5">
+                <span className="h-1 w-1 rounded-full bg-current" />
+                <span className="h-1 w-1 rounded-full bg-current" />
+                <span className="h-1 w-1 rounded-full bg-current" />
             </span>
         </button>
-        {open && <div role="menu" className="absolute right-0 z-50 mt-2 w-[calc(100vw-2rem)] max-w-52 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 shadow-2xl">
+        {open && <div role="menu" style={position ? { top: position.top, right: position.right } : undefined} className="fixed z-[9999] w-[calc(100vw-2rem)] max-w-52 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 shadow-2xl">
             {visibleActions.map((item) => {
                 const className = `block min-h-9 w-full px-3 py-2 text-left text-sm ${item.danger ? "text-red-300 hover:bg-red-950/40" : "text-neutral-200 hover:bg-neutral-900"}`
                 if (item.href) {

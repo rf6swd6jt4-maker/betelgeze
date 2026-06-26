@@ -311,13 +311,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                         const creator = client.created_by ? clientCreatorById.get(client.created_by) : null
                         const creatorAvatar = creator?.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) : null
                         const status = getClientStatus({ percentage, stuck })
-                        return <div key={client.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(210px,1.15fr)_80px_155px_minmax(220px,1.2fr)_145px_110px_120px_32px] md:items-center ${isFilterMatch ? "" : "opacity-35"} ${stuck ? "bg-red-950/[0.08]" : ""}`}>
+                        return <div key={client.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(170px,0.9fr)_76px_120px_145px_minmax(190px,1.05fr)_145px_105px_120px_32px] md:items-center ${isFilterMatch ? "" : "opacity-35"} ${stuck ? "bg-red-950/[0.08]" : ""}`}>
                             <div className="min-w-0">
-                                <Link href={`/admin/client/${client.id}`} className="truncate text-base font-semibold text-neutral-100 underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
+                                <Link href={`/admin/client/${client.id}`} className="truncate text-base font-medium text-neutral-100 underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
                             </div>
                             <div className="flex flex-wrap gap-1.5">
                                 {client.is_test && <span className="rounded-md border border-amber-400/30 px-2 py-1 text-[11px] uppercase tracking-wide text-amber-200">Test</span>}
                             </div>
+                            <span className={`inline-flex items-center gap-2 text-sm ${status.text}`}><span className={`h-2 w-2 rotate-45 ${status.mark}`} />{status.label}</span>
                             <p className="truncate text-sm text-neutral-400">{client.phone ? displayMessageAddress(client.phone) : client.email || "No contact saved"}</p>
                             <div className="flex flex-wrap gap-2">
                                 {assignedServiceKeys.length ? assignedServiceKeys.map((serviceKey) => (
@@ -327,12 +328,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                                 )) : <span className="text-sm text-neutral-500">No services</span>}
                             </div>
                             <div className="min-w-0">
-                                <div className="flex items-center gap-3">
-                                    <span className={`inline-flex items-center gap-2 text-sm ${status.text}`}><span className={`h-2 w-2 rotate-45 ${status.mark}`} />{status.label}</span>
+                                <div className="flex items-center gap-4">
+                                    <div className="h-1.5 w-16 overflow-hidden rounded-full bg-neutral-800">
+                                        <div className="h-full rounded-full bg-white" style={{ width: `${percentage}%` }} />
+                                    </div>
                                     <span className="text-sm text-neutral-300">{percentage}%</span>
-                                </div>
-                                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-800">
-                                    <div className="h-full rounded-full bg-white" style={{ width: `${percentage}%` }} />
                                 </div>
                             </div>
                             <p className="font-mono text-sm text-neutral-500">{shortId(client.id)}</p>

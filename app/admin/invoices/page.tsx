@@ -8,6 +8,7 @@ import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { ListAutoRefresh } from "@/components/list/ListAutoRefresh"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
+import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
 import { compactText, formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { removeInvoice, retryInvoiceAutomation } from "./actions"
 import { ListToolbar } from "@/components/admin/ListToolbar"
@@ -248,7 +249,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                     ))}
                 </div>
 
-                <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2">
+                <div className="mt-3 hidden rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 sm:block">
                     <p className="text-xs text-neutral-500">Tracked volume</p>
                     <p className="mt-1 text-lg font-semibold">
                         {formatMoney(totalVolume, sales[0]?.currency ?? "usd")}
@@ -274,32 +275,35 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                             const invoiceAttention = isAttentionStatus(sale.status)
                             const invoiceStatusMark = <span className={`inline-flex items-center gap-2 text-sm md:whitespace-nowrap ${invoiceTone.text}`}><span className={`h-2.5 w-2.5 shrink-0 rotate-45 ${invoiceTone.mark}`} />{invoiceStatus.label}</span>
                             const whatsappStatusMark = <span className={`inline-flex items-center gap-2 text-sm md:whitespace-nowrap ${whatsappTone.text}`}><span className={`h-2.5 w-2.5 shrink-0 rotate-45 ${whatsappTone.mark}`} />{whatsappStatus.label}</span>
+                            const mobileWhatsappLabel =
+                                whatsappStatus.label === "WA consent template failed" ? "WA consent failed" :
+                                whatsappStatus.label === "WA consent template sent" ? "WA consent sent" :
+                                whatsappStatus.label === "WA consent template not sent" ? "WA not sent" :
+                                whatsappStatus.label
+                            const mobileWhatsappStatusMark = <span className={`ml-auto inline-flex min-w-0 max-w-[11.5rem] items-center justify-end gap-2 text-right text-sm ${whatsappTone.text}`}><span className={`h-2.5 w-2.5 shrink-0 rotate-45 ${whatsappTone.mark}`} /><span className="truncate">{mobileWhatsappLabel}</span></span>
+                            const invoiceActions = [
+                                invoiceAttention ? { label: "Retry", action: retryInvoiceAutomation.bind(null, sale.id) } : {},
+                                sale.stripe_hosted_invoice_url ? { label: "Open invoice", href: sale.stripe_hosted_invoice_url, external: true } : {},
+                                sale.client_id ? { label: "Open client", href: `/admin/client/${sale.client_id}` } : {},
+                                diagnostic ? { label: "Open console", href: `#invoice-console-${sale.id}` } : {},
+                                { label: "Remove", action: removeInvoice.bind(null, sale.id), danger: true, confirmMessage: "Remove this invoice from Betelgeze? Stripe records will remain in Stripe." },
+                            ]
                             return <div key={sale.id} className={`${sale.isFilterMatch ? "" : "opacity-35"} md:border-b md:border-neutral-900 md:last:border-0`}>
-                                <div className={`rounded-2xl border border-neutral-800 bg-black md:hidden ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
-                                    <div className="flex items-center justify-between gap-3 border-b border-neutral-900 px-4 py-3">
-                                        <p className="min-w-0 truncate text-base font-medium text-neutral-100">
-                                            {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="underline-offset-4 hover:underline">{sale.client_name}</Link> : sale.client_name}
-                                        </p>
+                                <MobileCardActionSurface actions={invoiceActions} className={`rounded-2xl border border-neutral-800 bg-black md:hidden ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
+                                    <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
+                                        {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="min-w-0 truncate text-base font-medium text-neutral-100 underline underline-offset-4">{sale.client_name}</Link> : <p className="min-w-0 truncate text-base font-medium text-neutral-100">{sale.client_name}</p>}
                                         {invoiceStatusMark}
                                     </div>
-                                    <div className="flex items-center gap-3 border-b border-neutral-900 px-4 py-3">
+                                    <div className="flex items-center gap-3 px-3.5 py-2.5">
                                         <div>{labelPill("Manual")}</div>
-                                        <p className="text-sm font-medium text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
-                                        <div className="ml-auto">{whatsappStatusMark}</div>
-                                    </div>
-                                    <div className="flex items-center gap-3 px-4 py-2.5">
+                                        <p className="whitespace-nowrap text-sm font-medium text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
                                         <p className="font-mono text-sm text-neutral-500">{shortId(sale.stripe_invoice_id ?? sale.id)}</p>
-                                        <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(sale.created_at)}</p>
-                                        <ListCreatorBadge src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} label="Created by" date={new Date(sale.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
-                                        <ListActionMenu actions={[
-                                            invoiceAttention ? { label: "Retry", action: retryInvoiceAutomation.bind(null, sale.id) } : {},
-                                            sale.stripe_hosted_invoice_url ? { label: "Open invoice", href: sale.stripe_hosted_invoice_url, external: true } : {},
-                                            sale.client_id ? { label: "Open client", href: `/admin/client/${sale.client_id}` } : {},
-                                            diagnostic ? { label: "Open console", href: `#invoice-console-${sale.id}` } : {},
-                                            { label: "Remove", action: removeInvoice.bind(null, sale.id), danger: true, confirmMessage: "Remove this invoice from Betelgeze? Stripe records will remain in Stripe." },
-                                        ]} />
+                                        <div className="ml-auto flex min-w-0 flex-col items-end gap-0.5">
+                                            {mobileWhatsappStatusMark}
+                                            <p className="whitespace-nowrap text-xs text-neutral-500">{formatRelativeTime(sale.created_at)}</p>
+                                        </div>
                                     </div>
-                                </div>
+                                </MobileCardActionSurface>
                                 <div className={`hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(180px,1fr)_92px_120px_165px_220px_100px_120px_32px] md:items-center ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
                                 <div className="min-w-0">
                                     <p className="truncate text-base font-medium text-neutral-100">
@@ -317,13 +321,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                                     <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(sale.created_at)}</p>
                                     <ListCreatorBadge src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} label="Created by" date={new Date(sale.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
                                 </div>
-                                <ListActionMenu actions={[
-                                    invoiceAttention ? { label: "Retry", action: retryInvoiceAutomation.bind(null, sale.id) } : {},
-                                    sale.stripe_hosted_invoice_url ? { label: "Open invoice", href: sale.stripe_hosted_invoice_url, external: true } : {},
-                                    sale.client_id ? { label: "Open client", href: `/admin/client/${sale.client_id}` } : {},
-                                    diagnostic ? { label: "Open console", href: `#invoice-console-${sale.id}` } : {},
-                                    { label: "Remove", action: removeInvoice.bind(null, sale.id), danger: true, confirmMessage: "Remove this invoice from Betelgeze? Stripe records will remain in Stripe." },
-                                ]} />
+                                <ListActionMenu actions={invoiceActions} />
                             </div>
                             </div>
                         })}

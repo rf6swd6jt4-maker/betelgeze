@@ -14,6 +14,7 @@ import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { DashboardAutoRefresh } from "@/components/admin/DashboardAutoRefresh"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
+import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { removeClientFromList } from "./actions"
 export const dynamic = "force-dynamic"
@@ -316,37 +317,44 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                                 {SERVICES[serviceKey]?.title ?? serviceKey}
                             </span>
                         )) : <span className="text-sm text-neutral-500">No services</span>
+                        const mobileServicePills = assignedServiceKeys.length ? <>
+                            {assignedServiceKeys.slice(0, 2).map((serviceKey) => (
+                                <span key={serviceKey} className="max-w-[9rem] truncate rounded-md bg-blue-500/10 px-2 py-0.5 text-xs text-blue-200">
+                                    {SERVICES[serviceKey]?.title ?? serviceKey}
+                                </span>
+                            ))}
+                            {assignedServiceKeys.length > 2 && <span className="rounded-md border border-neutral-800 px-2 py-0.5 text-xs text-neutral-400">+{assignedServiceKeys.length - 2}</span>}
+                        </> : <span className="text-sm text-neutral-500">No services</span>
+                        const clientActions = [
+                            { label: "Open client", href: `/admin/client/${client.id}` },
+                            { label: "Remove", action: removeClientFromList.bind(null, client.id), danger: true, confirmMessage: "Remove this client from the dashboard? This archives the client instead of hard-deleting their records." },
+                        ]
                         return <div key={client.id} className={`${isFilterMatch ? "" : "opacity-35"} md:border-b md:border-neutral-900 md:last:border-0`}>
-                            <div className={`rounded-2xl border border-neutral-800 bg-black md:hidden ${stuck ? "bg-red-950/[0.08]" : ""}`}>
-                                <div className="flex items-center justify-between gap-3 border-b border-neutral-900 px-4 py-3">
+                            <MobileCardActionSurface actions={clientActions} className={`rounded-2xl border border-neutral-800 bg-black md:hidden ${stuck ? "bg-red-950/[0.08]" : ""}`}>
+                                <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
                                     <div className="flex min-w-0 items-center gap-2">
-                                        <Link href={`/admin/client/${client.id}`} className="truncate text-base font-medium text-neutral-100 underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
-                                        {client.is_test && <span className="shrink-0 rounded-md border border-amber-400/30 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">Test</span>}
+                                        <Link href={`/admin/client/${client.id}`} className="truncate text-base font-medium text-neutral-100 underline underline-offset-4">{client.name ?? "Unnamed client"}</Link>
+                                        {client.is_test && <span className="shrink-0 rounded-md border border-amber-400/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">Test</span>}
                                     </div>
                                     <span className={`inline-flex shrink-0 items-center gap-2 text-sm ${status.text}`}><span className={`h-2 w-2 rotate-45 ${status.mark}`} />{status.label}</span>
                                 </div>
-                                <div className="flex flex-wrap gap-1.5 px-4 py-2.5">
-                                    {servicePills}
-                                </div>
-                                <div className="flex items-center gap-3 border-t border-neutral-900 px-4 py-3">
-                                    <p className="min-w-0 flex-1 truncate text-sm text-neutral-400">{client.phone ? displayMessageAddress(client.phone) : client.email || "No contact saved"}</p>
+                                <div className="flex items-center gap-2 border-b border-neutral-900 px-3.5 py-2">
+                                    <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+                                        {mobileServicePills}
+                                    </div>
                                     <div className="flex shrink-0 items-center gap-2">
-                                        <div className="h-1.5 w-14 overflow-hidden rounded-full bg-neutral-800">
+                                        <div className="h-1.5 w-12 overflow-hidden rounded-full bg-neutral-800">
                                             <div className="h-full rounded-full bg-white" style={{ width: `${percentage}%` }} />
                                         </div>
                                         <span className="text-sm text-neutral-300">{percentage}%</span>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-3 border-t border-neutral-900 px-4 py-2.5">
-                                    <p className="font-mono text-sm text-neutral-500">{shortId(client.id)}</p>
+                                <div className="flex items-center gap-3 px-3.5 py-2">
+                                    <p className="min-w-0 flex-1 truncate text-sm text-neutral-400">{client.phone ? displayMessageAddress(client.phone) : client.email || "No contact saved"}</p>
                                     <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(lastActivity ?? client.created_at)}</p>
-                                    <ListCreatorBadge src={creatorAvatar} username={creator?.username ?? null} label="Added by" date={new Date(client.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
-                                    <ListActionMenu actions={[
-                                        { label: "Open client", href: `/admin/client/${client.id}` },
-                                        { label: "Remove", action: removeClientFromList.bind(null, client.id), danger: true, confirmMessage: "Remove this client from the dashboard? This archives the client instead of hard-deleting their records." },
-                                    ]} />
+                                    <p className="font-mono text-sm text-neutral-500">{shortId(client.id)}</p>
                                 </div>
-                            </div>
+                            </MobileCardActionSurface>
                             <div className={`hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(170px,0.9fr)_76px_120px_145px_minmax(190px,1.05fr)_145px_105px_120px_32px] md:items-center ${stuck ? "bg-red-950/[0.08]" : ""}`}>
                             <div className="min-w-0">
                                 <Link href={`/admin/client/${client.id}`} className="truncate text-base font-medium text-neutral-100 underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
@@ -372,10 +380,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                                 <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(lastActivity ?? client.created_at)}</p>
                                 <ListCreatorBadge src={creatorAvatar} username={creator?.username ?? null} label="Added by" date={new Date(client.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
                             </div>
-                            <ListActionMenu actions={[
-                                { label: "Open client", href: `/admin/client/${client.id}` },
-                                { label: "Remove", action: removeClientFromList.bind(null, client.id), danger: true, confirmMessage: "Remove this client from the dashboard? This archives the client instead of hard-deleting their records." },
-                            ]} />
+                            <ListActionMenu actions={clientActions} />
                         </div>
                         </div>
                     })}

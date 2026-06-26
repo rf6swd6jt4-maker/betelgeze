@@ -131,17 +131,17 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                 </div>)}
             </div>
 
-            <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+            <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
                 {polls.length ? polls.map((poll) => {
                     const meta = statusMeta(poll.status)
                     const live = ["queued", "running"].includes(poll.status)
                     const tasks = tasksByPoll[poll.id] ?? []
                     const failedTasks = tasks.filter((task) => task.error || task.status === "failed")
+                    const hasConsoleEntry = poll.status === "failed" || failedTasks.length > 0
                     const creator = poll.requested_by ? creatorById.get(poll.requested_by) : null
                     return <div key={poll.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(240px,1.35fr)_100px_170px_160px_130px_100px_120px_32px] md:items-center ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>
                         <div className="min-w-0">
                             <p className="truncate text-base font-semibold text-neutral-100">{sourceNames(poll.source_snapshot, poll.source_count)} poll</p>
-                            <p className="mt-0.5 truncate text-xs text-neutral-500">Source run · {shortId(poll.id)}</p>
                         </div>
                         <span className="w-fit rounded-md border border-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-400">{poll.trigger === "manual" ? "Manual" : "Automated"}</span>
                         <div className="flex items-center justify-end gap-3 md:justify-start">
@@ -157,7 +157,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                         </div>
                         <ListActionMenu actions={[
                             poll.status === "failed" ? { label: "Retry", action: retryLeadgenPoll.bind(null, workspace.slug, poll.id) } : {},
-                            failedTasks.length ? { label: "Open console", href: `#poll-console-${poll.id}` } : {},
+                            hasConsoleEntry ? { label: "Open console", href: `#poll-console-${poll.id}` } : {},
                             live ? { label: "Cancel", action: cancelLeadgenPoll.bind(null, workspace.slug, poll.id), danger: true, confirmMessage: "Cancel this running poll?" } : {},
                             { label: "Remove", action: removeLeadgenPoll.bind(null, workspace.slug, poll.id), danger: true },
                         ]} />
@@ -169,22 +169,31 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                 </div>}
             </section>
 
-            {pollTasks.some((task) => task.error) && <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+            {polls.some((poll) => poll.status === "failed" || (tasksByPoll[poll.id] ?? []).some((task) => task.error || task.status === "failed")) && <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
                 <div className="border-b border-neutral-800 px-5 py-4">
                     <h2 className="font-semibold">Poll console</h2>
                     <p className="mt-1 text-sm text-neutral-500">Open console from a failed poll to jump to its source errors.</p>
                 </div>
-                {polls.flatMap((poll) => (tasksByPoll[poll.id] ?? []).filter((task) => task.error).map((task) => {
-                    const taskMeta = statusMeta(task.status)
-                    return <div id={`poll-console-${poll.id}`} key={task.id} className="grid min-h-14 gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[140px_minmax(0,1fr)_120px] md:items-center">
-                        <span className={`inline-flex items-center gap-2 text-sm ${taskMeta.text}`}><BetelgezeStatusMark className={taskMeta.mark} />{taskMeta.label}</span>
+                {polls.map((poll) => {
+                    const failedTasks = (tasksByPoll[poll.id] ?? []).filter((task) => task.error || task.status === "failed")
+                    if (poll.status !== "failed" && failedTasks.length === 0) return null
+                    const firstError = failedTasks.find((task) => task.error)?.error ?? "Poll failed before a source returned a detailed error."
+                    const pollMeta = statusMeta(poll.status === "failed" ? "failed" : failedTasks[0]?.status ?? "failed")
+                    return <div id={`poll-console-${poll.id}`} key={poll.id} className="grid min-h-14 scroll-mt-24 gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[140px_minmax(0,1fr)_120px] md:items-center">
+                        <span className={`inline-flex items-center gap-2 text-sm ${pollMeta.text}`}><BetelgezeStatusMark className={pollMeta.mark} />{pollMeta.label}</span>
                         <details className="min-w-0 text-sm">
-                            <summary className="cursor-pointer truncate text-red-300">{compactText(task.error, 220)}</summary>
-                            <p className="mt-2 whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-xs text-red-100">{task.error}</p>
+                            <summary className="cursor-pointer truncate text-red-300">{compactText(firstError, 220)}</summary>
+                            <div className="mt-2 space-y-2">
+                                {failedTasks.length ? failedTasks.map((task) => (
+                                    <p key={task.id} className="whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-xs text-red-100">
+                                        {task.error ?? `${task.source_key} task failed without a detailed error.`}
+                                    </p>
+                                )) : <p className="whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-xs text-red-100">{firstError}</p>}
+                            </div>
                         </details>
                         <p className="font-mono text-xs text-neutral-500">{shortId(poll.id)}</p>
                     </div>
-                }))}
+                })}
             </section>}
             <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
         </div>

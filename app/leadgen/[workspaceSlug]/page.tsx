@@ -50,14 +50,12 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                 </div>)}
             </div>
 
-            <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+            <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
                 {companies.length ? companies.map((company) => {
-                    const address = company.address && typeof company.address === "object" && "city" in company.address ? company.address as { city?: string; state?: string } : null
                     const sourceUrl = company.website_url ?? company.profile_url ?? null
                     return <div key={company.id} className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(250px,1.4fr)_150px_170px_150px_100px_120px_32px] md:items-center">
                         <div className="min-w-0">
                             <p className="truncate text-base font-semibold text-neutral-100">{company.display_name}</p>
-                            <p className="mt-1 truncate text-xs text-neutral-500">{sourceUrl ? "Source profile available" : "No source link"}</p>
                         </div>
                         <span className={`inline-flex items-center gap-2 text-sm ${company.phone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${company.phone ? "bg-emerald-300" : "bg-neutral-500"}`} />{company.phone ? "Callable" : "No phone"}</span>
                         <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
@@ -68,7 +66,6 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                             sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
                             { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },
                         ]} />
-                        <p className="col-span-full truncate text-xs text-neutral-600">{[address?.city, address?.state].filter(Boolean).join(", ") || String(company.location_value ?? "—").replace(/_/g, " ")}</p>
                     </div>
                 }) : <div className="grid gap-4 p-5 lg:grid-cols-[1.1fr_0.9fr]">
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">

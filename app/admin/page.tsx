@@ -5,6 +5,7 @@ import { SERVICES } from "@/lib/onboarding/services"
 import { requireWorkspaceMember } from "@/lib/admin/auth"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
 import { isOnboardingStuck } from "@/lib/onboarding/stuck"
+import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
@@ -197,6 +198,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     const matchesClientFilter = (summary: (typeof clientSummaries)[number]) => {
         if (filter === "all") return true
         if (filter === "stuck") return summary.stuck
+        if (filter === "not-started") return !summary.stuck && summary.percentage === 0
+        if (filter === "active") return !summary.stuck && summary.percentage > 0 && summary.percentage < 100
+        if (filter === "complete") return !summary.stuck && summary.percentage === 100
         if (filter === "test") return Boolean(summary.client.is_test)
         if (filter.startsWith("creator:")) return summary.client.created_by === filter.slice("creator:".length)
         if (filter.startsWith("service:")) return summary.assignedServiceKeys.includes(filter.slice("service:".length))
@@ -216,6 +220,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         })
     const toolbarCreators = (clientCreators ?? []).map((creator) => ({ value: `creator:${creator.user_id}`, label: `@${creator.username}`, avatarSrc: creator.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) ?? null : null }))
     const toolbarServices = [...new Set(clientSummaries.flatMap((summary) => summary.assignedServiceKeys))].map((serviceKey) => ({ value: `service:${serviceKey}`, label: SERVICES[serviceKey]?.title ?? serviceKey }))
+    const getClientStatus = ({ percentage, stuck }: { percentage: number; stuck: boolean }) => {
+        if (stuck) return { label: "Stuck", text: "text-red-200", mark: "bg-red-300" }
+        if (percentage === 0) return { label: "Not started", text: "text-neutral-300", mark: "bg-neutral-500" }
+        if (percentage === 100) return { label: "Complete", text: "text-emerald-200", mark: "bg-emerald-300" }
+        return { label: "Active", text: "text-yellow-200", mark: "bg-yellow-300" }
+    }
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
@@ -294,27 +304,36 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                     ))}
                 </div>
 
-                <ListToolbar sortOptions={[{ value: "created-new", label: "Date added: newest" }, { value: "created-old", label: "Date added: oldest" }, { value: "name-az", label: "Client name: A–Z" }, { value: "progress-low", label: "Progress: low to high" }, { value: "progress-high", label: "Progress: high to low" }, { value: "activity-recent", label: "Last activity: recent" }]} filterGroups={[{ label: "Status", options: [{ value: "stuck", label: "Stuck" }, { value: "test", label: "Test client" }] }, { label: "Added by", options: toolbarCreators }, { label: "Services", options: toolbarServices }]} />
+                <ListToolbar sortOptions={[{ value: "created-new", label: "Date added: newest" }, { value: "created-old", label: "Date added: oldest" }, { value: "name-az", label: "Client name: A–Z" }, { value: "progress-low", label: "Progress: low to high" }, { value: "progress-high", label: "Progress: high to low" }, { value: "activity-recent", label: "Last activity: recent" }]} filterGroups={[{ label: "Status", options: [{ value: "active", label: "Active" }, { value: "not-started", label: "Not started" }, { value: "complete", label: "Complete" }, { value: "stuck", label: "Stuck" }, { value: "test", label: "Test client" }] }, { label: "Added by", options: toolbarCreators }, { label: "Services", options: toolbarServices }]} />
 
-                <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+                <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
                     {sortedClientSummaries.map(({ client, assignedServiceKeys, percentage, lastActivity, stuck, isFilterMatch }) => {
                         const creator = client.created_by ? clientCreatorById.get(client.created_by) : null
                         const creatorAvatar = creator?.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) : null
-                        return <div key={client.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(230px,1.25fr)_120px_170px_minmax(210px,1fr)_130px_120px_32px] md:items-center ${isFilterMatch ? "" : "opacity-35"} ${stuck ? "bg-red-950/[0.08]" : ""}`}>
+                        const status = getClientStatus({ percentage, stuck })
+                        return <div key={client.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(210px,1.15fr)_80px_155px_minmax(220px,1.2fr)_145px_110px_120px_32px] md:items-center ${isFilterMatch ? "" : "opacity-35"} ${stuck ? "bg-red-950/[0.08]" : ""}`}>
                             <div className="min-w-0">
                                 <Link href={`/admin/client/${client.id}`} className="truncate text-base font-semibold text-neutral-100 underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
-                                <p className="mt-0.5 truncate text-xs text-neutral-500">{client.email || client.phone || "No contact saved"}</p>
                             </div>
                             <div className="flex flex-wrap gap-1.5">
                                 {client.is_test && <span className="rounded-md border border-amber-400/30 px-2 py-1 text-[11px] uppercase tracking-wide text-amber-200">Test</span>}
-                                {stuck && <span className="rounded-md border border-red-400/30 px-2 py-1 text-[11px] uppercase tracking-wide text-red-200">Stuck</span>}
                             </div>
-                            <span className={`inline-flex items-center gap-2 text-sm ${stuck ? "text-red-200" : percentage === 100 ? "text-emerald-200" : "text-yellow-200"}`}><span className={`h-2 w-2 rotate-45 ${stuck ? "bg-red-300" : percentage === 100 ? "bg-emerald-300" : "bg-yellow-300"}`} />{stuck ? "Stuck" : percentage === 100 ? "Complete" : "Active"} · {percentage}%</span>
+                            <p className="truncate text-sm text-neutral-400">{client.phone ? displayMessageAddress(client.phone) : client.email || "No contact saved"}</p>
+                            <div className="flex flex-wrap gap-2">
+                                {assignedServiceKeys.length ? assignedServiceKeys.map((serviceKey) => (
+                                    <span key={serviceKey} className="rounded-md bg-blue-500/10 px-2 py-1 text-xs text-blue-200">
+                                        {SERVICES[serviceKey]?.title ?? serviceKey}
+                                    </span>
+                                )) : <span className="text-sm text-neutral-500">No services</span>}
+                            </div>
                             <div className="min-w-0">
-                                <div className="h-1.5 overflow-hidden rounded-full bg-neutral-800">
+                                <div className="flex items-center gap-3">
+                                    <span className={`inline-flex items-center gap-2 text-sm ${status.text}`}><span className={`h-2 w-2 rotate-45 ${status.mark}`} />{status.label}</span>
+                                    <span className="text-sm text-neutral-300">{percentage}%</span>
+                                </div>
+                                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-800">
                                     <div className="h-full rounded-full bg-white" style={{ width: `${percentage}%` }} />
                                 </div>
-                                <p className="mt-1 truncate text-xs text-neutral-500">{assignedServiceKeys.length ? assignedServiceKeys.map((serviceKey) => SERVICES[serviceKey]?.title ?? serviceKey).join(", ") : "No services"}</p>
                             </div>
                             <p className="font-mono text-sm text-neutral-500">{shortId(client.id)}</p>
                             <div className="flex items-center justify-end gap-3">

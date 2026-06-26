@@ -262,7 +262,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                         Apply the Stripe sales automation migration to show invoice automation status here.
                     </p>
                 ) : sales.length > 0 ? (
-                    <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+                    <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
                         {sortedSales.map((sale) => {
                             const manualMigration = isManualMigration(sale.raw_payload)
                             const diagnostic = getAutomationDiagnostic(sale.raw_payload)
@@ -277,7 +277,6 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                                     <p className="truncate text-base font-semibold text-neutral-100">
                                         {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="underline-offset-4 hover:underline">{sale.client_name}</Link> : sale.client_name}
                                     </p>
-                                    <p className="mt-0.5 truncate text-xs text-neutral-500">{sale.client_email ?? sale.client_phone}</p>
                                 </div>
                                 <div>{labelPill("Manual")}</div>
                                 <p className="text-sm font-medium text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
@@ -306,7 +305,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                         dashboard yet.
                     </p>
                 )}
-                {sortedSales.some((sale) => getAutomationDiagnostic(sale.raw_payload)) && <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+                {sortedSales.some((sale) => getAutomationDiagnostic(sale.raw_payload)) && <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
                     <div className="border-b border-neutral-800 px-5 py-4">
                         <h2 className="font-semibold">Invoice console</h2>
                         <p className="mt-1 text-sm text-neutral-500">Automation errors are collapsed by default. Open console from an invoice to jump here.</p>
@@ -314,7 +313,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                     {sortedSales.map((sale) => {
                         const diagnostic = getAutomationDiagnostic(sale.raw_payload)
                         if (!diagnostic) return null
-                        return <div id={`invoice-console-${sale.id}`} key={sale.id} className="grid min-h-14 gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[160px_minmax(0,1fr)_120px] md:items-center">
+                        return <div id={`invoice-console-${sale.id}`} key={sale.id} className="grid min-h-14 scroll-mt-24 gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[160px_minmax(0,1fr)_120px] md:items-center">
                             <span className="inline-flex items-center gap-2 text-sm text-red-200"><span className="h-2 w-2 rotate-45 bg-red-300" />Automation error</span>
                             <details className="min-w-0 text-sm">
                                 <summary className="cursor-pointer truncate text-red-300">{compactText(diagnostic, 220)}</summary>

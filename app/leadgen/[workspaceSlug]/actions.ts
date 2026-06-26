@@ -7,7 +7,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { buildSourcePlan, executableLeadgenSources, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
 import { createOsmTasksForPoll, finalizeLeadgenPoll, processOsmPoll } from "@/lib/leadgen/osm-worker"
 import { createPipelineTasksForPoll, createWebsiteTasksForPoll, processPipelineSourcePoll } from "@/lib/leadgen/pipeline-workers"
-import { createStateLicensingTasksForPoll, processStateLicensingPoll } from "@/lib/leadgen/state-licensing-worker"
+import { createStateLicensingEnrichmentTasksForPoll, createStateLicensingTasksForPoll, processStateLicensingPoll } from "@/lib/leadgen/state-licensing-worker"
 
 function configObject(value: unknown): Partial<LeadgenSourceConfig> {
     return value && typeof value === "object" ? value as Partial<LeadgenSourceConfig> : {}
@@ -75,6 +75,10 @@ export async function createLeadgenPoll(slug: string) {
             for (const plan of preSeedPipelinePlans) await processPipelineSourcePoll(poll.id, workspace.id, plan.key, { finalize: false })
             if (runnableOsmPlan) await processOsmPoll(poll.id, workspace.id, { finalize: false })
             if (runnableStateLicensingPlan) await processStateLicensingPoll(poll.id, workspace.id, { finalize: false })
+            if (runnableStateLicensingPlan) {
+                await createStateLicensingEnrichmentTasksForPoll({ workspaceId: workspace.id, pollId: poll.id, plan: runnableStateLicensingPlan })
+                await processStateLicensingPoll(poll.id, workspace.id, { finalize: false })
+            }
             if (runnableWebsitePlan) {
                 await createWebsiteTasksForPoll({ workspaceId: workspace.id, pollId: poll.id, plan: runnableWebsitePlan })
                 await processPipelineSourcePoll(poll.id, workspace.id, "website", { finalize: false })

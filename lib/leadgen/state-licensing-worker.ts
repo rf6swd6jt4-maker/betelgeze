@@ -18,6 +18,15 @@ type SourceLocationMapping = {
     native_values: string[] | null
 }
 
+type CompanyCandidate = {
+    id: string
+    display_name: string
+    phone: string | null
+    address: Record<string, unknown> | null
+    industry_value: string | null
+    location_value: string | null
+}
+
 type TdlrResult = {
     licenseNumber: string
     expirationDate: string | null
@@ -120,14 +129,14 @@ function tdlrCounty(option: SourceOption) {
     return cleanText(county)
 }
 
-async function fetchTdlrSearch({ status, endorsement, county }: { status: string; endorsement?: string; county: string }) {
+async function fetchTdlrSearch({ status, endorsement, county, name }: { status: string; endorsement?: string; county: string; name?: string | null }) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), TDLR_FETCH_TIMEOUT_MS)
     const body = new URLSearchParams({
         tdlr_status: status,
         pht_lic: "",
         pht_expdt: "",
-        pht_oth_name: "",
+        pht_oth_name: name ?? "",
         phy_city: "-1",
         phy_cnty: county,
         phy_zip: "",
@@ -299,6 +308,44 @@ async function upsertTdlrRecord({
     return true
 }
 
+async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, result }: { workspaceId: string; pollId: string; companyId: string; result: TdlrResult }) {
+    const ownerName = ownerNameFromTdlrName(result.name)
+    const value = {
+        source: "tdlr_license_search",
+        license_number: result.licenseNumber,
+        legal_name: result.name,
+        parsed_owner_name: ownerName,
+        phone: result.phone,
+        profile_url: result.profileUrl,
+    }
+    const { error: evidenceError } = await supabaseAdmin.from("leadgen_evidence").insert({
+        workspace_id: workspaceId,
+        poll_id: pollId,
+        company_id: companyId,
+        source_key: "state_licensing",
+        evidence_kind: "license_candidate_match",
+        confidence: ownerName && result.phone ? 82 : result.phone ? 48 : 35,
+        value,
+        raw_payload: { ...value, raw_html: result.rawHtml },
+    })
+    if (evidenceError) throw evidenceError
+    const updatePayload: Record<string, unknown> = {
+        last_seen_at: new Date().toISOString(),
+        profile_url: result.profileUrl,
+    }
+    if (result.phone) updatePayload.phone = result.phone
+    if (ownerName) {
+        updatePayload.owner_name = ownerName
+        updatePayload.owner_source_key = "state_licensing"
+        updatePayload.owner_confidence = ownerName && result.phone ? 82 : 55
+        updatePayload.owner_evidence = value
+        if (result.phone) updatePayload.owner_phone = result.phone
+    }
+    const { error } = await supabaseAdmin.from("leadgen_companies").update(updatePayload).eq("id", companyId).eq("workspace_id", workspaceId)
+    if (error) throw error
+    return Boolean(ownerName && result.phone)
+}
+
 export async function createStateLicensingTasksForPoll({ workspaceId, pollId, plan }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem }) {
     if (plan.key !== "state_licensing") return 0
     const [industryMappingsResult, locationMappingsResult] = await Promise.all([
@@ -381,6 +428,78 @@ export async function createStateLicensingTasksForPoll({ workspaceId, pollId, pl
     return tasks.length
 }
 
+export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem }) {
+    if (plan.key !== "state_licensing") return 0
+    const candidatesResult = await supabaseAdmin
+        .from("leadgen_companies")
+        .select("id, display_name, phone, address, industry_value, location_value")
+        .eq("workspace_id", workspaceId)
+        .eq("first_seen_poll_id", pollId)
+        .is("owner_phone", null)
+        .limit(Math.min(80, Math.max(1, plan.limit ?? 30)))
+    if (candidatesResult.error) throw new Error(`Could not load candidates for state licensing enrichment: ${candidatesResult.error.message}`)
+    const candidates = (candidatesResult.data ?? []) as CompanyCandidate[]
+    if (candidates.length === 0) return 0
+    const [industryMappingsResult, locationMappingsResult] = await Promise.all([
+        supabaseAdmin
+            .from("leadgen_source_industry_mappings")
+            .select("icp_industry_value, native_values")
+            .eq("source_key", "state_licensing")
+            .eq("enabled", true)
+            .in("icp_industry_value", plan.industries),
+        supabaseAdmin
+            .from("leadgen_source_location_mappings")
+            .select("icp_location_value, native_values")
+            .eq("source_key", "state_licensing")
+            .eq("enabled", true)
+            .in("icp_location_value", plan.locations),
+    ])
+    if (industryMappingsResult.error) throw new Error(`Could not load state licensing enrichment industry mappings: ${industryMappingsResult.error.message}`)
+    if (locationMappingsResult.error) throw new Error(`Could not load state licensing enrichment location mappings: ${locationMappingsResult.error.message}`)
+    const industryMappings = (industryMappingsResult.data ?? []) as SourceIndustryMapping[]
+    const locationMappings = (locationMappingsResult.data ?? []) as SourceLocationMapping[]
+    const nativeIndustries = [...new Set(industryMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
+    const nativeLocations = [...new Set(locationMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
+    if (nativeIndustries.length === 0 || nativeLocations.length === 0) return 0
+    const [industriesResult, locationsResult] = await Promise.all([
+        supabaseAdmin.from("leadgen_source_options").select("value, label, metadata").eq("source_key", "state_licensing").eq("option_kind", "industry").eq("enabled", true).in("value", nativeIndustries),
+        supabaseAdmin.from("leadgen_source_options").select("value, label, metadata").eq("source_key", "state_licensing").eq("option_kind", "location").eq("enabled", true).in("value", nativeLocations),
+    ])
+    if (industriesResult.error) throw new Error(`Could not load state licensing enrichment industries: ${industriesResult.error.message}`)
+    if (locationsResult.error) throw new Error(`Could not load state licensing enrichment locations: ${locationsResult.error.message}`)
+    const industries = ((industriesResult.data ?? []) as SourceOption[]).filter((industry) => Boolean(tdlrMapping(industry))).slice(0, 4)
+    const locations = ((locationsResult.data ?? []) as SourceOption[]).slice(0, 6)
+    const tasks = candidates.flatMap((candidate) => industries.flatMap((industry) => {
+        const mapping = tdlrMapping(industry)
+        if (!mapping) return []
+        return locations.map((location) => ({
+            poll_id: pollId,
+            workspace_id: workspaceId,
+            source_key: "state_licensing",
+            stage: "licensing_candidate_enrichment",
+            industry_value: candidate.industry_value ?? industry.value,
+            location_value: candidate.location_value ?? location.value,
+            status: "queued",
+            source_query: {
+                board: "tdlr",
+                board_label: "Texas Department of Licensing and Regulation",
+                candidate_company_id: candidate.id,
+                candidate_company_name: candidate.display_name,
+                tdlr_status: mapping.status,
+                tdlr_endorsement: mapping.endorsement ?? null,
+                industry_label: industry.label,
+                county: tdlrCounty(location),
+                location_label: location.label,
+                limit: 5,
+            },
+        }))
+    }))
+    if (tasks.length === 0) return 0
+    const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(tasks)
+    if (error) throw error
+    return tasks.length
+}
+
 export async function processStateLicensingPoll(pollId: string, workspaceId: string, options: { finalize?: boolean } = {}) {
     await setLeadgenPollStatus(pollId, workspaceId, "running")
     const tasksResult = await supabaseAdmin
@@ -410,23 +529,33 @@ export async function processStateLicensingPoll(pollId: string, workspaceId: str
                 industry_label?: string
                 location_label?: string
                 limit?: number
+                candidate_company_id?: string
+                candidate_company_name?: string
             }
             if (!query.tdlr_status || !query.county) throw new Error("Missing TDLR license type or county in source task.")
-            const html = await fetchTdlrSearch({ status: query.tdlr_status, endorsement: query.tdlr_endorsement ?? undefined, county: query.county })
+            const html = await fetchTdlrSearch({ status: query.tdlr_status, endorsement: query.tdlr_endorsement ?? undefined, county: query.county, name: query.candidate_company_name })
             const results = parseTdlrRows(html, Math.min(25, Math.max(1, Number(query.limit) || 15)))
             let companyCount = 0
-            for (const result of results) {
-                const stored = await upsertTdlrRecord({
-                    workspaceId,
-                    pollId,
-                    taskId: task.id,
-                    industryValue: task.industry_value,
-                    locationValue: task.location_value,
-                    industryLabel: query.industry_label ?? task.industry_value,
-                    countyLabel: query.location_label ?? query.county,
-                    result,
-                })
-                if (stored) companyCount += 1
+            if (query.candidate_company_id) {
+                const bestResult = results.find((result) => result.phone) ?? results[0]
+                if (bestResult) {
+                    const qualified = await applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult })
+                    companyCount = qualified ? 1 : 0
+                }
+            } else {
+                for (const result of results) {
+                    const stored = await upsertTdlrRecord({
+                        workspaceId,
+                        pollId,
+                        taskId: task.id,
+                        industryValue: task.industry_value,
+                        locationValue: task.location_value,
+                        industryLabel: query.industry_label ?? task.industry_value,
+                        countyLabel: query.location_label ?? query.county,
+                        result,
+                    })
+                    if (stored) companyCount += 1
+                }
             }
             await supabaseAdmin
                 .from("leadgen_poll_tasks")

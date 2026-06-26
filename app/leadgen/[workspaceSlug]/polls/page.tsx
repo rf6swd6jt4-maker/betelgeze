@@ -128,6 +128,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     const duration = <span className="font-mono text-sm text-neutral-500"><PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live} /></span>
                     const triggerPill = <span className="w-fit rounded-md border border-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-400">{poll.trigger === "manual" ? "Manual" : "Automated"}</span>
                     const pollActions = [
+                        { label: "Open poll", href: `https://leadgen.betelgeze.com/${workspace.slug}/polls/${poll.id}` },
                         poll.status === "failed" ? { label: "Retry", action: retryLeadgenPoll.bind(null, workspace.slug, poll.id) } : {},
                         hasConsoleEntry ? { label: "Open console", href: `#poll-console-${poll.id}` } : {},
                         live ? { label: "Cancel", action: cancelLeadgenPoll.bind(null, workspace.slug, poll.id), danger: true, confirmMessage: "Cancel this running poll?" } : {},

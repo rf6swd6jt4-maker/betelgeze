@@ -12,6 +12,14 @@ type CompanySeed = {
     source_record_id: string
 }
 
+type PageExtraction = {
+    url: string
+    owner_name: string | null
+    phone: string | null
+    phones: string[]
+    evidence: string[]
+}
+
 type PipelineTask = {
     id: string
     source_key: LeadgenSourceKey
@@ -39,9 +47,20 @@ function normalisePhone(value: string | null | undefined) {
     return digits.length >= 8 ? `+${digits}` : null
 }
 
-function extractPhone(text: string) {
-    const match = text.match(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/)
-    return normalisePhone(match?.[0])
+function uniqueValues(values: Array<string | null | undefined>) {
+    return [...new Set(values.filter((value): value is string => Boolean(value)))]
+}
+
+function extractPhones(text: string) {
+    const candidates = [
+        ...text.matchAll(/href=["']tel:([^"']+)["']/gi),
+        ...text.matchAll(/telephone["']?\s*[:=]\s*["']([^"']+)["']/gi),
+        ...text.matchAll(/phone["']?\s*[:=]\s*["']([^"']+)["']/gi),
+        ...text.matchAll(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g),
+    ]
+        .map((match) => normalisePhone(match[1] ?? match[0]))
+        .filter((phone): phone is string => Boolean(phone))
+    return uniqueValues(candidates)
 }
 
 function extractOwnerName(text: string) {
@@ -64,7 +83,7 @@ function urlsToInspect(baseUrl: string, depth: number) {
     return [...new Set(paths.map((path) => new URL(path, url.origin).toString()))]
 }
 
-async function fetchText(url: string, timeoutSeconds: number) {
+async function fetchPage(url: string, timeoutSeconds: number) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), timeoutSeconds * 1000)
     try {
@@ -76,10 +95,29 @@ async function fetchText(url: string, timeoutSeconds: number) {
         if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`)
         const contentType = response.headers.get("content-type") ?? ""
         if (!contentType.includes("text/html") && !contentType.includes("text/plain")) return ""
-        return (await response.text()).replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+        const html = await response.text()
+        const visibleText = html
+            .replace(/<script(?![^>]*application\/ld\+json)[\s\S]*?<\/script>/gi, " ")
+            .replace(/<style[\s\S]*?<\/style>/gi, " ")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+        return { html, visibleText }
     } finally {
         clearTimeout(timeout)
     }
+}
+
+function extractPageEvidence(url: string, html: string, visibleText: string): PageExtraction {
+    const phones = extractPhones(`${html} ${visibleText}`)
+    const ownerName = extractOwnerName(visibleText)
+    const evidence = [
+        phones.length ? `phone:${phones.join(",")}` : null,
+        ownerName ? `owner:${ownerName}` : null,
+        /application\/ld\+json/i.test(html) ? "json_ld_present" : null,
+        /href=["']tel:/i.test(html) ? "tel_link_present" : null,
+    ].filter((value): value is string => Boolean(value))
+    return { url, owner_name: ownerName, phone: phones[0] ?? null, phones, evidence }
 }
 
 async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem }) {
@@ -197,20 +235,21 @@ async function processWebsiteTask(task: PipelineTask) {
     if (!companyId || !websiteUrl) throw new Error("Website crawler task is missing a company or website URL.")
     const depth = Math.min(5, Math.max(1, Number(task.source_query.crawl_depth) || 2))
     const timeoutSeconds = Math.min(30, Math.max(3, Number(task.source_query.timeout_seconds) || 10))
-    const inspected: Array<{ url: string; owner_name: string | null; phone: string | null }> = []
+    const inspected: PageExtraction[] = []
     let ownerName: string | null = null
     let phone: string | null = null
     for (const url of urlsToInspect(websiteUrl, depth)) {
         try {
-            const text = await fetchText(url, timeoutSeconds)
-            const pageOwner = extractOwnerName(text)
-            const pagePhone = extractPhone(text)
-            inspected.push({ url, owner_name: pageOwner, phone: pagePhone })
+            const page = await fetchPage(url, timeoutSeconds)
+            const extracted = extractPageEvidence(url, page.html, page.visibleText)
+            const pageOwner = extracted.owner_name
+            const pagePhone = extracted.phone
+            inspected.push(extracted)
             ownerName ||= pageOwner
             phone ||= pagePhone
             if (ownerName && phone) break
         } catch {
-            inspected.push({ url, owner_name: null, phone: null })
+            inspected.push({ url, owner_name: null, phone: null, phones: [], evidence: ["fetch_failed"] })
         }
     }
     const { error: evidenceError } = await supabaseAdmin.from("leadgen_evidence").insert({
@@ -219,7 +258,7 @@ async function processWebsiteTask(task: PipelineTask) {
         source_key: "website",
         evidence_kind: "website_owner_phone_extract",
         confidence: ownerName && phone ? 62 : phone ? 35 : 20,
-        value: { owner_name: ownerName, phone },
+        value: { owner_name: ownerName, phone, phones: uniqueValues(inspected.flatMap((page) => page.phones)) },
         raw_payload: { inspected },
     })
     if (evidenceError) throw evidenceError

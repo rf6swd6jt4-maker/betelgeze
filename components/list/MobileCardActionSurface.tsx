@@ -21,6 +21,8 @@ export function MobileCardActionSurface({
     const [position, setPosition] = useState<{ top: number; right: number } | null>(null)
     const menuId = useId()
     const surfaceRef = useRef<HTMLDivElement>(null)
+    const menuRef = useRef<HTMLDivElement>(null)
+    const ignoreNextCardClick = useRef(false)
     const visibleActions = actions.filter((action): action is ListAction => {
         if (!action) return false
         return Boolean(action.label && (action.href || action.action))
@@ -42,7 +44,11 @@ export function MobileCardActionSurface({
 
     useEffect(() => {
         function close(event: MouseEvent) {
-            if (surfaceRef.current && !surfaceRef.current.contains(event.target as Node)) setOpen(false)
+            if (!open) return
+            const target = event.target as Node
+            if (menuRef.current?.contains(target)) return
+            ignoreNextCardClick.current = Boolean(surfaceRef.current?.contains(target))
+            setOpen(false)
         }
         function escape(event: KeyboardEvent) {
             if (event.key === "Escape") setOpen(false)
@@ -77,7 +83,15 @@ export function MobileCardActionSurface({
 
     function handleClick(event: ReactMouseEvent<HTMLDivElement>) {
         const target = event.target as HTMLElement
+        if (ignoreNextCardClick.current) {
+            ignoreNextCardClick.current = false
+            return
+        }
         if (target.closest("a,button,input,select,textarea,summary")) return
+        if (open) {
+            setOpen(false)
+            return
+        }
         openMenu()
     }
 
@@ -90,7 +104,7 @@ export function MobileCardActionSurface({
 
     return <div ref={surfaceRef} className={className} role="button" tabIndex={0} aria-label={label} onClick={handleClick} onKeyDown={handleKeyDown}>
         {children}
-        {open && <div role="menu" style={position ? { top: position.top, right: position.right } : undefined} className="fixed z-[9999] w-[calc(100vw-2rem)] max-w-52 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 shadow-2xl">
+        {open && <div ref={menuRef} role="menu" style={position ? { top: position.top, right: position.right } : undefined} className="fixed z-[9999] w-[calc(100vw-2rem)] max-w-52 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 shadow-2xl">
             {visibleActions.map((item) => {
                 const itemClassName = `block min-h-9 w-full px-3 py-2 text-left text-sm ${item.danger ? "text-red-300 hover:bg-red-950/40" : "text-neutral-200 hover:bg-neutral-900"}`
                 if (item.href) {

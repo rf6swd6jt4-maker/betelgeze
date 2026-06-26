@@ -5,6 +5,7 @@ import { NewPollButton } from "@/components/leadgen/NewPollButton"
 import { PollDuration } from "@/components/leadgen/PollDuration"
 import { PollsAutoRefresh } from "@/components/leadgen/PollsAutoRefresh"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
+import { ListCreatorAvatar } from "@/components/list/ListCreatorAvatar"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
@@ -156,11 +157,11 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                                 <span className="flex shrink-0 items-center gap-2">{statusMark}{duration}</span>
                             </div>
                             <div className="flex items-center gap-3 px-3.5 py-2.5">
-                                {triggerPill}
                                 <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.candidate_count}</span> searched</p>
                                 <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.normalised_count}</span> returned</p>
                                 <p className="font-mono text-sm text-neutral-500">{shortId(poll.id)}</p>
                                 <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(poll.created_at)}</p>
+                                <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
                             </div>
                         </MobileCardActionSurface>
                         <div className={`hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(190px,1fr)_94px_170px_160px_130px_100px_120px_32px] md:items-center ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>

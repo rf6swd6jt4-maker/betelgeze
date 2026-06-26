@@ -7,6 +7,7 @@ import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { ListAutoRefresh } from "@/components/list/ListAutoRefresh"
+import { ListCreatorAvatar } from "@/components/list/ListCreatorAvatar"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
 import { compactText, formatRelativeTime, shortId } from "@/lib/ui/relative-time"
@@ -292,16 +293,16 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                                 <MobileCardActionSurface actions={invoiceActions} className={`rounded-2xl border border-neutral-800 bg-black md:hidden ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
                                     <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
                                         {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="min-w-0 truncate text-base font-medium text-neutral-100 underline underline-offset-4">{sale.client_name}</Link> : <p className="min-w-0 truncate text-base font-medium text-neutral-100">{sale.client_name}</p>}
-                                        {invoiceStatusMark}
+                                        <p className="shrink-0 whitespace-nowrap text-sm font-medium text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
                                     </div>
-                                    <div className="flex items-center gap-3 px-3.5 py-2.5">
-                                        <div>{labelPill("Manual")}</div>
-                                        <p className="whitespace-nowrap text-sm font-medium text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
+                                    <div className="grid grid-cols-[0.85fr_1.15fr] gap-3 border-b border-neutral-900 px-3.5 py-2">
+                                        <div className="min-w-0 [&>span]:max-w-full [&>span]:truncate">{invoiceStatusMark}</div>
+                                        <div className="min-w-0 [&>span]:max-w-full">{mobileWhatsappStatusMark}</div>
+                                    </div>
+                                    <div className="flex items-center gap-3 px-3.5 py-2">
                                         <p className="font-mono text-sm text-neutral-500">{shortId(sale.stripe_invoice_id ?? sale.id)}</p>
-                                        <div className="ml-auto flex min-w-0 flex-col items-end gap-0.5">
-                                            {mobileWhatsappStatusMark}
-                                            <p className="whitespace-nowrap text-xs text-neutral-500">{formatRelativeTime(sale.created_at)}</p>
-                                        </div>
+                                        <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(sale.created_at)}</p>
+                                        <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
                                     </div>
                                 </MobileCardActionSurface>
                                 <div className={`hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(180px,1fr)_92px_120px_165px_220px_100px_120px_32px] md:items-center ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>

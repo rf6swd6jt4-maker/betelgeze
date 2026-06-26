@@ -13,6 +13,7 @@ import { ListToolbar } from "@/components/admin/ListToolbar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { DashboardAutoRefresh } from "@/components/admin/DashboardAutoRefresh"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
+import { ListCreatorAvatar } from "@/components/list/ListCreatorAvatar"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
@@ -351,8 +352,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                                 </div>
                                 <div className="flex items-center gap-3 px-3.5 py-2">
                                     <p className="min-w-0 flex-1 truncate text-sm text-neutral-400">{client.phone ? displayMessageAddress(client.phone) : client.email || "No contact saved"}</p>
-                                    <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(lastActivity ?? client.created_at)}</p>
                                     <p className="font-mono text-sm text-neutral-500">{shortId(client.id)}</p>
+                                    <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(lastActivity ?? client.created_at)}</p>
+                                    <ListCreatorAvatar src={creatorAvatar} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
                                 </div>
                             </MobileCardActionSurface>
                             <div className={`hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(170px,0.9fr)_76px_120px_145px_minmax(190px,1.05fr)_145px_105px_120px_32px] md:items-center ${stuck ? "bg-red-950/[0.08]" : ""}`}>

@@ -60,6 +60,15 @@ function sourceNames(snapshot: unknown, count: number) {
         .join(", ") || `${count} configured`
 }
 
+function pollTaskStats(tasks: PollTask[]) {
+    return {
+        sourceQueries: tasks.length,
+        processedQueries: tasks.filter((task) => ["completed", "failed"].includes(task.status)).length,
+        rawReturned: tasks.reduce((total, task) => total + (task.raw_count ?? 0), 0),
+        companiesStored: tasks.reduce((total, task) => total + (task.company_count ?? 0), 0),
+    }
+}
+
 export default async function LeadgenPollsPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
@@ -89,6 +98,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
     }, {})
     const livePolls = polls.filter((poll) => ["queued", "running"].includes(poll.status))
     const latestPoll = polls[0]
+    const latestTaskStats = latestPoll ? pollTaskStats(tasksByPoll[latestPoll.id] ?? []) : null
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
         <PollsAutoRefresh enabled intervalMs={5000} />
@@ -100,7 +110,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     <h1 className="text-2xl font-semibold tracking-tight">{workspace.name}</h1>
                     <p className="mt-2 text-sm text-neutral-400">Track source polling, queue state, run durations, and pipeline counts. Signed in as {role}.</p>
                 </div>
-                <NewPollButton href={`https://leadgen.betelgeze.com/${workspace.slug}/polls/new`} />
+                <NewPollButton href={`https://leadgen.betelgeze.com/${workspace.slug}/new`} />
             </div>
 
             <LeadgenTabs workspaceSlug={workspace.slug} active="polls" />
@@ -109,8 +119,8 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                 {[
                     ["Running", livePolls.length, ""],
                     ["History", polls.length, ""],
-                    ["Latest searched", latestPoll?.candidate_count ?? 0, "hidden sm:block"],
-                    ["Returned", latestPoll?.normalised_count ?? 0, ""],
+                    ["Latest queries", latestTaskStats?.sourceQueries ?? 0, "hidden sm:block"],
+                    ["Raw returned", latestTaskStats?.rawReturned ?? 0, ""],
                 ].map(([label, value, className]) => <div key={label} className={`${className} border-r border-neutral-800 px-2 py-2 text-center last:border-r-0 sm:rounded-lg sm:border sm:border-neutral-800 sm:bg-neutral-900 sm:px-3 sm:text-left`}>
                     <p className="text-[10px] leading-tight text-neutral-500 sm:text-xs">{label}</p>
                     <p className="mt-1 text-lg font-semibold">{value}</p>
@@ -122,13 +132,14 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     const meta = statusMeta(poll.status)
                     const live = ["queued", "running"].includes(poll.status)
                     const tasks = tasksByPoll[poll.id] ?? []
+                    const taskStats = pollTaskStats(tasks)
                     const failedTasks = tasks.filter((task) => task.error || task.status === "failed")
                     const hasConsoleEntry = poll.status === "failed" || failedTasks.length > 0
                     const creator = poll.requested_by ? creatorById.get(poll.requested_by) : null
                     const statusMark = <span className={`inline-flex items-center gap-2 text-sm ${meta.text}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
                     const duration = <span className="font-mono text-sm text-neutral-500"><PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live} /></span>
                     const triggerPill = <span className="w-fit rounded-md border border-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-400">{poll.trigger === "manual" ? "Manual" : "Automated"}</span>
-                    const pollHref = `https://leadgen.betelgeze.com/${workspace.slug}/polls/${poll.id}`
+                    const pollHref = `https://leadgen.betelgeze.com/${workspace.slug}/poll/${poll.id}`
                     const pollActions = [
                         { label: "Open poll", href: pollHref },
                         poll.status === "failed" ? { label: "Retry", action: retryLeadgenPoll.bind(null, workspace.slug, poll.id) } : {},
@@ -145,8 +156,9 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                                 <span className="flex shrink-0 items-center gap-2">{statusMark}{duration}</span>
                             </div>
                             <div className="flex items-center gap-3 px-3.5 py-2.5">
-                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.candidate_count}</span> searched</p>
-                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.normalised_count}</span> returned</p>
+                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.processedQueries}/{taskStats.sourceQueries}</span> queries</p>
+                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.rawReturned}</span> raw</p>
+                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.normalised_count}</span> companies</p>
                                 <p className="font-mono text-sm text-neutral-500">{shortId(poll.id)}</p>
                                 <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(poll.created_at)}</p>
                                 <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
@@ -161,8 +173,8 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                             {statusMark}
                             {duration}
                         </div>
-                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.candidate_count}</span> records searched</p>
-                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.normalised_count}</span> returned</p>
+                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.processedQueries}/{taskStats.sourceQueries}</span> source queries</p>
+                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.rawReturned}</span> raw returned · <span className="text-neutral-200">{poll.normalised_count}</span> companies</p>
                         <p className="font-mono text-sm text-neutral-500">{shortId(poll.id)}</p>
                         <div className="flex items-center justify-end gap-3">
                             <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(poll.created_at)}</p>

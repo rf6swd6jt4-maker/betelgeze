@@ -141,6 +141,10 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                                     <div className="flex items-center justify-between gap-2"><span>Location mapping</span><span className={mapped.locationText.includes("0/") ? "text-amber-200" : "text-neutral-300"}>{mapped.locationText}</span></div>
                                     {source.value === "overture" && <div className="flex items-center justify-between gap-2"><span>Adapter</span><span className={adapterConfigured ? "text-emerald-200" : "text-amber-200"}>{adapterConfigured ? "Configured" : "Missing in Vercel"}</span></div>}
                                     {source.requiresApiKey && <div className="flex items-center justify-between gap-2"><span>API key</span><span className={apiKeyConfigured ? "text-emerald-200" : "text-amber-200"}>{apiKeyConfigured ? "Configured" : "Missing in Vercel"}</span></div>}
+                                    {source.envVar && <div className="rounded-lg border border-neutral-900 bg-neutral-950 p-2">
+                                        <p className="font-mono text-[11px] text-neutral-300">{source.envVar}</p>
+                                        {source.setupHint && <p className="mt-1 leading-5 text-neutral-500">{source.setupHint}</p>}
+                                    </div>}
                                 </div>
                                 <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
                                     <summary className="cursor-pointer text-sm font-medium text-neutral-300">Technical settings</summary>

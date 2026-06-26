@@ -37,7 +37,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                     <h1 className="text-2xl font-semibold tracking-tight">{workspace.name}</h1>
                     <p className="mt-2 text-sm text-neutral-400">Review and route the highest quality leads for this workspace. Signed in as {role}.</p>
                 </div>
-                <NewPollButton href={`https://leadgen.betelgeze.com/${workspace.slug}/polls/new`} />
+                <NewPollButton href={`https://leadgen.betelgeze.com/${workspace.slug}/new`} />
             </div>
 
             <LeadgenTabs workspaceSlug={workspace.slug} active="leads" />

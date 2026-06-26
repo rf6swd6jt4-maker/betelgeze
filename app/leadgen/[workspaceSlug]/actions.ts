@@ -16,6 +16,7 @@ function configObject(value: unknown): Partial<LeadgenSourceConfig> {
 function refreshPolls(slug: string) {
     revalidatePath(`/leadgen/${slug}`)
     revalidatePath(`/leadgen/${slug}/polls`)
+    revalidatePath(`/leadgen/${slug}/new`)
 }
 
 export async function createLeadgenPoll(slug: string) {

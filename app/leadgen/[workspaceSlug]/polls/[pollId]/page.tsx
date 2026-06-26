@@ -82,6 +82,9 @@ export default async function LeadgenPollDetailPage({ params }: PageProps) {
     const records = recordsResult.error ? [] : recordsResult.data ?? []
     const companies = companiesResult.error ? [] : companiesResult.data ?? []
     const evidence = evidenceResult.error ? [] : evidenceResult.data ?? []
+    const processedTaskCount = tasks.filter((task) => ["completed", "failed"].includes(task.status)).length
+    const rawReturnedCount = tasks.reduce((total, task) => total + (task.raw_count ?? 0), 0)
+    const taskCompanyCount = tasks.reduce((total, task) => total + (task.company_count ?? 0), 0)
     const meta = statusMeta(poll.status)
     const live = ["queued", "running"].includes(poll.status)
 
@@ -105,9 +108,9 @@ export default async function LeadgenPollDetailPage({ params }: PageProps) {
 
             <section className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
                 {[
-                    ["Source records", poll.candidate_count],
-                    ["Companies", poll.normalised_count],
-                    ["Deduped", poll.deduped_count],
+                    ["Source queries", `${processedTaskCount}/${tasks.length}`],
+                    ["Raw returned", rawReturnedCount],
+                    ["Companies", `${companies.length || poll.normalised_count} stored`],
                     ["Enriched", evidence.length],
                     ["Qualified", poll.qualified_count],
                 ].map(([label, value]) => <div key={label} className="rounded-xl border border-neutral-800 bg-neutral-900 p-3">
@@ -127,7 +130,8 @@ export default async function LeadgenPollDetailPage({ params }: PageProps) {
             <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
                 <div className="border-b border-neutral-800 px-5 py-4">
                     <h2 className="font-semibold">Source tasks</h2>
-                    <p className="mt-1 text-sm text-neutral-500">Exact worker tasks generated for this poll.</p>
+                    <p className="mt-1 text-sm text-neutral-500">Exact worker tasks generated for this poll. This is the truth layer for whether sources actually queried anything.</p>
+                    <p className="mt-2 text-xs text-neutral-600">{tasks.length} generated · {processedTaskCount} processed · {rawReturnedCount} raw records returned · {taskCompanyCount} companies stored from tasks</p>
                 </div>
                 {tasks.length ? tasks.map((task) => {
                     const taskMeta = statusMeta(task.status)

@@ -33,13 +33,15 @@ export type LeadgenSourcePlanItem = {
 
 export const executableLeadgenSources = new Set<LeadgenSourceKey>(["overture", "website", "osm", "state_licensing", "opencorporates", "sam_gov"])
 
-export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: string; detail: string; statusLabel: string; notesPlaceholder: string; requiresApiKey?: boolean; implemented?: boolean }> = [
+export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: string; detail: string; statusLabel: string; notesPlaceholder: string; requiresApiKey?: boolean; implemented?: boolean; envVar?: string; setupHint?: string }> = [
     {
         value: "overture",
         label: "Overture Places",
         detail: "Primary open places database. Uses ICP mappings to query Overture categories and regions through the GeoParquet adapter.",
         statusLabel: "Requires Overture adapter",
         notesPlaceholder: "Release pin, category exclusions, confidence thresholds, or bounding-box notes.",
+        envVar: "OVERTURE_DUCKDB_ENDPOINT",
+        setupHint: "This is not an API key. It must point to Betelgeze's Overture/DuckDB adapter service once we deploy it.",
     },
     {
         value: "website",
@@ -71,6 +73,8 @@ export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: strin
         statusLabel: "Requires API key",
         notesPlaceholder: "Enabled jurisdictions, officer confidence rules, or registered-agent caveats.",
         requiresApiKey: true,
+        envVar: "OPENCORPORATES_API_KEY",
+        setupHint: "Create an OpenCorporates account, generate an API token, then add it to Vercel.",
     },
     {
         value: "sam_gov",
@@ -79,6 +83,8 @@ export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: strin
         statusLabel: "Requires API key",
         notesPlaceholder: "NAICS filters, POC confidence rules, or entity-status constraints.",
         requiresApiKey: true,
+        envVar: "SAM_GOV_API_KEY",
+        setupHint: "Request a SAM.gov public API key, then add it to Vercel.",
     },
 ]
 

@@ -384,10 +384,15 @@ export async function processOsmPoll(pollId: string, workspaceId: string, option
     for (const task of tasks) {
         await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "running", started_at: new Date().toISOString(), error: null }).eq("id", task.id)
         try {
-            const query = task.source_query as { query?: string }
+            const query = task.source_query as { query?: string; target?: string; tags?: string[] }
             if (!query.query) throw new Error("Missing Overpass query.")
             const payload = await fetchOverpass(query.query)
             const elements = Array.isArray(payload?.elements) ? payload.elements as OsmElement[] : []
+            if (elements.length === 0) {
+                const target = query.target ?? task.location_value
+                const tags = Array.isArray(query.tags) ? query.tags.map(String).join(", ") : "mapped OSM tags"
+                throw new Error(`OpenStreetMap returned 0 place records for ${task.industry_value ?? "this industry"} in ${target ?? "this location"} using ${tags}. The source query ran, but the public OSM data did not contain matching records for this mapped target.`)
+            }
             let companyCount = 0
             for (const element of elements) {
                 const stored = await upsertOsmElement({ workspaceId, pollId, taskId: task.id, industryValue: task.industry_value, locationValue: task.location_value, element })

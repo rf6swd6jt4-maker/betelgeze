@@ -109,10 +109,12 @@ export function ListActionMenu({ actions, label = "Open item actions" }: { actio
                     </Link>
                 }
                 return <form key={item.label} action={item.action}>
-                    <button className={className} role="menuitem" onClick={(event) => {
+                    <button type="submit" className={className} role="menuitem" onClick={(event) => {
                         const warning = item.confirmMessage ?? (item.danger ? REMOVE_WARNING : null)
-                        if (warning && !window.confirm(warning)) event.preventDefault()
-                        setOpen(false)
+                        if (warning && !window.confirm(warning)) {
+                            event.preventDefault()
+                            setOpen(false)
+                        }
                     }}>
                         {item.label}
                     </button>

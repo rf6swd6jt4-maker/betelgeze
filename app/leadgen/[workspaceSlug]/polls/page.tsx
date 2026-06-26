@@ -198,7 +198,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                 {polls.map((poll) => {
                     const failedTasks = (tasksByPoll[poll.id] ?? []).filter((task) => task.error || task.status === "failed")
                     if (poll.status !== "failed" && failedTasks.length === 0) return null
-                    const firstError = failedTasks.find((task) => task.error)?.error ?? "Poll failed before a source returned a detailed error."
+                    const firstError = poll.error ?? failedTasks.find((task) => task.error)?.error ?? "Poll failed without a task-level error. Retry the poll; if this repeats, the source worker could not create or read its source tasks."
                     const pollMeta = statusMeta(poll.status === "failed" ? "failed" : failedTasks[0]?.status ?? "failed")
                     return <div id={`poll-console-${poll.id}`} key={poll.id} className="grid min-h-14 scroll-mt-24 gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[140px_minmax(0,1fr)_120px] md:items-center">
                         <span className={`inline-flex items-center gap-2 text-sm ${pollMeta.text}`}><BetelgezeStatusMark className={pollMeta.mark} />{pollMeta.label}</span>

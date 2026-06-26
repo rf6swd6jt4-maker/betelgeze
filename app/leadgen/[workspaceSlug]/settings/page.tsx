@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic"
 type PageProps = { params: Promise<{ workspaceSlug: string }> }
 type SourceOption = { source_key: string; option_kind: "industry" | "location"; value: string; label: string }
 type GeoTarget = { value: string; label: string }
-const runnableSources = new Set(["osm"])
+const runnableSources = new Set(["osm", "state_licensing"])
 
 function sourceConfigValue(config: unknown): Partial<LeadgenSourceConfig> {
     return config && typeof config === "object" ? config as Partial<LeadgenSourceConfig> : {}
@@ -130,6 +130,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                                     <div className="mt-4 grid gap-3">
                                         {locationOptions.length > 0 && <SearchableMultiSelect name={`sourceConfig:${source.value}:locations`} label="Locations" options={locationOptions} selectedValues={Array.isArray(config?.locations) ? config.locations : []} />}
                                         {industryOptions.length > 0 && <SearchableMultiSelect name={`sourceConfig:${source.value}:industries`} label="License / record types" options={industryOptions} selectedValues={Array.isArray(config?.industries) ? config.industries : []} />}
+                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Max records per license/county<input name={`sourceConfig:${source.value}:limit`} type="number" min={1} max={25} defaultValue={sourceSettings?.limit ?? 10} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
                                         <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Notes<textarea name={`sourceConfig:${source.value}:notes`} defaultValue={config?.notes ?? ""} rows={2} placeholder={source.notesPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
                                     </div>
                                 </details>}

@@ -32,7 +32,7 @@ export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: strin
     {
         value: "state_licensing",
         label: "State licensing boards",
-        detail: "Official licensing records for narrow regulated trades. Planned after OSM.",
+        detail: "Official public licensing records. First worker: Texas TDLR county/license searches.",
         targetsLabel: "Boards / states / trades",
         targetsPlaceholder: "e.g. Texas HVAC, electrical, water well",
         notesPlaceholder: "License statuses, classifications, renewal windows, or exclusions.",

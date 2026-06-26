@@ -80,7 +80,7 @@ ${clauses}
 out center ${limit};`
 }
 
-async function setPollStatus(pollId: string, workspaceId: string, status: string, error?: string | null) {
+export async function setLeadgenPollStatus(pollId: string, workspaceId: string, status: string, error?: string | null) {
     await supabaseAdmin
         .from("leadgen_polls")
         .update({ status, error: error ?? null, ...(status === "running" ? { started_at: new Date().toISOString() } : {}), ...(["completed", "failed", "cancelled"].includes(status) ? { completed_at: new Date().toISOString() } : {}) })
@@ -88,7 +88,7 @@ async function setPollStatus(pollId: string, workspaceId: string, status: string
         .eq("workspace_id", workspaceId)
 }
 
-async function refreshPollCounts(pollId: string, workspaceId: string) {
+export async function refreshLeadgenPollCounts(pollId: string, workspaceId: string) {
     const [recordsResult, companiesResult] = await Promise.all([
         supabaseAdmin.from("leadgen_source_records").select("id", { count: "exact", head: true }).eq("poll_id", pollId),
         supabaseAdmin.from("leadgen_companies").select("id", { count: "exact", head: true }).eq("first_seen_poll_id", pollId),
@@ -104,6 +104,48 @@ async function refreshPollCounts(pollId: string, workspaceId: string) {
         })
         .eq("id", pollId)
         .eq("workspace_id", workspaceId)
+}
+
+export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
+    await refreshLeadgenPollCounts(pollId, workspaceId)
+    const [tasksResult, companiesResult] = await Promise.all([
+        supabaseAdmin
+            .from("leadgen_poll_tasks")
+            .select("source_key, industry_value, location_value, status, error")
+            .eq("poll_id", pollId)
+            .eq("workspace_id", workspaceId)
+            .order("created_at", { ascending: true }),
+        supabaseAdmin
+            .from("leadgen_companies")
+            .select("id", { count: "exact", head: true })
+            .eq("first_seen_poll_id", pollId),
+    ])
+    if (tasksResult.error) {
+        await setLeadgenPollStatus(pollId, workspaceId, "failed", `Could not read poll task results: ${tasksResult.error.message}`)
+        return
+    }
+    const tasks = tasksResult.data ?? []
+    const failedTasks = tasks.filter((task) => task.status === "failed")
+    const unfinishedTasks = tasks.filter((task) => ["queued", "running"].includes(task.status))
+    const companyCount = companiesResult.count ?? 0
+    const firstErrors = failedTasks
+        .slice(0, 3)
+        .map((task) => `${task.source_key}/${task.industry_value ?? "unknown"}/${task.location_value ?? "unknown"}: ${task.error || "Unknown source error"}`)
+        .join(" | ")
+    const emptyResultError = "The poll completed, but the enabled sources returned zero usable companies for this configuration. Treating this as failed so Betelgeze does not hide an empty collection run behind a green status. Try broader locations/industries or add another source."
+    await setLeadgenPollStatus(
+        pollId,
+        workspaceId,
+        failedTasks.length > 0 || unfinishedTasks.length > 0 || companyCount === 0 ? "failed" : "completed",
+        failedTasks.length > 0
+            ? `${failedTasks.length} source task${failedTasks.length === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}`
+            : unfinishedTasks.length > 0
+                ? `${unfinishedTasks.length} source task${unfinishedTasks.length === 1 ? " was" : "s were"} not processed. Retry the poll or check the enabled sources.`
+                : companyCount === 0
+                    ? emptyResultError
+                    : null,
+    )
+    await refreshLeadgenPollCounts(pollId, workspaceId)
 }
 
 function compactErrorMessage(error: unknown) {
@@ -264,8 +306,10 @@ export async function createOsmTasksForPoll({ workspaceId, pollId, plan }: { wor
             .eq("enabled", true)
             .in("industry_value", plan.industries),
     ])
-    const targets = (targetsResult.error ? [] : targetsResult.data ?? []) as GeoTarget[]
-    const mappings = (mappingsResult.error ? [] : mappingsResult.data ?? []) as CategoryMapping[]
+    if (targetsResult.error) throw new Error(`Could not load OSM target locations: ${targetsResult.error.message}`)
+    if (mappingsResult.error) throw new Error(`Could not load OSM category mappings: ${mappingsResult.error.message}`)
+    const targets = (targetsResult.data ?? []) as GeoTarget[]
+    const mappings = (mappingsResult.data ?? []) as CategoryMapping[]
     const tasks = mappings.flatMap((mapping) => targets
         .filter((target) => typeof target.latitude === "number" && typeof target.longitude === "number")
         .map((target) => {
@@ -293,8 +337,8 @@ export async function createOsmTasksForPoll({ workspaceId, pollId, plan }: { wor
     return tasks.length
 }
 
-export async function processOsmPoll(pollId: string, workspaceId: string) {
-    await setPollStatus(pollId, workspaceId, "running")
+export async function processOsmPoll(pollId: string, workspaceId: string, options: { finalize?: boolean } = {}) {
+    await setLeadgenPollStatus(pollId, workspaceId, "running")
     const tasksResult = await supabaseAdmin
         .from("leadgen_poll_tasks")
         .select("id, industry_value, location_value, source_query")
@@ -303,9 +347,13 @@ export async function processOsmPoll(pollId: string, workspaceId: string) {
         .eq("source_key", "osm")
         .eq("status", "queued")
         .order("created_at", { ascending: true })
-    const tasks = tasksResult.error ? [] : tasksResult.data ?? []
+    if (tasksResult.error) {
+        await setLeadgenPollStatus(pollId, workspaceId, "failed", `Could not load OSM tasks: ${tasksResult.error.message}`)
+        return
+    }
+    const tasks = tasksResult.data ?? []
     if (tasks.length === 0) {
-        await setPollStatus(pollId, workspaceId, "failed", "No OSM source tasks were generated from these settings.")
+        if (options.finalize !== false) await setLeadgenPollStatus(pollId, workspaceId, "failed", "No queued OSM tasks were available for this poll.")
         return
     }
     for (const task of tasks) {
@@ -333,32 +381,9 @@ export async function processOsmPoll(pollId: string, workspaceId: string) {
         }
         await sleep(OVERPASS_REQUEST_DELAY_MS)
     }
-    await refreshPollCounts(pollId, workspaceId)
-    const [failedResult, companiesResult] = await Promise.all([
-        supabaseAdmin
-        .from("leadgen_poll_tasks")
-        .select("industry_value, location_value, error")
-        .eq("poll_id", pollId)
-        .eq("status", "failed")
-        .order("created_at", { ascending: true }),
-        supabaseAdmin
-            .from("leadgen_companies")
-            .select("id", { count: "exact", head: true })
-            .eq("first_seen_poll_id", pollId),
-    ])
-    const failedTasks = failedResult.error ? [] : failedResult.data ?? []
-    const failedCount = failedTasks.length
-    const companyCount = companiesResult.count ?? 0
-    const firstErrors = failedTasks
-        .slice(0, 3)
-        .map((task) => `${task.industry_value}/${task.location_value}: ${task.error || "Unknown error"}`)
-        .join(" | ")
-    const emptyResultError = "The poll completed, but OpenStreetMap returned zero usable companies for this configuration. Treating this as failed so we do not hide an empty source result behind a green status. Try broader locations/industries or add more sources."
-    await setPollStatus(
-        pollId,
-        workspaceId,
-        failedCount > 0 || companyCount === 0 ? "failed" : "completed",
-        failedCount > 0 ? `${failedCount} OSM task${failedCount === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}` : companyCount === 0 ? emptyResultError : null,
-    )
-    await refreshPollCounts(pollId, workspaceId)
+    if (options.finalize === false) {
+        await refreshLeadgenPollCounts(pollId, workspaceId)
+        return
+    }
+    await finalizeLeadgenPoll(pollId, workspaceId)
 }

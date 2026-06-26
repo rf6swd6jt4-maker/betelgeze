@@ -44,7 +44,13 @@ export function ListActionMenu({ actions, label = "Open item actions" }: { actio
     }, [menuId])
 
     if (visibleActions.length === 0) {
-        return <span className="inline-flex h-8 w-8 items-center justify-center text-neutral-700">⋯</span>
+        return <span className="inline-flex h-10 w-10 items-center justify-center text-neutral-700">
+            <span aria-hidden="true" className="flex items-center gap-0.5">
+                <span className="h-1 w-1 rounded-full bg-current" />
+                <span className="h-1 w-1 rounded-full bg-current" />
+                <span className="h-1 w-1 rounded-full bg-current" />
+            </span>
+        </span>
     }
 
     function toggle() {
@@ -56,8 +62,12 @@ export function ListActionMenu({ actions, label = "Open item actions" }: { actio
     }
 
     return <div ref={menuRef} className="relative shrink-0">
-        <button type="button" onClick={toggle} aria-label={label} aria-expanded={open} aria-haspopup="menu" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-xl leading-none text-neutral-300 hover:bg-neutral-900 hover:text-white">
-            ⋯
+        <button type="button" onClick={toggle} aria-label={label} aria-expanded={open} aria-haspopup="menu" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-800 text-white hover:border-neutral-600 focus:outline-none focus:ring-2 focus:ring-white/30">
+            <span aria-hidden="true" className="flex items-center gap-0.5">
+                <span className="h-1 w-1 rounded-full bg-current" />
+                <span className="h-1 w-1 rounded-full bg-current" />
+                <span className="h-1 w-1 rounded-full bg-current" />
+            </span>
         </button>
         {open && <div role="menu" className="absolute right-0 z-30 mt-2 w-[calc(100vw-2rem)] max-w-52 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 shadow-2xl">
             {visibleActions.map((item) => {

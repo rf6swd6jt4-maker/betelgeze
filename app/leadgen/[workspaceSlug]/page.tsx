@@ -54,16 +54,16 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                 {companies.length ? companies.map((company) => {
                     const address = company.address && typeof company.address === "object" && "city" in company.address ? company.address as { city?: string; state?: string } : null
                     const sourceUrl = company.website_url ?? company.profile_url ?? null
-                    return <div key={company.id} className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[minmax(250px,1.4fr)_150px_170px_150px_100px_120px_32px] md:items-center">
+                    return <div key={company.id} className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(250px,1.4fr)_150px_170px_150px_100px_120px_32px] md:items-center">
                         <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-neutral-100">{company.display_name}</p>
+                            <p className="truncate text-base font-semibold text-neutral-100">{company.display_name}</p>
                             <p className="mt-1 truncate text-xs text-neutral-500">{sourceUrl ? "Source profile available" : "No source link"}</p>
                         </div>
                         <span className={`inline-flex items-center gap-2 text-sm ${company.phone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${company.phone ? "bg-emerald-300" : "bg-neutral-500"}`} />{company.phone ? "Callable" : "No phone"}</span>
                         <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
                         <p className="truncate text-sm text-neutral-400">{String(company.industry_value ?? "—").replace(/_/g, " ")}</p>
-                        <p className="font-mono text-xs text-neutral-500">{shortId(company.id)}</p>
-                        <p className="whitespace-nowrap text-xs text-neutral-500">{formatRelativeTime(company.created_at)}</p>
+                        <p className="font-mono text-sm text-neutral-500">{shortId(company.id)}</p>
+                        <p className="whitespace-nowrap text-right text-sm text-neutral-500">{formatRelativeTime(company.created_at)}</p>
                         <ListActionMenu actions={[
                             sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
                             { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },

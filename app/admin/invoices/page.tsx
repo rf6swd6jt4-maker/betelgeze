@@ -4,19 +4,15 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
-import { Avatar } from "@/components/account/Avatar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { ListAutoRefresh } from "@/components/list/ListAutoRefresh"
+import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { compactText, formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { removeInvoice, retryInvoiceAutomation } from "./actions"
 import { ListToolbar } from "@/components/admin/ListToolbar"
 
 export const dynamic = "force-dynamic"
-
-function formatStatus(value: string) {
-    return value.replace(/_/g, " ")
-}
 
 function formatMoney(amount: number, currency: string) {
     return (amount / 100).toLocaleString("en-US", {
@@ -62,7 +58,7 @@ function getAutomationDiagnostic(rawPayload: unknown) {
 }
 
 function isManualMigration(rawPayload: unknown) {
-    return (
+    return Boolean(
         rawPayload &&
         typeof rawPayload === "object" &&
         !Array.isArray(rawPayload) &&
@@ -71,15 +67,38 @@ function isManualMigration(rawPayload: unknown) {
 }
 
 function getWhatsAppState(sale: {
+    status: string
     consent_template_sent_at: string | null
     consent_confirmed_at: string | null
     onboarding_link_sent_at: string | null
 }) {
-    if (sale.onboarding_link_sent_at) return "Onboarding link sent"
-    if (sale.consent_confirmed_at) return "WhatsApp confirmed"
-    if (sale.consent_template_sent_at) return "Consent template sent"
+    if (sale.status === "invoice_failed") return { label: "WA consent template not sent", tone: "red" as const }
+    if (sale.status.includes("consent_template_failed")) return { label: "WA consent template failed", tone: "red" as const }
+    if (sale.status === "onboarding_link_failed") return { label: "WA onboarding link failed", tone: "red" as const }
+    if (sale.onboarding_link_sent_at || sale.status === "onboarding_link_sent") return { label: "Onboarding link sent", tone: "green" as const }
+    if (sale.consent_confirmed_at || ["whatsapp_confirmed", "onboarding_created", "manual_workspace_created"].includes(sale.status)) return { label: "WA confirmed", tone: "green" as const }
+    if (sale.consent_template_sent_at || sale.status.includes("awaiting_whatsapp_confirm")) return { label: "WA consent template sent", tone: "yellow" as const }
+    return { label: "WA consent template not sent", tone: "neutral" as const }
+}
 
-    return "Consent template not sent"
+function getInvoiceState(status: string, manualMigration: boolean) {
+    if (manualMigration) return { label: "Invoice not issued", tone: "neutral" as const }
+    if (status === "invoice_failed") return { label: "Invoice failed", tone: "red" as const }
+    if (status === "invoice_creating") return { label: "Invoice creating", tone: "yellow" as const }
+    if (status === "invoice_sent") return { label: "Invoice sent", tone: "yellow" as const }
+    if (["paid", "test_paid", "paid_awaiting_whatsapp_confirm", "paid_consent_template_failed", "whatsapp_confirmed", "onboarding_created", "onboarding_link_sent", "onboarding_link_failed"].includes(status)) return { label: "Invoice paid", tone: "green" as const }
+    return { label: "Invoice pending", tone: "neutral" as const }
+}
+
+function toneClasses(tone: "green" | "yellow" | "red" | "neutral") {
+    if (tone === "green") return { text: "text-emerald-200", mark: "bg-emerald-300" }
+    if (tone === "yellow") return { text: "text-yellow-200", mark: "bg-yellow-300" }
+    if (tone === "red") return { text: "text-red-200", mark: "bg-red-300" }
+    return { text: "text-neutral-300", mark: "bg-neutral-500" }
+}
+
+function labelPill(label: string) {
+    return <span className="rounded-md border border-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-400">{label}</span>
 }
 
 function isAttentionStatus(status: string) {
@@ -123,11 +142,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
         : { data: [] as Array<{ user_id: string; username: string; avatar_path: string | null }> }
     const creatorById = new Map((creators ?? []).map((creator) => [creator.user_id, creator]))
     const creatorAvatarUrls = await createUploadSignedUrls((creators ?? []).map((creator) => creator.avatar_path).filter((path): path is string => Boolean(path)))
-    const paidCount = sales.filter((sale) =>
-        ["paid", "paid_awaiting_whatsapp_confirm", "onboarding_created", "onboarding_link_sent"].includes(
-            sale.status
-        )
-    ).length
+    const paidCount = sales.filter((sale) => getInvoiceState(sale.status, isManualMigration(sale.raw_payload)).label === "Invoice paid").length
     const attentionCount = sales.filter((sale) =>
         isAttentionStatus(sale.status)
     ).length
@@ -138,7 +153,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
     const matchesInvoiceFilter = (sale: (typeof sales)[number]) => {
         if (filter === "all") return true
         if (filter === "attention") return isAttentionStatus(sale.status)
-        if (filter === "paid") return ["paid", "paid_awaiting_whatsapp_confirm", "onboarding_created", "onboarding_link_sent"].includes(sale.status)
+        if (filter === "paid") return getInvoiceState(sale.status, isManualMigration(sale.raw_payload)).label === "Invoice paid"
         if (filter.startsWith("creator:")) return sale.created_by === filter.slice("creator:".length)
         return true
     }
@@ -252,27 +267,29 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                             const manualMigration = isManualMigration(sale.raw_payload)
                             const diagnostic = getAutomationDiagnostic(sale.raw_payload)
                             const creator = sale.created_by ? creatorById.get(sale.created_by) : null
-                            const invoiceStatus = manualMigration ? "Manual migration" : formatStatus(sale.status)
+                            const invoiceStatus = getInvoiceState(sale.status, manualMigration)
                             const whatsappStatus = getWhatsAppState(sale)
+                            const invoiceTone = toneClasses(invoiceStatus.tone)
+                            const whatsappTone = toneClasses(whatsappStatus.tone)
                             const invoiceAttention = isAttentionStatus(sale.status)
-                            return <div key={sale.id} className={`grid min-h-16 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[minmax(230px,1.25fr)_170px_190px_120px_100px_120px_32px] md:items-center ${sale.isFilterMatch ? "" : "opacity-35"} ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
+                            return <div key={sale.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(220px,1.25fr)_100px_120px_165px_190px_100px_120px_32px] md:items-center ${sale.isFilterMatch ? "" : "opacity-35"} ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
                                 <div className="min-w-0">
-                                    <p className="truncate text-sm font-medium text-neutral-100">
+                                    <p className="truncate text-base font-semibold text-neutral-100">
                                         {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="underline-offset-4 hover:underline">{sale.client_name}</Link> : sale.client_name}
                                     </p>
-                                    <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">
-                                        {creator ? <Avatar src={creator.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} name={creator.username} className="h-5 w-5 shrink-0" /> : null}
-                                        <span className="truncate">{creator ? `@${creator.username}` : sale.client_email ?? sale.client_phone}</span>
-                                        <span className="rounded-md border border-neutral-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">Manual</span>
-                                    </div>
+                                    <p className="mt-0.5 truncate text-xs text-neutral-500">{sale.client_email ?? sale.client_phone}</p>
                                 </div>
+                                <div>{labelPill("Manual")}</div>
+                                <p className="text-sm font-medium text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <span className={`inline-flex items-center gap-2 text-sm ${invoiceAttention ? "text-yellow-200" : sale.status.includes("failed") ? "text-red-200" : "text-emerald-200"}`}><span className={`h-2 w-2 rotate-45 ${sale.status.includes("failed") ? "bg-red-300" : invoiceAttention ? "bg-yellow-300" : "bg-emerald-300"}`} />{invoiceStatus}</span>
+                                    <span className={`inline-flex items-center gap-2 text-sm ${invoiceTone.text}`}><span className={`h-2.5 w-2.5 rotate-45 ${invoiceTone.mark}`} />{invoiceStatus.label}</span>
                                 </div>
-                                <span className={`inline-flex items-center gap-2 text-sm ${sale.onboarding_link_sent_at ? "text-emerald-200" : sale.consent_template_sent_at ? "text-yellow-200" : "text-neutral-300"}`}><span className={`h-2 w-2 rotate-45 ${sale.onboarding_link_sent_at ? "bg-emerald-300" : sale.consent_template_sent_at ? "bg-yellow-300" : "bg-neutral-400"}`} />{whatsappStatus}</span>
-                                <p className="text-sm text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
-                                <p className="font-mono text-xs text-neutral-500">{shortId(sale.stripe_invoice_id ?? sale.id)}</p>
-                                <p className="whitespace-nowrap text-xs text-neutral-500">{formatRelativeTime(sale.created_at)}</p>
+                                <span className={`inline-flex items-center gap-2 text-sm ${whatsappTone.text}`}><span className={`h-2.5 w-2.5 rotate-45 ${whatsappTone.mark}`} />{whatsappStatus.label}</span>
+                                <p className="font-mono text-sm text-neutral-500">{shortId(sale.stripe_invoice_id ?? sale.id)}</p>
+                                <div className="flex items-center justify-end gap-3">
+                                    <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(sale.created_at)}</p>
+                                    <ListCreatorBadge src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} label="Created by" date={new Date(sale.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
+                                </div>
                                 <ListActionMenu actions={[
                                     invoiceAttention ? { label: "Retry", action: retryInvoiceAutomation.bind(null, sale.id) } : {},
                                     sale.stripe_hosted_invoice_url ? { label: "Open invoice", href: sale.stripe_hosted_invoice_url, external: true } : {},

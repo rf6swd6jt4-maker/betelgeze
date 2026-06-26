@@ -1,4 +1,3 @@
-import { Avatar } from "@/components/account/Avatar"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
@@ -6,6 +5,7 @@ import { NewPollButton } from "@/components/leadgen/NewPollButton"
 import { PollDuration } from "@/components/leadgen/PollDuration"
 import { PollsAutoRefresh } from "@/components/leadgen/PollsAutoRefresh"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
+import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { buildSourcePlan, sourceLabel, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
@@ -138,23 +138,23 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     const tasks = tasksByPoll[poll.id] ?? []
                     const failedTasks = tasks.filter((task) => task.error || task.status === "failed")
                     const creator = poll.requested_by ? creatorById.get(poll.requested_by) : null
-                    return <div key={poll.id} className={`grid min-h-16 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[minmax(240px,1.35fr)_170px_160px_130px_100px_120px_32px] md:items-center ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>
+                    return <div key={poll.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(240px,1.35fr)_100px_170px_160px_130px_100px_120px_32px] md:items-center ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>
                         <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-neutral-100">{sourceNames(poll.source_snapshot, poll.source_count)} poll</p>
-                            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">
-                                <Avatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} name={creator?.username ?? "Betelgeze"} className="h-5 w-5 shrink-0" />
-                                <span className="truncate">{creator ? `@${creator.username}` : "Betelgeze"}</span>
-                                {poll.trigger !== "manual" && <span className="rounded-md border border-neutral-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">Automated</span>}
-                            </div>
+                            <p className="truncate text-base font-semibold text-neutral-100">{sourceNames(poll.source_snapshot, poll.source_count)} poll</p>
+                            <p className="mt-0.5 truncate text-xs text-neutral-500">Source run · {shortId(poll.id)}</p>
                         </div>
+                        <span className="w-fit rounded-md border border-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-400">{poll.trigger === "manual" ? "Manual" : "Automated"}</span>
                         <div className="flex items-center justify-end gap-3 md:justify-start">
                             <span className={`inline-flex items-center gap-2 text-sm ${meta.text}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
                             <span className="font-mono text-sm text-neutral-500"><PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live} /></span>
                         </div>
-                        <p className="text-xs text-neutral-500 md:text-sm"><span className="text-neutral-200">{poll.candidate_count}</span> records searched</p>
-                        <p className="text-xs text-neutral-500 md:text-sm"><span className="text-neutral-200">{poll.normalised_count}</span> returned</p>
-                        <p className="font-mono text-xs text-neutral-500">{shortId(poll.id)}</p>
-                        <p className="whitespace-nowrap text-xs text-neutral-500">{formatRelativeTime(poll.created_at)}</p>
+                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.candidate_count}</span> records searched</p>
+                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.normalised_count}</span> returned</p>
+                        <p className="font-mono text-sm text-neutral-500">{shortId(poll.id)}</p>
+                        <div className="flex items-center justify-end gap-3">
+                            <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(poll.created_at)}</p>
+                            <ListCreatorBadge src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} label="Created by" date={new Date(poll.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
+                        </div>
                         <ListActionMenu actions={[
                             poll.status === "failed" ? { label: "Retry", action: retryLeadgenPoll.bind(null, workspace.slug, poll.id) } : {},
                             failedTasks.length ? { label: "Open console", href: `#poll-console-${poll.id}` } : {},

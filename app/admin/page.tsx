@@ -9,10 +9,10 @@ import { AdminActionsMenu } from "@/components/admin/AdminActionsMenu"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { ListToolbar } from "@/components/admin/ListToolbar"
-import { Avatar } from "@/components/account/Avatar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { DashboardAutoRefresh } from "@/components/admin/DashboardAutoRefresh"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
+import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { removeClientFromList } from "./actions"
 export const dynamic = "force-dynamic"
@@ -300,19 +300,27 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                     {sortedClientSummaries.map(({ client, assignedServiceKeys, percentage, lastActivity, stuck, isFilterMatch }) => {
                         const creator = client.created_by ? clientCreatorById.get(client.created_by) : null
                         const creatorAvatar = creator?.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) : null
-                        return <div key={client.id} className={`grid min-h-16 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[minmax(230px,1.3fr)_170px_minmax(220px,1fr)_130px_120px_32px] md:items-center ${isFilterMatch ? "" : "opacity-35"} ${stuck ? "bg-red-950/[0.08]" : ""}`}>
+                        return <div key={client.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(230px,1.25fr)_120px_170px_minmax(210px,1fr)_130px_120px_32px] md:items-center ${isFilterMatch ? "" : "opacity-35"} ${stuck ? "bg-red-950/[0.08]" : ""}`}>
                             <div className="min-w-0">
-                                <Link href={`/admin/client/${client.id}`} className="truncate text-sm font-medium text-neutral-100 underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
-                                <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">
-                                    {creator ? <Avatar src={creatorAvatar} name={creator.username} className="h-5 w-5 shrink-0" /> : null}
-                                    <span className="truncate">{creator ? `Added by @${creator.username}` : "Legacy client"}</span>
-                                    {client.is_test && <span className="rounded-md border border-amber-400/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">Test</span>}
-                                </div>
+                                <Link href={`/admin/client/${client.id}`} className="truncate text-base font-semibold text-neutral-100 underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
+                                <p className="mt-0.5 truncate text-xs text-neutral-500">{client.email || client.phone || "No contact saved"}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {client.is_test && <span className="rounded-md border border-amber-400/30 px-2 py-1 text-[11px] uppercase tracking-wide text-amber-200">Test</span>}
+                                {stuck && <span className="rounded-md border border-red-400/30 px-2 py-1 text-[11px] uppercase tracking-wide text-red-200">Stuck</span>}
                             </div>
                             <span className={`inline-flex items-center gap-2 text-sm ${stuck ? "text-red-200" : percentage === 100 ? "text-emerald-200" : "text-yellow-200"}`}><span className={`h-2 w-2 rotate-45 ${stuck ? "bg-red-300" : percentage === 100 ? "bg-emerald-300" : "bg-yellow-300"}`} />{stuck ? "Stuck" : percentage === 100 ? "Complete" : "Active"} · {percentage}%</span>
-                            <p className="truncate text-sm text-neutral-400">{assignedServiceKeys.length ? assignedServiceKeys.map((serviceKey) => SERVICES[serviceKey]?.title ?? serviceKey).join(", ") : "No services"}</p>
-                            <p className="font-mono text-xs text-neutral-500">{shortId(client.id)}</p>
-                            <p className="whitespace-nowrap text-xs text-neutral-500">{formatRelativeTime(lastActivity ?? client.created_at)}</p>
+                            <div className="min-w-0">
+                                <div className="h-1.5 overflow-hidden rounded-full bg-neutral-800">
+                                    <div className="h-full rounded-full bg-white" style={{ width: `${percentage}%` }} />
+                                </div>
+                                <p className="mt-1 truncate text-xs text-neutral-500">{assignedServiceKeys.length ? assignedServiceKeys.map((serviceKey) => SERVICES[serviceKey]?.title ?? serviceKey).join(", ") : "No services"}</p>
+                            </div>
+                            <p className="font-mono text-sm text-neutral-500">{shortId(client.id)}</p>
+                            <div className="flex items-center justify-end gap-3">
+                                <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(lastActivity ?? client.created_at)}</p>
+                                <ListCreatorBadge src={creatorAvatar} username={creator?.username ?? null} label="Added by" date={new Date(client.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
+                            </div>
                             <ListActionMenu actions={[
                                 { label: "Open client", href: `/admin/client/${client.id}` },
                                 { label: "Remove", action: removeClientFromList.bind(null, client.id), danger: true, confirmMessage: "Remove this client from the dashboard? This archives the client instead of hard-deleting their records." },

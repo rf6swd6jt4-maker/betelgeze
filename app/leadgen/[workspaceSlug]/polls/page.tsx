@@ -14,6 +14,7 @@ import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { compactText, formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
+import Link from "next/link"
 import { cancelLeadgenPoll, removeLeadgenPoll, retryLeadgenPoll } from "../actions"
 
 export const dynamic = "force-dynamic"
@@ -127,8 +128,9 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     const statusMark = <span className={`inline-flex items-center gap-2 text-sm ${meta.text}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
                     const duration = <span className="font-mono text-sm text-neutral-500"><PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live} /></span>
                     const triggerPill = <span className="w-fit rounded-md border border-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-400">{poll.trigger === "manual" ? "Manual" : "Automated"}</span>
+                    const pollHref = `https://leadgen.betelgeze.com/${workspace.slug}/polls/${poll.id}`
                     const pollActions = [
-                        { label: "Open poll", href: `https://leadgen.betelgeze.com/${workspace.slug}/polls/${poll.id}` },
+                        { label: "Open poll", href: pollHref },
                         poll.status === "failed" ? { label: "Retry", action: retryLeadgenPoll.bind(null, workspace.slug, poll.id) } : {},
                         hasConsoleEntry ? { label: "Open console", href: `#poll-console-${poll.id}` } : {},
                         live ? { label: "Cancel", action: cancelLeadgenPoll.bind(null, workspace.slug, poll.id), danger: true, confirmMessage: "Cancel this running poll?" } : {},
@@ -137,7 +139,9 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     return <div key={poll.id} className="md:border-b md:border-neutral-900 md:last:border-0">
                         <MobileCardActionSurface actions={pollActions} className={`rounded-2xl border border-neutral-800 bg-black md:hidden ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>
                             <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
-                                <p className="min-w-0 truncate text-base font-medium text-neutral-100">{sourceNames(poll.source_snapshot, poll.source_count)} poll</p>
+                                <Link href={pollHref} className="min-w-0 truncate text-base font-medium text-neutral-100 underline decoration-neutral-500 underline-offset-4 hover:text-white">
+                                    {sourceNames(poll.source_snapshot, poll.source_count)} poll
+                                </Link>
                                 <span className="flex shrink-0 items-center gap-2">{statusMark}{duration}</span>
                             </div>
                             <div className="flex items-center gap-3 px-3.5 py-2.5">

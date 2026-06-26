@@ -83,7 +83,7 @@ function urlsToInspect(baseUrl: string, depth: number) {
     return [...new Set(paths.map((path) => new URL(path, url.origin).toString()))]
 }
 
-async function fetchPage(url: string, timeoutSeconds: number) {
+async function fetchPage(url: string, timeoutSeconds: number): Promise<{ html: string; visibleText: string } | null> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), timeoutSeconds * 1000)
     try {
@@ -94,7 +94,7 @@ async function fetchPage(url: string, timeoutSeconds: number) {
         })
         if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`)
         const contentType = response.headers.get("content-type") ?? ""
-        if (!contentType.includes("text/html") && !contentType.includes("text/plain")) return ""
+        if (!contentType.includes("text/html") && !contentType.includes("text/plain")) return null
         const html = await response.text()
         const visibleText = html
             .replace(/<script(?![^>]*application\/ld\+json)[\s\S]*?<\/script>/gi, " ")
@@ -241,6 +241,10 @@ async function processWebsiteTask(task: PipelineTask) {
     for (const url of urlsToInspect(websiteUrl, depth)) {
         try {
             const page = await fetchPage(url, timeoutSeconds)
+            if (!page) {
+                inspected.push({ url, owner_name: null, phone: null, phones: [], evidence: ["non_text_response"] })
+                continue
+            }
             const extracted = extractPageEvidence(url, page.html, page.visibleText)
             const pageOwner = extracted.owner_name
             const pagePhone = extracted.phone

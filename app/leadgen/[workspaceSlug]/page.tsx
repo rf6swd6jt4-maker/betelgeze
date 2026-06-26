@@ -39,25 +39,45 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
 
             <LeadgenTabs workspaceSlug={workspace.slug} active="leads" />
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:grid-cols-3">
                 {[
                     ["Collected leads", companies.length],
                     ["With phone", callable],
                     ["With source profile", withProfiles],
-                ].map(([label, value]) => <div key={label} className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2">
-                    <p className="text-xs text-neutral-500">{label}</p>
+                ].map(([label, value]) => <div key={label} className="border-r border-neutral-800 px-2 py-2 text-center last:border-r-0 sm:rounded-lg sm:border sm:border-neutral-800 sm:bg-neutral-900 sm:px-3 sm:text-left">
+                    <p className="text-[10px] leading-tight text-neutral-500 sm:text-xs">{label}</p>
                     <p className="mt-1 text-lg font-semibold">{value}</p>
                 </div>)}
             </div>
 
-            <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
+            <section className="mt-5 space-y-3 md:space-y-0 md:rounded-2xl md:border md:border-neutral-800 md:bg-black">
                 {companies.length ? companies.map((company) => {
                     const sourceUrl = company.website_url ?? company.profile_url ?? null
-                    return <div key={company.id} className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(210px,1.1fr)_150px_170px_150px_100px_120px_32px] md:items-center">
+                    const phoneStatus = <span className={`inline-flex items-center gap-2 text-sm ${company.phone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${company.phone ? "bg-emerald-300" : "bg-neutral-500"}`} />{company.phone ? "Callable" : "No phone"}</span>
+                    return <div key={company.id} className="md:border-b md:border-neutral-900 md:last:border-0">
+                    <div className="rounded-2xl border border-neutral-800 bg-black md:hidden">
+                        <div className="flex items-center justify-between gap-3 border-b border-neutral-900 px-4 py-3">
+                            <p className="min-w-0 truncate text-base font-medium text-neutral-100">{company.display_name}</p>
+                            {phoneStatus}
+                        </div>
+                        <div className="flex items-center gap-3 border-b border-neutral-900 px-4 py-2.5">
+                            <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
+                            <p className="min-w-0 truncate text-sm text-neutral-400">{String(company.industry_value ?? "—").replace(/_/g, " ")}</p>
+                        </div>
+                        <div className="flex items-center gap-3 px-4 py-2.5">
+                            <p className="font-mono text-sm text-neutral-500">{shortId(company.id)}</p>
+                            <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(company.created_at)}</p>
+                            <ListActionMenu actions={[
+                                sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
+                                { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },
+                            ]} />
+                        </div>
+                    </div>
+                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(210px,1.1fr)_150px_170px_150px_100px_120px_32px] md:items-center">
                         <div className="min-w-0">
                             <p className="truncate text-base font-medium text-neutral-100">{company.display_name}</p>
                         </div>
-                        <span className={`inline-flex items-center gap-2 text-sm ${company.phone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${company.phone ? "bg-emerald-300" : "bg-neutral-500"}`} />{company.phone ? "Callable" : "No phone"}</span>
+                        {phoneStatus}
                         <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
                         <p className="truncate text-sm text-neutral-400">{String(company.industry_value ?? "—").replace(/_/g, " ")}</p>
                         <p className="font-mono text-sm text-neutral-500">{shortId(company.id)}</p>
@@ -66,6 +86,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                             sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
                             { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },
                         ]} />
+                    </div>
                     </div>
                 }) : <div className="grid gap-4 p-5 lg:grid-cols-[1.1fr_0.9fr]">
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">

@@ -284,7 +284,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                     </Link>
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:grid-cols-3">
                     {[
                         ["Clients", totalClients],
                         ["Active", activeClients],
@@ -292,12 +292,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                     ].map(([label, value]) => (
                         <div
                             key={label}
-                            className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2"
+                            className="border-r border-neutral-800 px-2 py-2 text-center last:border-r-0 sm:rounded-lg sm:border sm:border-neutral-800 sm:bg-neutral-900 sm:px-3 sm:text-left"
                         >
-                            <p className="text-xs text-neutral-500">
+                            <p className="text-[10px] leading-tight text-neutral-500 sm:text-xs">
                                 {label}
                             </p>
-                            <p className="mt-1 text-lg font-semibold">
+                            <p className="mt-1 text-lg font-semibold sm:text-left">
                                 {value}
                             </p>
                         </div>
@@ -306,12 +306,48 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
                 <ListToolbar sortOptions={[{ value: "created-new", label: "Date added: newest" }, { value: "created-old", label: "Date added: oldest" }, { value: "name-az", label: "Client name: A–Z" }, { value: "progress-low", label: "Progress: low to high" }, { value: "progress-high", label: "Progress: high to low" }, { value: "activity-recent", label: "Last activity: recent" }]} filterGroups={[{ label: "Status", options: [{ value: "active", label: "Active" }, { value: "not-started", label: "Not started" }, { value: "complete", label: "Complete" }, { value: "stuck", label: "Stuck" }, { value: "test", label: "Test client" }] }, { label: "Added by", options: toolbarCreators }, { label: "Services", options: toolbarServices }]} />
 
-                <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
+                <section className="mt-5 space-y-3 md:space-y-0 md:rounded-2xl md:border md:border-neutral-800 md:bg-black">
                     {sortedClientSummaries.map(({ client, assignedServiceKeys, percentage, lastActivity, stuck, isFilterMatch }) => {
                         const creator = client.created_by ? clientCreatorById.get(client.created_by) : null
                         const creatorAvatar = creator?.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) : null
                         const status = getClientStatus({ percentage, stuck })
-                        return <div key={client.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(170px,0.9fr)_76px_120px_145px_minmax(190px,1.05fr)_145px_105px_120px_32px] md:items-center ${isFilterMatch ? "" : "opacity-35"} ${stuck ? "bg-red-950/[0.08]" : ""}`}>
+                        const servicePills = assignedServiceKeys.length ? assignedServiceKeys.map((serviceKey) => (
+                            <span key={serviceKey} className="rounded-md bg-blue-500/10 px-2 py-1 text-xs text-blue-200">
+                                {SERVICES[serviceKey]?.title ?? serviceKey}
+                            </span>
+                        )) : <span className="text-sm text-neutral-500">No services</span>
+                        return <div key={client.id} className={`${isFilterMatch ? "" : "opacity-35"} md:border-b md:border-neutral-900 md:last:border-0`}>
+                            <div className={`rounded-2xl border border-neutral-800 bg-black md:hidden ${stuck ? "bg-red-950/[0.08]" : ""}`}>
+                                <div className="flex items-center justify-between gap-3 border-b border-neutral-900 px-4 py-3">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <Link href={`/admin/client/${client.id}`} className="truncate text-base font-medium text-neutral-100 underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
+                                        {client.is_test && <span className="shrink-0 rounded-md border border-amber-400/30 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">Test</span>}
+                                    </div>
+                                    <span className={`inline-flex shrink-0 items-center gap-2 text-sm ${status.text}`}><span className={`h-2 w-2 rotate-45 ${status.mark}`} />{status.label}</span>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5 px-4 py-2.5">
+                                    {servicePills}
+                                </div>
+                                <div className="flex items-center gap-3 border-t border-neutral-900 px-4 py-3">
+                                    <p className="min-w-0 flex-1 truncate text-sm text-neutral-400">{client.phone ? displayMessageAddress(client.phone) : client.email || "No contact saved"}</p>
+                                    <div className="flex shrink-0 items-center gap-2">
+                                        <div className="h-1.5 w-14 overflow-hidden rounded-full bg-neutral-800">
+                                            <div className="h-full rounded-full bg-white" style={{ width: `${percentage}%` }} />
+                                        </div>
+                                        <span className="text-sm text-neutral-300">{percentage}%</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 border-t border-neutral-900 px-4 py-2.5">
+                                    <p className="font-mono text-sm text-neutral-500">{shortId(client.id)}</p>
+                                    <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(lastActivity ?? client.created_at)}</p>
+                                    <ListCreatorBadge src={creatorAvatar} username={creator?.username ?? null} label="Added by" date={new Date(client.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
+                                    <ListActionMenu actions={[
+                                        { label: "Open client", href: `/admin/client/${client.id}` },
+                                        { label: "Remove", action: removeClientFromList.bind(null, client.id), danger: true, confirmMessage: "Remove this client from the dashboard? This archives the client instead of hard-deleting their records." },
+                                    ]} />
+                                </div>
+                            </div>
+                            <div className={`hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(170px,0.9fr)_76px_120px_145px_minmax(190px,1.05fr)_145px_105px_120px_32px] md:items-center ${stuck ? "bg-red-950/[0.08]" : ""}`}>
                             <div className="min-w-0">
                                 <Link href={`/admin/client/${client.id}`} className="truncate text-base font-medium text-neutral-100 underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
                             </div>
@@ -321,11 +357,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                             <span className={`inline-flex items-center gap-2 text-sm ${status.text}`}><span className={`h-2 w-2 rotate-45 ${status.mark}`} />{status.label}</span>
                             <p className="truncate text-sm text-neutral-400">{client.phone ? displayMessageAddress(client.phone) : client.email || "No contact saved"}</p>
                             <div className="flex flex-wrap gap-2">
-                                {assignedServiceKeys.length ? assignedServiceKeys.map((serviceKey) => (
-                                    <span key={serviceKey} className="rounded-md bg-blue-500/10 px-2 py-1 text-xs text-blue-200">
-                                        {SERVICES[serviceKey]?.title ?? serviceKey}
-                                    </span>
-                                )) : <span className="text-sm text-neutral-500">No services</span>}
+                                {servicePills}
                             </div>
                             <div className="min-w-0">
                                 <div className="flex items-center gap-4">
@@ -344,6 +376,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                                 { label: "Open client", href: `/admin/client/${client.id}` },
                                 { label: "Remove", action: removeClientFromList.bind(null, client.id), danger: true, confirmMessage: "Remove this client from the dashboard? This archives the client instead of hard-deleting their records." },
                             ]} />
+                        </div>
                         </div>
                     })}
                 </section>

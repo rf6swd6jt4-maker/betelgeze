@@ -228,7 +228,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                     </Link>
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:grid-cols-3">
                     {[
                         ["Invoices", sales.length],
                         ["Paid", paidCount],
@@ -236,9 +236,9 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                     ].map(([label, value]) => (
                         <div
                             key={label}
-                            className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2"
+                            className="border-r border-neutral-800 px-2 py-2 text-center last:border-r-0 sm:rounded-lg sm:border sm:border-neutral-800 sm:bg-neutral-900 sm:px-3 sm:text-left"
                         >
-                            <p className="text-xs text-neutral-500">
+                            <p className="text-[10px] leading-tight text-neutral-500 sm:text-xs">
                                 {label}
                             </p>
                             <p className="mt-1 text-lg font-semibold">
@@ -262,7 +262,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                         Apply the Stripe sales automation migration to show invoice automation status here.
                     </p>
                 ) : sales.length > 0 ? (
-                    <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
+                    <section className="mt-5 space-y-3 md:space-y-0 md:rounded-2xl md:border md:border-neutral-800 md:bg-black">
                         {sortedSales.map((sale) => {
                             const manualMigration = isManualMigration(sale.raw_payload)
                             const diagnostic = getAutomationDiagnostic(sale.raw_payload)
@@ -272,7 +272,35 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                             const invoiceTone = toneClasses(invoiceStatus.tone)
                             const whatsappTone = toneClasses(whatsappStatus.tone)
                             const invoiceAttention = isAttentionStatus(sale.status)
-                            return <div key={sale.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-900 px-4 py-2.5 last:border-0 md:grid-cols-[minmax(180px,1fr)_92px_120px_165px_190px_100px_120px_32px] md:items-center ${sale.isFilterMatch ? "" : "opacity-35"} ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
+                            const invoiceStatusMark = <span className={`inline-flex items-center gap-2 text-sm md:whitespace-nowrap ${invoiceTone.text}`}><span className={`h-2.5 w-2.5 shrink-0 rotate-45 ${invoiceTone.mark}`} />{invoiceStatus.label}</span>
+                            const whatsappStatusMark = <span className={`inline-flex items-center gap-2 text-sm md:whitespace-nowrap ${whatsappTone.text}`}><span className={`h-2.5 w-2.5 shrink-0 rotate-45 ${whatsappTone.mark}`} />{whatsappStatus.label}</span>
+                            return <div key={sale.id} className={`${sale.isFilterMatch ? "" : "opacity-35"} md:border-b md:border-neutral-900 md:last:border-0`}>
+                                <div className={`rounded-2xl border border-neutral-800 bg-black md:hidden ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
+                                    <div className="flex items-center justify-between gap-3 border-b border-neutral-900 px-4 py-3">
+                                        <p className="min-w-0 truncate text-base font-medium text-neutral-100">
+                                            {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="underline-offset-4 hover:underline">{sale.client_name}</Link> : sale.client_name}
+                                        </p>
+                                        {invoiceStatusMark}
+                                    </div>
+                                    <div className="flex items-center gap-3 border-b border-neutral-900 px-4 py-3">
+                                        <div>{labelPill("Manual")}</div>
+                                        <p className="text-sm font-medium text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
+                                        <div className="ml-auto">{whatsappStatusMark}</div>
+                                    </div>
+                                    <div className="flex items-center gap-3 px-4 py-2.5">
+                                        <p className="font-mono text-sm text-neutral-500">{shortId(sale.stripe_invoice_id ?? sale.id)}</p>
+                                        <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(sale.created_at)}</p>
+                                        <ListCreatorBadge src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} label="Created by" date={new Date(sale.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
+                                        <ListActionMenu actions={[
+                                            invoiceAttention ? { label: "Retry", action: retryInvoiceAutomation.bind(null, sale.id) } : {},
+                                            sale.stripe_hosted_invoice_url ? { label: "Open invoice", href: sale.stripe_hosted_invoice_url, external: true } : {},
+                                            sale.client_id ? { label: "Open client", href: `/admin/client/${sale.client_id}` } : {},
+                                            diagnostic ? { label: "Open console", href: `#invoice-console-${sale.id}` } : {},
+                                            { label: "Remove", action: removeInvoice.bind(null, sale.id), danger: true, confirmMessage: "Remove this invoice from Betelgeze? Stripe records will remain in Stripe." },
+                                        ]} />
+                                    </div>
+                                </div>
+                                <div className={`hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(180px,1fr)_92px_120px_165px_220px_100px_120px_32px] md:items-center ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
                                 <div className="min-w-0">
                                     <p className="truncate text-base font-medium text-neutral-100">
                                         {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="underline-offset-4 hover:underline">{sale.client_name}</Link> : sale.client_name}
@@ -281,9 +309,9 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                                 <div>{labelPill("Manual")}</div>
                                 <p className="text-sm font-medium text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <span className={`inline-flex items-center gap-2 text-sm ${invoiceTone.text}`}><span className={`h-2.5 w-2.5 rotate-45 ${invoiceTone.mark}`} />{invoiceStatus.label}</span>
+                                    {invoiceStatusMark}
                                 </div>
-                                <span className={`inline-flex items-center gap-2 text-sm ${whatsappTone.text}`}><span className={`h-2.5 w-2.5 rotate-45 ${whatsappTone.mark}`} />{whatsappStatus.label}</span>
+                                {whatsappStatusMark}
                                 <p className="font-mono text-sm text-neutral-500">{shortId(sale.stripe_invoice_id ?? sale.id)}</p>
                                 <div className="flex items-center justify-end gap-3">
                                     <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(sale.created_at)}</p>
@@ -296,6 +324,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                                     diagnostic ? { label: "Open console", href: `#invoice-console-${sale.id}` } : {},
                                     { label: "Remove", action: removeInvoice.bind(null, sale.id), danger: true, confirmMessage: "Remove this invoice from Betelgeze? Stripe records will remain in Stripe." },
                                 ]} />
+                            </div>
                             </div>
                         })}
                     </section>

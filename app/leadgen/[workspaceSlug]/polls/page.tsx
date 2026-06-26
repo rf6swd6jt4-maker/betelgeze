@@ -9,12 +9,12 @@ import { ListCreatorAvatar } from "@/components/list/ListCreatorAvatar"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
-import { buildSourcePlan, sourceLabel, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
+import { sourceLabel } from "@/lib/leadgen/sources"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { compactText, formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
-import { cancelLeadgenPoll, createLeadgenPoll, removeLeadgenPoll, retryLeadgenPoll } from "../actions"
+import { cancelLeadgenPoll, removeLeadgenPoll, retryLeadgenPoll } from "../actions"
 
 export const dynamic = "force-dynamic"
 
@@ -34,7 +34,7 @@ type PollTask = {
 }
 
 const statusStyles: Record<PollStatus, { label: string; mark: string; text: string }> = {
-    queued: { label: "Scheduled", mark: "bg-neutral-400", text: "text-neutral-300" },
+    queued: { label: "Initialising", mark: "bg-neutral-400", text: "text-neutral-300" },
     running: { label: "In progress", mark: "bg-yellow-300", text: "text-yellow-200" },
     completed: { label: "Successful", mark: "bg-emerald-300", text: "text-emerald-200" },
     failed: { label: "Failed", mark: "bg-red-300", text: "text-red-200" },
@@ -43,10 +43,6 @@ const statusStyles: Record<PollStatus, { label: string; mark: string; text: stri
 
 function statusMeta(status: string) {
     return statusStyles[(status as PollStatus) in statusStyles ? status as PollStatus : "queued"]
-}
-
-function configObject(value: unknown): Partial<LeadgenSourceConfig> {
-    return value && typeof value === "object" ? value as Partial<LeadgenSourceConfig> : {}
 }
 
 function sourceNames(snapshot: unknown, count: number) {
@@ -66,17 +62,6 @@ function sourceNames(snapshot: unknown, count: number) {
 export default async function LeadgenPollsPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
-    const settingsResult = await supabaseAdmin
-        .from("leadgen_workspace_settings")
-        .select("enabled_sources, source_config")
-        .eq("workspace_id", workspace.id)
-        .maybeSingle()
-    const settings = settingsResult.error ? null : settingsResult.data
-    const enabledSources = Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : []
-    const sourcePlan = buildSourcePlan(enabledSources, configObject(settings?.source_config))
-    const runnableSourcePlan = sourcePlan.filter((source) => source.industries.length > 0 && source.locations.length > 0)
-    const warnAboutOsmOnly = runnableSourcePlan.length === 1 && runnableSourcePlan[0]?.key === "osm"
-
     const pollsResult = await supabaseAdmin
         .from("leadgen_polls")
         .select("id, requested_by, status, trigger, source_count, source_snapshot, candidate_count, normalised_count, deduped_count, enriched_count, qualified_count, created_at, started_at, completed_at, error")
@@ -114,9 +99,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     <h1 className="text-2xl font-semibold tracking-tight">{workspace.name}</h1>
                     <p className="mt-2 text-sm text-neutral-400">Track source polling, queue state, run durations, and pipeline counts. Signed in as {role}.</p>
                 </div>
-                <form action={createLeadgenPoll.bind(null, workspace.slug)}>
-                    <NewPollButton warnAboutOsmOnly={warnAboutOsmOnly} />
-                </form>
+                <NewPollButton href={`https://leadgen.betelgeze.com/${workspace.slug}/polls/new`} />
             </div>
 
             <LeadgenTabs workspaceSlug={workspace.slug} active="polls" />

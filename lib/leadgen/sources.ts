@@ -31,21 +31,21 @@ export type LeadgenSourcePlanItem = {
     notes: string | null
 }
 
-export const executableLeadgenSources = new Set<LeadgenSourceKey>(["osm", "state_licensing"])
+export const executableLeadgenSources = new Set<LeadgenSourceKey>(["overture", "website", "osm", "state_licensing", "opencorporates", "sam_gov"])
 
 export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: string; detail: string; statusLabel: string; notesPlaceholder: string; requiresApiKey?: boolean; implemented?: boolean }> = [
     {
         value: "overture",
         label: "Overture Places",
-        detail: "Primary open places database. Uses ICP mappings to query Overture categories and regions once the GeoParquet adapter is installed.",
-        statusLabel: "GeoParquet adapter pending",
+        detail: "Primary open places database. Uses ICP mappings to query Overture categories and regions through the GeoParquet adapter.",
+        statusLabel: "Requires Overture adapter",
         notesPlaceholder: "Release pin, category exclusions, confidence thresholds, or bounding-box notes.",
     },
     {
         value: "website",
         label: "Website crawler",
         detail: "Owner and phone discovery from collected candidate websites. Runs after seed candidates exist.",
-        statusLabel: "Pipeline stage planned",
+        statusLabel: "Executable after candidates exist",
         notesPlaceholder: "Pages to inspect, owner-title patterns, or domains to skip.",
     },
     {
@@ -68,7 +68,7 @@ export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: strin
         value: "opencorporates",
         label: "Business registries / OpenCorporates",
         detail: "Officer/principal enrichment from business registries. Requires source credentials where jurisdictions need them.",
-        statusLabel: "API/key stage planned",
+        statusLabel: "Requires API key",
         notesPlaceholder: "Enabled jurisdictions, officer confidence rules, or registered-agent caveats.",
         requiresApiKey: true,
     },
@@ -76,7 +76,7 @@ export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: strin
         value: "sam_gov",
         label: "SAM.gov",
         detail: "Public contractor/entity enrichment for NAICS, government POCs, and registration evidence.",
-        statusLabel: "API/key stage planned",
+        statusLabel: "Requires API key",
         notesPlaceholder: "NAICS filters, POC confidence rules, or entity-status constraints.",
         requiresApiKey: true,
     },

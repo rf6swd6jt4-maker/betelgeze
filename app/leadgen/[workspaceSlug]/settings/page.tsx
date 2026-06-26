@@ -124,8 +124,9 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                             const implemented = executableLeadgenSources.has(source.value)
                             const sourceSettings = sourceConfig[source.value]
                             const mapped = mappingSummary(source.value)
-                            const canRun = implemented && mapped.ready
                             const apiKeyConfigured = source.value === "opencorporates" ? Boolean(process.env.OPENCORPORATES_API_KEY) : source.value === "sam_gov" ? Boolean(process.env.SAM_GOV_API_KEY) : true
+                            const adapterConfigured = source.value === "overture" ? Boolean(process.env.OVERTURE_DUCKDB_ENDPOINT) : true
+                            const canRun = implemented && mapped.ready && apiKeyConfigured && adapterConfigured
                             return <div key={source.value} className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">
                                 <label className="flex min-h-24 items-start gap-3">
                                     <input name="sources" value={source.value} type="checkbox" defaultChecked={enabledSources.has(source.value)} disabled={!canRun} className="mt-1 h-4 w-4 accent-white disabled:opacity-40" />
@@ -138,6 +139,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                                 <div className="mt-3 grid gap-2 rounded-lg border border-neutral-900 bg-black/40 p-3 text-xs text-neutral-400">
                                     <div className="flex items-center justify-between gap-2"><span>Industry mapping</span><span className={mapped.industryText.includes("0/") ? "text-amber-200" : "text-neutral-300"}>{mapped.industryText}</span></div>
                                     <div className="flex items-center justify-between gap-2"><span>Location mapping</span><span className={mapped.locationText.includes("0/") ? "text-amber-200" : "text-neutral-300"}>{mapped.locationText}</span></div>
+                                    {source.value === "overture" && <div className="flex items-center justify-between gap-2"><span>Adapter</span><span className={adapterConfigured ? "text-emerald-200" : "text-amber-200"}>{adapterConfigured ? "Configured" : "Missing in Vercel"}</span></div>}
                                     {source.requiresApiKey && <div className="flex items-center justify-between gap-2"><span>API key</span><span className={apiKeyConfigured ? "text-emerald-200" : "text-amber-200"}>{apiKeyConfigured ? "Configured" : "Missing in Vercel"}</span></div>}
                                 </div>
                                 <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">

@@ -1,5 +1,6 @@
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
+import { NewPollButton } from "@/components/leadgen/NewPollButton"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { ListAutoRefresh } from "@/components/list/ListAutoRefresh"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
@@ -36,6 +37,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                     <h1 className="text-2xl font-semibold tracking-tight">{workspace.name}</h1>
                     <p className="mt-2 text-sm text-neutral-400">Review and route the highest quality leads for this workspace. Signed in as {role}.</p>
                 </div>
+                <NewPollButton href={`https://leadgen.betelgeze.com/${workspace.slug}/polls/new`} />
             </div>
 
             <LeadgenTabs workspaceSlug={workspace.slug} active="leads" />

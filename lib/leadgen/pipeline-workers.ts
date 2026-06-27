@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { LeadgenSourceKey, LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
 import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
+import { queryOverturePlaces, type OverturePlaceRecord } from "@/lib/leadgen/overture-duckdb"
 
 type CompanySeed = {
     id: string
@@ -29,6 +30,24 @@ type PipelineTask = {
 }
 
 type SamEntity = Record<string, unknown>
+
+const SAM_NAICS_BY_INDUSTRY: Record<string, string[]> = {
+    roofers: ["238160"],
+    remodellers: ["236118", "236115", "236116", "236220"],
+    plumbers: ["238220"],
+    hvac_contractors: ["238220"],
+    electricians: ["238210"],
+    landscapers: ["561730"],
+    painters: ["238320"],
+    pool_builders: ["238990", "561790"],
+    general_contractors: ["236115", "236116", "236220"],
+    flooring_contractors: ["238330"],
+    fencing_contractors: ["238990"],
+    tree_services: ["561730"],
+    solar_installers: ["238210", "221114"],
+    restoration_companies: ["562910", "236118"],
+    water_well_services: ["237110"],
+}
 
 const SOURCE_STAGE: Partial<Record<LeadgenSourceKey, string>> = {
     overture: "candidate_seed",
@@ -74,6 +93,10 @@ function domainFromUrl(value: string | null | undefined) {
     } catch {
         return null
     }
+}
+
+function numberValue(value: unknown) {
+    return typeof value === "number" && Number.isFinite(value) ? value : null
 }
 
 function extractPhones(text: string) {
@@ -239,10 +262,6 @@ export async function createPipelineTasksForPoll({ workspaceId, pollId, plans }:
 }
 
 async function processBlockedExternalTask(task: PipelineTask) {
-    if (task.source_key === "overture") {
-        if (!process.env.OVERTURE_DUCKDB_ENDPOINT) throw new Error("Overture Places is mapped, but the Overture GeoParquet/DuckDB adapter is not configured yet. Add OVERTURE_DUCKDB_ENDPOINT, then this worker can seed candidates from the Overture Places dataset.")
-        throw new Error("Overture adapter endpoint is configured, but the endpoint client has not been implemented in Betelgeze yet.")
-    }
     if (task.source_key === "opencorporates") {
         if (!process.env.OPENCORPORATES_API_KEY) throw new Error("OpenCorporates is mapped, but OPENCORPORATES_API_KEY is not configured in Vercel.")
         throw new Error("OpenCorporates is currently disabled because the useful API access is paid unless a public-benefit exemption applies.")
@@ -261,6 +280,24 @@ function stateFromLocationMapping(locationMapping: unknown, nativeLocation: stri
     if (region && /^[A-Z]{2}$/i.test(region)) return region.toUpperCase()
     const match = nativeLocation?.match(/_([a-z]{2})$/i)
     return match ? match[1].toUpperCase() : null
+}
+
+function overtureLocationFromTask(task: PipelineTask) {
+    const mapping = asRecord(task.source_query.location_mapping)
+    const metadata = asRecord(mapping?.metadata)
+    return {
+        label: asString(metadata?.locality) ?? asString(metadata?.region) ?? task.location_value ?? null,
+        latitude: numberValue(metadata?.latitude),
+        longitude: numberValue(metadata?.longitude),
+        radiusMeters: numberValue(metadata?.radius_meters) ?? numberValue(task.source_query.radius_meters),
+    }
+}
+
+function samNaicsCodesForTask(task: PipelineTask) {
+    const nativeIndustries = valuesFromQuery(task.source_query.native_industries)
+    const nativeNaics = nativeIndustries.filter((value) => /^\d{6}$/.test(value))
+    const mapped = task.industry_value ? SAM_NAICS_BY_INDUSTRY[task.industry_value] ?? [] : []
+    return uniqueValues([...nativeNaics, ...mapped])
 }
 
 function extractSamEntities(payload: unknown): SamEntity[] {
@@ -356,20 +393,35 @@ async function fetchSamEntities(task: PipelineTask) {
     const locationMapping = task.source_query.location_mapping
     const industryQuery = titleCaseFromValue(nativeIndustries[0] ?? task.industry_value ?? null)
     const state = stateFromLocationMapping(locationMapping, nativeLocations[0] ?? null)
-    const url = new URL("https://api.sam.gov/entity-information/v4/entities")
-    url.searchParams.set("api_key", apiKey)
-    url.searchParams.set("includeSections", "entityRegistration,coreData,pointsOfContact")
-    url.searchParams.set("samRegistered", "Yes")
-    url.searchParams.set("registrationStatus", "A")
-    if (industryQuery) url.searchParams.set("q", industryQuery)
-    if (state) url.searchParams.set("physicalAddressProvinceOrStateCode", state)
-    const response = await fetch(url, {
-        headers: { Accept: "application/json", "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)" },
-        cache: "no-store",
-    })
-    const responseText = await response.text()
-    if (!response.ok) throw new Error(`SAM.gov returned HTTP ${response.status}: ${responseText.slice(0, 500)}`)
-    return { payload: JSON.parse(responseText) as unknown, queryUrl: url.toString().replace(apiKey, "[redacted]") }
+    const naicsCodes = samNaicsCodesForTask(task)
+    const attempts = naicsCodes.length
+        ? naicsCodes.map((naics) => ({ kind: "primaryNaics", value: naics }))
+        : industryQuery
+            ? [{ kind: "q", value: industryQuery }]
+            : []
+    const payloads: unknown[] = []
+    const queryUrls: string[] = []
+    for (const attempt of attempts) {
+        const url = new URL("https://api.sam.gov/entity-information/v4/entities")
+        url.searchParams.set("api_key", apiKey)
+        url.searchParams.set("includeSections", "entityRegistration,coreData,pointsOfContact")
+        url.searchParams.set("samRegistered", "Yes")
+        url.searchParams.set("registrationStatus", "A")
+        url.searchParams.set(attempt.kind, attempt.value)
+        if (state) url.searchParams.set("physicalAddressProvinceOrStateCode", state)
+        const response = await fetch(url, {
+            headers: { Accept: "application/json", "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)" },
+            cache: "no-store",
+        })
+        const responseText = await response.text()
+        queryUrls.push(url.toString().replace(apiKey, "[redacted]"))
+        if (!response.ok) throw new Error(`SAM.gov returned HTTP ${response.status}: ${responseText.slice(0, 500)}`)
+        const payload = JSON.parse(responseText) as unknown
+        payloads.push(payload)
+        if (extractSamEntities(payload).length > 0) break
+    }
+    if (payloads.length === 0) throw new Error("SAM.gov could not build a mapped query for this ICP industry/location. Add a NAICS mapping for the industry.")
+    return { payloads, queryUrls, attemptedNaics: naicsCodes }
 }
 
 async function upsertSamEntity({ workspaceId, pollId, task, entity }: { workspaceId: string; pollId: string; task: PipelineTask; entity: SamEntity }) {
@@ -455,15 +507,91 @@ async function processSamGovTask(task: PipelineTask) {
     const workspaceId = typeof task.source_query.workspace_id === "string" ? task.source_query.workspace_id : null
     const pollId = typeof task.source_query.poll_id === "string" ? task.source_query.poll_id : null
     if (!workspaceId || !pollId) throw new Error("SAM.gov task is missing workspace or poll context.")
-    const { payload, queryUrl } = await fetchSamEntities(task)
-    const entities = extractSamEntities(payload)
-    if (entities.length === 0) throw new Error(`SAM.gov returned 0 entities for this mapped ICP query. Query: ${queryUrl}`)
+    const { payloads, queryUrls, attemptedNaics } = await fetchSamEntities(task)
+    const entitiesById = new Map<string, SamEntity>()
+    for (const payload of payloads) {
+        for (const entity of extractSamEntities(payload)) {
+            entitiesById.set(samRecordId(entity) ?? JSON.stringify(entity).slice(0, 80), entity)
+        }
+    }
+    const entities = [...entitiesById.values()]
+    if (entities.length === 0) throw new Error(`SAM.gov returned 0 entities after ${queryUrls.length} mapped ${attemptedNaics.length ? "NAICS" : "text"} attempt${queryUrls.length === 1 ? "" : "s"}. Queries: ${queryUrls.join(" | ")}`)
     let companyCount = 0
     for (const entity of entities) {
         const stored = await upsertSamEntity({ workspaceId, pollId, task, entity })
         if (stored) companyCount += 1
     }
     return { rawCount: entities.length, companyCount }
+}
+
+async function upsertOverturePlace({ workspaceId, pollId, task, place }: { workspaceId: string; pollId: string; task: PipelineTask; place: OverturePlaceRecord }) {
+    if (!place.name) return false
+    const sourceRecord = {
+        workspace_id: workspaceId,
+        poll_id: pollId,
+        task_id: task.id,
+        source_key: "overture",
+        source_record_id: place.id,
+        company_name: place.name,
+        phone: normalisePhone(place.phone),
+        website_url: place.website_url,
+        profile_url: null,
+        address: place.address,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        categories: place.categories,
+        rating: null,
+        review_count: null,
+        raw_payload: place.raw_payload,
+    }
+    const { error: recordError } = await supabaseAdmin
+        .from("leadgen_source_records")
+        .upsert(sourceRecord, { onConflict: "workspace_id,source_key,source_record_id" })
+    if (recordError) throw recordError
+    const companyPayload = {
+        workspace_id: workspaceId,
+        canonical_name: place.name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(),
+        display_name: place.name,
+        phone: sourceRecord.phone,
+        website_domain: domainFromUrl(place.website_url),
+        website_url: place.website_url,
+        profile_url: null,
+        source_key: "overture",
+        source_record_id: place.id,
+        address: place.address,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        categories: place.categories,
+        rating: null,
+        review_count: null,
+        industry_value: task.industry_value,
+        location_value: task.location_value,
+        first_seen_poll_id: pollId,
+        last_seen_at: new Date().toISOString(),
+    }
+    const { error: companyError } = await supabaseAdmin
+        .from("leadgen_companies")
+        .upsert(companyPayload, { onConflict: "workspace_id,source_key,source_record_id" })
+    if (companyError) throw companyError
+    return true
+}
+
+async function processOvertureTask(task: PipelineTask) {
+    const workspaceId = typeof task.source_query.workspace_id === "string" ? task.source_query.workspace_id : null
+    const pollId = typeof task.source_query.poll_id === "string" ? task.source_query.poll_id : null
+    if (!workspaceId || !pollId) throw new Error("Overture task is missing workspace or poll context.")
+    const categories = valuesFromQuery(task.source_query.native_industries)
+    const location = overtureLocationFromTask(task)
+    const limit = Math.min(500, Math.max(1, Number(task.source_query.limit) || 100))
+    const release = typeof task.source_query.release === "string" ? task.source_query.release : null
+    const places = await queryOverturePlaces({ categories, location, limit, release })
+    if (places.length === 0) throw new Error(`Overture returned 0 place records for ${task.industry_value ?? "this industry"} in ${location.label ?? task.location_value ?? "this location"} using ${categories.join(", ")}.`)
+    let companyCount = 0
+    for (const place of places) {
+        const stored = await upsertOverturePlace({ workspaceId, pollId, task, place })
+        if (stored) companyCount += 1
+    }
+    return { rawCount: places.length, companyCount }
 }
 
 async function processWebsiteTask(task: PipelineTask) {
@@ -550,7 +678,9 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
                 ? await processWebsiteTask(taskWithWorkspace)
                 : sourceKey === "sam_gov"
                     ? await processSamGovTask(taskWithWorkspace)
-                    : await processBlockedExternalTask(taskWithWorkspace)
+                    : sourceKey === "overture"
+                        ? await processOvertureTask(taskWithWorkspace)
+                        : await processBlockedExternalTask(taskWithWorkspace)
             await supabaseAdmin
                 .from("leadgen_poll_tasks")
                 .update({ status: "completed", raw_count: result?.rawCount ?? 0, company_count: result?.companyCount ?? 0, completed_at: new Date().toISOString(), error: null })

@@ -4,14 +4,8 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { buildSourcePlan, executableLeadgenSources, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
-import { createOsmTasksForPoll, finalizeLeadgenPoll, processOsmPoll } from "@/lib/leadgen/osm-worker"
-import { createPipelineTasksForPoll, createWebsiteTasksForPoll, processPipelineSourcePoll } from "@/lib/leadgen/pipeline-workers"
-import { createStateLicensingEnrichmentTasksForPoll, createStateLicensingTasksForPoll, processStateLicensingPoll } from "@/lib/leadgen/state-licensing-worker"
-
-function configObject(value: unknown): Partial<LeadgenSourceConfig> {
-    return value && typeof value === "object" ? value as Partial<LeadgenSourceConfig> : {}
-}
+import { configObject, createInitialLeadgenPollTasks, planLeadgenSources, processLeadgenPoll } from "@/lib/leadgen/poll-runner"
+import { executableLeadgenSources } from "@/lib/leadgen/sources"
 
 function refreshPolls(slug: string) {
     revalidatePath(`/leadgen/${slug}`)
@@ -29,15 +23,7 @@ export async function createLeadgenPoll(slug: string) {
     const settings = settingsResult.error ? null : settingsResult.data
     const enabledSources = Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : []
     const currentSourceConfig = configObject(settings?.source_config)
-    const sourcePlan = buildSourcePlan(enabledSources, currentSourceConfig)
-    const osmPlan = sourcePlan.find((source) => source.key === "osm")
-    const stateLicensingPlan = sourcePlan.find((source) => source.key === "state_licensing")
-    const websitePlan = sourcePlan.find((source) => source.key === "website")
-    const preSeedPipelinePlans = sourcePlan.filter((source) => ["overture", "sam_gov"].includes(source.key) && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
-    const postSeedPipelinePlans = sourcePlan.filter((source) => ["opencorporates"].includes(source.key) && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
-    const runnableOsmPlan = osmPlan && osmPlan.industries.length > 0 && osmPlan.locations.length > 0 ? osmPlan : null
-    const runnableStateLicensingPlan = stateLicensingPlan && stateLicensingPlan.industries.length > 0 && stateLicensingPlan.locations.length > 0 ? stateLicensingPlan : null
-    const runnableWebsitePlan = websitePlan && websitePlan.industries.length > 0 && websitePlan.locations.length > 0 ? websitePlan : null
+    const sourcePlan = planLeadgenSources(enabledSources, currentSourceConfig)
     const runnablePlans = sourcePlan.filter((source) => executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
     const hasRunnableSources = runnablePlans.length > 0
     const { data: poll, error } = await supabaseAdmin.from("leadgen_polls").insert({
@@ -60,35 +46,13 @@ export async function createLeadgenPoll(slug: string) {
     }).select("id").single()
     if (error) throw new Error("Could not queue a new leadgen poll.")
     if (poll?.id && hasRunnableSources) {
-        const initialTaskCounts = await Promise.all([
-            preSeedPipelinePlans.length ? createPipelineTasksForPoll({ workspaceId: workspace.id, pollId: poll.id, plans: preSeedPipelinePlans }) : 0,
-            runnableOsmPlan ? createOsmTasksForPoll({ workspaceId: workspace.id, pollId: poll.id, plan: runnableOsmPlan }) : 0,
-            runnableStateLicensingPlan ? createStateLicensingTasksForPoll({ workspaceId: workspace.id, pollId: poll.id, plan: runnableStateLicensingPlan }) : 0,
-        ])
-        const taskCount = initialTaskCounts.reduce((total, count) => total + count, 0)
+        const taskCount = await createInitialLeadgenPollTasks({ workspaceId: workspace.id, pollId: poll.id, sourcePlan })
         if (taskCount === 0) {
             await supabaseAdmin
                 .from("leadgen_polls")
                 .update({ status: "failed", completed_at: new Date().toISOString(), error: "No source tasks could be generated. Check source mappings and target locations." })
                 .eq("id", poll.id)
                 .eq("workspace_id", workspace.id)
-        } else {
-            for (const plan of preSeedPipelinePlans) await processPipelineSourcePoll(poll.id, workspace.id, plan.key, { finalize: false })
-            if (runnableOsmPlan) await processOsmPoll(poll.id, workspace.id, { finalize: false })
-            if (runnableStateLicensingPlan) await processStateLicensingPoll(poll.id, workspace.id, { finalize: false })
-            if (runnableStateLicensingPlan) {
-                await createStateLicensingEnrichmentTasksForPoll({ workspaceId: workspace.id, pollId: poll.id, plan: runnableStateLicensingPlan })
-                await processStateLicensingPoll(poll.id, workspace.id, { finalize: false })
-            }
-            if (runnableWebsitePlan) {
-                await createWebsiteTasksForPoll({ workspaceId: workspace.id, pollId: poll.id, plan: runnableWebsitePlan })
-                await processPipelineSourcePoll(poll.id, workspace.id, "website", { finalize: false })
-            }
-            if (postSeedPipelinePlans.length) {
-                await createPipelineTasksForPoll({ workspaceId: workspace.id, pollId: poll.id, plans: postSeedPipelinePlans })
-                for (const plan of postSeedPipelinePlans) await processPipelineSourcePoll(poll.id, workspace.id, plan.key, { finalize: false })
-            }
-            await finalizeLeadgenPoll(poll.id, workspace.id)
         }
     }
     refreshPolls(slug)
@@ -120,13 +84,7 @@ export async function retryLeadgenPoll(slug: string, pollId: string) {
         .update({ status: "queued", error: null, completed_at: null })
         .eq("id", pollId)
         .eq("workspace_id", workspace.id)
-    await processOsmPoll(pollId, workspace.id, { finalize: false })
-    await processStateLicensingPoll(pollId, workspace.id, { finalize: false })
-    await processPipelineSourcePoll(pollId, workspace.id, "website", { finalize: false })
-    await processPipelineSourcePoll(pollId, workspace.id, "overture", { finalize: false })
-    await processPipelineSourcePoll(pollId, workspace.id, "opencorporates", { finalize: false })
-    await processPipelineSourcePoll(pollId, workspace.id, "sam_gov", { finalize: false })
-    await finalizeLeadgenPoll(pollId, workspace.id)
+    await processLeadgenPoll({ pollId, workspaceId: workspace.id })
     refreshPolls(slug)
 }
 

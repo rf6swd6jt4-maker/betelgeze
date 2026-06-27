@@ -37,11 +37,11 @@ export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: strin
     {
         value: "overture",
         label: "Overture Places",
-        detail: "Primary open places database. Uses ICP mappings to query Overture categories and regions through the GeoParquet adapter.",
-        statusLabel: "Requires Overture adapter",
+        detail: "Primary open places database. Uses ICP mappings to query Overture categories and regions from the public GeoParquet dataset.",
+        statusLabel: "Executable, no key",
         notesPlaceholder: "Release pin, category exclusions, confidence thresholds, or bounding-box notes.",
-        envVar: "OVERTURE_DUCKDB_ENDPOINT",
-        setupHint: "This is not an API key. It must point to Betelgeze's Overture/DuckDB adapter service once we deploy it.",
+        implemented: true,
+        setupHint: "No API key is needed. Betelgeze queries Overture's public GeoParquet release with DuckDB.",
     },
     {
         value: "website",

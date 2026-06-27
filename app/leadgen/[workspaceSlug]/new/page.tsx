@@ -16,7 +16,6 @@ function configObject(value: unknown): Partial<LeadgenSourceConfig> {
 }
 
 function sourceRequirement(sourceKey: LeadgenSourceKey, hasSeedSource: boolean) {
-    if (sourceKey === "overture") return process.env.OVERTURE_DUCKDB_ENDPOINT ? null : "Missing Overture adapter"
     if (sourceKey === "website" && !hasSeedSource) return "Needs a seed source first"
     if (sourceKey === "opencorporates") return "Paid source, disabled"
     if (sourceKey === "sam_gov") return process.env.SAM_GOV_API_KEY ? null : "Missing SAM.gov API key"
@@ -47,7 +46,7 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
     const locationLabels = new Map((locationsResult.data ?? []).map((location) => [location.value, location.label]))
     const industryMappings = (industryMappingsResult.error ? [] : industryMappingsResult.data ?? []) as SourceMapping[]
     const locationMappings = (locationMappingsResult.error ? [] : locationMappingsResult.data ?? []) as SourceMapping[]
-    const hasSeedSource = sourcePlan.some((plan) => plan.key === "osm" || plan.key === "state_licensing" || plan.key === "sam_gov" || (plan.key === "overture" && Boolean(process.env.OVERTURE_DUCKDB_ENDPOINT)))
+    const hasSeedSource = sourcePlan.some((plan) => plan.key === "osm" || plan.key === "state_licensing" || plan.key === "sam_gov" || plan.key === "overture")
     const sourceSummaries = leadgenSourceOptions.map((source) => {
         const plan = sourcePlan.find((item) => item.key === source.value)
         const mappedIndustries = new Set(industryMappings.filter((mapping) => mapping.source_key === source.value && (mapping.native_values?.length ?? 0) > 0).map((mapping) => mapping.icp_industry_value).filter(Boolean))

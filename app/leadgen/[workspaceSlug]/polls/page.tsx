@@ -101,7 +101,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
     const latestTaskStats = latestPoll ? pollTaskStats(tasksByPoll[latestPoll.id] ?? []) : null
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
-        <PollsAutoRefresh enabled intervalMs={5000} />
+        <PollsAutoRefresh enabled intervalMs={5000} processUrl={`/api/leadgen/polls/process?workspace=${encodeURIComponent(workspace.slug)}`} />
         <div className="mx-auto max-w-7xl">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
             <WorkspaceBanner bannerPath={workspace.leadgen_banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.leadgen_banner_height} position={workspace.leadgen_banner_position} />

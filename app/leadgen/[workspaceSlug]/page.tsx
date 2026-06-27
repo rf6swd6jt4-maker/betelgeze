@@ -17,10 +17,19 @@ type PageProps = { params: Promise<{ workspaceSlug: string }> }
 export default async function LeadgenWorkspacePage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
+    const latestPollResult = await supabaseAdmin
+        .from("leadgen_polls")
+        .select("id, status, created_at")
+        .eq("workspace_id", workspace.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    const latestPoll = latestPollResult.error ? null : latestPollResult.data
     const companiesResult = await supabaseAdmin
         .from("leadgen_companies")
         .select("id, display_name, phone, owner_name, owner_phone, website_url, profile_url, source_key, address, rating, review_count, industry_value, location_value, created_at")
         .eq("workspace_id", workspace.id)
+        .eq("first_seen_poll_id", latestPoll?.id ?? "00000000-0000-0000-0000-000000000000")
         .order("created_at", { ascending: false })
         .limit(100)
     const companies = (companiesResult.error ? [] : companiesResult.data ?? []).filter((company) => Boolean(company.owner_name && (company.owner_phone || company.phone)))
@@ -35,7 +44,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div>
                     <h1 className="text-2xl font-semibold tracking-tight">{workspace.name}</h1>
-                    <p className="mt-2 text-sm text-neutral-400">Review and route the highest quality leads for this workspace. Signed in as {role}.</p>
+                    <p className="mt-2 text-sm text-neutral-400">Review and route the latest poll output for this workspace. Signed in as {role}.</p>
                 </div>
                 <NewPollButton href={`https://leadgen.betelgeze.com/${workspace.slug}/new`} />
             </div>
@@ -44,7 +53,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
 
             <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:grid-cols-3">
                 {[
-                    ["Collected leads", companies.length],
+                    ["Latest poll leads", companies.length],
                     ["With phone", callable],
                     ["With source profile", withProfiles],
                 ].map(([label, value]) => <div key={label} className="border-r border-neutral-800 px-2 py-2 text-center last:border-r-0 sm:rounded-lg sm:border sm:border-neutral-800 sm:bg-neutral-900 sm:px-3 sm:text-left">
@@ -93,8 +102,8 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                 }) : <div className="grid gap-4 p-5 lg:grid-cols-[1.1fr_0.9fr]">
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Starting clean</p>
-                        <h3 className="mt-3 text-xl font-semibold">No real companies have been collected yet.</h3>
-                        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">Configure OpenStreetMap in Settings, choose industries and locations, then run a poll. Only actual stored source records appear here.</p>
+                        <h3 className="mt-3 text-xl font-semibold">{latestPoll ? "This poll did not return qualified leads." : "No real companies have been collected yet."}</h3>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">{latestPoll ? "The Leads tab now shows only qualified leads first seen in the latest poll. Older poll output is preserved in poll detail pages, but hidden here for now." : "Configure sources in Settings, choose industries and locations, then run a poll. Only actual stored source records appear here."}</p>
                     </div>
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Next action</p>

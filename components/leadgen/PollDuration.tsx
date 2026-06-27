@@ -10,9 +10,9 @@ function formatDuration(ms: number) {
     return `${minutes}m ${String(remainder).padStart(2, "0")}s`
 }
 
-export function PollDuration({ startedAt, createdAt, completedAt, live }: { startedAt: string | null; createdAt: string; completedAt: string | null; live: boolean }) {
+export function PollDuration({ createdAt, completedAt, live }: { startedAt: string | null; createdAt: string; completedAt: string | null; live: boolean }) {
     const [now, setNow] = useState(() => Date.now())
-    const start = useMemo(() => new Date(startedAt ?? createdAt).getTime(), [createdAt, startedAt])
+    const start = useMemo(() => new Date(createdAt).getTime(), [createdAt])
     const end = completedAt ? new Date(completedAt).getTime() : now
 
     useEffect(() => {

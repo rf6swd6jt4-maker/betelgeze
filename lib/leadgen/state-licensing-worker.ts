@@ -222,6 +222,15 @@ async function upsertTdlrRecord({
     const displayName = companyNameFromTdlrName(result.name)
     const ownerName = ownerNameFromTdlrName(result.name)
     const sourceRecordId = result.profileUrl?.split("?")[1] || `${industryValue}:${locationValue}:${result.licenseNumber}`
+    const { data: existingRecord, error: existingError } = await supabaseAdmin
+        .from("leadgen_source_records")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("source_key", "state_licensing")
+        .eq("source_record_id", sourceRecordId)
+        .maybeSingle()
+    if (existingError) throw existingError
+    if (existingRecord) return false
     const address = {
         city: result.city,
         county: result.county || countyLabel,
@@ -251,7 +260,7 @@ async function upsertTdlrRecord({
     }
     const { error: recordError } = await supabaseAdmin
         .from("leadgen_source_records")
-        .upsert({
+        .insert({
             workspace_id: workspaceId,
             poll_id: pollId,
             task_id: taskId,
@@ -268,7 +277,7 @@ async function upsertTdlrRecord({
             rating: null,
             review_count: null,
             raw_payload: rawPayload,
-        }, { onConflict: "workspace_id,source_key,source_record_id" })
+        })
     if (recordError) throw recordError
     const { error: companyError } = await supabaseAdmin
         .from("leadgen_companies")

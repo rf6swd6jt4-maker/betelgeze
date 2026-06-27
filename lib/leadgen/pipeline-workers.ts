@@ -455,6 +455,15 @@ async function upsertSamEntity({ workspaceId, pollId, task, entity }: { workspac
     const companyName = samCompanyName(entity)
     const sourceRecordId = samRecordId(entity)
     if (!companyName || !sourceRecordId) return false
+    const { data: existingRecord, error: existingError } = await supabaseAdmin
+        .from("leadgen_source_records")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("source_key", "sam_gov")
+        .eq("source_record_id", sourceRecordId)
+        .maybeSingle()
+    if (existingError) throw existingError
+    if (existingRecord) return false
     const contacts = collectSamContacts(entity)
     const bestContact = contacts.find((contact) => contact.fullName && contact.phone) ?? contacts.find((contact) => contact.phone) ?? contacts[0] ?? null
     const core = samCoreData(entity)
@@ -481,7 +490,7 @@ async function upsertSamEntity({ workspaceId, pollId, task, entity }: { workspac
     }
     const { error: recordError } = await supabaseAdmin
         .from("leadgen_source_records")
-        .upsert(sourceRecord, { onConflict: "workspace_id,source_key,source_record_id" })
+        .insert(sourceRecord)
     if (recordError) throw recordError
     const companyPayload = {
         workspace_id: workspaceId,
@@ -553,6 +562,15 @@ async function processSamGovTask(task: PipelineTask) {
 
 async function upsertOverturePlace({ workspaceId, pollId, task, place }: { workspaceId: string; pollId: string; task: PipelineTask; place: OverturePlaceRecord }) {
     if (!place.name) return false
+    const { data: existingRecord, error: existingError } = await supabaseAdmin
+        .from("leadgen_source_records")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("source_key", "overture")
+        .eq("source_record_id", place.id)
+        .maybeSingle()
+    if (existingError) throw existingError
+    if (existingRecord) return false
     const sourceRecord = {
         workspace_id: workspaceId,
         poll_id: pollId,
@@ -573,7 +591,7 @@ async function upsertOverturePlace({ workspaceId, pollId, task, place }: { works
     }
     const { error: recordError } = await supabaseAdmin
         .from("leadgen_source_records")
-        .upsert(sourceRecord, { onConflict: "workspace_id,source_key,source_record_id" })
+        .insert(sourceRecord)
     if (recordError) throw recordError
     const companyPayload = {
         workspace_id: workspaceId,

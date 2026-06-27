@@ -89,7 +89,7 @@ out center ${limit};`
 export async function setLeadgenPollStatus(pollId: string, workspaceId: string, status: string, error?: string | null) {
     await supabaseAdmin
         .from("leadgen_polls")
-        .update({ status, error: error ?? null, ...(status === "running" ? { started_at: new Date().toISOString() } : {}), ...(["completed", "failed", "cancelled"].includes(status) ? { completed_at: new Date().toISOString() } : {}) })
+        .update({ status, error: error ?? null, ...(["completed", "failed", "cancelled"].includes(status) ? { completed_at: new Date().toISOString() } : {}) })
         .eq("id", pollId)
         .eq("workspace_id", workspaceId)
 }
@@ -142,21 +142,28 @@ export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
     const failedTasks = tasks.filter((task) => task.status === "failed")
     const unfinishedTasks = tasks.filter((task) => ["queued", "running"].includes(task.status))
     const qualifiedCompanyCount = companiesResult.count ?? 0
+    const totalTaskCount = tasks.length
+    const failedOrUnfinishedCount = failedTasks.length + unfinishedTasks.length
+    const majorityTasksFailed = totalTaskCount === 0 || failedOrUnfinishedCount > totalTaskCount / 2
     const firstErrors = failedTasks
         .slice(0, 3)
         .map((task) => `${task.source_key}/${task.industry_value ?? "unknown"}/${task.location_value ?? "unknown"}: ${task.error || "Unknown source error"}`)
         .join(" | ")
+    const shouldFail = majorityTasksFailed || qualifiedCompanyCount === 0
+    const warning = failedTasks.length > 0
+        ? `${failedTasks.length} source task${failedTasks.length === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}`
+        : unfinishedTasks.length > 0
+            ? `${unfinishedTasks.length} source task${unfinishedTasks.length === 1 ? " was" : "s were"} not processed. Retry the poll or check the enabled sources.`
+            : null
     await setLeadgenPollStatus(
         pollId,
         workspaceId,
-        failedTasks.length > 0 || unfinishedTasks.length > 0 || qualifiedCompanyCount === 0 ? "failed" : "completed",
-        failedTasks.length > 0
-            ? `${failedTasks.length} source task${failedTasks.length === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}`
-            : unfinishedTasks.length > 0
-                ? `${unfinishedTasks.length} source task${unfinishedTasks.length === 1 ? " was" : "s were"} not processed. Retry the poll or check the enabled sources.`
-                : qualifiedCompanyCount === 0
-                    ? "The poll completed, but no qualified leads had both an owner/principal and a callable phone number. Betelgeze stored any raw candidates/evidence internally, but the Leads tab only shows qualified leads."
-                    : null,
+        shouldFail ? "failed" : "completed",
+        shouldFail
+            ? majorityTasksFailed
+                ? warning ?? "The poll failed because most source tasks did not complete."
+                : "The poll completed, but no qualified leads had both an owner/principal and a callable phone number. Betelgeze stored any raw candidates/evidence internally, but the Leads tab only shows qualified leads."
+            : warning,
     )
     await refreshLeadgenPollCounts(pollId, workspaceId)
 }
@@ -241,6 +248,15 @@ async function upsertOsmElement({ workspaceId, pollId, taskId, industryValue, lo
     const companyName = tags.name?.trim()
     if (!companyName) return false
     const sourceRecordId = `${element.type}/${element.id}`
+    const { data: existingRecord, error: existingError } = await supabaseAdmin
+        .from("leadgen_source_records")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("source_key", "osm")
+        .eq("source_record_id", sourceRecordId)
+        .maybeSingle()
+    if (existingError) throw existingError
+    if (existingRecord) return false
     const phone = normalisePhone(tags.phone || tags["contact:phone"])
     const websiteUrl = tags.website || tags["contact:website"] || null
     const profileUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`
@@ -276,7 +292,7 @@ async function upsertOsmElement({ workspaceId, pollId, taskId, industryValue, lo
     }
     const { error: recordError } = await supabaseAdmin
         .from("leadgen_source_records")
-        .upsert(sourceRecord, { onConflict: "workspace_id,source_key,source_record_id" })
+        .insert(sourceRecord)
     if (recordError) throw recordError
     const { error: companyError } = await supabaseAdmin
         .from("leadgen_companies")

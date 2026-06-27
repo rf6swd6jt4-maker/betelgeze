@@ -18,6 +18,7 @@ export type OverturePlaceRecord = {
 }
 
 const DEFAULT_RELEASE = "2026-06-17.0"
+const DUCKDB_RUNTIME_DIR = "/tmp/duckdb"
 
 function sqlString(value: string) {
     return `'${value.replace(/'/g, "''")}'`
@@ -68,6 +69,12 @@ function firstObject(value: unknown) {
 export async function queryOverturePlaces({ categories, location, limit, release }: { categories: string[]; location: OvertureLocation; limit: number; release?: string | null }) {
     if (!location.latitude || !location.longitude) throw new Error("Overture requires a target location with latitude and longitude.")
     if (categories.length === 0) throw new Error("Overture requires at least one mapped category.")
+    const { mkdir } = await import("node:fs/promises")
+    await Promise.all([
+        mkdir(DUCKDB_RUNTIME_DIR, { recursive: true }),
+        mkdir(`${DUCKDB_RUNTIME_DIR}/temp`, { recursive: true }),
+        mkdir(`${DUCKDB_RUNTIME_DIR}/extensions`, { recursive: true }),
+    ])
 
     const { minLat, maxLat, minLon, maxLon } = bboxForRadius(location.latitude, location.longitude, Math.min(40_000, Math.max(1_000, location.radiusMeters ?? 24_000)))
     const safeRelease = (release || DEFAULT_RELEASE).replace(/[^0-9.\-]/g, "") || DEFAULT_RELEASE
@@ -99,7 +106,9 @@ export async function queryOverturePlaces({ categories, location, limit, release
     const { DuckDBConnection } = await import("@duckdb/node-api")
     const connection = await DuckDBConnection.create()
     try {
-        await connection.run("set extension_directory='/tmp/duckdb_extensions';")
+        await connection.run(`set home_directory=${sqlString(DUCKDB_RUNTIME_DIR)};`)
+        await connection.run(`set temp_directory=${sqlString(`${DUCKDB_RUNTIME_DIR}/temp`)};`)
+        await connection.run(`set extension_directory=${sqlString(`${DUCKDB_RUNTIME_DIR}/extensions`)};`)
         await connection.run("install httpfs;")
         await connection.run("load httpfs;")
         await connection.run("set s3_region='us-west-2';")

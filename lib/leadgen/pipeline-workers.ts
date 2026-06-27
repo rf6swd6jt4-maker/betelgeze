@@ -61,6 +61,30 @@ function compactErrorMessage(error: unknown) {
     return message.length > 900 ? `${message.slice(0, 900)}…` : message
 }
 
+class SamGovQuotaError extends Error {
+    constructor(message: string, readonly nextAccessTime: string | null) {
+        super(message)
+        this.name = "SamGovQuotaError"
+    }
+}
+
+function samQuotaMessage(responseText: string) {
+    try {
+        const payload = JSON.parse(responseText) as { nextAccessTime?: unknown; description?: unknown; message?: unknown }
+        const nextAccessTime = typeof payload.nextAccessTime === "string" ? payload.nextAccessTime : null
+        const description = typeof payload.description === "string" ? payload.description : null
+        const message = typeof payload.message === "string" ? payload.message : null
+        return {
+            nextAccessTime,
+            message: nextAccessTime
+                ? `SAM.gov quota is exhausted. Next access time: ${nextAccessTime}.`
+                : `SAM.gov quota is exhausted.${description || message ? ` ${description ?? message}` : ""}`,
+        }
+    } catch {
+        return { nextAccessTime: null, message: `SAM.gov quota is exhausted. ${responseText.slice(0, 300)}` }
+    }
+}
+
 function normalisePhone(value: string | null | undefined) {
     const raw = value?.trim()
     if (!raw) return null
@@ -415,6 +439,10 @@ async function fetchSamEntities(task: PipelineTask) {
         })
         const responseText = await response.text()
         queryUrls.push(url.toString().replace(apiKey, "[redacted]"))
+        if (response.status === 429) {
+            const quota = samQuotaMessage(responseText)
+            throw new SamGovQuotaError(quota.message, quota.nextAccessTime)
+        }
         if (!response.ok) throw new Error(`SAM.gov returned HTTP ${response.status}: ${responseText.slice(0, 500)}`)
         const payload = JSON.parse(responseText) as unknown
         payloads.push(payload)
@@ -669,7 +697,7 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
         return
     }
     const tasks = (tasksResult.data ?? []) as PipelineTask[]
-    for (const task of tasks) {
+    for (const [index, task] of tasks.entries()) {
         await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "running", started_at: new Date().toISOString(), error: null }).eq("id", task.id)
         try {
             const query = { ...(task.source_query ?? {}), workspace_id: workspaceId, poll_id: pollId }
@@ -686,6 +714,21 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
                 .update({ status: "completed", raw_count: result?.rawCount ?? 0, company_count: result?.companyCount ?? 0, completed_at: new Date().toISOString(), error: null })
                 .eq("id", task.id)
         } catch (error) {
+            if (error instanceof SamGovQuotaError) {
+                const message = compactErrorMessage(error)
+                const remainingTaskIds = tasks.slice(index + 1).map((remainingTask) => remainingTask.id)
+                await supabaseAdmin
+                    .from("leadgen_poll_tasks")
+                    .update({ status: "failed", completed_at: new Date().toISOString(), error: message })
+                    .eq("id", task.id)
+                if (remainingTaskIds.length) {
+                    await supabaseAdmin
+                        .from("leadgen_poll_tasks")
+                        .update({ status: "failed", completed_at: new Date().toISOString(), error: `Skipped because ${message}` })
+                        .in("id", remainingTaskIds)
+                }
+                break
+            }
             await supabaseAdmin
                 .from("leadgen_poll_tasks")
                 .update({ status: "failed", completed_at: new Date().toISOString(), error: compactErrorMessage(error) })

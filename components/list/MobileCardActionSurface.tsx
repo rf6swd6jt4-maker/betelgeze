@@ -25,7 +25,7 @@ export function MobileCardActionSurface({
     const ignoreNextCardClick = useRef(false)
     const visibleActions = actions.filter((action): action is ListAction => {
         if (!action) return false
-        return Boolean(action.label && (action.href || action.action))
+        return Boolean(action.label && (action.href || action.action || action.copyText))
     })
 
     const updatePosition = useCallback(() => {
@@ -116,6 +116,19 @@ export function MobileCardActionSurface({
                     return <Link key={item.label} href={item.href} target={item.external ? "_blank" : undefined} rel={item.external ? "noreferrer" : undefined} className={itemClassName} role="menuitem" onClick={() => setOpen(false)}>
                         {item.label}
                     </Link>
+                }
+                if (item.copyText) {
+                    return <button key={item.label} type="button" className={itemClassName} role="menuitem" onClick={async () => {
+                        try {
+                            await navigator.clipboard.writeText(item.copyText!)
+                        } catch {
+                            window.alert("Copy failed, check browser clipboard permissions.")
+                        } finally {
+                            setOpen(false)
+                        }
+                    }}>
+                        {item.label}
+                    </button>
                 }
                 return <form key={item.label} action={item.action}>
                     <button type="submit" className={itemClassName} role="menuitem" onClick={(event) => {

@@ -35,6 +35,19 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
     const companies = (companiesResult.error ? [] : companiesResult.data ?? []).filter((company) => Boolean(company.owner_name && (company.owner_phone || company.phone)))
     const callable = companies.filter((company) => Boolean(company.owner_phone || company.phone)).length
     const withProfiles = companies.filter((company) => Boolean(company.profile_url || company.website_url)).length
+    function locationLabel(address: unknown) {
+        if (!address || typeof address !== "object") return "Location unknown"
+        const details = address as Record<string, unknown>
+        const city = typeof details.city === "string" && details.city.trim() ? details.city.trim() : ""
+        const locality = typeof details.locality === "string" && details.locality.trim() ? details.locality.trim() : ""
+        const state = typeof details.state === "string" && details.state.trim()
+            ? details.state.trim()
+            : typeof details.region === "string" && details.region.trim()
+                ? details.region.trim()
+                : ""
+        const place = [city || locality, state].filter(Boolean).join(", ")
+        return place || "Location unknown"
+    }
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
         <ListAutoRefresh />
@@ -66,32 +79,33 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                 {companies.length ? companies.map((company) => {
                     const sourceUrl = company.website_url ?? company.profile_url ?? null
                     const bestPhone = company.owner_phone || company.phone
+                    const ownerName = company.owner_name ?? "Owner not found"
+                    const location = locationLabel(company.address)
+                    const titleLine = `${ownerName} - ${company.display_name}`
+                    const copyLine = `${ownerName}: ${bestPhone ?? "No phone"} - ${company.display_name}, ${location}`
                     const phoneStatus = <span className={`inline-flex items-center gap-2 text-sm ${bestPhone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${bestPhone ? "bg-emerald-300" : "bg-neutral-500"}`} />{bestPhone ? "Callable" : "No phone"}</span>
-                    const ownerStatus = <span className={`truncate text-sm ${company.owner_name ? "text-neutral-200" : "text-neutral-500"}`}>{company.owner_name ? `Owner: ${company.owner_name}${company.owner_phone ? ` · ${company.owner_phone}` : ""}` : "Owner not found"}</span>
                     const leadActions = [
                         sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
+                        { label: "Copy lead details", copyText: copyLine },
                         { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },
                     ]
                     return <div key={company.id} className="md:border-b md:border-neutral-900 md:last:border-0">
                     <MobileCardActionSurface actions={leadActions} className="rounded-2xl border border-neutral-800 bg-black md:hidden">
                         <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
-                            <p className="min-w-0 truncate text-base font-medium text-neutral-100">{company.display_name}</p>
+                            <p className="min-w-0 flex-1 truncate text-base font-medium text-neutral-100">{titleLine}</p>
                             {phoneStatus}
                         </div>
                         <div className="flex items-center gap-3 px-3.5 py-2.5">
-                            {ownerStatus}
-                            <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
-                            <p className="min-w-0 truncate text-sm text-neutral-400">{String(company.industry_value ?? "—").replace(/_/g, " ")}</p>
-                            <p className="font-mono text-sm text-neutral-500">{shortId(company.id)}</p>
-                            <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(company.created_at)}</p>
+                            <p className="truncate text-sm text-neutral-200">{bestPhone || "No phone"}</p>
+                            <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{shortId(company.id)} · {formatRelativeTime(company.created_at)}</p>
                         </div>
                     </MobileCardActionSurface>
                     <div className="hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(210px,1.1fr)_150px_minmax(190px,0.9fr)_130px_140px_100px_120px_32px] md:items-center">
                         <div className="min-w-0">
-                            <p className="truncate text-base font-medium text-neutral-100">{company.display_name}</p>
+                            <p className="truncate text-base font-medium text-neutral-100">{titleLine}</p>
                         </div>
                         {phoneStatus}
-                        {ownerStatus}
+                        <p className="truncate text-sm text-neutral-200">{bestPhone || "No phone"}</p>
                         <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
                         <p className="truncate text-sm text-neutral-400">{String(company.industry_value ?? "—").replace(/_/g, " ")}</p>
                         <p className="font-mono text-sm text-neutral-500">{shortId(company.id)}</p>

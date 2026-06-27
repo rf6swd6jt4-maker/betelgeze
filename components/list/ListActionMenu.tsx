@@ -7,6 +7,7 @@ export type ListAction = {
     label: string
     href?: string
     action?: () => Promise<void> | void
+    copyText?: string
     danger?: boolean
     external?: boolean
     confirmMessage?: string
@@ -22,7 +23,7 @@ export function ListActionMenu({ actions, label = "Open item actions" }: { actio
     const buttonRef = useRef<HTMLButtonElement>(null)
     const visibleActions = actions.filter((action): action is ListAction => {
         if (!action) return false
-        return Boolean(action.label && (action.href || action.action))
+        return Boolean(action.label && (action.href || action.action || action.copyText))
     })
 
     const updatePosition = useCallback(() => {
@@ -107,6 +108,19 @@ export function ListActionMenu({ actions, label = "Open item actions" }: { actio
                     return <Link key={item.label} href={item.href} target={item.external ? "_blank" : undefined} rel={item.external ? "noreferrer" : undefined} className={className} role="menuitem" onClick={() => setOpen(false)}>
                         {item.label}
                     </Link>
+                }
+                if (item.copyText) {
+                    return <button key={item.label} type="button" className={className} role="menuitem" onClick={async () => {
+                        try {
+                            await navigator.clipboard.writeText(item.copyText!)
+                        } catch {
+                            window.alert("Copy failed, check browser clipboard permissions.")
+                        } finally {
+                            setOpen(false)
+                        }
+                    }}>
+                        {item.label}
+                    </button>
                 }
                 return <form key={item.label} action={item.action}>
                     <button type="submit" className={className} role="menuitem" onClick={(event) => {

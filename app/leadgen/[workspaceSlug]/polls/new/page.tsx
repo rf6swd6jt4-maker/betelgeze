@@ -49,7 +49,7 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
     const locationLabels = new Map((locationsResult.data ?? []).map((location) => [location.value, location.label]))
     const industryMappings = (industryMappingsResult.error ? [] : industryMappingsResult.data ?? []) as SourceMapping[]
     const locationMappings = (locationMappingsResult.error ? [] : locationMappingsResult.data ?? []) as SourceMapping[]
-    const hasSeedSource = sourcePlan.some((plan) => plan.key === "osm" || plan.key === "state_licensing" || (plan.key === "overture" && Boolean(process.env.OVERTURE_DUCKDB_ENDPOINT)))
+    const hasSeedSource = sourcePlan.some((plan) => plan.key === "osm" || plan.key === "state_licensing" || plan.key === "sam_gov" || (plan.key === "overture" && Boolean(process.env.OVERTURE_DUCKDB_ENDPOINT)))
 
     const sourceSummaries = leadgenSourceOptions.map((source) => {
         const plan = sourcePlan.find((item) => item.key === source.value)

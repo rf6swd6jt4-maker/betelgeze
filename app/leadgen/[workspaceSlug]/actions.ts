@@ -33,8 +33,8 @@ export async function createLeadgenPoll(slug: string) {
     const osmPlan = sourcePlan.find((source) => source.key === "osm")
     const stateLicensingPlan = sourcePlan.find((source) => source.key === "state_licensing")
     const websitePlan = sourcePlan.find((source) => source.key === "website")
-    const preSeedPipelinePlans = sourcePlan.filter((source) => ["overture"].includes(source.key) && source.industries.length > 0 && source.locations.length > 0)
-    const postSeedPipelinePlans = sourcePlan.filter((source) => ["opencorporates", "sam_gov"].includes(source.key) && source.industries.length > 0 && source.locations.length > 0)
+    const preSeedPipelinePlans = sourcePlan.filter((source) => ["overture", "sam_gov"].includes(source.key) && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
+    const postSeedPipelinePlans = sourcePlan.filter((source) => ["opencorporates"].includes(source.key) && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
     const runnableOsmPlan = osmPlan && osmPlan.industries.length > 0 && osmPlan.locations.length > 0 ? osmPlan : null
     const runnableStateLicensingPlan = stateLicensingPlan && stateLicensingPlan.industries.length > 0 && stateLicensingPlan.locations.length > 0 ? stateLicensingPlan : null
     const runnableWebsitePlan = websitePlan && websitePlan.industries.length > 0 && websitePlan.locations.length > 0 ? websitePlan : null

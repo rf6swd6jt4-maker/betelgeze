@@ -24,7 +24,11 @@ type PipelineTask = {
     id: string
     source_key: LeadgenSourceKey
     source_query: Record<string, unknown>
+    industry_value?: string | null
+    location_value?: string | null
 }
+
+type SamEntity = Record<string, unknown>
 
 const SOURCE_STAGE: Partial<Record<LeadgenSourceKey, string>> = {
     overture: "candidate_seed",
@@ -49,6 +53,27 @@ function normalisePhone(value: string | null | undefined) {
 
 function uniqueValues(values: Array<string | null | undefined>) {
     return [...new Set(values.filter((value): value is string => Boolean(value)))]
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+function asString(value: unknown) {
+    return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function titleCaseFromValue(value: string | null | undefined) {
+    return value?.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) ?? null
+}
+
+function domainFromUrl(value: string | null | undefined) {
+    if (!value) return null
+    try {
+        return new URL(value.startsWith("http") ? value : `https://${value}`).hostname.toLowerCase().replace(/^www\./, "") || null
+    } catch {
+        return null
+    }
 }
 
 function extractPhones(text: string) {
@@ -220,13 +245,225 @@ async function processBlockedExternalTask(task: PipelineTask) {
     }
     if (task.source_key === "opencorporates") {
         if (!process.env.OPENCORPORATES_API_KEY) throw new Error("OpenCorporates is mapped, but OPENCORPORATES_API_KEY is not configured in Vercel.")
-        throw new Error("OpenCorporates API key is configured, but the officer lookup client has not been implemented in Betelgeze yet.")
-    }
-    if (task.source_key === "sam_gov") {
-        if (!process.env.SAM_GOV_API_KEY) throw new Error("SAM.gov is mapped, but SAM_GOV_API_KEY is not configured in Vercel.")
-        throw new Error("SAM.gov API key is configured, but the entity lookup client has not been implemented in Betelgeze yet.")
+        throw new Error("OpenCorporates is currently disabled because the useful API access is paid unless a public-benefit exemption applies.")
     }
     return { rawCount: 0, companyCount: 0 }
+}
+
+function valuesFromQuery(value: unknown) {
+    return Array.isArray(value) ? value.map(String).filter(Boolean) : []
+}
+
+function stateFromLocationMapping(locationMapping: unknown, nativeLocation: string | null) {
+    const mapping = asRecord(locationMapping)
+    const metadata = asRecord(mapping?.metadata)
+    const region = asString(metadata?.region)
+    if (region && /^[A-Z]{2}$/i.test(region)) return region.toUpperCase()
+    const match = nativeLocation?.match(/_([a-z]{2})$/i)
+    return match ? match[1].toUpperCase() : null
+}
+
+function extractSamEntities(payload: unknown): SamEntity[] {
+    const root = asRecord(payload)
+    const direct = root?.entityData ?? root?.entities ?? root?.results ?? root?.data
+    if (Array.isArray(direct)) return direct.filter((item): item is SamEntity => Boolean(asRecord(item)))
+    const embedded = asRecord(root?._embedded)
+    const embeddedData = embedded?.entityData ?? embedded?.entities ?? embedded?.results
+    return Array.isArray(embeddedData) ? embeddedData.filter((item): item is SamEntity => Boolean(asRecord(item))) : []
+}
+
+function nestedRecord(source: Record<string, unknown>, keys: string[]) {
+    for (const key of keys) {
+        const value = asRecord(source[key])
+        if (value) return value
+    }
+    return null
+}
+
+function nestedArray(source: Record<string, unknown>, keys: string[]) {
+    for (const key of keys) {
+        const value = source[key]
+        if (Array.isArray(value)) return value
+    }
+    return []
+}
+
+function samEntityRegistration(entity: SamEntity) {
+    return nestedRecord(entity, ["entityRegistration", "registration", "entity"])
+}
+
+function samCoreData(entity: SamEntity) {
+    return nestedRecord(entity, ["coreData", "core"])
+}
+
+function samAddress(entity: SamEntity) {
+    const registration = samEntityRegistration(entity)
+    const core = samCoreData(entity)
+    const address = nestedRecord(registration ?? {}, ["physicalAddress", "address"]) ?? nestedRecord(core ?? {}, ["physicalAddress", "address"]) ?? {}
+    return {
+        street: [asString(address.addressLine1), asString(address.addressLine2)].filter(Boolean).join(" ") || null,
+        city: asString(address.city) ?? asString(address.physicalAddressCity),
+        state: asString(address.stateOrProvinceCode) ?? asString(address.physicalAddressProvinceOrStateCode),
+        postcode: asString(address.zipCode) ?? asString(address.zip) ?? asString(address.postalCode),
+        country: asString(address.countryCode) ?? asString(address.country),
+    }
+}
+
+function samCompanyName(entity: SamEntity) {
+    const registration = samEntityRegistration(entity)
+    return asString(registration?.legalBusinessName)
+        ?? asString(registration?.dbaName)
+        ?? asString(entity.legalBusinessName)
+        ?? asString(entity.entityName)
+        ?? asString(entity.name)
+}
+
+function samRecordId(entity: SamEntity) {
+    const registration = samEntityRegistration(entity)
+    return asString(registration?.ueiSAM)
+        ?? asString(registration?.uei)
+        ?? asString(entity.ueiSAM)
+        ?? asString(entity.uei)
+        ?? asString(registration?.cageCode)
+        ?? asString(entity.cageCode)
+        ?? null
+}
+
+function collectSamContacts(entity: SamEntity) {
+    const contactsRoot = asRecord(entity.pointsOfContact) ?? asRecord(entity.pointOfContact) ?? {}
+    const arrays = [
+        ...nestedArray(contactsRoot, ["governmentBusinessPOC", "governmentBusinessPoc", "pastPerformancePOC", "electronicBusinessPOC", "accountsReceivablePOC"]),
+        ...nestedArray(entity, ["pointsOfContact"]),
+    ]
+    const singletonContacts = Object.values(contactsRoot).filter((value) => asRecord(value)) as Record<string, unknown>[]
+    const candidates = [...arrays, ...singletonContacts].map((item) => asRecord(item)).filter((item): item is Record<string, unknown> => Boolean(item))
+    return candidates.map((contact) => {
+        const fullName = asString(contact.fullName)
+            ?? asString([asString(contact.firstName), asString(contact.middleInitial), asString(contact.lastName)].filter(Boolean).join(" "))
+            ?? asString(contact.name)
+        const phone = normalisePhone(asString(contact.phone) ?? asString(contact.telephone) ?? asString(contact.usPhone) ?? asString(contact.nonUSPhone))
+        const email = asString(contact.email) ?? asString(contact.emailAddress)
+        const role = asString(contact.pocType) ?? asString(contact.type) ?? asString(contact.title)
+        return { fullName: fullName || null, phone, email, role, raw: contact }
+    }).filter((contact) => contact.fullName || contact.phone || contact.email)
+}
+
+async function fetchSamEntities(task: PipelineTask) {
+    const apiKey = process.env.SAM_GOV_API_KEY
+    if (!apiKey) throw new Error("SAM.gov is enabled, but SAM_GOV_API_KEY is not configured in Vercel.")
+    const nativeIndustries = valuesFromQuery(task.source_query.native_industries)
+    const nativeLocations = valuesFromQuery(task.source_query.native_locations)
+    const locationMapping = task.source_query.location_mapping
+    const industryQuery = titleCaseFromValue(nativeIndustries[0] ?? task.industry_value ?? null)
+    const state = stateFromLocationMapping(locationMapping, nativeLocations[0] ?? null)
+    const url = new URL("https://api.sam.gov/entity-information/v4/entities")
+    url.searchParams.set("api_key", apiKey)
+    url.searchParams.set("includeSections", "entityRegistration,coreData,pointsOfContact")
+    url.searchParams.set("samRegistered", "Yes")
+    url.searchParams.set("registrationStatus", "A")
+    if (industryQuery) url.searchParams.set("q", industryQuery)
+    if (state) url.searchParams.set("physicalAddressProvinceOrStateCode", state)
+    const response = await fetch(url, {
+        headers: { Accept: "application/json", "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)" },
+        cache: "no-store",
+    })
+    const responseText = await response.text()
+    if (!response.ok) throw new Error(`SAM.gov returned HTTP ${response.status}: ${responseText.slice(0, 500)}`)
+    return { payload: JSON.parse(responseText) as unknown, queryUrl: url.toString().replace(apiKey, "[redacted]") }
+}
+
+async function upsertSamEntity({ workspaceId, pollId, task, entity }: { workspaceId: string; pollId: string; task: PipelineTask; entity: SamEntity }) {
+    const companyName = samCompanyName(entity)
+    const sourceRecordId = samRecordId(entity)
+    if (!companyName || !sourceRecordId) return false
+    const contacts = collectSamContacts(entity)
+    const bestContact = contacts.find((contact) => contact.fullName && contact.phone) ?? contacts.find((contact) => contact.phone) ?? contacts[0] ?? null
+    const core = samCoreData(entity)
+    const websiteUrl = asString(core?.entityURL) ?? asString(core?.websiteURL) ?? asString(core?.website)
+    const address = samAddress(entity)
+    const phone = bestContact?.phone ?? null
+    const sourceRecord = {
+        workspace_id: workspaceId,
+        poll_id: pollId,
+        task_id: task.id,
+        source_key: "sam_gov",
+        source_record_id: sourceRecordId,
+        company_name: companyName,
+        phone,
+        website_url: websiteUrl,
+        profile_url: `https://sam.gov/entity/${sourceRecordId}/coreData`,
+        address,
+        latitude: null,
+        longitude: null,
+        categories: [{ key: "sam_gov", value: task.industry_value ?? "entity" }],
+        rating: null,
+        review_count: null,
+        raw_payload: entity,
+    }
+    const { error: recordError } = await supabaseAdmin
+        .from("leadgen_source_records")
+        .upsert(sourceRecord, { onConflict: "workspace_id,source_key,source_record_id" })
+    if (recordError) throw recordError
+    const companyPayload = {
+        workspace_id: workspaceId,
+        canonical_name: companyName.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(),
+        display_name: companyName,
+        phone,
+        website_domain: domainFromUrl(websiteUrl),
+        website_url: websiteUrl,
+        profile_url: sourceRecord.profile_url,
+        source_key: "sam_gov",
+        source_record_id: sourceRecordId,
+        address,
+        latitude: null,
+        longitude: null,
+        categories: sourceRecord.categories,
+        rating: null,
+        review_count: null,
+        industry_value: task.industry_value,
+        location_value: task.location_value,
+        first_seen_poll_id: pollId,
+        owner_name: bestContact?.fullName ?? null,
+        owner_phone: bestContact?.phone ?? null,
+        owner_source_key: bestContact ? "sam_gov" : null,
+        owner_confidence: bestContact?.phone ? 70 : bestContact ? 45 : null,
+        owner_evidence: bestContact ? { source: "sam_gov", role: bestContact.role, email: bestContact.email, contacts } : null,
+        last_seen_at: new Date().toISOString(),
+    }
+    const { data: company, error: companyError } = await supabaseAdmin
+        .from("leadgen_companies")
+        .upsert(companyPayload, { onConflict: "workspace_id,source_key,source_record_id" })
+        .select("id")
+        .single()
+    if (companyError) throw companyError
+    if (company?.id && bestContact) {
+        await supabaseAdmin.from("leadgen_evidence").insert({
+            workspace_id: workspaceId,
+            poll_id: pollId,
+            company_id: company.id,
+            source_key: "sam_gov",
+            evidence_kind: "sam_public_poc",
+            confidence: bestContact.phone ? 70 : 45,
+            value: { owner_name: bestContact.fullName, phone: bestContact.phone, email: bestContact.email, role: bestContact.role },
+            raw_payload: { contacts },
+        })
+    }
+    return true
+}
+
+async function processSamGovTask(task: PipelineTask) {
+    const workspaceId = typeof task.source_query.workspace_id === "string" ? task.source_query.workspace_id : null
+    const pollId = typeof task.source_query.poll_id === "string" ? task.source_query.poll_id : null
+    if (!workspaceId || !pollId) throw new Error("SAM.gov task is missing workspace or poll context.")
+    const { payload, queryUrl } = await fetchSamEntities(task)
+    const entities = extractSamEntities(payload)
+    if (entities.length === 0) throw new Error(`SAM.gov returned 0 entities for this mapped ICP query. Query: ${queryUrl}`)
+    let companyCount = 0
+    for (const entity of entities) {
+        const stored = await upsertSamEntity({ workspaceId, pollId, task, entity })
+        if (stored) companyCount += 1
+    }
+    return { rawCount: entities.length, companyCount }
 }
 
 async function processWebsiteTask(task: PipelineTask) {
@@ -293,7 +530,7 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
     await setLeadgenPollStatus(pollId, workspaceId, "running")
     const tasksResult = await supabaseAdmin
         .from("leadgen_poll_tasks")
-        .select("id, source_key, source_query")
+        .select("id, source_key, source_query, industry_value, location_value")
         .eq("poll_id", pollId)
         .eq("workspace_id", workspaceId)
         .eq("source_key", sourceKey)
@@ -307,9 +544,13 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
     for (const task of tasks) {
         await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "running", started_at: new Date().toISOString(), error: null }).eq("id", task.id)
         try {
-            const query = { ...(task.source_query ?? {}), workspace_id: workspaceId }
+            const query = { ...(task.source_query ?? {}), workspace_id: workspaceId, poll_id: pollId }
             const taskWithWorkspace = { ...task, source_query: query }
-            const result = sourceKey === "website" ? await processWebsiteTask(taskWithWorkspace) : await processBlockedExternalTask(taskWithWorkspace)
+            const result = sourceKey === "website"
+                ? await processWebsiteTask(taskWithWorkspace)
+                : sourceKey === "sam_gov"
+                    ? await processSamGovTask(taskWithWorkspace)
+                    : await processBlockedExternalTask(taskWithWorkspace)
             await supabaseAdmin
                 .from("leadgen_poll_tasks")
                 .update({ status: "completed", raw_count: result?.rawCount ?? 0, company_count: result?.companyCount ?? 0, completed_at: new Date().toISOString(), error: null })

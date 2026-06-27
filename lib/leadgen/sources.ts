@@ -31,7 +31,7 @@ export type LeadgenSourcePlanItem = {
     notes: string | null
 }
 
-export const executableLeadgenSources = new Set<LeadgenSourceKey>(["overture", "website", "osm", "state_licensing", "opencorporates", "sam_gov"])
+export const executableLeadgenSources = new Set<LeadgenSourceKey>(["overture", "website", "osm", "state_licensing", "sam_gov"])
 
 export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: string; detail: string; statusLabel: string; notesPlaceholder: string; requiresApiKey?: boolean; implemented?: boolean; envVar?: string; setupHint?: string }> = [
     {
@@ -69,20 +69,21 @@ export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: strin
     {
         value: "opencorporates",
         label: "Business registries / OpenCorporates",
-        detail: "Officer/principal enrichment from business registries. Requires source credentials where jurisdictions need them.",
-        statusLabel: "Requires API key",
+        detail: "Officer/principal enrichment from business registries. OpenCorporates access is paid unless a public-benefit exemption applies.",
+        statusLabel: "Paid / not active",
         notesPlaceholder: "Enabled jurisdictions, officer confidence rules, or registered-agent caveats.",
         requiresApiKey: true,
         envVar: "OPENCORPORATES_API_KEY",
-        setupHint: "Create an OpenCorporates account, generate an API token, then add it to Vercel.",
+        setupHint: "Not a default source for Betelgeze. Their free API access is aimed at academic, NGO, journalism, media, or nonprofit public-benefit projects.",
     },
     {
         value: "sam_gov",
         label: "SAM.gov",
         detail: "Public contractor/entity enrichment for NAICS, government POCs, and registration evidence.",
-        statusLabel: "Requires API key",
+        statusLabel: "Executable with API key",
         notesPlaceholder: "NAICS filters, POC confidence rules, or entity-status constraints.",
         requiresApiKey: true,
+        implemented: true,
         envVar: "SAM_GOV_API_KEY",
         setupHint: "Request a SAM.gov public API key, then add it to Vercel.",
     },

@@ -287,8 +287,7 @@ export async function createPipelineTasksForPoll({ workspaceId, pollId, plans }:
 
 async function processBlockedExternalTask(task: PipelineTask) {
     if (task.source_key === "opencorporates") {
-        if (!process.env.OPENCORPORATES_API_KEY) throw new Error("OpenCorporates is mapped, but OPENCORPORATES_API_KEY is not configured in Vercel.")
-        throw new Error("OpenCorporates is currently disabled because the useful API access is paid unless a public-benefit exemption applies.")
+        throw new Error("Business registry enrichment is planned, but no free state SOS registry adapter is active yet.")
     }
     return { rawCount: 0, companyCount: 0 }
 }

@@ -31,7 +31,7 @@ export type LeadgenSourcePlanItem = {
     notes: string | null
 }
 
-export const executableLeadgenSources = new Set<LeadgenSourceKey>(["overture", "website", "osm", "state_licensing", "sam_gov"])
+export const executableLeadgenSources = new Set<LeadgenSourceKey>(["overture", "website", "osm", "state_licensing"])
 
 export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: string; detail: string; statusLabel: string; notesPlaceholder: string; requiresApiKey?: boolean; implemented?: boolean; envVar?: string; setupHint?: string }> = [
     {
@@ -68,24 +68,21 @@ export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: strin
     },
     {
         value: "opencorporates",
-        label: "Business registries / OpenCorporates",
-        detail: "Officer/principal enrichment from business registries. OpenCorporates access is paid unless a public-benefit exemption applies.",
-        statusLabel: "Paid / not active",
-        notesPlaceholder: "Enabled jurisdictions, officer confidence rules, or registered-agent caveats.",
-        requiresApiKey: true,
-        envVar: "OPENCORPORATES_API_KEY",
-        setupHint: "Not a default source for Betelgeze. Their free API access is aimed at academic, NGO, journalism, media, or nonprofit public-benefit projects.",
+        label: "Business registries",
+        detail: "Officer/principal enrichment from free state SOS and local registry data. OpenCorporates is intentionally excluded from the default stack.",
+        statusLabel: "Planned: state registry adapters",
+        notesPlaceholder: "Enabled jurisdictions, officer confidence rules, registered-agent caveats, or SOS portals to prioritize.",
+        setupHint: "Next target: direct state SOS datasets and public portal adapters, starting with Texas and other high-value service states.",
     },
     {
         value: "sam_gov",
         label: "SAM.gov",
-        detail: "Public contractor/entity enrichment for NAICS, government POCs, and registration evidence.",
-        statusLabel: "Executable with API key",
+        detail: "Validation-only federal contractor/entity source for NAICS, identity, and public POC evidence. Not suitable for bulk polling on a basic API quota.",
+        statusLabel: "Validation-only, disabled for bulk polls",
         notesPlaceholder: "NAICS filters, POC confidence rules, or entity-status constraints.",
         requiresApiKey: true,
-        implemented: true,
         envVar: "SAM_GOV_API_KEY",
-        setupHint: "Request a SAM.gov public API key, then add it to Vercel.",
+        setupHint: "Basic SAM.gov keys are too limited for bulk polling. Keep this for later validation of already-ranked leads.",
     },
 ]
 

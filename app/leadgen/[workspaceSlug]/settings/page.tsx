@@ -124,7 +124,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                             const implemented = executableLeadgenSources.has(source.value)
                             const sourceSettings = sourceConfig[source.value]
                             const mapped = mappingSummary(source.value)
-                            const apiKeyConfigured = source.value === "opencorporates" ? Boolean(process.env.OPENCORPORATES_API_KEY) : source.value === "sam_gov" ? Boolean(process.env.SAM_GOV_API_KEY) : true
+                            const apiKeyConfigured = source.value === "sam_gov" ? Boolean(process.env.SAM_GOV_API_KEY) : true
                             const adapterConfigured = true
                             const canRun = implemented && mapped.ready && apiKeyConfigured && adapterConfigured
                             return <div key={source.value} className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">

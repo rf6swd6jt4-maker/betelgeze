@@ -66,7 +66,7 @@ function firstObject(value: unknown) {
     return objectValue(value)
 }
 
-export async function queryOverturePlaces({ categories, location, limit, release }: { categories: string[]; location: OvertureLocation; limit: number; release?: string | null }) {
+export async function queryOverturePlaces({ categories, location, limit, release, excludeIds = [] }: { categories: string[]; location: OvertureLocation; limit: number; release?: string | null; excludeIds?: string[] }) {
     if (!location.latitude || !location.longitude) throw new Error("Overture requires a target location with latitude and longitude.")
     if (categories.length === 0) throw new Error("Overture requires at least one mapped category.")
     const { mkdir } = await import("node:fs/promises")
@@ -81,6 +81,8 @@ export async function queryOverturePlaces({ categories, location, limit, release
     const safeLimit = Math.min(500, Math.max(1, limit))
     const categoryList = sqlStringList(categories)
     const alternateCategoryPredicate = categories.map((category) => `list_contains(categories.alternate, ${sqlString(category)})`).join(" OR ")
+    const existingIdList = sqlStringList([...new Set(excludeIds)].slice(0, 5_000))
+    const unseenPredicate = existingIdList ? `and id not in (${existingIdList})` : ""
     const dataset = `s3://overturemaps-us-west-2/release/${safeRelease}/theme=places/type=place/*`
     const sql = `
         select
@@ -100,6 +102,7 @@ export async function queryOverturePlaces({ categories, location, limit, release
             categories.primary in (${categoryList})
             ${alternateCategoryPredicate ? `or ${alternateCategoryPredicate}` : ""}
           )
+          ${unseenPredicate}
         limit ${safeLimit}
     `
 

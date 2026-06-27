@@ -629,8 +629,21 @@ async function processOvertureTask(task: PipelineTask) {
     const location = overtureLocationFromTask(task)
     const limit = Math.min(500, Math.max(1, Number(task.source_query.limit) || 100))
     const release = typeof task.source_query.release === "string" ? task.source_query.release : null
-    const places = await queryOverturePlaces({ categories, location, limit, release })
-    if (places.length === 0) throw new Error(`Overture returned 0 place records for ${task.industry_value ?? "this industry"} in ${location.label ?? task.location_value ?? "this location"} using ${categories.join(", ")}.`)
+    const { data: existingRecords, error: existingError } = await supabaseAdmin
+        .from("leadgen_source_records")
+        .select("source_record_id")
+        .eq("workspace_id", workspaceId)
+        .eq("source_key", "overture")
+        .limit(5_000)
+    if (existingError) throw existingError
+    const excludeIds = (existingRecords ?? [])
+        .map((record) => typeof record.source_record_id === "string" ? record.source_record_id : null)
+        .filter((id): id is string => Boolean(id))
+    const places = await queryOverturePlaces({ categories, location, limit, release, excludeIds })
+    if (places.length === 0) {
+        const unseenContext = excludeIds.length > 0 ? ` after excluding ${excludeIds.length.toLocaleString()} records already seen by this workspace` : ""
+        throw new Error(`Overture returned 0 new place records for ${task.industry_value ?? "this industry"} in ${location.label ?? task.location_value ?? "this location"} using ${categories.join(", ")}${unseenContext}.`)
+    }
     let companyCount = 0
     for (const place of places) {
         const stored = await upsertOverturePlace({ workspaceId, pollId, task, place })

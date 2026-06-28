@@ -45,6 +45,9 @@ const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set([
     "transport.fmcsa_safer",
     "regulated.epa_echo",
     "regulated.nppes",
+    "procurement.usaspending",
+    "web.rdap_whois",
+    "web.certificate_transparency",
 ])
 
 function clampPoints(value: number) {

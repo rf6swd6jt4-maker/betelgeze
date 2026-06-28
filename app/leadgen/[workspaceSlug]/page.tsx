@@ -59,7 +59,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div>
                     <h1 className="text-2xl font-semibold tracking-tight">{workspace.name}</h1>
-                    <p className="mt-2 text-sm text-neutral-400">Review and route the latest poll output for this workspace. Signed in as {role}.</p>
+                    <p className="mt-2 text-sm text-neutral-400">Review qualified owner-phone leads from the latest poll. Research candidates and rejected evidence stay on the poll detail page. Signed in as {role}.</p>
                 </div>
                 <NewPollButton href={`https://leadgen.betelgeze.com/${workspace.slug}/new`} />
             </div>
@@ -68,9 +68,9 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
 
             <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:grid-cols-3">
                 {[
-                    ["Latest poll leads", companies.length],
-                    ["With phone", callable],
-                    ["With source profile", withProfiles],
+                    ["Qualified leads", companies.length],
+                    ["Owner phones", callable],
+                    ["Source links", withProfiles],
                 ].map(([label, value]) => <div key={label} className="border-r border-neutral-800 px-2 py-2 text-center last:border-r-0 sm:rounded-lg sm:border sm:border-neutral-800 sm:bg-neutral-900 sm:px-3 sm:text-left">
                     <p className="text-[10px] leading-tight text-neutral-500 sm:text-xs">{label}</p>
                     <p className="mt-1 text-lg font-semibold">{value}</p>
@@ -123,14 +123,14 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Starting clean</p>
                         <h3 className="mt-3 text-xl font-semibold">{latestPoll ? "This poll did not return qualified leads." : "No real companies have been collected yet."}</h3>
-                        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">{latestPoll ? "The Leads tab now shows only qualified leads first seen in the latest poll. Older poll output is preserved in poll detail pages, but hidden here for now." : "Configure sources in Settings, choose industries and locations, then run a poll. Only actual stored source records appear here."}</p>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">{latestPoll ? "The Leads tab only shows companies from the latest poll where source-backed owner identity and owner phone evidence both cleared the qualification threshold. Raw candidates, skipped checks, and rejected reasons are preserved inside the poll detail page." : "Configure Overture plus ICP industries and locations in Settings, then run a poll. Candidates will be investigated across the active public-source catalogue before anything appears here."}</p>
                     </div>
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Next action</p>
                         <ul className="mt-3 space-y-2 text-sm text-neutral-300">
-                            <li>• Select OpenStreetMap, industries, and locations in Settings.</li>
-                            <li>• Run a test poll from the Polls tab.</li>
-                            <li>• Review collected companies here.</li>
+                            <li>• Check Settings to confirm Overture and the active fan-out catalogue are ready.</li>
+                            <li>• Run a 10-business test poll from New Poll.</li>
+                            <li>• Open the poll detail page to inspect candidates, evidence, and rejection reasons.</li>
                         </ul>
                     </div>
                 </div>}

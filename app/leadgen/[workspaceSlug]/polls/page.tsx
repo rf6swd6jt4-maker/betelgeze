@@ -33,6 +33,21 @@ type PollTask = {
     error: string | null
     created_at: string
 }
+type InvestigationTask = {
+    id: string
+    poll_id: string
+    status: string
+    source_key: string
+    matched: boolean | null
+    error: string | null
+    skip_reason: string | null
+    created_at: string
+}
+type EvidenceClaim = {
+    id: string
+    poll_id: string
+    claim_kind: string
+}
 
 const statusStyles: Record<PollStatus, { label: string; mark: string; text: string }> = {
     queued: { label: "Initialising", mark: "bg-neutral-400", text: "text-neutral-300" },
@@ -69,6 +84,17 @@ function pollTaskStats(tasks: PollTask[]) {
     }
 }
 
+function investigationStats(tasks: InvestigationTask[], claims: EvidenceClaim[]) {
+    return {
+        checks: tasks.length,
+        matched: tasks.filter((task) => task.matched).length,
+        failed: tasks.filter((task) => task.status === "failed" || task.error).length,
+        skipped: tasks.filter((task) => task.status === "skipped").length,
+        claims: claims.length,
+        ownerClaims: claims.filter((claim) => ["owner_identity", "officer_identity", "owner_phone"].includes(claim.claim_kind)).length,
+    }
+}
+
 export default async function LeadgenPollsPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
@@ -96,9 +122,29 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
         groups[task.poll_id] = [...(groups[task.poll_id] ?? []), task]
         return groups
     }, {})
+    const investigationResult = polls.length ? await supabaseAdmin
+        .from("leadgen_investigation_tasks")
+        .select("id, poll_id, status, source_key, matched, error, skip_reason, created_at")
+        .in("poll_id", polls.map((poll) => poll.id))
+        .order("created_at", { ascending: true }) : { data: [], error: null }
+    const investigationTasks = (investigationResult.error ? [] : investigationResult.data ?? []) as InvestigationTask[]
+    const investigationsByPoll = investigationTasks.reduce<Record<string, InvestigationTask[]>>((groups, task) => {
+        groups[task.poll_id] = [...(groups[task.poll_id] ?? []), task]
+        return groups
+    }, {})
+    const claimsResult = polls.length ? await supabaseAdmin
+        .from("leadgen_evidence_claims")
+        .select("id, poll_id, claim_kind")
+        .in("poll_id", polls.map((poll) => poll.id)) : { data: [], error: null }
+    const claims = (claimsResult.error ? [] : claimsResult.data ?? []) as EvidenceClaim[]
+    const claimsByPoll = claims.reduce<Record<string, EvidenceClaim[]>>((groups, claim) => {
+        groups[claim.poll_id] = [...(groups[claim.poll_id] ?? []), claim]
+        return groups
+    }, {})
     const livePolls = polls.filter((poll) => ["queued", "running"].includes(poll.status))
     const latestPoll = polls[0]
     const latestTaskStats = latestPoll ? pollTaskStats(tasksByPoll[latestPoll.id] ?? []) : null
+    const latestInvestigationStats = latestPoll ? investigationStats(investigationsByPoll[latestPoll.id] ?? [], claimsByPoll[latestPoll.id] ?? []) : null
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
         <PollsAutoRefresh enabled intervalMs={5000} processUrl={`/api/leadgen/polls/process?workspace=${encodeURIComponent(workspace.slug)}`} />
@@ -119,7 +165,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                 {[
                     ["Running", livePolls.length, ""],
                     ["History", polls.length, ""],
-                    ["Latest queries", latestTaskStats?.sourceQueries ?? 0, "hidden sm:block"],
+                    ["Source checks", latestInvestigationStats?.checks ?? 0, "hidden sm:block"],
                     ["Raw returned", latestTaskStats?.rawReturned ?? 0, ""],
                 ].map(([label, value, className]) => <div key={label} className={`${className} border-r border-neutral-800 px-2 py-2 text-center last:border-r-0 sm:rounded-lg sm:border sm:border-neutral-800 sm:bg-neutral-900 sm:px-3 sm:text-left`}>
                     <p className="text-[10px] leading-tight text-neutral-500 sm:text-xs">{label}</p>
@@ -133,8 +179,12 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     const live = ["queued", "running"].includes(poll.status)
                     const tasks = tasksByPoll[poll.id] ?? []
                     const taskStats = pollTaskStats(tasks)
+                    const investigations = investigationsByPoll[poll.id] ?? []
+                    const claimStats = investigationStats(investigations, claimsByPoll[poll.id] ?? [])
                     const failedTasks = tasks.filter((task) => task.error || task.status === "failed")
+                    const failedInvestigations = investigations.filter((task) => task.error || task.status === "failed")
                     const hasConsoleEntry = poll.status === "failed" || failedTasks.length > 0
+                        || failedInvestigations.length > 0
                     const creator = poll.requested_by ? creatorById.get(poll.requested_by) : null
                     const statusMark = <span className={`inline-flex items-center gap-2 text-sm ${meta.text}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
                     const duration = <span className="font-mono text-sm text-neutral-500"><PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live} /></span>
@@ -156,9 +206,9 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                                 <span className="flex shrink-0 items-center gap-2">{statusMark}{duration}</span>
                             </div>
                             <div className="flex items-center gap-3 px-3.5 py-2.5">
-                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.completedQueries}</span>/<span className="text-neutral-200">{taskStats.sourceQueries}</span> queries</p>
+                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.completedQueries}</span>/<span className="text-neutral-200">{taskStats.sourceQueries}</span> seed</p>
                                 <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.rawReturned}</span> raw</p>
-                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.qualified_count}</span> qualified</p>
+                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{claimStats.matched}</span>/<span className="text-neutral-200">{claimStats.checks}</span> checks</p>
                                 <p className="font-mono text-sm text-neutral-500">{shortId(poll.id)}</p>
                                 <div className="ml-auto flex shrink-0 items-center gap-2">
                                     <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(poll.created_at)}</p>
@@ -175,8 +225,8 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                             {statusMark}
                             {duration}
                         </div>
-                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.completedQueries}</span>/<span className="text-neutral-200">{taskStats.sourceQueries}</span> source queries</p>
-                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.rawReturned}</span> raw returned · <span className="text-neutral-200">{poll.qualified_count}</span> qualified</p>
+                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.rawReturned}</span> raw · <span className="text-neutral-200">{claimStats.checks}</span> checks</p>
+                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{claimStats.ownerClaims}</span> owner claims · <span className="text-neutral-200">{poll.qualified_count}</span> qualified</p>
                         <p className="font-mono text-sm text-neutral-500">{shortId(poll.id)}</p>
                         <div className="flex items-center justify-end gap-3">
                             <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(poll.created_at)}</p>
@@ -192,24 +242,25 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                 </div>}
             </section>
 
-            {polls.some((poll) => poll.status === "failed" || (tasksByPoll[poll.id] ?? []).some((task) => task.error || task.status === "failed")) && <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
+            {polls.some((poll) => poll.status === "failed" || (tasksByPoll[poll.id] ?? []).some((task) => task.error || task.status === "failed") || (investigationsByPoll[poll.id] ?? []).some((task) => task.error || task.status === "failed")) && <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
                 <div className="border-b border-neutral-800 px-5 py-4">
                     <h2 className="font-semibold">Poll console</h2>
                     <p className="mt-1 text-sm text-neutral-500">Open console from a failed poll to jump to its source errors.</p>
                 </div>
                 {polls.map((poll) => {
                     const failedTasks = (tasksByPoll[poll.id] ?? []).filter((task) => task.error || task.status === "failed")
-                    if (poll.status !== "failed" && failedTasks.length === 0) return null
-                    const firstError = poll.error ?? failedTasks.find((task) => task.error)?.error ?? "Poll failed without a task-level error. Retry the poll; if this repeats, the source worker could not create or read its source tasks."
+                    const failedInvestigations = (investigationsByPoll[poll.id] ?? []).filter((task) => task.error || task.status === "failed")
+                    if (poll.status !== "failed" && failedTasks.length === 0 && failedInvestigations.length === 0) return null
+                    const firstError = poll.error ?? failedTasks.find((task) => task.error)?.error ?? failedInvestigations.find((task) => task.error)?.error ?? "Poll failed without a task-level error. Retry the poll; if this repeats, the source worker could not create or read its source tasks."
                     const pollMeta = statusMeta(poll.status === "failed" ? "failed" : failedTasks[0]?.status ?? "failed")
                     return <div id={`poll-console-${poll.id}`} key={poll.id} className="grid min-h-14 scroll-mt-24 gap-3 border-b border-neutral-900 px-4 py-3 last:border-0 md:grid-cols-[140px_minmax(0,1fr)_120px] md:items-center">
                         <span className={`inline-flex items-center gap-2 text-sm ${pollMeta.text}`}><BetelgezeStatusMark className={pollMeta.mark} />{pollMeta.label}</span>
                         <details className="min-w-0 text-sm">
                             <summary className="cursor-pointer truncate text-red-300">{compactText(firstError, 220)}</summary>
                             <div className="mt-2 space-y-2">
-                                {failedTasks.length ? failedTasks.map((task) => (
+                                {failedTasks.length || failedInvestigations.length ? [...failedTasks.map((task) => ({ id: task.id, error: task.error ?? `${task.source_key} task failed without a detailed error.` })), ...failedInvestigations.map((task) => ({ id: task.id, error: task.error ?? `${task.source_key} candidate check failed without a detailed error.` }))].map((task) => (
                                     <p key={task.id} className="whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-xs text-red-100">
-                                        {task.error ?? `${task.source_key} task failed without a detailed error.`}
+                                        {task.error}
                                     </p>
                                 )) : <p className="whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-xs text-red-100">{firstError}</p>}
                             </div>

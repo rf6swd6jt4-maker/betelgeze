@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { BrandLockup } from "@/components/brand/BrandLockup"
 import { PollDuration } from "@/components/leadgen/PollDuration"
+import { sourceCatalogMap, sourceHumanLabel, type LeadgenSourceCatalogRow } from "@/lib/leadgen/source-catalog-ui"
 import { sourceLabel } from "@/lib/leadgen/sources"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -47,7 +48,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
         .maybeSingle()
     if (pollResult.error || !pollResult.data) notFound()
     const poll = pollResult.data
-    const [tasksResult, recordsResult, companiesResult, evidenceResult, investigationResult, claimsResult, scoresResult] = await Promise.all([
+    const [tasksResult, recordsResult, companiesResult, evidenceResult, investigationResult, claimsResult, scoresResult, catalogResult] = await Promise.all([
         supabaseAdmin
             .from("leadgen_poll_tasks")
             .select("id, source_key, stage, industry_value, location_value, status, source_query, raw_count, company_count, error, started_at, completed_at, created_at")
@@ -94,6 +95,9 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
             .select("company_id, owner_identity_points, owner_phone_points, business_support_points, total_score, qualification_status, disqualification_reason, best_owner_name, best_owner_phone")
             .eq("poll_id", poll.id)
             .eq("workspace_id", workspace.id),
+        supabaseAdmin
+            .from("leadgen_source_catalog")
+            .select("source_key, label, family, source_points, owner_identity_points, owner_phone_points, business_support_points, access_method, free_status, implementation_status, run_stage, enabled, rate_limit_ms, coverage, metadata"),
     ])
     const tasks = tasksResult.error ? [] : tasksResult.data ?? []
     const records = recordsResult.error ? [] : recordsResult.data ?? []
@@ -102,13 +106,24 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
     const investigations = investigationResult.error ? [] : investigationResult.data ?? []
     const claims = claimsResult.error ? [] : claimsResult.data ?? []
     const scores = scoresResult.error ? [] : scoresResult.data ?? []
+    const catalog = (catalogResult.error ? [] : catalogResult.data ?? []) as LeadgenSourceCatalogRow[]
+    const sourcesByKey = sourceCatalogMap(catalog)
     const scoreByCompany = new Map(scores.map((score) => [score.company_id, score]))
     const processedTaskCount = tasks.filter((task) => ["completed", "failed"].includes(task.status)).length
     const rawReturnedCount = tasks.reduce((total, task) => total + (task.raw_count ?? 0), 0)
     const taskCompanyCount = tasks.reduce((total, task) => total + (task.company_count ?? 0), 0)
     const completedTaskCount = tasks.filter((task) => task.status === "completed").length
+    const matchedInvestigationCount = investigations.filter((task) => task.matched).length
+    const failedInvestigationCount = investigations.filter((task) => task.status === "failed" || task.error).length
+    const skippedInvestigationCount = investigations.filter((task) => task.status === "skipped").length
+    const ownerIdentityClaimCount = claims.filter((claim) => ["owner_identity", "officer_identity"].includes(claim.claim_kind)).length
+    const ownerPhoneClaimCount = claims.filter((claim) => claim.claim_kind === "owner_phone").length
     const meta = statusMeta(poll.status)
     const live = ["queued", "running"].includes(poll.status)
+    const consoleRows = [
+        ...tasks.filter((task) => task.error).map((task) => ({ id: task.id, label: `${sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}/${task.stage ?? "task"}`, error: task.error })),
+        ...investigations.filter((task) => task.error).map((task) => ({ id: task.id, label: `${sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}/candidate check`, error: task.error })),
+    ].filter((row): row is { id: string; label: string; error: string } => Boolean(row.error))
 
     return <main className="min-h-screen bg-neutral-950 px-5 py-8 text-white sm:px-8">
         <div className="mx-auto max-w-6xl">
@@ -141,15 +156,30 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
 
             <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
                 {[
-                    ["Source queries", `${completedTaskCount}/${tasks.length}`],
+                    ["Seed queries", `${completedTaskCount}/${tasks.length}`],
                     ["Raw returned", rawReturnedCount],
+                    ["Candidate checks", `${matchedInvestigationCount}/${investigations.length}`],
+                    ["Owner evidence", `${ownerIdentityClaimCount}/${ownerPhoneClaimCount}`],
                     ["Qualified", `${poll.qualified_count}`],
-                    ["Enriched", claims.length || evidence.length],
-                    ["Companies", `${companies.length || poll.normalised_count}`],
                 ].map(([label, value]) => <div key={label} className="rounded-xl border border-neutral-800 bg-neutral-900 p-3">
                     <p className="text-xs text-neutral-500">{label}</p>
                     <p className="mt-1 text-lg font-semibold">{value}</p>
                 </div>)}
+            </section>
+
+            <section className="mt-5 grid gap-3 lg:grid-cols-3">
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Fan-out status</p>
+                    <p className="mt-2 text-sm text-neutral-300">{investigations.length} candidate-level checks generated; {matchedInvestigationCount} matched, {skippedInvestigationCount} skipped, {failedInvestigationCount} failed.</p>
+                </div>
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Qualification rule</p>
+                    <p className="mt-2 text-sm text-neutral-300">A lead only qualifies when owner identity and owner phone evidence both clear the score threshold.</p>
+                </div>
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Stored candidates</p>
+                    <p className="mt-2 text-sm text-neutral-300">{companies.length || poll.normalised_count} companies were stored for audit, even if they did not qualify for the Leads tab.</p>
+                </div>
             </section>
 
             <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
@@ -163,7 +193,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                     return <details key={task.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
                         <summary className="grid cursor-pointer gap-3 md:grid-cols-[150px_minmax(180px,1fr)_100px_140px_minmax(0,1fr)] md:items-center">
                             <span className={`inline-flex items-center gap-2 text-sm ${task.status === "skipped" ? "text-neutral-500" : taskMeta.text}`}><BetelgezeStatusMark className={task.status === "skipped" ? "bg-neutral-600" : taskMeta.mark} />{task.status}</span>
-                            <span className="truncate text-sm text-neutral-300">{task.source_key}</span>
+                            <span className="truncate text-sm text-neutral-300">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
                             <span className="text-sm text-neutral-500">{task.matched ? "matched" : "no match"}</span>
                             <span className="text-sm text-neutral-500">{task.owner_identity_points}/{task.owner_phone_points}/{task.business_support_points} pts</span>
                             <span className="truncate text-sm text-neutral-500">{task.error ?? task.skip_reason ?? "—"}</span>
@@ -173,11 +203,11 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                 }) : <p className="p-5 text-sm text-neutral-500">No candidate investigation tasks were generated.</p>}
             </section>
 
-            {(poll.error || tasks.some((task) => task.error)) && <section className="mt-5 rounded-2xl border border-red-400/20 bg-red-950/[0.08] p-5">
+            {(poll.error || consoleRows.length > 0) && <section className="mt-5 rounded-2xl border border-red-400/20 bg-red-950/[0.08] p-5">
                 <h2 className="font-semibold text-red-200">Console</h2>
                 {poll.error && <p className="mt-3 whitespace-pre-wrap break-words text-sm text-red-100">{poll.error}</p>}
                 <div className="mt-3 space-y-2">
-                    {tasks.filter((task) => task.error).map((task) => <p key={task.id} className="whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-black/30 p-3 text-xs text-red-100">{task.source_key}/{task.stage ?? "task"}: {task.error}</p>)}
+                    {consoleRows.map((row) => <p key={row.id} className="whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-black/30 p-3 text-xs text-red-100">{row.label}: {row.error}</p>)}
                 </div>
             </section>}
 
@@ -192,7 +222,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                     return <details key={task.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
                         <summary className="grid cursor-pointer gap-3 md:grid-cols-[150px_160px_120px_120px_minmax(0,1fr)] md:items-center">
                             <span className={`inline-flex items-center gap-2 text-sm ${taskMeta.text}`}><BetelgezeStatusMark className={taskMeta.mark} />{taskMeta.label}</span>
-                            <span className="text-sm capitalize text-neutral-300">{task.source_key.replace(/_/g, " ")}</span>
+                            <span className="text-sm text-neutral-300">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
                             <span className="text-sm text-neutral-500">{task.raw_count ?? 0} raw</span>
                             <span className="text-sm text-neutral-500">{task.company_count ?? 0} companies</span>
                             <span className="truncate text-sm text-neutral-500">{task.stage ?? "source query"}</span>
@@ -234,10 +264,10 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                         <h2 className="font-semibold">Evidence claims</h2>
                     </div>
                     {claims.length ? claims.map((item) => <details key={item.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
-                        <summary className="cursor-pointer text-sm text-neutral-200">{item.claim_kind} <span className="ml-2 text-neutral-500">{item.source_key} · {item.points_awarded} pts · {item.confidence ?? "—"}%</span></summary>
+                        <summary className="cursor-pointer text-sm text-neutral-200">{item.claim_kind} <span className="ml-2 text-neutral-500">{sourceHumanLabel(item.source_key, sourcesByKey, sourceLabel)} · {item.points_awarded} pts · {item.confidence ?? "—"}%</span></summary>
                         <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(item)}</pre>
                     </details>) : evidence.length ? evidence.map((item) => <details key={item.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
-                        <summary className="cursor-pointer text-sm text-neutral-200">{item.evidence_kind} <span className="ml-2 text-neutral-500">{item.source_key} · {item.confidence ?? "—"}%</span></summary>
+                        <summary className="cursor-pointer text-sm text-neutral-200">{item.evidence_kind} <span className="ml-2 text-neutral-500">{sourceHumanLabel(item.source_key, sourcesByKey, sourceLabel)} · {item.confidence ?? "—"}%</span></summary>
                         <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(item)}</pre>
                     </details>) : <p className="p-5 text-sm text-neutral-500">No enrichment evidence stored.</p>}
                 </div>

@@ -1,7 +1,9 @@
 import { WorkspaceIdentityEditor } from "@/components/admin/WorkspaceIdentityEditor"
+import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
 import { SearchableMultiSelect } from "@/components/leadgen/SearchableMultiSelect"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
+import { leadgenSourceFamilyLabels, leadgenSourceFamilyOrder, sourceHealthMap, sourceMetadataNote, sourcePointSummary, sourceStatusMeta, type LeadgenSourceCatalogRow, type LeadgenSourceHealthRow } from "@/lib/leadgen/source-catalog-ui"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
@@ -25,7 +27,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
         workspace.leadgen_banner_path ? createUploadSignedUrl(workspace.leadgen_banner_path) : null,
         workspace.logo_path ? createUploadSignedUrl(workspace.logo_path) : null,
     ])
-    const [settingsResult, industriesResult, locationsResult, industryMappingsResult, locationMappingsResult] = await Promise.all([
+    const [settingsResult, industriesResult, locationsResult, industryMappingsResult, locationMappingsResult, catalogResult, healthResult] = await Promise.all([
         supabaseAdmin
         .from("leadgen_workspace_settings")
         .select("poll_interval_hours, automatic_polls_enabled, geography, icp_notes, enabled_sources, source_config")
@@ -49,6 +51,14 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
             .from("leadgen_source_location_mappings")
             .select("source_key, icp_location_value, native_values")
             .eq("enabled", true),
+        supabaseAdmin
+            .from("leadgen_source_catalog")
+            .select("source_key, label, family, source_points, owner_identity_points, owner_phone_points, business_support_points, access_method, free_status, implementation_status, run_stage, enabled, rate_limit_ms, coverage, metadata")
+            .order("family", { ascending: true })
+            .order("label", { ascending: true }),
+        supabaseAdmin
+            .from("leadgen_source_health")
+            .select("source_key, status, last_success_at, last_failure_at, last_error, metadata"),
     ])
     const settings = settingsResult.error ? null : settingsResult.data
     const enabledSources = new Set(Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : [])
@@ -57,8 +67,17 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
     const icpLocations = (locationsResult.error ? [] : locationsResult.data ?? []) as IcpOption[]
     const industryMappings = (industryMappingsResult.error ? [] : industryMappingsResult.data ?? []) as SourceMapping[]
     const locationMappings = (locationMappingsResult.error ? [] : locationMappingsResult.data ?? []) as SourceMapping[]
+    const catalog = (catalogResult.error ? [] : catalogResult.data ?? []) as LeadgenSourceCatalogRow[]
+    const sourceHealth = sourceHealthMap((healthResult.error ? [] : healthResult.data ?? []) as LeadgenSourceHealthRow[])
     const selectedIndustries = Array.isArray(sourceConfig.icp?.industries) ? sourceConfig.icp.industries : []
     const selectedLocations = Array.isArray(sourceConfig.icp?.locations) ? sourceConfig.icp.locations : []
+    const activeCatalogSources = catalog.filter((source) => source.enabled && source.implementation_status === "active")
+    const validationOnlyCount = catalog.filter((source) => source.implementation_status === "validation_only").length
+    const needsWorkCount = catalog.filter((source) => ["source_specific_configuration", "bulk_refresh"].includes(source.run_stage ?? "")).length
+    const blockedCount = catalog.filter((source) => source.implementation_status === "blocked" || source.run_stage === "blocked").length
+    const groupedCatalog = leadgenSourceFamilyOrder
+        .map((family) => ({ family, sources: catalog.filter((source) => source.family === family) }))
+        .filter((group) => group.sources.length > 0)
 
     function mappingSummary(sourceKey: LeadgenSourceKey) {
         const mappedIndustries = new Set(industryMappings.filter((mapping) => mapping.source_key === sourceKey && (mapping.native_values?.length ?? 0) > 0).map((mapping) => mapping.icp_industry_value).filter(Boolean))
@@ -116,8 +135,56 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                         <div>
                             <h2 className="text-lg font-semibold">Sources</h2>
-                            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Enable source families. Targeting comes only from the ICP above; source cards hold technical limits, credentials, health, and pacing.</p>
+                            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">The poll now seeds candidates first, then investigates each company across the public-source catalogue. The switches below control the core workspace execution plan; the catalogue shows what the fan-out can honestly do today.</p>
                         </div>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        {[
+                            ["Active", activeCatalogSources.length],
+                            ["Validation only", validationOnlyCount],
+                            ["Needs work", needsWorkCount],
+                            ["Blocked", blockedCount],
+                        ].map(([label, value]) => <div key={label} className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+                            <p className="text-xs text-neutral-500">{label}</p>
+                            <p className="mt-1 text-lg font-semibold">{value}</p>
+                        </div>)}
+                    </div>
+
+                    <div className="mt-5 rounded-xl border border-neutral-800 bg-black">
+                        <div className="border-b border-neutral-800 px-4 py-3">
+                            <h3 className="font-medium text-neutral-100">Source catalogue truth layer</h3>
+                            <p className="mt-1 text-sm text-neutral-500">Point split is owner identity / owner phone / business support. Only poll-time and seed sources run during a poll.</p>
+                        </div>
+                        <div className="divide-y divide-neutral-900">
+                            {groupedCatalog.length ? groupedCatalog.map((group) => <details key={group.family} className="group">
+                                <summary className="grid cursor-pointer gap-2 px-4 py-3 md:grid-cols-[170px_1fr_120px] md:items-center">
+                                    <span className="text-sm font-medium text-neutral-100">{leadgenSourceFamilyLabels[group.family] ?? group.family}</span>
+                                    <span className="text-sm text-neutral-500">{group.sources.filter((source) => source.enabled && source.implementation_status === "active").length} active · {group.sources.length} catalogued</span>
+                                    <span className="text-right text-xs uppercase tracking-[0.14em] text-neutral-600">open</span>
+                                </summary>
+                                <div className="divide-y divide-neutral-900 border-t border-neutral-900">
+                                    {group.sources.map((source) => {
+                                        const health = sourceHealth.get(source.source_key)
+                                        const meta = sourceStatusMeta(source, health)
+                                        return <div key={source.source_key} className={`grid gap-3 px-4 py-3 md:grid-cols-[minmax(180px,0.9fr)_130px_120px_minmax(0,1.2fr)] md:items-center ${meta.muted ? "opacity-75" : ""}`}>
+                                            <div className="min-w-0">
+                                                <p className="truncate text-sm font-medium text-neutral-100">{source.label}</p>
+                                                <p className="mt-1 truncate font-mono text-xs text-neutral-600">{source.source_key}</p>
+                                            </div>
+                                            <span className={`inline-flex items-center gap-2 text-sm ${meta.text}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
+                                            <p className="text-sm text-neutral-500">{sourcePointSummary(source)}</p>
+                                            <p className="min-w-0 truncate text-sm text-neutral-500">{sourceMetadataNote(source, health)}</p>
+                                        </div>
+                                    })}
+                                </div>
+                            </details>) : <p className="p-4 text-sm text-neutral-500">No source catalogue rows found. Apply the leadgen source fan-out migrations before testing polls.</p>}
+                        </div>
+                    </div>
+
+                    <div className="mt-6">
+                        <h3 className="font-medium text-neutral-100">Workspace execution switches</h3>
+                        <p className="mt-1 text-sm text-neutral-500">Keep this concise: Overture seeds new candidates; website and licensing switches let the older source-plan workers run alongside the catalogue fan-out.</p>
                     </div>
                     <div className="mt-5 grid gap-3 xl:grid-cols-3">
                         {leadgenSourceOptions.map((source) => {

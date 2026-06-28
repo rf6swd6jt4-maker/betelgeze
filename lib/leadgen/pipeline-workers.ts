@@ -135,18 +135,68 @@ function extractPhones(text: string) {
     return uniqueValues(candidates)
 }
 
-function extractOwnerName(text: string) {
+function phoneMatches(text: string) {
+    return [...text.matchAll(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g)]
+        .map((match) => ({ phone: normalisePhone(match[0]), index: match.index ?? -1 }))
+        .filter((match): match is { phone: string; index: number } => Boolean(match.phone && match.index >= 0))
+}
+
+function isLikelyPersonName(value: string) {
+    const cleaned = value.replace(/\s+/g, " ").trim()
+    if (!cleaned) return false
+    const words = cleaned.split(" ")
+    if (words.length < 2 || words.length > 4) return false
+    const lower = cleaned.toLowerCase()
+    const rejectedWords = new Set([
+        "and",
+        "been",
+        "business",
+        "call",
+        "company",
+        "connect",
+        "contact",
+        "daily",
+        "directly",
+        "for",
+        "from",
+        "home",
+        "our",
+        "run",
+        "service",
+        "services",
+        "team",
+        "the",
+        "this",
+        "with",
+        "your",
+    ])
+    if (words.some((word) => rejectedWords.has(word.toLowerCase()))) return false
+    if (/\b(llc|inc|corp|company|co|ltd|services|remodel|remodeling|roofing|plumbing|construction)\b/i.test(cleaned)) return false
+    if (lower === cleaned) return false
+    return words.every((word) => /^[A-Z][a-z]+(?:[-'][A-Z][a-z]+)?$/.test(word))
+}
+
+function extractOwnerMatch(text: string) {
     const patterns = [
-        /\b(?:owner|founder|principal|president|managing partner|operator)\s*[:\-–]\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/i,
-        /([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s*,?\s+(?:owner|founder|principal|president|managing partner|operator)\b/i,
-        /\bmeet\s+(?:the\s+owner|our\s+owner)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/i,
+        /\b(?:Owner|Founder|Principal|President|Managing Partner|Operator)\s*[:\-–]\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/g,
+        /([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s*,?\s+(?:owner|founder|principal|president|managing partner|operator)\b/g,
+        /\b[Mm]eet\s+(?:the\s+owner|our\s+owner)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/g,
     ]
     for (const pattern of patterns) {
-        const match = text.match(pattern)
-        const value = match?.[1]?.replace(/\s+/g, " ").trim()
-        if (value) return value
+        for (const match of text.matchAll(pattern)) {
+            const value = match[1]?.replace(/\s+/g, " ").trim()
+            if (value && isLikelyPersonName(value)) return { name: value, index: match.index ?? -1 }
+        }
     }
     return null
+}
+
+function ownerAssociatedPhone(text: string, ownerIndex: number) {
+    if (ownerIndex < 0) return null
+    const nearbyPhones = phoneMatches(text)
+        .filter((match) => Math.abs(match.index - ownerIndex) <= 350)
+        .map((match) => match.phone)
+    return uniqueValues(nearbyPhones)[0] ?? null
 }
 
 function urlsToInspect(baseUrl: string, depth: number) {
@@ -182,14 +232,17 @@ async function fetchPage(url: string, timeoutSeconds: number): Promise<{ html: s
 
 function extractPageEvidence(url: string, html: string, visibleText: string): PageExtraction {
     const phones = extractPhones(`${html} ${visibleText}`)
-    const ownerName = extractOwnerName(visibleText)
+    const ownerMatch = extractOwnerMatch(visibleText)
+    const ownerName = ownerMatch?.name ?? null
+    const ownerPhone = ownerMatch ? ownerAssociatedPhone(visibleText, ownerMatch.index) : null
     const evidence = [
         phones.length ? `phone:${phones.join(",")}` : null,
         ownerName ? `owner:${ownerName}` : null,
+        ownerPhone ? `owner_phone:${ownerPhone}` : null,
         /application\/ld\+json/i.test(html) ? "json_ld_present" : null,
         /href=["']tel:/i.test(html) ? "tel_link_present" : null,
     ].filter((value): value is string => Boolean(value))
-    return { url, owner_name: ownerName, phone: phones[0] ?? null, phones, evidence }
+    return { url, owner_name: ownerName, phone: ownerPhone, phones, evidence }
 }
 
 async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem }) {
@@ -660,7 +713,8 @@ async function processWebsiteTask(task: PipelineTask) {
     const timeoutSeconds = Math.min(30, Math.max(3, Number(task.source_query.timeout_seconds) || 10))
     const inspected: PageExtraction[] = []
     let ownerName: string | null = null
-    let phone: string | null = null
+    let ownerPhone: string | null = null
+    let businessPhone: string | null = null
     for (const url of urlsToInspect(websiteUrl, depth)) {
         try {
             const page = await fetchPage(url, timeoutSeconds)
@@ -670,11 +724,13 @@ async function processWebsiteTask(task: PipelineTask) {
             }
             const extracted = extractPageEvidence(url, page.html, page.visibleText)
             const pageOwner = extracted.owner_name
-            const pagePhone = extracted.phone
+            const pageOwnerPhone = extracted.phone
+            const pageBusinessPhone = extracted.phones[0] ?? null
             inspected.push(extracted)
             ownerName ||= pageOwner
-            phone ||= pagePhone
-            if (ownerName && phone) break
+            ownerPhone ||= pageOwnerPhone
+            businessPhone ||= pageBusinessPhone
+            if (ownerName && ownerPhone) break
         } catch {
             inspected.push({ url, owner_name: null, phone: null, phones: [], evidence: ["fetch_failed"] })
         }
@@ -684,32 +740,30 @@ async function processWebsiteTask(task: PipelineTask) {
         company_id: companyId,
         source_key: "website",
         evidence_kind: "website_owner_phone_extract",
-        confidence: ownerName && phone ? 62 : phone ? 35 : 20,
-        value: { owner_name: ownerName, phone, phones: uniqueValues(inspected.flatMap((page) => page.phones)) },
+        confidence: ownerName && ownerPhone ? 74 : ownerName ? 45 : businessPhone ? 25 : 15,
+        value: { owner_name: ownerName, owner_phone: ownerPhone, business_phone: businessPhone, phones: uniqueValues(inspected.flatMap((page) => page.phones)) },
         raw_payload: { inspected },
     })
     if (evidenceError) throw evidenceError
-    if (ownerName || phone) {
+    if (ownerName || ownerPhone || businessPhone) {
         const updatePayload: Record<string, unknown> = {
             last_seen_at: new Date().toISOString(),
         }
-        if (ownerName) {
+        if (ownerName && ownerPhone) {
             updatePayload.owner_name = ownerName
             updatePayload.owner_source_key = "website"
             updatePayload.owner_evidence = { source: "website", inspected, extracted_at: new Date().toISOString() }
-            if (phone) {
-                updatePayload.owner_phone = phone
-                updatePayload.owner_confidence = 62
-            }
+            updatePayload.owner_phone = ownerPhone
+            updatePayload.owner_confidence = 74
         }
-        if (phone) updatePayload.phone = phone
+        if (businessPhone) updatePayload.phone = businessPhone
         const { error } = await supabaseAdmin
             .from("leadgen_companies")
             .update(updatePayload)
             .eq("id", companyId)
         if (error) throw error
     }
-    return { rawCount: inspected.length, companyCount: ownerName && phone ? 1 : 0 }
+    return { rawCount: inspected.length, companyCount: ownerName && ownerPhone ? 1 : 0 }
 }
 
 export async function processPipelineSourcePoll(pollId: string, workspaceId: string, sourceKey: LeadgenSourceKey, options: { finalize?: boolean } = {}) {

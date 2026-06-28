@@ -104,7 +104,7 @@ export async function refreshLeadgenPollCounts(pollId: string, workspaceId: stri
         .select("id", { count: "exact", head: true })
         .eq("first_seen_poll_id", pollId)
         .not("owner_name", "is", null)
-        .or("owner_phone.not.is.null,phone.not.is.null")
+        .not("owner_phone", "is", null)
     await supabaseAdmin
         .from("leadgen_polls")
         .update({
@@ -132,7 +132,7 @@ export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
             .select("id", { count: "exact", head: true })
             .eq("first_seen_poll_id", pollId)
             .not("owner_name", "is", null)
-            .or("owner_phone.not.is.null,phone.not.is.null"),
+            .not("owner_phone", "is", null),
     ])
     if (tasksResult.error) {
         await setLeadgenPollStatus(pollId, workspaceId, "failed", `Could not read poll task results: ${tasksResult.error.message}`)

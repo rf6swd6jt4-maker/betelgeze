@@ -63,7 +63,7 @@ function sourceNames(snapshot: unknown, count: number) {
 function pollTaskStats(tasks: PollTask[]) {
     return {
         sourceQueries: tasks.length,
-        processedQueries: tasks.filter((task) => ["completed", "failed"].includes(task.status)).length,
+        completedQueries: tasks.filter((task) => task.status === "completed").length,
         rawReturned: tasks.reduce((total, task) => total + (task.raw_count ?? 0), 0),
         companiesStored: tasks.reduce((total, task) => total + (task.company_count ?? 0), 0),
     }
@@ -156,12 +156,14 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                                 <span className="flex shrink-0 items-center gap-2">{statusMark}{duration}</span>
                             </div>
                             <div className="flex items-center gap-3 px-3.5 py-2.5">
-                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.processedQueries}/{taskStats.sourceQueries}</span> queries</p>
+                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.completedQueries}</span>/<span className="text-neutral-200">{taskStats.sourceQueries}</span> queries</p>
                                 <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.rawReturned}</span> raw</p>
-                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.normalised_count}</span> companies</p>
+                                <p className="text-sm text-neutral-500"><span className="text-neutral-200">{poll.qualified_count}</span> qualified</p>
                                 <p className="font-mono text-sm text-neutral-500">{shortId(poll.id)}</p>
-                                <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(poll.created_at)}</p>
-                                <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
+                                <div className="ml-auto flex shrink-0 items-center gap-2">
+                                    <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(poll.created_at)}</p>
+                                    <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
+                                </div>
                             </div>
                         </MobileCardActionSurface>
                         <div className={`hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(190px,1fr)_94px_170px_160px_130px_100px_120px_32px] md:items-center ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>
@@ -173,8 +175,8 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                             {statusMark}
                             {duration}
                         </div>
-                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.processedQueries}/{taskStats.sourceQueries}</span> source queries</p>
-                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.rawReturned}</span> raw returned · <span className="text-neutral-200">{poll.normalised_count}</span> companies</p>
+                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.completedQueries}</span>/<span className="text-neutral-200">{taskStats.sourceQueries}</span> source queries</p>
+                        <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.rawReturned}</span> raw returned · <span className="text-neutral-200">{poll.qualified_count}</span> qualified</p>
                         <p className="font-mono text-sm text-neutral-500">{shortId(poll.id)}</p>
                         <div className="flex items-center justify-end gap-3">
                             <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(poll.created_at)}</p>

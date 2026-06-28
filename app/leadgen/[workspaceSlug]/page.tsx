@@ -82,7 +82,8 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                     const ownerName = company.owner_name ?? "Owner not found"
                     const location = locationLabel(company.address)
                     const titleLine = `${ownerName} - ${company.display_name}`
-                    const copyLine = `${ownerName}: ${bestPhone ?? "No phone"} - ${company.display_name}, ${location}`
+                    const industry = String(company.industry_value ?? "—").replace(/_/g, " ")
+                    const copyLine = `${ownerName}: ${bestPhone ?? "No phone"} - ${company.display_name}, ${industry}, ${location}`
                     const phoneStatus = <span className={`inline-flex items-center gap-2 text-sm ${bestPhone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${bestPhone ? "bg-emerald-300" : "bg-neutral-500"}`} />{bestPhone ? "Callable" : "No phone"}</span>
                     const leadActions = [
                         sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
@@ -97,7 +98,9 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                         </div>
                         <div className="flex items-center gap-3 px-3.5 py-2.5">
                             <p className="truncate text-sm text-neutral-200">{bestPhone || "No phone"}</p>
-                            <p className="ml-auto whitespace-nowrap text-sm text-neutral-500">{shortId(company.id)} · {formatRelativeTime(company.created_at)}</p>
+                            <p className="min-w-0 flex-1 truncate text-sm text-neutral-400">{industry}</p>
+                            <p className="text-sm text-neutral-500">{shortId(company.id)}</p>
+                            <p className="text-sm whitespace-nowrap text-neutral-500">{formatRelativeTime(company.created_at)}</p>
                         </div>
                     </MobileCardActionSurface>
                     <div className="hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(210px,1.1fr)_150px_minmax(190px,0.9fr)_130px_140px_100px_120px_32px] md:items-center">

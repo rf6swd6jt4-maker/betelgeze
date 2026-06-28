@@ -83,6 +83,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
     const processedTaskCount = tasks.filter((task) => ["completed", "failed"].includes(task.status)).length
     const rawReturnedCount = tasks.reduce((total, task) => total + (task.raw_count ?? 0), 0)
     const taskCompanyCount = tasks.reduce((total, task) => total + (task.company_count ?? 0), 0)
+    const completedTaskCount = tasks.filter((task) => task.status === "completed").length
     const meta = statusMeta(poll.status)
     const live = ["queued", "running"].includes(poll.status)
 
@@ -117,11 +118,11 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
 
             <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
                 {[
-                    ["Source queries", `${processedTaskCount}/${tasks.length}`],
+                    ["Source queries", `${completedTaskCount}/${tasks.length}`],
                     ["Raw returned", rawReturnedCount],
-                    ["Companies", `${companies.length || poll.normalised_count} stored`],
+                    ["Qualified", `${poll.qualified_count}`],
                     ["Enriched", evidence.length],
-                    ["Qualified", poll.qualified_count],
+                    ["Companies", `${companies.length || poll.normalised_count}`],
                 ].map(([label, value]) => <div key={label} className="rounded-xl border border-neutral-800 bg-neutral-900 p-3">
                     <p className="text-xs text-neutral-500">{label}</p>
                     <p className="mt-1 text-lg font-semibold">{value}</p>
@@ -140,7 +141,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                 <div className="border-b border-neutral-800 px-5 py-4">
                     <h2 className="font-semibold">Source tasks</h2>
                     <p className="mt-1 text-sm text-neutral-500">Exact worker tasks generated for this poll. This is the truth layer for whether sources actually queried anything.</p>
-                    <p className="mt-2 text-xs text-neutral-600">{tasks.length} generated · {processedTaskCount} processed · {rawReturnedCount} raw records returned · {taskCompanyCount} companies stored from tasks</p>
+                    <p className="mt-2 text-xs text-neutral-600">{tasks.length} generated · {processedTaskCount} processed · {rawReturnedCount} raw records returned · {taskCompanyCount} numbers returned from tasks</p>
                 </div>
                 {tasks.length ? tasks.map((task) => {
                     const taskMeta = statusMeta(task.status)

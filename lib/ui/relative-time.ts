@@ -3,15 +3,16 @@ export function formatRelativeTime(value: string | null | undefined) {
     const then = new Date(value).getTime()
     if (!Number.isFinite(then)) return "—"
     const diffSeconds = Math.max(0, Math.floor((Date.now() - then) / 1000))
-    if (diffSeconds < 60) return `${diffSeconds}s ago`
+    if (diffSeconds < 60) return `${diffSeconds}s`
     const diffMinutes = Math.floor(diffSeconds / 60)
-    if (diffMinutes < 60) return `${diffMinutes}m ago`
+    if (diffMinutes < 60) return `${diffMinutes}min`
     const diffHours = Math.floor(diffMinutes / 60)
-    if (diffHours < 24) return `${diffHours}h ago`
-    if (diffHours < 48) return "Yesterday"
+    if (diffHours < 24) return `${diffHours}hr`
     const diffDays = Math.floor(diffHours / 24)
-    if (diffDays < 7) return `${diffDays}d ago`
-    return new Date(value).toLocaleDateString("en-IE", { day: "numeric", month: "short", year: "numeric" })
+    if (diffDays < 7) return `${diffDays}d`
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)}w`
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo`
+    return `${Math.floor(diffDays / 365)}yr`
 }
 
 export function shortId(value: string | null | undefined, length = 7) {

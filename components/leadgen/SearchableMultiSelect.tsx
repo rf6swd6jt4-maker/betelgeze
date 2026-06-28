@@ -6,20 +6,20 @@ type Option = { value: string; label: string }
 
 export function SearchableMultiSelect({ name, label, options, selectedValues = [], emptyLabel = "No options available" }: { name: string; label: string; options: Option[]; selectedValues?: string[]; emptyLabel?: string }) {
     const [query, setQuery] = useState("")
-    const [selected, setSelected] = useState(() => new Set(selectedValues))
+    const [selected, setSelected] = useState(() => [...selectedValues])
+    const optionByValue = new Map(options.map((option) => [option.value, option]))
     const filtered = useMemo(() => {
         const normalisedQuery = query.trim().toLowerCase()
         if (!normalisedQuery) return options
         return options.filter((option) => option.label.toLowerCase().includes(normalisedQuery))
     }, [options, query])
-    const selectedOptions = options.filter((option) => selected.has(option.value))
+    const selectedOptions = selected.map((value) => optionByValue.get(value)).filter((option): option is Option => Boolean(option))
 
     function toggle(value: string) {
         setSelected((current) => {
-            const next = new Set(current)
-            if (next.has(value)) next.delete(value)
-            else next.add(value)
-            return next
+            const isSelected = current.includes(value)
+            if (isSelected) return current.filter((item) => item !== value)
+            return [...current, value]
         })
     }
 
@@ -34,9 +34,9 @@ export function SearchableMultiSelect({ name, label, options, selectedValues = [
             </div> : <p className="px-1 py-2 text-sm text-neutral-600">Nothing selected yet.</p>}
         </div>
         <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-neutral-800 bg-neutral-950 p-2">
-            {filtered.length ? <div className="space-y-1">
-                {filtered.map((option) => {
-                    const checked = selected.has(option.value)
+                {filtered.length ? <div className="space-y-1">
+                    {filtered.map((option) => {
+                    const checked = selected.includes(option.value)
                     return <label key={option.value} className="flex min-h-9 cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm text-neutral-300 hover:bg-neutral-900">
                         <input type="checkbox" name={name} value={option.value} checked={checked} onChange={() => toggle(option.value)} className="h-4 w-4 accent-white" />
                         <span>{option.label}</span>

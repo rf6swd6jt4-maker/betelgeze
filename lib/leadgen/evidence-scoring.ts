@@ -30,7 +30,13 @@ type InvestigationTaskUpdate = {
     rawPayload?: Record<string, unknown>
 }
 
-const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set(["website", "web.json_ld", "state_license.tx.tdlr"])
+const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set([
+    "website",
+    "web.json_ld",
+    "state_license.tx.tdlr",
+    "state_license.fl.electrical",
+    "state_license.nc.general_contractors",
+])
 
 function clampPoints(value: number) {
     return Math.min(3, Math.max(0, Math.round(value)))
@@ -46,6 +52,23 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asString(value: unknown) {
     return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function companyState(company: { address?: unknown }) {
+    const address = asRecord(company.address)
+    const direct = asString(address.state) ?? asString(address.region) ?? asString(address.state_code) ?? asString(address.region_code)
+    return direct && /^[A-Z]{2}$/i.test(direct) ? direct.toUpperCase() : null
+}
+
+function sourceAppliesToCompany(source: { source_key: string; coverage?: unknown }, company: { address?: unknown; industry_value?: string | null }) {
+    if (source.source_key === "website" || source.source_key === "web.json_ld") return true
+    const state = companyState(company)
+    if (source.source_key === "state_license.tx.tdlr") return state === "TX"
+    if (source.source_key === "state_license.fl.electrical") return state === "FL" && ["electricians", "solar_installers", "pool_builders", "hvac_contractors", "general_contractors"].includes(company.industry_value ?? "")
+    if (source.source_key === "state_license.nc.general_contractors") return state === "NC" && ["concrete_contractors", "deck_builders", "fencing_contractors", "general_contractors", "hardscaping_contractors", "home_builders", "insulation_contractors", "kitchen_remodelling", "masonry_contractors", "patio_contractors", "pool_builders", "remodellers", "restoration_companies", "roofers", "siding_contractors", "window_and_door_contractors"].includes(company.industry_value ?? "")
+    const coverage = asRecord(source.coverage)
+    const states = Array.isArray(coverage.states) ? coverage.states.map(String).map((value) => value.toUpperCase()) : []
+    return states.length === 0 || !state || states.includes(state)
 }
 
 export async function recordEvidenceClaim(input: EvidenceClaimInput) {
@@ -91,12 +114,12 @@ export async function createInvestigationTasksForPoll({ workspaceId, pollId }: {
     const [companiesResult, catalogResult] = await Promise.all([
         supabaseAdmin
             .from("leadgen_companies")
-            .select("id")
+            .select("id, address, industry_value")
             .eq("workspace_id", workspaceId)
             .eq("first_seen_poll_id", pollId),
         supabaseAdmin
             .from("leadgen_source_catalog")
-            .select("source_key, implementation_status, run_stage, enabled")
+            .select("source_key, implementation_status, run_stage, enabled, coverage")
             .eq("run_stage", "candidate_investigation"),
     ])
     if (companiesResult.error) throw companiesResult.error
@@ -105,14 +128,17 @@ export async function createInvestigationTasksForPoll({ workspaceId, pollId }: {
     const catalog = (catalogResult.data ?? [])
         .filter((source) => source.enabled || source.implementation_status === "planned")
         .filter((source) => CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES.has(source.source_key) || source.implementation_status === "planned")
-    const tasks = companies.flatMap((company) => catalog.map((source) => ({
-        workspace_id: workspaceId,
-        poll_id: pollId,
-        company_id: company.id,
-        source_key: source.source_key,
-        status: CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES.has(source.source_key) ? "queued" : "skipped",
-        skip_reason: CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES.has(source.source_key) ? null : "Adapter is catalogued but not implemented yet.",
-    })))
+    const tasks = companies.flatMap((company) => catalog.filter((source) => sourceAppliesToCompany(source, company)).map((source) => {
+        const executable = source.enabled && CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES.has(source.source_key)
+        return {
+            workspace_id: workspaceId,
+            poll_id: pollId,
+            company_id: company.id,
+            source_key: source.source_key,
+            status: executable ? "queued" : "skipped",
+            skip_reason: executable ? null : "Adapter is catalogued but not implemented yet or is disabled in the source catalogue.",
+        }
+    }))
     if (tasks.length === 0) return 0
     const { error } = await supabaseAdmin
         .from("leadgen_investigation_tasks")
@@ -130,7 +156,7 @@ function scoreFromClaim(kind: string, points: number) {
 
 function fallbackSourcePoints(sourceKey: string | null, ownerPhone: string | null) {
     if (!sourceKey || !ownerPhone) return { ownerIdentity: 0, ownerPhone: 0, businessSupport: 0 }
-    if (sourceKey === "state_licensing") return { ownerIdentity: 3, ownerPhone: 3, businessSupport: 2 }
+    if (sourceKey === "state_licensing" || sourceKey.startsWith("state_license.")) return { ownerIdentity: 3, ownerPhone: 3, businessSupport: 2 }
     if (sourceKey === "sam_gov") return { ownerIdentity: 2, ownerPhone: 2, businessSupport: 2 }
     if (sourceKey === "website") return { ownerIdentity: 2, ownerPhone: 2, businessSupport: 1 }
     return { ownerIdentity: 0, ownerPhone: 0, businessSupport: 0 }

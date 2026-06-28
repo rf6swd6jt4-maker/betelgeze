@@ -61,8 +61,8 @@ export const leadgenSourceOptions: Array<{ value: LeadgenSourceKey; label: strin
     {
         value: "state_licensing",
         label: "State licensing boards",
-        detail: "Official public licensing records. First executable worker: Texas TDLR mapped automatically from the ICP.",
-        statusLabel: "Executable for mapped Texas trades",
+        detail: "Official public licensing records. Active adapters: Texas TDLR, Florida DBPR electrical records, and North Carolina general contractor search. More boards stay catalogued until verified pullable.",
+        statusLabel: "Executable for TX, FL electrical, NC GC",
         notesPlaceholder: "License statuses, classifications, renewal windows, or exclusions.",
         implemented: true,
     },

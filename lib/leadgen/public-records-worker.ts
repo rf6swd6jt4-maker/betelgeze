@@ -52,6 +52,10 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "permits.fl.orlando",
     "permits.ca.los_angeles",
     "registry.fl.orlando_btr",
+    "safety.osha",
+    "transport.fmcsa_safer",
+    "regulated.epa_echo",
+    "regulated.nppes",
 ])
 
 const PUBLIC_RECORD_FETCH_TIMEOUT_MS = 18_000
@@ -87,6 +91,20 @@ function normalisePhone(value: string | null | undefined) {
     if (digits.length === 10) return `+1${digits}`
     if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`
     return digits.length >= 7 ? `+${digits}` : null
+}
+
+function decodeHtml(value: string) {
+    return value
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/&quot;/gi, "\"")
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+}
+
+function stripHtml(value: string) {
+    return cleanText(decodeHtml(value.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, " ")))
 }
 
 function stripLegalSuffixes(value: string | null | undefined) {
@@ -166,6 +184,12 @@ function pickString(row: SocrataRecord, fields: string[]) {
     return null
 }
 
+function candidateState(candidate: CompanyCandidate) {
+    const address = candidate.address ?? {}
+    const direct = asString(address.state) ?? asString(address.region) ?? asString(address.state_code) ?? asString(address.region_code)
+    return direct && /^[A-Z]{2}$/i.test(direct) ? direct.toUpperCase() : null
+}
+
 function extractPoint(row: SocrataRecord, fields: string[]) {
     for (const field of fields) {
         const value = row[field]
@@ -202,6 +226,8 @@ function addressFromRow(row: SocrataRecord, metadata: Record<string, unknown>) {
 }
 
 function sourceProfileUrl(sourceKey: string, metadata: Record<string, unknown>, result: MatchResult) {
+    const rowUrl = asString(result.row.source_url)
+    if (rowUrl) return rowUrl
     const configured = asString(metadata.provenance_url)
     if (configured) return configured
     const domain = asString(metadata.domain)
@@ -209,6 +235,31 @@ function sourceProfileUrl(sourceKey: string, metadata: Record<string, unknown>, 
     if (!domain || !datasetId) return null
     const marker = encodeURIComponent(result.permitNumber ?? result.businessName ?? result.personName ?? "")
     return marker ? `https://${domain}/d/${datasetId}?row=${marker}` : `https://${domain}/d/${datasetId}`
+}
+
+async function fetchTextWithTimeout(url: string, init?: RequestInit) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), PUBLIC_RECORD_FETCH_TIMEOUT_MS)
+    try {
+        const response = await fetch(url, {
+            ...init,
+            headers: {
+                Accept: "text/html,application/json,*/*",
+                "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)",
+                ...(init?.headers ?? {}),
+            },
+            cache: "no-store",
+            signal: controller.signal,
+        })
+        const text = await response.text()
+        if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}: ${stripHtml(text).slice(0, 280)}`)
+        return text
+    } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") throw new Error(`${url} timed out after ${Math.round(PUBLIC_RECORD_FETCH_TIMEOUT_MS / 1000)} seconds.`)
+        throw error
+    } finally {
+        clearTimeout(timeout)
+    }
 }
 
 async function fetchSocrataRows(metadata: Record<string, unknown>, searchTerm: string) {
@@ -242,6 +293,168 @@ async function fetchSocrataRows(metadata: Record<string, unknown>, searchTerm: s
     }
 }
 
+function parseFmcsaLabel(html: string, label: string) {
+    const expression = new RegExp(`${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:<\\/A><\\/TH>\\s*<TD[^>]*>([\\s\\S]*?)<\\/TD>`, "i")
+    return stripHtml(html.match(expression)?.[1] ?? "") || null
+}
+
+function parseFmcsaPhysicalAddress(value: string | null) {
+    const clean = cleanText(value ?? "")
+    const match = clean.match(/^(.+?)\s+([A-Z][A-Za-z .'-]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/)
+    return {
+        street: match?.[1] ?? (clean || null),
+        city: match?.[2] ?? null,
+        state: match?.[3] ?? null,
+        postcode: match?.[4] ?? null,
+        country: "US",
+    }
+}
+
+async function fetchFmcsaRows(searchTerm: string) {
+    const body = new URLSearchParams({
+        searchtype: "ANY",
+        query_type: "queryCarrierSnapshot",
+        query_param: "NAME",
+        query_string: searchTerm,
+    })
+    const html = await fetchTextWithTimeout("https://safer.fmcsa.dot.gov/query.asp", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+    })
+    const usdotNumbers = [...html.matchAll(/query_param=USDOT[^"]*query_string=(\d+)/gi)].map((match) => match[1]).filter(Boolean)
+    const directUsdot = parseFmcsaLabel(html, "USDOT Number")
+    const numbers = [...new Set([directUsdot?.replace(/\D/g, ""), ...usdotNumbers].filter((value): value is string => Boolean(value)))].slice(0, 3)
+    const rows: SocrataRecord[] = []
+    for (const usdotNumber of numbers) {
+        const sourceUrl = `https://safer.fmcsa.dot.gov/query.asp?searchtype=ANY&query_type=queryCarrierSnapshot&query_param=USDOT&query_string=${encodeURIComponent(usdotNumber)}`
+        const detailHtml = await fetchTextWithTimeout(sourceUrl)
+        const legalName = parseFmcsaLabel(detailHtml, "Legal Name")
+        const dbaName = parseFmcsaLabel(detailHtml, "DBA Name")
+        const phone = parseFmcsaLabel(detailHtml, "Phone")
+        const physicalAddress = parseFmcsaLabel(detailHtml, "Physical Address")
+        const status = parseFmcsaLabel(detailHtml, "USDOT Status")
+        if (!legalName && !dbaName) continue
+        rows.push({
+            legal_name: legalName,
+            dba_name: dbaName,
+            phone,
+            physical_address: physicalAddress,
+            usdot_number: usdotNumber,
+            status,
+            entity_type: parseFmcsaLabel(detailHtml, "Entity Type"),
+            operating_authority_status: parseFmcsaLabel(detailHtml, "Operating Authority Status"),
+            source_url: sourceUrl,
+            ...parseFmcsaPhysicalAddress(physicalAddress),
+        })
+    }
+    return rows
+}
+
+async function fetchOshaRows(searchTerm: string, company: CompanyCandidate) {
+    const params = new URLSearchParams({
+        p_logger: "1",
+        establishment: searchTerm,
+        State: candidateState(company) ?? "all",
+        officetype: "all",
+        Office: "all",
+        sitezip: "",
+        startmonth: "01",
+        startday: "01",
+        startyear: "2021",
+        endmonth: "12",
+        endday: "31",
+        endyear: String(new Date().getUTCFullYear()),
+    })
+    const sourceUrl = `https://www.osha.gov/ords/imis/establishment.search?${params.toString()}`
+    const html = await fetchTextWithTimeout(sourceUrl)
+    const resultCount = Number(html.match(/Results\s+\d+\s+-\s+\d+\s+of\s+(\d+)/i)?.[1] ?? 0)
+    if (!Number.isFinite(resultCount) || resultCount <= 0) return []
+    const inspectionIds = [...html.matchAll(/establishment\.inspection_detail\?id=([0-9.]+)/gi)].map((match) => match[1]).slice(0, 5)
+    return [{
+        establishment_name: company.display_name,
+        inspection_count: String(resultCount),
+        inspection_ids: inspectionIds.join(", "),
+        state: candidateState(company),
+        source_url: sourceUrl,
+        status: `${resultCount} OSHA inspection result${resultCount === 1 ? "" : "s"}`,
+    }]
+}
+
+async function fetchEpaEchoRows(searchTerm: string, company: CompanyCandidate) {
+    const params = new URLSearchParams({
+        output: "JSON",
+        p_fn: searchTerm,
+        p_pageno: "1",
+        p_pagesize: "10",
+    })
+    const state = candidateState(company)
+    if (state) params.set("p_st", state)
+    const text = await fetchTextWithTimeout(`https://echodata.epa.gov/echo/cwa_rest_services.get_facility_info?${params.toString()}`, { headers: { Accept: "application/json" } })
+    const parsed = JSON.parse(text) as { Results?: { Facilities?: Array<Record<string, unknown>> } }
+    return (parsed.Results?.Facilities ?? []).map((facility) => ({
+        facility_name: asString(facility.CWPName),
+        source_id: asString(facility.SourceID),
+        permit_number: asString(facility.MasterExternalPermitNmbr) ?? asString(facility.SourceID),
+        street: asString(facility.CWPStreet),
+        city: asString(facility.CWPCity),
+        state: asString(facility.CWPState),
+        postcode: asString(facility.CWPZip),
+        county: asString(facility.CWPCounty),
+        statute: asString(facility.Statute),
+        status: asString(facility.CWPStatus) ?? asString(facility.EPASystem),
+        latitude: asString(facility.FacLat),
+        longitude: asString(facility.FacLong),
+        source_url: facility.SourceID ? `https://echo.epa.gov/detailed-facility-report?fid=${encodeURIComponent(String(facility.SourceID))}` : "https://echo.epa.gov/",
+    }))
+}
+
+async function fetchNppesRows(searchTerm: string, company: CompanyCandidate) {
+    const params = new URLSearchParams({
+        version: "2.1",
+        organization_name: searchTerm,
+        limit: "10",
+    })
+    const state = candidateState(company)
+    if (state) params.set("state", state)
+    const text = await fetchTextWithTimeout(`https://npiregistry.cms.hhs.gov/api/?${params.toString()}`, { headers: { Accept: "application/json" } })
+    const parsed = JSON.parse(text) as { results?: Array<Record<string, unknown>> }
+    return (parsed.results ?? []).map((result) => {
+        const basic = asRecord(result.basic)
+        const addresses = Array.isArray(result.addresses) ? result.addresses.map(asRecord) : []
+        const location = addresses.find((address) => asString(address.address_purpose) === "LOCATION") ?? addresses[0] ?? {}
+        const officialName = [
+            asString(basic.authorized_official_first_name),
+            asString(basic.authorized_official_last_name),
+        ].filter(Boolean).join(" ")
+        const taxonomies = Array.isArray(result.taxonomies) ? result.taxonomies.map(asRecord).map((taxonomy) => asString(taxonomy.desc)).filter(Boolean).join(", ") : null
+        return {
+            organization_name: asString(basic.organization_name),
+            authorized_official_name: officialName || null,
+            authorized_official_phone: asString(basic.authorized_official_telephone_number),
+            authorized_official_title: asString(basic.authorized_official_title_or_position),
+            npi: asString(result.number),
+            status: asString(basic.status),
+            taxonomy: taxonomies,
+            street: [asString(location.address_1), asString(location.address_2)].filter(Boolean).join(" ") || null,
+            city: asString(location.city),
+            state: asString(location.state),
+            postcode: asString(location.postal_code),
+            phone: asString(location.telephone_number) ?? asString(basic.authorized_official_telephone_number),
+            source_url: result.number ? `https://npiregistry.cms.hhs.gov/provider-view/${encodeURIComponent(String(result.number))}` : "https://npiregistry.cms.hhs.gov/",
+        }
+    })
+}
+
+async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, company: CompanyCandidate) {
+    const adapter = asString(source.metadata?.adapter) ?? "socrata_public_records"
+    if (adapter === "fmcsa_safer_snapshot") return fetchFmcsaRows(searchTerm)
+    if (adapter === "osha_establishment_search") return fetchOshaRows(searchTerm, company)
+    if (adapter === "epa_echo_cwa_facility_info") return fetchEpaEchoRows(searchTerm, company)
+    if (adapter === "nppes_registry") return fetchNppesRows(searchTerm, company)
+    return fetchSocrataRows(source.metadata ?? {}, searchTerm)
+}
+
 function rowToMatch(row: SocrataRecord, candidate: CompanyCandidate, metadata: Record<string, unknown>): MatchResult | null {
     const fieldMap = asRecord(metadata.field_map)
     const businessName = pickString(row, asStringArray(fieldMap.business_name))
@@ -256,6 +469,8 @@ function rowToMatch(row: SocrataRecord, candidate: CompanyCandidate, metadata: R
     const recordNames = [businessName, contractorName, ownerName, applicantName, pickString(row, asStringArray(fieldMap.additional_match_name))]
     if (!strongBusinessNameMatch(candidate.display_name, ...recordNames)) return null
     const { latitude, longitude } = extractPoint(row, asStringArray(fieldMap.geopoint))
+    const directLatitude = Number(pickString(row, ["latitude"]))
+    const directLongitude = Number(pickString(row, ["longitude"]))
     return {
         row,
         businessName: businessName ?? contractorName ?? candidate.display_name,
@@ -265,8 +480,8 @@ function rowToMatch(row: SocrataRecord, candidate: CompanyCandidate, metadata: R
         status,
         recordType,
         address: addressFromRow(row, metadata),
-        latitude,
-        longitude,
+        latitude: latitude ?? (Number.isFinite(directLatitude) ? directLatitude : null),
+        longitude: longitude ?? (Number.isFinite(directLongitude) ? directLongitude : null),
         confidence: sharedTokenScore(candidate.display_name, businessName ?? contractorName) >= 0.8 ? 86 : 72,
     }
 }
@@ -463,7 +678,7 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
         })
         return
     }
-    const rows = await fetchSocrataRows(source.metadata ?? {}, searchTerm)
+    const rows = await fetchRowsForSource(source, searchTerm, company)
     const matches = rows
         .map((row) => rowToMatch(row, company, source.metadata ?? {}))
         .filter((match): match is MatchResult => Boolean(match))

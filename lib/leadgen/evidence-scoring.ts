@@ -41,6 +41,10 @@ const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set([
     "permits.fl.orlando",
     "permits.ca.los_angeles",
     "registry.fl.orlando_btr",
+    "safety.osha",
+    "transport.fmcsa_safer",
+    "regulated.epa_echo",
+    "regulated.nppes",
 ])
 
 function clampPoints(value: number) {
@@ -73,6 +77,8 @@ function sourceAppliesToCompany(source: { source_key: string; coverage?: unknown
     if (source.source_key === "state_license.nc.general_contractors") return state === "NC" && ["concrete_contractors", "deck_builders", "fencing_contractors", "general_contractors", "hardscaping_contractors", "home_builders", "insulation_contractors", "kitchen_remodelling", "masonry_contractors", "patio_contractors", "pool_builders", "remodellers", "restoration_companies", "roofers", "siding_contractors", "window_and_door_contractors"].includes(company.industry_value ?? "")
     const coverage = asRecord(source.coverage)
     const states = Array.isArray(coverage.states) ? coverage.states.map(String).map((value) => value.toUpperCase()) : []
+    const industries = Array.isArray(coverage.industries) ? coverage.industries.map(String) : []
+    if (industries.length > 0 && (!company.industry_value || !industries.includes(company.industry_value))) return false
     return states.length === 0 || !state || states.includes(state)
 }
 

@@ -25,6 +25,8 @@ type CompanyCandidate = {
     id: string
     display_name: string
     phone: string | null
+    website_domain: string | null
+    website_url: string | null
     address: Record<string, unknown> | null
     industry_value: string | null
     location_value: string | null
@@ -56,6 +58,9 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "transport.fmcsa_safer",
     "regulated.epa_echo",
     "regulated.nppes",
+    "procurement.usaspending",
+    "web.rdap_whois",
+    "web.certificate_transparency",
 ])
 
 const PUBLIC_RECORD_FETCH_TIMEOUT_MS = 18_000
@@ -91,6 +96,19 @@ function normalisePhone(value: string | null | undefined) {
     if (digits.length === 10) return `+1${digits}`
     if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`
     return digits.length >= 7 ? `+${digits}` : null
+}
+
+function domainFromUrl(value: string | null | undefined) {
+    if (!value) return null
+    try {
+        return new URL(value.startsWith("http") ? value : `https://${value}`).hostname.toLowerCase().replace(/^www\./, "") || null
+    } catch {
+        return null
+    }
+}
+
+function candidateDomain(candidate: CompanyCandidate) {
+    return domainFromUrl(candidate.website_domain) ?? domainFromUrl(candidate.website_url)
 }
 
 function decodeHtml(value: string) {
@@ -446,12 +464,115 @@ async function fetchNppesRows(searchTerm: string, company: CompanyCandidate) {
     })
 }
 
+async function fetchUsaspendingRows(searchTerm: string) {
+    const payload = {
+        filters: {
+            keywords: [searchTerm],
+            award_type_codes: ["A", "B", "C", "D"],
+        },
+        fields: ["Award ID", "Recipient Name", "Award Amount", "Awarding Agency", "Start Date", "End Date", "NAICS Code", "NAICS Description"],
+        page: 1,
+        limit: 10,
+        sort: "Start Date",
+        order: "desc",
+        subawards: false,
+    }
+    const text = await fetchTextWithTimeout("https://api.usaspending.gov/api/v2/search/spending_by_award/", {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    })
+    const parsed = JSON.parse(text) as { results?: Array<Record<string, unknown>> }
+    return (parsed.results ?? []).map((award) => ({
+        recipient_name: asString(award["Recipient Name"]),
+        award_id: asString(award["Award ID"]),
+        award_amount: asString(award["Award Amount"]),
+        awarding_agency: asString(award["Awarding Agency"]),
+        start_date: asString(award["Start Date"]),
+        end_date: asString(award["End Date"]),
+        naics_code: asString(award["NAICS Code"]),
+        naics_description: asString(award["NAICS Description"]),
+        source_url: award.generated_internal_id ? `https://www.usaspending.gov/award/${encodeURIComponent(String(award.generated_internal_id))}` : "https://www.usaspending.gov/search",
+    }))
+}
+
+function rdapUrlForDomain(domain: string) {
+    const lower = domain.toLowerCase()
+    if (lower.endsWith(".com")) return `https://rdap.verisign.com/com/v1/domain/${encodeURIComponent(lower.toUpperCase())}`
+    if (lower.endsWith(".net")) return `https://rdap.verisign.com/net/v1/domain/${encodeURIComponent(lower.toUpperCase())}`
+    return null
+}
+
+function rdapRegistrar(payload: Record<string, unknown>) {
+    const entities = Array.isArray(payload.entities) ? payload.entities.map(asRecord) : []
+    const registrar = entities.find((entity) => Array.isArray(entity.roles) && entity.roles.map(String).includes("registrar"))
+    const vcard = Array.isArray(registrar?.vcardArray) ? registrar.vcardArray : []
+    const entries = Array.isArray(vcard[1]) ? vcard[1] as unknown[] : []
+    for (const entry of entries) {
+        if (!Array.isArray(entry) || entry[0] !== "fn") continue
+        const name = asString(entry[3])
+        if (name) return name
+    }
+    return asString(registrar?.handle)
+}
+
+async function fetchRdapRows(company: CompanyCandidate) {
+    const domain = candidateDomain(company)
+    if (!domain) return []
+    const sourceUrl = rdapUrlForDomain(domain)
+    if (!sourceUrl) return []
+    const text = await fetchTextWithTimeout(sourceUrl, { headers: { Accept: "application/rdap+json,application/json" } })
+    const payload = JSON.parse(text) as Record<string, unknown>
+    const events = Array.isArray(payload.events) ? payload.events.map(asRecord) : []
+    const registrationEvent = events.find((event) => asString(event.eventAction) === "registration")
+    const expirationEvent = events.find((event) => asString(event.eventAction) === "expiration")
+    return [{
+        candidate_display_name: company.display_name,
+        domain,
+        rdap_handle: asString(payload.handle),
+        registrar: rdapRegistrar(payload),
+        status: Array.isArray(payload.status) ? payload.status.map(String).join(", ") : null,
+        registered_at: asString(registrationEvent?.eventDate),
+        expires_at: asString(expirationEvent?.eventDate),
+        source_url: sourceUrl,
+    }]
+}
+
+async function fetchCertificateTransparencyRows(company: CompanyCandidate) {
+    const domain = candidateDomain(company)
+    if (!domain) return []
+    const sourceUrl = `https://crt.sh/?q=${encodeURIComponent(`%.${domain}`)}&output=json`
+    const text = await fetchTextWithTimeout(sourceUrl, { headers: { Accept: "application/json" } })
+    const parsed = JSON.parse(text) as Array<Record<string, unknown>>
+    const seen = new Set<string>()
+    return parsed.slice(0, 30).flatMap((certificate) => {
+        const commonName = asString(certificate.common_name) ?? domain
+        const id = asString(certificate.id) ?? asString(certificate.serial_number) ?? commonName
+        if (seen.has(id)) return []
+        seen.add(id)
+        return [{
+            candidate_display_name: company.display_name,
+            domain,
+            common_name: commonName,
+            certificate_id: id,
+            issuer_name: asString(certificate.issuer_name),
+            not_before: asString(certificate.not_before),
+            not_after: asString(certificate.not_after),
+            entry_timestamp: asString(certificate.entry_timestamp),
+            source_url: `https://crt.sh/?id=${encodeURIComponent(id)}`,
+        }]
+    }).slice(0, 5)
+}
+
 async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, company: CompanyCandidate) {
     const adapter = asString(source.metadata?.adapter) ?? "socrata_public_records"
     if (adapter === "fmcsa_safer_snapshot") return fetchFmcsaRows(searchTerm)
     if (adapter === "osha_establishment_search") return fetchOshaRows(searchTerm, company)
     if (adapter === "epa_echo_cwa_facility_info") return fetchEpaEchoRows(searchTerm, company)
     if (adapter === "nppes_registry") return fetchNppesRows(searchTerm, company)
+    if (adapter === "usaspending_awards") return fetchUsaspendingRows(searchTerm)
+    if (adapter === "rdap_domain") return fetchRdapRows(company)
+    if (adapter === "certificate_transparency") return fetchCertificateTransparencyRows(company)
     return fetchSocrataRows(source.metadata ?? {}, searchTerm)
 }
 
@@ -733,7 +854,7 @@ export async function processPublicRecordsPoll(pollId: string, workspaceId: stri
             .in("source_key", sourceKeys),
         supabaseAdmin
             .from("leadgen_companies")
-            .select("id, display_name, phone, address, industry_value, location_value")
+            .select("id, display_name, phone, website_domain, website_url, address, industry_value, location_value")
             .eq("workspace_id", workspaceId)
             .in("id", companyIds),
     ])

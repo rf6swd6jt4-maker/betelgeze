@@ -63,14 +63,25 @@ function asString(value: unknown) {
     return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
+function domainFromUrl(value: unknown) {
+    const text = asString(value)
+    if (!text) return null
+    try {
+        return new URL(text.startsWith("http") ? text : `https://${text}`).hostname.toLowerCase().replace(/^www\./, "") || null
+    } catch {
+        return null
+    }
+}
+
 function companyState(company: { address?: unknown }) {
     const address = asRecord(company.address)
     const direct = asString(address.state) ?? asString(address.region) ?? asString(address.state_code) ?? asString(address.region_code)
     return direct && /^[A-Z]{2}$/i.test(direct) ? direct.toUpperCase() : null
 }
 
-function sourceAppliesToCompany(source: { source_key: string; coverage?: unknown }, company: { address?: unknown; industry_value?: string | null }) {
+function sourceAppliesToCompany(source: { source_key: string; coverage?: unknown }, company: { address?: unknown; industry_value?: string | null; website_domain?: string | null; website_url?: string | null }) {
     if (source.source_key === "website" || source.source_key === "web.json_ld") return true
+    if ((source.source_key === "web.rdap_whois" || source.source_key === "web.certificate_transparency") && !domainFromUrl(company.website_domain) && !domainFromUrl(company.website_url)) return false
     const state = companyState(company)
     if (source.source_key === "state_license.tx.tdlr") return state === "TX"
     if (source.source_key === "state_license.fl.electrical") return state === "FL" && ["electricians", "solar_installers", "pool_builders", "hvac_contractors", "general_contractors"].includes(company.industry_value ?? "")
@@ -125,7 +136,7 @@ export async function createInvestigationTasksForPoll({ workspaceId, pollId }: {
     const [companiesResult, catalogResult] = await Promise.all([
         supabaseAdmin
             .from("leadgen_companies")
-            .select("id, address, industry_value")
+            .select("id, address, industry_value, website_domain, website_url")
             .eq("workspace_id", workspaceId)
             .eq("first_seen_poll_id", pollId),
         supabaseAdmin

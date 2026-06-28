@@ -36,6 +36,11 @@ const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set([
     "state_license.tx.tdlr",
     "state_license.fl.electrical",
     "state_license.nc.general_contractors",
+    "permits.tx.dallas",
+    "permits.tx.austin",
+    "permits.fl.orlando",
+    "permits.ca.los_angeles",
+    "registry.fl.orlando_btr",
 ])
 
 function clampPoints(value: number) {

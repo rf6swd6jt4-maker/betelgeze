@@ -1,6 +1,7 @@
 import { buildSourcePlan, executableLeadgenSources, type LeadgenSourceConfig, type LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
 import { finalizeLeadgenPoll, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
 import { createPipelineTasksForPoll, createWebsiteTasksForPoll, processPipelineSourcePoll } from "@/lib/leadgen/pipeline-workers"
+import { processPublicRecordsPoll } from "@/lib/leadgen/public-records-worker"
 import { createStateLicensingEnrichmentTasksForPoll, processStateLicensingPoll } from "@/lib/leadgen/state-licensing-worker"
 import { createInvestigationTasksForPoll, scorePollCompanies } from "@/lib/leadgen/evidence-scoring"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -63,6 +64,7 @@ export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId:
     await setLeadgenPollStatus(pollId, workspaceId, "running")
     for (const plan of preSeedPipelinePlans) await processPipelineSourcePoll(pollId, workspaceId, plan.key, { finalize: false })
     await createInvestigationTasksForPoll({ workspaceId, pollId })
+    await processPublicRecordsPoll(pollId, workspaceId, { finalize: false })
     if (runnableStateLicensingPlan) {
         await createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan: runnableStateLicensingPlan })
         await processStateLicensingPoll(pollId, workspaceId, { finalize: false })

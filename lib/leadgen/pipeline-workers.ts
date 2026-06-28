@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { LeadgenSourceKey, LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
 import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
 import { queryOverturePlaces, type OverturePlaceRecord } from "@/lib/leadgen/overture-duckdb"
+import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
 
 type CompanySeed = {
     id: string
@@ -287,6 +288,7 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
                 industry_mapping: industry,
                 location_mapping: location,
                 limit: plan.limit ?? 25,
+                candidate_target_count: plan.key === "overture" ? plan.limit ?? 10 : null,
                 radius_meters: plan.radiusMeters,
                 release: plan.release,
             },
@@ -577,6 +579,20 @@ async function upsertSamEntity({ workspaceId, pollId, task, entity }: { workspac
         .select("id")
         .single()
     if (companyError) throw companyError
+    if (company?.id) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId: company.id,
+            sourceKey: "sam_gov",
+            claimKind: "business_support",
+            pointsAwarded: 2,
+            confidence: 70,
+            provenanceUrl: sourceRecord.profile_url,
+            claimValue: { legal_name: companyName, source_record_id: sourceRecordId },
+            rawPayload: { entity },
+        })
+    }
     if (company?.id && bestContact) {
         await supabaseAdmin.from("leadgen_evidence").insert({
             workspace_id: workspaceId,
@@ -588,6 +604,34 @@ async function upsertSamEntity({ workspaceId, pollId, task, entity }: { workspac
             value: { owner_name: bestContact.fullName, phone: bestContact.phone, email: bestContact.email, role: bestContact.role },
             raw_payload: { contacts },
         })
+        if (bestContact.fullName) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId: company.id,
+                sourceKey: "sam_gov",
+                claimKind: "owner_identity",
+                pointsAwarded: 2,
+                confidence: bestContact.phone ? 70 : 45,
+                provenanceUrl: sourceRecord.profile_url,
+                claimValue: { owner_name: bestContact.fullName, role: bestContact.role, email: bestContact.email },
+                rawPayload: { contacts },
+            })
+        }
+        if (bestContact.phone) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId: company.id,
+                sourceKey: "sam_gov",
+                claimKind: "owner_phone",
+                pointsAwarded: 2,
+                confidence: 70,
+                provenanceUrl: sourceRecord.profile_url,
+                claimValue: { owner_name: bestContact.fullName, owner_phone: bestContact.phone, role: bestContact.role },
+                rawPayload: { contacts },
+            })
+        }
     }
     return true
 }
@@ -667,10 +711,38 @@ async function upsertOverturePlace({ workspaceId, pollId, task, place }: { works
         first_seen_poll_id: pollId,
         last_seen_at: new Date().toISOString(),
     }
-    const { error: companyError } = await supabaseAdmin
+    const { data: company, error: companyError } = await supabaseAdmin
         .from("leadgen_companies")
         .upsert(companyPayload, { onConflict: "workspace_id,source_key,source_record_id" })
+        .select("id")
+        .single()
     if (companyError) throw companyError
+    if (company?.id) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId: company.id,
+            sourceKey: "overture",
+            claimKind: "business_support",
+            pointsAwarded: 1,
+            confidence: 55,
+            claimValue: { name: place.name, phone: sourceRecord.phone, website_url: place.website_url },
+            rawPayload: place.raw_payload,
+        })
+        if (sourceRecord.phone) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId: company.id,
+                sourceKey: "overture",
+                claimKind: "business_phone",
+                pointsAwarded: 1,
+                confidence: 45,
+                claimValue: { phone: sourceRecord.phone },
+                rawPayload: place.raw_payload,
+            })
+        }
+    }
     return true
 }
 
@@ -680,7 +752,16 @@ async function processOvertureTask(task: PipelineTask) {
     if (!workspaceId || !pollId) throw new Error("Overture task is missing workspace or poll context.")
     const categories = valuesFromQuery(task.source_query.native_industries)
     const location = overtureLocationFromTask(task)
-    const limit = Math.min(500, Math.max(1, Number(task.source_query.limit) || 100))
+    const candidateTargetCount = Math.min(500, Math.max(1, Number(task.source_query.candidate_target_count) || Number(task.source_query.limit) || 10))
+    const existingPollCompaniesResult = await supabaseAdmin
+        .from("leadgen_companies")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .eq("first_seen_poll_id", pollId)
+    if (existingPollCompaniesResult.error) throw existingPollCompaniesResult.error
+    const remainingCandidateSlots = candidateTargetCount - (existingPollCompaniesResult.count ?? 0)
+    if (remainingCandidateSlots <= 0) return { rawCount: 0, companyCount: 0 }
+    const limit = Math.min(500, Math.max(1, Math.min(remainingCandidateSlots, Number(task.source_query.limit) || 100)))
     const release = typeof task.source_query.release === "string" ? task.source_query.release : null
     const { data: existingRecords, error: existingError } = await supabaseAdmin
         .from("leadgen_source_records")
@@ -709,6 +790,12 @@ async function processWebsiteTask(task: PipelineTask) {
     const companyId = typeof task.source_query.company_id === "string" ? task.source_query.company_id : null
     const websiteUrl = typeof task.source_query.website_url === "string" ? task.source_query.website_url : null
     if (!companyId || !websiteUrl) throw new Error("Website crawler task is missing a company or website URL.")
+    const workspaceId = typeof task.source_query.workspace_id === "string" ? task.source_query.workspace_id : ""
+    const pollId = typeof task.source_query.poll_id === "string" ? task.source_query.poll_id : null
+    if (workspaceId && pollId) {
+        await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "website", status: "running" })
+        await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "web.json_ld", status: "running" })
+    }
     const depth = Math.min(5, Math.max(1, Number(task.source_query.crawl_depth) || 2))
     const timeoutSeconds = Math.min(30, Math.max(3, Number(task.source_query.timeout_seconds) || 10))
     const inspected: PageExtraction[] = []
@@ -736,8 +823,9 @@ async function processWebsiteTask(task: PipelineTask) {
         }
     }
     const { error: evidenceError } = await supabaseAdmin.from("leadgen_evidence").insert({
-        workspace_id: String(task.source_query.workspace_id ?? ""),
+        workspace_id: workspaceId,
         company_id: companyId,
+        poll_id: pollId,
         source_key: "website",
         evidence_kind: "website_owner_phone_extract",
         confidence: ownerName && ownerPhone ? 74 : ownerName ? 45 : businessPhone ? 25 : 15,
@@ -745,6 +833,84 @@ async function processWebsiteTask(task: PipelineTask) {
         raw_payload: { inspected },
     })
     if (evidenceError) throw evidenceError
+    if (workspaceId && pollId) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "website",
+            claimKind: "business_support",
+            pointsAwarded: 1,
+            confidence: 35,
+            provenanceUrl: websiteUrl,
+            claimValue: { website_url: websiteUrl, pages_inspected: inspected.length },
+            rawPayload: { inspected },
+        })
+        if (businessPhone) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId,
+                sourceKey: "website",
+                claimKind: "business_phone",
+                pointsAwarded: 1,
+                confidence: 35,
+                provenanceUrl: websiteUrl,
+                claimValue: { phone: businessPhone },
+                rawPayload: { inspected },
+            })
+        }
+        if (ownerName) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId,
+                sourceKey: "website",
+                claimKind: "owner_identity",
+                pointsAwarded: 2,
+                confidence: ownerPhone ? 74 : 45,
+                provenanceUrl: websiteUrl,
+                claimValue: { owner_name: ownerName },
+                rawPayload: { inspected },
+            })
+        }
+        if (ownerName && ownerPhone) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId,
+                sourceKey: "website",
+                claimKind: "owner_phone",
+                pointsAwarded: 2,
+                confidence: 74,
+                provenanceUrl: websiteUrl,
+                claimValue: { owner_name: ownerName, owner_phone: ownerPhone },
+                rawPayload: { inspected },
+            })
+        }
+        await updateInvestigationTask({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "website",
+            status: "completed",
+            matched: Boolean(ownerName || ownerPhone || businessPhone),
+            ownerIdentityPoints: ownerName ? 2 : 0,
+            ownerPhonePoints: ownerName && ownerPhone ? 2 : 0,
+            businessSupportPoints: businessPhone || inspected.length ? 1 : 0,
+            rawPayload: { inspected },
+        })
+        await updateInvestigationTask({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "web.json_ld",
+            status: "completed",
+            matched: inspected.some((page) => page.evidence.includes("json_ld_present")),
+            businessSupportPoints: inspected.some((page) => page.evidence.includes("json_ld_present")) ? 1 : 0,
+            rawPayload: { inspected },
+        })
+    }
     if (ownerName || ownerPhone || businessPhone) {
         const updatePayload: Record<string, unknown> = {
             last_seen_at: new Date().toISOString(),
@@ -798,8 +964,21 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
                 .update({ status: "completed", raw_count: result?.rawCount ?? 0, company_count: result?.companyCount ?? 0, completed_at: new Date().toISOString(), error: null })
                 .eq("id", task.id)
         } catch (error) {
+            const companyId = typeof task.source_query?.company_id === "string" ? task.source_query.company_id : null
+            const message = compactErrorMessage(error)
+            if (sourceKey === "website" && companyId) {
+                const query = { ...(task.source_query ?? {}), workspace_id: workspaceId, poll_id: pollId }
+                await updateInvestigationTask({
+                    workspaceId,
+                    pollId,
+                    companyId,
+                    sourceKey: "website",
+                    status: "failed",
+                    error: message,
+                    rawPayload: query,
+                })
+            }
             if (error instanceof SamGovQuotaError) {
-                const message = compactErrorMessage(error)
                 const remainingTaskIds = tasks.slice(index + 1).map((remainingTask) => remainingTask.id)
                 await supabaseAdmin
                     .from("leadgen_poll_tasks")

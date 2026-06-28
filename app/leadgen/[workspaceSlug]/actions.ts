@@ -24,8 +24,8 @@ export async function createLeadgenPoll(slug: string) {
     const enabledSources = Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : []
     const currentSourceConfig = configObject(settings?.source_config)
     const sourcePlan = planLeadgenSources(enabledSources, currentSourceConfig)
-    const runnablePlans = sourcePlan.filter((source) => executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
-    const hasRunnableSources = runnablePlans.length > 0
+    const seedPlan = sourcePlan.find((source) => source.key === "overture" && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
+    const hasRunnableSources = Boolean(seedPlan)
     const { data: poll, error } = await supabaseAdmin.from("leadgen_polls").insert({
         workspace_id: workspace.id,
         requested_by: user.id,
@@ -36,12 +36,13 @@ export async function createLeadgenPoll(slug: string) {
         icp_snapshot: {
             industries: sourcePlan[0]?.industries ?? [],
             locations: sourcePlan[0]?.locations ?? [],
-            candidate_target_count: currentSourceConfig.icp?.limit ?? null,
+            candidate_target_count: 10,
             max_enrichment_depth: currentSourceConfig.icp?.maxEnrichmentDepth ?? null,
             owner_required: currentSourceConfig.icp?.ownerRequired !== false,
+            pilot_mode: "10_business_fanout_test",
             captured_at: new Date().toISOString(),
         },
-        error: hasRunnableSources ? null : "Enable at least one executable source and select at least one ICP industry and one ICP location in Settings.",
+        error: hasRunnableSources ? null : "Enable Overture plus at least one ICP industry and one ICP location in Settings. Support sources now investigate Overture candidates instead of creating separate lead lists.",
         completed_at: hasRunnableSources ? null : new Date().toISOString(),
     }).select("id").single()
     if (error) throw new Error("Could not queue a new leadgen poll.")

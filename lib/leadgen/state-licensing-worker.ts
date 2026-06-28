@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
 import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
+import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
 
 type SourceOption = {
     value: string
@@ -279,7 +280,7 @@ async function upsertTdlrRecord({
             raw_payload: rawPayload,
         })
     if (recordError) throw recordError
-    const { error: companyError } = await supabaseAdmin
+    const { data: company, error: companyError } = await supabaseAdmin
         .from("leadgen_companies")
         .upsert({
             workspace_id: workspaceId,
@@ -313,7 +314,51 @@ async function upsertTdlrRecord({
             first_seen_poll_id: pollId,
             last_seen_at: new Date().toISOString(),
         }, { onConflict: "workspace_id,source_key,source_record_id" })
+        .select("id")
+        .single()
     if (companyError) throw companyError
+    if (company?.id) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId: company.id,
+            sourceKey: "state_license.tx.tdlr",
+            claimKind: "licence_activity",
+            pointsAwarded: 2,
+            confidence: 80,
+            provenanceUrl: result.profileUrl,
+            claimValue: { license_number: result.licenseNumber, license_type: industryLabel, status: "active" },
+            rawPayload,
+        })
+        if (ownerName) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId: company.id,
+                sourceKey: "state_license.tx.tdlr",
+                claimKind: "owner_identity",
+                pointsAwarded: 3,
+                confidence: result.phone ? 82 : 65,
+                provenanceUrl: result.profileUrl,
+                claimValue: { owner_name: ownerName, role: "license_holder", legal_name: result.name },
+                rawPayload,
+            })
+        }
+        if (ownerName && result.phone) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId: company.id,
+                sourceKey: "state_license.tx.tdlr",
+                claimKind: "owner_phone",
+                pointsAwarded: 3,
+                confidence: 82,
+                provenanceUrl: result.profileUrl,
+                claimValue: { owner_name: ownerName, owner_phone: result.phone, phone_source: "tdlr_license_phone" },
+                rawPayload,
+            })
+        }
+    }
     return true
 }
 
@@ -338,6 +383,46 @@ async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, re
         raw_payload: { ...value, raw_html: result.rawHtml },
     })
     if (evidenceError) throw evidenceError
+    await recordEvidenceClaim({
+        workspaceId,
+        pollId,
+        companyId,
+        sourceKey: "state_license.tx.tdlr",
+        claimKind: "licence_activity",
+        pointsAwarded: 2,
+        confidence: 80,
+        provenanceUrl: result.profileUrl,
+        claimValue: { license_number: result.licenseNumber, legal_name: result.name },
+        rawPayload: { ...value, raw_html: result.rawHtml },
+    })
+    if (ownerName) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "state_license.tx.tdlr",
+            claimKind: "owner_identity",
+            pointsAwarded: 3,
+            confidence: result.phone ? 82 : 55,
+            provenanceUrl: result.profileUrl,
+            claimValue: { owner_name: ownerName, role: "license_holder", legal_name: result.name },
+            rawPayload: { ...value, raw_html: result.rawHtml },
+        })
+    }
+    if (ownerName && result.phone) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "state_license.tx.tdlr",
+            claimKind: "owner_phone",
+            pointsAwarded: 3,
+            confidence: 82,
+            provenanceUrl: result.profileUrl,
+            claimValue: { owner_name: ownerName, owner_phone: result.phone, phone_source: "tdlr_license_phone" },
+            rawPayload: { ...value, raw_html: result.rawHtml },
+        })
+    }
     const updatePayload: Record<string, unknown> = {
         last_seen_at: new Date().toISOString(),
         profile_url: result.profileUrl,
@@ -352,6 +437,18 @@ async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, re
     }
     const { error } = await supabaseAdmin.from("leadgen_companies").update(updatePayload).eq("id", companyId).eq("workspace_id", workspaceId)
     if (error) throw error
+    await updateInvestigationTask({
+        workspaceId,
+        pollId,
+        companyId,
+        sourceKey: "state_license.tx.tdlr",
+        status: "completed",
+        matched: Boolean(ownerName || result.phone),
+        ownerIdentityPoints: ownerName ? 3 : 0,
+        ownerPhonePoints: ownerName && result.phone ? 3 : 0,
+        businessSupportPoints: 2,
+        rawPayload: { ...value, raw_html: result.rawHtml },
+    })
     return Boolean(ownerName && result.phone)
 }
 
@@ -550,6 +647,16 @@ export async function processStateLicensingPoll(pollId: string, workspaceId: str
                 if (bestResult) {
                     const qualified = await applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult })
                     companyCount = qualified ? 1 : 0
+                } else {
+                    await updateInvestigationTask({
+                        workspaceId,
+                        pollId,
+                        companyId: query.candidate_company_id,
+                        sourceKey: "state_license.tx.tdlr",
+                        status: "completed",
+                        matched: false,
+                        skipReason: "TDLR returned no candidate match for this business.",
+                    })
                 }
             } else {
                 for (const result of results) {

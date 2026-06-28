@@ -6,7 +6,7 @@ import { ListAutoRefresh } from "@/components/list/ListAutoRefresh"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
+import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
 import { removeLeadgenCompany } from "./actions"
 
@@ -27,13 +27,15 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
     const latestPoll = latestPollResult.error ? null : latestPollResult.data
     const companiesResult = await supabaseAdmin
         .from("leadgen_companies")
-        .select("id, display_name, phone, owner_name, owner_phone, website_url, profile_url, source_key, address, rating, review_count, industry_value, location_value, created_at")
+        .select("id, display_name, phone, owner_name, owner_phone, website_url, profile_url, source_key, address, rating, review_count, industry_value, location_value, owner_identity_points, owner_phone_points, business_support_points, lead_score, qualification_status, created_at")
         .eq("workspace_id", workspace.id)
         .eq("first_seen_poll_id", latestPoll?.id ?? "00000000-0000-0000-0000-000000000000")
+        .eq("qualification_status", "qualified")
+        .order("lead_score", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(100)
-    const companies = (companiesResult.error ? [] : companiesResult.data ?? []).filter((company) => Boolean(company.owner_name && (company.owner_phone || company.phone)))
-    const callable = companies.filter((company) => Boolean(company.owner_phone || company.phone)).length
+    const companies = (companiesResult.error ? [] : companiesResult.data ?? []).filter((company) => Boolean(company.owner_name && company.owner_phone))
+    const callable = companies.filter((company) => Boolean(company.owner_phone)).length
     const withProfiles = companies.filter((company) => Boolean(company.profile_url || company.website_url)).length
     function locationLabel(address: unknown) {
         if (!address || typeof address !== "object") return "Location unknown"
@@ -78,12 +80,13 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
             <section className="mt-5 space-y-3 md:space-y-0 md:rounded-2xl md:border md:border-neutral-800 md:bg-black">
                 {companies.length ? companies.map((company) => {
                     const sourceUrl = company.website_url ?? company.profile_url ?? null
-                    const bestPhone = company.owner_phone || company.phone
+                    const bestPhone = company.owner_phone
                     const ownerName = company.owner_name ?? "Owner not found"
                     const location = locationLabel(company.address)
                     const titleLine = `${ownerName} - ${company.display_name}`
                     const industry = String(company.industry_value ?? "—").replace(/_/g, " ")
-                    const copyLine = `${ownerName}: ${bestPhone ?? "No phone"} - ${company.display_name}, ${industry}, ${location}`
+                    const scoreLine = `Score ${company.lead_score ?? 0} · owner ${company.owner_identity_points ?? 0}/${company.owner_phone_points ?? 0}`
+                    const copyLine = `${ownerName}: ${bestPhone ?? "No owner phone"} - ${company.display_name}, ${industry}, ${location}. ${scoreLine}`
                     const phoneStatus = <span className={`inline-flex items-center gap-2 text-sm ${bestPhone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${bestPhone ? "bg-emerald-300" : "bg-neutral-500"}`} />{bestPhone ? "Callable" : "No phone"}</span>
                     const leadActions = [
                         sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
@@ -99,7 +102,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                         <div className="flex items-center gap-3 px-3.5 py-2.5">
                             <p className="truncate text-sm text-neutral-200">{bestPhone || "No phone"}</p>
                             <p className="min-w-0 flex-1 truncate text-sm text-neutral-400">{industry}</p>
-                            <p className="text-sm text-neutral-500">{shortId(company.id)}</p>
+                            <p className="text-sm text-neutral-500">{company.lead_score ?? 0} pts</p>
                             <p className="text-sm whitespace-nowrap text-neutral-500">{formatRelativeTime(company.created_at)}</p>
                         </div>
                     </MobileCardActionSurface>
@@ -111,7 +114,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                         <p className="truncate text-sm text-neutral-200">{bestPhone || "No phone"}</p>
                         <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
                         <p className="truncate text-sm text-neutral-400">{String(company.industry_value ?? "—").replace(/_/g, " ")}</p>
-                        <p className="font-mono text-sm text-neutral-500">{shortId(company.id)}</p>
+                        <p className="font-mono text-sm text-neutral-500">{company.lead_score ?? 0} pts</p>
                         <p className="whitespace-nowrap text-right text-sm text-neutral-500">{formatRelativeTime(company.created_at)}</p>
                         <ListActionMenu actions={leadActions} />
                     </div>

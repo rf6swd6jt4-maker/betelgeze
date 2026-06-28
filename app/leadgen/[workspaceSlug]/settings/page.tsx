@@ -1,8 +1,10 @@
 import { WorkspaceIdentityEditor } from "@/components/admin/WorkspaceIdentityEditor"
+import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
 import { SearchableMultiSelect } from "@/components/leadgen/SearchableMultiSelect"
 import { SourceSettingsCard, type SourceSettingsItem } from "@/components/leadgen/SourceSettingsCard"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
+import { leadgenSourceFamilyLabels, leadgenSourceFamilyOrder, sourceHealthMap, sourceMetadataNote, sourcePointSummary, sourceStatusMeta, type LeadgenSourceCatalogRow, type LeadgenSourceHealthRow } from "@/lib/leadgen/source-catalog-ui"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
@@ -32,7 +34,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
         workspace.leadgen_banner_path ? createUploadSignedUrl(workspace.leadgen_banner_path) : null,
         workspace.logo_path ? createUploadSignedUrl(workspace.logo_path) : null,
     ])
-    const [settingsResult, industriesResult, locationsResult, industryMappingsResult, locationMappingsResult] = await Promise.all([
+    const [settingsResult, industriesResult, locationsResult, industryMappingsResult, locationMappingsResult, catalogResult, healthResult] = await Promise.all([
         supabaseAdmin
         .from("leadgen_workspace_settings")
         .select("poll_interval_hours, automatic_polls_enabled, geography, icp_notes, enabled_sources, source_config")
@@ -56,6 +58,14 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
             .from("leadgen_source_location_mappings")
             .select("source_key, icp_location_value, native_values")
             .eq("enabled", true),
+        supabaseAdmin
+            .from("leadgen_source_catalog")
+            .select("source_key, label, family, source_points, owner_identity_points, owner_phone_points, business_support_points, access_method, free_status, implementation_status, run_stage, enabled, rate_limit_ms, coverage, metadata")
+            .order("family", { ascending: true })
+            .order("label", { ascending: true }),
+        supabaseAdmin
+            .from("leadgen_source_health")
+            .select("source_key, status, last_success_at, last_failure_at, last_error, metadata"),
     ])
     const settings = settingsResult.error ? null : settingsResult.data
     const enabledSources = new Set(Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : [])
@@ -64,8 +74,17 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
     const icpLocations = (locationsResult.error ? [] : locationsResult.data ?? []) as IcpOption[]
     const industryMappings = (industryMappingsResult.error ? [] : industryMappingsResult.data ?? []) as SourceMapping[]
     const locationMappings = (locationMappingsResult.error ? [] : locationMappingsResult.data ?? []) as SourceMapping[]
+    const catalog = (catalogResult.error ? [] : catalogResult.data ?? []) as LeadgenSourceCatalogRow[]
+    const sourceHealth = sourceHealthMap((healthResult.error ? [] : healthResult.data ?? []) as LeadgenSourceHealthRow[])
     const selectedIndustries = Array.isArray(sourceConfig.icp?.industries) ? sourceConfig.icp.industries : []
     const selectedLocations = Array.isArray(sourceConfig.icp?.locations) ? sourceConfig.icp.locations : []
+    const activeCatalogSources = catalog.filter((source) => source.enabled && source.implementation_status === "active")
+    const validationOnlyCount = catalog.filter((source) => source.implementation_status === "validation_only").length
+    const needsWorkCount = catalog.filter((source) => ["source_specific_configuration", "bulk_refresh"].includes(source.run_stage ?? "")).length
+    const blockedCount = catalog.filter((source) => source.implementation_status === "blocked" || source.run_stage === "blocked").length
+    const groupedCatalog = leadgenSourceFamilyOrder
+        .map((family) => ({ family, sources: catalog.filter((source) => source.family === family) }))
+        .filter((group) => group.sources.length > 0)
 
     function mappingSummary(sourceKey: LeadgenSourceKey) {
         const mappedIndustries = new Set(industryMappings.filter((mapping) => mapping.source_key === sourceKey && (mapping.native_values?.length ?? 0) > 0).map((mapping) => mapping.icp_industry_value).filter(Boolean))
@@ -152,7 +171,105 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                         </div>
                     </div>
                 </section>
-                <SourceSettingsCard sources={sourceItems} />
+                <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
+                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                        <div>
+                            <h2 className="text-lg font-semibold">Sources</h2>
+                            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">The poll now seeds candidates first, then investigates each company across the public-source catalogue. The switches below control the core workspace execution plan; the catalogue shows what the fan-out can honestly do today.</p>
+                        </div>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        {[
+                            ["Active", activeCatalogSources.length],
+                            ["Validation only", validationOnlyCount],
+                            ["Needs work", needsWorkCount],
+                            ["Blocked", blockedCount],
+                        ].map(([label, value]) => <div key={label} className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+                            <p className="text-xs text-neutral-500">{label}</p>
+                            <p className="mt-1 text-lg font-semibold">{value}</p>
+                        </div>)}            </div>
+
+                    <div className="mt-5 rounded-xl border border-neutral-800 bg-black">
+                        <div className="border-b border-neutral-800 px-4 py-3">
+                            <h3 className="font-medium text-neutral-100">Source catalogue truth layer</h3>
+                            <p className="mt-1 text-sm text-neutral-500">Point split is owner identity / owner phone / business support. Only poll-time and seed sources run during a poll.</p>
+                        </div>
+                        <div className="divide-y divide-neutral-900">
+                            {groupedCatalog.length ? groupedCatalog.map((group) => <details key={group.family} className="group">
+                                <summary className="grid cursor-pointer gap-2 px-4 py-3 md:grid-cols-[170px_1fr_120px] md:items-center">
+                                    <span className="text-sm font-medium text-neutral-100">{leadgenSourceFamilyLabels[group.family] ?? group.family}</span>
+                                    <span className="text-sm text-neutral-500">{group.sources.filter((source) => source.enabled && source.implementation_status === "active").length} active · {group.sources.length} catalogued</span>
+                                    <span className="text-right text-xs uppercase tracking-[0.14em] text-neutral-600">open</span>
+                                </summary>
+                                <div className="divide-y divide-neutral-900 border-t border-neutral-900">
+                                    {group.sources.map((source) => {
+                                        const health = sourceHealth.get(source.source_key)
+                                        const meta = sourceStatusMeta(source, health)
+                                        return <div key={source.source_key} className={`grid gap-3 px-4 py-3 md:grid-cols-[minmax(180px,0.9fr)_130px_120px_minmax(0,1.2fr)] md:items-center ${meta.muted ? "opacity-75" : ""}`}>
+                                            <div className="min-w-0">
+                                                <p className="truncate text-sm font-medium text-neutral-100">{source.label}</p>
+                                                <p className="mt-1 truncate font-mono text-xs text-neutral-600">{source.source_key}</p>
+                                            </div>
+                                            <span className={`inline-flex items-center gap-2 text-sm ${meta.text}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
+                                            <p className="text-sm text-neutral-500">{sourcePointSummary(source)}</p>
+                                            <p className="min-w-0 truncate text-sm text-neutral-500">{sourceMetadataNote(source, health)}</p>
+                                        </div>
+                                    })}
+                                </div>
+                            </details>) : <p className="p-4 text-sm text-neutral-500">No source catalogue rows found. Apply the leadgen source fan-out migrations before testing polls.</p>}
+                        </div>
+                    </div>
+
+                    <div className="mt-6">
+                        <h3 className="font-medium text-neutral-100">Workspace execution switches</h3>
+                        <p className="mt-1 text-sm text-neutral-500">Keep this concise: Overture seeds new candidates; website and licensing switches let the older source-plan workers run alongside the catalogue fan-out.</p>
+                    </div>
+                    <div className="mt-5 grid gap-3 xl:grid-cols-3">
+                        {leadgenSourceOptions.map((source) => {
+                            const implemented = executableLeadgenSources.has(source.value)
+                            const sourceSettings = sourceConfig[source.value]
+                            const mapped = mappingSummary(source.value)
+                            const apiKeyConfigured = source.value === "sam_gov" ? Boolean(process.env.SAM_GOV_API_KEY) : true
+                            const adapterConfigured = true
+                            const canRun = implemented && mapped.ready && apiKeyConfigured && adapterConfigured
+                            return <div key={source.value} className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">
+                                <label className="flex min-h-24 items-start gap-3">
+                                    <input name="sources" value={source.value} type="checkbox" defaultChecked={enabledSources.has(source.value)} disabled={!canRun} className="mt-1 h-4 w-4 accent-white disabled:opacity-40" />
+                                    <span>
+                                        <span className="block font-medium text-white">{source.label}</span>
+                                        <span className="mt-1 block text-sm leading-5 text-neutral-400">{source.detail}</span>
+                                        <span className={`mt-2 block text-xs ${canRun ? "text-emerald-200" : implemented ? "text-amber-200" : "text-neutral-500"}`}>{implemented ? source.statusLabel : "Planned source"}</span>
+                                    </span>
+                                </label>
+                                <div className="mt-3 grid gap-2 rounded-lg border border-neutral-900 bg-black/40 p-3 text-xs text-neutral-400">
+                                    <div className="flex items-center justify-between gap-2"><span>Industry mapping</span><span className={mapped.industryText.includes("0/") ? "text-amber-200" : "text-neutral-300"}>{mapped.industryText}</span></div>
+                                    <div className="flex items-center justify-between gap-2"><span>Location mapping</span><span className={mapped.locationText.includes("0/") ? "text-amber-200" : "text-neutral-300"}>{mapped.locationText}</span></div>
+                                    {source.value === "overture" && <div className="flex items-center justify-between gap-2"><span>Adapter</span><span className="text-emerald-200">Built in</span></div>}
+                                    {source.requiresApiKey && <div className="flex items-center justify-between gap-2"><span>API key</span><span className={apiKeyConfigured ? "text-emerald-200" : "text-amber-200"}>{apiKeyConfigured ? "Configured" : "Missing in Vercel"}</span></div>}
+                                    {source.envVar && <div className="rounded-lg border border-neutral-900 bg-neutral-950 p-2">
+                                        <p className="font-mono text-[11px] text-neutral-300">{source.envVar}</p>
+                                        {source.setupHint && <p className="mt-1 leading-5 text-neutral-500">{source.setupHint}</p>}
+                                    </div>}
+                                </div>
+                                <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
+                                    <summary className="cursor-pointer text-sm font-medium text-neutral-300">Technical settings</summary>
+                                    <div className="mt-4 grid gap-3">
+                                        {source.value === "overture" && <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Release/version<input name="sourceConfig:overture:release" defaultValue={sourceSettings?.release ?? "2026-06-17.0"} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>}
+                                        {source.value === "website" && <>
+                                            <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Crawl depth<input name="sourceConfig:website:crawlDepth" type="number" min={1} max={5} defaultValue={sourceSettings?.crawlDepth ?? 2} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
+                                            <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Timeout seconds<input name="sourceConfig:website:timeoutSeconds" type="number" min={3} max={30} defaultValue={sourceSettings?.timeoutSeconds ?? 10} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
+                                            <label className="flex items-center gap-2 text-xs text-neutral-300"><input name="sourceConfig:website:respectRobots" type="checkbox" defaultChecked={sourceSettings?.respectRobots !== false} className="h-4 w-4 accent-white" />Respect robots controls</label>
+                                        </>
+                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Max records per mapped task<input name={`sourceConfig:${source.value}:limit`} type="number" min={1} max={source.value === "overture" ? 500 : 50} defaultValue={sourceSettings?.limit ?? (source.value === "overture" ? 100 : source.value === "state_licensing" ? 15 : 25)} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
+                                        {(source.value === "osm" || source.value === "overture") && <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Radius in metres<input name={`sourceConfig:${source.value}:radiusMeters`} type="number" min={1000} max={40000} defaultValue={sourceSettings?.radiusMeters ?? 24000} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>}
+                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Notes<textarea name={`sourceConfig:${source.value}:notes`} defaultValue={sourceSettings?.notes ?? ""} rows={2} placeholder={source.notesPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
+                                    </div>
+                                </details>
+                            </div>
+                        })}
+                    </div>
+                </section>
                 <button className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">Save leadgen settings</button>
             </form>
             <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>

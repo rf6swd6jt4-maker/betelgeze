@@ -1,0 +1,98 @@
+insert into public.leadgen_source_catalog (
+    source_key,
+    label,
+    family,
+    source_points,
+    owner_identity_points,
+    owner_phone_points,
+    business_support_points,
+    access_method,
+    free_status,
+    implementation_status,
+    run_stage,
+    enabled,
+    rate_limit_ms,
+    coverage,
+    metadata
+) values
+    (
+        'state_license.fl.electrical',
+        'Florida DBPR electrical licensing',
+        'licensing',
+        3,
+        3,
+        3,
+        2,
+        'public_csv',
+        'free',
+        'active',
+        'candidate_investigation',
+        true,
+        1500,
+        '{"states":["FL"],"industries":["electricians","solar_installers","pool_builders","hvac_contractors","general_contractors"]}'::jsonb,
+        '{"adapter":"dbpr_electrical_csv","source_url":"https://www2.myfloridalicense.com/sto/file_download/extracts/lic08el.csv","phone_note":"The public electrical CSV usually proves the licensee/person and business, but does not usually expose a phone field."}'::jsonb
+    ),
+    (
+        'state_license.fl.dbpr',
+        'Florida DBPR construction licensing',
+        'licensing',
+        3,
+        3,
+        2,
+        2,
+        'public_csv',
+        'free',
+        'planned',
+        'candidate_investigation',
+        false,
+        2000,
+        '{"states":["FL"],"industries":["general_contractors","home_builders","remodellers","roofers","pool_builders","hvac_contractors"]}'::jsonb,
+        '{"adapter":"dbpr_construction_csv","source_url":"https://www2.myfloridalicense.com/sto/file_download/extracts/CONSTRUCTIONLICENSE_1.csv","status":"planned_until_clean_feed_verified","note":"DBPR publishes construction public-record feeds, but the clean license CSV needs a safer parser/health check before activation."}'::jsonb
+    ),
+    (
+        'state_license.nc.general_contractors',
+        'North Carolina general contractor licensing',
+        'licensing',
+        3,
+        3,
+        3,
+        2,
+        'public_html',
+        'free',
+        'active',
+        'candidate_investigation',
+        true,
+        1500,
+        '{"states":["NC"],"industries":["concrete_contractors","deck_builders","fencing_contractors","general_contractors","hardscaping_contractors","home_builders","insulation_contractors","kitchen_remodelling","masonry_contractors","patio_contractors","pool_builders","remodellers","restoration_companies","roofers","siding_contractors","window_and_door_contractors"]}'::jsonb,
+        '{"adapter":"nclbgc_public_search","search_url":"https://portal.nclbgc.org/Public/_Search/","detail_url":"https://portal.nclbgc.org/Public/_ShowAccountDetails/","classification_source":"public search form"}'::jsonb
+    )
+on conflict (source_key) do update set
+    label = excluded.label,
+    family = excluded.family,
+    source_points = excluded.source_points,
+    owner_identity_points = excluded.owner_identity_points,
+    owner_phone_points = excluded.owner_phone_points,
+    business_support_points = excluded.business_support_points,
+    access_method = excluded.access_method,
+    free_status = excluded.free_status,
+    implementation_status = excluded.implementation_status,
+    run_stage = excluded.run_stage,
+    enabled = excluded.enabled,
+    rate_limit_ms = excluded.rate_limit_ms,
+    coverage = excluded.coverage,
+    metadata = public.leadgen_source_catalog.metadata || excluded.metadata,
+    updated_at = now();
+
+update public.leadgen_source_catalog
+set metadata = metadata || '{"batch_2_note":"Still catalogued, but not activated until a pullable free endpoint/feed is verified."}'::jsonb,
+    updated_at = now()
+where source_key in (
+    'state_license.ca.cslb',
+    'state_license.az.roc',
+    'state_license.nc.electrical',
+    'state_license.nc.plumbing_hvac',
+    'state_license.ga.contractors',
+    'state_license.tn.contractors',
+    'state_license.co.local_contractors',
+    'state_license.tx.plumbing'
+);

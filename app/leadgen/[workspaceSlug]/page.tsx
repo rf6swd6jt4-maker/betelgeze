@@ -6,7 +6,7 @@ import { ListAutoRefresh } from "@/components/list/ListAutoRefresh"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
+import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
 import { removeLeadgenCompany } from "./actions"
 
@@ -27,13 +27,15 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
     const latestPoll = latestPollResult.error ? null : latestPollResult.data
     const companiesResult = await supabaseAdmin
         .from("leadgen_companies")
-        .select("id, display_name, phone, owner_name, owner_phone, website_url, profile_url, source_key, address, rating, review_count, industry_value, location_value, created_at")
+        .select("id, display_name, phone, owner_name, owner_phone, website_url, profile_url, source_key, address, rating, review_count, industry_value, location_value, owner_identity_points, owner_phone_points, business_support_points, lead_score, qualification_status, created_at")
         .eq("workspace_id", workspace.id)
         .eq("first_seen_poll_id", latestPoll?.id ?? "00000000-0000-0000-0000-000000000000")
+        .eq("qualification_status", "qualified")
+        .order("lead_score", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(100)
-    const companies = (companiesResult.error ? [] : companiesResult.data ?? []).filter((company) => Boolean(company.owner_name && (company.owner_phone || company.phone)))
-    const callable = companies.filter((company) => Boolean(company.owner_phone || company.phone)).length
+    const companies = (companiesResult.error ? [] : companiesResult.data ?? []).filter((company) => Boolean(company.owner_name && company.owner_phone))
+    const callable = companies.filter((company) => Boolean(company.owner_phone)).length
     const withProfiles = companies.filter((company) => Boolean(company.profile_url || company.website_url)).length
     function locationLabel(address: unknown) {
         if (!address || typeof address !== "object") return "Location unknown"
@@ -57,7 +59,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div>
                     <h1 className="text-2xl font-semibold tracking-tight">{workspace.name}</h1>
-                    <p className="mt-2 text-sm text-neutral-400">Review and route the latest poll output for this workspace. Signed in as {role}.</p>
+                    <p className="mt-2 text-sm text-neutral-400">Review qualified owner-phone leads from the latest poll. Research candidates and rejected evidence stay on the poll detail page. Signed in as {role}.</p>
                 </div>
                 <NewPollButton href={`https://leadgen.betelgeze.com/${workspace.slug}/new`} />
             </div>
@@ -66,9 +68,9 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
 
             <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:grid-cols-3">
                 {[
-                    ["Latest poll leads", companies.length],
-                    ["With phone", callable],
-                    ["With source profile", withProfiles],
+                    ["Qualified leads", companies.length],
+                    ["Owner phones", callable],
+                    ["Source links", withProfiles],
                 ].map(([label, value]) => <div key={label} className="border-r border-neutral-800 px-2 py-2 text-center last:border-r-0 sm:rounded-lg sm:border sm:border-neutral-800 sm:bg-neutral-900 sm:px-3 sm:text-left">
                     <p className="text-[10px] leading-tight text-neutral-500 sm:text-xs">{label}</p>
                     <p className="mt-1 text-lg font-semibold">{value}</p>
@@ -78,12 +80,13 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
             <section className="mt-5 space-y-3 md:space-y-0 md:rounded-2xl md:border md:border-neutral-800 md:bg-black">
                 {companies.length ? companies.map((company) => {
                     const sourceUrl = company.website_url ?? company.profile_url ?? null
-                    const bestPhone = company.owner_phone || company.phone
+                    const bestPhone = company.owner_phone
                     const ownerName = company.owner_name ?? "Owner not found"
                     const location = locationLabel(company.address)
                     const titleLine = `${ownerName} - ${company.display_name}`
                     const industry = String(company.industry_value ?? "—").replace(/_/g, " ")
-                    const copyLine = `${ownerName}: ${bestPhone ?? "No phone"} - ${company.display_name}, ${industry}, ${location}`
+                    const scoreLine = `Score ${company.lead_score ?? 0} · owner ${company.owner_identity_points ?? 0}/${company.owner_phone_points ?? 0}`
+                    const copyLine = `${ownerName}: ${bestPhone ?? "No owner phone"} - ${company.display_name}, ${industry}, ${location}. ${scoreLine}`
                     const phoneStatus = <span className={`inline-flex items-center gap-2 text-sm ${bestPhone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${bestPhone ? "bg-emerald-300" : "bg-neutral-500"}`} />{bestPhone ? "Callable" : "No phone"}</span>
                     const leadActions = [
                         sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
@@ -99,7 +102,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                         <div className="flex items-center gap-3 px-3.5 py-2.5">
                             <p className="truncate text-sm text-neutral-200">{bestPhone || "No phone"}</p>
                             <p className="min-w-0 flex-1 truncate text-sm text-neutral-400">{industry}</p>
-                            <p className="text-sm text-neutral-500">{shortId(company.id)}</p>
+                            <p className="text-sm text-neutral-500">{company.lead_score ?? 0} pts</p>
                             <p className="text-sm whitespace-nowrap text-neutral-500">{formatRelativeTime(company.created_at)}</p>
                         </div>
                     </MobileCardActionSurface>
@@ -111,7 +114,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                         <p className="truncate text-sm text-neutral-200">{bestPhone || "No phone"}</p>
                         <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
                         <p className="truncate text-sm text-neutral-400">{String(company.industry_value ?? "—").replace(/_/g, " ")}</p>
-                        <p className="font-mono text-sm text-neutral-500">{shortId(company.id)}</p>
+                        <p className="font-mono text-sm text-neutral-500">{company.lead_score ?? 0} pts</p>
                         <p className="whitespace-nowrap text-right text-sm text-neutral-500">{formatRelativeTime(company.created_at)}</p>
                         <ListActionMenu actions={leadActions} />
                     </div>
@@ -120,14 +123,14 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Starting clean</p>
                         <h3 className="mt-3 text-xl font-semibold">{latestPoll ? "This poll did not return qualified leads." : "No real companies have been collected yet."}</h3>
-                        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">{latestPoll ? "The Leads tab now shows only qualified leads first seen in the latest poll. Older poll output is preserved in poll detail pages, but hidden here for now." : "Configure sources in Settings, choose industries and locations, then run a poll. Only actual stored source records appear here."}</p>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">{latestPoll ? "The Leads tab only shows companies from the latest poll where source-backed owner identity and owner phone evidence both cleared the qualification threshold. Raw candidates, skipped checks, and rejected reasons are preserved inside the poll detail page." : "Configure Overture plus ICP industries and locations in Settings, then run a poll. Candidates will be investigated across the active public-source catalogue before anything appears here."}</p>
                     </div>
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Next action</p>
                         <ul className="mt-3 space-y-2 text-sm text-neutral-300">
-                            <li>• Select OpenStreetMap, industries, and locations in Settings.</li>
-                            <li>• Run a test poll from the Polls tab.</li>
-                            <li>• Review collected companies here.</li>
+                            <li>• Check Settings to confirm Overture and the active fan-out catalogue are ready.</li>
+                            <li>• Run a 10-business test poll from New Poll.</li>
+                            <li>• Open the poll detail page to inspect candidates, evidence, and rejection reasons.</li>
                         </ul>
                     </div>
                 </div>}

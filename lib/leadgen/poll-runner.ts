@@ -1,8 +1,12 @@
 import { buildSourcePlan, executableLeadgenSources, type LeadgenSourceConfig, type LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
-import { createOsmTasksForPoll, finalizeLeadgenPoll, processOsmPoll, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
+import { finalizeLeadgenPoll, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
 import { createPipelineTasksForPoll, createWebsiteTasksForPoll, processPipelineSourcePoll } from "@/lib/leadgen/pipeline-workers"
-import { createStateLicensingEnrichmentTasksForPoll, createStateLicensingTasksForPoll, processStateLicensingPoll } from "@/lib/leadgen/state-licensing-worker"
+import { processPublicRecordsPoll } from "@/lib/leadgen/public-records-worker"
+import { createStateLicensingEnrichmentTasksForPoll, processStateLicensingPoll } from "@/lib/leadgen/state-licensing-worker"
+import { createInvestigationTasksForPoll, scorePollCompanies } from "@/lib/leadgen/evidence-scoring"
 import { supabaseAdmin } from "@/lib/supabase/admin"
+
+const PILOT_CANDIDATE_LIMIT = 10
 
 export function configObject(value: unknown): Partial<LeadgenSourceConfig> {
     return value && typeof value === "object" ? value as Partial<LeadgenSourceConfig> : {}
@@ -14,25 +18,19 @@ export function planLeadgenSources(enabledSources: string[], sourceConfig: Parti
 
 function executablePlan(sourcePlan: LeadgenSourcePlanItem[]) {
     return {
-        osmPlan: sourcePlan.find((source) => source.key === "osm"),
         stateLicensingPlan: sourcePlan.find((source) => source.key === "state_licensing"),
         websitePlan: sourcePlan.find((source) => source.key === "website"),
-        preSeedPipelinePlans: sourcePlan.filter((source) => ["overture", "sam_gov"].includes(source.key) && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0),
+        preSeedPipelinePlans: sourcePlan
+            .filter((source) => source.key === "overture" && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
+            .map((source) => ({ ...source, limit: Math.min(PILOT_CANDIDATE_LIMIT, Math.max(1, source.limit ?? PILOT_CANDIDATE_LIMIT)) })),
         postSeedPipelinePlans: sourcePlan.filter((source) => ["opencorporates"].includes(source.key) && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0),
         runnablePlans: sourcePlan.filter((source) => executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0),
     }
 }
 
 export async function createInitialLeadgenPollTasks({ workspaceId, pollId, sourcePlan }: { workspaceId: string; pollId: string; sourcePlan: LeadgenSourcePlanItem[] }) {
-    const { osmPlan, stateLicensingPlan, preSeedPipelinePlans } = executablePlan(sourcePlan)
-    const runnableOsmPlan = osmPlan && osmPlan.industries.length > 0 && osmPlan.locations.length > 0 ? osmPlan : null
-    const runnableStateLicensingPlan = stateLicensingPlan && stateLicensingPlan.industries.length > 0 && stateLicensingPlan.locations.length > 0 ? stateLicensingPlan : null
-    const initialTaskCounts = await Promise.all([
-        preSeedPipelinePlans.length ? createPipelineTasksForPoll({ workspaceId, pollId, plans: preSeedPipelinePlans }) : 0,
-        runnableOsmPlan ? createOsmTasksForPoll({ workspaceId, pollId, plan: runnableOsmPlan }) : 0,
-        runnableStateLicensingPlan ? createStateLicensingTasksForPoll({ workspaceId, pollId, plan: runnableStateLicensingPlan }) : 0,
-    ])
-    return initialTaskCounts.reduce((total, count) => total + count, 0)
+    const { preSeedPipelinePlans } = executablePlan(sourcePlan)
+    return preSeedPipelinePlans.length ? createPipelineTasksForPoll({ workspaceId, pollId, plans: preSeedPipelinePlans }) : 0
 }
 
 function sourcePlanFromPollSnapshot(snapshot: unknown): LeadgenSourcePlanItem[] {
@@ -59,15 +57,14 @@ export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId:
     if (!["queued", "running"].includes(pollResult.data.status)) return { processed: false, reason: "not_runnable" }
 
     const sourcePlan = sourcePlanFromPollSnapshot(pollResult.data.source_snapshot)
-    const { osmPlan, stateLicensingPlan, websitePlan, preSeedPipelinePlans, postSeedPipelinePlans } = executablePlan(sourcePlan)
-    const runnableOsmPlan = osmPlan && osmPlan.industries.length > 0 && osmPlan.locations.length > 0 ? osmPlan : null
+    const { stateLicensingPlan, websitePlan, preSeedPipelinePlans, postSeedPipelinePlans } = executablePlan(sourcePlan)
     const runnableStateLicensingPlan = stateLicensingPlan && stateLicensingPlan.industries.length > 0 && stateLicensingPlan.locations.length > 0 ? stateLicensingPlan : null
-    const runnableWebsitePlan = websitePlan && websitePlan.industries.length > 0 && websitePlan.locations.length > 0 ? websitePlan : null
+    const runnableWebsitePlan = websitePlan && websitePlan.industries.length > 0 && websitePlan.locations.length > 0 ? { ...websitePlan, limit: PILOT_CANDIDATE_LIMIT } : null
 
     await setLeadgenPollStatus(pollId, workspaceId, "running")
     for (const plan of preSeedPipelinePlans) await processPipelineSourcePoll(pollId, workspaceId, plan.key, { finalize: false })
-    if (runnableOsmPlan) await processOsmPoll(pollId, workspaceId, { finalize: false })
-    if (runnableStateLicensingPlan) await processStateLicensingPoll(pollId, workspaceId, { finalize: false })
+    await createInvestigationTasksForPoll({ workspaceId, pollId })
+    await processPublicRecordsPoll(pollId, workspaceId, { finalize: false })
     if (runnableStateLicensingPlan) {
         await createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan: runnableStateLicensingPlan })
         await processStateLicensingPoll(pollId, workspaceId, { finalize: false })
@@ -80,7 +77,7 @@ export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId:
         await createPipelineTasksForPoll({ workspaceId, pollId, plans: postSeedPipelinePlans })
         for (const plan of postSeedPipelinePlans) await processPipelineSourcePoll(pollId, workspaceId, plan.key, { finalize: false })
     }
+    await scorePollCompanies({ workspaceId, pollId })
     await finalizeLeadgenPoll(pollId, workspaceId)
     return { processed: true }
 }
-

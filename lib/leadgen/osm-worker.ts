@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
+import { recordEvidenceClaim } from "@/lib/leadgen/evidence-scoring"
 
 type GeoTarget = {
     value: string
@@ -95,23 +96,24 @@ export async function setLeadgenPollStatus(pollId: string, workspaceId: string, 
 }
 
 export async function refreshLeadgenPollCounts(pollId: string, workspaceId: string) {
-    const [recordsResult, companiesResult] = await Promise.all([
+    const [recordsResult, companiesResult, evidenceClaimsResult, investigationResult] = await Promise.all([
         supabaseAdmin.from("leadgen_source_records").select("id", { count: "exact", head: true }).eq("poll_id", pollId),
         supabaseAdmin.from("leadgen_companies").select("id", { count: "exact", head: true }).eq("first_seen_poll_id", pollId),
+        supabaseAdmin.from("leadgen_evidence_claims").select("id", { count: "exact", head: true }).eq("poll_id", pollId),
+        supabaseAdmin.from("leadgen_investigation_tasks").select("id", { count: "exact", head: true }).eq("poll_id", pollId).in("status", ["completed", "failed", "skipped"]),
     ])
     const qualifiedResult = await supabaseAdmin
         .from("leadgen_companies")
         .select("id", { count: "exact", head: true })
         .eq("first_seen_poll_id", pollId)
-        .not("owner_name", "is", null)
-        .or("owner_phone.not.is.null,phone.not.is.null")
+        .eq("qualification_status", "qualified")
     await supabaseAdmin
         .from("leadgen_polls")
         .update({
             candidate_count: recordsResult.count ?? 0,
             normalised_count: companiesResult.count ?? 0,
             deduped_count: companiesResult.count ?? 0,
-            enriched_count: 0,
+            enriched_count: Math.max(evidenceClaimsResult.count ?? 0, investigationResult.count ?? 0),
             qualified_count: qualifiedResult.count ?? 0,
         })
         .eq("id", pollId)
@@ -131,8 +133,7 @@ export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
             .from("leadgen_companies")
             .select("id", { count: "exact", head: true })
             .eq("first_seen_poll_id", pollId)
-            .not("owner_name", "is", null)
-            .or("owner_phone.not.is.null,phone.not.is.null"),
+            .eq("qualification_status", "qualified"),
     ])
     if (tasksResult.error) {
         await setLeadgenPollStatus(pollId, workspaceId, "failed", `Could not read poll task results: ${tasksResult.error.message}`)
@@ -294,7 +295,7 @@ async function upsertOsmElement({ workspaceId, pollId, taskId, industryValue, lo
         .from("leadgen_source_records")
         .insert(sourceRecord)
     if (recordError) throw recordError
-    const { error: companyError } = await supabaseAdmin
+    const { data: company, error: companyError } = await supabaseAdmin
         .from("leadgen_companies")
         .upsert({
             workspace_id: workspaceId,
@@ -317,7 +318,37 @@ async function upsertOsmElement({ workspaceId, pollId, taskId, industryValue, lo
             first_seen_poll_id: pollId,
             last_seen_at: new Date().toISOString(),
         }, { onConflict: "workspace_id,source_key,source_record_id" })
+        .select("id")
+        .single()
     if (companyError) throw companyError
+    if (company?.id) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId: company.id,
+            sourceKey: "osm",
+            claimKind: "business_support",
+            pointsAwarded: 1,
+            confidence: 45,
+            provenanceUrl: profileUrl,
+            claimValue: { name: companyName, website_url: websiteUrl, categories },
+            rawPayload: element as unknown as Record<string, unknown>,
+        })
+        if (phone) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId: company.id,
+                sourceKey: "osm",
+                claimKind: "business_phone",
+                pointsAwarded: 1,
+                confidence: 35,
+                provenanceUrl: profileUrl,
+                claimValue: { phone },
+                rawPayload: element as unknown as Record<string, unknown>,
+            })
+        }
+    }
     return true
 }
 

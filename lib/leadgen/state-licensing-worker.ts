@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
 import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
+import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
 
 type SourceOption = {
     value: string
@@ -27,6 +28,13 @@ type CompanyCandidate = {
     location_value: string | null
 }
 
+type LicensingTask = {
+    id: string
+    industry_value: string | null
+    location_value: string | null
+    source_query: Record<string, unknown> | null
+}
+
 type TdlrResult = {
     licenseNumber: string
     expirationDate: string | null
@@ -40,10 +48,68 @@ type TdlrResult = {
     rawHtml: string
 }
 
+type DbprLicenseResult = {
+    licenseNumber: string
+    licenseType: string
+    ownerName: string | null
+    businessName: string | null
+    status: string | null
+    expirationDate: string | null
+    address: Record<string, unknown>
+    phone: string | null
+    profileUrl: string
+    row: string[]
+}
+
+type NcLicenseResult = {
+    licenseNumber: string
+    ownerName: string | null
+    phone: string | null
+    status: string | null
+    classifications: string[]
+    active: boolean
+    detailUrl: string
+    rawSearchRow: string
+    rawDetailHtml: string
+}
+
 const TDLR_SEARCH_URL = "https://www.tdlr.texas.gov/LicenseSearch/SearchResultsListBrowse.asp?from=search"
 const TDLR_DETAIL_BASE_URL = "https://www.tdlr.texas.gov/LicenseSearch/"
+const DBPR_ELECTRICAL_CSV_URL = "https://www2.myfloridalicense.com/sto/file_download/extracts/lic08el.csv"
+const DBPR_LICENSE_BASE_URL = "https://www.myfloridalicense.com/LicenseDetail.asp"
+const NC_GENERAL_SEARCH_URL = "https://portal.nclbgc.org/Public/_Search/"
+const NC_GENERAL_DETAIL_URL = "https://portal.nclbgc.org/Public/_ShowAccountDetails/"
 const TDLR_FETCH_TIMEOUT_MS = 22000
-const TDLR_REQUEST_DELAY_MS = 1200
+const STATE_LICENSING_REQUEST_DELAY_MS = 900
+
+const DBPR_ELECTRICAL_INDUSTRIES = new Set([
+    "electricians",
+    "solar_installers",
+    "pool_builders",
+    "hvac_contractors",
+    "general_contractors",
+])
+
+const NC_CLASSIFICATIONS_BY_INDUSTRY: Record<string, string[]> = {
+    concrete_contractors: ["42"],
+    deck_builders: ["27", "28"],
+    fencing_contractors: ["50"],
+    general_contractors: ["27", "28", "26"],
+    hardscaping_contractors: ["42"],
+    home_builders: ["27", "28"],
+    insulation_contractors: ["43"],
+    kitchen_remodelling: ["27", "28", "44"],
+    masonry_contractors: ["46"],
+    patio_contractors: ["27", "42"],
+    pool_builders: ["51"],
+    remodellers: ["27", "28", "44"],
+    restoration_companies: ["27", "28", "26"],
+    roofers: ["49"],
+    siding_contractors: ["27", "44"],
+    window_and_door_contractors: ["27", "44"],
+}
+
+const csvTextCache = new Map<string, Promise<string>>()
 
 const FALLBACK_TDLR_MAPPINGS: Record<string, { status: string; endorsement?: string }> = {
     a_c_contractor: { status: "AIRREF" },
@@ -114,6 +180,243 @@ function ownerNameFromTdlrName(value: string) {
 function compactErrorMessage(error: unknown) {
     const message = error instanceof Error ? error.message : "State licensing task failed."
     return message.length > 900 ? `${message.slice(0, 900)}…` : message
+}
+
+function asString(value: unknown) {
+    return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function candidateState(candidate: CompanyCandidate) {
+    const address = candidate.address ?? {}
+    const direct = asString(address.state) ?? asString(address.region) ?? asString(address.state_code) ?? asString(address.region_code)
+    if (direct && /^[A-Z]{2}$/i.test(direct)) return direct.toUpperCase()
+    const freeform = [address.freeform, address.locality, address.postcode, address.country].map(asString).filter(Boolean).join(" ")
+    const match = freeform.match(/\b([A-Z]{2})\b/)
+    return match ? match[1].toUpperCase() : null
+}
+
+function candidateCity(candidate: CompanyCandidate) {
+    const address = candidate.address ?? {}
+    return asString(address.city) ?? asString(address.locality) ?? asString(address.town) ?? asString(address.municipality)
+}
+
+function candidatePostcode(candidate: CompanyCandidate) {
+    const address = candidate.address ?? {}
+    const value = asString(address.postcode) ?? asString(address.postal_code) ?? asString(address.zip)
+    return value?.slice(0, 10) ?? null
+}
+
+function stripLegalSuffixes(value: string) {
+    return value
+        .replace(/\b(d\/b\/a|dba|llc|l\.l\.c\.|inc|incorporated|corp|corporation|co|company|ltd|limited|lp|llp|pllc|pa)\b\.?/gi, " ")
+        .replace(/\b(the|and|&)\b/gi, " ")
+        .replace(/[^a-z0-9]+/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase()
+}
+
+function nameTokens(value: string | null | undefined) {
+    return stripLegalSuffixes(value ?? "")
+        .split(" ")
+        .filter((token) => token.length >= 3)
+}
+
+function sharedTokenScore(left: string | null | undefined, right: string | null | undefined) {
+    const leftTokens = new Set(nameTokens(left))
+    const rightTokens = new Set(nameTokens(right))
+    if (leftTokens.size === 0 || rightTokens.size === 0) return 0
+    const shared = [...leftTokens].filter((token) => rightTokens.has(token)).length
+    return shared / Math.max(leftTokens.size, rightTokens.size)
+}
+
+function strongBusinessNameMatch(candidateName: string, ...recordNames: Array<string | null | undefined>) {
+    const candidateCanonical = stripLegalSuffixes(candidateName)
+    if (!candidateCanonical) return false
+    return recordNames.some((recordName) => {
+        const recordCanonical = stripLegalSuffixes(recordName ?? "")
+        if (!recordCanonical) return false
+        return recordCanonical.includes(candidateCanonical)
+            || candidateCanonical.includes(recordCanonical)
+            || sharedTokenScore(candidateCanonical, recordCanonical) >= 0.58
+    })
+}
+
+function firstSearchTerm(candidateName: string) {
+    const clean = stripLegalSuffixes(candidateName)
+    const tokens = clean.split(" ").filter(Boolean)
+    return tokens.slice(0, Math.min(4, Math.max(1, tokens.length))).join(" ")
+}
+
+function parseCsvLine(line: string) {
+    const cells: string[] = []
+    let current = ""
+    let quoted = false
+    for (let index = 0; index < line.length; index += 1) {
+        const char = line[index]
+        const next = line[index + 1]
+        if (char === "\"" && quoted && next === "\"") {
+            current += "\""
+            index += 1
+            continue
+        }
+        if (char === "\"") {
+            quoted = !quoted
+            continue
+        }
+        if (char === "," && !quoted) {
+            cells.push(cleanText(current))
+            current = ""
+            continue
+        }
+        current += char
+    }
+    cells.push(cleanText(current))
+    return cells
+}
+
+async function fetchTextWithTimeout(url: string, timeoutMs: number) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+        const response = await fetch(url, {
+            headers: { Accept: "text/csv,text/html,application/xhtml+xml", "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)" },
+            cache: "no-store",
+            signal: controller.signal,
+        })
+        const text = await response.text()
+        if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}: ${stripHtml(text).slice(0, 300)}`)
+        return text
+    } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") throw new Error(`${url} timed out after ${Math.round(timeoutMs / 1000)} seconds.`)
+        throw error
+    } finally {
+        clearTimeout(timeout)
+    }
+}
+
+async function fetchCachedCsv(url: string) {
+    const cached = csvTextCache.get(url)
+    if (cached) return cached
+    const promise = fetchTextWithTimeout(url, 28_000)
+    csvTextCache.set(url, promise)
+    return promise
+}
+
+function dbprName(value: string | null | undefined) {
+    if (!value) return null
+    const parts = value.split(",").map((part) => cleanText(part)).filter(Boolean)
+    if (parts.length >= 2) return `${parts.slice(1).join(" ")} ${parts[0]}`.replace(/\s+/g, " ").trim()
+    return cleanText(value)
+}
+
+function parseDbprElectricalRows(csv: string, candidate: CompanyCandidate, limit: number) {
+    const matches: DbprLicenseResult[] = []
+    const state = candidateState(candidate)
+    const zip = candidatePostcode(candidate)?.slice(0, 5)
+    const city = candidateCity(candidate)
+    for (const line of csv.split(/\r?\n/)) {
+        if (!line.trim()) continue
+        const row = parseCsvLine(line)
+        if (row.length < 21) continue
+        const ownerName = dbprName(row[2])
+        const businessName = cleanText(row[3]) || null
+        const rowState = cleanText(row[9]).toUpperCase()
+        const rowZip = cleanText(row[10]).slice(0, 5)
+        if (state && rowState && rowState !== state) continue
+        if (zip && rowZip && zip !== rowZip && !strongBusinessNameMatch(candidate.display_name, businessName)) continue
+        if (!strongBusinessNameMatch(candidate.display_name, businessName, ownerName)) continue
+        const status = cleanText(row[14]) || null
+        if (status && status !== "A") continue
+        const licenseNumber = cleanText(row[20]) || [row[1], row[12]].filter(Boolean).join("")
+        matches.push({
+            licenseNumber,
+            licenseType: cleanText(row[1]) || "Electrical contractor",
+            ownerName,
+            businessName,
+            status,
+            expirationDate: cleanText(row[17]) || null,
+            address: {
+                street: [row[5], row[6], row[7]].map(cleanText).filter(Boolean).join(" ") || null,
+                city: cleanText(row[8]) || city,
+                state: rowState || state,
+                postcode: cleanText(row[10]) || null,
+                country: "US",
+            },
+            phone: null,
+            profileUrl: `${DBPR_LICENSE_BASE_URL}?SID=&id=${encodeURIComponent(licenseNumber)}`,
+            row,
+        })
+        if (matches.length >= limit) break
+    }
+    return matches
+}
+
+function parseNcSearchRows(html: string, limit: number) {
+    return html
+        .split(/<tr>/i)
+        .slice(1)
+        .map((rowHtml) => {
+            const key = rowHtml.match(/ShowAccountDetails\(\s*'([^']+)'/i)?.[1]
+            const licenseNumber = stripHtml(rowHtml.match(/<a\b[^>]*>([\s\S]*?)<\/a>/i)?.[1] ?? "")
+            const cells = [...rowHtml.matchAll(/<td\b[^>]*>([\s\S]*?)(?=<td\b|<\/tr>|$)/gi)].map((match) => stripHtml(match[1]))
+            const ownerName = cells[2] || null
+            const active = !/License Not Active|License Not Valid|Archived/i.test(rowHtml)
+            return key && licenseNumber ? { key, licenseNumber, ownerName, active, rawSearchRow: rowHtml.slice(0, 2500) } : null
+        })
+        .filter((row): row is { key: string; licenseNumber: string; ownerName: string | null; active: boolean; rawSearchRow: string } => Boolean(row))
+        .filter((row) => row.active)
+        .slice(0, limit)
+}
+
+function extractNcDisplayFields(html: string) {
+    const fields: Record<string, string> = {}
+    const matches = [...html.matchAll(/<div class="display-label">([\s\S]*?)<\/div>\s*<div class="display-field">([\s\S]*?)<\/div>/gi)]
+    for (const match of matches) fields[stripHtml(match[1]).toLowerCase()] = stripHtml(match[2])
+    return fields
+}
+
+function extractNcClassifications(html: string) {
+    const classificationBlock = html.match(/<legend>Active Classifications<\/legend>([\s\S]*?)<\/fieldset>/i)?.[1] ?? ""
+    return [...classificationBlock.matchAll(/<div class="display-field">([\s\S]*?)<\/div>/gi)]
+        .map((match) => stripHtml(match[1]))
+        .filter(Boolean)
+}
+
+async function fetchNcGeneralSearch({ companyName, classificationId }: { companyName: string; classificationId?: string | null }) {
+    const body = new URLSearchParams({
+        CompanyName: companyName,
+        ClassificationDefinitionIdnt: classificationId ?? "",
+    })
+    const response = await fetch(NC_GENERAL_SEARCH_URL, {
+        method: "POST",
+        headers: {
+            Accept: "text/html,application/xhtml+xml",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)",
+        },
+        body,
+        cache: "no-store",
+    })
+    const text = await response.text()
+    if (!response.ok) throw new Error(`NC licensing search returned HTTP ${response.status}: ${stripHtml(text).slice(0, 300)}`)
+    return text
+}
+
+async function fetchNcGeneralDetail(key: string) {
+    const url = `${NC_GENERAL_DETAIL_URL}?key=${key}&Source=Search`
+    const html = await fetchTextWithTimeout(url, 18_000)
+    const fields = extractNcDisplayFields(html)
+    return {
+        detailUrl: url,
+        ownerName: fields.name || null,
+        phone: normalisePhone(fields.phone),
+        status: fields.status || null,
+        licenseNumber: fields["license #"] || null,
+        classifications: extractNcClassifications(html),
+        active: !/License Not Valid|License Not Active|Archived/i.test(fields.status ?? html),
+        rawDetailHtml: html.slice(0, 4000),
+    }
 }
 
 function tdlrMapping(option: SourceOption) {
@@ -279,7 +582,7 @@ async function upsertTdlrRecord({
             raw_payload: rawPayload,
         })
     if (recordError) throw recordError
-    const { error: companyError } = await supabaseAdmin
+    const { data: company, error: companyError } = await supabaseAdmin
         .from("leadgen_companies")
         .upsert({
             workspace_id: workspaceId,
@@ -313,7 +616,51 @@ async function upsertTdlrRecord({
             first_seen_poll_id: pollId,
             last_seen_at: new Date().toISOString(),
         }, { onConflict: "workspace_id,source_key,source_record_id" })
+        .select("id")
+        .single()
     if (companyError) throw companyError
+    if (company?.id) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId: company.id,
+            sourceKey: "state_license.tx.tdlr",
+            claimKind: "licence_activity",
+            pointsAwarded: 2,
+            confidence: 80,
+            provenanceUrl: result.profileUrl,
+            claimValue: { license_number: result.licenseNumber, license_type: industryLabel, status: "active" },
+            rawPayload,
+        })
+        if (ownerName) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId: company.id,
+                sourceKey: "state_license.tx.tdlr",
+                claimKind: "owner_identity",
+                pointsAwarded: 3,
+                confidence: result.phone ? 82 : 65,
+                provenanceUrl: result.profileUrl,
+                claimValue: { owner_name: ownerName, role: "license_holder", legal_name: result.name },
+                rawPayload,
+            })
+        }
+        if (ownerName && result.phone) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId: company.id,
+                sourceKey: "state_license.tx.tdlr",
+                claimKind: "owner_phone",
+                pointsAwarded: 3,
+                confidence: 82,
+                provenanceUrl: result.profileUrl,
+                claimValue: { owner_name: ownerName, owner_phone: result.phone, phone_source: "tdlr_license_phone" },
+                rawPayload,
+            })
+        }
+    }
     return true
 }
 
@@ -338,6 +685,46 @@ async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, re
         raw_payload: { ...value, raw_html: result.rawHtml },
     })
     if (evidenceError) throw evidenceError
+    await recordEvidenceClaim({
+        workspaceId,
+        pollId,
+        companyId,
+        sourceKey: "state_license.tx.tdlr",
+        claimKind: "licence_activity",
+        pointsAwarded: 2,
+        confidence: 80,
+        provenanceUrl: result.profileUrl,
+        claimValue: { license_number: result.licenseNumber, legal_name: result.name },
+        rawPayload: { ...value, raw_html: result.rawHtml },
+    })
+    if (ownerName) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "state_license.tx.tdlr",
+            claimKind: "owner_identity",
+            pointsAwarded: 3,
+            confidence: result.phone ? 82 : 55,
+            provenanceUrl: result.profileUrl,
+            claimValue: { owner_name: ownerName, role: "license_holder", legal_name: result.name },
+            rawPayload: { ...value, raw_html: result.rawHtml },
+        })
+    }
+    if (ownerName && result.phone) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "state_license.tx.tdlr",
+            claimKind: "owner_phone",
+            pointsAwarded: 3,
+            confidence: 82,
+            provenanceUrl: result.profileUrl,
+            claimValue: { owner_name: ownerName, owner_phone: result.phone, phone_source: "tdlr_license_phone" },
+            rawPayload: { ...value, raw_html: result.rawHtml },
+        })
+    }
     const updatePayload: Record<string, unknown> = {
         last_seen_at: new Date().toISOString(),
         profile_url: result.profileUrl,
@@ -352,7 +739,207 @@ async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, re
     }
     const { error } = await supabaseAdmin.from("leadgen_companies").update(updatePayload).eq("id", companyId).eq("workspace_id", workspaceId)
     if (error) throw error
+    await updateInvestigationTask({
+        workspaceId,
+        pollId,
+        companyId,
+        sourceKey: "state_license.tx.tdlr",
+        status: "completed",
+        matched: Boolean(ownerName || result.phone),
+        ownerIdentityPoints: ownerName ? 3 : 0,
+        ownerPhonePoints: ownerName && result.phone ? 3 : 0,
+        businessSupportPoints: 2,
+        rawPayload: { ...value, raw_html: result.rawHtml },
+    })
     return Boolean(ownerName && result.phone)
+}
+
+async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, companyId, result }: { workspaceId: string; pollId: string; companyId: string; result: DbprLicenseResult }) {
+    const rawPayload = {
+        source: "fl_dbpr_electrical_public_records",
+        license_number: result.licenseNumber,
+        license_type: result.licenseType,
+        owner_name: result.ownerName,
+        business_name: result.businessName,
+        status: result.status,
+        expiration_date: result.expirationDate,
+        address: result.address,
+        profile_url: result.profileUrl,
+        row: result.row,
+    }
+    await supabaseAdmin.from("leadgen_evidence").insert({
+        workspace_id: workspaceId,
+        poll_id: pollId,
+        company_id: companyId,
+        source_key: "state_licensing",
+        evidence_kind: "license_candidate_match",
+        confidence: result.ownerName ? 82 : 55,
+        value: rawPayload,
+        raw_payload: rawPayload,
+    })
+    await recordEvidenceClaim({
+        workspaceId,
+        pollId,
+        companyId,
+        sourceKey: "state_license.fl.electrical",
+        claimKind: "licence_activity",
+        pointsAwarded: 2,
+        confidence: 82,
+        provenanceUrl: result.profileUrl,
+        claimValue: { license_number: result.licenseNumber, license_type: result.licenseType, status: result.status },
+        rawPayload,
+    })
+    if (result.ownerName) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "state_license.fl.electrical",
+            claimKind: "owner_identity",
+            pointsAwarded: 3,
+            confidence: 82,
+            provenanceUrl: result.profileUrl,
+            claimValue: { owner_name: result.ownerName, role: "licensee", legal_name: result.businessName },
+            rawPayload,
+        })
+    }
+    if (result.ownerName && result.phone) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "state_license.fl.electrical",
+            claimKind: "owner_phone",
+            pointsAwarded: 3,
+            confidence: 82,
+            provenanceUrl: result.profileUrl,
+            claimValue: { owner_name: result.ownerName, owner_phone: result.phone, phone_source: "dbpr_license_phone" },
+            rawPayload,
+        })
+    }
+    const updatePayload: Record<string, unknown> = {
+        last_seen_at: new Date().toISOString(),
+        profile_url: result.profileUrl,
+        owner_evidence: rawPayload,
+    }
+    if (result.ownerName) {
+        updatePayload.owner_name = result.ownerName
+        updatePayload.owner_source_key = "state_licensing"
+        updatePayload.owner_confidence = result.phone ? 82 : 72
+    }
+    if (result.phone) {
+        updatePayload.phone = result.phone
+        if (result.ownerName) updatePayload.owner_phone = result.phone
+    }
+    const { error } = await supabaseAdmin.from("leadgen_companies").update(updatePayload).eq("id", companyId).eq("workspace_id", workspaceId)
+    if (error) throw error
+    await updateInvestigationTask({
+        workspaceId,
+        pollId,
+        companyId,
+        sourceKey: "state_license.fl.electrical",
+        status: "completed",
+        matched: Boolean(result.ownerName || result.phone),
+        ownerIdentityPoints: result.ownerName ? 3 : 0,
+        ownerPhonePoints: result.ownerName && result.phone ? 3 : 0,
+        businessSupportPoints: 2,
+        rawPayload,
+    })
+    return Boolean(result.ownerName && result.phone)
+}
+
+async function applyNcGeneralEnrichmentToCompany({ workspaceId, pollId, companyId, result }: { workspaceId: string; pollId: string; companyId: string; result: NcLicenseResult }) {
+    const rawPayload = {
+        source: "nc_general_contractor_public_search",
+        license_number: result.licenseNumber,
+        owner_name: result.ownerName,
+        phone: result.phone,
+        status: result.status,
+        classifications: result.classifications,
+        detail_url: result.detailUrl,
+        active: result.active,
+        raw_search_row: result.rawSearchRow,
+        raw_detail_html: result.rawDetailHtml,
+    }
+    await supabaseAdmin.from("leadgen_evidence").insert({
+        workspace_id: workspaceId,
+        poll_id: pollId,
+        company_id: companyId,
+        source_key: "state_licensing",
+        evidence_kind: "license_candidate_match",
+        confidence: result.ownerName && result.phone ? 84 : result.ownerName ? 72 : 45,
+        value: rawPayload,
+        raw_payload: rawPayload,
+    })
+    await recordEvidenceClaim({
+        workspaceId,
+        pollId,
+        companyId,
+        sourceKey: "state_license.nc.general_contractors",
+        claimKind: "licence_activity",
+        pointsAwarded: 2,
+        confidence: 82,
+        provenanceUrl: result.detailUrl,
+        claimValue: { license_number: result.licenseNumber, status: result.status, classifications: result.classifications },
+        rawPayload,
+    })
+    if (result.ownerName) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "state_license.nc.general_contractors",
+            claimKind: "owner_identity",
+            pointsAwarded: 3,
+            confidence: result.phone ? 84 : 72,
+            provenanceUrl: result.detailUrl,
+            claimValue: { owner_name: result.ownerName, role: "licensee" },
+            rawPayload,
+        })
+    }
+    if (result.ownerName && result.phone) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "state_license.nc.general_contractors",
+            claimKind: "owner_phone",
+            pointsAwarded: 3,
+            confidence: 84,
+            provenanceUrl: result.detailUrl,
+            claimValue: { owner_name: result.ownerName, owner_phone: result.phone, phone_source: "nc_license_phone" },
+            rawPayload,
+        })
+    }
+    const updatePayload: Record<string, unknown> = {
+        last_seen_at: new Date().toISOString(),
+        profile_url: result.detailUrl,
+        owner_evidence: rawPayload,
+    }
+    if (result.ownerName) {
+        updatePayload.owner_name = result.ownerName
+        updatePayload.owner_source_key = "state_licensing"
+        updatePayload.owner_confidence = result.phone ? 84 : 72
+    }
+    if (result.phone) {
+        updatePayload.phone = result.phone
+        if (result.ownerName) updatePayload.owner_phone = result.phone
+    }
+    const { error } = await supabaseAdmin.from("leadgen_companies").update(updatePayload).eq("id", companyId).eq("workspace_id", workspaceId)
+    if (error) throw error
+    await updateInvestigationTask({
+        workspaceId,
+        pollId,
+        companyId,
+        sourceKey: "state_license.nc.general_contractors",
+        status: "completed",
+        matched: Boolean(result.ownerName || result.phone),
+        ownerIdentityPoints: result.ownerName ? 3 : 0,
+        ownerPhonePoints: result.ownerName && result.phone ? 3 : 0,
+        businessSupportPoints: 2,
+        rawPayload,
+    })
+    return Boolean(result.ownerName && result.phone)
 }
 
 export async function createStateLicensingTasksForPoll({ workspaceId, pollId, plan }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem }) {
@@ -469,16 +1056,29 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
     const locationMappings = (locationMappingsResult.data ?? []) as SourceLocationMapping[]
     const nativeIndustries = [...new Set(industryMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
     const nativeLocations = [...new Set(locationMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
-    if (nativeIndustries.length === 0 || nativeLocations.length === 0) return 0
-    const [industriesResult, locationsResult] = await Promise.all([
-        supabaseAdmin.from("leadgen_source_options").select("value, label, metadata").eq("source_key", "state_licensing").eq("option_kind", "industry").eq("enabled", true).in("value", nativeIndustries),
-        supabaseAdmin.from("leadgen_source_options").select("value, label, metadata").eq("source_key", "state_licensing").eq("option_kind", "location").eq("enabled", true).in("value", nativeLocations),
-    ])
-    if (industriesResult.error) throw new Error(`Could not load state licensing enrichment industries: ${industriesResult.error.message}`)
-    if (locationsResult.error) throw new Error(`Could not load state licensing enrichment locations: ${locationsResult.error.message}`)
-    const industries = ((industriesResult.data ?? []) as SourceOption[]).filter((industry) => Boolean(tdlrMapping(industry))).slice(0, 4)
-    const locations = ((locationsResult.data ?? []) as SourceOption[]).slice(0, 6)
-    const tasks = candidates.flatMap((candidate) => industries.flatMap((industry) => {
+    let industries: SourceOption[] = []
+    let locations: SourceOption[] = []
+    if (nativeIndustries.length > 0 && nativeLocations.length > 0) {
+        const [industriesResult, locationsResult] = await Promise.all([
+            supabaseAdmin.from("leadgen_source_options").select("value, label, metadata").eq("source_key", "state_licensing").eq("option_kind", "industry").eq("enabled", true).in("value", nativeIndustries),
+            supabaseAdmin.from("leadgen_source_options").select("value, label, metadata").eq("source_key", "state_licensing").eq("option_kind", "location").eq("enabled", true).in("value", nativeLocations),
+        ])
+        if (industriesResult.error) throw new Error(`Could not load state licensing enrichment industries: ${industriesResult.error.message}`)
+        if (locationsResult.error) throw new Error(`Could not load state licensing enrichment locations: ${locationsResult.error.message}`)
+        industries = ((industriesResult.data ?? []) as SourceOption[]).filter((industry) => Boolean(tdlrMapping(industry))).slice(0, 4)
+        locations = ((locationsResult.data ?? []) as SourceOption[]).slice(0, 6)
+    }
+    const tasks: Array<{
+        poll_id: string
+        workspace_id: string
+        source_key: string
+        stage: string
+        industry_value: string | null
+        location_value: string | null
+        status: string
+        source_query: Record<string, unknown>
+    }> = candidates.flatMap((candidate) => industries.flatMap((industry) => {
+        if (candidateState(candidate) !== "TX") return []
         const mapping = tdlrMapping(industry)
         if (!mapping) return []
         return locations.map((location) => ({
@@ -503,10 +1103,206 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
             },
         }))
     }))
+    const dbprElectricalTasks = candidates
+        .filter((candidate) => candidateState(candidate) === "FL")
+        .filter((candidate) => DBPR_ELECTRICAL_INDUSTRIES.has(candidate.industry_value ?? ""))
+        .map((candidate) => ({
+            poll_id: pollId,
+            workspace_id: workspaceId,
+            source_key: "state_licensing",
+            stage: "licensing_candidate_enrichment",
+            industry_value: candidate.industry_value,
+            location_value: candidate.location_value,
+            status: "queued",
+            source_query: {
+                board: "fl_dbpr_electrical",
+                board_label: "Florida DBPR Electrical Contractors Licensing Board",
+                adapter_source_key: "state_license.fl.electrical",
+                candidate_company_id: candidate.id,
+                candidate_company_name: candidate.display_name,
+                candidate_state: "FL",
+                candidate_city: candidateCity(candidate),
+                candidate_postcode: candidatePostcode(candidate),
+                file_url: DBPR_ELECTRICAL_CSV_URL,
+                limit: 3,
+            },
+        }))
+    const ncGeneralTasks = candidates
+        .filter((candidate) => candidateState(candidate) === "NC")
+        .flatMap((candidate) => {
+            const classifications = NC_CLASSIFICATIONS_BY_INDUSTRY[candidate.industry_value ?? ""] ?? []
+            if (classifications.length === 0) return []
+            return classifications.slice(0, 3).map((classificationId) => ({
+                poll_id: pollId,
+                workspace_id: workspaceId,
+                source_key: "state_licensing",
+                stage: "licensing_candidate_enrichment",
+                industry_value: candidate.industry_value,
+                location_value: candidate.location_value,
+                status: "queued",
+                source_query: {
+                    board: "nc_general_contractors",
+                    board_label: "North Carolina Licensing Board for General Contractors",
+                    adapter_source_key: "state_license.nc.general_contractors",
+                    candidate_company_id: candidate.id,
+                    candidate_company_name: candidate.display_name,
+                    candidate_state: "NC",
+                    candidate_city: candidateCity(candidate),
+                    candidate_postcode: candidatePostcode(candidate),
+                    classification_id: classificationId,
+                    limit: 3,
+                },
+            }))
+        })
+    tasks.push(...dbprElectricalTasks, ...ncGeneralTasks)
     if (tasks.length === 0) return 0
     const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(tasks)
     if (error) throw error
     return tasks.length
+}
+
+async function processTdlrTask({ task, workspaceId, pollId }: { task: LicensingTask; workspaceId: string; pollId: string }) {
+    const query = task.source_query as {
+        tdlr_status?: string
+        tdlr_endorsement?: string | null
+        county?: string
+        industry_label?: string
+        location_label?: string
+        limit?: number
+        candidate_company_id?: string
+        candidate_company_name?: string
+    }
+    if (!query.tdlr_status || !query.county) throw new Error("Missing TDLR license type or county in source task.")
+    const html = await fetchTdlrSearch({ status: query.tdlr_status, endorsement: query.tdlr_endorsement ?? undefined, county: query.county, name: query.candidate_company_name })
+    const results = parseTdlrRows(html, Math.min(25, Math.max(1, Number(query.limit) || 15)))
+    let companyCount = 0
+    if (query.candidate_company_id) {
+        const bestResult = results.find((result) => result.phone) ?? results[0]
+        if (bestResult) {
+            const qualified = await applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult })
+            companyCount = qualified ? 1 : 0
+        } else {
+            await updateInvestigationTask({
+                workspaceId,
+                pollId,
+                companyId: query.candidate_company_id,
+                sourceKey: "state_license.tx.tdlr",
+                status: "completed",
+                matched: false,
+                skipReason: "TDLR returned no candidate match for this business.",
+            })
+        }
+    } else {
+        for (const result of results) {
+            const stored = await upsertTdlrRecord({
+                workspaceId,
+                pollId,
+                taskId: task.id,
+                industryValue: task.industry_value ?? "",
+                locationValue: task.location_value ?? "",
+                industryLabel: query.industry_label ?? task.industry_value ?? "State license",
+                countyLabel: query.location_label ?? query.county,
+                result,
+            })
+            if (stored) companyCount += 1
+        }
+    }
+    return { rawCount: results.length, companyCount }
+}
+
+async function processDbprElectricalTask({ task, workspaceId, pollId }: { task: LicensingTask; workspaceId: string; pollId: string }) {
+    const query = task.source_query as {
+        candidate_company_id?: string
+        candidate_company_name?: string
+        limit?: number
+        file_url?: string
+    }
+    if (!query.candidate_company_id || !query.candidate_company_name) throw new Error("Florida DBPR task is missing a candidate company.")
+    await updateInvestigationTask({ workspaceId, pollId, companyId: query.candidate_company_id, sourceKey: "state_license.fl.electrical", status: "running" })
+    const csv = await fetchCachedCsv(query.file_url || DBPR_ELECTRICAL_CSV_URL)
+    if (!csv.trim()) throw new Error("Florida DBPR electrical public records CSV was empty.")
+    const candidate: CompanyCandidate = {
+        id: query.candidate_company_id,
+        display_name: query.candidate_company_name,
+        phone: null,
+        address: {
+            state: "FL",
+            city: asString(task.source_query?.candidate_city),
+            postcode: asString(task.source_query?.candidate_postcode),
+        },
+        industry_value: task.industry_value,
+        location_value: task.location_value,
+    }
+    const results = parseDbprElectricalRows(csv, candidate, Math.min(10, Math.max(1, Number(query.limit) || 3)))
+    if (results.length === 0) {
+        await updateInvestigationTask({
+            workspaceId,
+            pollId,
+            companyId: query.candidate_company_id,
+            sourceKey: "state_license.fl.electrical",
+            status: "completed",
+            matched: false,
+            skipReason: "Florida DBPR electrical public records returned no active license match for this candidate.",
+        })
+        return { rawCount: 0, companyCount: 0 }
+    }
+    const bestResult = results[0]
+    const qualified = await applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult })
+    return { rawCount: results.length, companyCount: qualified ? 1 : 0 }
+}
+
+async function processNcGeneralTask({ task, workspaceId, pollId }: { task: LicensingTask; workspaceId: string; pollId: string }) {
+    const query = task.source_query as {
+        candidate_company_id?: string
+        candidate_company_name?: string
+        classification_id?: string
+        limit?: number
+    }
+    if (!query.candidate_company_id || !query.candidate_company_name) throw new Error("NC general contractor task is missing a candidate company.")
+    await updateInvestigationTask({ workspaceId, pollId, companyId: query.candidate_company_id, sourceKey: "state_license.nc.general_contractors", status: "running" })
+    const searchTerm = firstSearchTerm(query.candidate_company_name)
+    if (!searchTerm) throw new Error("NC general contractor task could not build a candidate company search term.")
+    const html = await fetchNcGeneralSearch({ companyName: searchTerm, classificationId: query.classification_id })
+    const rows = parseNcSearchRows(html, Math.min(10, Math.max(1, Number(query.limit) || 3)))
+    if (rows.length === 0) {
+        await updateInvestigationTask({
+            workspaceId,
+            pollId,
+            companyId: query.candidate_company_id,
+            sourceKey: "state_license.nc.general_contractors",
+            status: "completed",
+            matched: false,
+            skipReason: `NC general contractors returned no active license match for "${searchTerm}".`,
+        })
+        return { rawCount: 0, companyCount: 0 }
+    }
+    for (const row of rows) {
+        const detail = await fetchNcGeneralDetail(row.key)
+        if (!detail.active) continue
+        const result: NcLicenseResult = {
+            licenseNumber: detail.licenseNumber || row.licenseNumber,
+            ownerName: detail.ownerName || row.ownerName,
+            phone: detail.phone,
+            status: detail.status,
+            classifications: detail.classifications,
+            active: detail.active,
+            detailUrl: detail.detailUrl,
+            rawSearchRow: row.rawSearchRow,
+            rawDetailHtml: detail.rawDetailHtml,
+        }
+        const qualified = await applyNcGeneralEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result })
+        return { rawCount: rows.length, companyCount: qualified ? 1 : 0 }
+    }
+    await updateInvestigationTask({
+        workspaceId,
+        pollId,
+        companyId: query.candidate_company_id,
+        sourceKey: "state_license.nc.general_contractors",
+        status: "completed",
+        matched: false,
+        skipReason: "NC general contractors returned results, but none were active after detail lookup.",
+    })
+    return { rawCount: rows.length, companyCount: 0 }
 }
 
 export async function processStateLicensingPoll(pollId: string, workspaceId: string, options: { finalize?: boolean } = {}) {
@@ -523,7 +1319,7 @@ export async function processStateLicensingPoll(pollId: string, workspaceId: str
         await setLeadgenPollStatus(pollId, workspaceId, "failed", `Could not load state licensing tasks: ${tasksResult.error.message}`)
         return
     }
-    const tasks = tasksResult.data ?? []
+    const tasks = (tasksResult.data ?? []) as LicensingTask[]
     if (tasks.length === 0) {
         if (options.finalize !== false) await setLeadgenPollStatus(pollId, workspaceId, "failed", "No queued state licensing tasks were available for this poll.")
         return
@@ -531,44 +1327,15 @@ export async function processStateLicensingPoll(pollId: string, workspaceId: str
     for (const task of tasks) {
         await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "running", started_at: new Date().toISOString(), error: null }).eq("id", task.id)
         try {
-            const query = task.source_query as {
-                tdlr_status?: string
-                tdlr_endorsement?: string | null
-                county?: string
-                industry_label?: string
-                location_label?: string
-                limit?: number
-                candidate_company_id?: string
-                candidate_company_name?: string
-            }
-            if (!query.tdlr_status || !query.county) throw new Error("Missing TDLR license type or county in source task.")
-            const html = await fetchTdlrSearch({ status: query.tdlr_status, endorsement: query.tdlr_endorsement ?? undefined, county: query.county, name: query.candidate_company_name })
-            const results = parseTdlrRows(html, Math.min(25, Math.max(1, Number(query.limit) || 15)))
-            let companyCount = 0
-            if (query.candidate_company_id) {
-                const bestResult = results.find((result) => result.phone) ?? results[0]
-                if (bestResult) {
-                    const qualified = await applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult })
-                    companyCount = qualified ? 1 : 0
-                }
-            } else {
-                for (const result of results) {
-                    const stored = await upsertTdlrRecord({
-                        workspaceId,
-                        pollId,
-                        taskId: task.id,
-                        industryValue: task.industry_value,
-                        locationValue: task.location_value,
-                        industryLabel: query.industry_label ?? task.industry_value,
-                        countyLabel: query.location_label ?? query.county,
-                        result,
-                    })
-                    if (stored) companyCount += 1
-                }
-            }
+            const board = typeof task.source_query?.board === "string" ? task.source_query.board : "tdlr"
+            const { rawCount, companyCount } = board === "fl_dbpr_electrical"
+                ? await processDbprElectricalTask({ task, workspaceId, pollId })
+                : board === "nc_general_contractors"
+                    ? await processNcGeneralTask({ task, workspaceId, pollId })
+                    : await processTdlrTask({ task, workspaceId, pollId })
             await supabaseAdmin
                 .from("leadgen_poll_tasks")
-                .update({ status: "completed", raw_count: results.length, company_count: companyCount, completed_at: new Date().toISOString(), error: null })
+                .update({ status: "completed", raw_count: rawCount, company_count: companyCount, completed_at: new Date().toISOString(), error: null })
                 .eq("id", task.id)
         } catch (error) {
             await supabaseAdmin
@@ -576,7 +1343,7 @@ export async function processStateLicensingPoll(pollId: string, workspaceId: str
                 .update({ status: "failed", completed_at: new Date().toISOString(), error: compactErrorMessage(error) })
                 .eq("id", task.id)
         }
-        await sleep(TDLR_REQUEST_DELAY_MS)
+        await sleep(STATE_LICENSING_REQUEST_DELAY_MS)
     }
     await refreshLeadgenPollCounts(pollId, workspaceId)
 }

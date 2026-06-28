@@ -1,6 +1,7 @@
 import { WorkspaceIdentityEditor } from "@/components/admin/WorkspaceIdentityEditor"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
 import { SearchableMultiSelect } from "@/components/leadgen/SearchableMultiSelect"
+import { SourceSettingsCard, type SourceSettingsItem } from "@/components/leadgen/SourceSettingsCard"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -16,6 +17,12 @@ type SourceMapping = { source_key: LeadgenSourceKey; icp_industry_value?: string
 
 function sourceConfigValue(config: unknown): Partial<LeadgenSourceConfig> {
     return config && typeof config === "object" ? config as Partial<LeadgenSourceConfig> : {}
+}
+
+function sourceCategory(sourceKey: LeadgenSourceKey): SourceSettingsItem["category"] {
+    if (sourceKey === "state_licensing" || sourceKey === "sam_gov") return "industry"
+    if (sourceKey === "opencorporates") return "location"
+    return "general"
 }
 
 export default async function LeadgenSettingsPage({ params }: PageProps) {
@@ -74,6 +81,39 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
         }
     }
 
+    const sourceItems: SourceSettingsItem[] = leadgenSourceOptions.map((source) => {
+        const implemented = executableLeadgenSources.has(source.value)
+        const sourceSettings = sourceConfig[source.value]
+        const mapped = mappingSummary(source.value)
+        const apiKeyConfigured = source.value === "sam_gov" ? Boolean(process.env.SAM_GOV_API_KEY) : true
+        const configured = implemented && mapped.ready && apiKeyConfigured
+        return {
+            value: source.value,
+            label: source.label,
+            detail: source.detail,
+            statusLabel: source.statusLabel,
+            notesPlaceholder: source.notesPlaceholder,
+            category: sourceCategory(source.value),
+            configured,
+            enabled: configured && enabledSources.has(source.value),
+            implemented,
+            apiKeyConfigured,
+            envVar: source.envVar ?? null,
+            setupHint: source.setupHint ?? null,
+            mappingIndustryText: mapped.industryText,
+            mappingLocationText: mapped.locationText,
+            settings: {
+                limit: sourceSettings?.limit ?? (source.value === "overture" ? 100 : source.value === "state_licensing" ? 15 : 25),
+                radiusMeters: sourceSettings?.radiusMeters ?? 24000,
+                crawlDepth: sourceSettings?.crawlDepth ?? 2,
+                timeoutSeconds: sourceSettings?.timeoutSeconds ?? 10,
+                respectRobots: sourceSettings?.respectRobots !== false,
+                release: sourceSettings?.release ?? "2026-06-17.0",
+                notes: sourceSettings?.notes ?? "",
+            },
+        }
+    })
+
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
         <div className="mx-auto max-w-7xl">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
@@ -112,58 +152,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                         </div>
                     </div>
                 </section>
-                <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                        <div>
-                            <h2 className="text-lg font-semibold">Sources</h2>
-                            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Enable source families. Targeting comes only from the ICP above; source cards hold technical limits, credentials, health, and pacing.</p>
-                        </div>
-                    </div>
-                    <div className="mt-5 grid gap-3 xl:grid-cols-3">
-                        {leadgenSourceOptions.map((source) => {
-                            const implemented = executableLeadgenSources.has(source.value)
-                            const sourceSettings = sourceConfig[source.value]
-                            const mapped = mappingSummary(source.value)
-                            const apiKeyConfigured = source.value === "sam_gov" ? Boolean(process.env.SAM_GOV_API_KEY) : true
-                            const adapterConfigured = true
-                            const canRun = implemented && mapped.ready && apiKeyConfigured && adapterConfigured
-                            return <div key={source.value} className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">
-                                <label className="flex min-h-24 items-start gap-3">
-                                    <input name="sources" value={source.value} type="checkbox" defaultChecked={enabledSources.has(source.value)} disabled={!canRun} className="mt-1 h-4 w-4 accent-white disabled:opacity-40" />
-                                    <span>
-                                        <span className="block font-medium text-white">{source.label}</span>
-                                        <span className="mt-1 block text-sm leading-5 text-neutral-400">{source.detail}</span>
-                                        <span className={`mt-2 block text-xs ${canRun ? "text-emerald-200" : implemented ? "text-amber-200" : "text-neutral-500"}`}>{implemented ? source.statusLabel : "Planned source"}</span>
-                                    </span>
-                                </label>
-                                <div className="mt-3 grid gap-2 rounded-lg border border-neutral-900 bg-black/40 p-3 text-xs text-neutral-400">
-                                    <div className="flex items-center justify-between gap-2"><span>Industry mapping</span><span className={mapped.industryText.includes("0/") ? "text-amber-200" : "text-neutral-300"}>{mapped.industryText}</span></div>
-                                    <div className="flex items-center justify-between gap-2"><span>Location mapping</span><span className={mapped.locationText.includes("0/") ? "text-amber-200" : "text-neutral-300"}>{mapped.locationText}</span></div>
-                                    {source.value === "overture" && <div className="flex items-center justify-between gap-2"><span>Adapter</span><span className="text-emerald-200">Built in</span></div>}
-                                    {source.requiresApiKey && <div className="flex items-center justify-between gap-2"><span>API key</span><span className={apiKeyConfigured ? "text-emerald-200" : "text-amber-200"}>{apiKeyConfigured ? "Configured" : "Missing in Vercel"}</span></div>}
-                                    {source.envVar && <div className="rounded-lg border border-neutral-900 bg-neutral-950 p-2">
-                                        <p className="font-mono text-[11px] text-neutral-300">{source.envVar}</p>
-                                        {source.setupHint && <p className="mt-1 leading-5 text-neutral-500">{source.setupHint}</p>}
-                                    </div>}
-                                </div>
-                                <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
-                                    <summary className="cursor-pointer text-sm font-medium text-neutral-300">Technical settings</summary>
-                                    <div className="mt-4 grid gap-3">
-                                        {source.value === "overture" && <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Release/version<input name="sourceConfig:overture:release" defaultValue={sourceSettings?.release ?? "2026-06-17.0"} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>}
-                                        {source.value === "website" && <>
-                                            <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Crawl depth<input name="sourceConfig:website:crawlDepth" type="number" min={1} max={5} defaultValue={sourceSettings?.crawlDepth ?? 2} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
-                                            <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Timeout seconds<input name="sourceConfig:website:timeoutSeconds" type="number" min={3} max={30} defaultValue={sourceSettings?.timeoutSeconds ?? 10} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
-                                            <label className="flex items-center gap-2 text-xs text-neutral-300"><input name="sourceConfig:website:respectRobots" type="checkbox" defaultChecked={sourceSettings?.respectRobots !== false} className="h-4 w-4 accent-white" />Respect robots controls</label>
-                                        </>}
-                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Max records per mapped task<input name={`sourceConfig:${source.value}:limit`} type="number" min={1} max={source.value === "overture" ? 500 : 50} defaultValue={sourceSettings?.limit ?? (source.value === "overture" ? 100 : source.value === "state_licensing" ? 15 : 25)} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
-                                        {(source.value === "osm" || source.value === "overture") && <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Radius in metres<input name={`sourceConfig:${source.value}:radiusMeters`} type="number" min={1000} max={40000} defaultValue={sourceSettings?.radiusMeters ?? 24000} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>}
-                                        <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Notes<textarea name={`sourceConfig:${source.value}:notes`} defaultValue={sourceSettings?.notes ?? ""} rows={2} placeholder={source.notesPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" /></label>
-                                    </div>
-                                </details>
-                            </div>
-                        })}
-                    </div>
-                </section>
+                <SourceSettingsCard sources={sourceItems} />
                 <button className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">Save leadgen settings</button>
             </form>
             <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>

@@ -4,6 +4,7 @@ import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/os
 import { queryOverturePlaces, type OverturePlaceRecord } from "@/lib/leadgen/overture-duckdb"
 import { queryAllThePlaces, queryFoursquareOsPlaces, type PlaceSeedRecord } from "@/lib/leadgen/place-seed-sources"
 import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
+import type { PollStageKey } from "@/lib/leadgen/staged-poll"
 
 type CompanySeed = {
     id: string
@@ -26,6 +27,7 @@ type PageExtraction = {
 type PipelineTask = {
     id: string
     source_key: LeadgenSourceKey
+    stage_key: PollStageKey
     source_query: Record<string, unknown>
     industry_value?: string | null
     location_value?: string | null
@@ -280,6 +282,7 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
             poll_id: pollId,
             workspace_id: workspaceId,
             source_key: plan.key,
+            stage_key: PIPELINE_SEED_SOURCES.has(plan.key) ? "seed" : "business_validation",
             stage: sourceStage,
             industry_value: industry.icp_industry_value,
             location_value: location.icp_location_value,
@@ -305,7 +308,7 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
     return tasks.length
 }
 
-export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan, companyIds }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem; companyIds?: string[] }) {
+export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan, companyIds, stageKey = "owner_phone" }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem; companyIds?: string[]; stageKey?: Exclude<PollStageKey, "seed"> }) {
     if (plan.key !== "website") return 0
     let companiesQuery = supabaseAdmin
         .from("leadgen_companies")
@@ -322,6 +325,7 @@ export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan, com
         poll_id: pollId,
         workspace_id: workspaceId,
         source_key: "website",
+        stage_key: stageKey,
         stage: "owner_phone_extraction",
         candidate_id: null,
         industry_value: null,
@@ -926,9 +930,10 @@ async function processWebsiteTask(task: PipelineTask) {
     if (!companyId || !websiteUrl) throw new Error("Website crawler task is missing a company or website URL.")
     const workspaceId = typeof task.source_query.workspace_id === "string" ? task.source_query.workspace_id : ""
     const pollId = typeof task.source_query.poll_id === "string" ? task.source_query.poll_id : null
+    const stageKey = task.stage_key === "seed" ? "business_validation" : task.stage_key
     if (workspaceId && pollId) {
-        await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "website", status: "running" })
-        await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "web.json_ld", status: "running" })
+        await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "website", stageKey, status: "running" })
+        await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "web.json_ld", stageKey, status: "running" })
     }
     const depth = Math.min(5, Math.max(1, Number(task.source_query.crawl_depth) || 2))
     const timeoutSeconds = Math.min(30, Math.max(3, Number(task.source_query.timeout_seconds) || 10))
@@ -1027,6 +1032,7 @@ async function processWebsiteTask(task: PipelineTask) {
             pollId,
             companyId,
             sourceKey: "website",
+            stageKey,
             status: "completed",
             matched: Boolean(ownerName || ownerPhone || businessPhone),
             ownerIdentityPoints: ownerName ? 2 : 0,
@@ -1039,6 +1045,7 @@ async function processWebsiteTask(task: PipelineTask) {
             pollId,
             companyId,
             sourceKey: "web.json_ld",
+            stageKey,
             status: "completed",
             matched: inspected.some((page) => page.evidence.includes("json_ld_present")),
             businessSupportPoints: inspected.some((page) => page.evidence.includes("json_ld_present")) ? 1 : 0,
@@ -1066,16 +1073,18 @@ async function processWebsiteTask(task: PipelineTask) {
     return { rawCount: inspected.length, companyCount: ownerName && ownerPhone ? 1 : 0 }
 }
 
-export async function processPipelineSourcePoll(pollId: string, workspaceId: string, sourceKey: LeadgenSourceKey, options: { finalize?: boolean } = {}) {
+export async function processPipelineSourcePoll(pollId: string, workspaceId: string, sourceKey: LeadgenSourceKey, options: { finalize?: boolean; stageKey?: PollStageKey } = {}) {
     await setLeadgenPollStatus(pollId, workspaceId, "running")
-    const tasksResult = await supabaseAdmin
+    let tasksQuery = supabaseAdmin
         .from("leadgen_poll_tasks")
-        .select("id, source_key, source_query, industry_value, location_value")
+        .select("id, source_key, stage_key, source_query, industry_value, location_value")
         .eq("poll_id", pollId)
         .eq("workspace_id", workspaceId)
         .eq("source_key", sourceKey)
         .eq("status", "queued")
         .order("created_at", { ascending: true })
+    if (options.stageKey) tasksQuery = tasksQuery.eq("stage_key", options.stageKey)
+    const tasksResult = await tasksQuery
     if (tasksResult.error) {
         await setLeadgenPollStatus(pollId, workspaceId, "failed", `Could not load ${sourceKey} tasks: ${tasksResult.error.message}`)
         return
@@ -1109,6 +1118,7 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
                     pollId,
                     companyId,
                     sourceKey: "website",
+                    stageKey: task.stage_key === "seed" ? "business_validation" : task.stage_key,
                     status: "failed",
                     error: message,
                     rawPayload: query,

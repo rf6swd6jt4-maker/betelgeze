@@ -4,7 +4,7 @@ import { createPipelineTasksForPoll, createWebsiteTasksForPoll, processPipelineS
 import { processPublicRecordsPoll } from "@/lib/leadgen/public-records-worker"
 import { createStateLicensingEnrichmentTasksForPoll, processStateLicensingPoll } from "@/lib/leadgen/state-licensing-worker"
 import { createInvestigationTasksForPoll, scorePollCompanies } from "@/lib/leadgen/evidence-scoring"
-import { finishPollStage, loadPollCompanies, loadStageSourceKeys, recordBusinessValidationStage, recordOwnerIdentityStage, recordOwnerPhoneStage, recordPhoneValidationStage, recordSeedStage, startPollStage } from "@/lib/leadgen/staged-poll"
+import { finishPollStage, loadPollCompanies, loadStageSourceKeys, recordBusinessValidationStage, recordOwnerIdentityStage, recordOwnerPhoneStage, recordPhoneValidationStage, recordSeedStage, startPollStage, type PollStageKey } from "@/lib/leadgen/staged-poll"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
 export const TARGET_VALIDATED_BUSINESSES = 10
@@ -65,36 +65,38 @@ function isStateLicensingSource(sourceKey: string) {
     return stateLicensingSourceKeys.has(sourceKey as LeadgenSourcePlanItem["key"])
 }
 
-async function processBusinessValidationEvidence({
+async function processStageEvidence({
     workspaceId,
     pollId,
     companyIds,
-    validationSourceKeys,
+    stageKey,
+    sourceKeys,
     stateLicensingPlans,
     websitePlan,
 }: {
     workspaceId: string
     pollId: string
     companyIds: string[]
-    validationSourceKeys: string[]
+    stageKey: Exclude<PollStageKey, "seed" | "phone_validation">
+    sourceKeys: string[]
     stateLicensingPlans: LeadgenSourcePlanItem[]
     websitePlan: LeadgenSourcePlanItem | null
 }) {
     if (companyIds.length === 0) return
-    const publicRecordSourceKeys = validationSourceKeys.filter((sourceKey) => !isWebsiteSource(sourceKey) && !isStateLicensingSource(sourceKey))
+    const publicRecordSourceKeys = sourceKeys.filter((sourceKey) => !isWebsiteSource(sourceKey) && !isStateLicensingSource(sourceKey))
     if (publicRecordSourceKeys.length) {
-        await createInvestigationTasksForPoll({ workspaceId, pollId, enabledSourceKeys: publicRecordSourceKeys, companyIds })
-        await processPublicRecordsPoll(pollId, workspaceId, { finalize: false })
+        await createInvestigationTasksForPoll({ workspaceId, pollId, enabledSourceKeys: publicRecordSourceKeys, companyIds, stageKey })
+        await processPublicRecordsPoll(pollId, workspaceId, { finalize: false, stageKey })
     }
-    for (const stateLicensingPlan of stateLicensingPlans.filter((plan) => validationSourceKeys.includes(plan.key))) {
-        await createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan: { ...stateLicensingPlan, limit: Math.min(MAX_SEED_CANDIDATES, Math.max(1, stateLicensingPlan.limit ?? MAX_SEED_CANDIDATES)) }, companyIds })
+    for (const stateLicensingPlan of stateLicensingPlans.filter((plan) => sourceKeys.includes(plan.key))) {
+        await createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan: { ...stateLicensingPlan, limit: Math.min(MAX_SEED_CANDIDATES, Math.max(1, stateLicensingPlan.limit ?? MAX_SEED_CANDIDATES)) }, companyIds, stageKey })
     }
-    if (stateLicensingPlans.some((plan) => validationSourceKeys.includes(plan.key))) {
-        await processStateLicensingPoll(pollId, workspaceId, { finalize: false })
+    if (stateLicensingPlans.some((plan) => sourceKeys.includes(plan.key))) {
+        await processStateLicensingPoll(pollId, workspaceId, { finalize: false, stageKey })
     }
-    if (websitePlan && validationSourceKeys.includes("website")) {
-        await createWebsiteTasksForPoll({ workspaceId, pollId, plan: { ...websitePlan, limit: MAX_SEED_CANDIDATES }, companyIds })
-        await processPipelineSourcePoll(pollId, workspaceId, "website", { finalize: false })
+    if (websitePlan && sourceKeys.includes("website")) {
+        await createWebsiteTasksForPoll({ workspaceId, pollId, plan: { ...websitePlan, limit: MAX_SEED_CANDIDATES }, companyIds, stageKey })
+        await processPipelineSourcePoll(pollId, workspaceId, "website", { finalize: false, stageKey })
     }
 }
 
@@ -123,7 +125,7 @@ export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId:
 
     const validationSourceKeys = await loadStageSourceKeys("business_validation", enabledInvestigationSourceKeys)
     await startPollStage({ workspaceId, pollId, stageKey: "business_validation", targetCount: TARGET_VALIDATED_BUSINESSES, inputCount: seedCompanyIds.length })
-    await processBusinessValidationEvidence({ workspaceId, pollId, companyIds: seedCompanyIds, validationSourceKeys, stateLicensingPlans, websitePlan: runnableWebsitePlan })
+    await processStageEvidence({ workspaceId, pollId, stageKey: "business_validation", companyIds: seedCompanyIds, sourceKeys: validationSourceKeys, stateLicensingPlans, websitePlan: runnableWebsitePlan })
     await scorePollCompanies({ workspaceId, pollId })
     const latestSeedCompanies = await loadPollCompanies(workspaceId, pollId, MAX_SEED_CANDIDATES)
     const validatedCompanyIds = await recordBusinessValidationStage({ workspaceId, pollId, targetCount: TARGET_VALIDATED_BUSINESSES, companies: latestSeedCompanies })
@@ -137,9 +139,15 @@ export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId:
     }
 
     await startPollStage({ workspaceId, pollId, stageKey: "owner_identity", targetCount: validatedCompanyIds.length, inputCount: validatedCompanyIds.length })
+    const ownerIdentitySourceKeys = await loadStageSourceKeys("owner_identity", enabledInvestigationSourceKeys)
+    await processStageEvidence({ workspaceId, pollId, stageKey: "owner_identity", companyIds: validatedCompanyIds, sourceKeys: ownerIdentitySourceKeys, stateLicensingPlans, websitePlan: runnableWebsitePlan })
+    await scorePollCompanies({ workspaceId, pollId })
     const ownerIdentityCompanyIds = await recordOwnerIdentityStage({ workspaceId, pollId, companyIds: validatedCompanyIds })
 
     await startPollStage({ workspaceId, pollId, stageKey: "owner_phone", targetCount: ownerIdentityCompanyIds.length, inputCount: ownerIdentityCompanyIds.length })
+    const ownerPhoneSourceKeys = await loadStageSourceKeys("owner_phone", enabledInvestigationSourceKeys)
+    await processStageEvidence({ workspaceId, pollId, stageKey: "owner_phone", companyIds: ownerIdentityCompanyIds, sourceKeys: ownerPhoneSourceKeys, stateLicensingPlans, websitePlan: runnableWebsitePlan })
+    await scorePollCompanies({ workspaceId, pollId })
     const ownerPhoneCompanyIds = await recordOwnerPhoneStage({ workspaceId, pollId, companyIds: ownerIdentityCompanyIds })
 
     await startPollStage({ workspaceId, pollId, stageKey: "phone_validation", targetCount: ownerPhoneCompanyIds.length, inputCount: ownerPhoneCompanyIds.length })

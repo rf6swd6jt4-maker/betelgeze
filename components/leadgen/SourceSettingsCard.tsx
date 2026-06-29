@@ -7,6 +7,7 @@ import type { LeadgenSourceKey } from "@/lib/leadgen/sources"
 
 type SourceStatus = "not_configured" | "not_mapped" | "disabled" | "enabled"
 type ToggleState = "on" | "off" | "mixed"
+type SourceStageKey = "business_validation" | "owner_identity" | "owner_phone" | "phone_validation"
 
 type SourceSettings = {
     limit: number
@@ -33,6 +34,8 @@ export type SourceSettingsItem = {
     notesPlaceholder: string
     kind: "seed" | "enrichment"
     category: "general" | "location" | "industry"
+    sourceStage: SourceStageKey | null
+    stageKeys: SourceStageKey[]
     configured: boolean
     mapped: boolean
     enabled: boolean
@@ -58,10 +61,17 @@ type SourceCategory = {
     detail: string
 }
 
-const ENRICHMENT_CATEGORIES: SourceCategory[] = [
-    { key: "general", title: "General enrichment", detail: "Runs for any candidate once seed sources have created companies." },
+const SOURCE_CATEGORIES: SourceCategory[] = [
+    { key: "general", title: "General", detail: "Applies broadly across mapped industries and locations." },
     { key: "industry", title: "Industry-specific", detail: "Depends on mapped trades, verticals, licensing types, or NAICS-like tags." },
     { key: "location", title: "Location-specific", detail: "Depends on mapped states, cities, counties, or regional public records." },
+]
+
+const SOURCE_STAGE_CARDS: Array<{ key: SourceStageKey; title: string; detail: string; empty: string }> = [
+    { key: "business_validation", title: "Business validation sources", detail: "Sources that can confirm a seeded business is real enough to enter the owner pipeline.", empty: "No honest business-validation source is exposed for this workspace yet." },
+    { key: "owner_identity", title: "Owner identity sources", detail: "Sources that can find a credible owner, principal, license holder, or authorised official name.", empty: "No owner-identity source is exposed for this workspace yet." },
+    { key: "owner_phone", title: "Owner phone sources", detail: "Sources that can attach a phone number to the discovered owner or principal.", empty: "No owner-phone source is exposed for this workspace yet." },
+    { key: "phone_validation", title: "Phone validation sources", detail: "Sources that can prove an owner number is callable, and later whether it is mobile rather than landline.", empty: "No external callable/mobile validation source is configured yet." },
 ]
 
 function runnable(source: SourceSettingsItem) {
@@ -319,15 +329,27 @@ function SourceRow({ source, enabled, expanded, nested = false, onToggle, onExpa
 
 export function SourceSettingsCard({ sources, catalogueStats }: { sources: SourceSettingsItem[]; catalogueStats?: SourceCatalogueStats }) {
     const seedSectionRef = useRef<HTMLElement>(null)
-    const enrichmentSectionRef = useRef<HTMLElement>(null)
+    const stageSectionRefs = useRef<Record<string, HTMLElement | null>>({})
     const [enabledValues, setEnabledValues] = useState<Set<LeadgenSourceKey>>(() => new Set(sources.filter((source) => source.enabled && runnable(source)).map((source) => source.value)))
     const [expandedValues, setExpandedValues] = useState<Set<LeadgenSourceKey>>(() => new Set())
-    const [expandedCategories, setExpandedCategories] = useState<Set<SourceSettingsItem["category"]>>(() => new Set())
+    const [expandedCategories, setExpandedCategories] = useState<Set<string>>(() => new Set())
     const seedSources = useMemo(() => sources.filter((source) => source.kind === "seed"), [sources])
-    const enrichmentCategories = useMemo(() => ENRICHMENT_CATEGORIES.map((category) => ({
-        ...category,
-        sources: sources.filter((source) => source.kind === "enrichment" && source.category === category.key),
-    })).filter((category) => category.sources.length > 0), [sources])
+    const sourceStageCards = useMemo(() => SOURCE_STAGE_CARDS.map((stage) => {
+        const stageSources = sources.filter((source) => source.kind !== "seed" && source.sourceStage === stage.key)
+        return {
+            ...stage,
+            sources: stageSources,
+            categories: SOURCE_CATEGORIES.map((category) => ({
+                ...category,
+                sources: stageSources.filter((source) => source.category === category.key),
+            })).filter((category) => category.sources.length > 0),
+        }
+    }), [sources])
+    const sectionSourceEntries = useMemo(() => [
+        ["seed-sources", seedSources] as const,
+        ...sourceStageCards.map((stage) => [`source-stage-${stage.key}`, stage.sources] as const),
+    ], [seedSources, sourceStageCards])
+    const sectionSourcesByKey = useMemo(() => new Map<string, SourceSettingsItem[]>(sectionSourceEntries), [sectionSourceEntries])
     function statusCountsFor(groupSources: SourceSettingsItem[]) {
         return groupSources.reduce<Record<SourceStatus, number>>((acc, source) => {
             const status = statusFor(source, enabledValues)
@@ -380,7 +402,7 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
         })
     }
 
-    function toggleCategoryExpanded(category: SourceSettingsItem["category"]) {
+    function toggleCategoryExpanded(category: string) {
         setExpandedCategories((current) => {
             const next = new Set(current)
             if (next.has(category)) next.delete(category)
@@ -391,17 +413,16 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
 
     const seedCounts = groupCounts(seedSources)
     const seedStatusCounts = statusCountsFor(seedSources)
-    const enrichmentSources = useMemo(() => enrichmentCategories.flatMap((category) => category.sources), [enrichmentCategories])
-    const enrichmentStatusCounts = statusCountsFor(enrichmentSources)
     const seedKeys = useMemo(() => new Set(seedSources.map((source) => source.value)), [seedSources])
-    const enrichmentKeys = useMemo(() => new Set(enrichmentSources.map((source) => source.value)), [enrichmentSources])
     const initialEnabledValues = useMemo(() => new Set(sources.filter((source) => source.enabled && runnable(source)).map((source) => source.value)), [sources])
-
     function publishSourceDirty() {
         const seedDirtyCount = dirtyCountFor(seedSources, enabledValues, initialEnabledValues, seedSectionRef.current)
-        const enrichmentDirtyCount = dirtyCountFor(enrichmentSources, enabledValues, initialEnabledValues, enrichmentSectionRef.current)
         window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section: "seed-sources", count: seedDirtyCount } }))
-        window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section: "enrichment-sources", count: enrichmentDirtyCount } }))
+        for (const stage of sourceStageCards) {
+            const section = `source-stage-${stage.key}`
+            const dirtyCount = dirtyCountFor(stage.sources, enabledValues, initialEnabledValues, stageSectionRefs.current[section] ?? null)
+            window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section, count: dirtyCount } }))
+        }
     }
 
     function scheduleSourceDirtyCheck() {
@@ -410,16 +431,20 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
 
     useEffect(() => {
         const seedDirtyCount = dirtyCountFor(seedSources, enabledValues, initialEnabledValues, seedSectionRef.current)
-        const enrichmentDirtyCount = dirtyCountFor(enrichmentSources, enabledValues, initialEnabledValues, enrichmentSectionRef.current)
         window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section: "seed-sources", count: seedDirtyCount } }))
-        window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section: "enrichment-sources", count: enrichmentDirtyCount } }))
-    }, [enabledValues, enrichmentSources, initialEnabledValues, seedSources])
+        for (const stage of sourceStageCards) {
+            const section = `source-stage-${stage.key}`
+            const dirtyCount = dirtyCountFor(stage.sources, enabledValues, initialEnabledValues, stageSectionRefs.current[section] ?? null)
+            window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section, count: dirtyCount } }))
+        }
+    }, [enabledValues, initialEnabledValues, seedSources, sourceStageCards])
 
     useEffect(() => {
         const reset = (event: Event) => {
             const section = (event as CustomEvent<string>).detail
-            if (section !== "seed-sources" && section !== "enrichment-sources") return
-            const relevantKeys = section === "seed-sources" ? seedKeys : enrichmentKeys
+            const relevantSources = sectionSourcesByKey.get(section) ?? []
+            if (relevantSources.length === 0) return
+            const relevantKeys = new Set(relevantSources.map((source) => source.value))
             setEnabledValues((current) => {
                 const next = new Set(current)
                 for (const key of relevantKeys) {
@@ -431,7 +456,7 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
         }
         window.addEventListener("betelgeze:settings-section-revert", reset)
         return () => window.removeEventListener("betelgeze:settings-section-revert", reset)
-    }, [enrichmentKeys, initialEnabledValues, seedKeys])
+    }, [initialEnabledValues, sectionSourcesByKey])
 
     return <div className="space-y-4">
         <section ref={seedSectionRef} data-settings-section="seed-sources" onChange={scheduleSourceDirtyCheck} onInput={scheduleSourceDirtyCheck} className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
@@ -440,7 +465,7 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                 <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
                     <div>
                         <h2 className="text-lg font-semibold leading-6">Seed sources</h2>
-                        <p className="mt-1 text-sm leading-5 text-neutral-400">Candidate creation sources required before enrichment can investigate leads.</p>
+                        <p className="mt-1 text-sm leading-5 text-neutral-400">Candidate creation sources required before staged validation and owner discovery can run.</p>
                     </div>
                     <div className="space-y-1.5 xl:text-right">
                         <StatusSummary counts={seedStatusCounts} />
@@ -456,57 +481,71 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
             </div>
         </section>
 
-        <section ref={enrichmentSectionRef} data-settings-section="enrichment-sources" onChange={scheduleSourceDirtyCheck} onInput={scheduleSourceDirtyCheck} className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
-            {[...enabledValues].filter((value) => enrichmentKeys.has(value)).map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
-            <div className="border-b border-neutral-800 bg-neutral-900 px-4 py-4 sm:px-5">
-                <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
-                    <div>
-                        <h2 className="text-lg font-semibold leading-6">Enrichment sources</h2>
-                        <p className="mt-1 max-w-3xl text-sm leading-5 text-neutral-400">Candidate investigation sources grouped by how they apply. Descriptions, ICP coverage, and source options live inside each expanded row.</p>
-                        {catalogueStats ? <p className="mt-2 text-xs text-neutral-500">Catalog: {catalogueStats.active} active, {catalogueStats.validationOnly} validation only, {catalogueStats.needsWork} needs work, {catalogueStats.blocked} blocked.</p> : null}
-                    </div>
-                    <div className="space-y-1.5 xl:text-right">
-                        <StatusSummary counts={enrichmentStatusCounts} />
-                        <p className="text-xs leading-4 text-neutral-500">{enrichmentSources.filter(runnable).length}/{enrichmentSources.length} runnable</p>
+        {sourceStageCards.map((stage) => {
+            const section = `source-stage-${stage.key}`
+            const stageKeys = new Set(stage.sources.map((source) => source.value))
+            const statusCounts = statusCountsFor(stage.sources)
+            const counts = groupCounts(stage.sources)
+            return <section
+                key={stage.key}
+                ref={(node) => { stageSectionRefs.current[section] = node }}
+                data-settings-section={section}
+                onChange={scheduleSourceDirtyCheck}
+                onInput={scheduleSourceDirtyCheck}
+                className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900"
+            >
+                {[...enabledValues].filter((value) => stageKeys.has(value)).map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
+                <div className="border-b border-neutral-800 bg-neutral-900 px-4 py-4 sm:px-5">
+                    <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
+                        <div>
+                            <h2 className="text-lg font-semibold leading-6">{stage.title}</h2>
+                            <p className="mt-1 max-w-3xl text-sm leading-5 text-neutral-400">{stage.detail}</p>
+                            {stage.key === "business_validation" && catalogueStats ? <p className="mt-2 text-xs text-neutral-500">Catalog: {catalogueStats.active} active, {catalogueStats.validationOnly} validation only, {catalogueStats.needsWork} needs work, {catalogueStats.blocked} blocked.</p> : null}
+                        </div>
+                        {stage.sources.length ? <div className="space-y-1.5 xl:text-right">
+                            <StatusSummary counts={statusCounts} />
+                            <p className="text-xs leading-4 text-neutral-500">{counts.runnable}/{counts.total} runnable</p>
+                        </div> : null}
                     </div>
                 </div>
-            </div>
-            <div className="divide-y divide-neutral-800">
-                {enrichmentCategories.map((category) => {
-                    const expanded = expandedCategories.has(category.key)
-                    const counts = groupCounts(category.sources)
-                    return <div key={category.key} className="bg-neutral-950/40">
-                        <div className="grid gap-3 bg-neutral-950/60 px-4 py-3 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:items-center sm:px-5">
-                            <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
-                            <div className="min-w-0">
-                                <h4 className="text-sm font-semibold leading-5 text-white">{category.title}</h4>
-                                <p className="mt-0.5 text-xs leading-5 text-neutral-500">{category.detail}</p>
+                {stage.sources.length ? <div className="divide-y divide-neutral-800">
+                    {stage.categories.map((category) => {
+                        const categoryKey = `${stage.key}:${category.key}`
+                        const expanded = expandedCategories.has(categoryKey)
+                        const categoryCounts = groupCounts(category.sources)
+                        return <div key={category.key} className="bg-neutral-950/40">
+                            <div className="grid gap-3 bg-neutral-950/60 px-4 py-3 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:items-center sm:px-5">
+                                <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
+                                <div className="min-w-0">
+                                    <h4 className="text-sm font-semibold leading-5 text-white">{category.title}</h4>
+                                    <p className="mt-0.5 text-xs leading-5 text-neutral-500">{category.detail}</p>
+                                </div>
+                                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-400 sm:justify-self-end">
+                                    <span>{categoryCounts.enabled} on</span>
+                                    <span>{categoryCounts.runnable}/{categoryCounts.total} runnable</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => toggleCategoryExpanded(categoryKey)}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-950 hover:text-white"
+                                    aria-expanded={expanded}
+                                    aria-label={`Toggle ${category.title} sources`}
+                                >
+                                    <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
+                                </button>
                             </div>
-                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-400 sm:justify-self-end">
-                                <span>{counts.enabled} on</span>
-                                <span>{counts.runnable}/{counts.total} runnable</span>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => toggleCategoryExpanded(category.key)}
-                                className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-950 hover:text-white"
-                                aria-expanded={expanded}
-                                aria-label={`Toggle ${category.title} sources`}
-                            >
-                                <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
-                            </button>
+                            {expanded && <div className="border-t border-neutral-800 bg-black/70 py-1 pl-3 sm:pl-8">
+                                <div className="overflow-hidden border-l border-neutral-800">
+                                    {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} nested onToggle={toggleSource} onExpand={toggleExpanded} />)}
+                                </div>
+                            </div>}
                         </div>
-                        {expanded && <div className="border-t border-neutral-800 bg-black/70 py-1 pl-3 sm:pl-8">
-                            <div className="overflow-hidden border-l border-neutral-800">
-                                {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} nested onToggle={toggleSource} onExpand={toggleExpanded} />)}
-                            </div>
-                        </div>}
-                    </div>
-                })}
-            </div>
-            <div className="border-t border-neutral-800 px-4 pb-4 sm:px-5">
-                <SettingsSectionActions section="enrichment-sources" label="enrichment sources" />
-            </div>
-        </section>
+                    })}
+                </div> : <p className="px-4 py-4 text-sm text-neutral-500 sm:px-5">{stage.empty}</p>}
+                {stage.sources.length ? <div className="border-t border-neutral-800 px-4 pb-4 sm:px-5">
+                    <SettingsSectionActions section={section} label={stage.title.toLowerCase()} />
+                </div> : null}
+            </section>
+        })}
     </div>
 }

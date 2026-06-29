@@ -37,21 +37,87 @@ function sourceNames(snapshot: unknown, count: number) {
         .join(", ")
 }
 
+const stageDefinitions = [
+    {
+        key: "seed",
+        title: "Seed businesses",
+        detail: "Seed sources collect the backup pool of candidate businesses.",
+        passedLabel: "seeded",
+    },
+    {
+        key: "business_validation",
+        title: "Business validation",
+        detail: "The seed pool is validated as a batch; failed businesses are replaced by backup seed candidates until the target set is filled.",
+        passedLabel: "validated",
+    },
+    {
+        key: "owner_identity",
+        title: "Owner identity",
+        detail: "The validated batch is checked for a credible owner, principal, or authorised official name.",
+        passedLabel: "owners",
+    },
+    {
+        key: "owner_phone",
+        title: "Owner phone discovery",
+        detail: "Only businesses with owner identity evidence move into owner phone discovery.",
+        passedLabel: "numbers",
+    },
+    {
+        key: "phone_validation",
+        title: "Phone validation",
+        detail: "Discovered owner numbers are checked for callable formatting now; line-type/mobile validation can replace this later.",
+        passedLabel: "callable",
+    },
+] as const
+
+type StageKey = typeof stageDefinitions[number]["key"]
+
+function normalisedStageKey(value: unknown): StageKey | null {
+    return stageDefinitions.some((stage) => stage.key === value) ? value as StageKey : null
+}
+
+function taskStageKey(task: { stage_key?: string | null; stage?: string | null; source_key?: string | null }) {
+    const explicit = normalisedStageKey(task.stage_key)
+    if (explicit) return explicit
+    if (["overture", "osm", "alltheplaces", "foursquare_os_places"].includes(task.source_key ?? "") || task.stage === "candidate_seed") return "seed"
+    if (task.stage === "phone_validation") return "phone_validation"
+    return "business_validation"
+}
+
+function investigationStageKey(task: { stage_key?: string | null }) {
+    return normalisedStageKey(task.stage_key) ?? "business_validation"
+}
+
+function formatDuration(startedAt: string | null | undefined, completedAt: string | null | undefined) {
+    if (!startedAt) return "Not started"
+    const end = completedAt ? new Date(completedAt).getTime() : Date.now()
+    const start = new Date(startedAt).getTime()
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "Running"
+    const seconds = Math.max(0, Math.round((end - start) / 1000))
+    if (seconds < 60) return `${seconds}s`
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    if (minutes < 60) return remainingSeconds ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`
+    const hours = Math.floor(minutes / 60)
+    const remainingMinutes = minutes % 60
+    return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`
+}
+
 export default async function LeadgenPollObjectPage({ params }: PageProps) {
     const { workspaceSlug, pollId } = await params
     const { workspace } = await requireWorkspace(workspaceSlug)
     const pollResult = await supabaseAdmin
         .from("leadgen_polls")
-        .select("id, requested_by, status, trigger, source_count, source_snapshot, icp_snapshot, candidate_count, normalised_count, deduped_count, enriched_count, qualified_count, created_at, started_at, completed_at, error")
+        .select("id, requested_by, status, trigger, source_count, source_snapshot, icp_snapshot, candidate_count, normalised_count, deduped_count, enriched_count, qualified_count, current_stage, target_validated_count, max_seed_candidates, seeded_count, validation_passed_count, owner_identity_count, owner_phone_count, callable_phone_count, stage_summary, created_at, started_at, completed_at, error")
         .eq("workspace_id", workspace.id)
         .eq("id", pollId)
         .maybeSingle()
     if (pollResult.error || !pollResult.data) notFound()
     const poll = pollResult.data
-    const [tasksResult, recordsResult, companiesResult, evidenceResult, investigationResult, claimsResult, scoresResult, catalogResult] = await Promise.all([
+    const [tasksResult, recordsResult, companiesResult, evidenceResult, investigationResult, claimsResult, scoresResult, catalogResult, stageRunsResult, companyStagesResult] = await Promise.all([
         supabaseAdmin
             .from("leadgen_poll_tasks")
-            .select("id, source_key, stage, industry_value, location_value, status, source_query, raw_count, company_count, error, started_at, completed_at, created_at")
+            .select("id, source_key, stage_key, stage, industry_value, location_value, status, source_query, raw_count, company_count, error, started_at, completed_at, created_at")
             .eq("poll_id", poll.id)
             .eq("workspace_id", workspace.id)
             .order("created_at", { ascending: true }),
@@ -78,7 +144,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
             .limit(200),
         supabaseAdmin
             .from("leadgen_investigation_tasks")
-            .select("id, company_id, source_key, status, matched, skip_reason, error, owner_identity_points, owner_phone_points, business_support_points, created_at, completed_at")
+            .select("id, company_id, stage_key, source_key, status, matched, skip_reason, error, owner_identity_points, owner_phone_points, business_support_points, created_at, completed_at")
             .eq("poll_id", poll.id)
             .eq("workspace_id", workspace.id)
             .order("created_at", { ascending: true })
@@ -98,6 +164,19 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
         supabaseAdmin
             .from("leadgen_source_catalog")
             .select("source_key, label, family, source_points, owner_identity_points, owner_phone_points, business_support_points, access_method, free_status, implementation_status, run_stage, enabled, rate_limit_ms, coverage, metadata"),
+        supabaseAdmin
+            .from("leadgen_poll_stage_runs")
+            .select("id, stage_key, stage_order, status, target_count, input_count, passed_count, failed_count, skipped_count, replaced_count, error, metrics, started_at, completed_at, created_at")
+            .eq("poll_id", poll.id)
+            .eq("workspace_id", workspace.id)
+            .order("stage_order", { ascending: true }),
+        supabaseAdmin
+            .from("leadgen_company_stage_status")
+            .select("id, company_id, stage_key, status, source_keys, score, reason, metrics, completed_at")
+            .eq("poll_id", poll.id)
+            .eq("workspace_id", workspace.id)
+            .order("created_at", { ascending: true })
+            .limit(1000),
     ])
     const tasks = tasksResult.error ? [] : tasksResult.data ?? []
     const records = recordsResult.error ? [] : recordsResult.data ?? []
@@ -107,15 +186,10 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
     const claims = claimsResult.error ? [] : claimsResult.data ?? []
     const scores = scoresResult.error ? [] : scoresResult.data ?? []
     const catalog = (catalogResult.error ? [] : catalogResult.data ?? []) as LeadgenSourceCatalogRow[]
+    const stageRuns = stageRunsResult.error ? [] : stageRunsResult.data ?? []
+    const companyStages = companyStagesResult.error ? [] : companyStagesResult.data ?? []
     const sourcesByKey = sourceCatalogMap(catalog)
     const scoreByCompany = new Map(scores.map((score) => [score.company_id, score]))
-    const processedTaskCount = tasks.filter((task) => ["completed", "failed"].includes(task.status)).length
-    const rawReturnedCount = tasks.reduce((total, task) => total + (task.raw_count ?? 0), 0)
-    const taskCompanyCount = tasks.reduce((total, task) => total + (task.company_count ?? 0), 0)
-    const completedTaskCount = tasks.filter((task) => task.status === "completed").length
-    const matchedInvestigationCount = investigations.filter((task) => task.matched).length
-    const failedInvestigationCount = investigations.filter((task) => task.status === "failed" || task.error).length
-    const skippedInvestigationCount = investigations.filter((task) => task.status === "skipped").length
     const ownerIdentityClaimCount = claims.filter((claim) => ["owner_identity", "officer_identity"].includes(claim.claim_kind)).length
     const ownerPhoneClaimCount = claims.filter((claim) => claim.claim_kind === "owner_phone").length
     const meta = statusMeta(poll.status)
@@ -124,6 +198,22 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
         ...tasks.filter((task) => task.error).map((task) => ({ id: task.id, label: `${sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}/${task.stage ?? "task"}`, error: task.error })),
         ...investigations.filter((task) => task.error).map((task) => ({ id: task.id, label: `${sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}/candidate check`, error: task.error })),
     ].filter((row): row is { id: string; label: string; error: string } => Boolean(row.error))
+    const stageRunsByKey = new Map(stageRuns.map((stage) => [stage.stage_key, stage]))
+    const sourceTasksByStage = new Map<StageKey, typeof tasks>()
+    const investigationTasksByStage = new Map<StageKey, typeof investigations>()
+    const companyStagesByStage = new Map<StageKey, typeof companyStages>()
+    for (const stage of stageDefinitions) {
+        sourceTasksByStage.set(stage.key, tasks.filter((task) => taskStageKey(task) === stage.key))
+        investigationTasksByStage.set(stage.key, investigations.filter((task) => investigationStageKey(task) === stage.key))
+        companyStagesByStage.set(stage.key, companyStages.filter((item) => normalisedStageKey(item.stage_key) === stage.key))
+    }
+    const stageMetrics = {
+        seed: poll.seeded_count ?? stageRunsByKey.get("seed")?.passed_count ?? companies.length,
+        business_validation: poll.validation_passed_count ?? stageRunsByKey.get("business_validation")?.passed_count ?? 0,
+        owner_identity: poll.owner_identity_count ?? stageRunsByKey.get("owner_identity")?.passed_count ?? ownerIdentityClaimCount,
+        owner_phone: poll.owner_phone_count ?? stageRunsByKey.get("owner_phone")?.passed_count ?? ownerPhoneClaimCount,
+        phone_validation: poll.callable_phone_count ?? stageRunsByKey.get("phone_validation")?.passed_count ?? poll.qualified_count,
+    }
 
     return <main className="min-h-screen bg-neutral-950 px-5 py-8 text-white sm:px-8">
         <div className="mx-auto max-w-6xl">
@@ -156,80 +246,122 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
 
             <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
                 {[
-                    ["Seed queries", `${completedTaskCount}/${tasks.length}`],
-                    ["Raw returned", rawReturnedCount],
-                    ["Candidate checks", `${matchedInvestigationCount}/${investigations.length}`],
-                    ["Owner evidence", `${ownerIdentityClaimCount}/${ownerPhoneClaimCount}`],
-                    ["Qualified", `${poll.qualified_count}`],
+                    ["Seeded", stageMetrics.seed],
+                    ["Validated", stageMetrics.business_validation],
+                    ["Owner identified", stageMetrics.owner_identity],
+                    ["Owner numbers", stageMetrics.owner_phone],
+                    ["Callable", stageMetrics.phone_validation],
                 ].map(([label, value]) => <div key={label} className="rounded-xl border border-neutral-800 bg-neutral-900 p-3">
                     <p className="text-xs text-neutral-500">{label}</p>
                     <p className="mt-1 text-lg font-semibold">{value}</p>
                 </div>)}
             </section>
 
-            <section className="mt-5 grid gap-3 lg:grid-cols-3">
-                <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Fan-out status</p>
-                    <p className="mt-2 text-sm text-neutral-300">{investigations.length} candidate-level checks generated; {matchedInvestigationCount} matched, {skippedInvestigationCount} skipped, {failedInvestigationCount} failed.</p>
-                </div>
-                <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Qualification rule</p>
-                    <p className="mt-2 text-sm text-neutral-300">A lead only qualifies when owner identity and owner phone evidence both clear the score threshold.</p>
-                </div>
-                <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Stored candidates</p>
-                    <p className="mt-2 text-sm text-neutral-300">{companies.length || poll.normalised_count} numbers were stored for audit, even if they did not qualify for the Leads tab.</p>
-                </div>
-            </section>
-
             <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
                 <div className="border-b border-neutral-800 px-5 py-4">
-                    <h2 className="font-semibold">Candidate investigations</h2>
-                    <p className="mt-1 text-sm text-neutral-500">One candidate can be checked against many free/public sources. Planned adapters are skipped loudly until implemented.</p>
-                    <p className="mt-2 text-xs text-neutral-600">{investigations.length} source checks · {claims.length} normalized evidence claims</p>
+                    <h2 className="font-semibold">Poll funnel</h2>
+                    <p className="mt-1 text-sm text-neutral-500">Each step runs against the whole current batch before the next step starts. The counts below are the handoff counts between stages.</p>
+                    <p className="mt-2 text-xs text-neutral-600">{tasks.length} source tasks · {investigations.length} candidate checks · {claims.length} evidence claims</p>
                 </div>
-                {investigations.length ? investigations.map((task) => {
-                    const taskMeta = statusMeta(task.status === "skipped" ? "queued" : task.status)
-                    return <details key={task.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
-                        <summary className="grid cursor-pointer gap-3 md:grid-cols-[150px_minmax(180px,1fr)_100px_140px_minmax(0,1fr)] md:items-center">
-                            <span className={`inline-flex items-center gap-2 text-sm ${task.status === "skipped" ? "text-neutral-500" : taskMeta.text}`}><BetelgezeStatusMark className={task.status === "skipped" ? "bg-neutral-600" : taskMeta.mark} />{task.status}</span>
-                            <span className="truncate text-sm text-neutral-300">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
-                            <span className="text-sm text-neutral-500">{task.matched ? "matched" : "no match"}</span>
-                            <span className="text-sm text-neutral-500">{task.owner_identity_points}/{task.owner_phone_points}/{task.business_support_points} pts</span>
-                            <span className="truncate text-sm text-neutral-500">{task.error ?? task.skip_reason ?? "—"}</span>
-                        </summary>
-                        <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(task)}</pre>
-                    </details>
-                }) : <p className="p-5 text-sm text-neutral-500">No candidate investigation tasks were generated.</p>}
+                <div className="divide-y divide-neutral-900">
+                    {stageDefinitions.map((stage, index) => {
+                        const run = stageRunsByKey.get(stage.key)
+                        const sourceTasks = sourceTasksByStage.get(stage.key) ?? []
+                        const investigationTasks = investigationTasksByStage.get(stage.key) ?? []
+                        const companyRows = companyStagesByStage.get(stage.key) ?? []
+                        const runStatus = run?.status ?? (poll.current_stage === stage.key ? "running" : index === 0 && tasks.length ? "completed" : "queued")
+                        const runMeta = statusMeta(runStatus === "skipped" ? "queued" : runStatus)
+                        const passed = run?.passed_count ?? stageMetrics[stage.key]
+                        const input = run?.input_count ?? (stage.key === "seed" ? run?.target_count ?? poll.max_seed_candidates ?? 0 : 0)
+                        const failed = run?.failed_count ?? 0
+                        const skipped = run?.skipped_count ?? 0
+                        return <details key={stage.key} open={index < 3 || runStatus === "running"} className="group">
+                            <summary className="grid cursor-pointer gap-3 px-4 py-4 sm:grid-cols-[34px_minmax(0,1fr)_auto] sm:items-start sm:px-5">
+                                <span className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg border ${runStatus === "completed" ? "border-emerald-400/30 bg-emerald-300/10 text-emerald-200" : runStatus === "running" ? "border-yellow-400/30 bg-yellow-300/10 text-yellow-200" : runStatus === "failed" ? "border-red-400/30 bg-red-300/10 text-red-200" : "border-neutral-800 bg-neutral-950 text-neutral-500"}`}>{index + 1}</span>
+                                <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                        <h3 className="text-sm font-semibold leading-5 text-white">{stage.title}</h3>
+                                        <span className={`inline-flex items-center gap-2 text-xs ${runStatus === "skipped" ? "text-neutral-500" : runMeta.text}`}><BetelgezeStatusMark className={runStatus === "skipped" ? "bg-neutral-600" : runMeta.mark} />{runStatus}</span>
+                                    </div>
+                                    <p className="mt-1 text-sm leading-5 text-neutral-500">{stage.detail}</p>
+                                    {run?.error ? <p className="mt-2 text-xs leading-5 text-red-200">{run.error}</p> : null}
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 text-right sm:min-w-[290px]">
+                                    <div>
+                                        <p className="text-lg font-semibold leading-6 text-white">{passed}</p>
+                                        <p className="text-[11px] uppercase tracking-wide text-neutral-600">{stage.passedLabel}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-lg font-semibold leading-6 text-neutral-200">{input}</p>
+                                        <p className="text-[11px] uppercase tracking-wide text-neutral-600">input</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-lg font-semibold leading-6 text-neutral-200">{formatDuration(run?.started_at, run?.completed_at)}</p>
+                                        <p className="text-[11px] uppercase tracking-wide text-neutral-600">time</p>
+                                    </div>
+                                </div>
+                            </summary>
+                            <div className="border-t border-neutral-900 bg-neutral-950/40 px-4 py-3 sm:px-5">
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+                                    <span>{failed} failed</span>
+                                    <span>{skipped} skipped</span>
+                                    <span>{run?.replaced_count ?? 0} replaced or held back</span>
+                                    <span>{sourceTasks.length + investigationTasks.length} tasks</span>
+                                    <span>{companyRows.length} company results</span>
+                                </div>
+                                <div className="mt-3 space-y-2">
+                                    {sourceTasks.map((task) => {
+                                        const taskMeta = statusMeta(task.status)
+                                        return <details key={task.id} className="rounded-lg border border-neutral-800 bg-black px-3 py-2">
+                                            <summary className="grid cursor-pointer gap-2 text-sm sm:grid-cols-[130px_minmax(0,1fr)_90px_90px_minmax(0,1fr)] sm:items-center">
+                                                <span className={`inline-flex items-center gap-2 ${taskMeta.text}`}><BetelgezeStatusMark className={taskMeta.mark} />{taskMeta.label}</span>
+                                                <span className="truncate text-neutral-200">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
+                                                <span className="text-neutral-500">{task.raw_count ?? 0} raw</span>
+                                                <span className="text-neutral-500">{task.company_count ?? 0} numbers</span>
+                                                <span className="truncate text-neutral-500">{task.stage ?? "source task"}</span>
+                                            </summary>
+                                            <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(task.source_query)}</pre>
+                                        </details>
+                                    })}
+                                    {investigationTasks.map((task) => {
+                                        const taskMeta = statusMeta(task.status === "skipped" ? "queued" : task.status)
+                                        return <details key={task.id} className="rounded-lg border border-neutral-800 bg-black px-3 py-2">
+                                            <summary className="grid cursor-pointer gap-2 text-sm sm:grid-cols-[130px_minmax(0,1fr)_90px_120px_minmax(0,1fr)] sm:items-center">
+                                                <span className={`inline-flex items-center gap-2 ${task.status === "skipped" ? "text-neutral-500" : taskMeta.text}`}><BetelgezeStatusMark className={task.status === "skipped" ? "bg-neutral-600" : taskMeta.mark} />{task.status}</span>
+                                                <span className="truncate text-neutral-200">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
+                                                <span className="text-neutral-500">{task.matched ? "matched" : "no match"}</span>
+                                                <span className="text-neutral-500">{task.owner_identity_points}/{task.owner_phone_points}/{task.business_support_points} pts</span>
+                                                <span className="truncate text-neutral-500">{task.error ?? task.skip_reason ?? "candidate check"}</span>
+                                            </summary>
+                                            <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(task)}</pre>
+                                        </details>
+                                    })}
+                                    {companyRows.slice(0, 12).map((row) => {
+                                        const rowMeta = row.status === "passed" ? { mark: "bg-emerald-300", text: "text-emerald-200" } : row.status === "failed" ? { mark: "bg-red-300", text: "text-red-200" } : { mark: "bg-neutral-600", text: "text-neutral-500" }
+                                        return <details key={row.id} className="rounded-lg border border-neutral-800 bg-black px-3 py-2">
+                                            <summary className="grid cursor-pointer gap-2 text-sm sm:grid-cols-[130px_minmax(0,1fr)_80px_minmax(0,1fr)] sm:items-center">
+                                                <span className={`inline-flex items-center gap-2 ${rowMeta.text}`}><BetelgezeStatusMark className={rowMeta.mark} />{row.status}</span>
+                                                <span className="truncate text-neutral-200">{shortId(row.company_id)}</span>
+                                                <span className="text-neutral-500">{row.score ?? 0} pts</span>
+                                                <span className="truncate text-neutral-500">{row.reason ?? "stage result"}</span>
+                                            </summary>
+                                            <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(row)}</pre>
+                                        </details>
+                                    })}
+                                    {sourceTasks.length === 0 && investigationTasks.length === 0 && companyRows.length === 0 ? <p className="rounded-lg border border-neutral-800 bg-black px-3 py-2 text-sm text-neutral-500">No task rows recorded for this stage yet.</p> : null}
+                                </div>
+                            </div>
+                        </details>
+                    })}
+                </div>
             </section>
 
-            {(poll.error || consoleRows.length > 0) && <section className="mt-5 rounded-2xl border border-red-400/20 bg-red-950/[0.08] p-5">
-                <h2 className="font-semibold text-red-200">Console</h2>
-                {poll.error && <p className="mt-3 whitespace-pre-wrap break-words text-sm text-red-100">{poll.error}</p>}
+            <section className="mt-5 rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                <h2 className="font-semibold">Console</h2>
+                {poll.error ? <p className="mt-3 whitespace-pre-wrap break-words text-sm text-red-100">{poll.error}</p> : null}
                 <div className="mt-3 space-y-2">
-                    {consoleRows.map((row) => <p key={row.id} className="whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-black/30 p-3 text-xs text-red-100">{row.label}: {row.error}</p>)}
+                    {consoleRows.length ? consoleRows.map((row) => <p key={row.id} className="whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-black/30 p-3 text-xs text-red-100">{row.label}: {row.error}</p>) : <p className="rounded-lg border border-neutral-800 bg-black px-3 py-2 text-sm text-neutral-500">No poll errors logged.</p>}
                 </div>
-            </section>}
-
-            <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
-                <div className="border-b border-neutral-800 px-5 py-4">
-                    <h2 className="font-semibold">Source tasks</h2>
-                    <p className="mt-1 text-sm text-neutral-500">Exact worker tasks generated for this poll. This is the truth layer for whether sources actually queried anything.</p>
-                    <p className="mt-2 text-xs text-neutral-600">{tasks.length} generated · {processedTaskCount} processed · {rawReturnedCount} raw records returned · {taskCompanyCount} numbers returned from queries</p>
-                </div>
-                {tasks.length ? tasks.map((task) => {
-                    const taskMeta = statusMeta(task.status)
-                    return <details key={task.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
-                        <summary className="grid cursor-pointer gap-3 md:grid-cols-[150px_160px_120px_120px_minmax(0,1fr)] md:items-center">
-                            <span className={`inline-flex items-center gap-2 text-sm ${taskMeta.text}`}><BetelgezeStatusMark className={taskMeta.mark} />{taskMeta.label}</span>
-                            <span className="text-sm text-neutral-300">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
-                            <span className="text-sm text-neutral-500">{task.raw_count ?? 0} raw</span>
-                            <span className="text-sm text-neutral-500">{task.company_count ?? 0} numbers</span>
-                            <span className="truncate text-sm text-neutral-500">{task.stage ?? "source query"}</span>
-                        </summary>
-                        <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(task.source_query)}</pre>
-                    </details>
-                }) : <p className="p-5 text-sm text-neutral-500">No tasks were generated.</p>}
             </section>
 
             <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
@@ -269,7 +401,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                     </details>) : evidence.length ? evidence.map((item) => <details key={item.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
                         <summary className="cursor-pointer text-sm text-neutral-200">{item.evidence_kind} <span className="ml-2 text-neutral-500">{sourceHumanLabel(item.source_key, sourcesByKey, sourceLabel)} · {item.confidence ?? "—"}%</span></summary>
                         <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(item)}</pre>
-                    </details>) : <p className="p-5 text-sm text-neutral-500">No enrichment evidence stored.</p>}
+                    </details>) : <p className="p-5 text-sm text-neutral-500">No source evidence stored.</p>}
                 </div>
             </section>
         </div>

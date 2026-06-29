@@ -2,6 +2,7 @@ import { createHash } from "crypto"
 
 import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
 import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
+import type { PollStageKey } from "@/lib/leadgen/staged-poll"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
 type SourceCatalog = {
@@ -19,6 +20,7 @@ type InvestigationTask = {
     id: string
     company_id: string
     source_key: string
+    stage_key: Exclude<PollStageKey, "seed">
 }
 
 type CompanyCandidate = {
@@ -785,7 +787,7 @@ async function insertEvidence({
 }
 
 async function processTask({ workspaceId, pollId, task, company, source }: { workspaceId: string; pollId: string; task: InvestigationTask; company: CompanyCandidate; source: SourceCatalog }) {
-    await updateInvestigationTask({ workspaceId, pollId, companyId: company.id, sourceKey: task.source_key, status: "running" })
+    await updateInvestigationTask({ workspaceId, pollId, companyId: company.id, sourceKey: task.source_key, stageKey: task.stage_key, status: "running" })
     const searchTerm = firstSearchTerm(company.display_name)
     if (!searchTerm) {
         await updateInvestigationTask({
@@ -793,6 +795,7 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
             pollId,
             companyId: company.id,
             sourceKey: task.source_key,
+            stageKey: task.stage_key,
             status: "completed",
             matched: false,
             skipReason: "Could not build a useful business-name search term for this public-record source.",
@@ -810,6 +813,7 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
             pollId,
             companyId: company.id,
             sourceKey: task.source_key,
+            stageKey: task.stage_key,
             status: "completed",
             matched: false,
             skipReason: `${source.label} returned ${rows.length} public row${rows.length === 1 ? "" : "s"}, but none matched this candidate strongly enough.`,
@@ -823,6 +827,7 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
         pollId,
         companyId: company.id,
         sourceKey: task.source_key,
+        stageKey: task.stage_key,
         status: "completed",
         matched: true,
         ownerIdentityPoints: evidence.ownerIdentityPoints,
@@ -832,16 +837,18 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
     })
 }
 
-export async function processPublicRecordsPoll(pollId: string, workspaceId: string, options: { finalize?: boolean } = {}) {
+export async function processPublicRecordsPoll(pollId: string, workspaceId: string, options: { finalize?: boolean; stageKey?: Exclude<PollStageKey, "seed"> } = {}) {
     await setLeadgenPollStatus(pollId, workspaceId, "running")
-    const tasksResult = await supabaseAdmin
+    let tasksQuery = supabaseAdmin
         .from("leadgen_investigation_tasks")
-        .select("id, company_id, source_key")
+        .select("id, company_id, source_key, stage_key")
         .eq("poll_id", pollId)
         .eq("workspace_id", workspaceId)
         .eq("status", "queued")
         .in("source_key", [...EXECUTABLE_PUBLIC_RECORD_SOURCES])
         .order("created_at", { ascending: true })
+    if (options.stageKey) tasksQuery = tasksQuery.eq("stage_key", options.stageKey)
+    const tasksResult = await tasksQuery
     if (tasksResult.error) throw new Error(`Could not load public-record investigation tasks: ${tasksResult.error.message}`)
     const tasks = (tasksResult.data ?? []) as InvestigationTask[]
     if (tasks.length === 0) return
@@ -874,6 +881,7 @@ export async function processPublicRecordsPoll(pollId: string, workspaceId: stri
                 pollId,
                 companyId: task.company_id,
                 sourceKey: task.source_key,
+                stageKey: task.stage_key,
                 status: "failed",
                 error: compactErrorMessage(error),
             })

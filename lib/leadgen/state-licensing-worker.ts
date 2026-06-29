@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
 import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
 import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
+import type { PollStageKey } from "@/lib/leadgen/staged-poll"
 
 type SourceOption = {
     value: string
@@ -31,6 +32,7 @@ type CompanyCandidate = {
 type LicensingTask = {
     id: string
     source_key: string
+    stage_key: Exclude<PollStageKey, "seed">
     industry_value: string | null
     location_value: string | null
     source_query: Record<string, unknown> | null
@@ -670,7 +672,7 @@ async function upsertTdlrRecord({
     return true
 }
 
-async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, result }: { workspaceId: string; pollId: string; companyId: string; result: TdlrResult }) {
+async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, result, stageKey = "business_validation" }: { workspaceId: string; pollId: string; companyId: string; result: TdlrResult; stageKey?: Exclude<PollStageKey, "seed"> }) {
     const ownerName = ownerNameFromTdlrName(result.name)
     const value = {
         source: "tdlr_license_search",
@@ -750,6 +752,7 @@ async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, re
         pollId,
         companyId,
         sourceKey: "state_license.tx.tdlr",
+        stageKey,
         status: "completed",
         matched: Boolean(ownerName || result.phone),
         ownerIdentityPoints: ownerName ? 3 : 0,
@@ -760,7 +763,7 @@ async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, re
     return Boolean(ownerName && result.phone)
 }
 
-async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, companyId, result }: { workspaceId: string; pollId: string; companyId: string; result: DbprLicenseResult }) {
+async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, companyId, result, stageKey = "business_validation" }: { workspaceId: string; pollId: string; companyId: string; result: DbprLicenseResult; stageKey?: Exclude<PollStageKey, "seed"> }) {
     const rawPayload = {
         source: "fl_dbpr_electrical_public_records",
         license_number: result.licenseNumber,
@@ -844,6 +847,7 @@ async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, com
         pollId,
         companyId,
         sourceKey: "state_license.fl.electrical",
+        stageKey,
         status: "completed",
         matched: Boolean(result.ownerName || result.phone),
         ownerIdentityPoints: result.ownerName ? 3 : 0,
@@ -854,7 +858,7 @@ async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, com
     return Boolean(result.ownerName && result.phone)
 }
 
-async function applyNcGeneralEnrichmentToCompany({ workspaceId, pollId, companyId, result }: { workspaceId: string; pollId: string; companyId: string; result: NcLicenseResult }) {
+async function applyNcGeneralEnrichmentToCompany({ workspaceId, pollId, companyId, result, stageKey = "business_validation" }: { workspaceId: string; pollId: string; companyId: string; result: NcLicenseResult; stageKey?: Exclude<PollStageKey, "seed"> }) {
     const rawPayload = {
         source: "nc_general_contractor_public_search",
         license_number: result.licenseNumber,
@@ -938,6 +942,7 @@ async function applyNcGeneralEnrichmentToCompany({ workspaceId, pollId, companyI
         pollId,
         companyId,
         sourceKey: "state_license.nc.general_contractors",
+        stageKey,
         status: "completed",
         matched: Boolean(result.ownerName || result.phone),
         ownerIdentityPoints: result.ownerName ? 3 : 0,
@@ -1007,6 +1012,7 @@ export async function createStateLicensingTasksForPoll({ workspaceId, pollId, pl
                 poll_id: pollId,
                 workspace_id: workspaceId,
                 source_key: TDLR_SOURCE_KEY,
+                stage_key: "business_validation",
                 industry_value: industryMapping.icp_industry_value,
                 location_value: locationMapping.icp_location_value,
                 status: "queued",
@@ -1031,7 +1037,7 @@ export async function createStateLicensingTasksForPoll({ workspaceId, pollId, pl
     return tasks.length
 }
 
-export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan, companyIds }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem; companyIds?: string[] }) {
+export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan, companyIds, stageKey = "business_validation" }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem; companyIds?: string[]; stageKey?: Exclude<PollStageKey, "seed"> }) {
     if (!STATE_LICENSE_SOURCE_KEYS.includes(plan.key)) return 0
     const sourceKey = plan.key === "state_licensing" ? TDLR_SOURCE_KEY : plan.key
     let candidatesQuery = supabaseAdmin
@@ -1084,6 +1090,7 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
         poll_id: string
         workspace_id: string
         source_key: string
+        stage_key: Exclude<PollStageKey, "seed">
         stage: string
         industry_value: string | null
         location_value: string | null
@@ -1098,6 +1105,7 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
             poll_id: pollId,
             workspace_id: workspaceId,
             source_key: TDLR_SOURCE_KEY,
+            stage_key: stageKey,
             stage: "licensing_candidate_enrichment",
             industry_value: candidate.industry_value ?? industry.value,
             location_value: candidate.location_value ?? location.value,
@@ -1124,6 +1132,7 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
             poll_id: pollId,
             workspace_id: workspaceId,
             source_key: FL_DBPR_ELECTRICAL_SOURCE_KEY,
+            stage_key: stageKey,
             stage: "licensing_candidate_enrichment",
             industry_value: candidate.industry_value,
             location_value: candidate.location_value,
@@ -1151,6 +1160,7 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
                 poll_id: pollId,
                 workspace_id: workspaceId,
                 source_key: NC_GENERAL_CONTRACTORS_SOURCE_KEY,
+                stage_key: stageKey,
                 stage: "licensing_candidate_enrichment",
                 industry_value: candidate.industry_value,
                 location_value: candidate.location_value,
@@ -1194,7 +1204,7 @@ async function processTdlrTask({ task, workspaceId, pollId }: { task: LicensingT
     if (query.candidate_company_id) {
         const bestResult = results.find((result) => result.phone) ?? results[0]
         if (bestResult) {
-            const qualified = await applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult })
+            const qualified = await applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult, stageKey: task.stage_key })
             companyCount = qualified ? 1 : 0
         } else {
             await updateInvestigationTask({
@@ -1202,6 +1212,7 @@ async function processTdlrTask({ task, workspaceId, pollId }: { task: LicensingT
                 pollId,
                 companyId: query.candidate_company_id,
                 sourceKey: "state_license.tx.tdlr",
+                stageKey: task.stage_key,
                 status: "completed",
                 matched: false,
                 skipReason: "TDLR returned no candidate match for this business.",
@@ -1233,7 +1244,7 @@ async function processDbprElectricalTask({ task, workspaceId, pollId }: { task: 
         file_url?: string
     }
     if (!query.candidate_company_id || !query.candidate_company_name) throw new Error("Florida DBPR task is missing a candidate company.")
-    await updateInvestigationTask({ workspaceId, pollId, companyId: query.candidate_company_id, sourceKey: "state_license.fl.electrical", status: "running" })
+    await updateInvestigationTask({ workspaceId, pollId, companyId: query.candidate_company_id, sourceKey: "state_license.fl.electrical", stageKey: task.stage_key, status: "running" })
     const csv = await fetchCachedCsv(query.file_url || DBPR_ELECTRICAL_CSV_URL)
     if (!csv.trim()) throw new Error("Florida DBPR electrical public records CSV was empty.")
     const candidate: CompanyCandidate = {
@@ -1255,6 +1266,7 @@ async function processDbprElectricalTask({ task, workspaceId, pollId }: { task: 
             pollId,
             companyId: query.candidate_company_id,
             sourceKey: "state_license.fl.electrical",
+            stageKey: task.stage_key,
             status: "completed",
             matched: false,
             skipReason: "Florida DBPR electrical public records returned no active license match for this candidate.",
@@ -1262,7 +1274,7 @@ async function processDbprElectricalTask({ task, workspaceId, pollId }: { task: 
         return { rawCount: 0, companyCount: 0 }
     }
     const bestResult = results[0]
-    const qualified = await applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult })
+    const qualified = await applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult, stageKey: task.stage_key })
     return { rawCount: results.length, companyCount: qualified ? 1 : 0 }
 }
 
@@ -1274,7 +1286,7 @@ async function processNcGeneralTask({ task, workspaceId, pollId }: { task: Licen
         limit?: number
     }
     if (!query.candidate_company_id || !query.candidate_company_name) throw new Error("NC general contractor task is missing a candidate company.")
-    await updateInvestigationTask({ workspaceId, pollId, companyId: query.candidate_company_id, sourceKey: "state_license.nc.general_contractors", status: "running" })
+    await updateInvestigationTask({ workspaceId, pollId, companyId: query.candidate_company_id, sourceKey: "state_license.nc.general_contractors", stageKey: task.stage_key, status: "running" })
     const searchTerm = firstSearchTerm(query.candidate_company_name)
     if (!searchTerm) throw new Error("NC general contractor task could not build a candidate company search term.")
     const html = await fetchNcGeneralSearch({ companyName: searchTerm, classificationId: query.classification_id })
@@ -1285,6 +1297,7 @@ async function processNcGeneralTask({ task, workspaceId, pollId }: { task: Licen
             pollId,
             companyId: query.candidate_company_id,
             sourceKey: "state_license.nc.general_contractors",
+            stageKey: task.stage_key,
             status: "completed",
             matched: false,
             skipReason: `NC general contractors returned no active license match for "${searchTerm}".`,
@@ -1305,7 +1318,7 @@ async function processNcGeneralTask({ task, workspaceId, pollId }: { task: Licen
             rawSearchRow: row.rawSearchRow,
             rawDetailHtml: detail.rawDetailHtml,
         }
-        const qualified = await applyNcGeneralEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result })
+        const qualified = await applyNcGeneralEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result, stageKey: task.stage_key })
         return { rawCount: rows.length, companyCount: qualified ? 1 : 0 }
     }
     await updateInvestigationTask({
@@ -1313,6 +1326,7 @@ async function processNcGeneralTask({ task, workspaceId, pollId }: { task: Licen
         pollId,
         companyId: query.candidate_company_id,
         sourceKey: "state_license.nc.general_contractors",
+        stageKey: task.stage_key,
         status: "completed",
         matched: false,
         skipReason: "NC general contractors returned results, but none were active after detail lookup.",
@@ -1320,16 +1334,18 @@ async function processNcGeneralTask({ task, workspaceId, pollId }: { task: Licen
     return { rawCount: rows.length, companyCount: 0 }
 }
 
-export async function processStateLicensingPoll(pollId: string, workspaceId: string, options: { finalize?: boolean } = {}) {
+export async function processStateLicensingPoll(pollId: string, workspaceId: string, options: { finalize?: boolean; stageKey?: Exclude<PollStageKey, "seed"> } = {}) {
     await setLeadgenPollStatus(pollId, workspaceId, "running")
-    const tasksResult = await supabaseAdmin
+    let tasksQuery = supabaseAdmin
         .from("leadgen_poll_tasks")
-        .select("id, source_key, industry_value, location_value, source_query")
+        .select("id, source_key, stage_key, industry_value, location_value, source_query")
         .eq("poll_id", pollId)
         .eq("workspace_id", workspaceId)
         .in("source_key", STATE_LICENSE_SOURCE_KEYS)
         .eq("status", "queued")
         .order("created_at", { ascending: true })
+    if (options.stageKey) tasksQuery = tasksQuery.eq("stage_key", options.stageKey)
+    const tasksResult = await tasksQuery
     if (tasksResult.error) {
         await setLeadgenPollStatus(pollId, workspaceId, "failed", `Could not load state licensing tasks: ${tasksResult.error.message}`)
         return

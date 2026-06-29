@@ -15,9 +15,32 @@ export const dynamic = "force-dynamic"
 type PageProps = { params: Promise<{ workspaceSlug: string }> }
 type IcpOption = { value: string; label: string }
 type SourceMapping = { source_key: LeadgenSourceKey; icp_industry_value?: string | null; icp_location_value?: string | null; native_values?: string[] | null }
+type SourceStageKey = "business_validation" | "owner_identity" | "owner_phone" | "phone_validation"
 
 function sourceConfigValue(config: unknown): Partial<LeadgenSourceConfig> {
     return config && typeof config === "object" ? config as Partial<LeadgenSourceConfig> : {}
+}
+
+function stageCapabilities(value: unknown) {
+    if (!Array.isArray(value)) return [] as SourceStageKey[]
+    return value
+        .map((item) => item && typeof item === "object" && "stage_key" in item ? String(item.stage_key) : null)
+        .filter((item): item is SourceStageKey => item === "business_validation" || item === "owner_identity" || item === "owner_phone" || item === "phone_validation")
+}
+
+function primarySourceStage(sourceKey: LeadgenSourceKey, stages: SourceStageKey[]) {
+    if (sourceKey === "sam_gov") return null
+    if (sourceKey === "transport.fmcsa_safer" && stages.includes("business_validation")) return "business_validation"
+    if (sourceKey.startsWith("state_license.") && stages.includes("owner_identity")) return "owner_identity"
+    if (sourceKey === "website" && stages.includes("owner_identity")) return "owner_identity"
+    if (sourceKey === "regulated.nppes" && stages.includes("owner_identity")) return "owner_identity"
+    return stages[0] ?? null
+}
+
+function fallbackSourceStages(sourceKey: LeadgenSourceKey): SourceStageKey[] {
+    if (sourceKey === "transport.fmcsa_safer") return ["business_validation"]
+    if (sourceKey.startsWith("state_license.") || sourceKey === "website" || sourceKey === "regulated.nppes") return ["owner_identity"]
+    return []
 }
 
 export default async function LeadgenSourcesPage({ params }: PageProps) {
@@ -53,7 +76,7 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
             .eq("enabled", true),
         supabaseAdmin
             .from("leadgen_source_catalog")
-            .select("source_key, label, family, source_points, owner_identity_points, owner_phone_points, business_support_points, access_method, free_status, implementation_status, run_stage, enabled, rate_limit_ms, coverage, metadata")
+            .select("source_key, label, family, source_points, owner_identity_points, owner_phone_points, business_support_points, access_method, free_status, implementation_status, run_stage, stage_capabilities, enabled, rate_limit_ms, coverage, metadata")
             .order("family", { ascending: true })
             .order("label", { ascending: true }),
     ])
@@ -76,6 +99,7 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
 
     const industryLabelByValue = new Map(icpIndustries.map((industry) => [industry.value, industry.label]))
     const locationLabelByValue = new Map(icpLocations.map((location) => [location.value, location.label]))
+    const catalogBySource = new Map(catalog.map((source) => [source.source_key, source]))
 
     function labelsFor(values: string[], labels: Map<string, string>) {
         return values.map((value) => labels.get(value) ?? value).filter(Boolean)
@@ -118,6 +142,9 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
         const implemented = executableLeadgenSources.has(source.value)
         const sourceSettings = sourceConfig[source.value]
         const mapped = mappingSummary(source.value)
+        const stageKeys = stageCapabilities(catalogBySource.get(source.value)?.stage_capabilities)
+        const effectiveStageKeys = stageKeys.length ? stageKeys : fallbackSourceStages(source.value)
+        const sourceStage = primarySourceStage(source.value, effectiveStageKeys)
         const apiKeyConfigured = source.envVar ? Boolean(process.env[source.envVar]) : true
         const configured = implemented && apiKeyConfigured
         return {
@@ -128,6 +155,8 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
             notesPlaceholder: source.notesPlaceholder,
             kind: source.kind,
             category: source.category,
+            sourceStage,
+            stageKeys: effectiveStageKeys,
             configured,
             mapped: mapped.ready,
             enabled: configured && mapped.ready && enabledSources.has(source.value),

@@ -400,6 +400,7 @@ export async function createOsmTasksForPoll({ workspaceId, pollId, plan }: { wor
                 poll_id: pollId,
                 workspace_id: workspaceId,
                 source_key: "osm",
+                stage_key: "seed",
                 industry_value: mapping.icp_industry_value,
                 location_value: locationMapping.icp_location_value,
                 status: "queued",

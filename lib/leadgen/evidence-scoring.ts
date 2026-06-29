@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import type { PollStageKey } from "@/lib/leadgen/staged-poll"
 
 type ClaimKind = "owner_identity" | "owner_phone" | "business_phone" | "business_support" | "permit_activity" | "licence_activity" | "officer_identity"
 
@@ -20,6 +21,7 @@ type InvestigationTaskUpdate = {
     pollId: string
     companyId: string
     sourceKey: string
+    stageKey?: Exclude<PollStageKey, "seed">
     status: "queued" | "running" | "completed" | "skipped" | "failed"
     matched?: boolean
     skipReason?: string | null
@@ -113,7 +115,13 @@ export async function recordEvidenceClaim(input: EvidenceClaimInput) {
 }
 
 export async function updateInvestigationTask(input: InvestigationTaskUpdate) {
+    const stageKey = input.stageKey ?? "business_validation"
     const payload: Record<string, unknown> = {
+        workspace_id: input.workspaceId,
+        poll_id: input.pollId,
+        company_id: input.companyId,
+        source_key: input.sourceKey,
+        stage_key: stageKey,
         status: input.status,
         matched: input.matched ?? false,
         skip_reason: input.skipReason ?? null,
@@ -127,27 +135,25 @@ export async function updateInvestigationTask(input: InvestigationTaskUpdate) {
     if (input.status === "running") payload.started_at = new Date().toISOString()
     const { error } = await supabaseAdmin
         .from("leadgen_investigation_tasks")
-        .update(payload)
-        .eq("workspace_id", input.workspaceId)
-        .eq("poll_id", input.pollId)
-        .eq("company_id", input.companyId)
-        .eq("source_key", input.sourceKey)
+        .upsert(payload, { onConflict: "poll_id,company_id,source_key,stage_key" })
     if (error) throw error
 }
 
-export async function createInvestigationTasksForPoll({ workspaceId, pollId, enabledSourceKeys, companyIds }: { workspaceId: string; pollId: string; enabledSourceKeys?: string[]; companyIds?: string[] }) {
+export async function createInvestigationTasksForPoll({ workspaceId, pollId, enabledSourceKeys, companyIds, stageKey = "business_validation" }: { workspaceId: string; pollId: string; enabledSourceKeys?: string[]; companyIds?: string[]; stageKey?: Exclude<PollStageKey, "seed"> }) {
     let companiesQuery = supabaseAdmin
         .from("leadgen_companies")
         .select("id, address, industry_value, website_domain, website_url")
         .eq("workspace_id", workspaceId)
         .eq("first_seen_poll_id", pollId)
     if (companyIds?.length) companiesQuery = companiesQuery.in("id", companyIds)
+    let catalogQuery = supabaseAdmin
+        .from("leadgen_source_catalog")
+        .select("source_key, implementation_status, run_stage, enabled, coverage")
+    if (Array.isArray(enabledSourceKeys)) catalogQuery = catalogQuery.in("source_key", enabledSourceKeys.length ? enabledSourceKeys : ["__none__"])
+    else catalogQuery = catalogQuery.eq("run_stage", "candidate_investigation")
     const [companiesResult, catalogResult] = await Promise.all([
         companiesQuery,
-        supabaseAdmin
-            .from("leadgen_source_catalog")
-            .select("source_key, implementation_status, run_stage, enabled, coverage")
-            .eq("run_stage", "candidate_investigation"),
+        catalogQuery,
     ])
     if (companiesResult.error) throw companiesResult.error
     if (catalogResult.error) throw catalogResult.error
@@ -165,6 +171,7 @@ export async function createInvestigationTasksForPoll({ workspaceId, pollId, ena
             poll_id: pollId,
             company_id: company.id,
             source_key: source.source_key,
+            stage_key: stageKey,
             status: executable ? "queued" : "skipped",
             skip_reason: executable ? null : "Adapter is catalogued but not implemented yet or is disabled in the source catalogue.",
         }
@@ -172,7 +179,7 @@ export async function createInvestigationTasksForPoll({ workspaceId, pollId, ena
     if (tasks.length === 0) return 0
     const { error } = await supabaseAdmin
         .from("leadgen_investigation_tasks")
-        .upsert(tasks, { onConflict: "poll_id,company_id,source_key", ignoreDuplicates: true })
+        .upsert(tasks, { onConflict: "poll_id,company_id,source_key,stage_key", ignoreDuplicates: true })
     if (error) throw error
     return tasks.length
 }

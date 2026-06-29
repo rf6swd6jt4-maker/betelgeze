@@ -43,7 +43,7 @@ export async function createLeadgenPoll(slug: string) {
             poll_mode: "staged_validated_business_funnel",
             captured_at: new Date().toISOString(),
         },
-        error: hasRunnableSources ? null : "Enable at least one seed source plus at least one ICP industry and one ICP location in Settings. Enrichment sources investigate candidates after seed tasks run.",
+        error: hasRunnableSources ? null : "Enable at least one seed source plus at least one ICP industry and one ICP location in Settings. Staged sources investigate candidates after seed tasks run.",
         completed_at: hasRunnableSources ? null : new Date().toISOString(),
     }).select("id").single()
     if (error) throw new Error("Could not queue a new leadgen poll.")

@@ -147,7 +147,7 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
     {
         value: "state_license.fl.electrical",
         label: "Florida DBPR electrical records",
-        detail: "Florida DBPR electrical contractor CSV enrichment for Florida candidates in mapped electrical-adjacent industries.",
+        detail: "Florida DBPR electrical contractor CSV lookup for Florida candidates in mapped electrical-adjacent industries.",
         statusLabel: "Executable for mapped Florida electrical categories",
         notesPlaceholder: "License status rules, Florida county/city caveats, or DBPR match confidence notes.",
         kind: "enrichment",
@@ -167,7 +167,7 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
     {
         value: "transport.fmcsa_safer",
         label: "FMCSA SAFER company snapshot",
-        detail: "Official carrier registration enrichment for moving, trucking, hauling, freight, and adjacent transport-heavy candidates. Provides official business phone/support evidence, but does not count as direct owner-phone proof by itself.",
+        detail: "Official carrier registration lookup for moving, trucking, hauling, freight, and adjacent transport-heavy candidates. Provides official business phone/support evidence, but does not count as direct owner-phone proof by itself.",
         statusLabel: "Executable for mapped transport categories",
         notesPlaceholder: "USDOT confidence rules, carrier status filters, or transport category caveats.",
         kind: "enrichment",
@@ -178,7 +178,7 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
     {
         value: "regulated.nppes",
         label: "NPPES NPI Registry",
-        detail: "Official NPI Registry enrichment for healthcare ICPs. Organization records can include authorized official name and phone, which Betelgeze treats as owner/principal phone evidence.",
+        detail: "Official NPI Registry lookup for healthcare ICPs. Organization records can include authorized official name and phone, which Betelgeze treats as owner/principal phone evidence.",
         statusLabel: "Executable for mapped healthcare categories",
         notesPlaceholder: "Healthcare taxonomy filters, authorized-official confidence rules, or practice-type exclusions.",
         kind: "enrichment",
@@ -189,7 +189,7 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
     {
         value: "sam_gov",
         label: "SAM.gov",
-        detail: "Very scarce validation/enrichment for mapped NAICS, entity identity, and public POC evidence. Kept to one mapped task per poll because basic API quotas are strict.",
+        detail: "Very scarce validation and public POC lookup for mapped NAICS, entity identity, and contact evidence. Kept to one mapped task per poll because basic API quotas are strict.",
         statusLabel: "Executable with key, rate-limited hard",
         notesPlaceholder: "NAICS filters, POC confidence rules, or entity-status constraints.",
         kind: "enrichment",

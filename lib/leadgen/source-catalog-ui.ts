@@ -10,6 +10,7 @@ export type LeadgenSourceCatalogRow = {
     free_status: string | null
     implementation_status: string | null
     run_stage: string | null
+    stage_capabilities?: unknown
     enabled: boolean | null
     rate_limit_ms: number | null
     coverage: unknown
@@ -199,4 +200,3 @@ export function sourceMetadataNote(source: LeadgenSourceCatalogRow, health?: Lea
 export function activePollTimeSources(sources: LeadgenSourceCatalogRow[]) {
     return sources.filter((source) => source.enabled && source.implementation_status === "active" && ["seed", "candidate_investigation"].includes(source.run_stage ?? ""))
 }
-

@@ -5,7 +5,7 @@ import { redirect } from "next/navigation"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { configObject, createInitialLeadgenPollTasks, planLeadgenSources, processLeadgenPoll } from "@/lib/leadgen/poll-runner"
-import { executableLeadgenSources } from "@/lib/leadgen/sources"
+import { executableLeadgenSources, seedLeadgenSources } from "@/lib/leadgen/sources"
 
 function refreshPolls(slug: string) {
     revalidatePath(`/leadgen/${slug}`)
@@ -24,7 +24,7 @@ export async function createLeadgenPoll(slug: string) {
     const enabledSources = Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : []
     const currentSourceConfig = configObject(settings?.source_config)
     const sourcePlan = planLeadgenSources(enabledSources, currentSourceConfig)
-    const seedPlan = sourcePlan.find((source) => source.key === "overture" && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
+    const seedPlan = sourcePlan.find((source) => seedLeadgenSources.has(source.key) && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
     const hasRunnableSources = Boolean(seedPlan)
     const { data: poll, error } = await supabaseAdmin.from("leadgen_polls").insert({
         workspace_id: workspace.id,
@@ -42,7 +42,7 @@ export async function createLeadgenPoll(slug: string) {
             pilot_mode: "10_business_fanout_test",
             captured_at: new Date().toISOString(),
         },
-        error: hasRunnableSources ? null : "Enable Overture plus at least one ICP industry and one ICP location in Settings. Support sources now investigate Overture candidates instead of creating separate lead lists.",
+        error: hasRunnableSources ? null : "Enable at least one seed source plus at least one ICP industry and one ICP location in Settings. Enrichment sources investigate candidates after seed tasks run.",
         completed_at: hasRunnableSources ? null : new Date().toISOString(),
     }).select("id").single()
     if (error) throw new Error("Could not queue a new leadgen poll.")

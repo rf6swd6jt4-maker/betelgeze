@@ -2,7 +2,7 @@ import Link from "next/link"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { BrandLockup } from "@/components/brand/BrandLockup"
 import { leadgenSourceFamilyLabels, sourceHealthMap, sourceMetadataNote, sourceStatusMeta, type LeadgenSourceCatalogRow, type LeadgenSourceHealthRow } from "@/lib/leadgen/source-catalog-ui"
-import { buildSourcePlan, executableLeadgenSources, leadgenSourceOptions, type LeadgenSourceConfig, type LeadgenSourceKey } from "@/lib/leadgen/sources"
+import { buildSourcePlan, executableLeadgenSources, leadgenSourceOptions, seedLeadgenSources, type LeadgenSourceConfig, type LeadgenSourceKey } from "@/lib/leadgen/sources"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
 import { createLeadgenPoll } from "../actions"
@@ -18,8 +18,6 @@ function configObject(value: unknown): Partial<LeadgenSourceConfig> {
 
 function sourceRequirement(sourceKey: LeadgenSourceKey, hasSeedSource: boolean) {
     if (sourceKey === "website" && !hasSeedSource) return "Needs a seed source first"
-    if (sourceKey === "opencorporates") return "Planned registry source"
-    if (sourceKey === "sam_gov") return "Validation-only source"
     return null
 }
 
@@ -57,7 +55,7 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
     const locationMappings = (locationMappingsResult.error ? [] : locationMappingsResult.data ?? []) as SourceMapping[]
     const catalog = (catalogResult.error ? [] : catalogResult.data ?? []) as LeadgenSourceCatalogRow[]
     const sourceHealth = sourceHealthMap((healthResult.error ? [] : healthResult.data ?? []) as LeadgenSourceHealthRow[])
-    const hasSeedSource = sourcePlan.some((plan) => plan.key === "osm" || plan.key === "state_licensing" || plan.key === "overture")
+    const hasSeedSource = sourcePlan.some((plan) => seedLeadgenSources.has(plan.key))
     const sourceSummaries = leadgenSourceOptions.map((source) => {
         const plan = sourcePlan.find((item) => item.key === source.value)
         const mappedIndustries = new Set(industryMappings.filter((mapping) => mapping.source_key === source.value && (mapping.native_values?.length ?? 0) > 0).map((mapping) => mapping.icp_industry_value).filter(Boolean))
@@ -67,10 +65,12 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
         const requirement = sourceRequirement(source.value, hasSeedSource)
         const enabled = Boolean(plan)
         const mapped = selectedIndustries.length > 0 && selectedLocations.length > 0 && coveredIndustries > 0 && coveredLocations > 0
-        const ready = enabled && executableLeadgenSources.has(source.value) && mapped && !requirement
-        return { source, enabled, ready, requirement, coveredIndustries, coveredLocations, mapped }
+        const configured = source.envVar ? Boolean(process.env[source.envVar]) : true
+        const ready = enabled && executableLeadgenSources.has(source.value) && configured && mapped && !requirement
+        return { source, enabled, ready, requirement, configured, coveredIndustries, coveredLocations, mapped }
     })
     const readySources = sourceSummaries.filter((summary) => summary.ready)
+    const readySeedSources = sourceSummaries.filter((summary) => summary.ready && seedLeadgenSources.has(summary.source.value))
     const seedSources = catalog.filter((source) => source.enabled && source.implementation_status === "active" && source.run_stage === "seed")
     const pollTimeSources = catalog.filter((source) => source.enabled && source.implementation_status === "active" && source.run_stage === "candidate_investigation")
     const validationSources = catalog.filter((source) => source.implementation_status === "validation_only")
@@ -157,10 +157,10 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
                     <h3 className="mt-5 font-medium text-neutral-100">Core execution readiness</h3>
                     <p className="mt-1 text-sm text-neutral-500">The poll can start only when the seed plan can actually create candidate tasks.</p>
                     <div className="mt-4 divide-y divide-neutral-800 rounded-xl border border-neutral-800 bg-black">
-                        {sourceSummaries.map(({ source, enabled, ready, requirement, coveredIndustries, coveredLocations, mapped }) => {
-                            const statusText = ready ? "Ready" : !enabled ? "Disabled" : requirement ? requirement : mapped ? "Mapped, waiting" : "Missing mappings"
-                            const markClass = ready ? "bg-emerald-300" : enabled ? "bg-amber-300" : "bg-neutral-500"
-                            const textClass = ready ? "text-emerald-200" : enabled ? "text-amber-200" : "text-neutral-500"
+                        {sourceSummaries.map(({ source, enabled, ready, requirement, configured, coveredIndustries, coveredLocations, mapped }) => {
+                            const statusText = ready ? "Ready" : !enabled ? "Disabled" : !configured ? "Not configured" : requirement ? requirement : mapped ? "Mapped, waiting" : "Not mapped"
+                            const markClass = ready ? "bg-emerald-300" : !configured ? "bg-red-300" : enabled ? "bg-amber-300" : "bg-neutral-500"
+                            const textClass = ready ? "text-emerald-200" : !configured ? "text-red-200" : enabled ? "text-amber-200" : "text-neutral-500"
                             return <div key={source.value} className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(160px,1fr)_170px_150px] md:items-center">
                                 <div className="min-w-0">
                                     <p className="truncate text-sm font-medium text-neutral-100">{source.label}</p>
@@ -172,8 +172,8 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
                         })}
                     </div>
                     <form action={createLeadgenPoll.bind(null, workspace.slug)} className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <button disabled={readySources.length === 0} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400">Confirm new poll</button>
-                        <p className="text-sm text-neutral-500">{readySources.length ? `${readySources.length} source${readySources.length === 1 ? "" : "s"} ready. The poll will appear in Poll history.` : "No source is ready. Open Settings and complete at least one source."}</p>
+                        <button disabled={readySeedSources.length === 0} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400">Confirm new poll</button>
+                        <p className="text-sm text-neutral-500">{readySeedSources.length ? `${readySeedSources.length} seed source${readySeedSources.length === 1 ? "" : "s"} ready; ${readySources.length} total source${readySources.length === 1 ? "" : "s"} ready.` : "No seed source is ready. Open Settings and complete at least one seed source."}</p>
                     </form>
                 </div>
             </section>

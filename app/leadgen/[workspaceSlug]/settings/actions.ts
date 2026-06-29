@@ -18,6 +18,13 @@ function boundedInteger(value: FormDataEntryValue | null, fallback: number, min:
     return Number.isFinite(numeric) ? Math.min(max, Math.max(min, Math.floor(numeric))) : fallback
 }
 
+function sourceLimitMax(sourceValue: string, sourceKind: string) {
+    if (sourceValue === "overture") return 500
+    if (sourceValue === "sam_gov") return 1
+    if (sourceKind === "seed") return 25
+    return 80
+}
+
 export async function updateLeadgenWorkspaceName(slug: string, formData: FormData) {
     const { workspace } = await requireWorkspace(slug, "admin")
     const name = String(formData.get("name") ?? "").trim()
@@ -58,9 +65,9 @@ export async function uploadSharedWorkspaceLogo(slug: string, formData: FormData
 
 export async function saveLeadgenSettings(slug: string, formData: FormData) {
     const { workspace } = await requireWorkspace(slug, "admin")
-    const enabledSources = formData.getAll("sources")
+    const enabledSources = [...new Set(formData.getAll("sources")
         .map((value) => normaliseLeadgenSourceKey(String(value)))
-        .filter((value): value is NonNullable<typeof value> => Boolean(value))
+        .filter((value): value is NonNullable<typeof value> => Boolean(value)))]
     const sourceConfig = leadgenSourceOptions.reduce<Partial<LeadgenSourceConfig>>((config, source) => {
         const limit = Number(formData.get(`sourceConfig:${source.value}:limit`) ?? 10)
         const radiusMeters = Number(formData.get(`sourceConfig:${source.value}:radiusMeters`) ?? 24000)
@@ -70,7 +77,7 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
         const notes = String(formData.get(`sourceConfig:${source.value}:notes`) ?? "").trim()
         config[source.value] = {
             enabled: enabledSources.includes(source.value),
-            limit: Number.isFinite(limit) ? Math.min(50, Math.max(1, Math.floor(limit))) : 10,
+            limit: Number.isFinite(limit) ? Math.min(sourceLimitMax(source.value, source.kind), Math.max(1, Math.floor(limit))) : 10,
             radiusMeters: Number.isFinite(radiusMeters) ? Math.min(40000, Math.max(1000, Math.floor(radiusMeters))) : 24000,
             crawlDepth: Number.isFinite(crawlDepth) ? Math.min(5, Math.max(1, Math.floor(crawlDepth))) : 2,
             timeoutSeconds: Number.isFinite(timeoutSeconds) ? Math.min(30, Math.max(3, Math.floor(timeoutSeconds))) : 10,

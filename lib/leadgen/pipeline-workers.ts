@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { LeadgenSourceKey, LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
 import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
 import { queryOverturePlaces, type OverturePlaceRecord } from "@/lib/leadgen/overture-duckdb"
+import { queryAllThePlaces, queryFoursquareOsPlaces, type PlaceSeedRecord } from "@/lib/leadgen/place-seed-sources"
 import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
 
 type CompanySeed = {
@@ -52,10 +53,13 @@ const SAM_NAICS_BY_INDUSTRY: Record<string, string[]> = {
 
 const SOURCE_STAGE: Partial<Record<LeadgenSourceKey, string>> = {
     overture: "candidate_seed",
+    alltheplaces: "candidate_seed",
+    foursquare_os_places: "candidate_seed",
     website: "owner_phone_extraction",
-    opencorporates: "registry_enrichment",
     sam_gov: "sam_enrichment",
 }
+
+const PIPELINE_SEED_SOURCES = new Set<LeadgenSourceKey>(["overture", "alltheplaces", "foursquare_os_places"])
 
 function compactErrorMessage(error: unknown) {
     const message = error instanceof Error ? error.message : "Leadgen source task failed."
@@ -285,10 +289,11 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
                 stage: sourceStage,
                 native_industries: industryValues,
                 native_locations: locationValues,
+                native_label: industry.native_label,
                 industry_mapping: industry,
                 location_mapping: location,
                 limit: plan.limit ?? 25,
-                candidate_target_count: plan.key === "overture" ? plan.limit ?? 10 : null,
+                candidate_target_count: PIPELINE_SEED_SOURCES.has(plan.key) ? plan.limit ?? 10 : null,
                 radius_meters: plan.radiusMeters,
                 release: plan.release,
             },
@@ -340,10 +345,7 @@ export async function createPipelineTasksForPoll({ workspaceId, pollId, plans }:
     return taskCounts.reduce((total, count) => total + count, 0)
 }
 
-async function processBlockedExternalTask(task: PipelineTask) {
-    if (task.source_key === "opencorporates") {
-        throw new Error("Business registry enrichment is planned, but no free state SOS registry adapter is active yet.")
-    }
+async function processBlockedExternalTask() {
     return { rawCount: 0, companyCount: 0 }
 }
 
@@ -786,6 +788,136 @@ async function processOvertureTask(task: PipelineTask) {
     return { rawCount: places.length, companyCount }
 }
 
+async function existingSourceRecordIds(workspaceId: string, sourceKey: LeadgenSourceKey) {
+    const { data: existingRecords, error: existingError } = await supabaseAdmin
+        .from("leadgen_source_records")
+        .select("source_record_id")
+        .eq("workspace_id", workspaceId)
+        .eq("source_key", sourceKey)
+        .limit(5_000)
+    if (existingError) throw existingError
+    return (existingRecords ?? [])
+        .map((record) => typeof record.source_record_id === "string" ? record.source_record_id : null)
+        .filter((id): id is string => Boolean(id))
+}
+
+async function upsertPlaceSeedRecord({ workspaceId, pollId, task, place, sourceKey }: { workspaceId: string; pollId: string; task: PipelineTask; place: PlaceSeedRecord; sourceKey: "alltheplaces" | "foursquare_os_places" }) {
+    if (!place.name) return false
+    const { data: existingRecord, error: existingError } = await supabaseAdmin
+        .from("leadgen_source_records")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("source_key", sourceKey)
+        .eq("source_record_id", place.id)
+        .maybeSingle()
+    if (existingError) throw existingError
+    if (existingRecord) return false
+    const phone = normalisePhone(place.phone)
+    const sourceRecord = {
+        workspace_id: workspaceId,
+        poll_id: pollId,
+        task_id: task.id,
+        source_key: sourceKey,
+        source_record_id: place.id,
+        company_name: place.name,
+        phone,
+        website_url: place.website_url,
+        profile_url: place.profile_url,
+        address: place.address,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        categories: place.categories,
+        rating: null,
+        review_count: null,
+        raw_payload: place.raw_payload,
+    }
+    const { error: recordError } = await supabaseAdmin
+        .from("leadgen_source_records")
+        .insert(sourceRecord)
+    if (recordError) throw recordError
+    const companyPayload = {
+        workspace_id: workspaceId,
+        canonical_name: place.name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(),
+        display_name: place.name,
+        phone,
+        website_domain: domainFromUrl(place.website_url),
+        website_url: place.website_url,
+        profile_url: place.profile_url,
+        source_key: sourceKey,
+        source_record_id: place.id,
+        address: place.address,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        categories: place.categories,
+        rating: null,
+        review_count: null,
+        industry_value: task.industry_value,
+        location_value: task.location_value,
+        first_seen_poll_id: pollId,
+        last_seen_at: new Date().toISOString(),
+    }
+    const { data: company, error: companyError } = await supabaseAdmin
+        .from("leadgen_companies")
+        .upsert(companyPayload, { onConflict: "workspace_id,source_key,source_record_id" })
+        .select("id")
+        .single()
+    if (companyError) throw companyError
+    if (company?.id) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId: company.id,
+            sourceKey,
+            claimKind: "business_support",
+            pointsAwarded: 1,
+            confidence: 45,
+            provenanceUrl: place.profile_url ?? place.website_url,
+            claimValue: { name: place.name, phone, website_url: place.website_url, categories: place.categories },
+            rawPayload: place.raw_payload,
+        })
+        if (phone) {
+            await recordEvidenceClaim({
+                workspaceId,
+                pollId,
+                companyId: company.id,
+                sourceKey,
+                claimKind: "business_phone",
+                pointsAwarded: 1,
+                confidence: 35,
+                provenanceUrl: place.profile_url ?? place.website_url,
+                claimValue: { phone },
+                rawPayload: place.raw_payload,
+            })
+        }
+    }
+    return true
+}
+
+async function processPlaceSeedTask(task: PipelineTask, sourceKey: "alltheplaces" | "foursquare_os_places") {
+    const workspaceId = typeof task.source_query.workspace_id === "string" ? task.source_query.workspace_id : null
+    const pollId = typeof task.source_query.poll_id === "string" ? task.source_query.poll_id : null
+    if (!workspaceId || !pollId) throw new Error(`${sourceKey} task is missing workspace or poll context.`)
+    const nativeTerms = valuesFromQuery(task.source_query.native_industries)
+    const terms = uniqueValues([...nativeTerms, task.industry_value, task.source_query.native_label as string | null | undefined])
+    const location = overtureLocationFromTask(task)
+    const limit = Math.min(25, Math.max(1, Number(task.source_query.limit) || 10))
+    const excludeIds = await existingSourceRecordIds(workspaceId, sourceKey)
+    const places = sourceKey === "alltheplaces"
+        ? await queryAllThePlaces({ terms, industry: task.industry_value, location, limit, release: typeof task.source_query.release === "string" ? task.source_query.release : null, excludeIds })
+        : await queryFoursquareOsPlaces({ terms, location, limit, excludeIds })
+    if (places.length === 0) {
+        const label = sourceKey === "alltheplaces" ? "AllThePlaces" : "Foursquare OS Places"
+        const unseenContext = excludeIds.length > 0 ? ` after excluding ${excludeIds.length.toLocaleString()} records already seen by this workspace` : ""
+        throw new Error(`${label} returned 0 new place records for ${task.industry_value ?? "this industry"} in ${location.label ?? task.location_value ?? "this location"} using ${terms.join(", ") || "mapped terms"}${unseenContext}.`)
+    }
+    let companyCount = 0
+    for (const place of places) {
+        const stored = await upsertPlaceSeedRecord({ workspaceId, pollId, task, place, sourceKey })
+        if (stored) companyCount += 1
+    }
+    return { rawCount: places.length, companyCount }
+}
+
 async function processWebsiteTask(task: PipelineTask) {
     const companyId = typeof task.source_query.company_id === "string" ? task.source_query.company_id : null
     const websiteUrl = typeof task.source_query.website_url === "string" ? task.source_query.website_url : null
@@ -958,7 +1090,9 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
                     ? await processSamGovTask(taskWithWorkspace)
                     : sourceKey === "overture"
                         ? await processOvertureTask(taskWithWorkspace)
-                        : await processBlockedExternalTask(taskWithWorkspace)
+                        : sourceKey === "alltheplaces" || sourceKey === "foursquare_os_places"
+                            ? await processPlaceSeedTask(taskWithWorkspace, sourceKey)
+                        : await processBlockedExternalTask()
             await supabaseAdmin
                 .from("leadgen_poll_tasks")
                 .update({ status: "completed", raw_count: result?.rawCount ?? 0, company_count: result?.companyCount ?? 0, completed_at: new Date().toISOString(), error: null })

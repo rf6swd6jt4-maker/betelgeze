@@ -1,5 +1,5 @@
-import { buildSourcePlan, executableLeadgenSources, type LeadgenSourceConfig, type LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
-import { finalizeLeadgenPoll, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
+import { buildSourcePlan, executableLeadgenSources, seedLeadgenSources, stateLicensingSourceKeys, type LeadgenSourceConfig, type LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
+import { createOsmTasksForPoll, finalizeLeadgenPoll, processOsmPoll, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
 import { createPipelineTasksForPoll, createWebsiteTasksForPoll, processPipelineSourcePoll } from "@/lib/leadgen/pipeline-workers"
 import { processPublicRecordsPoll } from "@/lib/leadgen/public-records-worker"
 import { createStateLicensingEnrichmentTasksForPoll, processStateLicensingPoll } from "@/lib/leadgen/state-licensing-worker"
@@ -17,20 +17,29 @@ export function planLeadgenSources(enabledSources: string[], sourceConfig: Parti
 }
 
 function executablePlan(sourcePlan: LeadgenSourcePlanItem[]) {
+    const runnable = sourcePlan.filter((source) => executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
     return {
-        stateLicensingPlan: sourcePlan.find((source) => source.key === "state_licensing"),
+        osmSeedPlan: runnable.find((source) => source.key === "osm"),
+        stateLicensingPlans: runnable.filter((source) => stateLicensingSourceKeys.has(source.key)),
         websitePlan: sourcePlan.find((source) => source.key === "website"),
-        preSeedPipelinePlans: sourcePlan
-            .filter((source) => source.key === "overture" && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
+        preSeedPipelinePlans: runnable
+            .filter((source) => seedLeadgenSources.has(source.key) && source.key !== "osm")
             .map((source) => ({ ...source, limit: Math.min(PILOT_CANDIDATE_LIMIT, Math.max(1, source.limit ?? PILOT_CANDIDATE_LIMIT)) })),
-        postSeedPipelinePlans: sourcePlan.filter((source) => ["opencorporates"].includes(source.key) && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0),
-        runnablePlans: sourcePlan.filter((source) => executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0),
+        postSeedPipelinePlans: runnable
+            .filter((source) => source.key === "sam_gov")
+            .slice(0, 1)
+            .map((source) => ({ ...source, limit: 1 })),
+        runnablePlans: runnable,
     }
 }
 
 export async function createInitialLeadgenPollTasks({ workspaceId, pollId, sourcePlan }: { workspaceId: string; pollId: string; sourcePlan: LeadgenSourcePlanItem[] }) {
-    const { preSeedPipelinePlans } = executablePlan(sourcePlan)
-    return preSeedPipelinePlans.length ? createPipelineTasksForPoll({ workspaceId, pollId, plans: preSeedPipelinePlans }) : 0
+    const { osmSeedPlan, preSeedPipelinePlans } = executablePlan(sourcePlan)
+    const [pipelineCount, osmCount] = await Promise.all([
+        preSeedPipelinePlans.length ? createPipelineTasksForPoll({ workspaceId, pollId, plans: preSeedPipelinePlans }) : Promise.resolve(0),
+        osmSeedPlan ? createOsmTasksForPoll({ workspaceId, pollId, plan: { ...osmSeedPlan, limit: Math.min(PILOT_CANDIDATE_LIMIT, Math.max(1, osmSeedPlan.limit ?? PILOT_CANDIDATE_LIMIT)) } }) : Promise.resolve(0),
+    ])
+    return pipelineCount + osmCount
 }
 
 function sourcePlanFromPollSnapshot(snapshot: unknown): LeadgenSourcePlanItem[] {
@@ -57,16 +66,18 @@ export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId:
     if (!["queued", "running"].includes(pollResult.data.status)) return { processed: false, reason: "not_runnable" }
 
     const sourcePlan = sourcePlanFromPollSnapshot(pollResult.data.source_snapshot)
-    const { stateLicensingPlan, websitePlan, preSeedPipelinePlans, postSeedPipelinePlans } = executablePlan(sourcePlan)
-    const runnableStateLicensingPlan = stateLicensingPlan && stateLicensingPlan.industries.length > 0 && stateLicensingPlan.locations.length > 0 ? stateLicensingPlan : null
+    const { osmSeedPlan, stateLicensingPlans, websitePlan, preSeedPipelinePlans, postSeedPipelinePlans } = executablePlan(sourcePlan)
     const runnableWebsitePlan = websitePlan && websitePlan.industries.length > 0 && websitePlan.locations.length > 0 ? { ...websitePlan, limit: PILOT_CANDIDATE_LIMIT } : null
 
     await setLeadgenPollStatus(pollId, workspaceId, "running")
     for (const plan of preSeedPipelinePlans) await processPipelineSourcePoll(pollId, workspaceId, plan.key, { finalize: false })
+    if (osmSeedPlan) await processOsmPoll(pollId, workspaceId, { finalize: false })
     await createInvestigationTasksForPoll({ workspaceId, pollId })
     await processPublicRecordsPoll(pollId, workspaceId, { finalize: false })
-    if (runnableStateLicensingPlan) {
-        await createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan: runnableStateLicensingPlan })
+    for (const stateLicensingPlan of stateLicensingPlans) {
+        await createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan: stateLicensingPlan })
+    }
+    if (stateLicensingPlans.length) {
         await processStateLicensingPoll(pollId, workspaceId, { finalize: false })
     }
     if (runnableWebsitePlan) {

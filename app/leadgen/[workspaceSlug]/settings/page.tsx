@@ -20,12 +20,6 @@ function sourceConfigValue(config: unknown): Partial<LeadgenSourceConfig> {
     return config && typeof config === "object" ? config as Partial<LeadgenSourceConfig> : {}
 }
 
-function sourceCategory(sourceKey: LeadgenSourceKey): SourceSettingsItem["category"] {
-    if (sourceKey === "state_licensing" || sourceKey === "sam_gov") return "industry"
-    if (sourceKey === "opencorporates") return "location"
-    return "general"
-}
-
 export default async function LeadgenSettingsPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user } = await requireWorkspace(workspaceSlug, "admin")
@@ -102,17 +96,19 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
         const implemented = executableLeadgenSources.has(source.value)
         const sourceSettings = sourceConfig[source.value]
         const mapped = mappingSummary(source.value)
-        const apiKeyConfigured = source.value === "sam_gov" ? Boolean(process.env.SAM_GOV_API_KEY) : true
-        const configured = implemented && mapped.ready && apiKeyConfigured
+        const apiKeyConfigured = source.envVar ? Boolean(process.env[source.envVar]) : true
+        const configured = implemented && apiKeyConfigured
         return {
             value: source.value,
             label: source.label,
             detail: source.detail,
             statusLabel: source.statusLabel,
             notesPlaceholder: source.notesPlaceholder,
-            category: sourceCategory(source.value),
+            kind: source.kind,
+            category: source.category,
             configured,
-            enabled: configured && enabledSources.has(source.value),
+            mapped: mapped.ready,
+            enabled: configured && mapped.ready && enabledSources.has(source.value),
             implemented,
             apiKeyConfigured,
             envVar: source.envVar ?? null,
@@ -120,12 +116,12 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
             mappingIndustryText: mapped.industryText,
             mappingLocationText: mapped.locationText,
             settings: {
-                limit: sourceSettings?.limit ?? (source.value === "overture" ? 100 : source.value === "state_licensing" ? 15 : 25),
+                limit: sourceSettings?.limit ?? (source.value === "overture" ? 100 : source.value === "sam_gov" ? 1 : source.kind === "seed" ? 10 : 25),
                 radiusMeters: sourceSettings?.radiusMeters ?? 24000,
                 crawlDepth: sourceSettings?.crawlDepth ?? 2,
                 timeoutSeconds: sourceSettings?.timeoutSeconds ?? 10,
                 respectRobots: sourceSettings?.respectRobots !== false,
-                release: sourceSettings?.release ?? "2026-06-17.0",
+                release: sourceSettings?.release ?? (source.value === "alltheplaces" ? "latest" : "2026-06-17.0"),
                 notes: sourceSettings?.notes ?? "",
             },
         }

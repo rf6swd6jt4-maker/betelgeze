@@ -30,6 +30,7 @@ type CompanyCandidate = {
 
 type LicensingTask = {
     id: string
+    source_key: string
     industry_value: string | null
     location_value: string | null
     source_query: Record<string, unknown> | null
@@ -108,6 +109,11 @@ const NC_CLASSIFICATIONS_BY_INDUSTRY: Record<string, string[]> = {
     siding_contractors: ["27", "44"],
     window_and_door_contractors: ["27", "44"],
 }
+
+const STATE_LICENSE_SOURCE_KEYS = ["state_licensing", "state_license.tx.tdlr", "state_license.fl.electrical", "state_license.nc.general_contractors"]
+const TDLR_SOURCE_KEY = "state_license.tx.tdlr"
+const FL_DBPR_ELECTRICAL_SOURCE_KEY = "state_license.fl.electrical"
+const NC_GENERAL_CONTRACTORS_SOURCE_KEY = "state_license.nc.general_contractors"
 
 const csvTextCache = new Map<string, Promise<string>>()
 
@@ -529,7 +535,7 @@ async function upsertTdlrRecord({
         .from("leadgen_source_records")
         .select("id")
         .eq("workspace_id", workspaceId)
-        .eq("source_key", "state_licensing")
+        .eq("source_key", TDLR_SOURCE_KEY)
         .eq("source_record_id", sourceRecordId)
         .maybeSingle()
     if (existingError) throw existingError
@@ -567,7 +573,7 @@ async function upsertTdlrRecord({
             workspace_id: workspaceId,
             poll_id: pollId,
             task_id: taskId,
-            source_key: "state_licensing",
+            source_key: TDLR_SOURCE_KEY,
             source_record_id: sourceRecordId,
             company_name: displayName,
             phone: result.phone,
@@ -592,7 +598,7 @@ async function upsertTdlrRecord({
             website_domain: null,
             website_url: null,
             profile_url: result.profileUrl,
-            source_key: "state_licensing",
+            source_key: TDLR_SOURCE_KEY,
             source_record_id: sourceRecordId,
             address,
             latitude: null,
@@ -604,7 +610,7 @@ async function upsertTdlrRecord({
             location_value: locationValue,
             owner_name: ownerName,
             owner_phone: ownerName ? result.phone : null,
-            owner_source_key: ownerName ? "state_licensing" : null,
+            owner_source_key: ownerName ? TDLR_SOURCE_KEY : null,
             owner_confidence: ownerName && result.phone ? 78 : null,
             owner_evidence: ownerName ? {
                 source: "tdlr_license_search",
@@ -675,10 +681,10 @@ async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, re
         profile_url: result.profileUrl,
     }
     const { error: evidenceError } = await supabaseAdmin.from("leadgen_evidence").insert({
-        workspace_id: workspaceId,
-        poll_id: pollId,
-        company_id: companyId,
-        source_key: "state_licensing",
+            workspace_id: workspaceId,
+            poll_id: pollId,
+            company_id: companyId,
+        source_key: TDLR_SOURCE_KEY,
         evidence_kind: "license_candidate_match",
         confidence: ownerName && result.phone ? 82 : result.phone ? 48 : 35,
         value,
@@ -732,7 +738,7 @@ async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, re
     if (result.phone) updatePayload.phone = result.phone
     if (ownerName) {
         updatePayload.owner_name = ownerName
-        updatePayload.owner_source_key = "state_licensing"
+        updatePayload.owner_source_key = TDLR_SOURCE_KEY
         updatePayload.owner_confidence = ownerName && result.phone ? 82 : 55
         updatePayload.owner_evidence = value
         if (result.phone) updatePayload.owner_phone = result.phone
@@ -771,7 +777,7 @@ async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, com
         workspace_id: workspaceId,
         poll_id: pollId,
         company_id: companyId,
-        source_key: "state_licensing",
+        source_key: FL_DBPR_ELECTRICAL_SOURCE_KEY,
         evidence_kind: "license_candidate_match",
         confidence: result.ownerName ? 82 : 55,
         value: rawPayload,
@@ -824,7 +830,7 @@ async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, com
     }
     if (result.ownerName) {
         updatePayload.owner_name = result.ownerName
-        updatePayload.owner_source_key = "state_licensing"
+        updatePayload.owner_source_key = FL_DBPR_ELECTRICAL_SOURCE_KEY
         updatePayload.owner_confidence = result.phone ? 82 : 72
     }
     if (result.phone) {
@@ -865,7 +871,7 @@ async function applyNcGeneralEnrichmentToCompany({ workspaceId, pollId, companyI
         workspace_id: workspaceId,
         poll_id: pollId,
         company_id: companyId,
-        source_key: "state_licensing",
+        source_key: NC_GENERAL_CONTRACTORS_SOURCE_KEY,
         evidence_kind: "license_candidate_match",
         confidence: result.ownerName && result.phone ? 84 : result.ownerName ? 72 : 45,
         value: rawPayload,
@@ -918,7 +924,7 @@ async function applyNcGeneralEnrichmentToCompany({ workspaceId, pollId, companyI
     }
     if (result.ownerName) {
         updatePayload.owner_name = result.ownerName
-        updatePayload.owner_source_key = "state_licensing"
+        updatePayload.owner_source_key = NC_GENERAL_CONTRACTORS_SOURCE_KEY
         updatePayload.owner_confidence = result.phone ? 84 : 72
     }
     if (result.phone) {
@@ -943,18 +949,19 @@ async function applyNcGeneralEnrichmentToCompany({ workspaceId, pollId, companyI
 }
 
 export async function createStateLicensingTasksForPoll({ workspaceId, pollId, plan }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem }) {
-    if (plan.key !== "state_licensing") return 0
+    if (plan.key !== "state_licensing" && plan.key !== TDLR_SOURCE_KEY) return 0
+    const mappingSourceKey = plan.key === "state_licensing" ? "state_licensing" : TDLR_SOURCE_KEY
     const [industryMappingsResult, locationMappingsResult] = await Promise.all([
         supabaseAdmin
             .from("leadgen_source_industry_mappings")
             .select("icp_industry_value, native_values")
-            .eq("source_key", "state_licensing")
+            .eq("source_key", mappingSourceKey)
             .eq("enabled", true)
             .in("icp_industry_value", plan.industries),
         supabaseAdmin
             .from("leadgen_source_location_mappings")
             .select("icp_location_value, native_values")
-            .eq("source_key", "state_licensing")
+            .eq("source_key", mappingSourceKey)
             .eq("enabled", true)
             .in("icp_location_value", plan.locations),
     ])
@@ -999,7 +1006,7 @@ export async function createStateLicensingTasksForPoll({ workspaceId, pollId, pl
             return [{
                 poll_id: pollId,
                 workspace_id: workspaceId,
-                source_key: "state_licensing",
+                source_key: TDLR_SOURCE_KEY,
                 industry_value: industryMapping.icp_industry_value,
                 location_value: locationMapping.icp_location_value,
                 status: "queued",
@@ -1025,7 +1032,8 @@ export async function createStateLicensingTasksForPoll({ workspaceId, pollId, pl
 }
 
 export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem }) {
-    if (plan.key !== "state_licensing") return 0
+    if (!STATE_LICENSE_SOURCE_KEYS.includes(plan.key)) return 0
+    const sourceKey = plan.key === "state_licensing" ? TDLR_SOURCE_KEY : plan.key
     const candidatesResult = await supabaseAdmin
         .from("leadgen_companies")
         .select("id, display_name, phone, address, industry_value, location_value")
@@ -1040,13 +1048,13 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
         supabaseAdmin
             .from("leadgen_source_industry_mappings")
             .select("icp_industry_value, native_values")
-            .eq("source_key", "state_licensing")
+            .eq("source_key", plan.key === "state_licensing" ? "state_licensing" : sourceKey)
             .eq("enabled", true)
             .in("icp_industry_value", plan.industries),
         supabaseAdmin
             .from("leadgen_source_location_mappings")
             .select("icp_location_value, native_values")
-            .eq("source_key", "state_licensing")
+            .eq("source_key", plan.key === "state_licensing" ? "state_licensing" : sourceKey)
             .eq("enabled", true)
             .in("icp_location_value", plan.locations),
     ])
@@ -1054,11 +1062,13 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
     if (locationMappingsResult.error) throw new Error(`Could not load state licensing enrichment location mappings: ${locationMappingsResult.error.message}`)
     const industryMappings = (industryMappingsResult.data ?? []) as SourceIndustryMapping[]
     const locationMappings = (locationMappingsResult.data ?? []) as SourceLocationMapping[]
+    const mappedIndustries = new Set(industryMappings.map((mapping) => mapping.icp_industry_value))
+    const mappedLocations = new Set(locationMappings.map((mapping) => mapping.icp_location_value))
     const nativeIndustries = [...new Set(industryMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
     const nativeLocations = [...new Set(locationMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
     let industries: SourceOption[] = []
     let locations: SourceOption[] = []
-    if (nativeIndustries.length > 0 && nativeLocations.length > 0) {
+    if (sourceKey === TDLR_SOURCE_KEY && nativeIndustries.length > 0 && nativeLocations.length > 0) {
         const [industriesResult, locationsResult] = await Promise.all([
             supabaseAdmin.from("leadgen_source_options").select("value, label, metadata").eq("source_key", "state_licensing").eq("option_kind", "industry").eq("enabled", true).in("value", nativeIndustries),
             supabaseAdmin.from("leadgen_source_options").select("value, label, metadata").eq("source_key", "state_licensing").eq("option_kind", "location").eq("enabled", true).in("value", nativeLocations),
@@ -1077,14 +1087,15 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
         location_value: string | null
         status: string
         source_query: Record<string, unknown>
-    }> = candidates.flatMap((candidate) => industries.flatMap((industry) => {
+    }> = sourceKey === TDLR_SOURCE_KEY ? candidates.flatMap((candidate) => industries.flatMap((industry) => {
         if (candidateState(candidate) !== "TX") return []
+        if (!mappedIndustries.has(candidate.industry_value ?? "") || !mappedLocations.has(candidate.location_value ?? "")) return []
         const mapping = tdlrMapping(industry)
         if (!mapping) return []
         return locations.map((location) => ({
             poll_id: pollId,
             workspace_id: workspaceId,
-            source_key: "state_licensing",
+            source_key: TDLR_SOURCE_KEY,
             stage: "licensing_candidate_enrichment",
             industry_value: candidate.industry_value ?? industry.value,
             location_value: candidate.location_value ?? location.value,
@@ -1102,14 +1113,15 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
                 limit: 5,
             },
         }))
-    }))
-    const dbprElectricalTasks = candidates
+    })) : []
+    const dbprElectricalTasks = sourceKey === FL_DBPR_ELECTRICAL_SOURCE_KEY ? candidates
         .filter((candidate) => candidateState(candidate) === "FL")
+        .filter((candidate) => mappedIndustries.has(candidate.industry_value ?? "") && mappedLocations.has(candidate.location_value ?? ""))
         .filter((candidate) => DBPR_ELECTRICAL_INDUSTRIES.has(candidate.industry_value ?? ""))
         .map((candidate) => ({
             poll_id: pollId,
             workspace_id: workspaceId,
-            source_key: "state_licensing",
+            source_key: FL_DBPR_ELECTRICAL_SOURCE_KEY,
             stage: "licensing_candidate_enrichment",
             industry_value: candidate.industry_value,
             location_value: candidate.location_value,
@@ -1126,16 +1138,17 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
                 file_url: DBPR_ELECTRICAL_CSV_URL,
                 limit: 3,
             },
-        }))
-    const ncGeneralTasks = candidates
+        })) : []
+    const ncGeneralTasks = sourceKey === NC_GENERAL_CONTRACTORS_SOURCE_KEY ? candidates
         .filter((candidate) => candidateState(candidate) === "NC")
+        .filter((candidate) => mappedIndustries.has(candidate.industry_value ?? "") && mappedLocations.has(candidate.location_value ?? ""))
         .flatMap((candidate) => {
             const classifications = NC_CLASSIFICATIONS_BY_INDUSTRY[candidate.industry_value ?? ""] ?? []
             if (classifications.length === 0) return []
             return classifications.slice(0, 3).map((classificationId) => ({
                 poll_id: pollId,
                 workspace_id: workspaceId,
-                source_key: "state_licensing",
+                source_key: NC_GENERAL_CONTRACTORS_SOURCE_KEY,
                 stage: "licensing_candidate_enrichment",
                 industry_value: candidate.industry_value,
                 location_value: candidate.location_value,
@@ -1153,7 +1166,7 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
                     limit: 3,
                 },
             }))
-        })
+        }) : []
     tasks.push(...dbprElectricalTasks, ...ncGeneralTasks)
     if (tasks.length === 0) return 0
     const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(tasks)
@@ -1309,10 +1322,10 @@ export async function processStateLicensingPoll(pollId: string, workspaceId: str
     await setLeadgenPollStatus(pollId, workspaceId, "running")
     const tasksResult = await supabaseAdmin
         .from("leadgen_poll_tasks")
-        .select("id, industry_value, location_value, source_query")
+        .select("id, source_key, industry_value, location_value, source_query")
         .eq("poll_id", pollId)
         .eq("workspace_id", workspaceId)
-        .eq("source_key", "state_licensing")
+        .in("source_key", STATE_LICENSE_SOURCE_KEYS)
         .eq("status", "queued")
         .order("created_at", { ascending: true })
     if (tasksResult.error) {

@@ -192,36 +192,36 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                 uploadBanner={uploadLeadgenBanner.bind(null, workspace.slug)}
                 uploadLogo={uploadSharedWorkspaceLogo.bind(null, workspace.slug)}
                 product="leadgen"
-                description="Leadgen settings for this workspace."
+                description="Leadgen targeting, source readiness, and workspace presentation."
                 bannerLabel="leadgen banner"
             />
             <LeadgenTabs workspaceSlug={workspace.slug} active="settings" />
             <AutoSaveSettingsForm action={saveLeadgenSettings.bind(null, workspace.slug)}>
-                <section className="grid gap-4 lg:grid-cols-[0.75fr_1.25fr]">
-                    <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-                    <h2 className="text-lg font-semibold">Poll options</h2>
-                        <p className="mt-2 text-sm leading-6 text-neutral-400">Cadence and manual test runs.</p>
-                        <div className="mt-5 grid gap-4">
-                        <label className="block text-sm text-neutral-300">Automatic poll interval<input name="pollIntervalHours" type="number" min={1} max={2160} defaultValue={settings?.poll_interval_hours ?? 168} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-white" /><span className="mt-1 block text-xs text-neutral-500">Hours between scheduled polls. 168 = weekly.</span></label>
-                        <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300"><input name="automaticPollsEnabled" type="checkbox" defaultChecked={Boolean(settings?.automatic_polls_enabled)} className="h-4 w-4 accent-white" />Run polls automatically on this cadence</label>
+                <section className="grid gap-4 lg:grid-cols-[0.72fr_1.28fr]">
+                    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
+                    <h2 className="text-lg font-semibold leading-6">Poll options</h2>
+                        <p className="mt-1.5 text-sm leading-5 text-neutral-400">Cadence and manual test-run defaults.</p>
+                        <div className="mt-4 grid gap-3">
+                        <label className="block text-sm text-neutral-300">Automatic poll interval<input name="pollIntervalHours" type="number" min={1} max={2160} defaultValue={settings?.poll_interval_hours ?? 168} className="mt-2 h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" /><span className="mt-1.5 block text-xs leading-5 text-neutral-500">Hours between scheduled polls. 168 = weekly.</span></label>
+                        <label className="flex min-h-11 items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-300"><input name="automaticPollsEnabled" type="checkbox" defaultChecked={Boolean(settings?.automatic_polls_enabled)} className="h-4 w-4 shrink-0 accent-white" /><span>Run polls automatically on this cadence</span></label>
                         </div>
                     </div>
-                    <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-                        <h2 className="text-lg font-semibold">ICP targeting</h2>
-                        <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Shared target categories for sources that use the same broad Betelgeze ICP taxonomy, such as GBP, directories, and business registries.</p>
-                        <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
+                        <h2 className="text-lg font-semibold leading-6">ICP targeting</h2>
+                        <p className="mt-1.5 max-w-2xl text-sm leading-5 text-neutral-400">Shared target categories for sources that use the same broad Betelgeze ICP taxonomy, such as directories, public records, and registries.</p>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
                             <SearchableMultiSelect name="sourceConfig:icp:locations" label="Target locations" options={icpLocations.map((target) => ({ value: target.value, label: target.label, detail: `${target.location_kind ?? "location"}${target.region ? ` / ${target.region}` : ""}. ${sourcesForLocation(target.value)}` }))} selectedValues={selectedLocations} />
                             <SearchableMultiSelect name="sourceConfig:icp:industries" label="Target industries" options={icpIndustries.map((industry) => ({ value: industry.value, label: industry.label, detail: `${industry.category ?? "industry"}. ${sourcesForIndustry(industry.value)}` }))} selectedValues={selectedIndustries} />
-                            <label className="block text-sm text-neutral-300">Candidate target count<input name="sourceConfig:icp:limit" type="number" min={10} max={5000} defaultValue={sourceConfig.icp?.limit ?? 1000} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-white" /><span className="mt-1 block text-xs text-neutral-500">Upper bound for seed candidates before enrichment and qualification.</span></label>
-                            <label className="block text-sm text-neutral-300">Max enrichment depth<input name="sourceConfig:icp:maxEnrichmentDepth" type="number" min={1} max={8} defaultValue={sourceConfig.icp?.maxEnrichmentDepth ?? 4} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-white" /><span className="mt-1 block text-xs text-neutral-500">How far the pipeline may chase owner/phone evidence across supporting sources.</span></label>
-                            <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300 md:col-span-2"><input name="sourceConfig:icp:ownerRequired" type="checkbox" defaultChecked={sourceConfig.icp?.ownerRequired !== false} className="h-4 w-4 accent-white" />Only show qualified leads when owner/principal and phone evidence is found</label>
-                            <label className="block text-sm text-neutral-300 md:col-span-2">ICP notes<textarea name="icpNotes" defaultValue={settings?.icp_notes ?? ""} rows={3} placeholder="Company size, services, revenue band, licensing requirements, review profile, and disqualifiers." className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-white" /></label>
+                            <label className="block text-sm text-neutral-300">Candidate target count<input name="sourceConfig:icp:limit" type="number" min={10} max={5000} defaultValue={sourceConfig.icp?.limit ?? 1000} className="mt-2 h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" /><span className="mt-1.5 block text-xs leading-5 text-neutral-500">Upper bound before enrichment and qualification.</span></label>
+                            <label className="block text-sm text-neutral-300">Max enrichment depth<input name="sourceConfig:icp:maxEnrichmentDepth" type="number" min={1} max={8} defaultValue={sourceConfig.icp?.maxEnrichmentDepth ?? 4} className="mt-2 h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" /><span className="mt-1.5 block text-xs leading-5 text-neutral-500">How far the pipeline may chase owner evidence.</span></label>
+                            <label className="flex min-h-11 items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-300 md:col-span-2"><input name="sourceConfig:icp:ownerRequired" type="checkbox" defaultChecked={sourceConfig.icp?.ownerRequired !== false} className="h-4 w-4 shrink-0 accent-white" /><span>Only show qualified leads when owner/principal and phone evidence is found</span></label>
+                            <label className="block text-sm text-neutral-300 md:col-span-2">ICP notes<textarea name="icpNotes" defaultValue={settings?.icp_notes ?? ""} rows={3} placeholder="Company size, services, revenue band, licensing requirements, review profile, and disqualifiers." className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white" /></label>
                             <input type="hidden" name="geography" value={settings?.geography ?? ""} />
                         </div>
                     </div>
                 </section>
                 <SourceSettingsCard sources={sourceItems} catalogueStats={catalogueStats} />
-                <button className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">Save now</button>
+                <button className="inline-flex min-h-10 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium leading-none text-black transition hover:bg-neutral-200">Save now</button>
             </AutoSaveSettingsForm>
             <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
         </div>

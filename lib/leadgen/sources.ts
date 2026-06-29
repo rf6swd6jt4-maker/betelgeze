@@ -141,7 +141,7 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         statusLabel: "Executable for mapped Texas licensing categories",
         notesPlaceholder: "License statuses, endorsements, counties, or Texas exclusions.",
         kind: "enrichment",
-        category: "industry",
+        category: "location",
         implemented: true,
     },
     {
@@ -151,7 +151,7 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         statusLabel: "Executable for mapped Florida electrical categories",
         notesPlaceholder: "License status rules, Florida county/city caveats, or DBPR match confidence notes.",
         kind: "enrichment",
-        category: "industry",
+        category: "location",
         implemented: true,
     },
     {
@@ -161,7 +161,7 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         statusLabel: "Executable for mapped North Carolina GC categories",
         notesPlaceholder: "Classification ids, active-status rules, or name matching notes.",
         kind: "enrichment",
-        category: "industry",
+        category: "location",
         implemented: true,
     },
     {

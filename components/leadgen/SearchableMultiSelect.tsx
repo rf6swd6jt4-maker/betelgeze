@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 
 type Option = { value: string; label: string; detail?: string }
 
@@ -12,11 +12,12 @@ function SelectionMark({ checked }: { checked: boolean }) {
 
 export function SearchableMultiSelect({ name, label, options, selectedValues = [], emptyLabel = "No options available" }: { name: string; label: string; options: Option[]; selectedValues?: string[]; emptyLabel?: string }) {
     const [query, setQuery] = useState("")
-    const [selected, setSelected] = useState(() => [...selectedValues])
     const selectionSignature = selectedValues.join("|")
-    useEffect(() => {
-        setSelected([...selectedValues])
-    }, [selectionSignature])
+    const [selectedState, setSelectedState] = useState(() => ({
+        signature: selectionSignature,
+        values: [...selectedValues],
+    }))
+    const selected = selectedState.signature === selectionSignature ? selectedState.values : [...selectedValues]
     const optionByValue = new Map(options.map((option) => [option.value, option]))
     const filtered = useMemo(() => {
         const normalisedQuery = query.trim().toLowerCase()
@@ -26,10 +27,13 @@ export function SearchableMultiSelect({ name, label, options, selectedValues = [
     const selectedOptions = selected.map((value) => optionByValue.get(value)).filter((option): option is Option => Boolean(option))
 
     function toggle(value: string) {
-        setSelected((current) => {
-            const isSelected = current.includes(value)
-            if (isSelected) return current.filter((item) => item !== value)
-            return [...current, value]
+        setSelectedState((current) => {
+            const values = current.signature === selectionSignature ? current.values : [...selectedValues]
+            const isSelected = values.includes(value)
+            return {
+                signature: selectionSignature,
+                values: isSelected ? values.filter((item) => item !== value) : [...values, value],
+            }
         })
     }
 
@@ -37,25 +41,25 @@ export function SearchableMultiSelect({ name, label, options, selectedValues = [
         {selected.map((value) => <input key={value} type="hidden" name={name} value={value} />)}
         <div className="flex items-center justify-between gap-3">
             <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">{label}</label>
-            <span className="text-xs text-neutral-500">{selected.length} selected</span>
+            <span className="inline-flex h-6 items-center rounded-md border border-neutral-800 bg-neutral-950 px-2 text-xs text-neutral-500">{selected.length} selected</span>
         </div>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${label.toLowerCase()}`} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" />
-        <div className="mt-2 min-h-12 rounded-lg border border-neutral-800 bg-neutral-950 p-2">
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${label.toLowerCase()}`} className="mt-2 h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" />
+        <div className="mt-2 min-h-11 rounded-lg border border-neutral-800 bg-neutral-950 p-2">
             {selectedOptions.length ? <div className="flex flex-wrap gap-2">
                 {selectedOptions.map((option) => <button
                     key={option.value}
                     type="button"
                     onClick={() => toggle(option.value)}
                     data-autosave-control="true"
-                    className="inline-flex items-center gap-1 rounded-full border border-emerald-300/30 bg-emerald-300/15 px-2.5 py-1 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-300/20"
+                    className="inline-flex min-h-7 items-center justify-center gap-1 rounded-md border border-emerald-300/30 bg-emerald-300/15 px-2.5 text-xs font-semibold leading-none text-emerald-100 transition hover:bg-emerald-300/20"
                     aria-label={`Remove ${option.label}`}
                 >
                     {option.label}
-                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-100 hover:bg-emerald-500/30">x</span>
+                    <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-emerald-500/20 text-xs font-bold leading-none text-emerald-100 hover:bg-emerald-500/30">x</span>
                 </button>)}
             </div> : <p className="px-1 py-2 text-sm text-neutral-600">Nothing selected yet.</p>}
         </div>
-        <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-neutral-800 bg-neutral-950 p-2">
+        <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-neutral-800 bg-neutral-950 p-1.5">
             {filtered.length ? <div className="space-y-1">
                 {filtered.map((option) => {
                     const checked = selected.includes(option.value)

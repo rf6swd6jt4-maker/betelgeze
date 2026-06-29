@@ -1,14 +1,12 @@
-import { WorkspaceIdentityEditor } from "@/components/admin/WorkspaceIdentityEditor"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
 import { ManualSettingsForm } from "@/components/leadgen/ManualSettingsForm"
 import { SourceSettingsCard, type SourceCatalogueStats, type SourceSettingsItem } from "@/components/leadgen/SourceSettingsCard"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import type { LeadgenSourceCatalogRow } from "@/lib/leadgen/source-catalog-ui"
-import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
 import { executableLeadgenSources, leadgenSourceOptions, type LeadgenSourceConfig, type LeadgenSourceKey } from "@/lib/leadgen/sources"
-import { saveLeadgenSettings, updateLeadgenCoverLayout, updateLeadgenWorkspaceName, uploadLeadgenBanner, uploadSharedWorkspaceLogo } from "../settings/actions"
+import { saveLeadgenSettings } from "../settings/actions"
 
 export const dynamic = "force-dynamic"
 
@@ -23,10 +21,6 @@ function sourceConfigValue(config: unknown): Partial<LeadgenSourceConfig> {
 export default async function LeadgenSourcesPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user } = await requireWorkspace(workspaceSlug, "admin")
-    const [bannerSrc, logoSrc] = await Promise.all([
-        workspace.leadgen_banner_path ? createUploadSignedUrl(workspace.leadgen_banner_path) : null,
-        workspace.logo_path ? createUploadSignedUrl(workspace.logo_path) : null,
-    ])
     const [settingsResult, industriesResult, locationsResult, industryMappingsResult, locationMappingsResult, catalogResult] = await Promise.all([
         supabaseAdmin
             .from("leadgen_workspace_settings")
@@ -159,16 +153,6 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
         <div className="mx-auto max-w-7xl">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
-            <WorkspaceIdentityEditor
-                workspace={{ name: workspace.name, slug: workspace.slug, bannerHeight: workspace.leadgen_banner_height, bannerPosition: workspace.leadgen_banner_position, bannerSrc, logoSrc }}
-                updateName={updateLeadgenWorkspaceName.bind(null, workspace.slug)}
-                updateCoverLayout={updateLeadgenCoverLayout.bind(null, workspace.slug)}
-                uploadBanner={uploadLeadgenBanner.bind(null, workspace.slug)}
-                uploadLogo={uploadSharedWorkspaceLogo.bind(null, workspace.slug)}
-                product="leadgen"
-                description="Leadgen source readiness, mappings, and run controls."
-                bannerLabel="leadgen banner"
-            />
             <LeadgenTabs workspaceSlug={workspace.slug} active="sources" />
             <ManualSettingsForm action={saveLeadgenSettings.bind(null, workspace.slug)}>
                 <input type="hidden" name="settingsScope" value="sources" />

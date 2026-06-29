@@ -130,9 +130,9 @@ function ToggleBox({ state }: { state: ToggleState }) {
 
 function SourceToggle({ source, enabled, onToggle }: { source: SourceSettingsItem; enabled: boolean; onToggle: (source: SourceSettingsItem, checked: boolean) => void }) {
     if (!runnable(source)) {
-        return <span className="inline-flex h-8 min-w-[58px] items-center justify-center gap-2 rounded-lg text-xs font-medium text-neutral-500">
+        return <span className="inline-flex h-8 w-[64px] items-center justify-start gap-2 rounded-lg text-xs font-medium text-neutral-500">
             <ToggleBox state="off" />
-            <span>Off</span>
+            <span className="w-7 text-left">Off</span>
         </span>
     }
     return <button
@@ -141,11 +141,11 @@ function SourceToggle({ source, enabled, onToggle }: { source: SourceSettingsIte
         aria-checked={enabled}
         onClick={() => onToggle(source, !enabled)}
         data-settings-control="true"
-        className="inline-flex h-8 min-w-[58px] items-center justify-center gap-2 rounded-lg text-xs font-medium text-neutral-300 transition hover:text-white"
+        className="inline-flex h-8 w-[64px] items-center justify-start gap-2 rounded-lg text-xs font-medium text-neutral-300 transition hover:text-white"
         aria-label={`${enabled ? "Disable" : "Enable"} ${source.label}`}
     >
         <ToggleBox state={enabled ? "on" : "off"} />
-        <span>{enabled ? "On" : "Off"}</span>
+        <span className="w-7 text-left">{enabled ? "On" : "Off"}</span>
     </button>
 }
 
@@ -163,11 +163,11 @@ function CategoryToggle({ sources, enabledValues, onToggle }: { sources: SourceS
         disabled={disabled}
         onClick={() => onToggle(!checked)}
         data-settings-control="true"
-        className="inline-flex h-8 min-w-[74px] items-center justify-center gap-2 rounded-lg text-xs font-medium text-neutral-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+        className="inline-flex h-8 w-[82px] items-center justify-start gap-2 rounded-lg text-xs font-medium text-neutral-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
         aria-label="Toggle runnable sources in this category"
     >
         <ToggleBox state={checked ? "on" : mixed ? "mixed" : "off"} />
-        <span>{checked ? "All on" : mixed ? "Some" : "Off"}</span>
+        <span className="w-12 text-left">{checked ? "All on" : mixed ? "Some" : "Off"}</span>
     </button>
 }
 
@@ -218,7 +218,7 @@ function SourceRow({ source, enabled, expanded, nested = false, onToggle, onExpa
     const maxLimit = source.value === "overture" ? 500 : source.value === "sam_gov" ? 1 : source.kind === "seed" ? 25 : 80
     const detailLines = statusLine(source, status, enabled)
 
-    return <div className={`border-b border-neutral-900 transition last:border-b-0 ${enabled ? "bg-emerald-300/[0.035]" : nested ? "bg-neutral-950 hover:bg-black" : "bg-black hover:bg-neutral-950/60"}`}>
+    return <div className={`border-b border-neutral-900 transition last:border-b-0 ${enabled ? "bg-emerald-300/[0.035]" : nested ? "bg-black hover:bg-neutral-950" : "bg-neutral-950 hover:bg-black"}`}>
         {!expanded && <HiddenSourceSettings source={source} />}
         <div className="grid min-h-12 gap-3 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_150px_36px] sm:items-center sm:px-4">
             <div className="flex min-w-0 items-center gap-3">
@@ -431,7 +431,7 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                     const expanded = expandedCategories.has(category.key)
                     const counts = groupCounts(category.sources)
                     return <div key={category.key} className="bg-neutral-900/60">
-                        <div className="grid gap-3 bg-neutral-950/25 px-4 py-3 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:items-center sm:px-5">
+                        <div className="grid gap-3 bg-neutral-900 px-4 py-3 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:items-center sm:px-5">
                             <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
                             <div className="min-w-0">
                                 <h4 className="text-sm font-semibold leading-5 text-white">{category.title}</h4>
@@ -451,7 +451,7 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                                 <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
                             </button>
                         </div>
-                        {expanded && <div className="border-t border-neutral-800 bg-black/35 py-1 pl-3 sm:pl-8">
+                        {expanded && <div className="border-t border-neutral-800 bg-neutral-950 py-1 pl-3 sm:pl-8">
                             <div className="overflow-hidden border-l border-neutral-800">
                                 {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} nested onToggle={toggleSource} onExpand={toggleExpanded} />)}
                             </div>

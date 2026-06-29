@@ -147,6 +147,6 @@ export function SettingsSectionActions({ section, label }: { section: string; la
 
     return <div className="mt-4 flex flex-wrap items-center gap-2">
         <button type="submit" className="inline-flex min-h-10 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium leading-none text-black transition hover:bg-neutral-200">Save {label}</button>
-        {dirtyCount > 0 && <button type="button" onClick={revert} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-neutral-700 px-3 text-sm font-medium leading-none text-neutral-200 transition hover:border-neutral-500 hover:text-white">Revert {dirtyCount} change{dirtyCount === 1 ? "" : "s"}</button>}
+        {dirtyCount > 0 && <button type="button" onClick={revert} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-400/40 px-3 text-sm font-medium leading-none text-red-200 transition hover:border-red-300 hover:text-red-100">Revert {dirtyCount} change{dirtyCount === 1 ? "" : "s"}</button>}
     </div>
 }

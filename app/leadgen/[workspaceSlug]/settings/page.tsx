@@ -1,4 +1,5 @@
 import { WorkspaceIdentityEditor } from "@/components/admin/WorkspaceIdentityEditor"
+import { AutoSaveSettingsForm } from "@/components/leadgen/AutoSaveSettingsForm"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
 import { SearchableMultiSelect } from "@/components/leadgen/SearchableMultiSelect"
 import { SourceSettingsCard, type SourceCatalogueStats, type SourceSettingsItem } from "@/components/leadgen/SourceSettingsCard"
@@ -141,7 +142,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                 bannerLabel="leadgen banner"
             />
             <LeadgenTabs workspaceSlug={workspace.slug} active="settings" />
-            <form action={saveLeadgenSettings.bind(null, workspace.slug)} className="mt-8 space-y-4">
+            <AutoSaveSettingsForm action={saveLeadgenSettings.bind(null, workspace.slug)}>
                 <section className="grid gap-4 lg:grid-cols-[0.75fr_1.25fr]">
                     <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
                     <h2 className="text-lg font-semibold">Poll options</h2>
@@ -166,8 +167,8 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                     </div>
                 </section>
                 <SourceSettingsCard sources={sourceItems} catalogueStats={catalogueStats} />
-                <button className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">Save leadgen settings</button>
-            </form>
+                <button className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">Save now</button>
+            </AutoSaveSettingsForm>
             <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
         </div>
     </main>

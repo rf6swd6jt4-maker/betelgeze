@@ -105,6 +105,7 @@ function CategoryToggle({ sources, enabledValues, onToggle }: { sources: SourceS
         checked={checked}
         disabled={runnableSources.length === 0}
         onChange={(event) => onToggle(event.currentTarget.checked)}
+        data-autosave-control="true"
         className="h-4 w-4 shrink-0 accent-white disabled:opacity-40"
         aria-label="Toggle runnable sources in this category"
     />
@@ -125,6 +126,7 @@ function SourceRow({ source, enabled, expanded, onToggle, onExpand }: { source: 
                 checked={enabled}
                 disabled={disabled}
                 onChange={(event) => onToggle(source, event.currentTarget.checked)}
+                data-autosave-control="true"
                 className="mt-1 h-4 w-4 accent-white disabled:opacity-40"
                 aria-label={`Enable ${source.label}`}
             />

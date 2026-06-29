@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import type { LeadgenSourceKey } from "@/lib/leadgen/sources"
 
 type SourceStatus = "not_configured" | "not_mapped" | "disabled" | "enabled"
@@ -79,18 +80,18 @@ function statusText(status: SourceStatus) {
     return "Not configured"
 }
 
-function statusClass(status: SourceStatus) {
-    if (status === "enabled") return "border-emerald-300/40 bg-emerald-300/15 text-emerald-100"
-    if (status === "disabled") return "border-neutral-500/40 bg-neutral-500/10 text-neutral-300"
-    if (status === "not_mapped") return "border-amber-300/40 bg-amber-300/15 text-amber-100"
-    return "border-red-300/40 bg-red-300/15 text-red-100"
-}
-
 function statusTone(status: SourceStatus) {
     if (status === "enabled") return "text-emerald-200"
     if (status === "disabled") return "text-neutral-300"
     if (status === "not_mapped") return "text-amber-200"
     return "text-red-200"
+}
+
+function statusMarkClass(status: SourceStatus) {
+    if (status === "enabled") return "bg-emerald-300"
+    if (status === "disabled") return "bg-neutral-500"
+    if (status === "not_mapped") return "bg-amber-300"
+    return "bg-red-300"
 }
 
 function statusDescription(source: SourceSettingsItem, status: SourceStatus, enabled: boolean) {
@@ -128,7 +129,10 @@ function ToggleBox({ state }: { state: ToggleState }) {
 
 function SourceToggle({ source, enabled, onToggle }: { source: SourceSettingsItem; enabled: boolean; onToggle: (source: SourceSettingsItem, checked: boolean) => void }) {
     if (!runnable(source)) {
-        return <span className="mt-0.5 inline-flex rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-neutral-500">Locked</span>
+        return <span className="inline-flex h-8 min-w-[58px] items-center justify-center gap-2 rounded-lg text-xs font-medium text-neutral-500">
+            <ToggleBox state="off" />
+            <span>Off</span>
+        </span>
     }
     return <button
         type="button"
@@ -136,11 +140,11 @@ function SourceToggle({ source, enabled, onToggle }: { source: SourceSettingsIte
         aria-checked={enabled}
         onClick={() => onToggle(source, !enabled)}
         data-autosave-control="true"
-        className="inline-flex h-8 items-center justify-center gap-2 rounded-lg px-1.5 text-xs text-neutral-300 transition hover:text-white"
+        className="inline-flex h-8 min-w-[58px] items-center justify-center gap-2 rounded-lg text-xs font-medium text-neutral-300 transition hover:text-white"
         aria-label={`${enabled ? "Disable" : "Enable"} ${source.label}`}
     >
         <ToggleBox state={enabled ? "on" : "off"} />
-        <span className="hidden font-medium sm:inline">{enabled ? "On" : "Off"}</span>
+        <span>{enabled ? "On" : "Off"}</span>
     </button>
 }
 
@@ -158,12 +162,31 @@ function CategoryToggle({ sources, enabledValues, onToggle }: { sources: SourceS
         disabled={disabled}
         onClick={() => onToggle(!checked)}
         data-autosave-control="true"
-        className="inline-flex h-8 items-center justify-center gap-2 rounded-lg px-1.5 text-xs text-neutral-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+        className="inline-flex h-8 min-w-[74px] items-center justify-center gap-2 rounded-lg text-xs font-medium text-neutral-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
         aria-label="Toggle runnable sources in this category"
     >
         <ToggleBox state={checked ? "on" : mixed ? "mixed" : "off"} />
-        <span className="hidden font-medium sm:inline">{checked ? "All on" : mixed ? "Some" : "Off"}</span>
+        <span>{checked ? "All on" : mixed ? "Some" : "Off"}</span>
     </button>
+}
+
+function statusLine(source: SourceSettingsItem, status: SourceStatus, enabled: boolean) {
+    const config = !source.implemented
+        ? "Adapter is not implemented yet."
+        : !source.apiKeyConfigured && source.envVar
+            ? `${source.envVar} is missing.`
+            : source.configured
+                ? "Required configuration is present."
+                : "Source configuration is incomplete."
+    const mapping = source.mapped
+        ? "Current ICP has mapped industry and location coverage."
+        : source.mappingReason || "Current ICP is not mapped to this source."
+    const inclusion = status === "enabled"
+        ? "Included in the next poll snapshot."
+        : enabled
+            ? "Ready but currently excluded."
+            : "Excluded from the next poll snapshot."
+    return [config, mapping, inclusion]
 }
 
 function SourceRow({ source, enabled, expanded, onToggle, onExpand }: { source: SourceSettingsItem; enabled: boolean; expanded: boolean; onToggle: (source: SourceSettingsItem, checked: boolean) => void; onExpand: (source: SourceSettingsItem) => void }) {
@@ -171,54 +194,67 @@ function SourceRow({ source, enabled, expanded, onToggle, onExpand }: { source: 
     const showRadius = source.kind === "seed"
     const showRelease = source.value === "overture" || source.value === "alltheplaces"
     const maxLimit = source.value === "overture" ? 500 : source.value === "sam_gov" ? 1 : source.kind === "seed" ? 25 : 80
-    const icpSummary = `${source.mappingIndustryText} · ${source.mappingLocationText}`
+    const detailLines = statusLine(source, status, enabled)
 
-    return <div className={`rounded-lg border transition ${enabled ? "border-emerald-300/25 bg-emerald-300/[0.06]" : "border-neutral-800 bg-black/35 hover:border-neutral-700"}`}>
-        <div className="grid gap-3 px-3 py-3 sm:grid-cols-[72px_minmax(0,1fr)_36px] sm:items-start sm:px-4">
-            <SourceToggle source={source} enabled={enabled} onToggle={onToggle} />
-            <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium leading-5 text-white">{source.label}</p>
-                    <span className={`inline-flex min-h-6 items-center justify-center rounded-md border px-2 text-[11px] font-medium leading-none ${statusClass(status)}`}>{statusText(status)}</span>
-                </div>
-                <p className="mt-1 max-w-4xl text-sm leading-5 text-neutral-400">{source.detail}</p>
-                <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                    <span className="inline-flex min-h-6 items-center rounded-md border border-neutral-800 bg-neutral-950 px-2 text-neutral-400">{source.kind === "seed" ? "Seed" : source.category === "general" ? "General" : source.category === "industry" ? "Industry" : "Location"}</span>
-                    <span className="inline-flex min-h-6 min-w-0 items-center rounded-md border border-neutral-800 bg-neutral-950 px-2 text-neutral-500"><span className="truncate">{icpSummary}</span></span>
-                </div>
-                <p className={`mt-2 text-xs leading-5 ${statusTone(status)}`}>{statusDescription(source, status, enabled)}</p>
+    return <div className={`border-b border-neutral-900 transition last:border-b-0 ${enabled ? "bg-emerald-300/[0.035]" : "bg-black hover:bg-neutral-950/60"}`}>
+        <div className="grid min-h-12 gap-3 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_150px_36px] sm:items-center sm:px-4">
+            <div className="flex min-w-0 items-center gap-3">
+                <SourceToggle source={source} enabled={enabled} onToggle={onToggle} />
+                <p className="min-w-0 truncate text-sm font-medium leading-5 text-white">{source.label}</p>
+            </div>
+            <div className="flex items-center justify-between gap-3 sm:justify-end">
+                <span className={`inline-flex items-center gap-2 text-sm ${statusTone(status)}`}><BetelgezeStatusMark className={statusMarkClass(status)} />{statusText(status)}</span>
+                <button
+                    type="button"
+                    onClick={() => onExpand(source)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-900 hover:text-white sm:hidden"
+                    aria-expanded={expanded}
+                    aria-label={`Toggle ${source.label} details`}
+                >
+                    <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
+                </button>
             </div>
             <button
                 type="button"
                 onClick={() => onExpand(source)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition hover:border-neutral-700 hover:text-white"
+                className="hidden h-9 w-9 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-900 hover:text-white sm:flex"
                 aria-expanded={expanded}
                 aria-label={`Toggle ${source.label} details`}
             >
                 <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
             </button>
         </div>
-        {expanded && <div className="border-t border-neutral-800 px-3 py-3 sm:px-4">
-            <div className="space-y-3">
-                <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-sm text-neutral-300">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Why this source {status === "enabled" || status === "disabled" ? "is ready" : "is blocked"}</p>
-                    <p className="mt-2 leading-6">{statusDescription(source, status, enabled)}</p>
-                    <p className="mt-2 text-xs text-neutral-500">Catalog status: {source.statusLabel}</p>
-                    {source.setupHint && <p className="mt-2 text-xs text-neutral-500">{source.setupHint}</p>}
+        {expanded && <div className="border-t border-neutral-900 bg-neutral-950/65 px-3 py-3 sm:px-4">
+            <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
+                <div className="rounded-lg border border-neutral-800 bg-black p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Description</p>
+                    <p className="mt-2 text-sm leading-5 text-neutral-300">{source.detail}</p>
+                    <p className={`mt-3 text-sm leading-5 ${statusTone(status)}`}>{statusDescription(source, status, enabled)}</p>
                 </div>
-                <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Supported coverage</p>
+                <div className="rounded-lg border border-neutral-800 bg-black p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Configuration status</p>
                     <div className="mt-2 space-y-1.5">
-                        <MappingLine label="Industries" values={source.allMappedIndustryLabels} />
-                        <MappingLine label="Locations" values={source.allMappedLocationLabels} />
+                        {detailLines.map((line) => <p key={line} className="text-xs leading-5 text-neutral-400">{line}</p>)}
                     </div>
-                    <div className="mt-3 space-y-1.5">
-                        {source.selectedUnmappedIndustryLabels.length > 0 && <MappingLine label="Selected industries not mapped" values={source.selectedUnmappedIndustryLabels} tone="warn" />}
-                        {source.selectedUnmappedLocationLabels.length > 0 && <MappingLine label="Selected locations not mapped" values={source.selectedUnmappedLocationLabels} tone="warn" />}
+                    <p className="mt-2 text-xs text-neutral-600">Catalog: {source.statusLabel}</p>
+                    {source.setupHint && <p className="mt-1 text-xs leading-5 text-neutral-500">{source.setupHint}</p>}
+                </div>
+                <div className="rounded-lg border border-neutral-800 bg-black p-3 lg:col-span-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">ICP coverage</p>
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
+                        <div className="space-y-1.5">
+                            <MappingLine label="Industries" values={source.allMappedIndustryLabels} />
+                            {source.selectedUnmappedIndustryLabels.length > 0 && <MappingLine label="Selected industries not mapped" values={source.selectedUnmappedIndustryLabels} tone="warn" />}
+                        </div>
+                        <div className="space-y-1.5">
+                            <MappingLine label="Locations" values={source.allMappedLocationLabels} />
+                            {source.selectedUnmappedLocationLabels.length > 0 && <MappingLine label="Selected locations not mapped" values={source.selectedUnmappedLocationLabels} tone="warn" />}
+                        </div>
                     </div>
                 </div>
             </div>
-            <div className="mt-3 grid gap-3 rounded-lg border border-neutral-800 bg-black/55 p-3 sm:grid-cols-2">
+            <div className="mt-3 grid gap-3 rounded-lg border border-neutral-800 bg-black p-3 sm:grid-cols-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 sm:col-span-2">Source-specific options</p>
                 <label className="block text-xs text-neutral-400">Max records per mapped task<input name={`sourceConfig:${source.value}:limit`} type="number" min={1} max={maxLimit} defaultValue={source.settings.limit} className="mt-2 h-10 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white" /></label>
                 {showRelease && <label className="block text-xs text-neutral-400">Release / version<input name={`sourceConfig:${source.value}:release`} type="text" defaultValue={source.settings.release} placeholder={source.value === "alltheplaces" ? "latest" : undefined} className="mt-2 h-10 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white placeholder:text-neutral-600" /></label>}
                 {source.value === "website" && <>
@@ -257,6 +293,14 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
             notConfigured: 0,
         })
     }, [enabledValues, sources])
+
+    function groupCounts(groupSources: SourceSettingsItem[]) {
+        return {
+            enabled: groupSources.filter((source) => statusFor(source, enabledValues) === "enabled").length,
+            runnable: groupSources.filter(runnable).length,
+            total: groupSources.length,
+        }
+    }
 
     function toggleSource(source: SourceSettingsItem, checked: boolean) {
         if (!runnable(source)) return
@@ -298,73 +342,75 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
         })
     }
 
-    return <section className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+    const seedCounts = groupCounts(seedSources)
+
+    return <div className="space-y-4">
         {[...enabledValues].map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
-        <div className="border-b border-neutral-800 px-4 py-4 sm:px-5">
-            <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
-                <div>
-                    <h2 className="text-lg font-semibold leading-6">Sources</h2>
-                    <p className="mt-1.5 max-w-3xl text-sm leading-5 text-neutral-400">Enabled sources run when polling. Disabled sources are ready but excluded. Not-mapped or not-configured sources cannot run with the current ICP.</p>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-4 xl:min-w-[520px]">
-                    <p className="rounded-lg border border-emerald-300/30 bg-emerald-300/[0.12] px-3 py-2 text-center text-xs leading-4 text-emerald-200"><span className="block text-base font-semibold leading-5 text-emerald-100">{statusCounts.enabled}</span>Enabled</p>
-                    <p className="rounded-lg border border-neutral-500/30 bg-neutral-950 px-3 py-2 text-center text-xs leading-4 text-neutral-300"><span className="block text-base font-semibold leading-5 text-neutral-100">{statusCounts.disabled}</span>Disabled</p>
-                    <p className="rounded-lg border border-amber-300/30 bg-amber-300/[0.12] px-3 py-2 text-center text-xs leading-4 text-amber-200"><span className="block text-base font-semibold leading-5 text-amber-100">{statusCounts.notMapped}</span>Not mapped</p>
-                    <p className="rounded-lg border border-red-300/30 bg-red-300/[0.12] px-3 py-2 text-center text-xs leading-4 text-red-200"><span className="block text-base font-semibold leading-5 text-red-100">{statusCounts.notConfigured}</span>No config</p>
-                </div>
-            </div>
-            {catalogueStats ? <p className="mt-2 text-xs text-neutral-500">Catalog status: {catalogueStats.active} active, {catalogueStats.validationOnly} validation only, {catalogueStats.needsWork} needs work, {catalogueStats.blocked} blocked.</p> : null}
-        </div>
-        <div className="divide-y divide-neutral-800">
-            <div>
-                <div className="bg-neutral-950/55 px-4 py-3 sm:px-5">
-                    <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
-                        <div>
-                            <h3 className="text-sm font-semibold leading-5 text-white">Seed sources</h3>
-                            <p className="mt-0.5 text-xs leading-5 text-neutral-500">Candidate creation sources required to produce leads.</p>
-                        </div>
-                        <p className="inline-flex h-7 w-fit items-center rounded-md border border-neutral-800 bg-black px-2.5 text-xs text-neutral-400">{seedSources.filter(runnable).length}/{seedSources.length} runnable</p>
+        <section className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+            <div className="border-b border-neutral-800 bg-neutral-950/35 px-4 py-4 sm:px-5">
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+                    <div>
+                        <h2 className="text-lg font-semibold leading-6">Seed sources</h2>
+                        <p className="mt-1 text-sm leading-5 text-neutral-400">Candidate creation sources required before enrichment can investigate leads.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs text-neutral-400">
+                        <span className="inline-flex h-7 items-center rounded-md border border-neutral-800 bg-black px-2.5">{seedCounts.enabled} on</span>
+                        <span className="inline-flex h-7 items-center rounded-md border border-neutral-800 bg-black px-2.5">{seedCounts.runnable}/{seedCounts.total} runnable</span>
                     </div>
                 </div>
-                <div className="space-y-3 px-4 py-3 sm:px-5">
-                    {seedSources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} onToggle={toggleSource} onExpand={toggleExpanded} />)}
+            </div>
+            <div className="divide-y divide-neutral-900">
+                {seedSources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} onToggle={toggleSource} onExpand={toggleExpanded} />)}
+            </div>
+        </section>
+
+        <section className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+            <div className="border-b border-neutral-800 bg-neutral-950/35 px-4 py-4 sm:px-5">
+                <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
+                    <div>
+                        <h2 className="text-lg font-semibold leading-6">Enrichment sources</h2>
+                        <p className="mt-1 max-w-3xl text-sm leading-5 text-neutral-400">Candidate investigation sources grouped by how they apply. Descriptions, ICP coverage, and source options live inside each expanded row.</p>
+                        {catalogueStats ? <p className="mt-2 text-xs text-neutral-500">Catalog: {catalogueStats.active} active, {catalogueStats.validationOnly} validation only, {catalogueStats.needsWork} needs work, {catalogueStats.blocked} blocked.</p> : null}
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-4 xl:min-w-[520px]">
+                        <p className="text-center text-xs leading-4 text-emerald-200"><span className="block text-base font-semibold leading-5 text-emerald-100">{statusCounts.enabled}</span>Enabled</p>
+                        <p className="text-center text-xs leading-4 text-neutral-300"><span className="block text-base font-semibold leading-5 text-neutral-100">{statusCounts.disabled}</span>Disabled</p>
+                        <p className="text-center text-xs leading-4 text-amber-200"><span className="block text-base font-semibold leading-5 text-amber-100">{statusCounts.notMapped}</span>Not mapped</p>
+                        <p className="text-center text-xs leading-4 text-red-200"><span className="block text-base font-semibold leading-5 text-red-100">{statusCounts.notConfigured}</span>No config</p>
+                    </div>
                 </div>
             </div>
-
-            <div>
-                <div className="bg-neutral-950/55 px-4 py-3 sm:px-5">
-                    <h3 className="text-sm font-semibold leading-5 text-white">Enrichment sources</h3>
-                    <p className="mt-0.5 text-xs leading-5 text-neutral-500">Candidate investigation sources grouped by how they apply.</p>
-                </div>
-                <div>
-                    {enrichmentCategories.map((category) => {
-                        const expanded = expandedCategories.has(category.key)
-                        const runnableInCategory = category.sources.filter(runnable).length
-                        return <div key={category.key} className="border-t border-neutral-800 bg-neutral-900/60 py-2 first:border-t-0 last:border-b last:pb-2">
-                            <div className="grid gap-3 px-4 py-3 sm:grid-cols-[80px_minmax(0,1fr)_auto_36px] sm:items-center sm:px-5">
+            <div className="divide-y divide-neutral-800">
+                {enrichmentCategories.map((category) => {
+                    const expanded = expandedCategories.has(category.key)
+                    const counts = groupCounts(category.sources)
+                    return <div key={category.key} className="bg-neutral-900/60">
+                        <div className="grid gap-3 px-4 py-3 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:items-center sm:px-5">
                                 <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
                                 <div className="min-w-0">
                                     <h4 className="text-sm font-medium leading-5 text-white">{category.title}</h4>
                                     <p className="mt-0.5 text-xs leading-5 text-neutral-500">{category.detail}</p>
                                 </div>
-                                <p className="inline-flex h-7 w-fit items-center rounded-md border border-neutral-800 bg-black px-2.5 text-xs text-neutral-400 sm:justify-self-end">{runnableInCategory}/{category.sources.length} runnable</p>
+                                <div className="flex flex-wrap gap-2 text-xs text-neutral-400 sm:justify-self-end">
+                                    <span className="inline-flex h-7 items-center rounded-md border border-neutral-800 bg-black px-2.5">{counts.enabled} on</span>
+                                    <span className="inline-flex h-7 items-center rounded-md border border-neutral-800 bg-black px-2.5">{counts.runnable}/{counts.total} runnable</span>
+                                </div>
                                 <button
                                     type="button"
                                     onClick={() => toggleCategoryExpanded(category.key)}
-                                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition hover:border-neutral-700 hover:text-white"
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-950 hover:text-white"
                                     aria-expanded={expanded}
                                     aria-label={`Toggle ${category.title} sources`}
                                 >
                                     <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
                                 </button>
-                            </div>
-                            {expanded && <div className="space-y-2 px-4 pb-3 sm:px-5">
-                                {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} onToggle={toggleSource} onExpand={toggleExpanded} />)}
-                            </div>}
                         </div>
-                    })}
-                </div>
+                        {expanded && <div className="border-t border-neutral-800">
+                            {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} onToggle={toggleSource} onExpand={toggleExpanded} />)}
+                        </div>}
+                    </div>
+                })}
             </div>
-        </div>
-    </section>
+        </section>
+    </div>
 }

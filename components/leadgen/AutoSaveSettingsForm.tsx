@@ -7,6 +7,8 @@ type SaveState = "idle" | "waiting" | "saving" | "saved"
 export function AutoSaveSettingsForm({ action, children }: { action: (formData: FormData) => void | Promise<void>; children: ReactNode }) {
     const formRef = useRef<HTMLFormElement>(null)
     const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const savingRef = useRef(false)
+    const queuedRef = useRef(false)
     const [state, setState] = useState<SaveState>("idle")
 
     function clearPendingSave() {
@@ -15,14 +17,23 @@ export function AutoSaveSettingsForm({ action, children }: { action: (formData: 
         timeoutRef.current = null
     }
 
+    function submitWhenReady() {
+        timeoutRef.current = null
+        if (savingRef.current) {
+            queuedRef.current = true
+            setState("waiting")
+            return
+        }
+        savingRef.current = true
+        queuedRef.current = false
+        setState("saving")
+        formRef.current?.requestSubmit()
+    }
+
     function scheduleSave() {
         clearPendingSave()
         setState("waiting")
-        timeoutRef.current = setTimeout(() => {
-            timeoutRef.current = null
-            setState("saving")
-            formRef.current?.requestSubmit()
-        }, 900)
+        timeoutRef.current = setTimeout(submitWhenReady, 900)
     }
 
     useEffect(() => clearPendingSave, [])
@@ -30,9 +41,18 @@ export function AutoSaveSettingsForm({ action, children }: { action: (formData: 
     return <form
         ref={formRef}
         action={async (formData) => {
-            await action(formData)
-            setState("saved")
-            window.setTimeout(() => setState("idle"), 1800)
+            try {
+                await action(formData)
+                if (queuedRef.current) {
+                    setState("waiting")
+                    window.setTimeout(submitWhenReady, 120)
+                    return
+                }
+                setState("saved")
+                window.setTimeout(() => setState("idle"), 1800)
+            } finally {
+                savingRef.current = false
+            }
         }}
         onChange={(event) => {
             const target = event.target

@@ -108,5 +108,4 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
         source_config: sourceConfig,
     })
     if (error) throw new Error("Could not save leadgen settings.")
-    refresh(slug)
 }

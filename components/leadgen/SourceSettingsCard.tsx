@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useMemo, useState } from "react"
 import type { LeadgenSourceKey } from "@/lib/leadgen/sources"
 
 type SourceStatus = "not_configured" | "not_mapped" | "disabled" | "enabled"
+type ToggleState = "on" | "off" | "mixed"
 
 type SourceSettings = {
     limit: number
@@ -39,6 +40,13 @@ export type SourceSettingsItem = {
     setupHint: string | null
     mappingIndustryText: string
     mappingLocationText: string
+    mappingReason: string
+    selectedMappedIndustryLabels: string[]
+    selectedUnmappedIndustryLabels: string[]
+    selectedMappedLocationLabels: string[]
+    selectedUnmappedLocationLabels: string[]
+    allMappedIndustryLabels: string[]
+    allMappedLocationLabels: string[]
     settings: SourceSettings
 }
 
@@ -66,16 +74,16 @@ function statusFor(source: SourceSettingsItem, enabledValues: Set<LeadgenSourceK
 
 function statusText(status: SourceStatus) {
     if (status === "enabled") return "Enabled"
-    if (status === "disabled") return "Disabled"
+    if (status === "disabled") return "Available"
     if (status === "not_mapped") return "Not mapped"
     return "Not configured"
 }
 
 function statusClass(status: SourceStatus) {
-    if (status === "enabled") return "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
-    if (status === "disabled") return "border-neutral-700 bg-neutral-950 text-neutral-300"
-    if (status === "not_mapped") return "border-amber-400/30 bg-amber-400/10 text-amber-200"
-    return "border-red-400/30 bg-red-400/10 text-red-200"
+    if (status === "enabled") return "border-emerald-300/40 bg-emerald-300/15 text-emerald-100"
+    if (status === "disabled") return "border-sky-300/30 bg-sky-300/10 text-sky-100"
+    if (status === "not_mapped") return "border-amber-300/40 bg-amber-300/15 text-amber-100"
+    return "border-red-300/40 bg-red-300/15 text-red-100"
 }
 
 function statItems(stats?: SourceCatalogueStats) {
@@ -88,59 +96,90 @@ function statItems(stats?: SourceCatalogueStats) {
     ] as const
 }
 
+function formatList(values: string[], empty: string) {
+    if (values.length === 0) return empty
+    if (values.length <= 4) return values.join(", ")
+    return `${values.slice(0, 4).join(", ")} +${values.length - 4} more`
+}
+
+function MappingLine({ label, values, tone = "neutral" }: { label: string; values: string[]; tone?: "neutral" | "good" | "warn" }) {
+    const toneClass = tone === "good" ? "text-emerald-100" : tone === "warn" ? "text-amber-100" : "text-neutral-300"
+    return <p className="text-xs leading-5 text-neutral-500"><span className="font-medium text-neutral-400">{label}:</span> <span className={toneClass}>{formatList(values, "None")}</span></p>
+}
+
+function ToggleBox({ state }: { state: ToggleState }) {
+    const active = state === "on"
+    const mixed = state === "mixed"
+    return <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition ${active ? "border-emerald-300 bg-emerald-300" : mixed ? "border-amber-300 bg-amber-300/20" : "border-neutral-500 bg-black"}`} aria-hidden="true">
+        {active && <span className="h-3 w-3 rounded-sm bg-black" />}
+        {mixed && <span className="h-0.5 w-3 rounded-full bg-amber-200" />}
+    </span>
+}
+
+function SourceToggle({ source, enabled, onToggle }: { source: SourceSettingsItem; enabled: boolean; onToggle: (source: SourceSettingsItem, checked: boolean) => void }) {
+    if (!runnable(source)) {
+        return <span className="mt-0.5 inline-flex rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-neutral-500">Locked</span>
+    }
+    return <button
+        type="button"
+        role="checkbox"
+        aria-checked={enabled}
+        onClick={() => onToggle(source, !enabled)}
+        data-autosave-control="true"
+        className="flex items-center gap-2 rounded-lg px-1 py-1 text-xs text-neutral-300 transition hover:text-white"
+        aria-label={`${enabled ? "Disable" : "Enable"} ${source.label}`}
+    >
+        <ToggleBox state={enabled ? "on" : "off"} />
+        <span className="hidden font-medium sm:inline">{enabled ? "On" : "Off"}</span>
+    </button>
+}
+
 function CategoryToggle({ sources, enabledValues, onToggle }: { sources: SourceSettingsItem[]; enabledValues: Set<LeadgenSourceKey>; onToggle: (checked: boolean) => void }) {
-    const inputRef = useRef<HTMLInputElement>(null)
     const runnableSources = sources.filter(runnable)
     const enabledCount = runnableSources.filter((source) => enabledValues.has(source.value)).length
     const checked = runnableSources.length > 0 && enabledCount === runnableSources.length
-    const indeterminate = enabledCount > 0 && enabledCount < runnableSources.length
+    const mixed = enabledCount > 0 && enabledCount < runnableSources.length
+    const disabled = runnableSources.length === 0
 
-    useEffect(() => {
-        if (inputRef.current) inputRef.current.indeterminate = indeterminate
-    }, [indeterminate])
-
-    return <input
-        ref={inputRef}
-        type="checkbox"
-        checked={checked}
-        disabled={runnableSources.length === 0}
-        onChange={(event) => onToggle(event.currentTarget.checked)}
+    return <button
+        type="button"
+        role="checkbox"
+        aria-checked={mixed ? "mixed" : checked}
+        disabled={disabled}
+        onClick={() => onToggle(!checked)}
         data-autosave-control="true"
-        className="h-4 w-4 shrink-0 accent-white disabled:opacity-40"
+        className="flex items-center gap-2 rounded-lg py-1 text-xs text-neutral-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
         aria-label="Toggle runnable sources in this category"
-    />
+    >
+        <ToggleBox state={checked ? "on" : mixed ? "mixed" : "off"} />
+        <span className="hidden font-medium sm:inline">{checked ? "All on" : mixed ? "Some on" : "All off"}</span>
+    </button>
 }
 
 function SourceRow({ source, enabled, expanded, onToggle, onExpand }: { source: SourceSettingsItem; enabled: boolean; expanded: boolean; onToggle: (source: SourceSettingsItem, checked: boolean) => void; onExpand: (source: SourceSettingsItem) => void }) {
     const status = statusFor(source, new Set(enabled ? [source.value] : []))
-    const hasSettings = Boolean(source.setupHint || source.envVar || source.notesPlaceholder || ["overture", "osm", "alltheplaces", "foursquare_os_places", "website"].includes(source.value))
-    const disabled = !runnable(source)
+    const hasSettings = true
     const maxLimit = source.value === "overture" ? 500 : source.value === "sam_gov" ? 1 : source.kind === "seed" ? 25 : 80
     const showRadius = source.kind === "seed"
     const showRelease = source.value === "overture" || source.value === "alltheplaces"
+    const mappedNow = source.selectedMappedIndustryLabels.length > 0 && source.selectedMappedLocationLabels.length > 0
 
-    return <div className="bg-black/35 px-4 py-4 sm:px-5">
-        <div className="grid gap-3 md:grid-cols-[24px_minmax(0,1fr)_auto_40px] md:items-start">
-            <input
-                type="checkbox"
-                checked={enabled}
-                disabled={disabled}
-                onChange={(event) => onToggle(source, event.currentTarget.checked)}
-                data-autosave-control="true"
-                className="mt-1 h-4 w-4 accent-white disabled:opacity-40"
-                aria-label={`Enable ${source.label}`}
-            />
+    return <div className={`px-4 py-4 sm:px-5 ${enabled ? "bg-emerald-300/[0.04]" : "bg-black/35"}`}>
+        <div className="grid gap-3 md:grid-cols-[72px_minmax(0,1fr)_minmax(160px,auto)_40px] md:items-start">
+            <SourceToggle source={source} enabled={enabled} onToggle={onToggle} />
             <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-medium text-white sm:text-base">{source.label}</p>
                     {!source.implemented && <span className="rounded-md border border-neutral-700 px-2 py-0.5 text-[11px] uppercase tracking-wide text-neutral-500">Planned</span>}
                 </div>
                 <p className="mt-1 max-w-4xl text-sm leading-5 text-neutral-400">{source.detail}</p>
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-500">
-                    <span>{source.mappingIndustryText}</span>
-                    <span>{source.mappingLocationText}</span>
-                    {source.envVar && <span>{source.apiKeyConfigured ? `${source.envVar} configured` : `${source.envVar} missing`}</span>}
+                <div className="mt-3 grid gap-1.5 lg:grid-cols-2">
+                    <MappingLine label="Works now for industries" values={source.selectedMappedIndustryLabels} tone={mappedNow ? "good" : "warn"} />
+                    <MappingLine label="Works now for locations" values={source.selectedMappedLocationLabels} tone={mappedNow ? "good" : "warn"} />
+                    {source.selectedUnmappedIndustryLabels.length > 0 && <MappingLine label="Selected industries not mapped" values={source.selectedUnmappedIndustryLabels} tone="warn" />}
+                    {source.selectedUnmappedLocationLabels.length > 0 && <MappingLine label="Selected locations not mapped" values={source.selectedUnmappedLocationLabels} tone="warn" />}
                 </div>
+                <p className="mt-2 text-xs leading-5 text-neutral-500">{source.mappingReason}</p>
             </div>
             <span className={`w-fit rounded-md border px-2.5 py-1 text-xs ${statusClass(status)}`}>{statusText(status)}</span>
             {hasSettings ? <button
@@ -148,18 +187,27 @@ function SourceRow({ source, enabled, expanded, onToggle, onExpand }: { source: 
                 onClick={() => onExpand(source)}
                 className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition hover:border-neutral-700 hover:text-white"
                 aria-expanded={expanded}
-                aria-label={`Toggle ${source.label} settings`}
+                aria-label={`Toggle ${source.label} details`}
             >
                 <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
             </button> : <span className="hidden md:block" />}
         </div>
         {expanded && <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-950 p-4">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(280px,1.1fr)]">
-                <div className="rounded-lg border border-neutral-900 bg-black/40 p-3 text-sm text-neutral-400">
-                    <p className="font-medium text-neutral-200">{source.statusLabel}</p>
-                    {source.setupHint && <p className="mt-2 leading-6">{source.setupHint}</p>}
-                    {!source.configured && <p className="mt-2 leading-6 text-red-200">This source cannot run until its required endpoint, adapter, or credential is configured.</p>}
-                    {source.configured && !source.mapped && <p className="mt-2 leading-6 text-amber-200">The source is configured, but this ICP selection does not map to it yet.</p>}
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(280px,1.05fr)]">
+                <div className="space-y-3">
+                    <div className="rounded-lg border border-neutral-900 bg-black/40 p-3 text-sm text-neutral-400">
+                        <p className="font-medium text-neutral-200">{source.statusLabel}</p>
+                        {source.setupHint && <p className="mt-2 leading-6">{source.setupHint}</p>}
+                        {!source.configured && <p className="mt-2 leading-6 text-red-200">This source cannot run until its required endpoint, adapter, or credential is configured.</p>}
+                        {source.configured && !source.mapped && <p className="mt-2 leading-6 text-amber-200">This source is implemented, but it does not match the currently selected ICP industries and locations.</p>}
+                    </div>
+                    <div className="rounded-lg border border-neutral-900 bg-black/40 p-3">
+                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Full mapping coverage</p>
+                        <div className="mt-2 space-y-1.5">
+                            <MappingLine label="Supported industries" values={source.allMappedIndustryLabels} />
+                            <MappingLine label="Supported locations" values={source.allMappedLocationLabels} />
+                        </div>
+                    </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">Max records per mapped task<input name={`sourceConfig:${source.value}:limit`} type="number" min={1} max={maxLimit} defaultValue={source.settings.limit} className="mt-2 w-full rounded-lg border border-neutral-800 bg-black px-3 py-2 text-sm normal-case tracking-normal text-white" /></label>
@@ -260,13 +308,13 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
             <div>
                 <div className="bg-neutral-950/45 px-4 py-3 sm:px-5">
                     <h3 className="text-sm font-medium text-white">Enrichment sources</h3>
-                    <p className="mt-1 text-xs leading-5 text-neutral-500">Candidate investigation sources. Category checkboxes enable every runnable source in that group; collapsed groups still submit their enabled sources.</p>
+                    <p className="mt-1 text-xs leading-5 text-neutral-500">Candidate investigation sources. Category toggles enable every runnable source in that group; collapsed groups still submit their enabled sources.</p>
                 </div>
                 <div className="divide-y divide-neutral-800">
                     {enrichmentCategories.map((category) => {
                         const expanded = expandedCategories.has(category.key)
                         return <div key={category.key}>
-                            <div className="grid gap-3 px-4 py-3 sm:grid-cols-[24px_minmax(0,1fr)_auto_40px] sm:items-center sm:px-5">
+                            <div className="grid gap-3 px-4 py-3 sm:grid-cols-[104px_minmax(0,1fr)_auto_40px] sm:items-center sm:px-5">
                                 <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
                                 <div className="min-w-0">
                                     <h4 className="text-sm font-medium text-white">{category.title}</h4>

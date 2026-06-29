@@ -178,7 +178,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                 </div>
                 <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Stored candidates</p>
-                    <p className="mt-2 text-sm text-neutral-300">{companies.length || poll.normalised_count} companies were stored for audit, even if they did not qualify for the Leads tab.</p>
+                    <p className="mt-2 text-sm text-neutral-300">{companies.length || poll.normalised_count} numbers were stored for audit, even if they did not qualify for the Leads tab.</p>
                 </div>
             </section>
 
@@ -215,7 +215,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                 <div className="border-b border-neutral-800 px-5 py-4">
                     <h2 className="font-semibold">Source tasks</h2>
                     <p className="mt-1 text-sm text-neutral-500">Exact worker tasks generated for this poll. This is the truth layer for whether sources actually queried anything.</p>
-                    <p className="mt-2 text-xs text-neutral-600">{tasks.length} generated · {processedTaskCount} processed · {rawReturnedCount} raw records returned · {taskCompanyCount} numbers returned from tasks</p>
+                    <p className="mt-2 text-xs text-neutral-600">{tasks.length} generated · {processedTaskCount} processed · {rawReturnedCount} raw records returned · {taskCompanyCount} numbers returned from queries</p>
                 </div>
                 {tasks.length ? tasks.map((task) => {
                     const taskMeta = statusMeta(task.status)
@@ -224,7 +224,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                             <span className={`inline-flex items-center gap-2 text-sm ${taskMeta.text}`}><BetelgezeStatusMark className={taskMeta.mark} />{taskMeta.label}</span>
                             <span className="text-sm text-neutral-300">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
                             <span className="text-sm text-neutral-500">{task.raw_count ?? 0} raw</span>
-                            <span className="text-sm text-neutral-500">{task.company_count ?? 0} companies</span>
+                            <span className="text-sm text-neutral-500">{task.company_count ?? 0} numbers</span>
                             <span className="truncate text-sm text-neutral-500">{task.stage ?? "source query"}</span>
                         </summary>
                         <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(task.source_query)}</pre>

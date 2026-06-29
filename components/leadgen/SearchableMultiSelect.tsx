@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 type Option = { value: string; label: string; detail?: string }
 
@@ -13,6 +13,10 @@ function SelectionMark({ checked }: { checked: boolean }) {
 export function SearchableMultiSelect({ name, label, options, selectedValues = [], emptyLabel = "No options available" }: { name: string; label: string; options: Option[]; selectedValues?: string[]; emptyLabel?: string }) {
     const [query, setQuery] = useState("")
     const [selected, setSelected] = useState(() => [...selectedValues])
+    const selectionSignature = selectedValues.join("|")
+    useEffect(() => {
+        setSelected([...selectedValues])
+    }, [selectionSignature])
     const optionByValue = new Map(options.map((option) => [option.value, option]))
     const filtered = useMemo(() => {
         const normalisedQuery = query.trim().toLowerCase()

@@ -80,7 +80,7 @@ function pollTaskStats(tasks: PollTask[]) {
         sourceQueries: tasks.length,
         completedQueries: tasks.filter((task) => task.status === "completed").length,
         rawReturned: tasks.reduce((total, task) => total + (task.raw_count ?? 0), 0),
-        companiesStored: tasks.reduce((total, task) => total + (task.company_count ?? 0), 0),
+        numbersReturned: tasks.reduce((total, task) => total + (task.company_count ?? 0), 0),
     }
 }
 
@@ -210,7 +210,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                                 <p className="text-sm text-neutral-500"><span className="text-neutral-200">{taskStats.rawReturned}</span> raw</p>
                                 <p className="text-sm text-neutral-500"><span className="text-neutral-200">{claimStats.matched}</span>/<span className="text-neutral-200">{claimStats.checks}</span> checks</p>
                                 <p className="font-mono text-sm text-neutral-500">{shortId(poll.id)}</p>
-                                <div className="ml-auto flex shrink-0 items-center gap-2">
+                                <div className="ml-auto flex shrink-0 items-center gap-2 pr-2">
                                     <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(poll.created_at)}</p>
                                     <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
                                 </div>

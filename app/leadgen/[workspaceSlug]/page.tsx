@@ -6,7 +6,7 @@ import { ListAutoRefresh } from "@/components/list/ListAutoRefresh"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { formatRelativeTime } from "@/lib/ui/relative-time"
+import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
 import { removeLeadgenCompany } from "./actions"
 
@@ -94,19 +94,19 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                         { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },
                     ]
                     return <div key={company.id} className="md:border-b md:border-neutral-900 md:last:border-0">
-                    <MobileCardActionSurface actions={leadActions} className="rounded-2xl border border-neutral-800 bg-black md:hidden">
-                        <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
-                            <p className="min-w-0 flex-1 truncate text-base font-medium text-neutral-100">{titleLine}</p>
-                            {phoneStatus}
-                        </div>
-                        <div className="flex items-center gap-3 px-3.5 py-2.5">
-                            <p className="truncate text-sm text-neutral-200">{bestPhone || "No phone"}</p>
-                            <p className="min-w-0 flex-1 truncate text-sm text-neutral-400">{industry}</p>
-                            <p className="text-sm text-neutral-500">{company.lead_score ?? 0} pts</p>
-                            <p className="text-sm whitespace-nowrap text-neutral-500">{formatRelativeTime(company.created_at)}</p>
-                        </div>
-                    </MobileCardActionSurface>
-                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(210px,1.1fr)_150px_minmax(190px,0.9fr)_130px_140px_100px_120px_32px] md:items-center">
+                        <MobileCardActionSurface actions={leadActions} className="rounded-2xl border border-neutral-800 bg-black md:hidden">
+                            <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
+                                <p className="min-w-0 flex-1 truncate text-base font-medium text-neutral-100">{titleLine}</p>
+                                {phoneStatus}
+                            </div>
+                            <div className="flex items-center gap-3 px-3.5 py-2.5">
+                                <p className="truncate text-sm text-neutral-200">{bestPhone || "No phone"}</p>
+                                <p className="min-w-0 flex-1 truncate text-sm text-neutral-400">{industry}</p>
+                                <p className="font-mono text-sm text-neutral-500">{shortId(company.id)}</p>
+                                <p className="text-sm whitespace-nowrap text-neutral-500">{formatRelativeTime(company.created_at)}</p>
+                            </div>
+                        </MobileCardActionSurface>
+                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(210px,1.1fr)_150px_minmax(190px,0.9fr)_130px_110px_110px_120px_120px_32px] md:items-center">
                         <div className="min-w-0">
                             <p className="truncate text-base font-medium text-neutral-100">{titleLine}</p>
                         </div>
@@ -115,6 +115,7 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                         <p className="truncate text-sm capitalize text-neutral-400">{company.source_key}</p>
                         <p className="truncate text-sm text-neutral-400">{String(company.industry_value ?? "—").replace(/_/g, " ")}</p>
                         <p className="font-mono text-sm text-neutral-500">{company.lead_score ?? 0} pts</p>
+                        <p className="truncate font-mono text-sm text-neutral-500">{shortId(company.id)}</p>
                         <p className="whitespace-nowrap text-right text-sm text-neutral-500">{formatRelativeTime(company.created_at)}</p>
                         <ListActionMenu actions={leadActions} />
                     </div>

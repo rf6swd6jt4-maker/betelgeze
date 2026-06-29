@@ -42,8 +42,16 @@ export function SearchableMultiSelect({ name, label, options, selectedValues = [
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${label.toLowerCase()}`} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm normal-case tracking-normal text-white placeholder:text-neutral-600" />
         <div className="mt-2 min-h-12 rounded-lg border border-neutral-800 bg-neutral-950 p-2">
             {selectedOptions.length ? <div className="flex flex-wrap gap-2">
-                {selectedOptions.map((option) => <button key={option.value} type="button" onClick={() => toggle(option.value)} data-autosave-control="true" className="rounded-full border border-emerald-300/30 bg-emerald-300/15 px-2.5 py-1 text-xs font-semibold text-emerald-100">
-                    {option.label} <span className="text-emerald-300">remove</span>
+                {selectedOptions.map((option) => <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => toggle(option.value)}
+                    data-autosave-control="true"
+                    className="inline-flex items-center gap-1 rounded-full border border-emerald-300/30 bg-emerald-300/15 px-2.5 py-1 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-300/20"
+                    aria-label={`Remove ${option.label}`}
+                >
+                    {option.label}
+                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-100 hover:bg-emerald-500/30">x</span>
                 </button>)}
             </div> : <p className="px-1 py-2 text-sm text-neutral-600">Nothing selected yet.</p>}
         </div>

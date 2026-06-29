@@ -135,7 +135,7 @@ export async function updateInvestigationTask(input: InvestigationTaskUpdate) {
     if (error) throw error
 }
 
-export async function createInvestigationTasksForPoll({ workspaceId, pollId }: { workspaceId: string; pollId: string }) {
+export async function createInvestigationTasksForPoll({ workspaceId, pollId, enabledSourceKeys }: { workspaceId: string; pollId: string; enabledSourceKeys?: string[] }) {
     const [companiesResult, catalogResult] = await Promise.all([
         supabaseAdmin
             .from("leadgen_companies")
@@ -150,7 +150,10 @@ export async function createInvestigationTasksForPoll({ workspaceId, pollId }: {
     if (companiesResult.error) throw companiesResult.error
     if (catalogResult.error) throw catalogResult.error
     const companies = companiesResult.data ?? []
+    const enabledSet = new Set((enabledSourceKeys ?? []).map(String))
+    const restrictToWorkspaceSources = Array.isArray(enabledSourceKeys)
     const catalog = (catalogResult.data ?? [])
+        .filter((source) => !restrictToWorkspaceSources || enabledSet.has(source.source_key))
         .filter((source) => source.enabled || source.implementation_status === "planned")
         .filter((source) => CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES.has(source.source_key) || source.implementation_status === "planned")
     const tasks = companies.flatMap((company) => catalog.filter((source) => sourceAppliesToCompany(source, company)).map((source) => {

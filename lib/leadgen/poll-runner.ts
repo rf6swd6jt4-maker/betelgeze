@@ -66,13 +66,14 @@ export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId:
     if (!["queued", "running"].includes(pollResult.data.status)) return { processed: false, reason: "not_runnable" }
 
     const sourcePlan = sourcePlanFromPollSnapshot(pollResult.data.source_snapshot)
-    const { osmSeedPlan, stateLicensingPlans, websitePlan, preSeedPipelinePlans, postSeedPipelinePlans } = executablePlan(sourcePlan)
+    const { osmSeedPlan, stateLicensingPlans, websitePlan, preSeedPipelinePlans, postSeedPipelinePlans, runnablePlans } = executablePlan(sourcePlan)
     const runnableWebsitePlan = websitePlan && websitePlan.industries.length > 0 && websitePlan.locations.length > 0 ? { ...websitePlan, limit: PILOT_CANDIDATE_LIMIT } : null
+    const enabledInvestigationSourceKeys = runnablePlans.map((source) => source.key)
 
     await setLeadgenPollStatus(pollId, workspaceId, "running")
     for (const plan of preSeedPipelinePlans) await processPipelineSourcePoll(pollId, workspaceId, plan.key, { finalize: false })
     if (osmSeedPlan) await processOsmPoll(pollId, workspaceId, { finalize: false })
-    await createInvestigationTasksForPoll({ workspaceId, pollId })
+    await createInvestigationTasksForPoll({ workspaceId, pollId, enabledSourceKeys: enabledInvestigationSourceKeys })
     await processPublicRecordsPoll(pollId, workspaceId, { finalize: false })
     for (const stateLicensingPlan of stateLicensingPlans) {
         await createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan: stateLicensingPlan })

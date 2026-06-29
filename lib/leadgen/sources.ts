@@ -4,6 +4,8 @@ export type LeadgenEnrichmentSourceKey =
     | "state_license.tx.tdlr"
     | "state_license.fl.electrical"
     | "state_license.nc.general_contractors"
+    | "transport.fmcsa_safer"
+    | "regulated.nppes"
     | "sam_gov"
 export type LeadgenLegacySourceKey = "state_licensing"
 export type LeadgenSourceKey = LeadgenSeedSourceKey | LeadgenEnrichmentSourceKey | LeadgenLegacySourceKey
@@ -60,6 +62,8 @@ export const enrichmentLeadgenSources = new Set<LeadgenSourceKey>([
     "state_license.tx.tdlr",
     "state_license.fl.electrical",
     "state_license.nc.general_contractors",
+    "transport.fmcsa_safer",
+    "regulated.nppes",
     "sam_gov",
 ])
 export const stateLicensingSourceKeys = new Set<LeadgenSourceKey>([
@@ -159,6 +163,28 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         kind: "enrichment",
         category: "industry",
         implemented: true,
+    },
+    {
+        value: "transport.fmcsa_safer",
+        label: "FMCSA SAFER company snapshot",
+        detail: "Official carrier registration enrichment for moving, trucking, hauling, freight, and adjacent transport-heavy candidates. Provides official business phone/support evidence, but does not count as direct owner-phone proof by itself.",
+        statusLabel: "Executable for mapped transport categories",
+        notesPlaceholder: "USDOT confidence rules, carrier status filters, or transport category caveats.",
+        kind: "enrichment",
+        category: "industry",
+        implemented: true,
+        setupHint: "No API key is needed. Betelgeze uses the public FMCSA SAFER snapshot lookup with conservative per-candidate requests.",
+    },
+    {
+        value: "regulated.nppes",
+        label: "NPPES NPI Registry",
+        detail: "Official NPI Registry enrichment for healthcare ICPs. Organization records can include authorized official name and phone, which Betelgeze treats as owner/principal phone evidence.",
+        statusLabel: "Executable for mapped healthcare categories",
+        notesPlaceholder: "Healthcare taxonomy filters, authorized-official confidence rules, or practice-type exclusions.",
+        kind: "enrichment",
+        category: "industry",
+        implemented: true,
+        setupHint: "No API key is needed. Betelgeze queries the public NPPES API only for mapped healthcare candidates.",
     },
     {
         value: "sam_gov",

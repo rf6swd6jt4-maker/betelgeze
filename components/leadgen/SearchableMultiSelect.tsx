@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 type Option = { value: string; label: string; detail?: string }
 
@@ -26,6 +26,16 @@ export function SearchableMultiSelect({ name, label, options, selectedValues = [
     }, [options, query])
     const selectedOptions = selected.map((value) => optionByValue.get(value)).filter((option): option is Option => Boolean(option))
 
+    useEffect(() => {
+        const reset = (event: Event) => {
+            if ((event as CustomEvent<string>).detail !== "icp-targeting") return
+            setQuery("")
+            setSelectedState({ signature: selectionSignature, values: [...selectedValues] })
+        }
+        window.addEventListener("betelgeze:settings-section-revert", reset)
+        return () => window.removeEventListener("betelgeze:settings-section-revert", reset)
+    }, [selectedValues, selectionSignature])
+
     function toggle(value: string) {
         setSelectedState((current) => {
             const values = current.signature === selectionSignature ? current.values : [...selectedValues]
@@ -50,7 +60,7 @@ export function SearchableMultiSelect({ name, label, options, selectedValues = [
                     key={option.value}
                     type="button"
                     onClick={() => toggle(option.value)}
-                    data-autosave-control="true"
+                    data-settings-control="true"
                     className="inline-flex min-h-7 items-center justify-center gap-1 rounded-md border border-emerald-300/30 bg-emerald-300/15 px-2.5 text-xs font-semibold leading-none text-emerald-100 transition hover:bg-emerald-300/20"
                     aria-label={`Remove ${option.label}`}
                 >
@@ -63,7 +73,7 @@ export function SearchableMultiSelect({ name, label, options, selectedValues = [
             {filtered.length ? <div className="space-y-1">
                 {filtered.map((option) => {
                     const checked = selected.includes(option.value)
-                    return <button key={option.value} type="button" onClick={() => toggle(option.value)} data-autosave-control="true" className={`flex w-full min-h-10 items-start gap-3 rounded-md px-2 py-2 text-left text-sm transition ${checked ? "bg-emerald-300/10 text-white" : "text-neutral-300 hover:bg-neutral-900"}`} aria-pressed={checked}>
+                    return <button key={option.value} type="button" onClick={() => toggle(option.value)} data-settings-control="true" className={`flex w-full min-h-10 items-start gap-3 rounded-md px-2 py-2 text-left text-sm transition ${checked ? "bg-emerald-300/10 text-white" : "text-neutral-300 hover:bg-neutral-900"}`} aria-pressed={checked}>
                         <SelectionMark checked={checked} />
                         <span className="min-w-0">
                             <span className="block leading-5">{option.label}</span>

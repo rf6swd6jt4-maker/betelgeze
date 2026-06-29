@@ -1,6 +1,6 @@
 import { WorkspaceIdentityEditor } from "@/components/admin/WorkspaceIdentityEditor"
-import { AutoSaveSettingsForm } from "@/components/leadgen/AutoSaveSettingsForm"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
+import { ManualSettingsForm, SettingsSectionActions } from "@/components/leadgen/ManualSettingsForm"
 import { SearchableMultiSelect } from "@/components/leadgen/SearchableMultiSelect"
 import { SourceSettingsCard, type SourceCatalogueStats, type SourceSettingsItem } from "@/components/leadgen/SourceSettingsCard"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
@@ -31,7 +31,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
     const [settingsResult, industriesResult, locationsResult, industryMappingsResult, locationMappingsResult, catalogResult] = await Promise.all([
         supabaseAdmin
         .from("leadgen_workspace_settings")
-        .select("poll_interval_hours, automatic_polls_enabled, geography, icp_notes, enabled_sources, source_config")
+        .select("poll_interval_hours, automatic_polls_enabled, geography, enabled_sources, source_config")
         .eq("workspace_id", workspace.id)
         .maybeSingle(),
         supabaseAdmin
@@ -196,17 +196,18 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                 bannerLabel="leadgen banner"
             />
             <LeadgenTabs workspaceSlug={workspace.slug} active="settings" />
-            <AutoSaveSettingsForm action={saveLeadgenSettings.bind(null, workspace.slug)}>
+            <ManualSettingsForm action={saveLeadgenSettings.bind(null, workspace.slug)}>
                 <section className="grid gap-4 lg:grid-cols-[0.72fr_1.28fr]">
-                    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
+                    <div data-settings-section="poll-options" className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
                     <h2 className="text-lg font-semibold leading-6">Poll options</h2>
                         <p className="mt-1.5 text-sm leading-5 text-neutral-400">Cadence and manual test-run defaults.</p>
                         <div className="mt-4 grid gap-3">
                         <label className="block text-sm text-neutral-300">Automatic poll interval<input name="pollIntervalHours" type="number" min={1} max={2160} defaultValue={settings?.poll_interval_hours ?? 168} className="mt-2 h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" /><span className="mt-1.5 block text-xs leading-5 text-neutral-500">Hours between scheduled polls. 168 = weekly.</span></label>
                         <label className="flex min-h-11 items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-300"><input name="automaticPollsEnabled" type="checkbox" defaultChecked={Boolean(settings?.automatic_polls_enabled)} className="h-4 w-4 shrink-0 accent-white" /><span>Run polls automatically on this cadence</span></label>
                         </div>
+                        <SettingsSectionActions section="poll-options" label="poll options" />
                     </div>
-                    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
+                    <div data-settings-section="icp-targeting" className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
                         <h2 className="text-lg font-semibold leading-6">ICP targeting</h2>
                         <p className="mt-1.5 max-w-2xl text-sm leading-5 text-neutral-400">Shared target categories for sources that use the same broad Betelgeze ICP taxonomy, such as directories, public records, and registries.</p>
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -215,14 +216,13 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                             <label className="block text-sm text-neutral-300">Candidate target count<input name="sourceConfig:icp:limit" type="number" min={10} max={5000} defaultValue={sourceConfig.icp?.limit ?? 1000} className="mt-2 h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" /><span className="mt-1.5 block text-xs leading-5 text-neutral-500">Upper bound before enrichment and qualification.</span></label>
                             <label className="block text-sm text-neutral-300">Max enrichment depth<input name="sourceConfig:icp:maxEnrichmentDepth" type="number" min={1} max={8} defaultValue={sourceConfig.icp?.maxEnrichmentDepth ?? 4} className="mt-2 h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" /><span className="mt-1.5 block text-xs leading-5 text-neutral-500">How far the pipeline may chase owner evidence.</span></label>
                             <label className="flex min-h-11 items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-300 md:col-span-2"><input name="sourceConfig:icp:ownerRequired" type="checkbox" defaultChecked={sourceConfig.icp?.ownerRequired !== false} className="h-4 w-4 shrink-0 accent-white" /><span>Only show qualified leads when owner/principal and phone evidence is found</span></label>
-                            <label className="block text-sm text-neutral-300 md:col-span-2">ICP notes<textarea name="icpNotes" defaultValue={settings?.icp_notes ?? ""} rows={3} placeholder="Company size, services, revenue band, licensing requirements, review profile, and disqualifiers." className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white" /></label>
                             <input type="hidden" name="geography" value={settings?.geography ?? ""} />
                         </div>
+                        <SettingsSectionActions section="icp-targeting" label="ICP targeting" />
                     </div>
                 </section>
                 <SourceSettingsCard sources={sourceItems} catalogueStats={catalogueStats} />
-                <button className="inline-flex min-h-10 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium leading-none text-black transition hover:bg-neutral-200">Save now</button>
-            </AutoSaveSettingsForm>
+            </ManualSettingsForm>
             <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
         </div>
     </main>

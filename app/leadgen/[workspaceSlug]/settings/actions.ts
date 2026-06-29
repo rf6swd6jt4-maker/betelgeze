@@ -93,7 +93,6 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
             limit: boundedInteger(formData.get("sourceConfig:icp:limit"), 1000, 10, 5000),
             maxEnrichmentDepth: boundedInteger(formData.get("sourceConfig:icp:maxEnrichmentDepth"), 4, 1, 8),
             ownerRequired: formData.get("sourceConfig:icp:ownerRequired") !== "off",
-            notes: String(formData.get("sourceConfig:icp:notes") ?? "").trim(),
         },
     })
     const pollIntervalHours = Number(formData.get("pollIntervalHours") ?? 168)
@@ -103,9 +102,10 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
         poll_interval_hours: pollIntervalHours,
         automatic_polls_enabled: formData.get("automaticPollsEnabled") === "on",
         geography: String(formData.get("geography") ?? "").trim() || null,
-        icp_notes: String(formData.get("icpNotes") ?? "").trim() || null,
+        icp_notes: null,
         enabled_sources: enabledSources,
         source_config: sourceConfig,
     })
     if (error) throw new Error("Could not save leadgen settings.")
+    refresh(slug)
 }

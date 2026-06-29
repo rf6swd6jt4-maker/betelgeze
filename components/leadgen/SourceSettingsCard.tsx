@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
+import { SettingsSectionActions } from "@/components/leadgen/ManualSettingsForm"
 import type { LeadgenSourceKey } from "@/lib/leadgen/sources"
 
 type SourceStatus = "not_configured" | "not_mapped" | "disabled" | "enabled"
@@ -139,7 +140,7 @@ function SourceToggle({ source, enabled, onToggle }: { source: SourceSettingsIte
         role="checkbox"
         aria-checked={enabled}
         onClick={() => onToggle(source, !enabled)}
-        data-autosave-control="true"
+        data-settings-control="true"
         className="inline-flex h-8 min-w-[58px] items-center justify-center gap-2 rounded-lg text-xs font-medium text-neutral-300 transition hover:text-white"
         aria-label={`${enabled ? "Disable" : "Enable"} ${source.label}`}
     >
@@ -161,7 +162,7 @@ function CategoryToggle({ sources, enabledValues, onToggle }: { sources: SourceS
         aria-checked={mixed ? "mixed" : checked}
         disabled={disabled}
         onClick={() => onToggle(!checked)}
-        data-autosave-control="true"
+        data-settings-control="true"
         className="inline-flex h-8 min-w-[74px] items-center justify-center gap-2 rounded-lg text-xs font-medium text-neutral-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
         aria-label="Toggle runnable sources in this category"
     >
@@ -198,14 +199,27 @@ function statusLine(source: SourceSettingsItem, status: SourceStatus, enabled: b
     return [config, mapping, inclusion]
 }
 
-function SourceRow({ source, enabled, expanded, onToggle, onExpand }: { source: SourceSettingsItem; enabled: boolean; expanded: boolean; onToggle: (source: SourceSettingsItem, checked: boolean) => void; onExpand: (source: SourceSettingsItem) => void }) {
+function HiddenSourceSettings({ source }: { source: SourceSettingsItem }) {
+    return <>
+        <input type="hidden" name={`sourceConfig:${source.value}:limit`} value={source.settings.limit} />
+        <input type="hidden" name={`sourceConfig:${source.value}:radiusMeters`} value={source.settings.radiusMeters} />
+        <input type="hidden" name={`sourceConfig:${source.value}:crawlDepth`} value={source.settings.crawlDepth} />
+        <input type="hidden" name={`sourceConfig:${source.value}:timeoutSeconds`} value={source.settings.timeoutSeconds} />
+        <input type="hidden" name={`sourceConfig:${source.value}:respectRobots`} value={source.settings.respectRobots ? "on" : "off"} />
+        <input type="hidden" name={`sourceConfig:${source.value}:release`} value={source.settings.release} />
+        <input type="hidden" name={`sourceConfig:${source.value}:notes`} value={source.settings.notes} />
+    </>
+}
+
+function SourceRow({ source, enabled, expanded, nested = false, onToggle, onExpand }: { source: SourceSettingsItem; enabled: boolean; expanded: boolean; nested?: boolean; onToggle: (source: SourceSettingsItem, checked: boolean) => void; onExpand: (source: SourceSettingsItem) => void }) {
     const status = statusFor(source, new Set(enabled ? [source.value] : []))
     const showRadius = source.kind === "seed"
     const showRelease = source.value === "overture" || source.value === "alltheplaces"
     const maxLimit = source.value === "overture" ? 500 : source.value === "sam_gov" ? 1 : source.kind === "seed" ? 25 : 80
     const detailLines = statusLine(source, status, enabled)
 
-    return <div className={`border-b border-neutral-900 transition last:border-b-0 ${enabled ? "bg-emerald-300/[0.035]" : "bg-black hover:bg-neutral-950/60"}`}>
+    return <div className={`border-b border-neutral-900 transition last:border-b-0 ${enabled ? "bg-emerald-300/[0.035]" : nested ? "bg-neutral-950 hover:bg-black" : "bg-black hover:bg-neutral-950/60"}`}>
+        {!expanded && <HiddenSourceSettings source={source} />}
         <div className="grid min-h-12 gap-3 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_150px_36px] sm:items-center sm:px-4">
             <div className="flex min-w-0 items-center gap-3">
                 <SourceToggle source={source} enabled={enabled} onToggle={onToggle} />
@@ -350,12 +364,33 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
 
     const seedCounts = groupCounts(seedSources)
     const seedStatusCounts = statusCountsFor(seedSources)
-    const enrichmentSources = enrichmentCategories.flatMap((category) => category.sources)
+    const enrichmentSources = useMemo(() => enrichmentCategories.flatMap((category) => category.sources), [enrichmentCategories])
     const enrichmentStatusCounts = statusCountsFor(enrichmentSources)
+    const seedKeys = useMemo(() => new Set(seedSources.map((source) => source.value)), [seedSources])
+    const enrichmentKeys = useMemo(() => new Set(enrichmentSources.map((source) => source.value)), [enrichmentSources])
+    const initialEnabledValues = useMemo(() => new Set(sources.filter((source) => source.enabled && runnable(source)).map((source) => source.value)), [sources])
+
+    useEffect(() => {
+        const reset = (event: Event) => {
+            const section = (event as CustomEvent<string>).detail
+            if (section !== "seed-sources" && section !== "enrichment-sources") return
+            const relevantKeys = section === "seed-sources" ? seedKeys : enrichmentKeys
+            setEnabledValues((current) => {
+                const next = new Set(current)
+                for (const key of relevantKeys) {
+                    if (initialEnabledValues.has(key)) next.add(key)
+                    else next.delete(key)
+                }
+                return next
+            })
+        }
+        window.addEventListener("betelgeze:settings-section-revert", reset)
+        return () => window.removeEventListener("betelgeze:settings-section-revert", reset)
+    }, [enrichmentKeys, initialEnabledValues, seedKeys])
 
     return <div className="space-y-4">
-        {[...enabledValues].map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
-        <section className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+        <section data-settings-section="seed-sources" className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+            {[...enabledValues].filter((value) => seedKeys.has(value)).map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
             <div className="border-b border-neutral-800 bg-neutral-950/35 px-4 py-4 sm:px-5">
                 <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
                     <div>
@@ -371,9 +406,13 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
             <div className="divide-y divide-neutral-900">
                 {seedSources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} onToggle={toggleSource} onExpand={toggleExpanded} />)}
             </div>
+            <div className="border-t border-neutral-800 px-4 pb-4 sm:px-5">
+                <SettingsSectionActions section="seed-sources" label="seed sources" />
+            </div>
         </section>
 
-        <section className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+        <section data-settings-section="enrichment-sources" className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+            {[...enabledValues].filter((value) => enrichmentKeys.has(value)).map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
             <div className="border-b border-neutral-800 bg-neutral-950/35 px-4 py-4 sm:px-5">
                 <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
                     <div>
@@ -392,7 +431,8 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                     const expanded = expandedCategories.has(category.key)
                     const counts = groupCounts(category.sources)
                     return <div key={category.key} className="bg-neutral-900/60">
-                        <div className="grid gap-3 bg-neutral-950/25 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto_84px_36px] sm:items-center sm:px-5">
+                        <div className="grid gap-3 bg-neutral-950/25 px-4 py-3 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:items-center sm:px-5">
+                            <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
                             <div className="min-w-0">
                                 <h4 className="text-sm font-semibold leading-5 text-white">{category.title}</h4>
                                 <p className="mt-0.5 text-xs leading-5 text-neutral-500">{category.detail}</p>
@@ -401,7 +441,6 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                                 <span>{counts.enabled} on</span>
                                 <span>{counts.runnable}/{counts.total} runnable</span>
                             </div>
-                            <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
                             <button
                                 type="button"
                                 onClick={() => toggleCategoryExpanded(category.key)}
@@ -412,13 +451,16 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                                 <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
                             </button>
                         </div>
-                        {expanded && <div className="border-t border-neutral-800 bg-black/35 py-1 pl-3 sm:pl-6">
+                        {expanded && <div className="border-t border-neutral-800 bg-black/35 py-1 pl-3 sm:pl-8">
                             <div className="overflow-hidden border-l border-neutral-800">
-                                {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} onToggle={toggleSource} onExpand={toggleExpanded} />)}
+                                {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} nested onToggle={toggleSource} onExpand={toggleExpanded} />)}
                             </div>
                         </div>}
                     </div>
                 })}
+            </div>
+            <div className="border-t border-neutral-800 px-4 pb-4 sm:px-5">
+                <SettingsSectionActions section="enrichment-sources" label="enrichment sources" />
             </div>
         </section>
     </div>

@@ -170,6 +170,15 @@ function CategoryToggle({ sources, enabledValues, onToggle }: { sources: SourceS
     </button>
 }
 
+function StatusSummary({ counts }: { counts: Record<SourceStatus, number> }) {
+    return <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <p className="leading-4 text-emerald-200"><span className="font-semibold text-emerald-100">{counts.enabled}</span> Enabled</p>
+        <p className="leading-4 text-neutral-300"><span className="font-semibold text-neutral-100">{counts.disabled}</span> Disabled</p>
+        <p className="leading-4 text-amber-200"><span className="font-semibold text-amber-100">{counts.not_mapped}</span> Not mapped</p>
+        <p className="leading-4 text-red-200"><span className="font-semibold text-red-100">{counts.not_configured}</span> No config</p>
+    </div>
+}
+
 function statusLine(source: SourceSettingsItem, status: SourceStatus, enabled: boolean) {
     const config = !source.implemented
         ? "Adapter is not implemented yet."
@@ -278,21 +287,18 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
         ...category,
         sources: sources.filter((source) => source.kind === "enrichment" && source.category === category.key),
     })).filter((category) => category.sources.length > 0), [sources])
-    const statusCounts = useMemo(() => {
-        return sources.reduce((acc, source) => {
+    function statusCountsFor(groupSources: SourceSettingsItem[]) {
+        return groupSources.reduce<Record<SourceStatus, number>>((acc, source) => {
             const status = statusFor(source, enabledValues)
-            if (status === "enabled") acc.enabled += 1
-            else if (status === "disabled") acc.disabled += 1
-            else if (status === "not_mapped") acc.notMapped += 1
-            else acc.notConfigured += 1
+            acc[status] += 1
             return acc
         }, {
             enabled: 0,
             disabled: 0,
-            notMapped: 0,
-            notConfigured: 0,
+            not_mapped: 0,
+            not_configured: 0,
         })
-    }, [enabledValues, sources])
+    }
 
     function groupCounts(groupSources: SourceSettingsItem[]) {
         return {
@@ -343,19 +349,22 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
     }
 
     const seedCounts = groupCounts(seedSources)
+    const seedStatusCounts = statusCountsFor(seedSources)
+    const enrichmentSources = enrichmentCategories.flatMap((category) => category.sources)
+    const enrichmentStatusCounts = statusCountsFor(enrichmentSources)
 
     return <div className="space-y-4">
         {[...enabledValues].map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
         <section className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
             <div className="border-b border-neutral-800 bg-neutral-950/35 px-4 py-4 sm:px-5">
-                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+                <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
                     <div>
                         <h2 className="text-lg font-semibold leading-6">Seed sources</h2>
                         <p className="mt-1 text-sm leading-5 text-neutral-400">Candidate creation sources required before enrichment can investigate leads.</p>
                     </div>
-                    <div className="flex flex-wrap gap-2 text-xs text-neutral-400">
-                        <span className="inline-flex h-7 items-center rounded-md border border-neutral-800 bg-black px-2.5">{seedCounts.enabled} on</span>
-                        <span className="inline-flex h-7 items-center rounded-md border border-neutral-800 bg-black px-2.5">{seedCounts.runnable}/{seedCounts.total} runnable</span>
+                    <div className="space-y-1.5 xl:text-right">
+                        <StatusSummary counts={seedStatusCounts} />
+                        <p className="text-xs leading-4 text-neutral-500">{seedCounts.runnable}/{seedCounts.total} runnable</p>
                     </div>
                 </div>
             </div>
@@ -372,11 +381,9 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                         <p className="mt-1 max-w-3xl text-sm leading-5 text-neutral-400">Candidate investigation sources grouped by how they apply. Descriptions, ICP coverage, and source options live inside each expanded row.</p>
                         {catalogueStats ? <p className="mt-2 text-xs text-neutral-500">Catalog: {catalogueStats.active} active, {catalogueStats.validationOnly} validation only, {catalogueStats.needsWork} needs work, {catalogueStats.blocked} blocked.</p> : null}
                     </div>
-                    <div className="grid gap-2 sm:grid-cols-4 xl:min-w-[520px]">
-                        <p className="text-center text-xs leading-4 text-emerald-200"><span className="block text-base font-semibold leading-5 text-emerald-100">{statusCounts.enabled}</span>Enabled</p>
-                        <p className="text-center text-xs leading-4 text-neutral-300"><span className="block text-base font-semibold leading-5 text-neutral-100">{statusCounts.disabled}</span>Disabled</p>
-                        <p className="text-center text-xs leading-4 text-amber-200"><span className="block text-base font-semibold leading-5 text-amber-100">{statusCounts.notMapped}</span>Not mapped</p>
-                        <p className="text-center text-xs leading-4 text-red-200"><span className="block text-base font-semibold leading-5 text-red-100">{statusCounts.notConfigured}</span>No config</p>
+                    <div className="space-y-1.5 xl:text-right">
+                        <StatusSummary counts={enrichmentStatusCounts} />
+                        <p className="text-xs leading-4 text-neutral-500">{enrichmentSources.filter(runnable).length}/{enrichmentSources.length} runnable</p>
                     </div>
                 </div>
             </div>
@@ -385,28 +392,30 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                     const expanded = expandedCategories.has(category.key)
                     const counts = groupCounts(category.sources)
                     return <div key={category.key} className="bg-neutral-900/60">
-                        <div className="grid gap-3 px-4 py-3 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:items-center sm:px-5">
-                                <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
-                                <div className="min-w-0">
-                                    <h4 className="text-sm font-medium leading-5 text-white">{category.title}</h4>
-                                    <p className="mt-0.5 text-xs leading-5 text-neutral-500">{category.detail}</p>
-                                </div>
-                                <div className="flex flex-wrap gap-2 text-xs text-neutral-400 sm:justify-self-end">
-                                    <span className="inline-flex h-7 items-center rounded-md border border-neutral-800 bg-black px-2.5">{counts.enabled} on</span>
-                                    <span className="inline-flex h-7 items-center rounded-md border border-neutral-800 bg-black px-2.5">{counts.runnable}/{counts.total} runnable</span>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => toggleCategoryExpanded(category.key)}
-                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-950 hover:text-white"
-                                    aria-expanded={expanded}
-                                    aria-label={`Toggle ${category.title} sources`}
-                                >
-                                    <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
-                                </button>
+                        <div className="grid gap-3 bg-neutral-950/25 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto_84px_36px] sm:items-center sm:px-5">
+                            <div className="min-w-0">
+                                <h4 className="text-sm font-semibold leading-5 text-white">{category.title}</h4>
+                                <p className="mt-0.5 text-xs leading-5 text-neutral-500">{category.detail}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-400 sm:justify-self-end">
+                                <span>{counts.enabled} on</span>
+                                <span>{counts.runnable}/{counts.total} runnable</span>
+                            </div>
+                            <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
+                            <button
+                                type="button"
+                                onClick={() => toggleCategoryExpanded(category.key)}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-950 hover:text-white"
+                                aria-expanded={expanded}
+                                aria-label={`Toggle ${category.title} sources`}
+                            >
+                                <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
+                            </button>
                         </div>
-                        {expanded && <div className="border-t border-neutral-800">
-                            {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} onToggle={toggleSource} onExpand={toggleExpanded} />)}
+                        {expanded && <div className="border-t border-neutral-800 bg-black/35 py-1 pl-3 sm:pl-6">
+                            <div className="overflow-hidden border-l border-neutral-800">
+                                {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} onToggle={toggleSource} onExpand={toggleExpanded} />)}
+                            </div>
                         </div>}
                     </div>
                 })}

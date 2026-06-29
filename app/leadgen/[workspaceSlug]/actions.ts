@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { configObject, createInitialLeadgenPollTasks, planLeadgenSources, processLeadgenPoll } from "@/lib/leadgen/poll-runner"
+import { configObject, createInitialLeadgenPollTasks, MAX_SEED_CANDIDATES, planLeadgenSources, processLeadgenPoll, TARGET_VALIDATED_BUSINESSES } from "@/lib/leadgen/poll-runner"
 import { executableLeadgenSources, seedLeadgenSources } from "@/lib/leadgen/sources"
 
 function refreshPolls(slug: string) {
@@ -36,10 +36,11 @@ export async function createLeadgenPoll(slug: string) {
         icp_snapshot: {
             industries: sourcePlan[0]?.industries ?? [],
             locations: sourcePlan[0]?.locations ?? [],
-            candidate_target_count: 10,
+            candidate_target_count: TARGET_VALIDATED_BUSINESSES,
+            max_seed_candidates: MAX_SEED_CANDIDATES,
             max_enrichment_depth: currentSourceConfig.icp?.maxEnrichmentDepth ?? null,
             owner_required: currentSourceConfig.icp?.ownerRequired !== false,
-            pilot_mode: "10_business_fanout_test",
+            poll_mode: "staged_validated_business_funnel",
             captured_at: new Date().toISOString(),
         },
         error: hasRunnableSources ? null : "Enable at least one seed source plus at least one ICP industry and one ICP location in Settings. Enrichment sources investigate candidates after seed tasks run.",

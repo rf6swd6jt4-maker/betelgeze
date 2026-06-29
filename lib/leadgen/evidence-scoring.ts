@@ -135,13 +135,15 @@ export async function updateInvestigationTask(input: InvestigationTaskUpdate) {
     if (error) throw error
 }
 
-export async function createInvestigationTasksForPoll({ workspaceId, pollId, enabledSourceKeys }: { workspaceId: string; pollId: string; enabledSourceKeys?: string[] }) {
+export async function createInvestigationTasksForPoll({ workspaceId, pollId, enabledSourceKeys, companyIds }: { workspaceId: string; pollId: string; enabledSourceKeys?: string[]; companyIds?: string[] }) {
+    let companiesQuery = supabaseAdmin
+        .from("leadgen_companies")
+        .select("id, address, industry_value, website_domain, website_url")
+        .eq("workspace_id", workspaceId)
+        .eq("first_seen_poll_id", pollId)
+    if (companyIds?.length) companiesQuery = companiesQuery.in("id", companyIds)
     const [companiesResult, catalogResult] = await Promise.all([
-        supabaseAdmin
-            .from("leadgen_companies")
-            .select("id, address, industry_value, website_domain, website_url")
-            .eq("workspace_id", workspaceId)
-            .eq("first_seen_poll_id", pollId),
+        companiesQuery,
         supabaseAdmin
             .from("leadgen_source_catalog")
             .select("source_key, implementation_status, run_stage, enabled, coverage")

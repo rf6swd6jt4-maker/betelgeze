@@ -305,15 +305,17 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
     return tasks.length
 }
 
-export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem }) {
+export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan, companyIds }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem; companyIds?: string[] }) {
     if (plan.key !== "website") return 0
-    const companiesResult = await supabaseAdmin
+    let companiesQuery = supabaseAdmin
         .from("leadgen_companies")
         .select("id, display_name, phone, website_url, profile_url, source_key, source_record_id")
         .eq("workspace_id", workspaceId)
         .eq("first_seen_poll_id", pollId)
         .not("website_url", "is", null)
         .limit(Math.min(200, Math.max(1, plan.limit ?? 50)))
+    if (companyIds?.length) companiesQuery = companiesQuery.in("id", companyIds)
+    const companiesResult = await companiesQuery
     if (companiesResult.error) throw new Error(`Could not load companies for website crawling: ${companiesResult.error.message}`)
     const companies = (companiesResult.data ?? []) as CompanySeed[]
     const tasks = companies.flatMap((company) => company.website_url ? [{

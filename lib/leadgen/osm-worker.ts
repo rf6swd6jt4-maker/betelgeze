@@ -122,7 +122,7 @@ export async function refreshLeadgenPollCounts(pollId: string, workspaceId: stri
 
 export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
     await refreshLeadgenPollCounts(pollId, workspaceId)
-    const [tasksResult, companiesResult] = await Promise.all([
+    const [tasksResult, companiesResult, stageRunsResult] = await Promise.all([
         supabaseAdmin
             .from("leadgen_poll_tasks")
             .select("source_key, industry_value, location_value, status, error")
@@ -134,12 +134,20 @@ export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
             .select("id", { count: "exact", head: true })
             .eq("first_seen_poll_id", pollId)
             .eq("qualification_status", "qualified"),
+        supabaseAdmin
+            .from("leadgen_poll_stage_runs")
+            .select("stage_key, passed_count, status")
+            .eq("poll_id", pollId)
+            .eq("workspace_id", workspaceId),
     ])
     if (tasksResult.error) {
         await setLeadgenPollStatus(pollId, workspaceId, "failed", `Could not read poll task results: ${tasksResult.error.message}`)
         return
     }
     const tasks = tasksResult.data ?? []
+    const stageRuns = stageRunsResult.error ? [] : stageRunsResult.data ?? []
+    const stagedPoll = stageRuns.length > 0
+    const phoneValidationStage = stageRuns.find((stage) => stage.stage_key === "phone_validation")
     const failedTasks = tasks.filter((task) => task.status === "failed")
     const unfinishedTasks = tasks.filter((task) => ["queued", "running"].includes(task.status))
     const qualifiedCompanyCount = companiesResult.count ?? 0
@@ -150,7 +158,7 @@ export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
         .slice(0, 3)
         .map((task) => `${task.source_key}/${task.industry_value ?? "unknown"}/${task.location_value ?? "unknown"}: ${task.error || "Unknown source error"}`)
         .join(" | ")
-    const shouldFail = majorityTasksFailed || qualifiedCompanyCount === 0
+    const shouldFail = majorityTasksFailed || (!stagedPoll && qualifiedCompanyCount === 0)
     const warning = failedTasks.length > 0
         ? `${failedTasks.length} source task${failedTasks.length === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}`
         : unfinishedTasks.length > 0
@@ -164,7 +172,9 @@ export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
             ? majorityTasksFailed
                 ? warning ?? "The poll failed because most source tasks did not complete."
                 : "The poll completed, but no qualified leads had both an owner/principal and a callable phone number. Betelgeze stored any raw candidates/evidence internally, but the Leads tab only shows qualified leads."
-            : warning,
+            : warning ?? (stagedPoll && (phoneValidationStage?.passed_count ?? 0) === 0
+                ? "The staged poll completed, but no owner phone numbers passed validation. Check the stage funnel for where candidates dropped out."
+                : null),
     )
     await refreshLeadgenPollCounts(pollId, workspaceId)
 }

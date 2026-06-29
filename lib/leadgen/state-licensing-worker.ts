@@ -1031,16 +1031,18 @@ export async function createStateLicensingTasksForPoll({ workspaceId, pollId, pl
     return tasks.length
 }
 
-export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem }) {
+export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan, companyIds }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem; companyIds?: string[] }) {
     if (!STATE_LICENSE_SOURCE_KEYS.includes(plan.key)) return 0
     const sourceKey = plan.key === "state_licensing" ? TDLR_SOURCE_KEY : plan.key
-    const candidatesResult = await supabaseAdmin
+    let candidatesQuery = supabaseAdmin
         .from("leadgen_companies")
         .select("id, display_name, phone, address, industry_value, location_value")
         .eq("workspace_id", workspaceId)
         .eq("first_seen_poll_id", pollId)
         .is("owner_phone", null)
         .limit(Math.min(80, Math.max(1, plan.limit ?? 30)))
+    if (companyIds?.length) candidatesQuery = candidatesQuery.in("id", companyIds)
+    const candidatesResult = await candidatesQuery
     if (candidatesResult.error) throw new Error(`Could not load candidates for state licensing enrichment: ${candidatesResult.error.message}`)
     const candidates = (candidatesResult.data ?? []) as CompanyCandidate[]
     if (candidates.length === 0) return 0

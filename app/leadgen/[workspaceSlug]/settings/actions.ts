@@ -9,6 +9,7 @@ import { leadgenSourceOptions, normaliseLeadgenSourceKey, type LeadgenSourceConf
 function refresh(slug: string) {
     revalidatePath(`/leadgen/${slug}`)
     revalidatePath(`/leadgen/${slug}/settings`)
+    revalidatePath(`/leadgen/${slug}/sources`)
     revalidatePath(`/dashboard/${slug}`)
     revalidatePath(`/dashboard/${slug}/settings`)
 }
@@ -65,10 +66,28 @@ export async function uploadSharedWorkspaceLogo(slug: string, formData: FormData
 
 export async function saveLeadgenSettings(slug: string, formData: FormData) {
     const { workspace } = await requireWorkspace(slug, "admin")
-    const enabledSources = [...new Set(formData.getAll("sources")
+    const settingsResult = await supabaseAdmin
+        .from("leadgen_workspace_settings")
+        .select("poll_interval_hours, automatic_polls_enabled, geography, enabled_sources, source_config")
+        .eq("workspace_id", workspace.id)
+        .maybeSingle()
+    const existingSettings = settingsResult.error ? null : settingsResult.data
+    const existingSourceConfig = existingSettings?.source_config && typeof existingSettings.source_config === "object"
+        ? existingSettings.source_config as Partial<LeadgenSourceConfig>
+        : {}
+    const scope = String(formData.get("settingsScope") ?? "all")
+    const savingSources = scope === "sources" || scope === "all"
+    const savingSettings = scope === "settings" || scope === "all"
+    const enabledSources = savingSources ? [...new Set(formData.getAll("sources")
         .map((value) => normaliseLeadgenSourceKey(String(value)))
-        .filter((value): value is NonNullable<typeof value> => Boolean(value)))]
+        .filter((value): value is NonNullable<typeof value> => Boolean(value)))] : Array.isArray(existingSettings?.enabled_sources)
+            ? existingSettings.enabled_sources.map(String).map(normaliseLeadgenSourceKey).filter((value): value is NonNullable<typeof value> => Boolean(value))
+            : []
     const sourceConfig = leadgenSourceOptions.reduce<Partial<LeadgenSourceConfig>>((config, source) => {
+        if (!savingSources) {
+            config[source.value] = existingSourceConfig[source.value] ?? {}
+            return config
+        }
         const limit = Number(formData.get(`sourceConfig:${source.value}:limit`) ?? 10)
         const radiusMeters = Number(formData.get(`sourceConfig:${source.value}:radiusMeters`) ?? 24000)
         const crawlDepth = Number(formData.get(`sourceConfig:${source.value}:crawlDepth`) ?? 2)
@@ -87,21 +106,21 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
         }
         return config
     }, {
-        icp: {
+        icp: savingSettings ? {
             industries: formData.getAll("sourceConfig:icp:industries").map((value) => String(value)),
             locations: formData.getAll("sourceConfig:icp:locations").map((value) => String(value)),
             limit: boundedInteger(formData.get("sourceConfig:icp:limit"), 1000, 10, 5000),
             maxEnrichmentDepth: boundedInteger(formData.get("sourceConfig:icp:maxEnrichmentDepth"), 4, 1, 8),
             ownerRequired: formData.get("sourceConfig:icp:ownerRequired") !== "off",
-        },
+        } : existingSourceConfig.icp,
     })
-    const pollIntervalHours = Number(formData.get("pollIntervalHours") ?? 168)
+    const pollIntervalHours = savingSettings ? Number(formData.get("pollIntervalHours") ?? 168) : existingSettings?.poll_interval_hours ?? 168
     if (!Number.isInteger(pollIntervalHours) || pollIntervalHours < 1 || pollIntervalHours > 2160) throw new Error("Poll interval must be between 1 and 2160 hours.")
     const { error } = await supabaseAdmin.from("leadgen_workspace_settings").upsert({
         workspace_id: workspace.id,
         poll_interval_hours: pollIntervalHours,
-        automatic_polls_enabled: formData.get("automaticPollsEnabled") === "on",
-        geography: String(formData.get("geography") ?? "").trim() || null,
+        automatic_polls_enabled: savingSettings ? formData.get("automaticPollsEnabled") === "on" : Boolean(existingSettings?.automatic_polls_enabled),
+        geography: savingSettings ? String(formData.get("geography") ?? "").trim() || null : existingSettings?.geography ?? null,
         icp_notes: null,
         enabled_sources: enabledSources,
         source_config: sourceConfig,

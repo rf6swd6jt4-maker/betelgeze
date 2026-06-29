@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 
 type DirtyCounts = Record<string, number>
 type ControlValue = { name: string; values: string[] }
+type SectionDirtyOverride = { section: string; count: number }
 
 function controlValues(section: Element): ControlValue[] {
     const controls = [...section.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input[name], textarea[name], select[name]")]
@@ -132,14 +133,25 @@ export function ManualSettingsForm({ action, children }: { action: (formData: Fo
 
 export function SettingsSectionActions({ section, label }: { section: string; label: string }) {
     const [dirtyCount, setDirtyCount] = useState(0)
+    const [overrideDirtyCount, setOverrideDirtyCount] = useState<number | null>(null)
     useEffect(() => {
         const update = (event: Event) => {
             const counts = (event as CustomEvent<DirtyCounts>).detail ?? {}
             setDirtyCount(counts[section] ?? 0)
         }
+        const updateOverride = (event: Event) => {
+            const detail = (event as CustomEvent<SectionDirtyOverride>).detail
+            if (detail?.section === section) setOverrideDirtyCount(detail.count)
+        }
         window.addEventListener("betelgeze:settings-dirty", update)
-        return () => window.removeEventListener("betelgeze:settings-dirty", update)
+        window.addEventListener("betelgeze:settings-section-dirty", updateOverride)
+        return () => {
+            window.removeEventListener("betelgeze:settings-dirty", update)
+            window.removeEventListener("betelgeze:settings-section-dirty", updateOverride)
+        }
     }, [section])
+
+    const displayDirtyCount = overrideDirtyCount ?? dirtyCount
 
     function revert() {
         window.dispatchEvent(new CustomEvent("betelgeze:settings-revert-request", { detail: section }))
@@ -147,6 +159,6 @@ export function SettingsSectionActions({ section, label }: { section: string; la
 
     return <div className="mt-4 flex flex-wrap items-center gap-2">
         <button type="submit" className="inline-flex min-h-10 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium leading-none text-black transition hover:bg-neutral-200">Save {label}</button>
-        {dirtyCount > 0 && <button type="button" onClick={revert} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-400/40 px-3 text-sm font-medium leading-none text-red-200 transition hover:border-red-300 hover:text-red-100">Revert {dirtyCount} change{dirtyCount === 1 ? "" : "s"}</button>}
+        {displayDirtyCount > 0 && <button type="button" onClick={revert} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-400/40 px-3 text-sm font-medium leading-none text-red-200 transition hover:border-red-300 hover:text-red-100">Revert {displayDirtyCount} change{displayDirtyCount === 1 ? "" : "s"}</button>}
     </div>
 }

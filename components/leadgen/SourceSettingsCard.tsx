@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { SettingsSectionActions } from "@/components/leadgen/ManualSettingsForm"
 import type { LeadgenSourceKey } from "@/lib/leadgen/sources"
@@ -199,6 +199,31 @@ function statusLine(source: SourceSettingsItem, status: SourceStatus, enabled: b
     return [config, mapping, inclusion]
 }
 
+function sourceConfigDirty(source: SourceSettingsItem, section: HTMLElement | null) {
+    if (!section) return false
+    const controls = [...section.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(`[name^="sourceConfig:${source.value}:"]`)]
+    const controlFor = (suffix: keyof SourceSettings) => controls.find((control) => control.name === `sourceConfig:${source.value}:${suffix}`)
+    const valueChanged = (suffix: keyof SourceSettings, initialValue: string | number) => {
+        const control = controlFor(suffix)
+        return control ? control.value !== String(initialValue) : false
+    }
+    const respectRobots = controls.find((control): control is HTMLInputElement => control instanceof HTMLInputElement && control.type === "checkbox" && control.name === `sourceConfig:${source.value}:respectRobots`)
+    return valueChanged("limit", source.settings.limit)
+        || valueChanged("radiusMeters", source.settings.radiusMeters)
+        || valueChanged("crawlDepth", source.settings.crawlDepth)
+        || valueChanged("timeoutSeconds", source.settings.timeoutSeconds)
+        || valueChanged("release", source.settings.release)
+        || valueChanged("notes", source.settings.notes)
+        || (respectRobots ? respectRobots.checked !== source.settings.respectRobots : false)
+}
+
+function dirtyCountFor(sources: SourceSettingsItem[], enabledValues: Set<LeadgenSourceKey>, initialEnabledValues: Set<LeadgenSourceKey>, section: HTMLElement | null) {
+    return sources.filter((source) => {
+        const enabledChanged = runnable(source) && enabledValues.has(source.value) !== initialEnabledValues.has(source.value)
+        return enabledChanged || sourceConfigDirty(source, section)
+    }).length
+}
+
 function HiddenSourceSettings({ source }: { source: SourceSettingsItem }) {
     return <>
         <input type="hidden" name={`sourceConfig:${source.value}:limit`} value={source.settings.limit} />
@@ -293,6 +318,8 @@ function SourceRow({ source, enabled, expanded, nested = false, onToggle, onExpa
 }
 
 export function SourceSettingsCard({ sources, catalogueStats }: { sources: SourceSettingsItem[]; catalogueStats?: SourceCatalogueStats }) {
+    const seedSectionRef = useRef<HTMLElement>(null)
+    const enrichmentSectionRef = useRef<HTMLElement>(null)
     const [enabledValues, setEnabledValues] = useState<Set<LeadgenSourceKey>>(() => new Set(sources.filter((source) => source.enabled && runnable(source)).map((source) => source.value)))
     const [expandedValues, setExpandedValues] = useState<Set<LeadgenSourceKey>>(() => new Set())
     const [expandedCategories, setExpandedCategories] = useState<Set<SourceSettingsItem["category"]>>(() => new Set())
@@ -370,6 +397,24 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
     const enrichmentKeys = useMemo(() => new Set(enrichmentSources.map((source) => source.value)), [enrichmentSources])
     const initialEnabledValues = useMemo(() => new Set(sources.filter((source) => source.enabled && runnable(source)).map((source) => source.value)), [sources])
 
+    function publishSourceDirty() {
+        const seedDirtyCount = dirtyCountFor(seedSources, enabledValues, initialEnabledValues, seedSectionRef.current)
+        const enrichmentDirtyCount = dirtyCountFor(enrichmentSources, enabledValues, initialEnabledValues, enrichmentSectionRef.current)
+        window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section: "seed-sources", count: seedDirtyCount } }))
+        window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section: "enrichment-sources", count: enrichmentDirtyCount } }))
+    }
+
+    function scheduleSourceDirtyCheck() {
+        window.setTimeout(publishSourceDirty, 0)
+    }
+
+    useEffect(() => {
+        const seedDirtyCount = dirtyCountFor(seedSources, enabledValues, initialEnabledValues, seedSectionRef.current)
+        const enrichmentDirtyCount = dirtyCountFor(enrichmentSources, enabledValues, initialEnabledValues, enrichmentSectionRef.current)
+        window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section: "seed-sources", count: seedDirtyCount } }))
+        window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section: "enrichment-sources", count: enrichmentDirtyCount } }))
+    }, [enabledValues, enrichmentSources, initialEnabledValues, seedSources])
+
     useEffect(() => {
         const reset = (event: Event) => {
             const section = (event as CustomEvent<string>).detail
@@ -389,9 +434,9 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
     }, [enrichmentKeys, initialEnabledValues, seedKeys])
 
     return <div className="space-y-4">
-        <section data-settings-section="seed-sources" className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+        <section ref={seedSectionRef} data-settings-section="seed-sources" onChange={scheduleSourceDirtyCheck} onInput={scheduleSourceDirtyCheck} className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
             {[...enabledValues].filter((value) => seedKeys.has(value)).map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
-            <div className="border-b border-neutral-800 bg-neutral-950/35 px-4 py-4 sm:px-5">
+            <div className="border-b border-neutral-800 bg-neutral-900 px-4 py-4 sm:px-5">
                 <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
                     <div>
                         <h2 className="text-lg font-semibold leading-6">Seed sources</h2>
@@ -411,9 +456,9 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
             </div>
         </section>
 
-        <section data-settings-section="enrichment-sources" className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+        <section ref={enrichmentSectionRef} data-settings-section="enrichment-sources" onChange={scheduleSourceDirtyCheck} onInput={scheduleSourceDirtyCheck} className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
             {[...enabledValues].filter((value) => enrichmentKeys.has(value)).map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
-            <div className="border-b border-neutral-800 bg-neutral-950/35 px-4 py-4 sm:px-5">
+            <div className="border-b border-neutral-800 bg-neutral-900 px-4 py-4 sm:px-5">
                 <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
                     <div>
                         <h2 className="text-lg font-semibold leading-6">Enrichment sources</h2>
@@ -430,8 +475,8 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                 {enrichmentCategories.map((category) => {
                     const expanded = expandedCategories.has(category.key)
                     const counts = groupCounts(category.sources)
-                    return <div key={category.key} className="bg-neutral-900/60">
-                        <div className="grid gap-3 bg-neutral-900 px-4 py-3 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:items-center sm:px-5">
+                    return <div key={category.key} className="bg-neutral-950/40">
+                        <div className="grid gap-3 bg-neutral-950/60 px-4 py-3 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:items-center sm:px-5">
                             <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
                             <div className="min-w-0">
                                 <h4 className="text-sm font-semibold leading-5 text-white">{category.title}</h4>
@@ -451,7 +496,7 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                                 <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
                             </button>
                         </div>
-                        {expanded && <div className="border-t border-neutral-800 bg-neutral-950 py-1 pl-3 sm:pl-8">
+                        {expanded && <div className="border-t border-neutral-800 bg-black/70 py-1 pl-3 sm:pl-8">
                             <div className="overflow-hidden border-l border-neutral-800">
                                 {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} nested onToggle={toggleSource} onExpand={toggleExpanded} />)}
                             </div>

@@ -64,6 +64,18 @@ type DbprLicenseResult = {
     row: string[]
 }
 
+type TsbpeLicenseResult = {
+    licenseNumber: string
+    ownerName: string
+    businessName: string
+    status: string
+    expirationDate: string | null
+    address: Record<string, unknown>
+    phone: string | null
+    profileUrl: string
+    row: Record<string, string>
+}
+
 type NcLicenseResult = {
     licenseNumber: string
     ownerName: string | null
@@ -78,6 +90,9 @@ type NcLicenseResult = {
 
 const TDLR_SEARCH_URL = "https://www.tdlr.texas.gov/LicenseSearch/SearchResultsListBrowse.asp?from=search"
 const TDLR_DETAIL_BASE_URL = "https://www.tdlr.texas.gov/LicenseSearch/"
+const TSBPE_RMP_CSV_URL = "https://tsbpe.texas.gov/download-csv/RMP/"
+const TSBPE_LICENSE_SEARCH_URL = "https://tsbpe.texas.gov/license-search/"
+const DBPR_CONSTRUCTION_CSV_URL = "https://www2.myfloridalicense.com/sto/file_download/extracts/CONSTRUCTIONLICENSE_1.csv"
 const DBPR_ELECTRICAL_CSV_URL = "https://www2.myfloridalicense.com/sto/file_download/extracts/lic08el.csv"
 const DBPR_LICENSE_BASE_URL = "https://www.myfloridalicense.com/LicenseDetail.asp"
 const NC_GENERAL_SEARCH_URL = "https://portal.nclbgc.org/Public/_Search/"
@@ -87,10 +102,24 @@ const STATE_LICENSING_REQUEST_DELAY_MS = 900
 
 const DBPR_ELECTRICAL_INDUSTRIES = new Set([
     "electricians",
+    "lighting_contractors",
     "solar_installers",
     "pool_builders",
     "hvac_contractors",
     "general_contractors",
+])
+
+const DBPR_CONSTRUCTION_INDUSTRIES = new Set([
+    "general_contractors",
+    "home_builders",
+    "remodellers",
+    "roofers",
+    "hvac_contractors",
+    "plumbers",
+    "pool_builders",
+    "solar_installers",
+    "flooring_contractors",
+    "lighting_contractors",
 ])
 
 const NC_CLASSIFICATIONS_BY_INDUSTRY: Record<string, string[]> = {
@@ -112,8 +141,10 @@ const NC_CLASSIFICATIONS_BY_INDUSTRY: Record<string, string[]> = {
     window_and_door_contractors: ["27", "44"],
 }
 
-const STATE_LICENSE_SOURCE_KEYS = ["state_licensing", "state_license.tx.tdlr", "state_license.fl.electrical", "state_license.nc.general_contractors"]
+const STATE_LICENSE_SOURCE_KEYS = ["state_licensing", "state_license.tx.tdlr", "state_license.tx.plumbing", "state_license.fl.dbpr", "state_license.fl.electrical", "state_license.nc.general_contractors"]
 const TDLR_SOURCE_KEY = "state_license.tx.tdlr"
+const TX_PLUMBING_SOURCE_KEY = "state_license.tx.plumbing"
+const FL_DBPR_CONSTRUCTION_SOURCE_KEY = "state_license.fl.dbpr"
 const FL_DBPR_ELECTRICAL_SOURCE_KEY = "state_license.fl.electrical"
 const NC_GENERAL_CONTRACTORS_SOURCE_KEY = "state_license.nc.general_contractors"
 
@@ -283,6 +314,15 @@ function parseCsvLine(line: string) {
     return cells
 }
 
+function csvRowsWithHeaders(csv: string) {
+    const [headerLine, ...lines] = csv.split(/\r?\n/).filter((line) => line.trim())
+    const headers = parseCsvLine(headerLine ?? "").map((header) => header.trim())
+    return lines.map((line) => {
+        const cells = parseCsvLine(line)
+        return Object.fromEntries(headers.map((header, index) => [header, cleanText(cells[index])]))
+    })
+}
+
 async function fetchTextWithTimeout(url: string, timeoutMs: number) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
@@ -318,7 +358,56 @@ function dbprName(value: string | null | undefined) {
     return cleanText(value)
 }
 
-function parseDbprElectricalRows(csv: string, candidate: CompanyCandidate, limit: number) {
+function personNameFromParts(...parts: Array<string | null | undefined>) {
+    return parts.map((part) => cleanText(part)).filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
+}
+
+function parseTsbpeRows(csv: string, candidate: CompanyCandidate, limit: number) {
+    const matches: TsbpeLicenseResult[] = []
+    const state = candidateState(candidate)
+    const zip = candidatePostcode(candidate)?.slice(0, 5)
+    for (const row of csvRowsWithHeaders(csv)) {
+        const status = cleanText(row.LIC_STATUS)
+        if (!/^current$/i.test(status)) continue
+        const rowState = cleanText(row.STATE).toUpperCase()
+        const rowZip = cleanText(row.ZIP).slice(0, 5)
+        if (state && rowState && rowState !== state) continue
+        const ownerName = personNameFromParts(row.FIRST_NAME, row.MIDDLE_NAME, row.LAST_NAME, row.SUFFIX)
+        const businessName = cleanText(row.PLUMB_COMPANY) || ownerName
+        if (zip && rowZip && rowZip !== zip && !strongBusinessNameMatch(candidate.display_name, businessName, ownerName)) continue
+        if (!strongBusinessNameMatch(candidate.display_name, businessName, ownerName)) continue
+        const licenseNumber = cleanText(row.LICENSE_NBR)
+        if (!licenseNumber || !ownerName || !businessName) continue
+        matches.push({
+            licenseNumber,
+            ownerName,
+            businessName,
+            status,
+            expirationDate: cleanText(row.EXPIRATION_DTE) || null,
+            address: {
+                street: [row.ADDR1, row.ADDR2, row.ADDR3].map(cleanText).filter(Boolean).join(" ") || null,
+                city: cleanText(row.CITY) || candidateCity(candidate),
+                state: rowState || "TX",
+                postcode: cleanText(row.ZIP) || null,
+                county: cleanText(row.COUNTY) || null,
+                country: "US",
+            },
+            phone: normalisePhone(row.PHONE),
+            profileUrl: `${TSBPE_LICENSE_SEARCH_URL}?license=${encodeURIComponent(licenseNumber)}`,
+            row,
+        })
+        if (matches.length >= limit) break
+    }
+    return matches
+}
+
+function allowedDbprLicenseCodes(values: unknown) {
+    const raw = Array.isArray(values) ? values.map(String) : []
+    const codes = raw.map((value) => value.trim().toUpperCase()).filter((value) => /^[A-Z]{2,4}$/.test(value))
+    return codes.length ? new Set(codes) : null
+}
+
+function parseDbprLicenseRows(csv: string, candidate: CompanyCandidate, limit: number, options: { allowedCodes?: Set<string> | null } = {}) {
     const matches: DbprLicenseResult[] = []
     const state = candidateState(candidate)
     const zip = candidatePostcode(candidate)?.slice(0, 5)
@@ -327,6 +416,8 @@ function parseDbprElectricalRows(csv: string, candidate: CompanyCandidate, limit
         if (!line.trim()) continue
         const row = parseCsvLine(line)
         if (row.length < 21) continue
+        const licenseType = cleanText(row[1]) || "DBPR contractor"
+        if (options.allowedCodes && !options.allowedCodes.has(licenseType.toUpperCase())) continue
         const ownerName = dbprName(row[2])
         const businessName = cleanText(row[3]) || null
         const rowState = cleanText(row[9]).toUpperCase()
@@ -339,7 +430,7 @@ function parseDbprElectricalRows(csv: string, candidate: CompanyCandidate, limit
         const licenseNumber = cleanText(row[20]) || [row[1], row[12]].filter(Boolean).join("")
         matches.push({
             licenseNumber,
-            licenseType: cleanText(row[1]) || "Electrical contractor",
+            licenseType,
             ownerName,
             businessName,
             status,
@@ -763,9 +854,116 @@ async function applyTdlrEnrichmentToCompany({ workspaceId, pollId, companyId, re
     return Boolean(ownerName && result.phone)
 }
 
-async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, companyId, result, stageKey = "business_validation" }: { workspaceId: string; pollId: string; companyId: string; result: DbprLicenseResult; stageKey?: Exclude<PollStageKey, "seed"> }) {
+async function applyTsbpeEnrichmentToCompany({ workspaceId, pollId, companyId, result, stageKey = "business_validation" }: { workspaceId: string; pollId: string; companyId: string; result: TsbpeLicenseResult; stageKey?: Exclude<PollStageKey, "seed"> }) {
     const rawPayload = {
-        source: "fl_dbpr_electrical_public_records",
+        source: "tsbpe_rmp_public_csv",
+        license_number: result.licenseNumber,
+        owner_name: result.ownerName,
+        business_name: result.businessName,
+        status: result.status,
+        expiration_date: result.expirationDate,
+        address: result.address,
+        phone: result.phone,
+        profile_url: result.profileUrl,
+        row: result.row,
+    }
+    await supabaseAdmin.from("leadgen_evidence").insert({
+        workspace_id: workspaceId,
+        poll_id: pollId,
+        company_id: companyId,
+        source_key: TX_PLUMBING_SOURCE_KEY,
+        evidence_kind: "license_candidate_match",
+        confidence: result.ownerName && result.phone ? 88 : 78,
+        value: rawPayload,
+        raw_payload: rawPayload,
+    })
+    await recordEvidenceClaim({
+        workspaceId,
+        pollId,
+        companyId,
+        sourceKey: TX_PLUMBING_SOURCE_KEY,
+        claimKind: "licence_activity",
+        pointsAwarded: 2,
+        confidence: 86,
+        provenanceUrl: result.profileUrl,
+        claimValue: { license_number: result.licenseNumber, status: result.status, expiration_date: result.expirationDate },
+        rawPayload,
+    })
+    await recordEvidenceClaim({
+        workspaceId,
+        pollId,
+        companyId,
+        sourceKey: TX_PLUMBING_SOURCE_KEY,
+        claimKind: "owner_identity",
+        pointsAwarded: 3,
+        confidence: result.phone ? 88 : 78,
+        provenanceUrl: result.profileUrl,
+        claimValue: { owner_name: result.ownerName, role: "responsible_master_plumber", legal_name: result.businessName },
+        rawPayload,
+    })
+    if (result.phone) {
+        await recordEvidenceClaim({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: TX_PLUMBING_SOURCE_KEY,
+            claimKind: "owner_phone",
+            pointsAwarded: 3,
+            confidence: 88,
+            provenanceUrl: result.profileUrl,
+            claimValue: { owner_name: result.ownerName, owner_phone: result.phone, phone_source: "tsbpe_rmp_phone" },
+            rawPayload,
+        })
+    }
+    const updatePayload: Record<string, unknown> = {
+        last_seen_at: new Date().toISOString(),
+        profile_url: result.profileUrl,
+        owner_name: result.ownerName,
+        owner_source_key: TX_PLUMBING_SOURCE_KEY,
+        owner_confidence: result.phone ? 88 : 78,
+        owner_evidence: rawPayload,
+    }
+    if (result.phone) {
+        updatePayload.phone = result.phone
+        updatePayload.owner_phone = result.phone
+    }
+    const { error } = await supabaseAdmin.from("leadgen_companies").update(updatePayload).eq("id", companyId).eq("workspace_id", workspaceId)
+    if (error) throw error
+    await updateInvestigationTask({
+        workspaceId,
+        pollId,
+        companyId,
+        sourceKey: TX_PLUMBING_SOURCE_KEY,
+        stageKey,
+        status: "completed",
+        matched: true,
+        ownerIdentityPoints: 3,
+        ownerPhonePoints: result.phone ? 3 : 0,
+        businessSupportPoints: 2,
+        rawPayload,
+    })
+    return Boolean(result.ownerName && result.phone)
+}
+
+async function applyDbprEnrichmentToCompany({
+    workspaceId,
+    pollId,
+    companyId,
+    result,
+    sourceKey,
+    sourceTag,
+    stageKey = "business_validation",
+}: {
+    workspaceId: string
+    pollId: string
+    companyId: string
+    result: DbprLicenseResult
+    sourceKey: typeof FL_DBPR_CONSTRUCTION_SOURCE_KEY | typeof FL_DBPR_ELECTRICAL_SOURCE_KEY
+    sourceTag: string
+    stageKey?: Exclude<PollStageKey, "seed">
+}) {
+    const rawPayload = {
+        source: sourceTag,
         license_number: result.licenseNumber,
         license_type: result.licenseType,
         owner_name: result.ownerName,
@@ -780,7 +978,7 @@ async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, com
         workspace_id: workspaceId,
         poll_id: pollId,
         company_id: companyId,
-        source_key: FL_DBPR_ELECTRICAL_SOURCE_KEY,
+        source_key: sourceKey,
         evidence_kind: "license_candidate_match",
         confidence: result.ownerName ? 82 : 55,
         value: rawPayload,
@@ -790,7 +988,7 @@ async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, com
         workspaceId,
         pollId,
         companyId,
-        sourceKey: "state_license.fl.electrical",
+        sourceKey,
         claimKind: "licence_activity",
         pointsAwarded: 2,
         confidence: 82,
@@ -803,7 +1001,7 @@ async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, com
             workspaceId,
             pollId,
             companyId,
-            sourceKey: "state_license.fl.electrical",
+            sourceKey,
             claimKind: "owner_identity",
             pointsAwarded: 3,
             confidence: 82,
@@ -817,7 +1015,7 @@ async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, com
             workspaceId,
             pollId,
             companyId,
-            sourceKey: "state_license.fl.electrical",
+            sourceKey,
             claimKind: "owner_phone",
             pointsAwarded: 3,
             confidence: 82,
@@ -833,7 +1031,7 @@ async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, com
     }
     if (result.ownerName) {
         updatePayload.owner_name = result.ownerName
-        updatePayload.owner_source_key = FL_DBPR_ELECTRICAL_SOURCE_KEY
+        updatePayload.owner_source_key = sourceKey
         updatePayload.owner_confidence = result.phone ? 82 : 72
     }
     if (result.phone) {
@@ -846,7 +1044,7 @@ async function applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, com
         workspaceId,
         pollId,
         companyId,
-        sourceKey: "state_license.fl.electrical",
+        sourceKey,
         stageKey,
         status: "completed",
         matched: Boolean(result.ownerName || result.phone),
@@ -1074,6 +1272,7 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
     const mappedLocations = new Set(locationMappings.map((mapping) => mapping.icp_location_value))
     const nativeIndustries = [...new Set(industryMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
     const nativeLocations = [...new Set(locationMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
+    const nativeValuesByIndustry = new Map(industryMappings.map((mapping) => [mapping.icp_industry_value, mapping.native_values ?? []]))
     let industries: SourceOption[] = []
     let locations: SourceOption[] = []
     if (sourceKey === TDLR_SOURCE_KEY && nativeIndustries.length > 0 && nativeLocations.length > 0) {
@@ -1150,6 +1349,59 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
                 limit: 3,
             },
         })) : []
+    const txPlumbingTasks = sourceKey === TX_PLUMBING_SOURCE_KEY ? candidates
+        .filter((candidate) => candidateState(candidate) === "TX")
+        .filter((candidate) => mappedIndustries.has(candidate.industry_value ?? "") && mappedLocations.has(candidate.location_value ?? ""))
+        .filter((candidate) => candidate.industry_value === "plumbers")
+        .map((candidate) => ({
+            poll_id: pollId,
+            workspace_id: workspaceId,
+            source_key: TX_PLUMBING_SOURCE_KEY,
+            stage_key: stageKey,
+            stage: "licensing_candidate_enrichment",
+            industry_value: candidate.industry_value,
+            location_value: candidate.location_value,
+            status: "queued",
+            source_query: {
+                board: "tx_plumbing",
+                board_label: "Texas State Board of Plumbing Examiners",
+                adapter_source_key: TX_PLUMBING_SOURCE_KEY,
+                candidate_company_id: candidate.id,
+                candidate_company_name: candidate.display_name,
+                candidate_state: "TX",
+                candidate_city: candidateCity(candidate),
+                candidate_postcode: candidatePostcode(candidate),
+                file_url: TSBPE_RMP_CSV_URL,
+                limit: 5,
+            },
+        })) : []
+    const dbprConstructionTasks = sourceKey === FL_DBPR_CONSTRUCTION_SOURCE_KEY ? candidates
+        .filter((candidate) => candidateState(candidate) === "FL")
+        .filter((candidate) => mappedIndustries.has(candidate.industry_value ?? "") && mappedLocations.has(candidate.location_value ?? ""))
+        .filter((candidate) => DBPR_CONSTRUCTION_INDUSTRIES.has(candidate.industry_value ?? ""))
+        .map((candidate) => ({
+            poll_id: pollId,
+            workspace_id: workspaceId,
+            source_key: FL_DBPR_CONSTRUCTION_SOURCE_KEY,
+            stage_key: stageKey,
+            stage: "licensing_candidate_enrichment",
+            industry_value: candidate.industry_value,
+            location_value: candidate.location_value,
+            status: "queued",
+            source_query: {
+                board: "fl_dbpr_construction",
+                board_label: "Florida DBPR Construction Industry Licensing Board",
+                adapter_source_key: FL_DBPR_CONSTRUCTION_SOURCE_KEY,
+                candidate_company_id: candidate.id,
+                candidate_company_name: candidate.display_name,
+                candidate_state: "FL",
+                candidate_city: candidateCity(candidate),
+                candidate_postcode: candidatePostcode(candidate),
+                native_values: nativeValuesByIndustry.get(candidate.industry_value ?? "") ?? [],
+                file_url: DBPR_CONSTRUCTION_CSV_URL,
+                limit: 3,
+            },
+        })) : []
     const ncGeneralTasks = sourceKey === NC_GENERAL_CONTRACTORS_SOURCE_KEY ? candidates
         .filter((candidate) => candidateState(candidate) === "NC")
         .filter((candidate) => mappedIndustries.has(candidate.industry_value ?? "") && mappedLocations.has(candidate.location_value ?? ""))
@@ -1179,7 +1431,7 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
                 },
             }))
         }) : []
-    tasks.push(...dbprElectricalTasks, ...ncGeneralTasks)
+    tasks.push(...txPlumbingTasks, ...dbprConstructionTasks, ...dbprElectricalTasks, ...ncGeneralTasks)
     if (tasks.length === 0) return 0
     const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(tasks)
     if (error) throw error
@@ -1244,7 +1496,7 @@ async function processDbprElectricalTask({ task, workspaceId, pollId }: { task: 
         file_url?: string
     }
     if (!query.candidate_company_id || !query.candidate_company_name) throw new Error("Florida DBPR task is missing a candidate company.")
-    await updateInvestigationTask({ workspaceId, pollId, companyId: query.candidate_company_id, sourceKey: "state_license.fl.electrical", stageKey: task.stage_key, status: "running" })
+    await updateInvestigationTask({ workspaceId, pollId, companyId: query.candidate_company_id, sourceKey: FL_DBPR_ELECTRICAL_SOURCE_KEY, stageKey: task.stage_key, status: "running" })
     const csv = await fetchCachedCsv(query.file_url || DBPR_ELECTRICAL_CSV_URL)
     if (!csv.trim()) throw new Error("Florida DBPR electrical public records CSV was empty.")
     const candidate: CompanyCandidate = {
@@ -1259,13 +1511,13 @@ async function processDbprElectricalTask({ task, workspaceId, pollId }: { task: 
         industry_value: task.industry_value,
         location_value: task.location_value,
     }
-    const results = parseDbprElectricalRows(csv, candidate, Math.min(10, Math.max(1, Number(query.limit) || 3)))
+    const results = parseDbprLicenseRows(csv, candidate, Math.min(10, Math.max(1, Number(query.limit) || 3)))
     if (results.length === 0) {
         await updateInvestigationTask({
             workspaceId,
             pollId,
             companyId: query.candidate_company_id,
-            sourceKey: "state_license.fl.electrical",
+            sourceKey: FL_DBPR_ELECTRICAL_SOURCE_KEY,
             stageKey: task.stage_key,
             status: "completed",
             matched: false,
@@ -1274,7 +1526,94 @@ async function processDbprElectricalTask({ task, workspaceId, pollId }: { task: 
         return { rawCount: 0, companyCount: 0 }
     }
     const bestResult = results[0]
-    const qualified = await applyDbprElectricalEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult, stageKey: task.stage_key })
+    const qualified = await applyDbprEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult, sourceKey: FL_DBPR_ELECTRICAL_SOURCE_KEY, sourceTag: "fl_dbpr_electrical_public_records", stageKey: task.stage_key })
+    return { rawCount: results.length, companyCount: qualified ? 1 : 0 }
+}
+
+async function processTsbpeTask({ task, workspaceId, pollId }: { task: LicensingTask; workspaceId: string; pollId: string }) {
+    const query = task.source_query as {
+        candidate_company_id?: string
+        candidate_company_name?: string
+        limit?: number
+        file_url?: string
+    }
+    if (!query.candidate_company_id || !query.candidate_company_name) throw new Error("Texas plumbing task is missing a candidate company.")
+    await updateInvestigationTask({ workspaceId, pollId, companyId: query.candidate_company_id, sourceKey: TX_PLUMBING_SOURCE_KEY, stageKey: task.stage_key, status: "running" })
+    const csv = await fetchCachedCsv(query.file_url || TSBPE_RMP_CSV_URL)
+    if (!csv.trim()) throw new Error("Texas plumbing Responsible Master Plumber CSV was empty.")
+    const candidate: CompanyCandidate = {
+        id: query.candidate_company_id,
+        display_name: query.candidate_company_name,
+        phone: null,
+        address: {
+            state: "TX",
+            city: asString(task.source_query?.candidate_city),
+            postcode: asString(task.source_query?.candidate_postcode),
+        },
+        industry_value: task.industry_value,
+        location_value: task.location_value,
+    }
+    const results = parseTsbpeRows(csv, candidate, Math.min(10, Math.max(1, Number(query.limit) || 5)))
+    if (results.length === 0) {
+        await updateInvestigationTask({
+            workspaceId,
+            pollId,
+            companyId: query.candidate_company_id,
+            sourceKey: TX_PLUMBING_SOURCE_KEY,
+            stageKey: task.stage_key,
+            status: "completed",
+            matched: false,
+            skipReason: "Texas plumbing Responsible Master Plumber CSV returned no current license match for this candidate.",
+        })
+        return { rawCount: 0, companyCount: 0 }
+    }
+    const bestResult = results.find((result) => result.phone) ?? results[0]
+    const qualified = await applyTsbpeEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult, stageKey: task.stage_key })
+    return { rawCount: results.length, companyCount: qualified ? 1 : 0 }
+}
+
+async function processDbprConstructionTask({ task, workspaceId, pollId }: { task: LicensingTask; workspaceId: string; pollId: string }) {
+    const query = task.source_query as {
+        candidate_company_id?: string
+        candidate_company_name?: string
+        limit?: number
+        file_url?: string
+        native_values?: string[]
+    }
+    if (!query.candidate_company_id || !query.candidate_company_name) throw new Error("Florida DBPR construction task is missing a candidate company.")
+    await updateInvestigationTask({ workspaceId, pollId, companyId: query.candidate_company_id, sourceKey: FL_DBPR_CONSTRUCTION_SOURCE_KEY, stageKey: task.stage_key, status: "running" })
+    const csv = await fetchCachedCsv(query.file_url || DBPR_CONSTRUCTION_CSV_URL)
+    if (!csv.trim()) throw new Error("Florida DBPR construction public records CSV was empty.")
+    const candidate: CompanyCandidate = {
+        id: query.candidate_company_id,
+        display_name: query.candidate_company_name,
+        phone: null,
+        address: {
+            state: "FL",
+            city: asString(task.source_query?.candidate_city),
+            postcode: asString(task.source_query?.candidate_postcode),
+        },
+        industry_value: task.industry_value,
+        location_value: task.location_value,
+    }
+    const results = parseDbprLicenseRows(csv, candidate, Math.min(10, Math.max(1, Number(query.limit) || 3)), {
+        allowedCodes: allowedDbprLicenseCodes(query.native_values),
+    })
+    if (results.length === 0) {
+        await updateInvestigationTask({
+            workspaceId,
+            pollId,
+            companyId: query.candidate_company_id,
+            sourceKey: FL_DBPR_CONSTRUCTION_SOURCE_KEY,
+            stageKey: task.stage_key,
+            status: "completed",
+            matched: false,
+            skipReason: "Florida DBPR construction public records returned no active license match for this candidate.",
+        })
+        return { rawCount: 0, companyCount: 0 }
+    }
+    const bestResult = results[0]
+    const qualified = await applyDbprEnrichmentToCompany({ workspaceId, pollId, companyId: query.candidate_company_id, result: bestResult, sourceKey: FL_DBPR_CONSTRUCTION_SOURCE_KEY, sourceTag: "fl_dbpr_construction_public_records", stageKey: task.stage_key })
     return { rawCount: results.length, companyCount: qualified ? 1 : 0 }
 }
 
@@ -1361,9 +1700,13 @@ export async function processStateLicensingPoll(pollId: string, workspaceId: str
             const board = typeof task.source_query?.board === "string" ? task.source_query.board : "tdlr"
             const { rawCount, companyCount } = board === "fl_dbpr_electrical"
                 ? await processDbprElectricalTask({ task, workspaceId, pollId })
-                : board === "nc_general_contractors"
-                    ? await processNcGeneralTask({ task, workspaceId, pollId })
-                    : await processTdlrTask({ task, workspaceId, pollId })
+                : board === "fl_dbpr_construction"
+                    ? await processDbprConstructionTask({ task, workspaceId, pollId })
+                    : board === "tx_plumbing"
+                        ? await processTsbpeTask({ task, workspaceId, pollId })
+                        : board === "nc_general_contractors"
+                            ? await processNcGeneralTask({ task, workspaceId, pollId })
+                            : await processTdlrTask({ task, workspaceId, pollId })
             await supabaseAdmin
                 .from("leadgen_poll_tasks")
                 .update({ status: "completed", raw_count: rawCount, company_count: companyCount, completed_at: new Date().toISOString(), error: null })

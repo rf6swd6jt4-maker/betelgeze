@@ -31,7 +31,10 @@ function stageCapabilities(value: unknown) {
 function primarySourceStage(sourceKey: LeadgenSourceKey, stages: SourceStageKey[]) {
     if (sourceKey === "sam_gov") return null
     if (sourceKey === "transport.fmcsa_safer" && stages.includes("business_validation")) return "business_validation"
+    if (sourceKey.startsWith("permits.") && stages.includes("business_validation")) return "business_validation"
+    if (sourceKey === "regulated.epa_echo" && stages.includes("business_validation")) return "business_validation"
     if (sourceKey.startsWith("state_license.") && stages.includes("owner_identity")) return "owner_identity"
+    if (sourceKey.startsWith("registry.") && stages.includes("owner_identity")) return "owner_identity"
     if (sourceKey === "website" && stages.includes("owner_identity")) return "owner_identity"
     if (sourceKey === "regulated.nppes" && stages.includes("owner_identity")) return "owner_identity"
     return stages[0] ?? null
@@ -39,6 +42,8 @@ function primarySourceStage(sourceKey: LeadgenSourceKey, stages: SourceStageKey[
 
 function fallbackSourceStages(sourceKey: LeadgenSourceKey): SourceStageKey[] {
     if (sourceKey === "transport.fmcsa_safer") return ["business_validation"]
+    if (sourceKey.startsWith("permits.") || sourceKey === "regulated.epa_echo") return ["business_validation"]
+    if (sourceKey.startsWith("registry.")) return ["business_validation", "owner_identity", "owner_phone"]
     if (sourceKey.startsWith("state_license.") || sourceKey === "website" || sourceKey === "regulated.nppes") return ["owner_identity"]
     return []
 }

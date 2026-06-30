@@ -2,9 +2,17 @@ export type LeadgenSeedSourceKey = "overture" | "osm" | "alltheplaces" | "foursq
 export type LeadgenEnrichmentSourceKey =
     | "website"
     | "state_license.tx.tdlr"
+    | "state_license.tx.plumbing"
+    | "state_license.fl.dbpr"
     | "state_license.fl.electrical"
     | "state_license.nc.general_contractors"
+    | "permits.tx.dallas"
+    | "permits.tx.austin"
+    | "permits.fl.orlando"
+    | "permits.ca.los_angeles"
+    | "registry.fl.orlando_btr"
     | "transport.fmcsa_safer"
+    | "regulated.epa_echo"
     | "regulated.nppes"
     | "sam_gov"
 export type LeadgenLegacySourceKey = "state_licensing"
@@ -60,14 +68,24 @@ export const seedLeadgenSources = new Set<LeadgenSourceKey>(["overture", "osm", 
 export const enrichmentLeadgenSources = new Set<LeadgenSourceKey>([
     "website",
     "state_license.tx.tdlr",
+    "state_license.tx.plumbing",
+    "state_license.fl.dbpr",
     "state_license.fl.electrical",
     "state_license.nc.general_contractors",
+    "permits.tx.dallas",
+    "permits.tx.austin",
+    "permits.fl.orlando",
+    "permits.ca.los_angeles",
+    "registry.fl.orlando_btr",
     "transport.fmcsa_safer",
+    "regulated.epa_echo",
     "regulated.nppes",
     "sam_gov",
 ])
 export const stateLicensingSourceKeys = new Set<LeadgenSourceKey>([
     "state_license.tx.tdlr",
+    "state_license.tx.plumbing",
+    "state_license.fl.dbpr",
     "state_license.fl.electrical",
     "state_license.nc.general_contractors",
     "state_licensing",
@@ -145,6 +163,28 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         implemented: true,
     },
     {
+        value: "state_license.tx.plumbing",
+        label: "Texas plumbing examiners",
+        detail: "Texas State Board of Plumbing Examiners Responsible Master Plumber CSV. Matches Texas plumbing candidates to current RMP rows with company name, license holder, phone, county, status, and expiry.",
+        statusLabel: "Executable from public CSV",
+        notesPlaceholder: "RMP matching rules, status filters, or Texas plumbing county notes.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+        setupHint: "No API key is needed. Betelgeze reads the public Responsible Master Plumber CSV and treats licensee phone as owner/principal phone evidence.",
+    },
+    {
+        value: "state_license.fl.dbpr",
+        label: "Florida DBPR construction",
+        detail: "Florida DBPR construction public-record CSV for active building, residential, general, roofing, mechanical, air-conditioning, plumbing, pool, solar, and utility contractor records.",
+        statusLabel: "Executable from public CSV",
+        notesPlaceholder: "Construction code filters, active-status rules, or DBPR match confidence notes.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+        setupHint: "No API key is needed. DBPR construction records usually prove the qualifier/person and business, but usually do not expose a phone field.",
+    },
+    {
         value: "state_license.fl.electrical",
         label: "Florida DBPR electrical records",
         detail: "Florida DBPR electrical contractor CSV lookup for Florida candidates in mapped electrical-adjacent industries.",
@@ -165,6 +205,56 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         implemented: true,
     },
     {
+        value: "permits.tx.dallas",
+        label: "Dallas active contractor registrations",
+        detail: "Dallas Open Data active contractor registrations. Provides city registration support and contractor business phone evidence for Dallas-area candidates.",
+        statusLabel: "Executable from public API",
+        notesPlaceholder: "Dallas contractor registration match rules or phone confidence notes.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+    },
+    {
+        value: "permits.tx.austin",
+        label: "Austin ROW contractor licences",
+        detail: "Austin public active right-of-way contractor license holders. Provides contractor license activity support for Austin-area candidates.",
+        statusLabel: "Executable from public API",
+        notesPlaceholder: "Austin ROW license filters or local trade notes.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+    },
+    {
+        value: "permits.fl.orlando",
+        label: "Orlando permit applications",
+        detail: "Orlando permit applications dataset. Matches contractor records and can expose permit contact or qualifier details for Orlando candidates.",
+        statusLabel: "Executable from public API",
+        notesPlaceholder: "Permit status filters, contractor phone confidence, or work-type notes.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+    },
+    {
+        value: "registry.fl.orlando_btr",
+        label: "Orlando business tax receipts",
+        detail: "Orlando business tax receipts dataset. Can expose business owner name and phone on the same official row for Orlando candidates.",
+        statusLabel: "Executable from public API",
+        notesPlaceholder: "BTR status filters, owner-phone confidence, or city category notes.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+    },
+    {
+        value: "permits.ca.los_angeles",
+        label: "Los Angeles permits",
+        detail: "Los Angeles permits since 2018. Provides contractor business and permit-principal support for Los Angeles candidates.",
+        statusLabel: "Executable from public API",
+        notesPlaceholder: "Permit category filters, principal confidence, or Los Angeles limitations.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+    },
+    {
         value: "transport.fmcsa_safer",
         label: "FMCSA SAFER company snapshot",
         detail: "Official carrier registration lookup for moving, trucking, hauling, freight, and adjacent transport-heavy candidates. Provides official business phone/support evidence, but does not count as direct owner-phone proof by itself.",
@@ -174,6 +264,17 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         category: "industry",
         implemented: true,
         setupHint: "No API key is needed. Betelgeze uses the public FMCSA SAFER snapshot lookup with conservative per-candidate requests.",
+    },
+    {
+        value: "regulated.epa_echo",
+        label: "EPA ECHO facility search",
+        detail: "EPA ECHO facility lookup for waste, environmental, remediation, septic, well, and industrial cleaning candidates. Provides regulated-facility support evidence.",
+        statusLabel: "Executable, no key",
+        notesPlaceholder: "Facility name matching rules, program filters, or environmental contractor notes.",
+        kind: "enrichment",
+        category: "industry",
+        implemented: true,
+        setupHint: "No API key is needed. Betelgeze queries the public EPA ECHO REST service for mapped environmental and waste-adjacent candidates.",
     },
     {
         value: "regulated.nppes",

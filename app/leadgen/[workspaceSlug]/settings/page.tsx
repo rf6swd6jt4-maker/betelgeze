@@ -1,7 +1,7 @@
 import { WorkspaceIdentityEditor } from "@/components/admin/WorkspaceIdentityEditor"
+import { AdaptiveTargetingSettings, type AdaptiveIndustryOption, type AdaptiveLocationOption } from "@/components/leadgen/AdaptiveTargetingSettings"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
 import { ManualSettingsForm, SettingsSectionActions } from "@/components/leadgen/ManualSettingsForm"
-import { SearchableMultiSelect } from "@/components/leadgen/SearchableMultiSelect"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic"
 type PageProps = { params: Promise<{ workspaceSlug: string }> }
 type IcpOption = { value: string; label: string; category?: string | null; location_kind?: string | null; region?: string | null; locality?: string | null }
 type SourceMapping = { source_key: LeadgenSourceKey; icp_industry_value?: string | null; icp_location_value?: string | null; native_values?: string[] | null }
+type CatalogSource = { source_key: string; family: string | null; implementation_status: string | null; enabled: boolean | null }
 
 function sourceConfigValue(config: unknown): Partial<LeadgenSourceConfig> {
     return config && typeof config === "object" ? config as Partial<LeadgenSourceConfig> : {}
@@ -26,7 +27,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
         workspace.leadgen_banner_path ? createUploadSignedUrl(workspace.leadgen_banner_path) : null,
         workspace.logo_path ? createUploadSignedUrl(workspace.logo_path) : null,
     ])
-    const [settingsResult, industriesResult, locationsResult, industryMappingsResult, locationMappingsResult] = await Promise.all([
+    const [settingsResult, industriesResult, locationsResult, industryMappingsResult, locationMappingsResult, catalogResult] = await Promise.all([
         supabaseAdmin
         .from("leadgen_workspace_settings")
         .select("poll_interval_hours, automatic_polls_enabled, geography, enabled_sources, source_config")
@@ -50,6 +51,10 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
             .from("leadgen_source_location_mappings")
             .select("source_key, icp_location_value, native_values")
             .eq("enabled", true),
+        supabaseAdmin
+            .from("leadgen_source_catalog")
+            .select("source_key, family, implementation_status, enabled")
+            .eq("enabled", true),
     ])
     const settings = settingsResult.error ? null : settingsResult.data
     const sourceConfig = sourceConfigValue(settings?.source_config)
@@ -57,10 +62,16 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
     const icpLocations = (locationsResult.error ? [] : locationsResult.data ?? []) as IcpOption[]
     const industryMappings = (industryMappingsResult.error ? [] : industryMappingsResult.data ?? []) as SourceMapping[]
     const locationMappings = (locationMappingsResult.error ? [] : locationMappingsResult.data ?? []) as SourceMapping[]
+    const catalog = (catalogResult.error ? [] : catalogResult.data ?? []) as CatalogSource[]
     const selectedIndustries = Array.isArray(sourceConfig.icp?.industries) ? sourceConfig.icp.industries : []
     const selectedLocations = Array.isArray(sourceConfig.icp?.locations) ? sourceConfig.icp.locations : []
 
     const sourceLabelByValue = new Map<string, string>(leadgenSourceOptions.map((source) => [source.value, source.label]))
+    const locationByValue = new Map(icpLocations.map((location) => [location.value, location]))
+    const adaptiveSourceKeys = new Set(catalog
+        .filter((source) => source.enabled && source.implementation_status === "active")
+        .filter((source) => ["licensing", "permits", "registries", "transport", "regulated", "procurement", "safety"].includes(source.family ?? ""))
+        .map((source) => source.source_key))
 
     function compactSourceList(values: string[]) {
         if (values.length === 0) return "No source mappings yet"
@@ -68,11 +79,24 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
         return `Maps to ${values.slice(0, 3).join(", ")} +${values.length - 3} more`
     }
 
-    function sourcesForIndustry(industryValue: string) {
-        const labels = [...new Set(industryMappings
-            .filter((mapping) => mapping.icp_industry_value === industryValue && (mapping.native_values?.length ?? 0) > 0)
-            .map((mapping) => sourceLabelByValue.get(mapping.source_key) ?? mapping.source_key))]
-        return compactSourceList(labels)
+    function adaptiveCoverageForIndustry(industryValue: string) {
+        const supportingSourceKeys = [...new Set(industryMappings
+            .filter((mapping) => mapping.icp_industry_value === industryValue && (mapping.native_values?.length ?? 0) > 0 && adaptiveSourceKeys.has(mapping.source_key))
+            .map((mapping) => mapping.source_key))]
+        const supportedLocationValues = [...new Set(locationMappings
+            .filter((mapping) => supportingSourceKeys.includes(mapping.source_key) && (mapping.native_values?.length ?? 0) > 0)
+            .map((mapping) => mapping.icp_location_value)
+            .filter((value): value is string => Boolean(value)))]
+        const supportedRegions = [...new Set(supportedLocationValues
+            .map((value) => locationByValue.get(value)?.region)
+            .filter((value): value is string => Boolean(value))
+            .map((value) => value.toUpperCase()))]
+        const sourceLabels = supportingSourceKeys.map((sourceKey) => sourceLabelByValue.get(sourceKey) ?? sourceKey)
+        return {
+            detail: compactSourceList(sourceLabels),
+            supportedRegions,
+            supportedLocationValues,
+        }
     }
 
     function sourcesForLocation(locationValue: string) {
@@ -81,6 +105,24 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
             .map((mapping) => sourceLabelByValue.get(mapping.source_key) ?? mapping.source_key))]
         return compactSourceList(labels)
     }
+
+    const adaptiveIndustries: AdaptiveIndustryOption[] = icpIndustries.map((industry) => {
+        const coverage = adaptiveCoverageForIndustry(industry.value)
+        return {
+            value: industry.value,
+            label: industry.label,
+            category: industry.category,
+            detail: coverage.detail,
+            supportedRegions: coverage.supportedRegions,
+            supportedLocationValues: coverage.supportedLocationValues,
+        }
+    })
+    const adaptiveLocations: AdaptiveLocationOption[] = icpLocations.map((target) => ({
+        value: target.value,
+        label: target.label,
+        region: target.region,
+        detail: `${target.location_kind ?? "location"}${target.region ? ` / ${target.region}` : ""}. ${sourcesForLocation(target.value)}`,
+    }))
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">
         <div className="mx-auto max-w-7xl">
@@ -112,24 +154,7 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
                         </div>
                         <SettingsSectionActions section="poll-options" label="poll automation" />
                     </div>
-                    <section className="grid gap-4">
-                        <div data-settings-section="target-industries" className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
-                            <h2 className="text-lg font-semibold leading-6">Target Industries</h2>
-                            <p className="mt-1.5 text-sm leading-5 text-neutral-400">Shared industry targets used by seed sources and staged source categories.</p>
-                            <div className="mt-4">
-                                <SearchableMultiSelect name="sourceConfig:icp:industries" label="Target industries" options={icpIndustries.map((industry) => ({ value: industry.value, label: industry.label, detail: `${industry.category ?? "industry"}. ${sourcesForIndustry(industry.value)}` }))} selectedValues={selectedIndustries} />
-                            </div>
-                            <SettingsSectionActions section="target-industries" label="target industries" />
-                        </div>
-                        <div data-settings-section="target-locations" className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
-                            <h2 className="text-lg font-semibold leading-6">Target Locations</h2>
-                            <p className="mt-1.5 text-sm leading-5 text-neutral-400">Shared geography targets used by source mappings and poll tasks.</p>
-                            <div className="mt-4">
-                                <SearchableMultiSelect name="sourceConfig:icp:locations" label="Target locations" options={icpLocations.map((target) => ({ value: target.value, label: target.label, detail: `${target.location_kind ?? "location"}${target.region ? ` / ${target.region}` : ""}. ${sourcesForLocation(target.value)}` }))} selectedValues={selectedLocations} />
-                            </div>
-                            <SettingsSectionActions section="target-locations" label="target locations" />
-                        </div>
-                    </section>
+                    <AdaptiveTargetingSettings industries={adaptiveIndustries} locations={adaptiveLocations} selectedIndustries={selectedIndustries} selectedLocations={selectedLocations} />
                 </section>
             </ManualSettingsForm>
             <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>

@@ -36,6 +36,8 @@ const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set([
     "website",
     "web.json_ld",
     "state_license.tx.tdlr",
+    "state_license.tx.plumbing",
+    "state_license.fl.dbpr",
     "state_license.fl.electrical",
     "state_license.nc.general_contractors",
     "permits.tx.dallas",
@@ -84,18 +86,36 @@ function companyState(company: { address?: unknown }) {
     return direct && /^[A-Z]{2}$/i.test(direct) ? direct.toUpperCase() : null
 }
 
+function companyCity(company: { address?: unknown }) {
+    const address = asRecord(company.address)
+    return asString(address.city) ?? asString(address.locality) ?? asString(address.town) ?? asString(address.municipality)
+}
+
+function normaliseCity(value: string) {
+    return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+}
+
 function sourceAppliesToCompany(source: { source_key: string; coverage?: unknown }, company: { address?: unknown; industry_value?: string | null; website_domain?: string | null; website_url?: string | null }) {
     if (source.source_key === "website" || source.source_key === "web.json_ld") return true
     if ((source.source_key === "web.rdap_whois" || source.source_key === "web.certificate_transparency") && !domainFromUrl(company.website_domain) && !domainFromUrl(company.website_url)) return false
     const state = companyState(company)
     if (source.source_key === "state_license.tx.tdlr") return state === "TX"
-    if (source.source_key === "state_license.fl.electrical") return state === "FL" && ["electricians", "solar_installers", "pool_builders", "hvac_contractors", "general_contractors"].includes(company.industry_value ?? "")
+    if (source.source_key === "state_license.tx.plumbing") return state === "TX" && company.industry_value === "plumbers"
+    if (source.source_key === "state_license.fl.dbpr") return state === "FL" && ["general_contractors", "home_builders", "remodellers", "roofers", "hvac_contractors", "plumbers", "pool_builders", "solar_installers", "flooring_contractors", "lighting_contractors"].includes(company.industry_value ?? "")
+    if (source.source_key === "state_license.fl.electrical") return state === "FL" && ["electricians", "lighting_contractors", "solar_installers", "pool_builders", "hvac_contractors", "general_contractors"].includes(company.industry_value ?? "")
     if (source.source_key === "state_license.nc.general_contractors") return state === "NC" && ["concrete_contractors", "deck_builders", "fencing_contractors", "general_contractors", "hardscaping_contractors", "home_builders", "insulation_contractors", "kitchen_remodelling", "masonry_contractors", "patio_contractors", "pool_builders", "remodellers", "restoration_companies", "roofers", "siding_contractors", "window_and_door_contractors"].includes(company.industry_value ?? "")
     const coverage = asRecord(source.coverage)
     const states = Array.isArray(coverage.states) ? coverage.states.map(String).map((value) => value.toUpperCase()) : []
+    const cities = Array.isArray(coverage.cities) ? coverage.cities.map(String).map(normaliseCity).filter(Boolean) : []
     const industries = Array.isArray(coverage.industries) ? coverage.industries.map(String) : []
     if (industries.length > 0 && (!company.industry_value || !industries.includes(company.industry_value))) return false
-    return states.length === 0 || !state || states.includes(state)
+    if (states.length > 0 && state && !states.includes(state)) return false
+    if (cities.length > 0) {
+        const city = companyCity(company)
+        if (!city) return false
+        return cities.includes(normaliseCity(city))
+    }
+    return true
 }
 
 export async function recordEvidenceClaim(input: EvidenceClaimInput) {

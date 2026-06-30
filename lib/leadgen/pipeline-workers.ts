@@ -162,6 +162,7 @@ function isLikelyPersonName(value: string) {
         "company",
         "connect",
         "contact",
+        "contractor",
         "daily",
         "directly",
         "for",
@@ -178,16 +179,18 @@ function isLikelyPersonName(value: string) {
         "your",
     ])
     if (words.some((word) => rejectedWords.has(word.toLowerCase()))) return false
-    if (/\b(llc|inc|corp|company|co|ltd|services|remodel|remodeling|roofing|plumbing|construction)\b/i.test(cleaned)) return false
+    if (/\b(llc|inc|corp|company|co|ltd|services|service|remodel|remodeling|roofing|plumbing|construction|flooring|painting|landscaping|contractors?)\b/i.test(cleaned)) return false
     if (lower === cleaned) return false
-    return words.every((word) => /^[A-Z][a-z]+(?:[-'][A-Z][a-z]+)?$/.test(word))
+    return words.every((word) => /^(?:[A-Z]\.?|[A-Z][a-z]+(?:[-'][A-Z][a-z]+)?)$/.test(word))
 }
 
 function extractOwnerMatch(text: string) {
+    const person = String.raw`([A-Z][A-Za-z.'-]+(?:\s+(?:[A-Z]\.?\s+)?[A-Z][A-Za-z.'-]+){1,3})`
     const patterns = [
-        /\b(?:Owner|Founder|Principal|President|Managing Partner|Operator)\s*[:\-–]\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/g,
-        /([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s*,?\s+(?:owner|founder|principal|president|managing partner|operator)\b/g,
-        /\b[Mm]eet\s+(?:the\s+owner|our\s+owner)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/g,
+        new RegExp(String.raw`\b(?:Owner|Founder|Co-Founder|Principal|President|Managing Partner|Managing Member|Operator|CEO|Chief Executive Officer|License Holder|Qualifier)\s*(?:is|:|\-|–)?\s*${person}`, "g"),
+        new RegExp(String.raw`${person}\s*,?\s+(?:owner|founder|co-founder|principal|president|managing partner|managing member|operator|ceo|chief executive officer|license holder|qualifier)\b`, "g"),
+        new RegExp(String.raw`\b(?:owned and operated by|founded by|led by|run by|started by)\s+${person}`, "gi"),
+        new RegExp(String.raw`\b[Mm]eet\s+(?:the\s+owner|our\s+owner|the founder|our founder)?\s*${person}`, "g"),
     ]
     for (const pattern of patterns) {
         for (const match of text.matchAll(pattern)) {
@@ -201,14 +204,32 @@ function extractOwnerMatch(text: string) {
 function ownerAssociatedPhone(text: string, ownerIndex: number) {
     if (ownerIndex < 0) return null
     const nearbyPhones = phoneMatches(text)
-        .filter((match) => Math.abs(match.index - ownerIndex) <= 350)
+        .filter((match) => Math.abs(match.index - ownerIndex) <= 900)
         .map((match) => match.phone)
     return uniqueValues(nearbyPhones)[0] ?? null
 }
 
 function urlsToInspect(baseUrl: string, depth: number) {
     const url = new URL(baseUrl.startsWith("http") ? baseUrl : `https://${baseUrl}`)
-    const paths = depth <= 1 ? ["/"] : ["/", "/contact", "/contact-us", "/about", "/about-us", "/team"]
+    const paths = depth <= 1
+        ? ["/"]
+        : [
+            "/",
+            "/about",
+            "/about-us",
+            "/our-company",
+            "/company",
+            "/who-we-are",
+            "/team",
+            "/our-team",
+            "/meet-the-team",
+            "/staff",
+            "/leadership",
+            "/owners",
+            "/owner",
+            "/contact",
+            "/contact-us",
+        ]
     return [...new Set(paths.map((path) => new URL(path, url.origin).toString()))]
 }
 
@@ -237,15 +258,79 @@ async function fetchPage(url: string, timeoutSeconds: number): Promise<{ html: s
     }
 }
 
+function jsonLdScripts(html: string) {
+    return [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
+        .map((match) => match[1]?.replace(/<!--|-->/g, "").trim())
+        .filter((value): value is string => Boolean(value))
+}
+
+function flattenJsonLd(value: unknown): Record<string, unknown>[] {
+    if (Array.isArray(value)) return value.flatMap(flattenJsonLd)
+    if (!value || typeof value !== "object") return []
+    const record = value as Record<string, unknown>
+    const graph = Array.isArray(record["@graph"]) ? record["@graph"].flatMap(flattenJsonLd) : []
+    return [record, ...graph]
+}
+
+function jsonLdName(value: unknown): string | null {
+    if (typeof value === "string") return isLikelyPersonName(value) ? value : null
+    if (!value || typeof value !== "object") return null
+    const record = value as Record<string, unknown>
+    const directName = typeof record.name === "string" ? record.name.trim() : null
+    if (directName && isLikelyPersonName(directName)) return directName
+    const given = typeof record.givenName === "string" ? record.givenName.trim() : null
+    const family = typeof record.familyName === "string" ? record.familyName.trim() : null
+    const full = [given, family].filter(Boolean).join(" ")
+    return full && isLikelyPersonName(full) ? full : null
+}
+
+function extractJsonLdOwnerName(html: string) {
+    for (const script of jsonLdScripts(html)) {
+        try {
+            const nodes = flattenJsonLd(JSON.parse(script))
+            for (const node of nodes) {
+                const type = Array.isArray(node["@type"]) ? node["@type"].map(String) : [String(node["@type"] ?? "")]
+                if (type.some((item) => item.toLowerCase() === "person")) {
+                    const role = [node.jobTitle, node.title, node.description].map((value) => typeof value === "string" ? value : "").join(" ")
+                    const personName = jsonLdName(node)
+                    if (personName && /\b(owner|founder|principal|president|ceo|managing partner|managing member|operator|license holder|qualifier)\b/i.test(role)) return personName
+                }
+                for (const key of ["founder", "founders", "owner", "employee", "member", "foundingTeam"]) {
+                    const name = jsonLdName(node[key])
+                    if (name) return name
+                    if (Array.isArray(node[key])) {
+                        const arrayName = node[key].map(jsonLdName).find(Boolean)
+                        if (arrayName) return arrayName
+                    }
+                }
+            }
+        } catch {
+            continue
+        }
+    }
+    return null
+}
+
+function fallbackOwnerPhone(url: string, visibleText: string, phones: string[], ownerName: string | null) {
+    if (!ownerName || phones.length !== 1) return null
+    const ownerishPage = /\/(about|about-us|team|our-team|meet-the-team|staff|leadership|owner|owners|contact|contact-us)(?:\/|$)/i.test(new URL(url).pathname)
+    const ownerishText = /\b(owner|founder|principal|president|managed by|owned and operated|founded by)\b/i.test(visibleText)
+    return ownerishPage && ownerishText ? phones[0] : null
+}
+
 function extractPageEvidence(url: string, html: string, visibleText: string): PageExtraction {
     const phones = extractPhones(`${html} ${visibleText}`)
     const ownerMatch = extractOwnerMatch(visibleText)
-    const ownerName = ownerMatch?.name ?? null
-    const ownerPhone = ownerMatch ? ownerAssociatedPhone(visibleText, ownerMatch.index) : null
+    const jsonLdOwnerName = extractJsonLdOwnerName(html)
+    const ownerName = ownerMatch?.name ?? jsonLdOwnerName ?? null
+    const ownerPhone = ownerMatch
+        ? ownerAssociatedPhone(visibleText, ownerMatch.index) ?? fallbackOwnerPhone(url, visibleText, phones, ownerName)
+        : fallbackOwnerPhone(url, visibleText, phones, ownerName)
     const evidence = [
         phones.length ? `phone:${phones.join(",")}` : null,
         ownerName ? `owner:${ownerName}` : null,
         ownerPhone ? `owner_phone:${ownerPhone}` : null,
+        jsonLdOwnerName ? `json_ld_owner:${jsonLdOwnerName}` : null,
         /application\/ld\+json/i.test(html) ? "json_ld_present" : null,
         /href=["']tel:/i.test(html) ? "tel_link_present" : null,
     ].filter((value): value is string => Boolean(value))
@@ -956,6 +1041,7 @@ async function processWebsiteTask(task: PipelineTask) {
             ownerName ||= pageOwner
             ownerPhone ||= pageOwnerPhone
             businessPhone ||= pageBusinessPhone
+            if (stageKey === "owner_identity" && ownerName) break
             if (ownerName && ownerPhone) break
         } catch {
             inspected.push({ url, owner_name: null, phone: null, phones: [], evidence: ["fetch_failed"] })

@@ -42,6 +42,7 @@ function primarySourceStage(sourceKey: LeadgenSourceKey, stages: SourceStageKey[
 function fallbackSourceStages(sourceKey: LeadgenSourceKey): SourceStageKey[] {
     if (sourceKey === "phone.basic_format_validation") return ["phone_validation"]
     if (sourceKey === "transport.fmcsa_safer") return ["business_validation"]
+    if (sourceKey === "safety.osha" || sourceKey === "procurement.usaspending" || sourceKey === "web.rdap_whois" || sourceKey === "web.certificate_transparency") return ["business_validation"]
     if (sourceKey.startsWith("permits.") || sourceKey === "regulated.epa_echo") return ["business_validation"]
     if (sourceKey.startsWith("registry.")) return ["business_validation", "owner_identity", "owner_phone"]
     if (sourceKey.startsWith("state_license.") || sourceKey === "website" || sourceKey === "regulated.nppes") return ["owner_identity", "owner_phone"]

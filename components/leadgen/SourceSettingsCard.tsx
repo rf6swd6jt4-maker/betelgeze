@@ -247,7 +247,7 @@ function HiddenSourceSettings({ source }: { source: SourceSettingsItem }) {
     </>
 }
 
-function SourceRow({ source, enabled, expanded, nested = false, onToggle, onExpand }: { source: SourceSettingsItem; enabled: boolean; expanded: boolean; nested?: boolean; onToggle: (source: SourceSettingsItem, checked: boolean) => void; onExpand: (source: SourceSettingsItem) => void }) {
+function SourceRow({ source, enabled, expanded, nested = false, showConfig = true, onToggle, onExpand }: { source: SourceSettingsItem; enabled: boolean; expanded: boolean; nested?: boolean; showConfig?: boolean; onToggle: (source: SourceSettingsItem, checked: boolean) => void; onExpand: (source: SourceSettingsItem) => void }) {
     const status = statusFor(source, new Set(enabled ? [source.value] : []))
     const showRadius = source.kind === "seed"
     const showRelease = source.value === "overture" || source.value === "alltheplaces"
@@ -255,7 +255,7 @@ function SourceRow({ source, enabled, expanded, nested = false, onToggle, onExpa
     const detailLines = statusLine(source, status, enabled)
 
     return <div className={`border-b border-neutral-900 transition last:border-b-0 ${enabled ? "bg-emerald-300/[0.035]" : nested ? "bg-black hover:bg-neutral-950" : "bg-neutral-950 hover:bg-black"}`}>
-        {!expanded && <HiddenSourceSettings source={source} />}
+        {!expanded && showConfig && <HiddenSourceSettings source={source} />}
         <div className="grid min-h-10 grid-cols-[64px_minmax(0,1fr)_auto_30px] items-center gap-2 px-3 py-1.5 sm:min-h-12 sm:grid-cols-[minmax(0,1fr)_150px_36px] sm:gap-3 sm:px-4 sm:py-2">
             <div className="contents sm:flex sm:min-w-0 sm:items-center sm:gap-3">
                 <SourceToggle source={source} enabled={enabled} onToggle={onToggle} />
@@ -301,7 +301,7 @@ function SourceRow({ source, enabled, expanded, nested = false, onToggle, onExpa
                     </div>
                 </div>
             </div>
-            <div className="mt-2.5 grid gap-2.5 rounded-lg border border-neutral-800 bg-black p-3 sm:grid-cols-2">
+            {showConfig ? <div className="mt-2.5 grid gap-2.5 rounded-lg border border-neutral-800 bg-black p-3 sm:grid-cols-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 sm:col-span-2">Source-specific options</p>
                 <label className="block text-xs text-neutral-400">Max records per mapped task<input name={`sourceConfig:${source.value}:limit`} type="number" min={1} max={maxLimit} defaultValue={source.settings.limit} className="mt-1.5 h-9 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white" /></label>
                 {showRelease && <label className="block text-xs text-neutral-400">Release / version<input name={`sourceConfig:${source.value}:release`} type="text" defaultValue={source.settings.release} placeholder={source.value === "alltheplaces" ? "latest" : undefined} className="mt-1.5 h-9 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white placeholder:text-neutral-600" /></label>}
@@ -312,7 +312,7 @@ function SourceRow({ source, enabled, expanded, nested = false, onToggle, onExpa
                 </>}
                 {showRadius && <label className="block text-xs text-neutral-400">Radius (metres)<input name={`sourceConfig:${source.value}:radiusMeters`} type="number" min={1000} max={40000} defaultValue={source.settings.radiusMeters} className="mt-1.5 h-9 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white" /></label>}
                 <label className="block text-xs text-neutral-400 sm:col-span-2">Notes<textarea name={`sourceConfig:${source.value}:notes`} defaultValue={source.settings.notes} rows={2} placeholder={source.notesPlaceholder} className="mt-1.5 w-full rounded-lg border border-neutral-800 bg-black px-3 py-2 text-sm text-white placeholder:text-neutral-600" /></label>
-            </div>
+            </div> : <p className="mt-2.5 rounded-lg border border-neutral-800 bg-black p-3 text-xs leading-5 text-neutral-500">Source-specific options are shared across stages and can be edited from the source primary stage row.</p>}
         </div>}
     </div>
 }
@@ -325,7 +325,7 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(() => new Set())
     const seedSources = useMemo(() => sources.filter((source) => source.kind === "seed"), [sources])
     const sourceStageCards = useMemo(() => SOURCE_STAGE_CARDS.map((stage) => {
-        const stageSources = sources.filter((source) => source.kind !== "seed" && source.sourceStage === stage.key)
+        const stageSources = sources.filter((source) => source.kind !== "seed" && source.stageKeys.includes(stage.key))
         return {
             ...stage,
             sources: stageSources,
@@ -530,7 +530,7 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                             </div>
                             {expanded && <div className="border-t border-neutral-800 bg-black/70 py-1 pl-3 sm:pl-8">
                                 <div className="overflow-hidden border-l border-neutral-800">
-                                    {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} nested onToggle={toggleSource} onExpand={toggleExpanded} />)}
+                                    {category.sources.map((source) => <SourceRow key={source.value} source={source} enabled={enabledValues.has(source.value)} expanded={expandedValues.has(source.value)} nested showConfig={source.sourceStage === stage.key} onToggle={toggleSource} onExpand={toggleExpanded} />)}
                                 </div>
                             </div>}
                         </div>

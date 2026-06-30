@@ -80,6 +80,20 @@ function domainFromUrl(value: unknown) {
     }
 }
 
+function normalisePhone(value: string | null | undefined) {
+    const digits = value?.replace(/\D/g, "") ?? ""
+    if (digits.length === 10) return `+1${digits}`
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`
+    return digits.length >= 8 ? `+${digits}` : null
+}
+
+function phoneLooksCallable(value: string | null | undefined) {
+    const phone = normalisePhone(value)
+    if (!phone) return false
+    const digits = phone.replace(/\D/g, "")
+    return digits.length >= 10 && digits.length <= 15
+}
+
 function companyState(company: { address?: unknown }) {
     const address = asRecord(company.address)
     const direct = asString(address.state) ?? asString(address.region) ?? asString(address.state_code) ?? asString(address.region_code)
@@ -274,7 +288,7 @@ export async function scorePollCompanies({ workspaceId, pollId }: { workspaceId:
         }
         if (company.phone || company.website_url || company.profile_url) businessSupportPoints = Math.max(businessSupportPoints, 1)
         if (!bestOwnerName) bestOwnerPhone = null
-        const qualified = Boolean(bestOwnerName && bestOwnerPhone && ownerIdentityPoints >= 3 && ownerPhonePoints >= 3)
+        const qualified = Boolean(bestOwnerName && phoneLooksCallable(bestOwnerPhone))
         const status = qualified ? "qualified" : ownerIdentityPoints === 0 && ownerPhonePoints === 0 ? "rejected" : "researching"
         const reason = qualified
             ? null
@@ -282,7 +296,7 @@ export async function scorePollCompanies({ workspaceId, pollId }: { workspaceId:
                 ? "No source-backed owner/principal found."
                 : !bestOwnerPhone
                     ? "Owner/principal found, but no source-backed owner phone."
-                    : "Owner evidence exists, but does not meet the strict source score threshold."
+                    : "Owner phone evidence exists, but the phone could not be normalized into a callable format."
         const totalScore = ownerIdentityPoints + ownerPhonePoints + businessSupportPoints
         const scorePayload = {
             company_id: company.id,
@@ -297,7 +311,7 @@ export async function scorePollCompanies({ workspaceId, pollId }: { workspaceId:
             best_owner_name: bestOwnerName,
             best_owner_phone: bestOwnerPhone,
             score_detail: {
-                thresholds: { owner_identity_points: 3, owner_phone_points: 3 },
+                gate: { owner_identity: "source_claim_present", owner_phone: "source_claim_present", phone: "callable_format" },
                 claim_count: claimsResult.data?.length ?? 0,
             },
             updated_at: new Date().toISOString(),

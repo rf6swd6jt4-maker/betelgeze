@@ -31,6 +31,8 @@ type StageMetrics = {
     businessSupportPoints: number
     ownerIdentityPoints: number
     ownerPhonePoints: number
+    hasOwnerIdentityEvidence: boolean
+    hasOwnerPhoneEvidence: boolean
     ownerName: string | null
     ownerPhone: string | null
     sourceKeys: string[]
@@ -243,6 +245,8 @@ function metricsForCompany(company: StageCompany, claims: EvidenceClaim[]): Stag
     let businessSupportPoints = 0
     let ownerIdentityPoints = 0
     let ownerPhonePoints = 0
+    let hasOwnerIdentityEvidence = false
+    let hasOwnerPhoneEvidence = false
     let ownerName: string | null = null
     let ownerPhone: string | null = null
     const sourceKeys = new Set<string>()
@@ -254,27 +258,36 @@ function metricsForCompany(company: StageCompany, claims: EvidenceClaim[]): Stag
         const value = asRecord(claim.claim_value)
         if (["owner_identity", "officer_identity"].includes(claim.claim_kind)) {
             const claimOwnerName = ownerNameFromClaim(value)
-            if (claimOwnerName && points > 0) {
+            if (claimOwnerName) {
                 ownerName ||= claimOwnerName
+                hasOwnerIdentityEvidence = true
                 ownerIdentityPoints += points
             }
         }
         if (claim.claim_kind === "owner_phone") {
             const claimOwnerName = ownerNameFromClaim(value)
             const claimOwnerPhone = ownerPhoneFromClaim(value)
-            if (claimOwnerName) ownerName ||= claimOwnerName
-            if (claimOwnerPhone) ownerPhone ||= claimOwnerPhone
+            if (claimOwnerName) {
+                ownerName ||= claimOwnerName
+                hasOwnerIdentityEvidence = true
+            }
+            if (claimOwnerPhone) {
+                ownerPhone ||= claimOwnerPhone
+                hasOwnerPhoneEvidence = true
+            }
             ownerPhoneClaims.push({ points, ownerName: claimOwnerName, ownerPhone: claimOwnerPhone })
         }
     }
     for (const claim of ownerPhoneClaims) {
-        if (claim.ownerPhone && (claim.ownerName || ownerName) && claim.points > 0) ownerPhonePoints += claim.points
+        if (claim.ownerPhone && (claim.ownerName || ownerName)) ownerPhonePoints += claim.points
     }
     if (company.phone || company.website_url || company.profile_url) businessSupportPoints = Math.max(businessSupportPoints, 1)
     return {
         businessSupportPoints,
         ownerIdentityPoints,
         ownerPhonePoints,
+        hasOwnerIdentityEvidence,
+        hasOwnerPhoneEvidence,
         ownerName,
         ownerPhone,
         sourceKeys: [...sourceKeys],
@@ -378,7 +391,7 @@ export async function recordOwnerIdentityStage({ workspaceId, pollId, companyIds
     const passed: string[] = []
     await upsertCompanyStages(companies.map((company) => {
         const metrics = metricsForCompany(company, claims.get(company.id) ?? [])
-        const hasOwner = Boolean(metrics.ownerName && metrics.ownerIdentityPoints > 0)
+        const hasOwner = Boolean(metrics.ownerName && metrics.hasOwnerIdentityEvidence)
         if (hasOwner) passed.push(company.id)
         return {
             workspace_id: workspaceId,
@@ -391,6 +404,7 @@ export async function recordOwnerIdentityStage({ workspaceId, pollId, companyIds
             reason: hasOwner ? "Source-backed owner/principal identity found." : "No source-backed owner/principal identity found.",
             metrics: {
                 owner_identity_points: metrics.ownerIdentityPoints,
+                has_owner_identity_evidence: metrics.hasOwnerIdentityEvidence,
                 owner_name: metrics.ownerName,
             },
             completed_at: now,
@@ -416,7 +430,7 @@ export async function recordOwnerPhoneStage({ workspaceId, pollId, companyIds }:
     const passed: string[] = []
     await upsertCompanyStages(companies.map((company) => {
         const metrics = metricsForCompany(company, claims.get(company.id) ?? [])
-        const hasOwnerPhone = Boolean(metrics.ownerName && metrics.ownerPhone && metrics.ownerIdentityPoints > 0 && metrics.ownerPhonePoints > 0)
+        const hasOwnerPhone = Boolean(metrics.ownerName && metrics.ownerPhone && metrics.hasOwnerPhoneEvidence)
         if (hasOwnerPhone) passed.push(company.id)
         return {
             workspace_id: workspaceId,
@@ -429,6 +443,7 @@ export async function recordOwnerPhoneStage({ workspaceId, pollId, companyIds }:
             reason: hasOwnerPhone ? "Source-backed owner phone evidence found for the discovered owner/principal." : "Owner identity exists, but no source-backed owner phone evidence was found.",
             metrics: {
                 owner_phone_points: metrics.ownerPhonePoints,
+                has_owner_phone_evidence: metrics.hasOwnerPhoneEvidence,
                 owner_phone: metrics.ownerPhone,
             },
             completed_at: now,
@@ -455,7 +470,7 @@ export async function recordPhoneValidationStage({ workspaceId, pollId, companyI
     await upsertCompanyStages(companies.map((company) => {
         const metrics = metricsForCompany(company, claims.get(company.id) ?? [])
         const normalisedPhone = normalisePhone(metrics.ownerPhone)
-        const callable = Boolean(metrics.ownerName && metrics.ownerPhonePoints > 0 && phoneLooksCallable(normalisedPhone))
+        const callable = Boolean(metrics.ownerName && metrics.hasOwnerPhoneEvidence && phoneLooksCallable(normalisedPhone))
         if (callable) passed.push(company.id)
         return {
             workspace_id: workspaceId,

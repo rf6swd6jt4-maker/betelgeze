@@ -182,7 +182,12 @@ export function sourceStatusMeta(source: LeadgenSourceCatalogRow, health?: Leadg
 }
 
 export function sourcePointSummary(source: LeadgenSourceCatalogRow) {
-    return `${source.owner_identity_points ?? 0}/${source.owner_phone_points ?? 0}/${source.business_support_points ?? 0} pts`
+    const signals = [
+        (source.owner_identity_points ?? 0) > 0 ? "owner" : null,
+        (source.owner_phone_points ?? 0) > 0 ? "owner phone" : null,
+        (source.business_support_points ?? 0) > 0 ? "business" : null,
+    ].filter((signal): signal is string => Boolean(signal))
+    return signals.length ? signals.join(" + ") : "support only"
 }
 
 export function sourceHumanLabel(sourceKey: string, sources: Map<string, LeadgenSourceCatalogRow>, fallback?: (key: string) => string) {

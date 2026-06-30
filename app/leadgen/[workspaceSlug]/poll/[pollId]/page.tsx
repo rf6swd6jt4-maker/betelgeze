@@ -103,6 +103,15 @@ function formatDuration(startedAt: string | null | undefined, completedAt: strin
     return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`
 }
 
+function evidenceSignalLabel(item: { owner_identity_points?: number | null; owner_phone_points?: number | null; business_support_points?: number | null }) {
+    const signals = [
+        Number(item.owner_identity_points ?? 0) > 0 ? "owner" : null,
+        Number(item.owner_phone_points ?? 0) > 0 ? "owner phone" : null,
+        Number(item.business_support_points ?? 0) > 0 ? "business" : null,
+    ].filter((signal): signal is string => Boolean(signal))
+    return signals.length ? signals.join(" + ") : "no evidence"
+}
+
 export default async function LeadgenPollObjectPage({ params }: PageProps) {
     const { workspaceSlug, pollId } = await params
     const { workspace } = await requireWorkspace(workspaceSlug)
@@ -331,7 +340,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                                                 <span className="truncate text-neutral-200 sm:col-start-2 sm:row-start-1">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
                                                 <span className={`inline-flex items-center justify-end gap-1.5 whitespace-nowrap sm:col-start-1 sm:row-start-1 sm:justify-start sm:gap-2 ${task.status === "skipped" ? "text-neutral-500" : taskMeta.text}`}><BetelgezeStatusMark className={task.status === "skipped" ? "bg-neutral-600" : taskMeta.mark} />{task.status}</span>
                                                 <span className="text-neutral-500">{task.matched ? "matched" : "no match"}</span>
-                                                <span className="text-neutral-500">{task.owner_identity_points}/{task.owner_phone_points}/{task.business_support_points} pts</span>
+                                                <span className="text-neutral-500">{evidenceSignalLabel(task)}</span>
                                                 <span className="col-span-2 truncate text-neutral-500 sm:col-auto">{task.error ?? task.skip_reason ?? "candidate check"}</span>
                                             </summary>
                                             <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(task)}</pre>
@@ -343,7 +352,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                                             <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs sm:grid-cols-[130px_minmax(0,1fr)_80px_minmax(0,1fr)] sm:text-sm">
                                                 <span className="truncate text-neutral-200 sm:col-start-2 sm:row-start-1">{shortId(row.company_id)}</span>
                                                 <span className={`inline-flex items-center justify-end gap-1.5 whitespace-nowrap sm:col-start-1 sm:row-start-1 sm:justify-start sm:gap-2 ${rowMeta.text}`}><BetelgezeStatusMark className={rowMeta.mark} />{row.status}</span>
-                                                <span className="text-neutral-500">{row.score ?? 0} pts</span>
+                                                <span className="text-neutral-500">score {row.score ?? 0}</span>
                                                 <span className="col-span-2 truncate text-neutral-500 sm:col-auto">{row.reason ?? "stage result"}</span>
                                             </summary>
                                             <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(row)}</pre>
@@ -375,7 +384,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                         <span className="truncate text-sm font-medium text-neutral-100">{company.display_name}</span>
                         <span className="truncate text-sm text-neutral-300">{company.owner_name ? `Owner: ${company.owner_name}` : "No owner"}</span>
                         <span className="truncate text-sm text-neutral-300">{company.owner_phone ?? "No owner phone"}</span>
-                        <span className="truncate text-sm text-neutral-500">{scoreByCompany.get(company.id)?.qualification_status ?? company.qualification_status} · {scoreByCompany.get(company.id)?.total_score ?? company.lead_score ?? 0} pts</span>
+                        <span className="truncate text-sm text-neutral-500">{scoreByCompany.get(company.id)?.qualification_status ?? company.qualification_status} · score {scoreByCompany.get(company.id)?.total_score ?? company.lead_score ?? 0}</span>
                         <span className="font-mono text-xs text-neutral-500">{shortId(company.id)}</span>
                     </summary>
                     <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(company)}</pre>
@@ -397,7 +406,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                         <h2 className="font-semibold">Evidence claims</h2>
                     </div>
                     {claims.length ? claims.map((item) => <details key={item.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
-                        <summary className="cursor-pointer text-sm text-neutral-200">{item.claim_kind} <span className="ml-2 text-neutral-500">{sourceHumanLabel(item.source_key, sourcesByKey, sourceLabel)} · {item.points_awarded} pts · {item.confidence ?? "—"}%</span></summary>
+                        <summary className="cursor-pointer text-sm text-neutral-200">{item.claim_kind} <span className="ml-2 text-neutral-500">{sourceHumanLabel(item.source_key, sourcesByKey, sourceLabel)} · weight {item.points_awarded} · {item.confidence ?? "—"}%</span></summary>
                         <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(item)}</pre>
                     </details>) : evidence.length ? evidence.map((item) => <details key={item.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
                         <summary className="cursor-pointer text-sm text-neutral-200">{item.evidence_kind} <span className="ml-2 text-neutral-500">{sourceHumanLabel(item.source_key, sourcesByKey, sourceLabel)} · {item.confidence ?? "—"}%</span></summary>

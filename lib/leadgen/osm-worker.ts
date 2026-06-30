@@ -147,6 +147,7 @@ export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
     const tasks = tasksResult.data ?? []
     const stageRuns = stageRunsResult.error ? [] : stageRunsResult.data ?? []
     const stagedPoll = stageRuns.length > 0
+    const ownerPhoneStage = stageRuns.find((stage) => stage.stage_key === "owner_phone")
     const phoneValidationStage = stageRuns.find((stage) => stage.stage_key === "phone_validation")
     const failedTasks = tasks.filter((task) => task.status === "failed")
     const unfinishedTasks = tasks.filter((task) => ["queued", "running"].includes(task.status))
@@ -158,7 +159,10 @@ export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
         .slice(0, 3)
         .map((task) => `${task.source_key}/${task.industry_value ?? "unknown"}/${task.location_value ?? "unknown"}: ${task.error || "Unknown source error"}`)
         .join(" | ")
-    const shouldFail = majorityTasksFailed || (!stagedPoll && qualifiedCompanyCount === 0)
+    const noStagedOwnerPhones = stagedPoll && (ownerPhoneStage?.passed_count ?? 0) === 0
+    const noStagedCallablePhones = stagedPoll && (phoneValidationStage?.passed_count ?? 0) === 0
+    const noQualifiedLeads = qualifiedCompanyCount === 0
+    const shouldFail = majorityTasksFailed || (stagedPoll ? noStagedOwnerPhones || noStagedCallablePhones || noQualifiedLeads : noQualifiedLeads)
     const warning = failedTasks.length > 0
         ? `${failedTasks.length} source task${failedTasks.length === 1 ? "" : "s"} failed.${firstErrors ? ` ${firstErrors}` : ""}`
         : unfinishedTasks.length > 0
@@ -171,10 +175,12 @@ export async function finalizeLeadgenPoll(pollId: string, workspaceId: string) {
         shouldFail
             ? majorityTasksFailed
                 ? warning ?? "The poll failed because most source tasks did not complete."
-                : "The poll completed, but no qualified leads had both an owner/principal and a callable phone number. Betelgeze stored any raw candidates/evidence internally, but the Leads tab only shows qualified leads."
-            : warning ?? (stagedPoll && (phoneValidationStage?.passed_count ?? 0) === 0
-                ? "The staged poll completed, but no owner phone numbers passed validation. Check the stage funnel for where candidates dropped out."
-                : null),
+                : noStagedOwnerPhones
+                    ? "The staged poll found no source-backed owner phone numbers. Betelgeze stored raw candidates and evidence internally, but a poll is only successful when at least one owner number reaches validation."
+                    : noStagedCallablePhones
+                        ? "The staged poll found owner phone evidence, but no owner phone numbers passed callable-format validation."
+                        : "The poll completed, but no qualified leads had both an owner/principal and a callable phone number. Betelgeze stored any raw candidates/evidence internally, but the Leads tab only shows qualified leads."
+            : warning,
     )
     await refreshLeadgenPollCounts(pollId, workspaceId)
 }

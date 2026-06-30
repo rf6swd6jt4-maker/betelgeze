@@ -12,9 +12,13 @@ export type LeadgenEnrichmentSourceKey =
     | "permits.fl.orlando"
     | "permits.ca.los_angeles"
     | "registry.fl.orlando_btr"
+    | "safety.osha"
     | "transport.fmcsa_safer"
     | "regulated.epa_echo"
     | "regulated.nppes"
+    | "procurement.usaspending"
+    | "web.rdap_whois"
+    | "web.certificate_transparency"
     | "sam_gov"
 export type LeadgenLegacySourceKey = "state_licensing"
 export type LeadgenSourceKey = LeadgenSeedSourceKey | LeadgenEnrichmentSourceKey | LeadgenLegacySourceKey
@@ -79,9 +83,13 @@ export const enrichmentLeadgenSources = new Set<LeadgenSourceKey>([
     "permits.fl.orlando",
     "permits.ca.los_angeles",
     "registry.fl.orlando_btr",
+    "safety.osha",
     "transport.fmcsa_safer",
     "regulated.epa_echo",
     "regulated.nppes",
+    "procurement.usaspending",
+    "web.rdap_whois",
+    "web.certificate_transparency",
     "sam_gov",
 ])
 export const stateLicensingSourceKeys = new Set<LeadgenSourceKey>([
@@ -164,6 +172,28 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         category: "general",
         implemented: true,
         setupHint: "No API key is needed. This does not prove mobile line type; it only prevents malformed owner numbers from counting as callable.",
+    },
+    {
+        value: "web.rdap_whois",
+        label: "Domain RDAP / WHOIS",
+        detail: "Free RDAP lookup for candidate website domains. Provides domain registration support and age/status context, but modern records are usually privacy-redacted and do not count as owner-phone evidence.",
+        statusLabel: "Executable, no key",
+        notesPlaceholder: "TLD coverage, redaction caveats, or domain-age notes.",
+        kind: "enrichment",
+        category: "general",
+        implemented: true,
+        setupHint: "No API key is needed. Betelgeze only queries public RDAP for .com/.net domains with a candidate website.",
+    },
+    {
+        value: "web.certificate_transparency",
+        label: "Certificate transparency",
+        detail: "Free certificate transparency lookup for candidate website domains. Confirms domain activity through public certificate logs, but does not expose owner identity or phone evidence.",
+        statusLabel: "Executable, no key",
+        notesPlaceholder: "crt.sh limits, certificate matching notes, or domain activity caveats.",
+        kind: "enrichment",
+        category: "general",
+        implemented: true,
+        setupHint: "No API key is needed. This source only runs when a candidate has a website domain.",
     },
     {
         value: "state_license.tx.tdlr",
@@ -258,6 +288,17 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         implemented: true,
     },
     {
+        value: "safety.osha",
+        label: "OSHA establishment search",
+        detail: "Official OSHA establishment search. Provides broad contractor activity/support evidence for businesses with inspection history, but does not expose owner phone evidence.",
+        statusLabel: "Executable, no key",
+        notesPlaceholder: "Inspection date windows, establishment matching rules, or safety-source caveats.",
+        kind: "enrichment",
+        category: "industry",
+        implemented: true,
+        setupHint: "No API key is needed. This runs as business-validation support only.",
+    },
+    {
         value: "permits.ca.los_angeles",
         label: "Los Angeles permits",
         detail: "Los Angeles permits since 2018. Provides contractor business and permit-principal support for Los Angeles candidates.",
@@ -299,6 +340,17 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         category: "industry",
         implemented: true,
         setupHint: "No API key is needed. Betelgeze queries the public NPPES API only for mapped healthcare candidates.",
+    },
+    {
+        value: "procurement.usaspending",
+        label: "USAspending federal awards",
+        detail: "Official USAspending public API. Provides federal award/vendor activity support for contractor candidates, but does not expose direct owner phone evidence.",
+        statusLabel: "Executable, no key",
+        notesPlaceholder: "Award windows, NAICS matching notes, or procurement-source caveats.",
+        kind: "enrichment",
+        category: "industry",
+        implemented: true,
+        setupHint: "No API key is needed. This runs as business-validation support only.",
     },
     {
         value: "sam_gov",

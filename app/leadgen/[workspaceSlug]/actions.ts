@@ -58,7 +58,7 @@ export async function createLeadgenPoll(slug: string) {
         }
     }
     refreshPolls(slug)
-    redirect(`https://leadgen.betelgeze.com/${slug}/polls`)
+    redirect(`/leadgen/${slug}/polls`)
 }
 
 export async function cancelLeadgenPoll(slug: string, pollId: string) {

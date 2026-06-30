@@ -104,6 +104,12 @@ export async function proxy(request: NextRequest) {
             const next = `https://${DASHBOARD_HOST}${request.nextUrl.searchParams.get("next") ?? "/"}`
             return NextResponse.redirect(new URL(`${path}?next=${encodeURIComponent(next)}`, `https://${AUTH_HOST}`))
         }
+        if (path === "/leadgen" || path.startsWith("/leadgen/")) {
+            const headers = new Headers(request.headers)
+            const workspaceSlug = path.match(/^\/leadgen\/([a-z0-9][a-z0-9-]*)/i)?.[1]
+            if (workspaceSlug) headers.set("x-betelgeze-workspace-slug", workspaceSlug.toLowerCase())
+            return withRewrite(request, path, headers)
+        }
         if (path === "/dashboard") return withRedirect(request, "/")
         if (path.startsWith("/dashboard/")) return withRedirect(request, path.slice("/dashboard".length))
 
@@ -157,6 +163,17 @@ export async function proxy(request: NextRequest) {
     if (domain === LEADGEN_HOST) {
         if (isCentralAuthRoute) {
             const destination = new URL(`https://${AUTH_HOST}${path}`)
+            destination.search = request.nextUrl.search
+            return NextResponse.redirect(destination)
+        }
+        if (path === "/leadgen" || path.startsWith("/leadgen/")) {
+            const headers = new Headers(request.headers)
+            const workspaceSlug = path.match(/^\/leadgen\/([a-z0-9][a-z0-9-]*)/i)?.[1]
+            if (workspaceSlug) headers.set("x-betelgeze-workspace-slug", workspaceSlug.toLowerCase())
+            return withRewrite(request, path, headers)
+        }
+        if (path === "/dashboard" || path.startsWith("/dashboard/")) {
+            const destination = new URL(`https://${DASHBOARD_HOST}${path === "/dashboard" ? "/" : path.slice("/dashboard".length)}`)
             destination.search = request.nextUrl.search
             return NextResponse.redirect(destination)
         }

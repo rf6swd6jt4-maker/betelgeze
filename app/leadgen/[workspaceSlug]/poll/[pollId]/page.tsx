@@ -215,26 +215,26 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
         phone_validation: poll.callable_phone_count ?? stageRunsByKey.get("phone_validation")?.passed_count ?? poll.qualified_count,
     }
 
-    return <main className="min-h-screen bg-neutral-950 px-5 py-8 text-white sm:px-8">
+    return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-8 sm:py-8">
         <div className="mx-auto max-w-6xl">
-            <header className="flex flex-col justify-between gap-5 border-b border-neutral-800 pb-6 sm:flex-row sm:items-center">
+            <header className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 sm:flex-row sm:items-center sm:pb-6">
                 <div>
-                    <BrandLockup href={`https://leadgen.betelgeze.com/${workspace.slug}`} />
-                    <div className="mt-5 flex flex-wrap gap-4 text-sm text-neutral-400">
-                        <Link href={`https://leadgen.betelgeze.com/${workspace.slug}/polls`}>← Poll history</Link>
-                        <Link href={`https://leadgen.betelgeze.com/${workspace.slug}`}>Leads</Link>
-                        <Link href={`https://leadgen.betelgeze.com/${workspace.slug}/new`}>New poll</Link>
+                    <BrandLockup href={`/leadgen/${workspace.slug}`} />
+                    <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm text-neutral-400 sm:mt-5">
+                        <Link href={`/leadgen/${workspace.slug}/polls`}>← Poll history</Link>
+                        <Link href={`/leadgen/${workspace.slug}`}>Leads</Link>
+                        <Link href={`/leadgen/${workspace.slug}/new`}>New poll</Link>
                     </div>
                 </div>
                 <p className="text-sm text-neutral-500">{workspace.name}</p>
             </header>
 
-            <section className="py-10">
+            <section className="py-6 sm:py-10">
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">Poll detail</p>
-                        <h1 className="mt-3 text-3xl font-semibold tracking-tight">Poll {shortId(poll.id)}</h1>
-                        <p className="mt-3 text-sm text-neutral-400">{sourceNames(poll.source_snapshot, poll.source_count)} · {formatRelativeTime(poll.created_at)}</p>
+                        <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:mt-3 sm:text-3xl">Poll {shortId(poll.id)}</h1>
+                        <p className="mt-2 text-sm text-neutral-400 sm:mt-3">{sourceNames(poll.source_snapshot, poll.source_count)} · {formatRelativeTime(poll.created_at)}</p>
                     </div>
                     <div className={`inline-flex items-center gap-3 ${meta.text}`}>
                         <BetelgezeStatusMark className={meta.mark} />
@@ -244,23 +244,23 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                 </div>
             </section>
 
-            <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            <section className="grid grid-cols-5 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 md:gap-3 md:overflow-visible md:rounded-none md:border-0 md:bg-transparent">
                 {[
                     ["Seeded", stageMetrics.seed],
                     ["Validated", stageMetrics.business_validation],
-                    ["Owner identified", stageMetrics.owner_identity],
-                    ["Owner numbers", stageMetrics.owner_phone],
+                    ["Owners", stageMetrics.owner_identity],
+                    ["Numbers", stageMetrics.owner_phone],
                     ["Callable", stageMetrics.phone_validation],
-                ].map(([label, value]) => <div key={label} className="rounded-xl border border-neutral-800 bg-neutral-900 p-3">
-                    <p className="text-xs text-neutral-500">{label}</p>
-                    <p className="mt-1 text-lg font-semibold">{value}</p>
+                ].map(([label, value]) => <div key={label} className="border-r border-neutral-800 px-1.5 py-2 text-center last:border-r-0 md:rounded-xl md:border md:border-neutral-800 md:bg-neutral-900 md:p-3 md:text-left">
+                    <p className="text-[9px] leading-tight text-neutral-500 sm:text-xs">{label}</p>
+                    <p className="mt-1 text-base font-semibold sm:text-lg">{value}</p>
                 </div>)}
             </section>
 
-            <section className="mt-5 rounded-2xl border border-neutral-800 bg-black">
-                <div className="border-b border-neutral-800 px-5 py-4">
+            <section className="mt-5 rounded-xl border border-neutral-800 bg-black sm:rounded-2xl">
+                <div className="border-b border-neutral-800 px-3.5 py-3 sm:px-5 sm:py-4">
                     <h2 className="font-semibold">Poll funnel</h2>
-                    <p className="mt-1 text-sm text-neutral-500">Each step runs against the whole current batch before the next step starts. The counts below are the handoff counts between stages.</p>
+                    <p className="mt-1 text-sm leading-5 text-neutral-500">Each step runs against the whole current batch before the next step starts.</p>
                     <p className="mt-2 text-xs text-neutral-600">{tasks.length} source tasks · {investigations.length} candidate checks · {claims.length} evidence claims</p>
                 </div>
                 <div className="divide-y divide-neutral-900">
@@ -276,33 +276,34 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                         const failed = run?.failed_count ?? 0
                         const skipped = run?.skipped_count ?? 0
                         return <details key={stage.key} open={index < 3 || runStatus === "running"} className="group">
-                            <summary className="grid cursor-pointer gap-3 px-4 py-4 sm:grid-cols-[34px_minmax(0,1fr)_auto] sm:items-start sm:px-5">
-                                <span className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg border ${runStatus === "completed" ? "border-emerald-400/30 bg-emerald-300/10 text-emerald-200" : runStatus === "running" ? "border-yellow-400/30 bg-yellow-300/10 text-yellow-200" : runStatus === "failed" ? "border-red-400/30 bg-red-300/10 text-red-200" : "border-neutral-800 bg-neutral-950 text-neutral-500"}`}>{index + 1}</span>
+                            <summary className="grid cursor-pointer list-none grid-cols-[28px_minmax(0,1fr)_96px] items-start gap-2 px-3 py-3 sm:grid-cols-[34px_minmax(0,1fr)_auto] sm:gap-3 sm:px-5 sm:py-4">
+                                <span className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg border text-sm ${runStatus === "completed" ? "border-emerald-400/30 bg-emerald-300/10 text-emerald-200" : runStatus === "running" ? "border-yellow-400/30 bg-yellow-300/10 text-yellow-200" : runStatus === "failed" ? "border-red-400/30 bg-red-300/10 text-red-200" : "border-neutral-800 bg-neutral-950 text-neutral-500"}`}>{index + 1}</span>
                                 <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-3">
                                         <h3 className="text-sm font-semibold leading-5 text-white">{stage.title}</h3>
-                                        <span className={`inline-flex items-center gap-2 text-xs ${runStatus === "skipped" ? "text-neutral-500" : runMeta.text}`}><BetelgezeStatusMark className={runStatus === "skipped" ? "bg-neutral-600" : runMeta.mark} />{runStatus}</span>
+                                        <span className={`inline-flex items-center gap-1.5 text-xs ${runStatus === "skipped" ? "text-neutral-500" : runMeta.text}`}><BetelgezeStatusMark className={runStatus === "skipped" ? "bg-neutral-600" : runMeta.mark} />{runStatus}</span>
                                     </div>
-                                    <p className="mt-1 text-sm leading-5 text-neutral-500">{stage.detail}</p>
+                                    <p className="mt-1 hidden text-sm leading-5 text-neutral-500 sm:block">{stage.detail}</p>
                                     {run?.error ? <p className="mt-2 text-xs leading-5 text-red-200">{run.error}</p> : null}
                                 </div>
-                                <div className="grid grid-cols-3 gap-2 text-right sm:min-w-[290px]">
+                                <div className="grid grid-cols-3 gap-1 text-right sm:min-w-[290px] sm:gap-2">
                                     <div>
-                                        <p className="text-lg font-semibold leading-6 text-white">{passed}</p>
-                                        <p className="text-[11px] uppercase tracking-wide text-neutral-600">{stage.passedLabel}</p>
+                                        <p className="text-base font-semibold leading-5 text-white sm:text-lg sm:leading-6">{passed}</p>
+                                        <p className="text-[9px] uppercase tracking-wide text-neutral-600 sm:text-[11px]">{stage.passedLabel}</p>
                                     </div>
                                     <div>
-                                        <p className="text-lg font-semibold leading-6 text-neutral-200">{input}</p>
-                                        <p className="text-[11px] uppercase tracking-wide text-neutral-600">input</p>
+                                        <p className="text-base font-semibold leading-5 text-neutral-200 sm:text-lg sm:leading-6">{input}</p>
+                                        <p className="text-[9px] uppercase tracking-wide text-neutral-600 sm:text-[11px]">input</p>
                                     </div>
                                     <div>
-                                        <p className="text-lg font-semibold leading-6 text-neutral-200">{formatDuration(run?.started_at, run?.completed_at)}</p>
-                                        <p className="text-[11px] uppercase tracking-wide text-neutral-600">time</p>
+                                        <p className="text-[13px] font-semibold leading-5 text-neutral-200 sm:text-lg sm:leading-6">{formatDuration(run?.started_at, run?.completed_at)}</p>
+                                        <p className="text-[9px] uppercase tracking-wide text-neutral-600 sm:text-[11px]">time</p>
                                     </div>
                                 </div>
                             </summary>
-                            <div className="border-t border-neutral-900 bg-neutral-950/40 px-4 py-3 sm:px-5">
-                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+                            <div className="border-t border-neutral-900 bg-neutral-950/40 px-3 py-2.5 sm:px-5 sm:py-3">
+                                <p className="mb-2 text-xs leading-5 text-neutral-500 sm:hidden">{stage.detail}</p>
+                                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-500 sm:gap-x-4">
                                     <span>{failed} failed</span>
                                     <span>{skipped} skipped</span>
                                     <span>{run?.replaced_count ?? 0} replaced or held back</span>
@@ -313,12 +314,13 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                                     {sourceTasks.map((task) => {
                                         const taskMeta = statusMeta(task.status)
                                         return <details key={task.id} className="rounded-lg border border-neutral-800 bg-black px-3 py-2">
-                                            <summary className="grid cursor-pointer gap-2 text-sm sm:grid-cols-[130px_minmax(0,1fr)_90px_90px_minmax(0,1fr)] sm:items-center">
-                                                <span className={`inline-flex items-center gap-2 ${taskMeta.text}`}><BetelgezeStatusMark className={taskMeta.mark} />{taskMeta.label}</span>
-                                                <span className="truncate text-neutral-200">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
+                                            <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs sm:grid-cols-[130px_minmax(0,1fr)_90px_90px_minmax(0,1fr)] sm:text-sm">
+                                                <span className="truncate text-neutral-200 sm:col-start-2 sm:row-start-1">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
+                                                <span className={`inline-flex items-center justify-end gap-1.5 whitespace-nowrap sm:col-start-1 sm:row-start-1 sm:justify-start sm:gap-2 ${taskMeta.text}`}><BetelgezeStatusMark className={taskMeta.mark} />{taskMeta.label}</span>
                                                 <span className="text-neutral-500">{task.raw_count ?? 0} raw</span>
-                                                <span className="text-neutral-500">{task.company_count ?? 0} numbers</span>
-                                                <span className="truncate text-neutral-500">{task.stage ?? "source task"}</span>
+                                                <span className="hidden text-neutral-500 sm:block">{task.company_count ?? 0} numbers</span>
+                                                <span className="col-span-2 truncate text-neutral-500 sm:hidden">{task.stage ?? "source task"} · {task.company_count ?? 0} numbers</span>
+                                                <span className="hidden truncate text-neutral-500 sm:block">{task.stage ?? "source task"}</span>
                                             </summary>
                                             <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(task.source_query)}</pre>
                                         </details>
@@ -326,12 +328,12 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                                     {investigationTasks.map((task) => {
                                         const taskMeta = statusMeta(task.status === "skipped" ? "queued" : task.status)
                                         return <details key={task.id} className="rounded-lg border border-neutral-800 bg-black px-3 py-2">
-                                            <summary className="grid cursor-pointer gap-2 text-sm sm:grid-cols-[130px_minmax(0,1fr)_90px_120px_minmax(0,1fr)] sm:items-center">
-                                                <span className={`inline-flex items-center gap-2 ${task.status === "skipped" ? "text-neutral-500" : taskMeta.text}`}><BetelgezeStatusMark className={task.status === "skipped" ? "bg-neutral-600" : taskMeta.mark} />{task.status}</span>
-                                                <span className="truncate text-neutral-200">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
+                                            <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs sm:grid-cols-[130px_minmax(0,1fr)_90px_120px_minmax(0,1fr)] sm:text-sm">
+                                                <span className="truncate text-neutral-200 sm:col-start-2 sm:row-start-1">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
+                                                <span className={`inline-flex items-center justify-end gap-1.5 whitespace-nowrap sm:col-start-1 sm:row-start-1 sm:justify-start sm:gap-2 ${task.status === "skipped" ? "text-neutral-500" : taskMeta.text}`}><BetelgezeStatusMark className={task.status === "skipped" ? "bg-neutral-600" : taskMeta.mark} />{task.status}</span>
                                                 <span className="text-neutral-500">{task.matched ? "matched" : "no match"}</span>
                                                 <span className="text-neutral-500">{task.owner_identity_points}/{task.owner_phone_points}/{task.business_support_points} pts</span>
-                                                <span className="truncate text-neutral-500">{task.error ?? task.skip_reason ?? "candidate check"}</span>
+                                                <span className="col-span-2 truncate text-neutral-500 sm:col-auto">{task.error ?? task.skip_reason ?? "candidate check"}</span>
                                             </summary>
                                             <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(task)}</pre>
                                         </details>
@@ -339,11 +341,11 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                                     {companyRows.slice(0, 12).map((row) => {
                                         const rowMeta = row.status === "passed" ? { mark: "bg-emerald-300", text: "text-emerald-200" } : row.status === "failed" ? { mark: "bg-red-300", text: "text-red-200" } : { mark: "bg-neutral-600", text: "text-neutral-500" }
                                         return <details key={row.id} className="rounded-lg border border-neutral-800 bg-black px-3 py-2">
-                                            <summary className="grid cursor-pointer gap-2 text-sm sm:grid-cols-[130px_minmax(0,1fr)_80px_minmax(0,1fr)] sm:items-center">
-                                                <span className={`inline-flex items-center gap-2 ${rowMeta.text}`}><BetelgezeStatusMark className={rowMeta.mark} />{row.status}</span>
-                                                <span className="truncate text-neutral-200">{shortId(row.company_id)}</span>
+                                            <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs sm:grid-cols-[130px_minmax(0,1fr)_80px_minmax(0,1fr)] sm:text-sm">
+                                                <span className="truncate text-neutral-200 sm:col-start-2 sm:row-start-1">{shortId(row.company_id)}</span>
+                                                <span className={`inline-flex items-center justify-end gap-1.5 whitespace-nowrap sm:col-start-1 sm:row-start-1 sm:justify-start sm:gap-2 ${rowMeta.text}`}><BetelgezeStatusMark className={rowMeta.mark} />{row.status}</span>
                                                 <span className="text-neutral-500">{row.score ?? 0} pts</span>
-                                                <span className="truncate text-neutral-500">{row.reason ?? "stage result"}</span>
+                                                <span className="col-span-2 truncate text-neutral-500 sm:col-auto">{row.reason ?? "stage result"}</span>
                                             </summary>
                                             <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(row)}</pre>
                                         </details>

@@ -6,5 +6,5 @@ type PageProps = { params: Promise<{ workspaceSlug: string }> }
 
 export default async function LegacyNewLeadgenPollPage({ params }: PageProps) {
     const { workspaceSlug } = await params
-    redirect(`https://leadgen.betelgeze.com/${workspaceSlug}/new`)
+    redirect(`/leadgen/${workspaceSlug}/new`)
 }

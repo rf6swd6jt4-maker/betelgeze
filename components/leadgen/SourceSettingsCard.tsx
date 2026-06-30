@@ -182,7 +182,7 @@ function CategoryToggle({ sources, enabledValues, onToggle }: { sources: SourceS
 }
 
 function StatusSummary({ counts }: { counts: Record<SourceStatus, number> }) {
-    return <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+    return <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[11px] sm:text-xs">
         <p className="leading-4 text-emerald-200"><span className="font-semibold text-emerald-100">{counts.enabled}</span> Enabled</p>
         <p className="leading-4 text-neutral-300"><span className="font-semibold text-neutral-100">{counts.disabled}</span> Disabled</p>
         <p className="leading-4 text-amber-200"><span className="font-semibold text-amber-100">{counts.not_mapped}</span> Not mapped</p>
@@ -255,35 +255,24 @@ function SourceRow({ source, enabled, expanded, nested = false, onToggle, onExpa
 
     return <div className={`border-b border-neutral-900 transition last:border-b-0 ${enabled ? "bg-emerald-300/[0.035]" : nested ? "bg-black hover:bg-neutral-950" : "bg-neutral-950 hover:bg-black"}`}>
         {!expanded && <HiddenSourceSettings source={source} />}
-        <div className="grid min-h-12 gap-3 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_150px_36px] sm:items-center sm:px-4">
-            <div className="flex min-w-0 items-center gap-3">
+        <div className="grid min-h-10 grid-cols-[64px_minmax(0,1fr)_auto_30px] items-center gap-2 px-3 py-1.5 sm:min-h-12 sm:grid-cols-[minmax(0,1fr)_150px_36px] sm:gap-3 sm:px-4 sm:py-2">
+            <div className="contents sm:flex sm:min-w-0 sm:items-center sm:gap-3">
                 <SourceToggle source={source} enabled={enabled} onToggle={onToggle} />
                 <p className="min-w-0 truncate text-sm font-medium leading-5 text-white">{source.label}</p>
             </div>
-            <div className="flex items-center justify-between gap-3 sm:justify-end">
-                <span className={`inline-flex items-center gap-2 text-sm ${statusTone(status)}`}><BetelgezeStatusMark className={statusMarkClass(status)} />{statusText(status)}</span>
-                <button
-                    type="button"
-                    onClick={() => onExpand(source)}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-900 hover:text-white sm:hidden"
-                    aria-expanded={expanded}
-                    aria-label={`Toggle ${source.label} details`}
-                >
-                    <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
-                </button>
-            </div>
+            <span className={`inline-flex items-center justify-end gap-1.5 whitespace-nowrap text-xs sm:gap-2 sm:text-sm ${statusTone(status)}`}><BetelgezeStatusMark className={statusMarkClass(status)} />{statusText(status)}</span>
             <button
                 type="button"
                 onClick={() => onExpand(source)}
-                className="hidden h-9 w-9 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-900 hover:text-white sm:flex"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-900 hover:text-white sm:h-9 sm:w-9"
                 aria-expanded={expanded}
                 aria-label={`Toggle ${source.label} details`}
             >
                 <span className={`text-lg leading-none transition ${expanded ? "rotate-90" : ""}`}>›</span>
             </button>
         </div>
-        {expanded && <div className="border-t border-neutral-900 bg-neutral-950/65 px-3 py-3 sm:px-4">
-            <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
+        {expanded && <div className="border-t border-neutral-900 bg-neutral-950/65 px-2.5 py-2.5 sm:px-4 sm:py-3">
+            <div className="grid gap-2.5 lg:grid-cols-[1fr_1fr]">
                 <div className="rounded-lg border border-neutral-800 bg-black p-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Description</p>
                     <p className="mt-2 text-sm leading-5 text-neutral-300">{source.detail}</p>
@@ -311,17 +300,17 @@ function SourceRow({ source, enabled, expanded, nested = false, onToggle, onExpa
                     </div>
                 </div>
             </div>
-            <div className="mt-3 grid gap-3 rounded-lg border border-neutral-800 bg-black p-3 sm:grid-cols-2">
+            <div className="mt-2.5 grid gap-2.5 rounded-lg border border-neutral-800 bg-black p-3 sm:grid-cols-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 sm:col-span-2">Source-specific options</p>
-                <label className="block text-xs text-neutral-400">Max records per mapped task<input name={`sourceConfig:${source.value}:limit`} type="number" min={1} max={maxLimit} defaultValue={source.settings.limit} className="mt-2 h-10 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white" /></label>
-                {showRelease && <label className="block text-xs text-neutral-400">Release / version<input name={`sourceConfig:${source.value}:release`} type="text" defaultValue={source.settings.release} placeholder={source.value === "alltheplaces" ? "latest" : undefined} className="mt-2 h-10 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white placeholder:text-neutral-600" /></label>}
+                <label className="block text-xs text-neutral-400">Max records per mapped task<input name={`sourceConfig:${source.value}:limit`} type="number" min={1} max={maxLimit} defaultValue={source.settings.limit} className="mt-1.5 h-9 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white" /></label>
+                {showRelease && <label className="block text-xs text-neutral-400">Release / version<input name={`sourceConfig:${source.value}:release`} type="text" defaultValue={source.settings.release} placeholder={source.value === "alltheplaces" ? "latest" : undefined} className="mt-1.5 h-9 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white placeholder:text-neutral-600" /></label>}
                 {source.value === "website" && <>
-                    <label className="block text-xs text-neutral-400">Crawl depth<input name="sourceConfig:website:crawlDepth" type="number" min={1} max={5} defaultValue={source.settings.crawlDepth} className="mt-2 h-10 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white" /></label>
-                    <label className="block text-xs text-neutral-400">Timeout seconds<input name="sourceConfig:website:timeoutSeconds" type="number" min={3} max={30} defaultValue={source.settings.timeoutSeconds} className="mt-2 h-10 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white" /></label>
+                    <label className="block text-xs text-neutral-400">Crawl depth<input name="sourceConfig:website:crawlDepth" type="number" min={1} max={5} defaultValue={source.settings.crawlDepth} className="mt-1.5 h-9 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white" /></label>
+                    <label className="block text-xs text-neutral-400">Timeout seconds<input name="sourceConfig:website:timeoutSeconds" type="number" min={3} max={30} defaultValue={source.settings.timeoutSeconds} className="mt-1.5 h-9 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white" /></label>
                     <label className="flex items-center gap-2 text-xs text-neutral-300 sm:col-span-2"><input type="hidden" name="sourceConfig:website:respectRobots" value="off" /><input name="sourceConfig:website:respectRobots" type="checkbox" defaultChecked={source.settings.respectRobots} className="h-4 w-4 accent-white" />Respect robots controls</label>
                 </>}
-                {showRadius && <label className="block text-xs text-neutral-400">Radius (metres)<input name={`sourceConfig:${source.value}:radiusMeters`} type="number" min={1000} max={40000} defaultValue={source.settings.radiusMeters} className="mt-2 h-10 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white" /></label>}
-                <label className="block text-xs text-neutral-400 sm:col-span-2">Notes<textarea name={`sourceConfig:${source.value}:notes`} defaultValue={source.settings.notes} rows={2} placeholder={source.notesPlaceholder} className="mt-2 w-full rounded-lg border border-neutral-800 bg-black px-3 py-2 text-sm text-white placeholder:text-neutral-600" /></label>
+                {showRadius && <label className="block text-xs text-neutral-400">Radius (metres)<input name={`sourceConfig:${source.value}:radiusMeters`} type="number" min={1000} max={40000} defaultValue={source.settings.radiusMeters} className="mt-1.5 h-9 w-full rounded-lg border border-neutral-800 bg-black px-3 text-sm text-white" /></label>}
+                <label className="block text-xs text-neutral-400 sm:col-span-2">Notes<textarea name={`sourceConfig:${source.value}:notes`} defaultValue={source.settings.notes} rows={2} placeholder={source.notesPlaceholder} className="mt-1.5 w-full rounded-lg border border-neutral-800 bg-black px-3 py-2 text-sm text-white placeholder:text-neutral-600" /></label>
             </div>
         </div>}
     </div>
@@ -458,13 +447,13 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
         return () => window.removeEventListener("betelgeze:settings-section-revert", reset)
     }, [initialEnabledValues, sectionSourcesByKey])
 
-    return <div className="space-y-4">
+    return <div className="space-y-3 sm:space-y-4">
         <section ref={seedSectionRef} data-settings-section="seed-sources" onChange={scheduleSourceDirtyCheck} onInput={scheduleSourceDirtyCheck} className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
             {[...enabledValues].filter((value) => seedKeys.has(value)).map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
-            <div className="border-b border-neutral-800 bg-neutral-900 px-4 py-4 sm:px-5">
+            <div className="border-b border-neutral-800 bg-neutral-900 px-3 py-3 sm:px-5 sm:py-4">
                 <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
                     <div>
-                        <h2 className="text-lg font-semibold leading-6">Seed sources</h2>
+                        <h2 className="text-base font-semibold leading-6 sm:text-lg">Seed sources</h2>
                         <p className="mt-1 text-sm leading-5 text-neutral-400">Candidate creation sources required before staged validation and owner discovery can run.</p>
                     </div>
                     <div className="space-y-1.5 xl:text-right">
@@ -495,10 +484,10 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                 className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900"
             >
                 {[...enabledValues].filter((value) => stageKeys.has(value)).map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
-                <div className="border-b border-neutral-800 bg-neutral-900 px-4 py-4 sm:px-5">
+                <div className="border-b border-neutral-800 bg-neutral-900 px-3 py-3 sm:px-5 sm:py-4">
                     <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
                         <div>
-                            <h2 className="text-lg font-semibold leading-6">{stage.title}</h2>
+                            <h2 className="text-base font-semibold leading-6 sm:text-lg">{stage.title}</h2>
                             <p className="mt-1 max-w-3xl text-sm leading-5 text-neutral-400">{stage.detail}</p>
                             {stage.key === "business_validation" && catalogueStats ? <p className="mt-2 text-xs text-neutral-500">Catalog: {catalogueStats.active} active, {catalogueStats.validationOnly} validation only, {catalogueStats.needsWork} needs work, {catalogueStats.blocked} blocked.</p> : null}
                         </div>
@@ -514,20 +503,20 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                         const expanded = expandedCategories.has(categoryKey)
                         const categoryCounts = groupCounts(category.sources)
                         return <div key={category.key} className="bg-neutral-950/40">
-                            <div className="grid gap-3 bg-neutral-950/60 px-4 py-3 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:items-center sm:px-5">
+                            <div className="grid grid-cols-[82px_minmax(0,1fr)_32px] items-center gap-x-2 gap-y-0.5 bg-neutral-950/60 px-3 py-2 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:gap-3 sm:px-5 sm:py-3">
                                 <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
                                 <div className="min-w-0">
                                     <h4 className="text-sm font-semibold leading-5 text-white">{category.title}</h4>
-                                    <p className="mt-0.5 text-xs leading-5 text-neutral-500">{category.detail}</p>
+                                    <p className="mt-0.5 hidden text-xs leading-5 text-neutral-500 sm:block">{category.detail}</p>
                                 </div>
-                                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-400 sm:justify-self-end">
+                                <div className="col-start-2 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] leading-4 text-neutral-400 sm:col-auto sm:justify-self-end sm:text-xs">
                                     <span>{categoryCounts.enabled} on</span>
                                     <span>{categoryCounts.runnable}/{categoryCounts.total} runnable</span>
                                 </div>
                                 <button
                                     type="button"
                                     onClick={() => toggleCategoryExpanded(categoryKey)}
-                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-950 hover:text-white"
+                                    className="col-start-3 row-span-2 row-start-1 flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-950 hover:text-white sm:col-auto sm:row-auto sm:h-9 sm:w-9"
                                     aria-expanded={expanded}
                                     aria-label={`Toggle ${category.title} sources`}
                                 >

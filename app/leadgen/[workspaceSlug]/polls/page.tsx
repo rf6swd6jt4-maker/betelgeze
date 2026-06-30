@@ -156,7 +156,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     <h1 className="text-2xl font-semibold tracking-tight">{workspace.name}</h1>
                     <p className="mt-2 text-sm text-neutral-400">Track source polling, queue state, run durations, and pipeline counts. Signed in as {role}.</p>
                 </div>
-                <NewPollButton href={`https://leadgen.betelgeze.com/${workspace.slug}/new`} />
+                <NewPollButton href={`/leadgen/${workspace.slug}/new`} />
             </div>
 
             <LeadgenTabs workspaceSlug={workspace.slug} active="polls" />
@@ -189,7 +189,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     const statusMark = <span className={`inline-flex items-center gap-2 text-sm ${meta.text}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
                     const duration = <span className="font-mono text-sm text-neutral-500"><PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live} /></span>
                     const triggerPill = <span className="w-fit rounded-md border border-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-400">{poll.trigger === "manual" ? "Manual" : "Automated"}</span>
-                    const pollHref = `https://leadgen.betelgeze.com/${workspace.slug}/poll/${poll.id}`
+                    const pollHref = `/leadgen/${workspace.slug}/poll/${poll.id}`
                     const pollActions = [
                         { label: "Open poll", href: pollHref },
                         poll.status === "failed" ? { label: "Retry", action: retryLeadgenPoll.bind(null, workspace.slug, poll.id) } : {},

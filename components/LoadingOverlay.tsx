@@ -13,7 +13,8 @@ export function LoadingOverlay({
 
     return createPortal(
         <div
-            className="fixed inset-0 z-[2147483647] flex h-auto min-h-[100vh] w-[100vw] items-center justify-center bg-black/72 backdrop-blur-[2px]"
+            className="fixed inset-0 z-[2147483647] grid place-items-center overflow-hidden bg-black/72 backdrop-blur-[2px]"
+            style={{ width: "100vw", height: "100dvh", minHeight: "100svh", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}
             role="status"
             aria-live="polite"
             aria-label={label}

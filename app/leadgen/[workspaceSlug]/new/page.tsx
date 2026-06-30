@@ -76,30 +76,30 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
     const validationSources = catalog.filter((source) => source.implementation_status === "validation_only")
     const deferredSources = catalog.filter((source) => ["bulk_refresh", "source_specific_configuration"].includes(source.run_stage ?? ""))
 
-    return <main className="min-h-screen bg-neutral-950 px-5 py-8 text-white sm:px-8">
+    return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-8 sm:py-8">
         <div className="mx-auto max-w-5xl">
-            <header className="flex flex-col justify-between gap-5 border-b border-neutral-800 pb-6 sm:flex-row sm:items-center">
+            <header className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 sm:flex-row sm:items-center sm:pb-6">
                 <div>
-                    <BrandLockup href={`https://leadgen.betelgeze.com/${workspace.slug}`} />
-                    <div className="mt-5 flex flex-wrap gap-4 text-sm text-neutral-400">
-                        <Link href={`https://leadgen.betelgeze.com/${workspace.slug}`}>← Leads</Link>
-                        <Link href={`https://leadgen.betelgeze.com/${workspace.slug}/polls`}>Poll history</Link>
-                        <Link href={`https://leadgen.betelgeze.com/${workspace.slug}/settings`}>Settings</Link>
+                    <BrandLockup href={`/leadgen/${workspace.slug}`} />
+                    <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm text-neutral-400 sm:mt-5">
+                        <Link href={`/leadgen/${workspace.slug}`}>← Leads</Link>
+                        <Link href={`/leadgen/${workspace.slug}/polls`}>Poll history</Link>
+                        <Link href={`/leadgen/${workspace.slug}/settings`}>Settings</Link>
                     </div>
                 </div>
                 <p className="text-sm text-neutral-500">{workspace.name}</p>
             </header>
 
-            <section className="py-10">
+            <section className="py-6 sm:py-10">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">New poll</p>
-                <h1 className="mt-3 text-3xl font-semibold tracking-tight">Confirm candidate investigation</h1>
+                <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:mt-3 sm:text-3xl">Confirm candidate investigation</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">This poll will seed new businesses from the current ICP, then investigate each candidate across active free/public adapters. Sources that are validation-only, bulk-refresh, or endpoint-specific are shown here but will not pretend to run.</p>
             </section>
 
             <section className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
-                <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-                    <h2 className="text-lg font-semibold">ICP snapshot</h2>
-                    <div className="mt-5 space-y-5">
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
+                    <h2 className="text-base font-semibold sm:text-lg">ICP snapshot</h2>
+                    <div className="mt-4 space-y-4 sm:mt-5 sm:space-y-5">
                         <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Industries</p>
                             <div className="mt-2 flex flex-wrap gap-2">
@@ -112,12 +112,12 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
                                 {selectedLocations.length ? selectedLocations.map((value) => <span key={value} className="rounded-full bg-neutral-950 px-3 py-1 text-xs text-neutral-200">{locationLabels.get(value) ?? value.replace(/_/g, " ")}</span>) : <span className="text-sm text-amber-200">No locations selected</span>}
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+                        <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                            <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
                                 <p className="text-xs text-neutral-500">Candidate cap</p>
                                 <p className="mt-1 text-lg font-semibold">{sourceConfig.icp?.limit ?? 1000}</p>
                             </div>
-                            <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+                            <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
                                 <p className="text-xs text-neutral-500">Owner required</p>
                                 <p className="mt-1 text-lg font-semibold">{sourceConfig.icp?.ownerRequired === false ? "No" : "Yes"}</p>
                             </div>
@@ -125,17 +125,17 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
                     </div>
                 </div>
 
-                <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-                    <h2 className="text-lg font-semibold">Source stack</h2>
-                    <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
+                    <h2 className="text-base font-semibold sm:text-lg">Source stack</h2>
+                    <div className="mt-4 grid grid-cols-4 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 lg:gap-3 lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent">
                         {[
                             ["Seed", seedSources.length],
                             ["Poll-time", pollTimeSources.length],
                             ["Validation", validationSources.length],
                             ["Deferred", deferredSources.length],
-                        ].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
-                            <p className="text-xs text-neutral-500">{label}</p>
-                            <p className="mt-1 text-lg font-semibold">{value}</p>
+                        ].map(([label, value]) => <div key={String(label)} className="border-r border-neutral-800 px-2 py-2 text-center last:border-r-0 lg:rounded-xl lg:border lg:border-neutral-800 lg:bg-neutral-950 lg:p-3 lg:text-left">
+                            <p className="text-[10px] leading-tight text-neutral-500 sm:text-xs">{label}</p>
+                            <p className="mt-1 text-base font-semibold sm:text-lg">{value}</p>
                         </div>)}
                     </div>
 
@@ -143,31 +143,31 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
                         {catalog.length ? catalog.filter((source) => ["active", "validation_only"].includes(source.implementation_status ?? "") || ["bulk_refresh", "source_specific_configuration"].includes(source.run_stage ?? "")).slice(0, 12).map((source) => {
                             const health = sourceHealth.get(source.source_key)
                             const meta = sourceStatusMeta(source, health)
-                            return <div key={source.source_key} className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(160px,1fr)_150px_minmax(0,1fr)] md:items-center">
+                            return <div key={source.source_key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3 py-2 md:grid-cols-[minmax(160px,1fr)_150px_minmax(0,1fr)] md:px-4 md:py-3">
                                 <div className="min-w-0">
                                     <p className="truncate text-sm font-medium text-neutral-100">{source.label}</p>
                                     <p className="mt-1 truncate text-xs text-neutral-500">{leadgenSourceFamilyLabels[source.family] ?? source.family}</p>
                                 </div>
-                                <span className={`inline-flex items-center gap-2 text-sm ${meta.text}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
-                                <p className="truncate text-xs text-neutral-500">{sourceMetadataNote(source, health)}</p>
+                                <span className={`inline-flex items-center justify-end gap-1.5 whitespace-nowrap text-xs md:gap-2 md:text-sm ${meta.text}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
+                                <p className="col-span-2 truncate text-xs text-neutral-500 md:col-auto">{sourceMetadataNote(source, health)}</p>
                             </div>
                         }) : <p className="px-4 py-3 text-sm text-neutral-500">No source catalogue found. Apply the source fan-out migrations before creating polls.</p>}
                     </div>
 
-                    <h3 className="mt-5 font-medium text-neutral-100">Core execution readiness</h3>
+                    <h3 className="mt-4 font-medium text-neutral-100 sm:mt-5">Core execution readiness</h3>
                     <p className="mt-1 text-sm text-neutral-500">The poll can start only when the seed plan can actually create candidate tasks.</p>
                     <div className="mt-4 divide-y divide-neutral-800 rounded-xl border border-neutral-800 bg-black">
                         {sourceSummaries.map(({ source, enabled, ready, requirement, configured, coveredIndustries, coveredLocations, mapped }) => {
                             const statusText = ready ? "Ready" : !enabled ? "Disabled" : !configured ? "Not configured" : requirement ? requirement : mapped ? "Mapped, waiting" : "Not mapped"
                             const markClass = ready ? "bg-emerald-300" : !configured ? "bg-red-300" : enabled ? "bg-amber-300" : "bg-neutral-500"
                             const textClass = ready ? "text-emerald-200" : !configured ? "text-red-200" : enabled ? "text-amber-200" : "text-neutral-500"
-                            return <div key={source.value} className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(160px,1fr)_170px_150px] md:items-center">
+                            return <div key={source.value} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3 py-2 md:grid-cols-[minmax(160px,1fr)_170px_150px] md:px-4 md:py-3">
                                 <div className="min-w-0">
                                     <p className="truncate text-sm font-medium text-neutral-100">{source.label}</p>
                                     <p className="mt-1 truncate text-xs text-neutral-500">{source.detail}</p>
                                 </div>
-                                <p className="text-xs text-neutral-500"><span className="text-neutral-200">{coveredIndustries}/{selectedIndustries.length}</span> industries · <span className="text-neutral-200">{coveredLocations}/{selectedLocations.length}</span> locations</p>
-                                <span className={`inline-flex items-center gap-2 text-sm ${textClass}`}><BetelgezeStatusMark className={markClass} />{statusText}</span>
+                                <span className={`inline-flex items-center justify-end gap-1.5 whitespace-nowrap text-xs md:gap-2 md:text-sm ${textClass}`}><BetelgezeStatusMark className={markClass} />{statusText}</span>
+                                <p className="col-span-2 text-xs text-neutral-500 md:col-auto"><span className="text-neutral-200">{coveredIndustries}/{selectedIndustries.length}</span> industries · <span className="text-neutral-200">{coveredLocations}/{selectedLocations.length}</span> locations</p>
                             </div>
                         })}
                     </div>

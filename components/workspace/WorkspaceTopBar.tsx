@@ -20,8 +20,8 @@ export async function WorkspaceTopBar({ userId, workspace, currentProduct }: Pro
     const username = profile?.username ?? "account"
     const avatarSrc = profile?.avatar_path ? await createUploadSignedUrl(profile.avatar_path) : null
     const switchHref = currentProduct === "leadgen"
-        ? `https://dashboard.betelgeze.com/${workspace.slug}`
-        : `https://leadgen.betelgeze.com/${workspace.slug}`
+        ? `/dashboard/${workspace.slug}`
+        : `/leadgen/${workspace.slug}`
     const switchLabel = currentProduct === "leadgen" ? "Client work" : "Lead gen"
 
     return <div className="mb-4 flex items-center justify-between gap-3 text-sm">

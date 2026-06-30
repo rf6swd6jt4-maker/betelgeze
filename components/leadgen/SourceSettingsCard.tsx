@@ -173,11 +173,12 @@ function CategoryToggle({ sources, enabledValues, onToggle }: { sources: SourceS
         disabled={disabled}
         onClick={() => onToggle(!checked)}
         data-settings-control="true"
-        className="inline-flex h-8 w-[82px] items-center justify-start gap-2 rounded-lg text-xs font-medium text-neutral-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+        className="inline-flex h-8 w-[64px] items-center justify-start gap-2 rounded-lg text-xs font-medium text-neutral-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-45 sm:w-[82px]"
         aria-label="Toggle runnable sources in this category"
     >
         <ToggleBox state={checked ? "on" : mixed ? "mixed" : "off"} />
-        <span className="w-12 text-left">{checked ? "All on" : mixed ? "Some" : "Off"}</span>
+        <span className="w-7 text-left sm:hidden">{checked ? "On" : mixed ? "Some" : "Off"}</span>
+        <span className="hidden w-12 text-left sm:inline">{checked ? "All on" : mixed ? "Some" : "Off"}</span>
     </button>
 }
 
@@ -503,7 +504,7 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                         const expanded = expandedCategories.has(categoryKey)
                         const categoryCounts = groupCounts(category.sources)
                         return <div key={category.key} className="bg-neutral-950/40">
-                            <div className="grid grid-cols-[82px_minmax(0,1fr)_32px] items-center gap-x-2 bg-neutral-950/60 px-3 py-1.5 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:gap-3 sm:px-5 sm:py-3">
+                            <div className="grid grid-cols-[64px_minmax(0,1fr)_32px] items-center gap-x-2 bg-neutral-950/60 px-3 py-1.5 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:gap-3 sm:px-5 sm:py-3">
                                 <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
                                 <div className="min-w-0 self-center">
                                     <h4 className="truncate text-sm font-semibold leading-4 text-white sm:leading-5">{category.title}</h4>

@@ -200,7 +200,6 @@ export async function loadStageSourceKeys(stageKey: PollStageKey, enabledSourceK
         throw error
     }
     const keys = (data ?? []).map((row) => String(row.source_key))
-    if (stageKey === "phone_validation") return keys
     return keys.filter((key) => enabledSet.has(key))
 }
 

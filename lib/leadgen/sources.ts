@@ -1,6 +1,7 @@
 export type LeadgenSeedSourceKey = "overture" | "osm" | "alltheplaces" | "foursquare_os_places"
 export type LeadgenEnrichmentSourceKey =
     | "website"
+    | "phone.basic_format_validation"
     | "state_license.tx.tdlr"
     | "state_license.tx.plumbing"
     | "state_license.fl.dbpr"
@@ -67,6 +68,7 @@ export type LeadgenSourceOption = {
 export const seedLeadgenSources = new Set<LeadgenSourceKey>(["overture", "osm", "alltheplaces", "foursquare_os_places"])
 export const enrichmentLeadgenSources = new Set<LeadgenSourceKey>([
     "website",
+    "phone.basic_format_validation",
     "state_license.tx.tdlr",
     "state_license.tx.plumbing",
     "state_license.fl.dbpr",
@@ -151,6 +153,17 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         kind: "enrichment",
         category: "general",
         implemented: true,
+    },
+    {
+        value: "phone.basic_format_validation",
+        label: "Basic phone format validation",
+        detail: "Internal first-pass owner-phone validation. Normalises owner numbers into US/E.164-style callable-length numbers and records that line type/mobile reachability is still unknown.",
+        statusLabel: "Internal format validation",
+        notesPlaceholder: "Validation thresholds or future carrier lookup notes.",
+        kind: "enrichment",
+        category: "general",
+        implemented: true,
+        setupHint: "No API key is needed. This does not prove mobile line type; it only prevents malformed owner numbers from counting as callable.",
     },
     {
         value: "state_license.tx.tdlr",

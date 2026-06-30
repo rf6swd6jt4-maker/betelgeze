@@ -25,8 +25,37 @@ do update set
     metadata = public.leadgen_icp_industries.metadata || excluded.metadata,
     updated_at = now();
 
+insert into public.leadgen_icp_locations (value, label, location_kind, country, region, locality, latitude, longitude, radius_meters, metadata)
+values
+    ('united_states', 'United States', 'country', 'US', null, null, 39.8283, -98.5795, 40000, '{"seed":"contractors_v1"}'::jsonb),
+    ('texas', 'Texas', 'state', 'US', 'TX', null, 31.9686, -99.9018, 40000, '{"seed":"contractors_v1"}'::jsonb),
+    ('florida', 'Florida', 'state', 'US', 'FL', null, 27.6648, -81.5158, 40000, '{"seed":"contractors_v1"}'::jsonb),
+    ('north_carolina', 'North Carolina', 'state', 'US', 'NC', null, 35.7596, -79.0193, 40000, '{"seed":"contractors_v1"}'::jsonb),
+    ('california', 'California', 'state', 'US', 'CA', null, 36.7783, -119.4179, 40000, '{"seed":"contractors_v1"}'::jsonb),
+    ('dallas_tx', 'Dallas, TX', 'city', 'US', 'TX', 'Dallas', 32.7767, -96.7970, 24000, '{"seed":"contractors_v1"}'::jsonb),
+    ('austin_tx', 'Austin, TX', 'city', 'US', 'TX', 'Austin', 30.2672, -97.7431, 24000, '{"seed":"contractors_v1"}'::jsonb),
+    ('orlando_fl', 'Orlando, FL', 'city', 'US', 'FL', 'Orlando', 28.5383, -81.3792, 24000, '{"seed":"contractors_v1"}'::jsonb),
+    ('los_angeles_ca', 'Los Angeles, CA', 'city', 'US', 'CA', 'Los Angeles', 34.0522, -118.2437, 24000, '{"seed":"contractors_v1"}'::jsonb)
+on conflict (value)
+do update set
+    label = excluded.label,
+    location_kind = excluded.location_kind,
+    country = excluded.country,
+    region = excluded.region,
+    locality = excluded.locality,
+    latitude = excluded.latitude,
+    longitude = excluded.longitude,
+    radius_meters = excluded.radius_meters,
+    enabled = true,
+    metadata = public.leadgen_icp_locations.metadata || excluded.metadata,
+    updated_at = now();
+
 with mappings(source_key, industry_value, native_values, native_label, metadata) as (
     values
+        ('state_license.tx.tdlr', 'electricians', array['electrical_contractor','master_electrician','journeyman_electrician','electrical_sign_contractor'], 'Texas TDLR electrical licensing', '{"state":"TX","board":"tdlr"}'::jsonb),
+        ('state_license.tx.tdlr', 'lighting_contractors', array['electrical_sign_contractor','electrical_contractor'], 'Texas TDLR electrical/sign licensing', '{"state":"TX","board":"tdlr"}'::jsonb),
+        ('state_license.tx.tdlr', 'hvac_contractors', array['a_c_contractor','a_c_technician'], 'Texas TDLR A/C licensing', '{"state":"TX","board":"tdlr"}'::jsonb),
+        ('state_license.tx.tdlr', 'water_well_services', array['water_well_driller','water_well_pump_installer'], 'Texas TDLR water well licensing', '{"state":"TX","board":"tdlr"}'::jsonb),
         ('state_license.tx.plumbing', 'plumbers', array['RMP'], 'Texas Responsible Master Plumber records', '{"state":"TX","board":"tsbpe"}'::jsonb),
         ('state_license.fl.dbpr', 'general_contractors', array['CGC','CBC','CRC'], 'Florida DBPR construction contractor records', '{"state":"FL","board":"dbpr_construction"}'::jsonb),
         ('state_license.fl.dbpr', 'home_builders', array['CGC','CBC','CRC'], 'Florida DBPR building/residential contractor records', '{"state":"FL","board":"dbpr_construction"}'::jsonb),
@@ -91,7 +120,8 @@ public_sources(source_key, native_label) as (
         ('permits.fl.orlando', 'Orlando permit public records'),
         ('registry.fl.orlando_btr', 'Orlando business tax receipt records'),
         ('permits.ca.los_angeles', 'Los Angeles permit public records'),
-        ('website', 'Candidate website crawl')
+        ('website', 'Candidate website crawl'),
+        ('phone.basic_format_validation', 'Internal owner-phone format validation')
 )
 insert into public.leadgen_source_industry_mappings (source_key, icp_industry_value, native_values, native_label, metadata)
 select public_sources.source_key,
@@ -136,6 +166,7 @@ do update set
 
 with source_regions(source_key, region) as (
     values
+        ('state_license.tx.tdlr', 'TX'),
         ('state_license.tx.plumbing', 'TX'),
         ('permits.tx.dallas', 'TX'),
         ('permits.tx.austin', 'TX'),
@@ -165,7 +196,7 @@ select source.source_key,
     location.value,
     array[coalesce(location.region, location.country, location.value)],
     jsonb_build_object('seed', 'contractors_v1', 'country', location.country, 'region', location.region)
-from (values ('regulated.epa_echo'), ('transport.fmcsa_safer'), ('website')) as source(source_key)
+from (values ('regulated.epa_echo'), ('transport.fmcsa_safer'), ('website'), ('phone.basic_format_validation')) as source(source_key)
 cross join public.leadgen_icp_locations location
 where location.enabled = true
 and location.country = 'US'

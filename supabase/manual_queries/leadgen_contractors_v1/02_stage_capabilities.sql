@@ -13,6 +13,8 @@ with capabilities(source_key, stage_key, priority, metadata) as (
         ('state_license.nc.general_contractors', 'business_validation', 45, '{"reason":"active_general_contractor_license"}'::jsonb),
         ('state_license.nc.general_contractors', 'owner_identity', 45, '{"reason":"licensee_or_qualifier_name"}'::jsonb),
         ('state_license.nc.general_contractors', 'owner_phone', 45, '{"reason":"licensee_phone"}'::jsonb),
+        ('website', 'owner_identity', 50, '{"reason":"about_or_team_page"}'::jsonb),
+        ('website', 'owner_phone', 50, '{"reason":"owner_near_phone_evidence"}'::jsonb),
         ('permits.tx.dallas', 'business_validation', 70, '{"reason":"city_contractor_registration"}'::jsonb),
         ('permits.tx.austin', 'business_validation', 70, '{"reason":"city_contractor_license_activity"}'::jsonb),
         ('permits.fl.orlando', 'business_validation', 70, '{"reason":"permit_activity"}'::jsonb),
@@ -23,7 +25,8 @@ with capabilities(source_key, stage_key, priority, metadata) as (
         ('registry.fl.orlando_btr', 'owner_phone', 65, '{"reason":"business_owner_phone"}'::jsonb),
         ('permits.ca.los_angeles', 'business_validation', 70, '{"reason":"permit_activity"}'::jsonb),
         ('permits.ca.los_angeles', 'owner_identity', 70, '{"reason":"license_principal"}'::jsonb),
-        ('regulated.epa_echo', 'business_validation', 85, '{"reason":"regulated_facility"}'::jsonb)
+        ('regulated.epa_echo', 'business_validation', 85, '{"reason":"regulated_facility"}'::jsonb),
+        ('phone.basic_format_validation', 'phone_validation', 10, '{"reason":"internal_callable_format_check"}'::jsonb)
 )
 insert into public.leadgen_source_stage_capabilities (source_key, stage_key, priority, metadata)
 select capabilities.source_key, capabilities.stage_key, capabilities.priority, capabilities.metadata

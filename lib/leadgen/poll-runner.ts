@@ -151,7 +151,12 @@ export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId:
     const ownerPhoneCompanyIds = await recordOwnerPhoneStage({ workspaceId, pollId, companyIds: ownerIdentityCompanyIds })
 
     await startPollStage({ workspaceId, pollId, stageKey: "phone_validation", targetCount: ownerPhoneCompanyIds.length, inputCount: ownerPhoneCompanyIds.length })
-    await recordPhoneValidationStage({ workspaceId, pollId, companyIds: ownerPhoneCompanyIds })
+    const phoneValidationSourceKeys = await loadStageSourceKeys("phone_validation", enabledInvestigationSourceKeys)
+    if (phoneValidationSourceKeys.includes("phone.basic_format_validation")) {
+        await recordPhoneValidationStage({ workspaceId, pollId, companyIds: ownerPhoneCompanyIds })
+    } else {
+        await finishPollStage({ workspaceId, pollId, stageKey: "phone_validation", status: "skipped", inputCount: ownerPhoneCompanyIds.length, passedCount: 0, skippedCount: ownerPhoneCompanyIds.length, error: "No enabled phone validation source was available." })
+    }
 
     await scorePollCompanies({ workspaceId, pollId })
     await finalizeLeadgenPoll(pollId, workspaceId)

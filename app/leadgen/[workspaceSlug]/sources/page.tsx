@@ -30,21 +30,21 @@ function stageCapabilities(value: unknown) {
 
 function primarySourceStage(sourceKey: LeadgenSourceKey, stages: SourceStageKey[]) {
     if (sourceKey === "sam_gov") return null
+    if (stages.includes("phone_validation")) return "phone_validation"
+    if (stages.includes("owner_phone")) return "owner_phone"
+    if (stages.includes("owner_identity")) return "owner_identity"
     if (sourceKey === "transport.fmcsa_safer" && stages.includes("business_validation")) return "business_validation"
     if (sourceKey.startsWith("permits.") && stages.includes("business_validation")) return "business_validation"
     if (sourceKey === "regulated.epa_echo" && stages.includes("business_validation")) return "business_validation"
-    if (sourceKey.startsWith("state_license.") && stages.includes("owner_identity")) return "owner_identity"
-    if (sourceKey.startsWith("registry.") && stages.includes("owner_identity")) return "owner_identity"
-    if (sourceKey === "website" && stages.includes("owner_identity")) return "owner_identity"
-    if (sourceKey === "regulated.nppes" && stages.includes("owner_identity")) return "owner_identity"
     return stages[0] ?? null
 }
 
 function fallbackSourceStages(sourceKey: LeadgenSourceKey): SourceStageKey[] {
+    if (sourceKey === "phone.basic_format_validation") return ["phone_validation"]
     if (sourceKey === "transport.fmcsa_safer") return ["business_validation"]
     if (sourceKey.startsWith("permits.") || sourceKey === "regulated.epa_echo") return ["business_validation"]
     if (sourceKey.startsWith("registry.")) return ["business_validation", "owner_identity", "owner_phone"]
-    if (sourceKey.startsWith("state_license.") || sourceKey === "website" || sourceKey === "regulated.nppes") return ["owner_identity"]
+    if (sourceKey.startsWith("state_license.") || sourceKey === "website" || sourceKey === "regulated.nppes") return ["owner_identity", "owner_phone"]
     return []
 }
 
@@ -143,16 +143,18 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
         }
     }
 
-    const sourceItems: SourceSettingsItem[] = leadgenSourceOptions.map((source) => {
+    const hasSelectedIcp = selectedIndustries.length > 0 && selectedLocations.length > 0
+    const sourceItems: SourceSettingsItem[] = leadgenSourceOptions.flatMap((source) => {
         const implemented = executableLeadgenSources.has(source.value)
         const sourceSettings = sourceConfig[source.value]
         const mapped = mappingSummary(source.value)
         const stageKeys = stageCapabilities(catalogBySource.get(source.value)?.stage_capabilities)
         const effectiveStageKeys = stageKeys.length ? stageKeys : fallbackSourceStages(source.value)
         const sourceStage = primarySourceStage(source.value, effectiveStageKeys)
+        if (source.kind !== "seed" && hasSelectedIcp && source.value !== "phone.basic_format_validation" && !mapped.ready) return []
         const apiKeyConfigured = source.envVar ? Boolean(process.env[source.envVar]) : true
         const configured = implemented && apiKeyConfigured
-        return {
+        return [{
             value: source.value,
             label: source.label,
             detail: source.detail,
@@ -187,7 +189,7 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
                 release: sourceSettings?.release ?? (source.value === "alltheplaces" ? "latest" : "2026-06-17.0"),
                 notes: sourceSettings?.notes ?? "",
             },
-        }
+        }]
     })
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-6 sm:py-6">

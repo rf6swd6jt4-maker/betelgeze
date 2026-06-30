@@ -14,17 +14,23 @@ with recommended(source_key) as (
         ('registry.fl.orlando_btr'),
         ('permits.ca.los_angeles'),
         ('regulated.epa_echo'),
-        ('transport.fmcsa_safer')
+        ('transport.fmcsa_safer'),
+        ('website'),
+        ('phone.basic_format_validation')
 ),
 workspace_sources as (
     select settings.workspace_id,
-        array(
-            select distinct value
-            from unnest(coalesce(settings.enabled_sources, '{}'::text[]) || array(select source_key from recommended)) as values(value)
-            where value is not null and value <> ''
-            order by value
-        ) as enabled_sources
+        array_agg(distinct merged.source_key order by merged.source_key) as enabled_sources
     from public.leadgen_workspace_settings settings
+    cross join lateral (
+        select unnest(coalesce(settings.enabled_sources, '{}'::text[])) as source_key
+        union all
+        select recommended.source_key
+        from recommended
+    ) merged
+    where merged.source_key is not null
+    and merged.source_key <> ''
+    group by settings.workspace_id
 )
 update public.leadgen_workspace_settings settings
 set enabled_sources = workspace_sources.enabled_sources,

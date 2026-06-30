@@ -257,6 +257,23 @@ insert into public.leadgen_source_catalog (
         1200,
         '{"countries":["US"],"industries":["waste_disposal","cleaning_companies","restoration_companies","water_well_services"]}'::jsonb,
         '{"adapter":"epa_echo_cwa_facility_info","query_limit":10,"note":"Useful validation support for waste, remediation, septic/well, and industrial cleaning-adjacent businesses."}'::jsonb
+    ),
+    (
+        'phone.basic_format_validation',
+        'Basic phone format validation',
+        'phone_validation',
+        1,
+        0,
+        0,
+        0,
+        'internal',
+        'internal',
+        'active',
+        'phone_validation',
+        true,
+        0,
+        '{"countries":["US"]}'::jsonb,
+        '{"note":"Internal first-pass validation. It normalizes owner-phone values and checks callable-length format. It does not prove mobile line type or live reachability."}'::jsonb
     )
 on conflict (source_key)
 do update set

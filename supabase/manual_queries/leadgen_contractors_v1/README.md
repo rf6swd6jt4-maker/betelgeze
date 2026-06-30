@@ -1,6 +1,8 @@
 # Leadgen Contractors V1 Queries
 
-Run these in Supabase SQL editor in order:
+Run these in Supabase SQL editor in order.
+
+If you already ran an older copy of these files, rerun `01`, `02`, and `03`; they are idempotent and now also repair the missing phone-validation exposure and contractor mapping rows.
 
 1. `01_source_catalog.sql`
 2. `02_stage_capabilities.sql`

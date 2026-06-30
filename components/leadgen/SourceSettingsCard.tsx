@@ -503,20 +503,24 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                         const expanded = expandedCategories.has(categoryKey)
                         const categoryCounts = groupCounts(category.sources)
                         return <div key={category.key} className="bg-neutral-950/40">
-                            <div className="grid grid-cols-[82px_minmax(0,1fr)_32px] items-center gap-x-2 gap-y-0.5 bg-neutral-950/60 px-3 py-2 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:gap-3 sm:px-5 sm:py-3">
+                            <div className="grid grid-cols-[82px_minmax(0,1fr)_32px] items-center gap-x-2 bg-neutral-950/60 px-3 py-1.5 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:gap-3 sm:px-5 sm:py-3">
                                 <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
-                                <div className="min-w-0">
-                                    <h4 className="text-sm font-semibold leading-5 text-white">{category.title}</h4>
+                                <div className="min-w-0 self-center">
+                                    <h4 className="truncate text-sm font-semibold leading-4 text-white sm:leading-5">{category.title}</h4>
                                     <p className="mt-0.5 hidden text-xs leading-5 text-neutral-500 sm:block">{category.detail}</p>
+                                    <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0 text-[11px] leading-3 text-neutral-400 sm:hidden">
+                                        <span>{categoryCounts.enabled} on</span>
+                                        <span>{categoryCounts.runnable}/{categoryCounts.total} runnable</span>
+                                    </div>
                                 </div>
-                                <div className="col-start-2 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] leading-4 text-neutral-400 sm:col-auto sm:justify-self-end sm:text-xs">
+                                <div className="hidden flex-wrap gap-x-2.5 gap-y-0.5 text-xs leading-4 text-neutral-400 sm:flex sm:justify-self-end">
                                     <span>{categoryCounts.enabled} on</span>
                                     <span>{categoryCounts.runnable}/{categoryCounts.total} runnable</span>
                                 </div>
                                 <button
                                     type="button"
                                     onClick={() => toggleCategoryExpanded(categoryKey)}
-                                    className="col-start-3 row-span-2 row-start-1 flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-950 hover:text-white sm:col-auto sm:row-auto sm:h-9 sm:w-9"
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-950 hover:text-white sm:h-9 sm:w-9"
                                     aria-expanded={expanded}
                                     aria-label={`Toggle ${category.title} sources`}
                                 >

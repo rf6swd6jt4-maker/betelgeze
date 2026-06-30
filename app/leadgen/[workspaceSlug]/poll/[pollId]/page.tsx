@@ -276,30 +276,29 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                         const failed = run?.failed_count ?? 0
                         const skipped = run?.skipped_count ?? 0
                         return <details key={stage.key} open={index < 3 || runStatus === "running"} className="group">
-                            <summary className="grid cursor-pointer list-none grid-cols-[28px_minmax(0,1fr)_96px] items-start gap-2 px-3 py-3 sm:grid-cols-[34px_minmax(0,1fr)_auto] sm:gap-3 sm:px-5 sm:py-4">
+                            <summary className="grid cursor-pointer list-none grid-cols-[28px_minmax(0,1fr)_132px_20px] items-center gap-2 px-3 py-3 sm:grid-cols-[34px_minmax(0,1fr)_auto_24px] sm:gap-3 sm:px-5 sm:py-4">
                                 <span className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg border text-sm ${runStatus === "completed" ? "border-emerald-400/30 bg-emerald-300/10 text-emerald-200" : runStatus === "running" ? "border-yellow-400/30 bg-yellow-300/10 text-yellow-200" : runStatus === "failed" ? "border-red-400/30 bg-red-300/10 text-red-200" : "border-neutral-800 bg-neutral-950 text-neutral-500"}`}>{index + 1}</span>
                                 <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-3">
-                                        <h3 className="text-sm font-semibold leading-5 text-white">{stage.title}</h3>
-                                        <span className={`inline-flex items-center gap-1.5 text-xs ${runStatus === "skipped" ? "text-neutral-500" : runMeta.text}`}><BetelgezeStatusMark className={runStatus === "skipped" ? "bg-neutral-600" : runMeta.mark} />{runStatus}</span>
-                                    </div>
+                                    <h3 className="text-sm font-semibold leading-5 text-white">{stage.title}</h3>
+                                    <span className={`mt-0.5 inline-flex items-center gap-1.5 text-xs ${runStatus === "skipped" ? "text-neutral-500" : runMeta.text}`}><BetelgezeStatusMark className={runStatus === "skipped" ? "bg-neutral-600" : runMeta.mark} />{runStatus}</span>
                                     <p className="mt-1 hidden text-sm leading-5 text-neutral-500 sm:block">{stage.detail}</p>
                                     {run?.error ? <p className="mt-2 text-xs leading-5 text-red-200">{run.error}</p> : null}
                                 </div>
-                                <div className="grid grid-cols-3 gap-1 text-right sm:min-w-[290px] sm:gap-2">
+                                <div className="grid grid-cols-3 gap-2 text-center sm:min-w-[290px] sm:gap-4">
                                     <div>
                                         <p className="text-base font-semibold leading-5 text-white sm:text-lg sm:leading-6">{passed}</p>
-                                        <p className="text-[9px] uppercase tracking-wide text-neutral-600 sm:text-[11px]">{stage.passedLabel}</p>
+                                        <p className="text-[9px] uppercase leading-3 text-neutral-600 sm:text-[11px]">{stage.passedLabel}</p>
                                     </div>
                                     <div>
                                         <p className="text-base font-semibold leading-5 text-neutral-200 sm:text-lg sm:leading-6">{input}</p>
-                                        <p className="text-[9px] uppercase tracking-wide text-neutral-600 sm:text-[11px]">input</p>
+                                        <p className="text-[9px] uppercase leading-3 text-neutral-600 sm:text-[11px]">input</p>
                                     </div>
                                     <div>
                                         <p className="text-[13px] font-semibold leading-5 text-neutral-200 sm:text-lg sm:leading-6">{formatDuration(run?.started_at, run?.completed_at)}</p>
-                                        <p className="text-[9px] uppercase tracking-wide text-neutral-600 sm:text-[11px]">time</p>
+                                        <p className="text-[9px] uppercase leading-3 text-neutral-600 sm:text-[11px]">time</p>
                                     </div>
                                 </div>
+                                <span className="flex h-8 w-5 items-center justify-center justify-self-end text-lg leading-none text-neutral-500 transition group-open:rotate-90 group-hover:text-neutral-300" aria-hidden="true">›</span>
                             </summary>
                             <div className="border-t border-neutral-900 bg-neutral-950/40 px-3 py-2.5 sm:px-5 sm:py-3">
                                 <p className="mb-2 text-xs leading-5 text-neutral-500 sm:hidden">{stage.detail}</p>

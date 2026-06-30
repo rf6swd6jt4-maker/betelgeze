@@ -144,11 +144,26 @@ export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId:
     await scorePollCompanies({ workspaceId, pollId })
     const ownerIdentityCompanyIds = await recordOwnerIdentityStage({ workspaceId, pollId, companyIds: validatedCompanyIds })
 
+    if (ownerIdentityCompanyIds.length === 0) {
+        await finishPollStage({ workspaceId, pollId, stageKey: "owner_phone", status: "skipped", inputCount: 0, passedCount: 0, error: "No source-backed owner identities were available for phone discovery." })
+        await finishPollStage({ workspaceId, pollId, stageKey: "phone_validation", status: "skipped", inputCount: 0, passedCount: 0, error: "No owner phone numbers were available for validation." })
+        await scorePollCompanies({ workspaceId, pollId })
+        await finalizeLeadgenPoll(pollId, workspaceId)
+        return { processed: true }
+    }
+
     await startPollStage({ workspaceId, pollId, stageKey: "owner_phone", targetCount: ownerIdentityCompanyIds.length, inputCount: ownerIdentityCompanyIds.length })
     const ownerPhoneSourceKeys = await loadStageSourceKeys("owner_phone", enabledInvestigationSourceKeys)
     await processStageEvidence({ workspaceId, pollId, stageKey: "owner_phone", companyIds: ownerIdentityCompanyIds, sourceKeys: ownerPhoneSourceKeys, stateLicensingPlans, websitePlan: runnableWebsitePlan })
     await scorePollCompanies({ workspaceId, pollId })
     const ownerPhoneCompanyIds = await recordOwnerPhoneStage({ workspaceId, pollId, companyIds: ownerIdentityCompanyIds })
+
+    if (ownerPhoneCompanyIds.length === 0) {
+        await finishPollStage({ workspaceId, pollId, stageKey: "phone_validation", status: "skipped", inputCount: 0, passedCount: 0, error: "No source-backed owner phone numbers were available for validation." })
+        await scorePollCompanies({ workspaceId, pollId })
+        await finalizeLeadgenPoll(pollId, workspaceId)
+        return { processed: true }
+    }
 
     await startPollStage({ workspaceId, pollId, stageKey: "phone_validation", targetCount: ownerPhoneCompanyIds.length, inputCount: ownerPhoneCompanyIds.length })
     const phoneValidationSourceKeys = await loadStageSourceKeys("phone_validation", enabledInvestigationSourceKeys)

@@ -211,18 +211,18 @@ function scoreFromClaim(kind: string, points: number) {
     return { ownerIdentity: 0, ownerPhone: 0, businessSupport: 0 }
 }
 
-function fallbackSourcePoints(sourceKey: string | null, ownerPhone: string | null) {
-    if (!sourceKey || !ownerPhone) return { ownerIdentity: 0, ownerPhone: 0, businessSupport: 0 }
-    if (sourceKey === "state_licensing" || sourceKey.startsWith("state_license.")) return { ownerIdentity: 3, ownerPhone: 3, businessSupport: 2 }
-    if (sourceKey === "sam_gov") return { ownerIdentity: 2, ownerPhone: 2, businessSupport: 2 }
-    if (sourceKey === "website") return { ownerIdentity: 2, ownerPhone: 2, businessSupport: 1 }
-    return { ownerIdentity: 0, ownerPhone: 0, businessSupport: 0 }
+function ownerNameFromClaim(value: Record<string, unknown>) {
+    return asString(value.owner_name) ?? asString(value.full_name) ?? asString(value.person_name) ?? asString(value.name)
+}
+
+function ownerPhoneFromClaim(value: Record<string, unknown>) {
+    return asString(value.owner_phone) ?? asString(value.phone)
 }
 
 export async function scorePollCompanies({ workspaceId, pollId }: { workspaceId: string; pollId: string }) {
     const companiesResult = await supabaseAdmin
         .from("leadgen_companies")
-        .select("id, owner_name, owner_phone, owner_source_key, phone, website_url, profile_url")
+        .select("id, owner_source_key, phone, website_url, profile_url")
         .eq("workspace_id", workspaceId)
         .eq("first_seen_poll_id", pollId)
     if (companiesResult.error) throw companiesResult.error
@@ -232,27 +232,48 @@ export async function scorePollCompanies({ workspaceId, pollId }: { workspaceId:
             .from("leadgen_evidence_claims")
             .select("claim_kind, points_awarded, claim_value, source_key")
             .eq("workspace_id", workspaceId)
+            .eq("poll_id", pollId)
             .eq("company_id", company.id)
         if (claimsResult.error) throw claimsResult.error
         let ownerIdentityPoints = 0
         let ownerPhonePoints = 0
         let businessSupportPoints = 0
-        let bestOwnerName = company.owner_name
-        let bestOwnerPhone = company.owner_phone
+        let bestOwnerName: string | null = null
+        let bestOwnerPhone: string | null = null
+        let bestOwnerSourceKey: string | null = null
+        const ownerPhoneClaims: Array<{ points: number; ownerName: string | null; ownerPhone: string | null; sourceKey: string }> = []
         for (const claim of claimsResult.data ?? []) {
-            const score = scoreFromClaim(claim.claim_kind, claim.points_awarded ?? 0)
-            ownerIdentityPoints += score.ownerIdentity
-            ownerPhonePoints += score.ownerPhone
+            const points = Math.max(0, Number(claim.points_awarded) || 0)
+            const score = scoreFromClaim(claim.claim_kind, points)
             businessSupportPoints += score.businessSupport
             const value = asRecord(claim.claim_value)
-            bestOwnerName ||= asString(value.owner_name) ?? asString(value.full_name) ?? asString(value.name)
-            bestOwnerPhone ||= asString(value.owner_phone) ?? asString(value.phone)
+            if (["owner_identity", "officer_identity"].includes(claim.claim_kind)) {
+                const claimOwnerName = ownerNameFromClaim(value)
+                if (claimOwnerName && points > 0) {
+                    bestOwnerName ||= claimOwnerName
+                    bestOwnerSourceKey ||= claim.source_key
+                    ownerIdentityPoints += score.ownerIdentity
+                }
+            }
+            if (claim.claim_kind === "owner_phone") {
+                const claimOwnerName = ownerNameFromClaim(value)
+                const claimOwnerPhone = ownerPhoneFromClaim(value)
+                if (claimOwnerName) {
+                    bestOwnerName ||= claimOwnerName
+                    bestOwnerSourceKey ||= claim.source_key
+                }
+                if (claimOwnerPhone) bestOwnerPhone ||= claimOwnerPhone
+                ownerPhoneClaims.push({ points: score.ownerPhone, ownerName: claimOwnerName, ownerPhone: claimOwnerPhone, sourceKey: claim.source_key })
+            }
         }
-        const fallback = fallbackSourcePoints(company.owner_source_key, company.owner_phone)
-        ownerIdentityPoints = Math.max(ownerIdentityPoints, fallback.ownerIdentity)
-        ownerPhonePoints = Math.max(ownerPhonePoints, fallback.ownerPhone)
-        businessSupportPoints = Math.max(businessSupportPoints, fallback.businessSupport)
+        for (const claim of ownerPhoneClaims) {
+            if (claim.ownerPhone && (claim.ownerName || bestOwnerName) && claim.points > 0) {
+                ownerPhonePoints += claim.points
+                bestOwnerSourceKey ||= claim.sourceKey
+            }
+        }
         if (company.phone || company.website_url || company.profile_url) businessSupportPoints = Math.max(businessSupportPoints, 1)
+        if (!bestOwnerName) bestOwnerPhone = null
         const qualified = Boolean(bestOwnerName && bestOwnerPhone && ownerIdentityPoints >= 3 && ownerPhonePoints >= 3)
         const status = qualified ? "qualified" : ownerIdentityPoints === 0 && ownerPhonePoints === 0 ? "rejected" : "researching"
         const reason = qualified
@@ -285,19 +306,22 @@ export async function scorePollCompanies({ workspaceId, pollId }: { workspaceId:
             .from("leadgen_candidate_scores")
             .upsert(scorePayload, { onConflict: "company_id" })
         if (scoreError) throw scoreError
+        const companyUpdate: Record<string, unknown> = {
+            owner_identity_points: ownerIdentityPoints,
+            owner_phone_points: ownerPhonePoints,
+            business_support_points: businessSupportPoints,
+            lead_score: totalScore,
+            qualification_status: status,
+            disqualification_reason: reason,
+            qualified_at: qualified ? new Date().toISOString() : null,
+            owner_name: bestOwnerName,
+            owner_phone: bestOwnerPhone,
+            owner_source_key: bestOwnerName ? bestOwnerSourceKey ?? company.owner_source_key : null,
+        }
+        if (!bestOwnerName) companyUpdate.owner_confidence = null
         const { error: companyError } = await supabaseAdmin
             .from("leadgen_companies")
-            .update({
-                owner_identity_points: ownerIdentityPoints,
-                owner_phone_points: ownerPhonePoints,
-                business_support_points: businessSupportPoints,
-                lead_score: totalScore,
-                qualification_status: status,
-                disqualification_reason: reason,
-                qualified_at: qualified ? new Date().toISOString() : null,
-                owner_name: bestOwnerName,
-                owner_phone: bestOwnerPhone,
-            })
+            .update(companyUpdate)
             .eq("id", company.id)
             .eq("workspace_id", workspaceId)
         if (companyError) throw companyError

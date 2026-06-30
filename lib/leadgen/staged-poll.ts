@@ -52,6 +52,14 @@ function asString(value: unknown) {
     return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
+function ownerNameFromClaim(value: Record<string, unknown>) {
+    return asString(value.owner_name) ?? asString(value.full_name) ?? asString(value.person_name) ?? asString(value.name)
+}
+
+function ownerPhoneFromClaim(value: Record<string, unknown>) {
+    return asString(value.owner_phone) ?? asString(value.phone)
+}
+
 function missingStagedSchema(error: { code?: string; message?: string } | null) {
     return error?.code === "42P01" || /leadgen_(poll_stage_runs|company_stage_status|source_stage_capabilities)/i.test(error?.message ?? "")
 }
@@ -232,21 +240,35 @@ async function loadClaims(workspaceId: string, pollId: string, companyIds: strin
 }
 
 function metricsForCompany(company: StageCompany, claims: EvidenceClaim[]): StageMetrics {
-    let businessSupportPoints = company.business_support_points ?? 0
-    let ownerIdentityPoints = company.owner_identity_points ?? 0
-    let ownerPhonePoints = company.owner_phone_points ?? 0
-    let ownerName = company.owner_name
-    let ownerPhone = company.owner_phone
+    let businessSupportPoints = 0
+    let ownerIdentityPoints = 0
+    let ownerPhonePoints = 0
+    let ownerName: string | null = null
+    let ownerPhone: string | null = null
     const sourceKeys = new Set<string>()
+    const ownerPhoneClaims: Array<{ points: number; ownerName: string | null; ownerPhone: string | null }> = []
     for (const claim of claims) {
         sourceKeys.add(claim.source_key)
         const points = Math.max(0, Number(claim.points_awarded) || 0)
         if (["business_support", "business_phone", "permit_activity", "licence_activity"].includes(claim.claim_kind)) businessSupportPoints += points
-        if (["owner_identity", "officer_identity"].includes(claim.claim_kind)) ownerIdentityPoints += points
-        if (claim.claim_kind === "owner_phone") ownerPhonePoints += points
         const value = asRecord(claim.claim_value)
-        ownerName ||= asString(value.owner_name) ?? asString(value.full_name) ?? asString(value.name)
-        ownerPhone ||= asString(value.owner_phone) ?? asString(value.phone)
+        if (["owner_identity", "officer_identity"].includes(claim.claim_kind)) {
+            const claimOwnerName = ownerNameFromClaim(value)
+            if (claimOwnerName && points > 0) {
+                ownerName ||= claimOwnerName
+                ownerIdentityPoints += points
+            }
+        }
+        if (claim.claim_kind === "owner_phone") {
+            const claimOwnerName = ownerNameFromClaim(value)
+            const claimOwnerPhone = ownerPhoneFromClaim(value)
+            if (claimOwnerName) ownerName ||= claimOwnerName
+            if (claimOwnerPhone) ownerPhone ||= claimOwnerPhone
+            ownerPhoneClaims.push({ points, ownerName: claimOwnerName, ownerPhone: claimOwnerPhone })
+        }
+    }
+    for (const claim of ownerPhoneClaims) {
+        if (claim.ownerPhone && (claim.ownerName || ownerName) && claim.points > 0) ownerPhonePoints += claim.points
     }
     if (company.phone || company.website_url || company.profile_url) businessSupportPoints = Math.max(businessSupportPoints, 1)
     return {
@@ -356,7 +378,7 @@ export async function recordOwnerIdentityStage({ workspaceId, pollId, companyIds
     const passed: string[] = []
     await upsertCompanyStages(companies.map((company) => {
         const metrics = metricsForCompany(company, claims.get(company.id) ?? [])
-        const hasOwner = Boolean(metrics.ownerName || metrics.ownerIdentityPoints > 0)
+        const hasOwner = Boolean(metrics.ownerName && metrics.ownerIdentityPoints > 0)
         if (hasOwner) passed.push(company.id)
         return {
             workspace_id: workspaceId,
@@ -366,7 +388,7 @@ export async function recordOwnerIdentityStage({ workspaceId, pollId, companyIds
             status: hasOwner ? "passed" : "failed",
             source_keys: metrics.sourceKeys,
             score: metrics.ownerIdentityPoints,
-            reason: hasOwner ? "Owner or principal identity evidence found." : "No source-backed owner/principal identity found.",
+            reason: hasOwner ? "Source-backed owner/principal identity found." : "No source-backed owner/principal identity found.",
             metrics: {
                 owner_identity_points: metrics.ownerIdentityPoints,
                 owner_name: metrics.ownerName,
@@ -394,7 +416,7 @@ export async function recordOwnerPhoneStage({ workspaceId, pollId, companyIds }:
     const passed: string[] = []
     await upsertCompanyStages(companies.map((company) => {
         const metrics = metricsForCompany(company, claims.get(company.id) ?? [])
-        const hasOwnerPhone = Boolean(metrics.ownerPhone || metrics.ownerPhonePoints > 0)
+        const hasOwnerPhone = Boolean(metrics.ownerName && metrics.ownerPhone && metrics.ownerIdentityPoints > 0 && metrics.ownerPhonePoints > 0)
         if (hasOwnerPhone) passed.push(company.id)
         return {
             workspace_id: workspaceId,
@@ -404,7 +426,7 @@ export async function recordOwnerPhoneStage({ workspaceId, pollId, companyIds }:
             status: hasOwnerPhone ? "passed" : "failed",
             source_keys: metrics.sourceKeys,
             score: metrics.ownerPhonePoints,
-            reason: hasOwnerPhone ? "Owner phone evidence found." : "Owner identity exists, but no owner phone evidence was found.",
+            reason: hasOwnerPhone ? "Source-backed owner phone evidence found for the discovered owner/principal." : "Owner identity exists, but no source-backed owner phone evidence was found.",
             metrics: {
                 owner_phone_points: metrics.ownerPhonePoints,
                 owner_phone: metrics.ownerPhone,
@@ -433,7 +455,7 @@ export async function recordPhoneValidationStage({ workspaceId, pollId, companyI
     await upsertCompanyStages(companies.map((company) => {
         const metrics = metricsForCompany(company, claims.get(company.id) ?? [])
         const normalisedPhone = normalisePhone(metrics.ownerPhone)
-        const callable = phoneLooksCallable(normalisedPhone)
+        const callable = Boolean(metrics.ownerName && metrics.ownerPhonePoints > 0 && phoneLooksCallable(normalisedPhone))
         if (callable) passed.push(company.id)
         return {
             workspace_id: workspaceId,

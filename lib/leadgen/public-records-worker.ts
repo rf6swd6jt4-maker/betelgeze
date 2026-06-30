@@ -637,7 +637,7 @@ async function insertEvidence({
     const profileUrl = sourceProfileUrl(source.source_key, metadata, result)
     const sourceRecordId = `${source.source_key}:${result.permitNumber ?? hashRecord(result.row)}`
     const ownerIdentityPoints = Math.min(3, Math.max(0, Number(metadata.owner_identity_points_on_match) || 0))
-    const ownerPhonePoints = result.phone ? Math.min(3, Math.max(0, Number(metadata.owner_phone_points_on_match) || 0)) : 0
+    const ownerPhonePoints = result.personName && result.phone ? Math.min(3, Math.max(0, Number(metadata.owner_phone_points_on_match) || 0)) : 0
     const businessSupportPoints = Math.min(3, Math.max(0, Number(metadata.business_support_points_on_match) || source.business_support_points || 1))
     const rawPayload = {
         source_key: source.source_key,

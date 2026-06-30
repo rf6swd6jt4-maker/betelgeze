@@ -4,6 +4,15 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { processLeadgenPoll } from "@/lib/leadgen/poll-runner"
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 300
+
+const STALE_RUNNING_POLL_MS = 8 * 60 * 1000
+
+function runningPollIsStale(startedAt: string | null | undefined) {
+    if (!startedAt) return true
+    const started = new Date(startedAt).getTime()
+    return !Number.isFinite(started) || Date.now() - started > STALE_RUNNING_POLL_MS
+}
 
 export async function POST(request: Request) {
     const supabase = await createSupabaseServerClient()
@@ -32,12 +41,16 @@ export async function POST(request: Request) {
 
     const runningResult = await supabaseAdmin
         .from("leadgen_polls")
-        .select("id")
+        .select("id, started_at")
         .eq("workspace_id", workspace.id)
         .eq("status", "running")
         .limit(1)
         .maybeSingle()
-    if (runningResult.data?.id) return NextResponse.json({ status: "already_running", pollId: runningResult.data.id })
+    if (runningResult.data?.id) {
+        if (!runningPollIsStale(runningResult.data.started_at)) return NextResponse.json({ status: "already_running", pollId: runningResult.data.id })
+        await processLeadgenPoll({ workspaceId: workspace.id, pollId: runningResult.data.id })
+        return NextResponse.json({ status: "resumed_stale_running", pollId: runningResult.data.id })
+    }
 
     const queuedResult = await supabaseAdmin
         .from("leadgen_polls")
@@ -53,4 +66,3 @@ export async function POST(request: Request) {
     await processLeadgenPoll({ workspaceId: workspace.id, pollId: queuedPoll.id })
     return NextResponse.json({ status: "processed", pollId: queuedPoll.id })
 }
-

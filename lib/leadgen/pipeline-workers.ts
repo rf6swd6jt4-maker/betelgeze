@@ -62,6 +62,15 @@ const SOURCE_STAGE: Partial<Record<LeadgenSourceKey, string>> = {
 }
 
 const PIPELINE_SEED_SOURCES = new Set<LeadgenSourceKey>(["overture", "alltheplaces", "foursquare_os_places"])
+const WEBSITE_MAX_HTML_CHARS = 700_000
+const WEBSITE_JSON_LD_MAX_CHARS = 160_000
+const WEBSITE_STALE_TASK_MS = 90_000
+const WEBSITE_CRAWL_LIMITS: Record<Exclude<PollStageKey, "seed">, { maxPages: number; timeoutSeconds: number; budgetMs: number }> = {
+    business_validation: { maxPages: 1, timeoutSeconds: 4, budgetMs: 6_000 },
+    owner_identity: { maxPages: 6, timeoutSeconds: 5, budgetMs: 22_000 },
+    owner_phone: { maxPages: 8, timeoutSeconds: 5, budgetMs: 30_000 },
+    phone_validation: { maxPages: 0, timeoutSeconds: 1, budgetMs: 1_000 },
+}
 
 function compactErrorMessage(error: unknown) {
     const message = error instanceof Error ? error.message : "Leadgen source task failed."
@@ -209,11 +218,25 @@ function ownerAssociatedPhone(text: string, ownerIndex: number) {
     return uniqueValues(nearbyPhones)[0] ?? null
 }
 
-function urlsToInspect(baseUrl: string, depth: number) {
+function urlsToInspect(baseUrl: string, depth: number, stageKey: Exclude<PollStageKey, "seed">) {
     const url = new URL(baseUrl.startsWith("http") ? baseUrl : `https://${baseUrl}`)
-    const paths = depth <= 1
+    const limits = WEBSITE_CRAWL_LIMITS[stageKey] ?? WEBSITE_CRAWL_LIMITS.owner_identity
+    const stagePaths = stageKey === "business_validation"
         ? ["/"]
-        : [
+        : stageKey === "owner_phone"
+            ? [
+                "/",
+                "/contact",
+                "/contact-us",
+                "/about",
+                "/about-us",
+                "/team",
+                "/our-team",
+                "/owners",
+                "/staff",
+                "/leadership",
+            ]
+            : [
             "/",
             "/about",
             "/about-us",
@@ -230,7 +253,8 @@ function urlsToInspect(baseUrl: string, depth: number) {
             "/contact",
             "/contact-us",
         ]
-    return [...new Set(paths.map((path) => new URL(path, url.origin).toString()))]
+    const depthPageCount = depth <= 1 ? 1 : depth === 2 ? Math.min(5, limits.maxPages) : limits.maxPages
+    return [...new Set(stagePaths.slice(0, Math.max(0, depthPageCount)).map((path) => new URL(path, url.origin).toString()))]
 }
 
 async function fetchPage(url: string, timeoutSeconds: number): Promise<{ html: string; visibleText: string } | null> {
@@ -245,7 +269,7 @@ async function fetchPage(url: string, timeoutSeconds: number): Promise<{ html: s
         if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`)
         const contentType = response.headers.get("content-type") ?? ""
         if (!contentType.includes("text/html") && !contentType.includes("text/plain")) return null
-        const html = await response.text()
+        const html = (await response.text()).slice(0, WEBSITE_MAX_HTML_CHARS)
         const visibleText = html
             .replace(/<script(?![^>]*application\/ld\+json)[\s\S]*?<\/script>/gi, " ")
             .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -261,6 +285,7 @@ async function fetchPage(url: string, timeoutSeconds: number): Promise<{ html: s
 function jsonLdScripts(html: string) {
     return [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
         .map((match) => match[1]?.replace(/<!--|-->/g, "").trim())
+        .map((value) => value && value.length > WEBSITE_JSON_LD_MAX_CHARS ? null : value)
         .filter((value): value is string => Boolean(value))
 }
 
@@ -1020,15 +1045,22 @@ async function processWebsiteTask(task: PipelineTask) {
         await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "website", stageKey, status: "running" })
         await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "web.json_ld", stageKey, status: "running" })
     }
+    const crawlLimits = WEBSITE_CRAWL_LIMITS[stageKey] ?? WEBSITE_CRAWL_LIMITS.owner_identity
     const depth = Math.min(5, Math.max(1, Number(task.source_query.crawl_depth) || 2))
-    const timeoutSeconds = Math.min(30, Math.max(3, Number(task.source_query.timeout_seconds) || 10))
+    const timeoutSeconds = Math.min(crawlLimits.timeoutSeconds, Math.max(2, Number(task.source_query.timeout_seconds) || crawlLimits.timeoutSeconds))
+    const deadline = Date.now() + crawlLimits.budgetMs
     const inspected: PageExtraction[] = []
     let ownerName: string | null = null
     let ownerPhone: string | null = null
     let businessPhone: string | null = null
-    for (const url of urlsToInspect(websiteUrl, depth)) {
+    for (const url of urlsToInspect(websiteUrl, depth, stageKey)) {
+        if (Date.now() >= deadline) {
+            inspected.push({ url, owner_name: null, phone: null, phones: [], evidence: ["crawl_budget_exhausted"] })
+            break
+        }
         try {
-            const page = await fetchPage(url, timeoutSeconds)
+            const remainingSeconds = Math.max(1, Math.ceil((deadline - Date.now()) / 1000))
+            const page = await fetchPage(url, Math.min(timeoutSeconds, remainingSeconds))
             if (!page) {
                 inspected.push({ url, owner_name: null, phone: null, phones: [], evidence: ["non_text_response"] })
                 continue
@@ -1159,8 +1191,40 @@ async function processWebsiteTask(task: PipelineTask) {
     return { rawCount: inspected.length, companyCount: ownerName && ownerPhone ? 1 : 0 }
 }
 
+async function cancelStaleWebsiteTasks(workspaceId: string, pollId: string, stageKey?: PollStageKey) {
+    const staleStartedBefore = new Date(Date.now() - WEBSITE_STALE_TASK_MS).toISOString()
+    let staleTasksQuery = supabaseAdmin
+        .from("leadgen_poll_tasks")
+        .select("id, stage_key, source_query")
+        .eq("poll_id", pollId)
+        .eq("workspace_id", workspaceId)
+        .eq("source_key", "website")
+        .eq("status", "running")
+        .lt("started_at", staleStartedBefore)
+    if (stageKey) staleTasksQuery = staleTasksQuery.eq("stage_key", stageKey)
+    const staleTasksResult = await staleTasksQuery
+    if (staleTasksResult.error) throw new Error(`Could not inspect stale website tasks: ${staleTasksResult.error.message}`)
+    const staleTasks = (staleTasksResult.data ?? []) as Array<{ id: string; stage_key: PollStageKey; source_query: Record<string, unknown> | null }>
+    if (staleTasks.length === 0) return
+    const message = "Website crawl exceeded the per-candidate runtime budget and was cancelled so the staged poll can continue."
+    const staleTaskIds = staleTasks.map((task) => task.id)
+    const { error } = await supabaseAdmin
+        .from("leadgen_poll_tasks")
+        .update({ status: "cancelled", completed_at: new Date().toISOString(), error: message })
+        .in("id", staleTaskIds)
+    if (error) throw new Error(`Could not cancel stale website tasks: ${error.message}`)
+    for (const task of staleTasks) {
+        const companyId = typeof task.source_query?.company_id === "string" ? task.source_query.company_id : null
+        if (!companyId) continue
+        const taskStageKey = task.stage_key === "seed" ? "business_validation" : task.stage_key
+        await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "website", stageKey: taskStageKey, status: "skipped", skipReason: message, rawPayload: task.source_query ?? {} })
+        await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "web.json_ld", stageKey: taskStageKey, status: "skipped", skipReason: message, rawPayload: task.source_query ?? {} })
+    }
+}
+
 export async function processPipelineSourcePoll(pollId: string, workspaceId: string, sourceKey: LeadgenSourceKey, options: { finalize?: boolean; stageKey?: PollStageKey } = {}) {
     await setLeadgenPollStatus(pollId, workspaceId, "running")
+    if (sourceKey === "website") await cancelStaleWebsiteTasks(workspaceId, pollId, options.stageKey)
     let tasksQuery = supabaseAdmin
         .from("leadgen_poll_tasks")
         .select("id, source_key, stage_key, source_query, industry_value, location_value")
@@ -1199,12 +1263,23 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
             const message = compactErrorMessage(error)
             if (sourceKey === "website" && companyId) {
                 const query = { ...(task.source_query ?? {}), workspace_id: workspaceId, poll_id: pollId }
+                const stageKey = task.stage_key === "seed" ? "business_validation" : task.stage_key
                 await updateInvestigationTask({
                     workspaceId,
                     pollId,
                     companyId,
                     sourceKey: "website",
-                    stageKey: task.stage_key === "seed" ? "business_validation" : task.stage_key,
+                    stageKey,
+                    status: "failed",
+                    error: message,
+                    rawPayload: query,
+                })
+                await updateInvestigationTask({
+                    workspaceId,
+                    pollId,
+                    companyId,
+                    sourceKey: "web.json_ld",
+                    stageKey,
                     status: "failed",
                     error: message,
                     rawPayload: query,

@@ -172,6 +172,19 @@ export async function finishPollStage({
     error?: string | null
     metrics?: Record<string, unknown>
 }) {
+    const completedAt = new Date().toISOString()
+    const currentStageResult = await supabaseAdmin
+        .from("leadgen_poll_stage_runs")
+        .select("started_at, created_at")
+        .eq("workspace_id", workspaceId)
+        .eq("poll_id", pollId)
+        .eq("stage_key", stageKey)
+        .maybeSingle()
+    if (currentStageResult.error) {
+        if (missingStagedSchema(currentStageResult.error)) return
+        throw currentStageResult.error
+    }
+    const startedAt = currentStageResult.data?.started_at ?? currentStageResult.data?.created_at ?? completedAt
     const { error: upsertError } = await supabaseAdmin
         .from("leadgen_poll_stage_runs")
         .upsert({
@@ -188,7 +201,8 @@ export async function finishPollStage({
             replaced_count: replacedCount,
             error,
             metrics,
-            completed_at: new Date().toISOString(),
+            started_at: startedAt,
+            completed_at: completedAt,
         }, { onConflict: "poll_id,stage_key" })
     if (upsertError) {
         if (missingStagedSchema(upsertError)) return

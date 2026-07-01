@@ -63,11 +63,12 @@ export default async function LeadgenSettingsPage({ params }: PageProps) {
     const industryMappings = (industryMappingsResult.error ? [] : industryMappingsResult.data ?? []) as SourceMapping[]
     const locationMappings = (locationMappingsResult.error ? [] : locationMappingsResult.data ?? []) as SourceMapping[]
     const catalog = (catalogResult.error ? [] : catalogResult.data ?? []) as CatalogSource[]
-    const selectedIndustries = Array.isArray(sourceConfig.icp?.industries) ? sourceConfig.icp.industries : []
-    const selectedLocations = Array.isArray(sourceConfig.icp?.locations) ? sourceConfig.icp.locations : []
 
     const sourceLabelByValue = new Map<string, string>(leadgenSourceOptions.map((source) => [source.value, source.label]))
+    const industryByValue = new Map(icpIndustries.map((industry) => [industry.value, industry]))
     const locationByValue = new Map(icpLocations.map((location) => [location.value, location]))
+    const selectedIndustries = (Array.isArray(sourceConfig.icp?.industries) ? sourceConfig.icp.industries : []).filter((value) => industryByValue.has(value))
+    const selectedLocations = (Array.isArray(sourceConfig.icp?.locations) ? sourceConfig.icp.locations : []).filter((value) => locationByValue.has(value))
     const adaptiveSourceKeys = new Set(catalog
         .filter((source) => source.enabled && source.implementation_status === "active")
         .filter((source) => ["licensing", "permits", "registries", "transport", "regulated", "procurement", "safety"].includes(source.family ?? ""))

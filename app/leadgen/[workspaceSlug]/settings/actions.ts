@@ -8,6 +8,7 @@ import { executableLeadgenSources, leadgenSourceOptions, leadgenSourceRuntimeCon
 
 type SourceMapping = { source_key: LeadgenSourceKey; icp_industry_value?: string | null; icp_location_value?: string | null; native_values?: string[] | null }
 type SourceCatalogStageRow = { source_key: LeadgenSourceKey; stage_capabilities?: unknown }
+type EnabledIcpValueRow = { value: string }
 
 const SOURCE_CATEGORY_KEYS = new Set<LeadgenSourceCategoryKey>(["general", "industry", "location"])
 const SOURCE_STAGE_KEYS = new Set<LeadgenSourceStageKey>(["business_validation", "owner_identity", "owner_phone", "phone_validation"])
@@ -79,6 +80,19 @@ function fallbackSourceStages(sourceKey: LeadgenSourceKey): LeadgenSourceStageKe
 
 function selectedValues(value: unknown) {
     return Array.isArray(value) ? value.map(String).filter(Boolean) : []
+}
+
+async function loadEnabledIcpValueSets() {
+    const [industriesResult, locationsResult] = await Promise.all([
+        supabaseAdmin.from("leadgen_icp_industries").select("value").eq("enabled", true),
+        supabaseAdmin.from("leadgen_icp_locations").select("value").eq("enabled", true),
+    ])
+    if (industriesResult.error) throw new Error("Could not load supported ICP industries.")
+    if (locationsResult.error) throw new Error("Could not load supported ICP locations.")
+    return {
+        industries: new Set(((industriesResult.data ?? []) as EnabledIcpValueRow[]).map((item) => item.value)),
+        locations: new Set(((locationsResult.data ?? []) as EnabledIcpValueRow[]).map((item) => item.value)),
+    }
 }
 
 function sourceMappedForIcp(sourceKey: LeadgenSourceKey, icpConfig: LeadgenSourceSpecificConfig | undefined, industryMappings: SourceMapping[], locationMappings: SourceMapping[]) {
@@ -183,13 +197,18 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
             ? existingSettings.enabled_sources.map(String).map(normaliseLeadgenSourceKey).filter((value): value is NonNullable<typeof value> => Boolean(value))
             : []
     const sourceCategoryIntents = savingSources ? submittedSourceCategoryIntents(formData) : normaliseSourceCategoryIntents(existingSourceConfig.sourceCategoryIntents)
+    const enabledIcpValues = await loadEnabledIcpValueSets()
     const nextIcpConfig = savingSettings ? {
-        industries: formData.getAll("sourceConfig:icp:industries").map((value) => String(value)),
-        locations: formData.getAll("sourceConfig:icp:locations").map((value) => String(value)),
+        industries: formData.getAll("sourceConfig:icp:industries").map((value) => String(value)).filter((value) => enabledIcpValues.industries.has(value)),
+        locations: formData.getAll("sourceConfig:icp:locations").map((value) => String(value)).filter((value) => enabledIcpValues.locations.has(value)),
         limit: boundedInteger(formData.get("sourceConfig:icp:limit"), 1000, 10, 5000),
         maxEnrichmentDepth: boundedInteger(formData.get("sourceConfig:icp:maxEnrichmentDepth"), 4, 1, 8),
         ownerRequired: formData.get("sourceConfig:icp:ownerRequired") !== "off",
-    } : existingSourceConfig.icp
+    } : existingSourceConfig.icp ? {
+        ...existingSourceConfig.icp,
+        industries: selectedValues(existingSourceConfig.icp.industries).filter((value) => enabledIcpValues.industries.has(value)),
+        locations: selectedValues(existingSourceConfig.icp.locations).filter((value) => enabledIcpValues.locations.has(value)),
+    } : undefined
     const enabledSources = await reconcileEnabledSourcesForCategoryIntents({
         enabledSources: submittedEnabledSources,
         icpConfig: nextIcpConfig,

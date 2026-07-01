@@ -7,7 +7,7 @@ type GeoTarget = {
     label: string
     latitude: number | null
     longitude: number | null
-    radius_meters: number
+    radius_meters: number | null
 }
 
 type CategoryMapping = {
@@ -389,12 +389,22 @@ export async function createOsmTasksForPoll({ workspaceId, pollId, plan }: { wor
     const locationMappings = (targetsResult.data ?? []) as LocationMapping[]
     const mappedTargetValues = [...new Set(locationMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
     if (mappedTargetValues.length === 0) return 0
-    const geoTargetsResult = await supabaseAdmin
-        .from("leadgen_geo_targets")
-        .select("value, label, latitude, longitude, radius_meters")
-        .in("value", mappedTargetValues)
+    const [geoTargetsResult, icpTargetsResult] = await Promise.all([
+        supabaseAdmin
+            .from("leadgen_geo_targets")
+            .select("value, label, latitude, longitude, radius_meters")
+            .in("value", mappedTargetValues),
+        supabaseAdmin
+            .from("leadgen_icp_locations")
+            .select("value, label, latitude, longitude, radius_meters")
+            .eq("enabled", true)
+            .in("value", mappedTargetValues),
+    ])
     if (geoTargetsResult.error) throw new Error(`Could not load OSM target locations: ${geoTargetsResult.error.message}`)
-    const targetsByValue = new Map(((geoTargetsResult.data ?? []) as GeoTarget[]).map((target) => [target.value, target]))
+    if (icpTargetsResult.error) throw new Error(`Could not load OSM ICP target locations: ${icpTargetsResult.error.message}`)
+    const targetsByValue = new Map<string, GeoTarget>()
+    for (const target of (icpTargetsResult.data ?? []) as GeoTarget[]) targetsByValue.set(target.value, target)
+    for (const target of (geoTargetsResult.data ?? []) as GeoTarget[]) targetsByValue.set(target.value, target)
     const mappings = (mappingsResult.data ?? []) as CategoryMapping[]
     const tasks = mappings.flatMap((mapping) => locationMappings.flatMap((locationMapping) => (locationMapping.native_values ?? [])
         .map((nativeLocation) => targetsByValue.get(nativeLocation))

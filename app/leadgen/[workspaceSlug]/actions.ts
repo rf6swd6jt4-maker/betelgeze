@@ -7,10 +7,29 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { configObject, createInitialLeadgenPollTasks, MAX_SEED_CANDIDATES, planLeadgenSources, processLeadgenPoll, TARGET_VALIDATED_BUSINESSES } from "@/lib/leadgen/poll-runner"
 import { executableLeadgenSources, leadgenSourceRuntimeConfigured, seedLeadgenSources } from "@/lib/leadgen/sources"
 
+type EnabledIcpValueRow = { value: string }
+
 function refreshPolls(slug: string) {
     revalidatePath(`/leadgen/${slug}`)
     revalidatePath(`/leadgen/${slug}/polls`)
     revalidatePath(`/leadgen/${slug}/new`)
+}
+
+function selectedValues(value: unknown) {
+    return Array.isArray(value) ? value.map(String).filter(Boolean) : []
+}
+
+async function loadEnabledIcpValueSets() {
+    const [industriesResult, locationsResult] = await Promise.all([
+        supabaseAdmin.from("leadgen_icp_industries").select("value").eq("enabled", true),
+        supabaseAdmin.from("leadgen_icp_locations").select("value").eq("enabled", true),
+    ])
+    if (industriesResult.error) throw new Error("Could not load supported ICP industries.")
+    if (locationsResult.error) throw new Error("Could not load supported ICP locations.")
+    return {
+        industries: new Set(((industriesResult.data ?? []) as EnabledIcpValueRow[]).map((item) => item.value)),
+        locations: new Set(((locationsResult.data ?? []) as EnabledIcpValueRow[]).map((item) => item.value)),
+    }
 }
 
 export async function createLeadgenPoll(slug: string) {
@@ -23,7 +42,16 @@ export async function createLeadgenPoll(slug: string) {
     const settings = settingsResult.error ? null : settingsResult.data
     const enabledSources = Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : []
     const currentSourceConfig = configObject(settings?.source_config)
-    const sourcePlan = planLeadgenSources(enabledSources, currentSourceConfig)
+    const enabledIcpValues = await loadEnabledIcpValueSets()
+    const runnableSourceConfig = {
+        ...currentSourceConfig,
+        icp: currentSourceConfig.icp ? {
+            ...currentSourceConfig.icp,
+            industries: selectedValues(currentSourceConfig.icp.industries).filter((value) => enabledIcpValues.industries.has(value)),
+            locations: selectedValues(currentSourceConfig.icp.locations).filter((value) => enabledIcpValues.locations.has(value)),
+        } : currentSourceConfig.icp,
+    }
+    const sourcePlan = planLeadgenSources(enabledSources, runnableSourceConfig)
         .filter((source) => leadgenSourceRuntimeConfigured(source.key))
     const seedPlan = sourcePlan.find((source) => seedLeadgenSources.has(source.key) && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
     const hasRunnableSources = Boolean(seedPlan)
@@ -39,8 +67,8 @@ export async function createLeadgenPoll(slug: string) {
             locations: sourcePlan[0]?.locations ?? [],
             candidate_target_count: TARGET_VALIDATED_BUSINESSES,
             max_seed_candidates: MAX_SEED_CANDIDATES,
-            max_enrichment_depth: currentSourceConfig.icp?.maxEnrichmentDepth ?? null,
-            owner_required: currentSourceConfig.icp?.ownerRequired !== false,
+            max_enrichment_depth: runnableSourceConfig.icp?.maxEnrichmentDepth ?? null,
+            owner_required: runnableSourceConfig.icp?.ownerRequired !== false,
             poll_mode: "staged_validated_business_funnel",
             captured_at: new Date().toISOString(),
         },

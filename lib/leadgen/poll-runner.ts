@@ -192,12 +192,9 @@ export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId:
     }
 
     await startPollStage({ workspaceId, pollId, stageKey: "phone_validation", targetCount: ownerPhoneCompanyIds.length, inputCount: ownerPhoneCompanyIds.length })
-    const phoneValidationSourceKeys = await loadStageSourceKeys("phone_validation", enabledInvestigationSourceKeys)
-    if (phoneValidationSourceKeys.includes("phone.basic_format_validation")) {
-        await recordPhoneValidationStage({ workspaceId, pollId, companyIds: ownerPhoneCompanyIds })
-    } else {
-        await finishPollStage({ workspaceId, pollId, stageKey: "phone_validation", status: "skipped", inputCount: ownerPhoneCompanyIds.length, passedCount: 0, skippedCount: ownerPhoneCompanyIds.length, error: "No enabled phone validation source was available." })
-    }
+    // Basic phone validation is an internal no-key formatting gate, not an optional external source.
+    // Once source-backed owner-phone evidence exists, it should complete or fail on the data itself.
+    await recordPhoneValidationStage({ workspaceId, pollId, companyIds: ownerPhoneCompanyIds })
 
     await scorePollCompanies({ workspaceId, pollId })
     await finalizeLeadgenPoll(pollId, workspaceId)

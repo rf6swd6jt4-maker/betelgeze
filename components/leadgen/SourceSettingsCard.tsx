@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { SettingsSectionActions } from "@/components/leadgen/ManualSettingsForm"
-import type { LeadgenSourceKey } from "@/lib/leadgen/sources"
+import type { LeadgenSourceCategoryIntentKey, LeadgenSourceCategoryKey, LeadgenSourceKey, LeadgenSourceStageKey } from "@/lib/leadgen/sources"
 
 type SourceStatus = "not_configured" | "not_mapped" | "disabled" | "enabled"
 type ToggleState = "on" | "off" | "mixed"
-type SourceStageKey = "business_validation" | "owner_identity" | "owner_phone" | "phone_validation"
+type SourceStageKey = LeadgenSourceStageKey
 
 type SourceSettings = {
     limit: number
@@ -33,7 +33,7 @@ export type SourceSettingsItem = {
     statusLabel: string
     notesPlaceholder: string
     kind: "seed" | "enrichment"
-    category: "general" | "location" | "industry"
+    category: LeadgenSourceCategoryKey
     sourceStage: SourceStageKey | null
     stageKeys: SourceStageKey[]
     configured: boolean
@@ -76,6 +76,15 @@ const SOURCE_STAGE_CARDS: Array<{ key: SourceStageKey; title: string; detail: st
 
 function runnable(source: SourceSettingsItem) {
     return source.configured && source.mapped
+}
+
+function sourceCategoryIntentKey(stageKey: SourceStageKey, category: LeadgenSourceCategoryKey) {
+    return `${stageKey}:${category}` as LeadgenSourceCategoryIntentKey
+}
+
+function categoryChecked(sources: SourceSettingsItem[], enabledValues: Set<LeadgenSourceKey>) {
+    const runnableSources = sources.filter(runnable)
+    return runnableSources.length > 0 && runnableSources.every((source) => enabledValues.has(source.value))
 }
 
 function statusFor(source: SourceSettingsItem, enabledValues: Set<LeadgenSourceKey>): SourceStatus {
@@ -159,12 +168,11 @@ function SourceToggle({ source, enabled, onToggle }: { source: SourceSettingsIte
     </button>
 }
 
-function CategoryToggle({ sources, enabledValues, onToggle }: { sources: SourceSettingsItem[]; enabledValues: Set<LeadgenSourceKey>; onToggle: (checked: boolean) => void }) {
+function CategoryToggle({ sources, enabledValues, checked, onToggle }: { sources: SourceSettingsItem[]; enabledValues: Set<LeadgenSourceKey>; checked: boolean; onToggle: (checked: boolean) => void }) {
     const runnableSources = sources.filter(runnable)
     const enabledCount = runnableSources.filter((source) => enabledValues.has(source.value)).length
-    const checked = runnableSources.length > 0 && enabledCount === runnableSources.length
-    const mixed = enabledCount > 0 && enabledCount < runnableSources.length
-    const disabled = runnableSources.length === 0
+    const mixed = !checked && enabledCount > 0
+    const disabled = runnableSources.length === 0 && !checked
 
     return <button
         type="button"
@@ -317,12 +325,9 @@ function SourceRow({ source, enabled, expanded, nested = false, showConfig = tru
     </div>
 }
 
-export function SourceSettingsCard({ sources, catalogueStats }: { sources: SourceSettingsItem[]; catalogueStats?: SourceCatalogueStats }) {
+export function SourceSettingsCard({ sources, sourceCategoryIntents = {}, catalogueStats }: { sources: SourceSettingsItem[]; sourceCategoryIntents?: Partial<Record<LeadgenSourceCategoryIntentKey, boolean>>; catalogueStats?: SourceCatalogueStats }) {
     const seedSectionRef = useRef<HTMLElement>(null)
     const stageSectionRefs = useRef<Record<string, HTMLElement | null>>({})
-    const [enabledValues, setEnabledValues] = useState<Set<LeadgenSourceKey>>(() => new Set(sources.filter((source) => source.enabled && runnable(source)).map((source) => source.value)))
-    const [expandedValues, setExpandedValues] = useState<Set<LeadgenSourceKey>>(() => new Set())
-    const [expandedCategories, setExpandedCategories] = useState<Set<string>>(() => new Set())
     const seedSources = useMemo(() => sources.filter((source) => source.kind === "seed"), [sources])
     const sourceStageCards = useMemo(() => SOURCE_STAGE_CARDS.map((stage) => {
         const stageSources = sources.filter((source) => source.kind !== "seed" && source.stageKeys.includes(stage.key))
@@ -335,6 +340,23 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
             })).filter((category) => category.sources.length > 0),
         }
     }), [sources])
+    const initialEnabledValues = useMemo(() => new Set(sources.filter((source) => source.enabled && runnable(source)).map((source) => source.value)), [sources])
+    const savedCategoryIntentValues = useMemo(() => new Set(Object.entries(sourceCategoryIntents)
+        .filter(([, enabled]) => enabled)
+        .map(([key]) => key as LeadgenSourceCategoryIntentKey)), [sourceCategoryIntents])
+    const initialCategoryIntentValues = useMemo(() => {
+        const next = new Set(savedCategoryIntentValues)
+        for (const stage of sourceStageCards) {
+            for (const category of stage.categories) {
+                if (categoryChecked(category.sources, initialEnabledValues)) next.add(sourceCategoryIntentKey(stage.key, category.key))
+            }
+        }
+        return next
+    }, [initialEnabledValues, savedCategoryIntentValues, sourceStageCards])
+    const [enabledValues, setEnabledValues] = useState<Set<LeadgenSourceKey>>(() => new Set(initialEnabledValues))
+    const [enabledCategoryIntents, setEnabledCategoryIntents] = useState<Set<LeadgenSourceCategoryIntentKey>>(() => new Set(initialCategoryIntentValues))
+    const [expandedValues, setExpandedValues] = useState<Set<LeadgenSourceKey>>(() => new Set())
+    const [expandedCategories, setExpandedCategories] = useState<Set<string>>(() => new Set())
     const sectionSourceEntries = useMemo(() => [
         ["seed-sources", seedSources] as const,
         ...sourceStageCards.map((stage) => [`source-stage-${stage.key}`, stage.sources] as const),
@@ -369,9 +391,23 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
             else next.delete(source.value)
             return next
         })
+        if (!checked) {
+            setEnabledCategoryIntents((current) => {
+                const next = new Set(current)
+                for (const stageKey of source.stageKeys) next.delete(sourceCategoryIntentKey(stageKey, source.category))
+                return next
+            })
+        }
     }
 
-    function toggleCategory(categorySources: SourceSettingsItem[], checked: boolean) {
+    function toggleCategory(stageKey: SourceStageKey, category: LeadgenSourceCategoryKey, categorySources: SourceSettingsItem[], checked: boolean) {
+        const intentKey = sourceCategoryIntentKey(stageKey, category)
+        setEnabledCategoryIntents((current) => {
+            const next = new Set(current)
+            if (checked) next.add(intentKey)
+            else next.delete(intentKey)
+            return next
+        })
         setEnabledValues((current) => {
             const next = new Set(current)
             for (const source of categorySources) {
@@ -404,13 +440,23 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
     const seedCounts = groupCounts(seedSources)
     const seedStatusCounts = statusCountsFor(seedSources)
     const seedKeys = useMemo(() => new Set(seedSources.map((source) => source.value)), [seedSources])
-    const initialEnabledValues = useMemo(() => new Set(sources.filter((source) => source.enabled && runnable(source)).map((source) => source.value)), [sources])
+    const categoryIntentActive = useCallback((stageKey: SourceStageKey, category: LeadgenSourceCategoryKey, categorySources: SourceSettingsItem[]) => {
+        return enabledCategoryIntents.has(sourceCategoryIntentKey(stageKey, category)) || categoryChecked(categorySources, enabledValues)
+    }, [enabledCategoryIntents, enabledValues])
+
+    const categoryIntentDirtyCount = useCallback((stage: (typeof sourceStageCards)[number]) => {
+        return stage.categories.filter((category) => {
+            const intentKey = sourceCategoryIntentKey(stage.key, category.key)
+            return categoryIntentActive(stage.key, category.key, category.sources) !== initialCategoryIntentValues.has(intentKey)
+        }).length
+    }, [categoryIntentActive, initialCategoryIntentValues])
+
     function publishSourceDirty() {
         const seedDirtyCount = dirtyCountFor(seedSources, enabledValues, initialEnabledValues, seedSectionRef.current)
         window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section: "seed-sources", count: seedDirtyCount } }))
         for (const stage of sourceStageCards) {
             const section = `source-stage-${stage.key}`
-            const dirtyCount = dirtyCountFor(stage.sources, enabledValues, initialEnabledValues, stageSectionRefs.current[section] ?? null)
+            const dirtyCount = dirtyCountFor(stage.sources, enabledValues, initialEnabledValues, stageSectionRefs.current[section] ?? null) + categoryIntentDirtyCount(stage)
             window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section, count: dirtyCount } }))
         }
     }
@@ -424,10 +470,10 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
         window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section: "seed-sources", count: seedDirtyCount } }))
         for (const stage of sourceStageCards) {
             const section = `source-stage-${stage.key}`
-            const dirtyCount = dirtyCountFor(stage.sources, enabledValues, initialEnabledValues, stageSectionRefs.current[section] ?? null)
+            const dirtyCount = dirtyCountFor(stage.sources, enabledValues, initialEnabledValues, stageSectionRefs.current[section] ?? null) + categoryIntentDirtyCount(stage)
             window.dispatchEvent(new CustomEvent("betelgeze:settings-section-dirty", { detail: { section, count: dirtyCount } }))
         }
-    }, [enabledValues, initialEnabledValues, seedSources, sourceStageCards])
+    }, [categoryIntentDirtyCount, enabledValues, enabledCategoryIntents, initialCategoryIntentValues, initialEnabledValues, seedSources, sourceStageCards])
 
     useEffect(() => {
         const reset = (event: Event) => {
@@ -435,6 +481,7 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
             const relevantSources = sectionSourcesByKey.get(section) ?? []
             if (relevantSources.length === 0) return
             const relevantKeys = new Set(relevantSources.map((source) => source.value))
+            const relevantStage = sourceStageCards.find((stage) => `source-stage-${stage.key}` === section)
             setEnabledValues((current) => {
                 const next = new Set(current)
                 for (const key of relevantKeys) {
@@ -443,10 +490,21 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                 }
                 return next
             })
+            if (relevantStage) {
+                setEnabledCategoryIntents((current) => {
+                    const next = new Set(current)
+                    for (const category of relevantStage.categories) {
+                        const intentKey = sourceCategoryIntentKey(relevantStage.key, category.key)
+                        if (initialCategoryIntentValues.has(intentKey)) next.add(intentKey)
+                        else next.delete(intentKey)
+                    }
+                    return next
+                })
+            }
         }
         window.addEventListener("betelgeze:settings-section-revert", reset)
         return () => window.removeEventListener("betelgeze:settings-section-revert", reset)
-    }, [initialEnabledValues, sectionSourcesByKey])
+    }, [initialCategoryIntentValues, initialEnabledValues, sectionSourcesByKey, sourceStageCards])
 
     return <div className="space-y-3 sm:space-y-4">
         <section ref={seedSectionRef} data-settings-section="seed-sources" onChange={scheduleSourceDirtyCheck} onInput={scheduleSourceDirtyCheck} className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
@@ -485,6 +543,9 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                 className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900"
             >
                 {[...enabledValues].filter((value) => stageKeys.has(value)).map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
+                {stage.categories
+                    .filter((category) => categoryIntentActive(stage.key, category.key, category.sources))
+                    .map((category) => <input key={category.key} type="hidden" name="sourceCategoryIntent" value={sourceCategoryIntentKey(stage.key, category.key)} />)}
                 <div className="border-b border-neutral-800 bg-neutral-900 px-3 py-3 sm:px-5 sm:py-4">
                     <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
                         <div>
@@ -503,9 +564,10 @@ export function SourceSettingsCard({ sources, catalogueStats }: { sources: Sourc
                         const categoryKey = `${stage.key}:${category.key}`
                         const expanded = expandedCategories.has(categoryKey)
                         const categoryCounts = groupCounts(category.sources)
+                        const categoryOn = categoryIntentActive(stage.key, category.key, category.sources)
                         return <div key={category.key} className="bg-neutral-950/40">
                             <div className="grid grid-cols-[64px_minmax(0,1fr)_32px] items-center gap-x-2 bg-neutral-950/60 px-3 py-1.5 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:gap-3 sm:px-5 sm:py-3">
-                                <CategoryToggle sources={category.sources} enabledValues={enabledValues} onToggle={(checked) => toggleCategory(category.sources, checked)} />
+                                <CategoryToggle sources={category.sources} enabledValues={enabledValues} checked={categoryOn} onToggle={(checked) => toggleCategory(stage.key, category.key, category.sources, checked)} />
                                 <div className="min-w-0 self-center">
                                     <h4 className="truncate text-sm font-semibold leading-4 text-white sm:leading-5">{category.title}</h4>
                                     <p className="mt-0.5 hidden text-xs leading-5 text-neutral-500 sm:block">{category.detail}</p>

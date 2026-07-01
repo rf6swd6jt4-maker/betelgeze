@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { storeWorkspaceImage } from "@/lib/onboarding/uploads"
-import { leadgenSourceOptions, normaliseLeadgenSourceKey, type LeadgenSourceConfig } from "@/lib/leadgen/sources"
+import { executableLeadgenSources, leadgenSourceOptions, normaliseLeadgenSourceKey, type LeadgenSourceCategoryIntentKey, type LeadgenSourceCategoryKey, type LeadgenSourceConfig, type LeadgenSourceKey, type LeadgenSourceSpecificConfig, type LeadgenSourceStageKey } from "@/lib/leadgen/sources"
+
+type SourceMapping = { source_key: LeadgenSourceKey; icp_industry_value?: string | null; icp_location_value?: string | null; native_values?: string[] | null }
+type SourceCatalogStageRow = { source_key: LeadgenSourceKey; stage_capabilities?: unknown }
+
+const SOURCE_CATEGORY_KEYS = new Set<LeadgenSourceCategoryKey>(["general", "industry", "location"])
+const SOURCE_STAGE_KEYS = new Set<LeadgenSourceStageKey>(["business_validation", "owner_identity", "owner_phone", "phone_validation"])
 
 function refresh(slug: string) {
     revalidatePath(`/leadgen/${slug}`)
@@ -24,6 +30,99 @@ function sourceLimitMax(sourceValue: string, sourceKind: string) {
     if (sourceValue === "sam_gov") return 1
     if (sourceKind === "seed") return 25
     return 80
+}
+
+function sourceCategoryIntentKey(stageKey: LeadgenSourceStageKey, category: LeadgenSourceCategoryKey) {
+    return `${stageKey}:${category}` as LeadgenSourceCategoryIntentKey
+}
+
+function normaliseSourceCategoryIntents(value: unknown) {
+    const intents: Partial<Record<LeadgenSourceCategoryIntentKey, boolean>> = {}
+    const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+    for (const [key, enabled] of Object.entries(record)) {
+        const [stageKey, category] = key.split(":")
+        if (!SOURCE_STAGE_KEYS.has(stageKey as LeadgenSourceStageKey) || !SOURCE_CATEGORY_KEYS.has(category as LeadgenSourceCategoryKey)) continue
+        if (enabled) intents[sourceCategoryIntentKey(stageKey as LeadgenSourceStageKey, category as LeadgenSourceCategoryKey)] = true
+    }
+    return intents
+}
+
+function submittedSourceCategoryIntents(formData: FormData) {
+    const intents: Partial<Record<LeadgenSourceCategoryIntentKey, boolean>> = {}
+    for (const value of formData.getAll("sourceCategoryIntent")) {
+        const [stageKey, category] = String(value).split(":")
+        if (!SOURCE_STAGE_KEYS.has(stageKey as LeadgenSourceStageKey) || !SOURCE_CATEGORY_KEYS.has(category as LeadgenSourceCategoryKey)) continue
+        intents[sourceCategoryIntentKey(stageKey as LeadgenSourceStageKey, category as LeadgenSourceCategoryKey)] = true
+    }
+    return intents
+}
+
+function stageCapabilities(value: unknown) {
+    if (!Array.isArray(value)) return [] as LeadgenSourceStageKey[]
+    return value
+        .map((item) => item && typeof item === "object" && "stage_key" in item ? String(item.stage_key) : null)
+        .filter((item): item is LeadgenSourceStageKey => item === "business_validation" || item === "owner_identity" || item === "owner_phone" || item === "phone_validation")
+}
+
+function fallbackSourceStages(sourceKey: LeadgenSourceKey): LeadgenSourceStageKey[] {
+    if (sourceKey === "phone.basic_format_validation") return ["phone_validation"]
+    if (sourceKey === "sam_gov") return ["business_validation"]
+    if (sourceKey === "transport.fmcsa_safer") return ["business_validation"]
+    if (sourceKey === "safety.osha" || sourceKey === "procurement.usaspending" || sourceKey === "web.rdap_whois" || sourceKey === "web.certificate_transparency") return ["business_validation"]
+    if (sourceKey.startsWith("permits.") || sourceKey === "regulated.epa_echo") return ["business_validation"]
+    if (sourceKey === "regulated.tx.tceq_waste" || sourceKey === "regulated.ca.calrecycle_waste") return ["owner_identity"]
+    if (sourceKey.startsWith("registry.")) return ["business_validation", "owner_identity"]
+    if (sourceKey.startsWith("state_license.")) return ["owner_identity"]
+    if (sourceKey === "website" || sourceKey === "regulated.nppes") return ["owner_identity", "owner_phone"]
+    return []
+}
+
+function selectedValues(value: unknown) {
+    return Array.isArray(value) ? value.map(String).filter(Boolean) : []
+}
+
+function sourceMappedForIcp(sourceKey: LeadgenSourceKey, icpConfig: LeadgenSourceSpecificConfig | undefined, industryMappings: SourceMapping[], locationMappings: SourceMapping[]) {
+    const selectedIndustries = selectedValues(icpConfig?.industries)
+    const selectedLocations = selectedValues(icpConfig?.locations)
+    if (selectedIndustries.length === 0 || selectedLocations.length === 0) return false
+    const mappedIndustries = new Set(industryMappings.filter((mapping) => mapping.source_key === sourceKey && (mapping.native_values?.length ?? 0) > 0).map((mapping) => mapping.icp_industry_value).filter(Boolean))
+    const mappedLocations = new Set(locationMappings.filter((mapping) => mapping.source_key === sourceKey && (mapping.native_values?.length ?? 0) > 0).map((mapping) => mapping.icp_location_value).filter(Boolean))
+    return selectedIndustries.some((value) => mappedIndustries.has(value)) && selectedLocations.some((value) => mappedLocations.has(value))
+}
+
+async function reconcileEnabledSourcesForCategoryIntents({
+    enabledSources,
+    icpConfig,
+    sourceCategoryIntents,
+}: {
+    enabledSources: LeadgenSourceKey[]
+    icpConfig: LeadgenSourceSpecificConfig | undefined
+    sourceCategoryIntents: Partial<Record<LeadgenSourceCategoryIntentKey, boolean>>
+}) {
+    if (!Object.values(sourceCategoryIntents).some(Boolean)) return enabledSources
+    const [industryMappingsResult, locationMappingsResult, catalogResult] = await Promise.all([
+        supabaseAdmin.from("leadgen_source_industry_mappings").select("source_key, icp_industry_value, native_values").eq("enabled", true),
+        supabaseAdmin.from("leadgen_source_location_mappings").select("source_key, icp_location_value, native_values").eq("enabled", true),
+        supabaseAdmin.from("leadgen_source_catalog").select("source_key, stage_capabilities"),
+    ])
+    if (industryMappingsResult.error) throw new Error("Could not load source industry mappings.")
+    if (locationMappingsResult.error) throw new Error("Could not load source location mappings.")
+    if (catalogResult.error) throw new Error("Could not load source stage capabilities.")
+    const industryMappings = (industryMappingsResult.data ?? []) as SourceMapping[]
+    const locationMappings = (locationMappingsResult.data ?? []) as SourceMapping[]
+    const catalogBySource = new Map(((catalogResult.data ?? []) as SourceCatalogStageRow[]).map((source) => [source.source_key, source]))
+    const next = new Set(enabledSources)
+    for (const source of leadgenSourceOptions) {
+        const sourceStages = stageCapabilities(catalogBySource.get(source.value)?.stage_capabilities)
+        const effectiveStages = sourceStages.length ? sourceStages : fallbackSourceStages(source.value)
+        const categoryIntentApplies = effectiveStages.some((stageKey) => sourceCategoryIntents[sourceCategoryIntentKey(stageKey, source.category)])
+        if (!categoryIntentApplies) continue
+        const configured = executableLeadgenSources.has(source.value) && (!source.envVar || Boolean(process.env[source.envVar]))
+        const mapped = sourceMappedForIcp(source.value, icpConfig, industryMappings, locationMappings)
+        if (configured && mapped) next.add(source.value)
+        else next.delete(source.value)
+    }
+    return [...next]
 }
 
 export async function updateLeadgenWorkspaceName(slug: string, formData: FormData) {
@@ -78,12 +177,25 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
     const scope = String(formData.get("settingsScope") ?? "all")
     const savingSources = scope === "sources" || scope === "all"
     const savingSettings = scope === "settings" || scope === "all"
-    const enabledSources = savingSources ? [...new Set(formData.getAll("sources")
+    const submittedEnabledSources = savingSources ? [...new Set(formData.getAll("sources")
         .map((value) => normaliseLeadgenSourceKey(String(value)))
         .filter((value): value is NonNullable<typeof value> => Boolean(value)))] : Array.isArray(existingSettings?.enabled_sources)
             ? existingSettings.enabled_sources.map(String).map(normaliseLeadgenSourceKey).filter((value): value is NonNullable<typeof value> => Boolean(value))
             : []
-    const sourceConfig = leadgenSourceOptions.reduce<Partial<LeadgenSourceConfig>>((config, source) => {
+    const sourceCategoryIntents = savingSources ? submittedSourceCategoryIntents(formData) : normaliseSourceCategoryIntents(existingSourceConfig.sourceCategoryIntents)
+    const nextIcpConfig = savingSettings ? {
+        industries: formData.getAll("sourceConfig:icp:industries").map((value) => String(value)),
+        locations: formData.getAll("sourceConfig:icp:locations").map((value) => String(value)),
+        limit: boundedInteger(formData.get("sourceConfig:icp:limit"), 1000, 10, 5000),
+        maxEnrichmentDepth: boundedInteger(formData.get("sourceConfig:icp:maxEnrichmentDepth"), 4, 1, 8),
+        ownerRequired: formData.get("sourceConfig:icp:ownerRequired") !== "off",
+    } : existingSourceConfig.icp
+    const enabledSources = await reconcileEnabledSourcesForCategoryIntents({
+        enabledSources: submittedEnabledSources,
+        icpConfig: nextIcpConfig,
+        sourceCategoryIntents,
+    })
+    const sourceConfig = leadgenSourceOptions.reduce<LeadgenSourceConfig>((config, source) => {
         if (!savingSources) {
             config[source.value] = existingSourceConfig[source.value] ?? {}
             return config
@@ -106,13 +218,8 @@ export async function saveLeadgenSettings(slug: string, formData: FormData) {
         }
         return config
     }, {
-        icp: savingSettings ? {
-            industries: formData.getAll("sourceConfig:icp:industries").map((value) => String(value)),
-            locations: formData.getAll("sourceConfig:icp:locations").map((value) => String(value)),
-            limit: boundedInteger(formData.get("sourceConfig:icp:limit"), 1000, 10, 5000),
-            maxEnrichmentDepth: boundedInteger(formData.get("sourceConfig:icp:maxEnrichmentDepth"), 4, 1, 8),
-            ownerRequired: formData.get("sourceConfig:icp:ownerRequired") !== "off",
-        } : existingSourceConfig.icp,
+        icp: nextIcpConfig,
+        sourceCategoryIntents,
     })
     const pollIntervalHours = savingSettings ? Number(formData.get("pollIntervalHours") ?? 168) : existingSettings?.poll_interval_hours ?? 168
     if (!Number.isInteger(pollIntervalHours) || pollIntervalHours < 1 || pollIntervalHours > 2160) throw new Error("Poll interval must be between 1 and 2160 hours.")

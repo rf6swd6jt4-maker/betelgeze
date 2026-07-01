@@ -113,24 +113,6 @@ export function AdaptiveTargetingSettings({
 }) {
     const [industryValues, setIndustryValues] = useState(selectedIndustries)
     const [locationValues, setLocationValues] = useState(selectedLocations)
-    const selectedRegions = useMemo(() => {
-        const regions = locations
-            .filter((location) => locationValues.includes(location.value))
-            .map((location) => location.region?.toUpperCase())
-            .filter((region): region is string => Boolean(region))
-        return new Set(regions)
-    }, [locationValues, locations])
-    const selectedLocationSet = useMemo(() => new Set(locationValues), [locationValues])
-    const availableIndustries = useMemo(() => {
-        if (selectedRegions.size === 0 && selectedLocationSet.size === 0) return industries
-        return industries.filter((industry) => {
-            if (industry.supportedLocationValues.some((value) => selectedLocationSet.has(value))) return true
-            if (selectedRegions.size === 0) return true
-            return industry.supportedRegions.some((region) => selectedRegions.has(region.toUpperCase()))
-        })
-    }, [industries, selectedLocationSet, selectedRegions])
-    const availableIndustryValues = useMemo(() => new Set(availableIndustries.map((industry) => industry.value)), [availableIndustries])
-    const effectiveIndustryValues = useMemo(() => industryValues.filter((value) => availableIndustryValues.has(value)), [availableIndustryValues, industryValues])
 
     useEffect(() => {
         const reset = (event: Event) => {
@@ -142,7 +124,7 @@ export function AdaptiveTargetingSettings({
         return () => window.removeEventListener("betelgeze:settings-section-revert", reset)
     }, [selectedIndustries, selectedLocations])
 
-    const industryOptions = availableIndustries.map((industry) => ({
+    const industryOptions = industries.map((industry) => ({
         value: industry.value,
         label: industry.label,
         detail: `${industry.category ?? "industry"}. ${industry.detail}. ${formatRegions(industry.supportedRegions)}`,
@@ -151,15 +133,15 @@ export function AdaptiveTargetingSettings({
     return <section className="grid gap-4">
         <div data-settings-section="target-industries" className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
             <h2 className="text-lg font-semibold leading-6">Target Industries</h2>
-            <p className="mt-1.5 text-sm leading-5 text-neutral-400">Shared industry targets filtered to the states and cities currently selected below.</p>
+            <p className="mt-1.5 text-sm leading-5 text-neutral-400">Shared industry targets used by source mappings and poll tasks.</p>
             <div className="mt-4">
                 <MultiSelectList
                     name="sourceConfig:icp:industries"
                     label="Target industries"
                     options={industryOptions}
-                    selectedValues={effectiveIndustryValues}
+                    selectedValues={industryValues}
                     onChange={setIndustryValues}
-                    emptyLabel="No mapped contractor industries are available for the selected locations yet."
+                    emptyLabel="No contractor industries are available yet."
                 />
             </div>
             <SettingsSectionActions section="target-industries" label="target industries" />

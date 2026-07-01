@@ -7,7 +7,7 @@ import type { LeadgenSourceCatalogRow } from "@/lib/leadgen/source-catalog-ui"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
-import { executableLeadgenSources, leadgenSourceOptions, type LeadgenSourceConfig, type LeadgenSourceKey } from "@/lib/leadgen/sources"
+import { executableLeadgenSources, leadgenSourceOptions, type LeadgenSourceCategoryKey, type LeadgenSourceConfig, type LeadgenSourceKey, type LeadgenSourceStageKey } from "@/lib/leadgen/sources"
 import { saveLeadgenSettings, updateLeadgenCoverLayout, updateLeadgenWorkspaceName, uploadLeadgenBanner, uploadSharedWorkspaceLogo } from "../settings/actions"
 
 export const dynamic = "force-dynamic"
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic"
 type PageProps = { params: Promise<{ workspaceSlug: string }> }
 type IcpOption = { value: string; label: string }
 type SourceMapping = { source_key: LeadgenSourceKey; icp_industry_value?: string | null; icp_location_value?: string | null; native_values?: string[] | null }
-type SourceStageKey = "business_validation" | "owner_identity" | "owner_phone" | "phone_validation"
+type SourceStageKey = LeadgenSourceStageKey
 
 function sourceConfigValue(config: unknown): Partial<LeadgenSourceConfig> {
     return config && typeof config === "object" ? config as Partial<LeadgenSourceConfig> : {}
@@ -29,7 +29,6 @@ function stageCapabilities(value: unknown) {
 }
 
 function primarySourceStage(sourceKey: LeadgenSourceKey, stages: SourceStageKey[]) {
-    if (sourceKey === "sam_gov") return null
     if (stages.includes("phone_validation")) return "phone_validation"
     if (stages.includes("owner_phone")) return "owner_phone"
     if (stages.includes("owner_identity")) return "owner_identity"
@@ -39,8 +38,13 @@ function primarySourceStage(sourceKey: LeadgenSourceKey, stages: SourceStageKey[
     return stages[0] ?? null
 }
 
+function sourceCategoryIntentKey(stageKey: SourceStageKey, category: LeadgenSourceCategoryKey) {
+    return `${stageKey}:${category}` as const
+}
+
 function fallbackSourceStages(sourceKey: LeadgenSourceKey): SourceStageKey[] {
     if (sourceKey === "phone.basic_format_validation") return ["phone_validation"]
+    if (sourceKey === "sam_gov") return ["business_validation"]
     if (sourceKey === "transport.fmcsa_safer") return ["business_validation"]
     if (sourceKey === "safety.osha" || sourceKey === "procurement.usaspending" || sourceKey === "web.rdap_whois" || sourceKey === "web.certificate_transparency") return ["business_validation"]
     if (sourceKey.startsWith("permits.") || sourceKey === "regulated.epa_echo") return ["business_validation"]
@@ -146,7 +150,7 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
         }
     }
 
-    const hasSelectedIcp = selectedIndustries.length > 0 && selectedLocations.length > 0
+    const sourceCategoryIntents = sourceConfig.sourceCategoryIntents && typeof sourceConfig.sourceCategoryIntents === "object" ? sourceConfig.sourceCategoryIntents : {}
     const sourceItems: SourceSettingsItem[] = leadgenSourceOptions.flatMap((source) => {
         const implemented = executableLeadgenSources.has(source.value)
         const sourceSettings = sourceConfig[source.value]
@@ -154,9 +158,10 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
         const stageKeys = stageCapabilities(catalogBySource.get(source.value)?.stage_capabilities)
         const effectiveStageKeys = stageKeys.length ? stageKeys : fallbackSourceStages(source.value)
         const sourceStage = primarySourceStage(source.value, effectiveStageKeys)
-        if (source.kind !== "seed" && hasSelectedIcp && source.value !== "phone.basic_format_validation" && !mapped.ready) return []
         const apiKeyConfigured = source.envVar ? Boolean(process.env[source.envVar]) : true
         const configured = implemented && apiKeyConfigured
+        const categoryIntentEnabled = effectiveStageKeys.some((stageKey) => sourceCategoryIntents[sourceCategoryIntentKey(stageKey, source.category)])
+        const enabled = configured && mapped.ready && (enabledSources.has(source.value) || categoryIntentEnabled)
         return [{
             value: source.value,
             label: source.label,
@@ -169,7 +174,7 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
             stageKeys: effectiveStageKeys,
             configured,
             mapped: mapped.ready,
-            enabled: configured && mapped.ready && enabledSources.has(source.value),
+            enabled,
             implemented,
             apiKeyConfigured,
             envVar: source.envVar ?? null,
@@ -212,7 +217,7 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
             <LeadgenTabs workspaceSlug={workspace.slug} active="sources" />
             <ManualSettingsForm action={saveLeadgenSettings.bind(null, workspace.slug)}>
                 <input type="hidden" name="settingsScope" value="sources" />
-                <SourceSettingsCard sources={sourceItems} catalogueStats={catalogueStats} />
+                <SourceSettingsCard sources={sourceItems} sourceCategoryIntents={sourceCategoryIntents} catalogueStats={catalogueStats} />
             </ManualSettingsForm>
             <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
         </div>

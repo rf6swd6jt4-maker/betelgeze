@@ -42,8 +42,11 @@ export type LeadgenEnrichmentSourceKey =
 export type LeadgenLegacySourceKey = "state_licensing"
 export type LeadgenSourceKey = LeadgenSeedSourceKey | LeadgenEnrichmentSourceKey | LeadgenLegacySourceKey
 export type LeadgenConfigKey = LeadgenSourceKey | "icp"
+export type LeadgenSourceCategoryKey = "general" | "location" | "industry"
+export type LeadgenSourceStageKey = "business_validation" | "owner_identity" | "owner_phone" | "phone_validation"
+export type LeadgenSourceCategoryIntentKey = `${LeadgenSourceStageKey}:${LeadgenSourceCategoryKey}`
 
-export type LeadgenSourceConfig = Partial<Record<LeadgenConfigKey, {
+export type LeadgenSourceSpecificConfig = {
     industries?: string[]
     locations?: string[]
     enabled?: boolean
@@ -56,14 +59,18 @@ export type LeadgenSourceConfig = Partial<Record<LeadgenConfigKey, {
     respectRobots?: boolean
     release?: string
     notes?: string
-}>>
+}
+
+export type LeadgenSourceConfig = Partial<Record<LeadgenConfigKey, LeadgenSourceSpecificConfig>> & {
+    sourceCategoryIntents?: Partial<Record<LeadgenSourceCategoryIntentKey, boolean>>
+}
 
 export type LeadgenSourcePlanItem = {
     key: LeadgenSourceKey
     label: string
     detail: string
     kind: "seed" | "enrichment"
-    category: "general" | "location" | "industry"
+    category: LeadgenSourceCategoryKey
     industries: string[]
     locations: string[]
     limit: number | null
@@ -82,7 +89,7 @@ export type LeadgenSourceOption = {
     statusLabel: string
     notesPlaceholder: string
     kind: "seed" | "enrichment"
-    category: "general" | "location" | "industry"
+    category: LeadgenSourceCategoryKey
     implemented?: boolean
     envVar?: string
     setupHint?: string

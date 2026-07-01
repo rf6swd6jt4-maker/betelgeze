@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { storeWorkspaceImage } from "@/lib/onboarding/uploads"
-import { executableLeadgenSources, leadgenSourceOptions, normaliseLeadgenSourceKey, type LeadgenSourceCategoryIntentKey, type LeadgenSourceCategoryKey, type LeadgenSourceConfig, type LeadgenSourceKey, type LeadgenSourceSpecificConfig, type LeadgenSourceStageKey } from "@/lib/leadgen/sources"
+import { executableLeadgenSources, leadgenSourceOptions, leadgenSourceRuntimeConfigured, normaliseLeadgenSourceKey, type LeadgenSourceCategoryIntentKey, type LeadgenSourceCategoryKey, type LeadgenSourceConfig, type LeadgenSourceKey, type LeadgenSourceSpecificConfig, type LeadgenSourceStageKey } from "@/lib/leadgen/sources"
 
 type SourceMapping = { source_key: LeadgenSourceKey; icp_industry_value?: string | null; icp_location_value?: string | null; native_values?: string[] | null }
 type SourceCatalogStageRow = { source_key: LeadgenSourceKey; stage_capabilities?: unknown }
@@ -117,7 +117,7 @@ async function reconcileEnabledSourcesForCategoryIntents({
         const effectiveStages = sourceStages.length ? sourceStages : fallbackSourceStages(source.value)
         const categoryIntentApplies = effectiveStages.some((stageKey) => sourceCategoryIntents[sourceCategoryIntentKey(stageKey, source.category)])
         if (!categoryIntentApplies) continue
-        const configured = executableLeadgenSources.has(source.value) && (!source.envVar || Boolean(process.env[source.envVar]))
+        const configured = executableLeadgenSources.has(source.value) && leadgenSourceRuntimeConfigured(source.value)
         const mapped = sourceMappedForIcp(source.value, icpConfig, industryMappings, locationMappings)
         if (configured && mapped) next.add(source.value)
         else next.delete(source.value)

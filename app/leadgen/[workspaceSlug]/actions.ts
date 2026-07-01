@@ -5,7 +5,7 @@ import { redirect } from "next/navigation"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { configObject, createInitialLeadgenPollTasks, MAX_SEED_CANDIDATES, planLeadgenSources, processLeadgenPoll, TARGET_VALIDATED_BUSINESSES } from "@/lib/leadgen/poll-runner"
-import { executableLeadgenSources, seedLeadgenSources } from "@/lib/leadgen/sources"
+import { executableLeadgenSources, leadgenSourceRuntimeConfigured, seedLeadgenSources } from "@/lib/leadgen/sources"
 
 function refreshPolls(slug: string) {
     revalidatePath(`/leadgen/${slug}`)
@@ -24,6 +24,7 @@ export async function createLeadgenPoll(slug: string) {
     const enabledSources = Array.isArray(settings?.enabled_sources) ? settings.enabled_sources.map(String) : []
     const currentSourceConfig = configObject(settings?.source_config)
     const sourcePlan = planLeadgenSources(enabledSources, currentSourceConfig)
+        .filter((source) => leadgenSourceRuntimeConfigured(source.key))
     const seedPlan = sourcePlan.find((source) => seedLeadgenSources.has(source.key) && executableLeadgenSources.has(source.key) && source.industries.length > 0 && source.locations.length > 0)
     const hasRunnableSources = Boolean(seedPlan)
     const { data: poll, error } = await supabaseAdmin.from("leadgen_polls").insert({

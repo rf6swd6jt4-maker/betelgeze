@@ -42,6 +42,7 @@ export type SourceSettingsItem = {
     implemented: boolean
     apiKeyConfigured: boolean
     envVar: string | null
+    envVars: string[]
     setupHint: string | null
     mappingIndustryText: string
     mappingLocationText: string
@@ -123,6 +124,7 @@ function statusDescription(source: SourceSettingsItem, status: SourceStatus, ena
     }
     if (status === "not_mapped") return source.mappingReason || "Current ICP industries or locations do not map to this source."
     if (source.setupHint) return source.setupHint
+    if (source.envVars.length) return `${source.envVars.join(", ")} ${source.envVars.length === 1 ? "is" : "are"} not set for this environment.`
     if (source.envVar) return `${source.envVar} is not set for this environment.`
     return "Source config is incomplete or unavailable."
 }
@@ -202,8 +204,10 @@ function StatusSummary({ counts }: { counts: Record<SourceStatus, number> }) {
 function statusLine(source: SourceSettingsItem, status: SourceStatus, enabled: boolean) {
     const config = !source.implemented
         ? "Adapter is not implemented yet."
-        : !source.apiKeyConfigured && source.envVar
-            ? `${source.envVar} is missing.`
+        : !source.apiKeyConfigured && source.envVars.length
+            ? `${source.envVars.join(", ")} ${source.envVars.length === 1 ? "is" : "are"} missing.`
+            : !source.apiKeyConfigured && source.envVar
+                ? `${source.envVar} is missing.`
             : source.configured
                 ? "Required configuration is present."
                 : "Source configuration is incomplete."

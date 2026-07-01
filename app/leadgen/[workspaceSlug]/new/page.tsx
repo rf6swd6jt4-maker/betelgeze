@@ -2,7 +2,7 @@ import Link from "next/link"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { BrandLockup } from "@/components/brand/BrandLockup"
 import { leadgenSourceFamilyLabels, sourceHealthMap, sourceMetadataNote, sourceStatusMeta, type LeadgenSourceCatalogRow, type LeadgenSourceHealthRow } from "@/lib/leadgen/source-catalog-ui"
-import { buildSourcePlan, executableLeadgenSources, leadgenSourceOptions, seedLeadgenSources, type LeadgenSourceConfig, type LeadgenSourceKey } from "@/lib/leadgen/sources"
+import { buildSourcePlan, executableLeadgenSources, leadgenSourceOptions, leadgenSourceRuntimeConfigured, seedLeadgenSources, type LeadgenSourceConfig, type LeadgenSourceKey } from "@/lib/leadgen/sources"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
 import { createLeadgenPoll } from "../actions"
@@ -65,7 +65,7 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
         const requirement = sourceRequirement(source.value, hasSeedSource)
         const enabled = Boolean(plan)
         const mapped = selectedIndustries.length > 0 && selectedLocations.length > 0 && coveredIndustries > 0 && coveredLocations > 0
-        const configured = source.envVar ? Boolean(process.env[source.envVar]) : true
+        const configured = leadgenSourceRuntimeConfigured(source.value)
         const ready = enabled && executableLeadgenSources.has(source.value) && configured && mapped && !requirement
         return { source, enabled, ready, requirement, configured, coveredIndustries, coveredLocations, mapped }
     })

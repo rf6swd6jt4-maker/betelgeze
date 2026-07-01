@@ -55,8 +55,26 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "permits.tx.austin",
     "permits.fl.orlando",
     "permits.ca.los_angeles",
+    "permits.az.phoenix",
     "registry.tx.comptroller",
+    "state_license.tx.tda_pest",
+    "regulated.tx.tceq_waste",
+    "registry.fl.sunbiz",
+    "state_license.fl.fdacs_pest",
+    "state_license.fl.fdacs_auto_repair",
     "registry.fl.orlando_btr",
+    "registry.fl.miami_dade_lbt",
+    "registry.fl.tampa_btr",
+    "registry.fl.jacksonville_btr",
+    "state_license.ca.cslb",
+    "state_license.ca.bar_auto_repair",
+    "state_license.ca.pest_control",
+    "registry.ca.bizfile",
+    "registry.ca.los_angeles_fbn",
+    "regulated.ca.calrecycle_waste",
+    "state_license.az.roc",
+    "state_license.az.pest_management",
+    "registry.az.corp_commission",
     "safety.osha",
     "transport.fmcsa_safer",
     "regulated.epa_echo",
@@ -67,6 +85,7 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
 ])
 
 const PUBLIC_RECORD_FETCH_TIMEOUT_MS = 18_000
+const CSV_CACHE = new Map<string, Promise<string>>()
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -167,6 +186,87 @@ function strongBusinessNameMatch(candidateName: string, ...recordNames: Array<st
 function firstSearchTerm(candidateName: string) {
     const tokens = nameTokens(candidateName)
     return tokens.slice(0, Math.min(4, Math.max(1, tokens.length))).join(" ")
+}
+
+function candidateCity(candidate: CompanyCandidate) {
+    const address = candidate.address ?? {}
+    return asString(address.city) ?? asString(address.locality) ?? asString(address.town) ?? asString(address.municipality)
+}
+
+function candidatePostcode(candidate: CompanyCandidate) {
+    const address = candidate.address ?? {}
+    const value = asString(address.postcode) ?? asString(address.postal_code) ?? asString(address.zip)
+    return value?.slice(0, 10) ?? null
+}
+
+function parseCsvLine(line: string) {
+    const cells: string[] = []
+    let current = ""
+    let quoted = false
+    for (let index = 0; index < line.length; index += 1) {
+        const char = line[index]
+        const next = line[index + 1]
+        if (char === "\"" && quoted && next === "\"") {
+            current += "\""
+            index += 1
+            continue
+        }
+        if (char === "\"") {
+            quoted = !quoted
+            continue
+        }
+        if (char === "," && !quoted) {
+            cells.push(cleanText(current))
+            current = ""
+            continue
+        }
+        current += char
+    }
+    cells.push(cleanText(current))
+    return cells
+}
+
+function csvRowsWithHeaders(csv: string) {
+    const lines = csv.split(/\r?\n/).filter((line) => line.trim())
+    const headerIndex = lines.findIndex((line) => {
+        const lower = line.toLowerCase()
+        return lower.includes("business") || lower.includes("contractor") || lower.includes("license") || lower.includes("owner") || lower.includes("type,number")
+    })
+    const [headerLine, ...dataLines] = lines.slice(Math.max(0, headerIndex))
+    const headers = parseCsvLine(headerLine ?? "").map((header) => header.trim())
+    return dataLines.map((line) => {
+        const cells = parseCsvLine(line)
+        return Object.fromEntries(headers.map((header, index) => [header, cleanText(cells[index])]))
+    })
+}
+
+async function fetchCachedCsv(url: string) {
+    const cached = CSV_CACHE.get(url)
+    if (cached) return cached
+    const promise = fetchTextWithTimeout(url, { headers: { Accept: "text/csv,text/plain,*/*" } })
+    CSV_CACHE.set(url, promise)
+    return promise
+}
+
+function dateParts(date: Date) {
+    return {
+        month: String(date.getUTCMonth() + 1).padStart(2, "0"),
+        day: String(date.getUTCDate()).padStart(2, "0"),
+        year: String(date.getUTCFullYear()),
+    }
+}
+
+function usDate(date: Date) {
+    const parts = dateParts(date)
+    return `${parts.month}/${parts.day}/${parts.year}`
+}
+
+function looksLikeChallengePage(text: string) {
+    return /Just a moment|Cloudflare|Attention Required|Incapsula|Request unsuccessful|captcha|recaptcha|Error 403|outside the United States/i.test(text)
+}
+
+function assertNotChallenge(sourceLabel: string, text: string) {
+    if (looksLikeChallengePage(text)) throw new Error(`${sourceLabel} returned an anti-bot, captcha, or geo-block challenge instead of public records.`)
 }
 
 function looksLikePersonName(value: string | null | undefined) {
@@ -584,6 +684,408 @@ async function fetchTexasComptrollerRows(searchTerm: string, metadata: Record<st
     return rows
 }
 
+async function fetchTexasAgriculturePestRows(searchTerm: string, metadata: Record<string, unknown>, company: CompanyCandidate) {
+    const urls = asStringArray(metadata.source_urls)
+    const sourceUrls = urls.length ? urls : [
+        "https://texasagriculture.gov/Portals/0/Reports/PIR/spcs_commercial_business.csv",
+        "https://texasagriculture.gov/Portals/0/Reports/PIR/spcs_noncommercial_business.csv",
+    ]
+    const limit = Math.min(30, Math.max(1, Number(metadata.query_limit) || 15))
+    const rows: SocrataRecord[] = []
+    const state = candidateState(company)
+    const county = asString(company.address?.county)
+    for (const sourceUrl of sourceUrls) {
+        const csv = await fetchCachedCsv(sourceUrl)
+        for (const row of csvRowsWithHeaders(csv)) {
+            const legalName = asString(row.LEGAL_BUSINESS_NAME)
+            const dbaName = asString(row.DBA)
+            if (!strongBusinessNameMatch(company.display_name, legalName, dbaName, asString(row.BUSINESS_NAME))) continue
+            if (state && state !== "TX") continue
+            if (county && asString(row.COUNTY) && sharedTokenScore(county, asString(row.COUNTY)) < 0.6 && !strongBusinessNameMatch(company.display_name, legalName, dbaName)) continue
+            const responsibleApplicator = asString(row.RESPONSIBLE_APPLICATOR)
+            const operator = asString(row.OPERATOR)
+            rows.push({
+                ...row,
+                business_name: dbaName ?? legalName,
+                legal_business_name: legalName,
+                owner_name: looksLikePersonName(responsibleApplicator) ? responsibleApplicator : looksLikePersonName(operator) ? operator : null,
+                applicator_name: responsibleApplicator,
+                operator_name: operator,
+                license_number: asString(row.TPCL) ?? asString(row.ACCOUNT),
+                status: asString(row.LICENSE_EXPIRED) ? `Expires ${asString(row.LICENSE_EXPIRED)}` : null,
+                record_type: asString(row.ACCOUNT_TYPE) ?? "Texas structural pest business license",
+                county: asString(row.COUNTY),
+                state: "TX",
+                source_url: "https://texasagriculture.gov/Regulatory-Programs/Pesticides/Structural-Pest-Control-Service/Structural-Pest-Control-Reports-Current-Licenses",
+            })
+            if (rows.length >= limit) return rows
+        }
+    }
+    return rows
+}
+
+function labelledHtmlValue(html: string, label: string) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const patterns = [
+        new RegExp(`<(?:span|label|div)[^>]*>\\s*${escaped}\\s*:?[\\s\\S]*?<\\/[^>]+>\\s*([^<\\n][\\s\\S]*?)(?=<\\/p>|<p|<div|<span|<label|<br|$)`, "i"),
+        new RegExp(`${escaped}\\s*:?\\s*(?:<br\\s*\\/?>)?\\s*([^<\\n][\\s\\S]*?)(?=<\\/p>|<p|<div|<span|<label|<br|$)`, "i"),
+    ]
+    for (const pattern of patterns) {
+        const value = stripHtml(html.match(pattern)?.[1] ?? "")
+        if (value && !new RegExp(`^${escaped}$`, "i").test(value)) return value
+    }
+    return null
+}
+
+function tableRows(html: string) {
+    return [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+        .map((rowMatch) => [...rowMatch[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)(?=<t[dh]\b|<\/tr>|$)/gi)].map((cell) => stripHtml(cell[1])))
+        .filter((cells) => cells.length > 0)
+}
+
+async function fetchTceqRows(searchTerm: string, metadata: Record<string, unknown>, company: CompanyCandidate) {
+    const limit = Math.min(8, Math.max(1, Number(metadata.query_limit) || 5))
+    const body = new URLSearchParams({
+        fuseaction: "regent.validateRE",
+        re_name_txt: searchTerm,
+        pgm_area: asString(metadata.program_area) ?? "",
+        addn_id_status_cd: "",
+        city_name: candidateCity(company) ?? "",
+        zip_cd: candidatePostcode(company)?.slice(0, 5) ?? "",
+        cnty_name: asString(company.address?.county) ?? "",
+    })
+    const searchHtml = await fetchTextWithTimeout("https://www15.tceq.texas.gov/crpub/index.cfm", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Referer: "https://www15.tceq.texas.gov/crpub/index.cfm?fuseaction=regent.RNSearch",
+        },
+        body,
+    })
+    assertNotChallenge("Texas TCEQ Central Registry", searchHtml)
+    const links = [...searchHtml.matchAll(/href="([^"]*showSingleRN[^"]+)/gi)]
+        .map((match) => match[1].replace(/&amp;/g, "&"))
+        .slice(0, limit)
+    const rows: SocrataRecord[] = []
+    for (const link of links) {
+        const sourceUrl = new URL(link, "https://www15.tceq.texas.gov/crpub/").toString()
+        const detailHtml = await fetchTextWithTimeout(sourceUrl)
+        const regulatedName = labelledHtmlValue(detailHtml, "Name")
+        if (!regulatedName || !strongBusinessNameMatch(company.display_name, regulatedName)) continue
+        const rnNumber = detailHtml.match(/RN\s*&nbsp;Number:[\s\S]*?(RN\d+)/i)?.[1] ?? detailHtml.match(/\b(RN\d{9})\b/i)?.[1] ?? null
+        const primaryBusiness = labelledHtmlValue(detailHtml, "Primary Business")
+        const county = labelledHtmlValue(detailHtml, "County")
+        const city = labelledHtmlValue(detailHtml, "Nearest City")
+        const zip = labelledHtmlValue(detailHtml, "Near ZIP Code")
+        const physicalLocation = labelledHtmlValue(detailHtml, "Physical Location")
+        const customerRows = tableRows(detailHtml).filter((cells) => cells.some((cell) => /^CN\d+/i.test(cell)))
+        if (customerRows.length === 0) {
+            rows.push({
+                regulated_entity_name: regulatedName,
+                business_name: regulatedName,
+                rn_number: rnNumber,
+                record_id: rnNumber,
+                status: primaryBusiness,
+                record_type: "TCEQ regulated entity",
+                street: physicalLocation,
+                city,
+                county,
+                state: "TX",
+                postcode: zip,
+                source_url: sourceUrl,
+            })
+        }
+        for (const cells of customerRows.slice(0, 3)) {
+            const cnNumber = cells.find((cell) => /^CN\d+/i.test(cell)) ?? null
+            const customerName = cells.find((cell) => cell !== cnNumber && !/OWNER|OPERATOR|CUSTOMER|Details/i.test(cell)) ?? null
+            const role = cells.find((cell) => /OWNER|OPERATOR|RESPONSIBLE|CUSTOMER/i.test(cell)) ?? "Affiliated customer"
+            rows.push({
+                regulated_entity_name: regulatedName,
+                business_name: regulatedName,
+                owner_name: looksLikePersonName(customerName) ? customerName : null,
+                affiliated_customer_name: customerName,
+                customer_role: role,
+                rn_number: rnNumber,
+                cn_number: cnNumber,
+                record_id: cnNumber ?? rnNumber,
+                status: primaryBusiness,
+                record_type: role,
+                street: physicalLocation,
+                city,
+                county,
+                state: "TX",
+                postcode: zip,
+                source_url: sourceUrl,
+                additional_match_name: customerName,
+            })
+        }
+        await sleep(160)
+    }
+    return rows
+}
+
+function htmlFormValue(html: string, name: string) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    return decodeHtml(html.match(new RegExp(`name="${escaped}"[^>]*value="([^"]*)"`, "i"))?.[1] ?? "")
+}
+
+function responseCookies(response: Response) {
+    const getSetCookie = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie
+    const cookies = getSetCookie?.() ?? (response.headers.get("set-cookie") ? [response.headers.get("set-cookie") as string] : [])
+    return cookies.map((cookie) => cookie.split(";")[0]).filter(Boolean).join("; ")
+}
+
+function cslbRowsFromSearch(html: string) {
+    return html
+        .split(/<tr>\s*<td(?:\s|>)/i)
+        .slice(1)
+        .map((chunk) => `<td${chunk}`)
+        .map((rowHtml) => {
+            const licenseNumber = rowHtml.match(/LicenseDetail\.aspx\?LicNum=(\d+)/i)?.[1] ?? null
+            const fields: Record<string, string> = {}
+            for (const fieldMatch of rowHtml.matchAll(/<span[^>]*lbl(?:CName|NameType|License|txtCity|Status)_\d+[^>]*>([\s\S]*?)<\/span>\s*<\/td>\s*<td>\s*(?:<a[^>]*>)?<span[^>]*>([\s\S]*?)<\/span>|<span[^>]*lbl(CName|Type|City|LicenseStatus)_\d+[^>]*>([\s\S]*?)<\/span>/gi)) {
+                const label = stripHtml(fieldMatch[1] ?? fieldMatch[3] ?? "")
+                const value = stripHtml(fieldMatch[2] ?? fieldMatch[4] ?? "")
+                if (label && value) fields[label.toLowerCase()] = value
+            }
+            const businessName = fields["contractor name"] ?? stripHtml(rowHtml.match(/lblName_\d+[^>]*>([\s\S]*?)<\/span>/i)?.[1] ?? "")
+            const city = fields.city ?? stripHtml(rowHtml.match(/lblCity_\d+[^>]*>([\s\S]*?)<\/span>/i)?.[1] ?? "")
+            const status = fields.status ?? stripHtml(rowHtml.match(/lblLicenseStatus_\d+[^>]*>([\s\S]*?)<\/span>/i)?.[1] ?? "")
+            return licenseNumber && businessName ? { licenseNumber, businessName, city, status, rowHtml } : null
+        })
+        .filter((row): row is { licenseNumber: string; businessName: string; city: string; status: string; rowHtml: string } => Boolean(row))
+}
+
+function cslbBusinessInfo(detailHtml: string) {
+    const block = detailHtml.match(/id="MainContent_BusInfo"[^>]*>([\s\S]*?)<\/td>/i)?.[1] ?? ""
+    const lines = block.split(/<br\s*\/?>/i).map(stripHtml).filter(Boolean)
+    const phone = normalisePhone(block.match(/Business Phone Number:\s*([^<]+)/i)?.[1])
+    const businessName = lines[0] ?? null
+    const street = lines[1] ?? null
+    const cityStateZip = lines.find((line) => /,\s*[A-Z]{2}\s+\d{5}/.test(line)) ?? null
+    const cityStateZipMatch = cityStateZip?.match(/^(.+?),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)/)
+    const qualifier = detailHtml.match(/qualifying individual\s+([A-Z][A-Z .'-]+?)\s+certified/i)?.[1] ?? null
+    return {
+        businessName,
+        phone,
+        street,
+        city: cityStateZipMatch?.[1] ?? null,
+        state: cityStateZipMatch?.[2] ?? "CA",
+        postcode: cityStateZipMatch?.[3] ?? null,
+        ownerName: looksLikePersonName(qualifier) ? cleanText(qualifier) : null,
+        entity: stripHtml(detailHtml.match(/id="MainContent_Entity"[^>]*>([\s\S]*?)<\/td>/i)?.[1] ?? "") || null,
+        issueDate: stripHtml(detailHtml.match(/id="MainContent_IssDt"[^>]*>([\s\S]*?)<\/td>/i)?.[1] ?? "") || null,
+        expireDate: stripHtml(detailHtml.match(/id="MainContent_ExpDt"[^>]*>([\s\S]*?)<\/td>/i)?.[1] ?? "") || null,
+        status: stripHtml(detailHtml.match(/id="MainContent_Status"[^>]*>([\s\S]*?)<\/td>/i)?.[1] ?? "") || null,
+        classifications: stripHtml(detailHtml.match(/id="MainContent_ClassCellTable"[^>]*>([\s\S]*?)<\/td>/i)?.[1] ?? "") || null,
+    }
+}
+
+async function fetchCslbRows(searchTerm: string, metadata: Record<string, unknown>, company: CompanyCandidate) {
+    const firstResponse = await fetch("https://www.cslb.ca.gov/onlineservices/checklicenseII/checklicense.aspx", {
+        headers: { "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)" },
+        cache: "no-store",
+    })
+    const firstHtml = await firstResponse.text()
+    if (!firstResponse.ok) throw new Error(`CSLB search form returned HTTP ${firstResponse.status}: ${stripHtml(firstHtml).slice(0, 280)}`)
+    const firstCookie = responseCookies(firstResponse)
+    const body = new URLSearchParams({
+        __VIEWSTATE: htmlFormValue(firstHtml, "__VIEWSTATE"),
+        __VIEWSTATEGENERATOR: htmlFormValue(firstHtml, "__VIEWSTATEGENERATOR"),
+        __EVENTVALIDATION: htmlFormValue(firstHtml, "__EVENTVALIDATION"),
+        "ctl00$MainContent$LicNo": "",
+        "ctl00$MainContent$NextName": searchTerm,
+        "ctl00$MainContent$LName": "",
+        "ctl00$MainContent$FName": "",
+        "ctl00$MainContent$HIS_LicNo": "",
+        "ctl00$MainContent$LicLmfPre": "SP",
+        "ctl00$MainContent$HIS_LName": "",
+        "ctl00$MainContent$HIS_FName": "",
+        "ctl00$MainContent$Contractor_Business_Name_Button": " ",
+    })
+    const searchResponse = await fetch("https://www.cslb.ca.gov/onlineservices/checklicenseII/checklicense.aspx", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)",
+            Referer: "https://www.cslb.ca.gov/onlineservices/checklicenseII/checklicense.aspx",
+            ...(firstCookie ? { Cookie: firstCookie } : {}),
+        },
+        body,
+        cache: "no-store",
+    })
+    const searchHtml = await searchResponse.text()
+    if (!searchResponse.ok) throw new Error(`CSLB search returned HTTP ${searchResponse.status}: ${stripHtml(searchHtml).slice(0, 280)}`)
+    assertNotChallenge("California CSLB", searchHtml)
+    const cookie = [firstCookie, responseCookies(searchResponse)].filter(Boolean).join("; ")
+    const rows: SocrataRecord[] = []
+    const limit = Math.min(8, Math.max(1, Number(metadata.query_limit) || 5))
+    for (const result of cslbRowsFromSearch(searchHtml).slice(0, limit)) {
+        if (!strongBusinessNameMatch(company.display_name, result.businessName)) continue
+        const sourceUrl = `https://www.cslb.ca.gov/OnlineServices/checklicenseII/LicenseDetail.aspx?LicNum=${encodeURIComponent(result.licenseNumber)}`
+        let detail = cslbBusinessInfo("")
+        try {
+            const detailHtml = await fetchTextWithTimeout(sourceUrl, {
+                headers: {
+                    Referer: "https://www.cslb.ca.gov/onlineservices/checklicenseII/checklicense.aspx",
+                    ...(cookie ? { Cookie: cookie } : {}),
+                },
+            })
+            detail = cslbBusinessInfo(detailHtml)
+        } catch {
+            detail = cslbBusinessInfo("")
+        }
+        rows.push({
+            business_name: detail.businessName ?? result.businessName,
+            contractor_name: result.businessName,
+            owner_name: detail.ownerName,
+            phone: detail.phone,
+            license_number: result.licenseNumber,
+            status: detail.status ?? result.status,
+            record_type: detail.classifications ?? "CSLB contractor license",
+            street: detail.street,
+            city: detail.city ?? result.city,
+            state: detail.state ?? "CA",
+            postcode: detail.postcode,
+            entity: detail.entity,
+            issue_date: detail.issueDate,
+            expiration_date: detail.expireDate,
+            source_url: sourceUrl,
+        })
+        await sleep(200)
+    }
+    return rows
+}
+
+function arcgisWhere(searchTerm: string, fields: string[]) {
+    const escaped = searchTerm.toUpperCase().replace(/'/g, "''")
+    return fields.map((field) => `UPPER(${field}) LIKE '%${escaped}%'`).join(" OR ")
+}
+
+async function fetchArcgisRows(metadata: Record<string, unknown>, searchTerm: string) {
+    const serviceUrl = asString(metadata.service_url)
+    if (!serviceUrl) throw new Error("ArcGIS source is missing service_url metadata.")
+    const fields = asStringArray(metadata.search_fields)
+    if (fields.length === 0) throw new Error("ArcGIS source is missing search_fields metadata.")
+    const limit = Math.min(50, Math.max(1, Number(metadata.query_limit) || 15))
+    const params = new URLSearchParams({
+        f: "json",
+        where: arcgisWhere(searchTerm, fields),
+        outFields: "*",
+        resultRecordCount: String(limit),
+    })
+    const text = await fetchTextWithTimeout(`${serviceUrl.replace(/\/$/, "")}/query?${params.toString()}`, { headers: { Accept: "application/json" } })
+    const parsed = JSON.parse(text) as { features?: Array<{ attributes?: SocrataRecord; geometry?: { x?: number; y?: number } }>; error?: { message?: string; details?: string[] } }
+    if (parsed.error) throw new Error(`ArcGIS query failed: ${parsed.error.message ?? "unknown error"} ${(parsed.error.details ?? []).join(" ")}`.trim())
+    return (parsed.features ?? []).map((feature) => ({
+        ...(feature.attributes ?? {}),
+        longitude: feature.attributes?.Longitude ?? feature.attributes?.longitude ?? feature.geometry?.x,
+        latitude: feature.attributes?.Latitude ?? feature.attributes?.latitude ?? feature.geometry?.y,
+    }))
+}
+
+async function fetchPhoenixPermitRows(searchTerm: string, metadata: Record<string, unknown>, company: CompanyCandidate) {
+    const permitType = asString(metadata.permit_type) ?? "PERS"
+    const structureClass = asString(metadata.structure_class) ?? ""
+    const end = new Date()
+    const start = new Date(end)
+    start.setUTCDate(start.getUTCDate() - 365)
+    const url = `https://apps-secure.phoenix.gov/PDD/Search/IssuedPermit/ExportToCSV?${new URLSearchParams({
+        PermitType: permitType,
+        StructureClass: structureClass,
+        StartDate: usDate(start),
+        EndDate: usDate(end),
+        SortBy: "PER_ISSUE_DATE",
+    }).toString()}`
+    const csv = await fetchCachedCsv(url)
+    return csvRowsWithHeaders(csv)
+        .filter((row) => strongBusinessNameMatch(company.display_name, asString(row.Contractor)))
+        .map((row) => ({
+            ...row,
+            business_name: asString(row.Contractor),
+            contractor_name: asString(row.Contractor),
+            phone: asString(row["Cont Phone"]),
+            property_owner_name: asString(row.Owner),
+            permit_number: asString(row.Number),
+            status: asString(row.Status),
+            record_type: [asString(row.Type), asString(row["Struct Class"]), asString(row.Use)].filter(Boolean).join(" / ") || "Phoenix issued permit",
+            street: asString(row.Address),
+            city: "Phoenix",
+            state: "AZ",
+            source_url: "https://apps-secure.phoenix.gov/PDD/Search/IssuedPermit",
+            additional_match_name: asString(row.Contractor),
+        }))
+        .slice(0, Math.min(20, Math.max(1, Number(metadata.query_limit) || 10)))
+}
+
+async function fetchDcaRows(searchTerm: string, metadata: Record<string, unknown>) {
+    const appId = process.env.DCA_SEARCH_APP_ID
+    const appKey = process.env.DCA_SEARCH_APP_KEY
+    if (!appId || !appKey) throw new Error("California DCA Search API requires DCA_SEARCH_APP_ID and DCA_SEARCH_APP_KEY.")
+    const clientCodeId = asStringArray(metadata.dca_client_code_ids).map(Number).filter(Number.isFinite)
+    if (clientCodeId.length === 0) throw new Error("DCA source is missing dca_client_code_ids metadata.")
+    const payload = {
+        searchMethod: "SNDX",
+        name: searchTerm,
+        clientCodeId,
+    }
+    const text = await fetchTextWithTimeout("https://iservices.dca.ca.gov/api/search/v1/licenseSearchService/getPublicLicenseSearch", {
+        method: "POST",
+        headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            APP_ID: appId,
+            APP_KEY: appKey,
+        },
+        body: JSON.stringify(payload),
+    })
+    const parsed = JSON.parse(text) as { results?: Array<Record<string, unknown>> }
+    return (parsed.results ?? []).map((result) => ({
+        business_name: asString(result.name),
+        owner_name: looksLikePersonName(asString(result.name)) ? asString(result.name) : null,
+        license_number: asString(result.licenseNumber),
+        board_code: asString(result.boardCode),
+        license_type: asString(result.licenseType),
+        license_rank: asString(result.licenseTypeRank),
+        city: asString(result.city),
+        county: asString(result.county),
+        state: asString(result.state) ?? "CA",
+        postcode: asString(result.zip),
+        status: asString(result.primaryStatusCode),
+        record_type: asString(result.licenseType),
+        source_url: result.licenseNumber ? `https://search.dca.ca.gov/details/${encodeURIComponent(String(result.boardCode ?? ""))}/${encodeURIComponent(String(result.licenseNumber))}` : "https://search.dca.ca.gov/",
+    }))
+}
+
+async function fetchGuardedHtmlRows(source: SourceCatalog, searchTerm: string, metadata: Record<string, unknown>) {
+    const searchUrlTemplate = asString(metadata.search_url)
+    const label = source.label
+    if (!searchUrlTemplate) throw new Error(`${label} is missing search_url metadata.`)
+    const searchUrl = searchUrlTemplate.replace("{query}", encodeURIComponent(searchTerm))
+    const html = await fetchTextWithTimeout(searchUrl)
+    assertNotChallenge(label, html)
+    const rows = tableRows(html)
+    const mappedRows = rows.slice(0, Math.min(20, Math.max(1, Number(metadata.query_limit) || 10))).flatMap((cells) => {
+        const joined = cells.join(" ")
+        if (!strongBusinessNameMatch(searchTerm, joined)) return []
+        const phoneCell = cells.find((cell) => Boolean(normalisePhone(cell)))
+        return [{
+            business_name: cells.find((cell) => strongBusinessNameMatch(searchTerm, cell)) ?? joined,
+            owner_name: cells.find((cell) => looksLikePersonName(cell)) ?? null,
+            phone: normalisePhone(phoneCell),
+            record_id: cells.find((cell) => /[A-Z0-9-]{5,}/i.test(cell)) ?? hashRecord(cells),
+            status: cells.find((cell) => /active|current|registered|open/i.test(cell)) ?? null,
+            record_type: asString(metadata.default_record_type) ?? label,
+            source_url: searchUrl,
+            raw_cells: cells,
+        }]
+    })
+    if (mappedRows.length === 0 && /<html/i.test(html)) {
+        throw new Error(`${label} responded, but no parseable public-record rows were found for "${searchTerm}".`)
+    }
+    return mappedRows
+}
+
 function rdapUrlForDomain(domain: string) {
     const lower = domain.toLowerCase()
     if (lower.endsWith(".com")) return `https://rdap.verisign.com/com/v1/domain/${encodeURIComponent(lower.toUpperCase())}`
@@ -660,6 +1162,13 @@ async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, com
     if (adapter === "nppes_registry") return fetchNppesRows(searchTerm, company)
     if (adapter === "usaspending_awards") return fetchUsaspendingRows(searchTerm)
     if (adapter === "texas_comptroller_franchise_tax") return fetchTexasComptrollerRows(searchTerm, source.metadata ?? {})
+    if (adapter === "texas_agriculture_spcs_csv") return fetchTexasAgriculturePestRows(searchTerm, source.metadata ?? {}, company)
+    if (adapter === "tceq_central_registry") return fetchTceqRows(searchTerm, source.metadata ?? {}, company)
+    if (adapter === "cslb_license_search") return fetchCslbRows(searchTerm, source.metadata ?? {}, company)
+    if (adapter === "arcgis_feature_service") return fetchArcgisRows(source.metadata ?? {}, searchTerm)
+    if (adapter === "phoenix_issued_permit_csv") return fetchPhoenixPermitRows(searchTerm, source.metadata ?? {}, company)
+    if (adapter === "dca_search_api") return fetchDcaRows(searchTerm, source.metadata ?? {})
+    if (adapter === "guarded_html_search") return fetchGuardedHtmlRows(source, searchTerm, source.metadata ?? {})
     if (adapter === "rdap_domain") return fetchRdapRows(company)
     if (adapter === "certificate_transparency") return fetchCertificateTransparencyRows(company)
     return fetchSocrataRows(source.metadata ?? {}, searchTerm)

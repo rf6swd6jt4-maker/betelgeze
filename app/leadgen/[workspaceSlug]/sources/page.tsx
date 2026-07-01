@@ -7,7 +7,7 @@ import type { LeadgenSourceCatalogRow } from "@/lib/leadgen/source-catalog-ui"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
-import { executableLeadgenSources, leadgenSourceOptions, type LeadgenSourceCategoryKey, type LeadgenSourceConfig, type LeadgenSourceKey, type LeadgenSourceStageKey } from "@/lib/leadgen/sources"
+import { executableLeadgenSources, leadgenSourceEnvVars, leadgenSourceOptions, leadgenSourceRuntimeConfigured, type LeadgenSourceCategoryKey, type LeadgenSourceConfig, type LeadgenSourceKey, type LeadgenSourceStageKey } from "@/lib/leadgen/sources"
 import { saveLeadgenSettings, updateLeadgenCoverLayout, updateLeadgenWorkspaceName, uploadLeadgenBanner, uploadSharedWorkspaceLogo } from "../settings/actions"
 
 export const dynamic = "force-dynamic"
@@ -158,7 +158,8 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
         const stageKeys = stageCapabilities(catalogBySource.get(source.value)?.stage_capabilities)
         const effectiveStageKeys = stageKeys.length ? stageKeys : fallbackSourceStages(source.value)
         const sourceStage = primarySourceStage(source.value, effectiveStageKeys)
-        const apiKeyConfigured = source.envVar ? Boolean(process.env[source.envVar]) : true
+        const envVars = leadgenSourceEnvVars(source)
+        const apiKeyConfigured = leadgenSourceRuntimeConfigured(source.value)
         const configured = implemented && apiKeyConfigured
         const categoryIntentEnabled = effectiveStageKeys.some((stageKey) => sourceCategoryIntents[sourceCategoryIntentKey(stageKey, source.category)])
         const enabled = configured && mapped.ready && (enabledSources.has(source.value) || categoryIntentEnabled)
@@ -178,6 +179,7 @@ export default async function LeadgenSourcesPage({ params }: PageProps) {
             implemented,
             apiKeyConfigured,
             envVar: source.envVar ?? null,
+            envVars,
             setupHint: source.setupHint ?? null,
             mappingIndustryText: mapped.industryText,
             mappingLocationText: mapped.locationText,

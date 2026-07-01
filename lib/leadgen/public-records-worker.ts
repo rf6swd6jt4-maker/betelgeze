@@ -55,6 +55,7 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "permits.tx.austin",
     "permits.fl.orlando",
     "permits.ca.los_angeles",
+    "registry.tx.comptroller",
     "registry.fl.orlando_btr",
     "safety.osha",
     "transport.fmcsa_safer",
@@ -498,6 +499,91 @@ async function fetchUsaspendingRows(searchTerm: string) {
     }))
 }
 
+function texasComptrollerRowsFromDetail(detail: Record<string, unknown>, sourceUrl: string) {
+    const taxpayerId = asString(detail.taxpayerId)
+    const base = {
+        name: asString(detail.name),
+        dba_name: asString(detail.dbaName),
+        taxpayer_id: taxpayerId,
+        fei_number: asString(detail.feiNumber),
+        sos_file_number: asString(detail.sosFileNumber),
+        sos_registration_status: asString(detail.sosRegistrationStatus),
+        right_to_transact_tx: asString(detail.rightToTransactTX),
+        effective_sos_registration_date: asString(detail.effectiveSosRegistrationDate),
+        report_year: asString(detail.reportYear),
+        mailing_address_street: asString(detail.mailingAddressStreet),
+        mailing_address_city: asString(detail.mailingAddressCity),
+        mailing_address_state: asString(detail.mailingAddressState),
+        mailing_address_zip: asString(detail.mailingAddressZip),
+        source_url: sourceUrl,
+    }
+    const rows: SocrataRecord[] = []
+    const seenPeople = new Set<string>()
+    const registeredAgentName = asString(detail.registeredAgentName)
+    if (registeredAgentName && !/^not on file$/i.test(registeredAgentName)) {
+        seenPeople.add(`registered agent:${registeredAgentName.toLowerCase()}`)
+        rows.push({
+            ...base,
+            registered_agent_name: registeredAgentName,
+            officer_name: registeredAgentName,
+            officer_title: "Registered Agent",
+            record_id: taxpayerId ? `${taxpayerId}:registered-agent` : `registered-agent:${registeredAgentName}`,
+            record_type: "Texas franchise tax registered agent",
+            registered_office_address_street: asString(detail.registeredOfficeAddressStreet),
+            registered_office_address_city: asString(detail.registeredOfficeAddressCity),
+            registered_office_address_state: asString(detail.registeredOfficeAddressState),
+            registered_office_address_zip: asString(detail.registeredOfficeAddressZip),
+        })
+    }
+    const officerRows = Array.isArray(detail.officerInfo) ? detail.officerInfo.map(asRecord) : []
+    for (const officer of officerRows) {
+        const officerName = asString(officer.AGNT_NM)
+        const officerTitle = asString(officer.AGNT_TITL_TX) ?? "Officer"
+        if (!officerName) continue
+        const key = `${officerTitle}:${officerName}`.toLowerCase()
+        if (seenPeople.has(key)) continue
+        seenPeople.add(key)
+        rows.push({
+            ...base,
+            officer_name: officerName,
+            officer_title: officerTitle,
+            record_id: taxpayerId ? `${taxpayerId}:${officerTitle}:${officerName}` : `${officerTitle}:${officerName}`,
+            record_type: "Texas franchise tax Public Information Report officer",
+            officer_active_year: asString(officer.AGNT_ACTV_YR),
+            officer_source: asString(officer.SOURCE),
+            officer_address_street: asString(officer.AD_STR_POB_TX),
+            officer_address_city: asString(officer.CITY_NM),
+            officer_address_state: asString(officer.ST_CD),
+            officer_address_zip: asString(officer.AD_ZP),
+        })
+    }
+    if (rows.length === 0 && base.name) rows.push({ ...base, record_id: taxpayerId, record_type: "Texas franchise tax account status" })
+    return rows
+}
+
+async function fetchTexasComptrollerRows(searchTerm: string, metadata: Record<string, unknown>) {
+    if (!searchTerm) return []
+    const limit = Math.min(8, Math.max(1, Number(metadata.query_limit) || 5))
+    const searchParams = new URLSearchParams({ name: searchTerm })
+    const searchUrl = `https://comptroller.texas.gov/data-search/franchise-tax?${searchParams.toString()}`
+    const searchText = await fetchTextWithTimeout(searchUrl, { headers: { Accept: "application/json" } })
+    const parsed = JSON.parse(searchText) as { data?: unknown }
+    const summaries = Array.isArray(parsed.data) ? parsed.data.map(asRecord).slice(0, limit) : []
+    const rows: SocrataRecord[] = []
+    for (const summary of summaries) {
+        const taxpayerId = asString(summary.taxpayerId)
+        if (!taxpayerId) continue
+        const detailApiUrl = `https://comptroller.texas.gov/data-search/franchise-tax/${encodeURIComponent(taxpayerId)}`
+        const detailText = await fetchTextWithTimeout(detailApiUrl, { headers: { Accept: "application/json" } })
+        const detailParsed = JSON.parse(detailText) as { data?: unknown }
+        const detail = asRecord(detailParsed.data)
+        const sourceUrl = `https://comptroller.texas.gov/taxes/franchise/account-status/search/${encodeURIComponent(taxpayerId)}`
+        rows.push(...texasComptrollerRowsFromDetail(detail, sourceUrl))
+        await sleep(120)
+    }
+    return rows
+}
+
 function rdapUrlForDomain(domain: string) {
     const lower = domain.toLowerCase()
     if (lower.endsWith(".com")) return `https://rdap.verisign.com/com/v1/domain/${encodeURIComponent(lower.toUpperCase())}`
@@ -573,6 +659,7 @@ async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, com
     if (adapter === "epa_echo_cwa_facility_info") return fetchEpaEchoRows(searchTerm, company)
     if (adapter === "nppes_registry") return fetchNppesRows(searchTerm, company)
     if (adapter === "usaspending_awards") return fetchUsaspendingRows(searchTerm)
+    if (adapter === "texas_comptroller_franchise_tax") return fetchTexasComptrollerRows(searchTerm, source.metadata ?? {})
     if (adapter === "rdap_domain") return fetchRdapRows(company)
     if (adapter === "certificate_transparency") return fetchCertificateTransparencyRows(company)
     return fetchSocrataRows(source.metadata ?? {}, searchTerm)

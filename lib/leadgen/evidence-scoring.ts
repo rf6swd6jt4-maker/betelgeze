@@ -44,6 +44,7 @@ const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set([
     "permits.tx.austin",
     "permits.fl.orlando",
     "permits.ca.los_angeles",
+    "registry.tx.comptroller",
     "registry.fl.orlando_btr",
     "safety.osha",
     "transport.fmcsa_safer",

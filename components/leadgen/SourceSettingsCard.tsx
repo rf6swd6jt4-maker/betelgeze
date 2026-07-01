@@ -69,7 +69,7 @@ const SOURCE_CATEGORIES: SourceCategory[] = [
 
 const SOURCE_STAGE_CARDS: Array<{ key: SourceStageKey; title: string; detail: string; empty: string }> = [
     { key: "business_validation", title: "Business validation sources", detail: "Sources that can confirm a seeded business is real enough to enter the owner pipeline.", empty: "No honest business-validation source is exposed for this workspace yet." },
-    { key: "owner_identity", title: "Owner identity sources", detail: "Sources that can find a credible owner, principal, license holder, or authorised official name.", empty: "No owner-identity source is exposed for this workspace yet." },
+    { key: "owner_identity", title: "Owner identity discovery", detail: "Sources that can find a credible owner, principal, license holder, or authorised official name.", empty: "No owner-identity source is exposed for this workspace yet." },
     { key: "owner_phone", title: "Owner phone sources", detail: "Sources that can attach a phone number to the discovered owner or principal.", empty: "No owner-phone source is exposed for this workspace yet." },
     { key: "phone_validation", title: "Phone validation sources", detail: "Sources that check owner-phone format now, and can later add carrier, line-type, and reachability checks.", empty: "No phone-validation source is exposed for this workspace yet." },
 ]

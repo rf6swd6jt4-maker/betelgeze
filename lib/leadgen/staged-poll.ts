@@ -55,9 +55,9 @@ function asString(value: unknown) {
     return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
-function ownerNameFromClaim(value: Record<string, unknown>) {
+function ownerNameFromClaim(value: Record<string, unknown>, contextNames: Array<string | null | undefined> = []) {
     const raw = asString(value.owner_name) ?? asString(value.full_name) ?? asString(value.person_name) ?? asString(value.name)
-    return normalisePersonName(raw, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 58 })
+    return normalisePersonName(raw, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 58, contextNames })
 }
 
 function ownerPhoneFromClaim(value: Record<string, unknown>) {
@@ -273,7 +273,7 @@ function metricsForCompany(company: StageCompany, claims: EvidenceClaim[]): Stag
         if (["business_support", "business_phone", "permit_activity", "licence_activity"].includes(claim.claim_kind)) businessSupportPoints += points
         const value = asRecord(claim.claim_value)
         if (["owner_identity", "officer_identity"].includes(claim.claim_kind)) {
-            const claimOwnerName = ownerNameFromClaim(value)
+            const claimOwnerName = ownerNameFromClaim(value, [company.display_name])
             if (claimOwnerName) {
                 ownerName ||= claimOwnerName
                 hasOwnerIdentityEvidence = true
@@ -281,7 +281,7 @@ function metricsForCompany(company: StageCompany, claims: EvidenceClaim[]): Stag
             }
         }
         if (claim.claim_kind === "owner_phone") {
-            const claimOwnerName = ownerNameFromClaim(value)
+            const claimOwnerName = ownerNameFromClaim(value, [company.display_name])
             const claimOwnerPhone = ownerPhoneFromClaim(value)
             if (claimOwnerName) {
                 ownerName ||= claimOwnerName

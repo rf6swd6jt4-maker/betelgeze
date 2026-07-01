@@ -90,10 +90,38 @@ test("cleans noisy owner phrases down to person spans", () => {
         </html>
     `
 
-    const result = extractPageEvidence("https://example.com/about", html)
+    const result = extractPageEvidence("https://example.com/about", html, undefined, undefined, undefined, { businessNames: ["Spillman Excavating"] })
 
     assert.equal(result.owner_name, "Joe Spillman")
     assert.equal(result.owner_source, "team_card")
+})
+
+test("rejects business-name echoes and utility labels as owner names", () => {
+    const html = `
+        <html>
+            <body>
+                <section class="team-card">
+                    <h2>Modular Solutions</h2>
+                    <p>Owner portal for Modular Solutions Ltd customers.</p>
+                </section>
+                <section class="team-card">
+                    <h2>Help Log</h2>
+                    <p>Principal support tickets and customer resources.</p>
+                </section>
+                <section class="team-card">
+                    <h2>Rincon Drywall</h2>
+                    <p>Owner operated drywall contractor serving Tucson.</p>
+                </section>
+            </body>
+        </html>
+    `
+
+    const result = extractPageEvidence("https://example.com/about", html, undefined, undefined, undefined, {
+        businessNames: ["Modular Solutions Ltd", "Rincon Drywall"],
+    })
+
+    assert.equal(result.owner_name, null)
+    assert.equal(result.evidence.some((item) => item.startsWith("owner:")), false)
 })
 
 test("rejects navigation and project headings as owner names", () => {

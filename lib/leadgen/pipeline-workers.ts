@@ -865,6 +865,7 @@ async function processPlaceSeedTask(task: PipelineTask, sourceKey: "alltheplaces
 async function processWebsiteTask(task: PipelineTask) {
     const companyId = typeof task.source_query.company_id === "string" ? task.source_query.company_id : null
     const websiteUrl = typeof task.source_query.website_url === "string" ? task.source_query.website_url : null
+    const companyName = typeof task.source_query.company_name === "string" ? task.source_query.company_name : null
     if (!companyId || !websiteUrl) throw new Error("Website crawler task is missing a company or website URL.")
     const workspaceId = typeof task.source_query.workspace_id === "string" ? task.source_query.workspace_id : ""
     const pollId = typeof task.source_query.poll_id === "string" ? task.source_query.poll_id : null
@@ -914,7 +915,7 @@ async function processWebsiteTask(task: PipelineTask) {
                 inspected.push({ url, owner_name: null, phone: null, phones: [], evidence: ["non_text_response"] })
                 continue
             }
-            const extracted = extractPageEvidence(url, page.html, page.visibleText, page.title, page.metaDescription)
+            const extracted = extractPageEvidence(url, page.html, page.visibleText, page.title, page.metaDescription, { businessNames: [companyName] })
             const discoveredLinks = discoverWebsiteUrlsFromHtml(websiteUrl, url, page.html, stageKey, depth)
             extracted.discovered_links = discoveredLinks.slice(0, 8)
             if (inspected.length + queue.length < maxPages + 8) enqueue(discoveredLinks)

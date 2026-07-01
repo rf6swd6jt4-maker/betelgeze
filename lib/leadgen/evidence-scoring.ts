@@ -211,9 +211,9 @@ function scoreFromClaim(kind: string, points: number) {
     return { ownerIdentity: 0, ownerPhone: 0, businessSupport: 0 }
 }
 
-function ownerNameFromClaim(value: Record<string, unknown>) {
+function ownerNameFromClaim(value: Record<string, unknown>, contextNames: Array<string | null | undefined> = []) {
     const raw = asString(value.owner_name) ?? asString(value.full_name) ?? asString(value.person_name) ?? asString(value.name)
-    return normalisePersonName(raw, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 58 })
+    return normalisePersonName(raw, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 58, contextNames })
 }
 
 function ownerPhoneFromClaim(value: Record<string, unknown>) {
@@ -223,7 +223,7 @@ function ownerPhoneFromClaim(value: Record<string, unknown>) {
 export async function scorePollCompanies({ workspaceId, pollId }: { workspaceId: string; pollId: string }) {
     const companiesResult = await supabaseAdmin
         .from("leadgen_companies")
-        .select("id, owner_source_key, phone, website_url, profile_url")
+        .select("id, display_name, owner_source_key, phone, website_url, profile_url")
         .eq("workspace_id", workspaceId)
         .eq("first_seen_poll_id", pollId)
     if (companiesResult.error) throw companiesResult.error
@@ -249,7 +249,7 @@ export async function scorePollCompanies({ workspaceId, pollId }: { workspaceId:
             businessSupportPoints += score.businessSupport
             const value = asRecord(claim.claim_value)
             if (["owner_identity", "officer_identity"].includes(claim.claim_kind)) {
-                const claimOwnerName = ownerNameFromClaim(value)
+                const claimOwnerName = ownerNameFromClaim(value, [company.display_name])
                 if (claimOwnerName && points > 0) {
                     bestOwnerName ||= claimOwnerName
                     bestOwnerSourceKey ||= claim.source_key
@@ -257,7 +257,7 @@ export async function scorePollCompanies({ workspaceId, pollId }: { workspaceId:
                 }
             }
             if (claim.claim_kind === "owner_phone") {
-                const claimOwnerName = ownerNameFromClaim(value)
+                const claimOwnerName = ownerNameFromClaim(value, [company.display_name])
                 const claimOwnerPhone = ownerPhoneFromClaim(value)
                 if (claimOwnerName) {
                     bestOwnerName ||= claimOwnerName

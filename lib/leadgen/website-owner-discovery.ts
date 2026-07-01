@@ -17,6 +17,10 @@ export type PageExtraction = {
     discovered_links?: string[]
 }
 
+export type PageExtractionOptions = {
+    businessNames?: Array<string | null | undefined>
+}
+
 export type WebsitePage = {
     html: string
     visibleText: string
@@ -103,12 +107,13 @@ function ownerishContext(value: string | null | undefined) {
     return new RegExp(String.raw`\b(?:${OWNER_ROLE_PATTERN}|owned by|founded by|led by|managed by|owned and operated by)\b`, "i").test(value ?? "")
 }
 
-function normaliseOwnerName(value: string | null | undefined, context: string | null | undefined = null) {
+function normaliseOwnerName(value: string | null | undefined, context: string | null | undefined = null, businessNames: Array<string | null | undefined> = []) {
     const ownerContext = ownerishContext(`${value ?? ""} ${context ?? ""}`)
     return normalisePersonName(value, {
         allowExtraction: true,
         ownerContext,
         minConfidence: ownerContext ? 58 : 66,
+        contextNames: businessNames,
     })
 }
 
@@ -155,9 +160,10 @@ function ownerCandidate(input: {
     index?: number
     snippet?: string | null
     confidence?: number | null
+    businessNames?: Array<string | null | undefined>
 }): WebsiteOwnerCandidate | null {
     const context = [input.role, input.snippet, input.source].filter(Boolean).join(" ")
-    const name = normaliseOwnerName(input.name, context)
+    const name = normaliseOwnerName(input.name, context, input.businessNames ?? [])
     if (!name) return null
     return {
         name,
@@ -179,7 +185,7 @@ function ownerAssociatedPhone(text: string, ownerIndex: number) {
     return uniqueValues(nearbyPhones)[0] ?? null
 }
 
-function extractOwnerCandidatesFromText(url: string, text: string, source = "visible_text") {
+function extractOwnerCandidatesFromText(url: string, text: string, source = "visible_text", businessNames: Array<string | null | undefined> = []) {
     const patterns: Array<{ regex: RegExp; nameGroup: number; roleGroup?: number; confidence?: number }> = [
         { regex: new RegExp(String.raw`\b(${OWNER_ROLE_PATTERN})\s*(?:is|:|-|\u2013)?\s*${PERSON_PATTERN}`, "gi"), roleGroup: 1, nameGroup: 2, confidence: 86 },
         { regex: new RegExp(String.raw`${PERSON_PATTERN}\s*(?:,|-|\u2013|\||/)?\s*(?:the\s+)?(${OWNER_ROLE_PATTERN})\b`, "gi"), nameGroup: 1, roleGroup: 2, confidence: 84 },
@@ -202,6 +208,7 @@ function extractOwnerCandidatesFromText(url: string, text: string, source = "vis
                 index,
                 snippet,
                 confidence: pattern.confidence ?? null,
+                businessNames,
             })
             if (candidate) candidates.push(candidate)
         }
@@ -220,7 +227,7 @@ function htmlBlocks(html: string) {
     })).filter((block) => block.text.length >= 20)
 }
 
-function headingNamesFromHtml(html: string) {
+function headingNamesFromHtml(html: string, businessNames: Array<string | null | undefined> = []) {
     return [...html.matchAll(/<h[1-4]\b[^>]*>([\s\S]{2,160}?)<\/h[1-4]>/gi)]
         .map((match) => {
             const heading = stripHtml(match[1] ?? "")
@@ -228,15 +235,16 @@ function headingNamesFromHtml(html: string) {
                 allowExtraction: ownerishContext(heading),
                 ownerContext: ownerishContext(heading),
                 minConfidence: ownerishContext(heading) ? 58 : 70,
+                contextNames: businessNames,
             })
         })
         .filter((name): name is string => Boolean(name))
 }
 
-function extractOwnerCandidatesFromCards(url: string, html: string) {
+function extractOwnerCandidatesFromCards(url: string, html: string, businessNames: Array<string | null | undefined> = []) {
     return htmlBlocks(html).flatMap((block) => {
         const role = block.text.match(new RegExp(OWNER_ROLE_PATTERN, "i"))?.[0] ?? null
-        const headingCandidates = headingNamesFromHtml(block.html).flatMap((name) => {
+        const headingCandidates = headingNamesFromHtml(block.html, businessNames).flatMap((name) => {
             const candidate = ownerCandidate({
                 name,
                 role,
@@ -245,10 +253,11 @@ function extractOwnerCandidatesFromCards(url: string, html: string) {
                 sourceUrl: url,
                 snippet: block.text.slice(0, 520),
                 confidence: role ? roleConfidence(role, "team_card") + 4 : 58,
+                businessNames,
             })
             return candidate ? [candidate] : []
         })
-        const textCandidates = extractOwnerCandidatesFromText(url, block.text, "team_card").map((candidate) => ({
+        const textCandidates = extractOwnerCandidatesFromText(url, block.text, "team_card", businessNames).map((candidate) => ({
             ...candidate,
             snippet: candidate.snippet || block.text.slice(0, 520),
             confidence: Math.max(candidate.confidence, roleConfidence(candidate.role, "team_card")),
@@ -257,10 +266,10 @@ function extractOwnerCandidatesFromCards(url: string, html: string) {
     })
 }
 
-function extractTitleCandidates(url: string, title: string | null, description: string | null) {
+function extractTitleCandidates(url: string, title: string | null, description: string | null, businessNames: Array<string | null | undefined> = []) {
     const text = [title, description].filter(Boolean).join(" ")
     if (!text) return []
-    return extractOwnerCandidatesFromText(url, text, "title_or_meta").map((candidate) => ({
+    return extractOwnerCandidatesFromText(url, text, "title_or_meta", businessNames).map((candidate) => ({
         ...candidate,
         confidence: Math.max(candidate.confidence, 72),
     }))
@@ -448,15 +457,15 @@ function flattenJsonLd(value: unknown): Record<string, unknown>[] {
     return [record, ...graph]
 }
 
-function jsonLdName(value: unknown): string | null {
-    if (typeof value === "string") return normalisePersonName(value, { allowExtraction: false, ownerContext: true, minConfidence: 58 })
+function jsonLdName(value: unknown, businessNames: Array<string | null | undefined> = []): string | null {
+    if (typeof value === "string") return normalisePersonName(value, { allowExtraction: false, ownerContext: true, minConfidence: 58, contextNames: businessNames })
     if (!value || typeof value !== "object") return null
     const record = value as Record<string, unknown>
-    const direct = normalisePersonName(typeof record.name === "string" ? record.name : null, { allowExtraction: false, ownerContext: true, minConfidence: 58 })
+    const direct = normalisePersonName(typeof record.name === "string" ? record.name : null, { allowExtraction: false, ownerContext: true, minConfidence: 58, contextNames: businessNames })
     if (direct) return direct
     const given = typeof record.givenName === "string" ? record.givenName.trim() : null
     const family = typeof record.familyName === "string" ? record.familyName.trim() : null
-    return normalisePersonName([given, family].filter(Boolean).join(" "), { allowExtraction: false, ownerContext: true, minConfidence: 58 })
+    return normalisePersonName([given, family].filter(Boolean).join(" "), { allowExtraction: false, ownerContext: true, minConfidence: 58, contextNames: businessNames })
 }
 
 function jsonLdPhone(value: unknown) {
@@ -465,7 +474,7 @@ function jsonLdPhone(value: unknown) {
     return normalisePhone(typeof record.telephone === "string" ? record.telephone : typeof record.phone === "string" ? record.phone : null)
 }
 
-function extractJsonLdOwnerCandidates(url: string, html: string) {
+function extractJsonLdOwnerCandidates(url: string, html: string, businessNames: Array<string | null | undefined> = []) {
     const candidates: WebsiteOwnerCandidate[] = []
     for (const script of jsonLdScripts(html)) {
         try {
@@ -474,18 +483,20 @@ function extractJsonLdOwnerCandidates(url: string, html: string) {
                 const type = Array.isArray(node["@type"]) ? node["@type"].map(String) : [String(node["@type"] ?? "")]
                 if (type.some((item) => item.toLowerCase() === "person")) {
                     const role = [node.jobTitle, node.title, node.description].map((value) => typeof value === "string" ? value : "").join(" ")
-                    const personName = jsonLdName(node)
+                    const personName = jsonLdName(node, businessNames)
                     if (personName && /\b(owner|founder|principal|president|ceo|managing partner|managing member|operator|license holder|qualifier|manager)\b/i.test(role)) {
-                        const candidate = ownerCandidate({ name: personName, role, phone: jsonLdPhone(node), source: "json_ld", sourceUrl: url, snippet: `${personName} ${role}`.trim(), confidence: roleConfidence(role, "json_ld") })
+                        const candidate = ownerCandidate({ name: personName, role, phone: jsonLdPhone(node), source: "json_ld", sourceUrl: url, snippet: `${personName} ${role}`.trim(), confidence: roleConfidence(role, "json_ld"), businessNames })
                         if (candidate) candidates.push(candidate)
                     }
                 }
                 for (const key of ["founder", "founders", "owner", "employee", "member", "foundingTeam", "alumni"]) {
-                    const candidate = ownerCandidate({ name: jsonLdName(node[key]), role: key, phone: jsonLdPhone(node[key]), source: "json_ld", sourceUrl: url, snippet: `${key}: ${jsonLdName(node[key]) ?? ""}`, confidence: key.includes("founder") || key === "owner" ? 82 : 60 })
+                    const candidateName = jsonLdName(node[key], businessNames)
+                    const candidate = ownerCandidate({ name: candidateName, role: key, phone: jsonLdPhone(node[key]), source: "json_ld", sourceUrl: url, snippet: `${key}: ${candidateName ?? ""}`, confidence: key.includes("founder") || key === "owner" ? 82 : 60, businessNames })
                     if (candidate) candidates.push(candidate)
                     if (Array.isArray(node[key])) {
                         for (const item of node[key]) {
-                            const arrayCandidate = ownerCandidate({ name: jsonLdName(item), role: key, phone: jsonLdPhone(item), source: "json_ld", sourceUrl: url, snippet: `${key}: ${jsonLdName(item) ?? ""}`, confidence: key.includes("founder") || key === "owner" ? 82 : 60 })
+                            const arrayCandidateName = jsonLdName(item, businessNames)
+                            const arrayCandidate = ownerCandidate({ name: arrayCandidateName, role: key, phone: jsonLdPhone(item), source: "json_ld", sourceUrl: url, snippet: `${key}: ${arrayCandidateName ?? ""}`, confidence: key.includes("founder") || key === "owner" ? 82 : 60, businessNames })
                             if (arrayCandidate) candidates.push(arrayCandidate)
                         }
                     }
@@ -519,14 +530,15 @@ function dedupeOwnerCandidates(candidates: WebsiteOwnerCandidate[]) {
     })
 }
 
-export function extractPageEvidence(url: string, html: string, visibleText = visibleTextFromHtml(html), title: string | null = pageTitle(html), metaDescription: string | null = metaContent(html, ["description", "og:description", "twitter:description"])): PageExtraction {
+export function extractPageEvidence(url: string, html: string, visibleText = visibleTextFromHtml(html), title: string | null = pageTitle(html), metaDescription: string | null = metaContent(html, ["description", "og:description", "twitter:description"]), options: PageExtractionOptions = {}): PageExtraction {
     const phones = extractPhones(`${html} ${visibleText}`)
     const links = extractLinks(html, url)
+    const businessNames = options.businessNames ?? []
     const candidates = dedupeOwnerCandidates([
-        ...extractOwnerCandidatesFromText(url, visibleText, "visible_text"),
-        ...extractTitleCandidates(url, title, metaDescription),
-        ...extractOwnerCandidatesFromCards(url, html),
-        ...extractJsonLdOwnerCandidates(url, html),
+        ...extractOwnerCandidatesFromText(url, visibleText, "visible_text", businessNames),
+        ...extractTitleCandidates(url, title, metaDescription, businessNames),
+        ...extractOwnerCandidatesFromCards(url, html, businessNames),
+        ...extractJsonLdOwnerCandidates(url, html, businessNames),
     ])
     const bestCandidate = candidates[0] ?? null
     const ownerName = bestCandidate?.name ?? null

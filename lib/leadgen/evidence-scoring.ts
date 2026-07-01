@@ -6,6 +6,7 @@ import {
     sourceCoverageApplies,
     type LeadgenLocationTarget,
 } from "@/lib/leadgen/location-resolution"
+import { normalisePersonName } from "./person-name-normalizer.js"
 
 type ClaimKind = "owner_identity" | "owner_phone" | "business_phone" | "business_support" | "permit_activity" | "licence_activity" | "officer_identity"
 
@@ -211,7 +212,8 @@ function scoreFromClaim(kind: string, points: number) {
 }
 
 function ownerNameFromClaim(value: Record<string, unknown>) {
-    return asString(value.owner_name) ?? asString(value.full_name) ?? asString(value.person_name) ?? asString(value.name)
+    const raw = asString(value.owner_name) ?? asString(value.full_name) ?? asString(value.person_name) ?? asString(value.name)
+    return normalisePersonName(raw, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 58 })
 }
 
 function ownerPhoneFromClaim(value: Record<string, unknown>) {

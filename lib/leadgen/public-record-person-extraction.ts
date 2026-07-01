@@ -1,3 +1,5 @@
+import { isLikelyPersonName, normalisePersonName } from "./person-name-normalizer.js"
+
 export type PublicRecordPersonCandidate = {
     name: string
     role: string
@@ -156,21 +158,13 @@ function normaliseCommaName(value: string) {
     return cleanText(`${comma[2]} ${comma[1]}`)
 }
 
-function titleCaseAllCaps(value: string) {
-    if (!/^[A-Z .'-]+$/.test(value) || /[a-z]/.test(value)) return value
-    return value.toLowerCase().replace(/\b([a-z])([a-z.'-]*)/g, (_match, first: string, rest: string) => `${first.toUpperCase()}${rest}`)
-}
-
 export function normalisePublicRecordPersonName(value: string | null | undefined) {
     let clean = stripRoleText(value ?? "")
     if (!clean) return null
     clean = clean.replace(/\s+(?:and|&)\s+.+$/i, "")
     clean = clean.split(/[;\n|]/)[0] ?? clean
     clean = normaliseCommaName(stripRoleText(clean))
-    clean = clean.replace(/[^A-Za-z .'-]/g, " ")
-    clean = clean.replace(/\s+/g, " ").trim()
-    clean = titleCaseAllCaps(clean)
-    return clean || null
+    return normalisePersonName(clean, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 55 })
 }
 
 export function isLikelyPublicRecordPersonName(value: string | null | undefined) {
@@ -183,7 +177,7 @@ export function isLikelyPublicRecordPersonName(value: string | null | undefined)
     const parts = name.split(/\s+/).filter(Boolean)
     if (parts.length < 2 || parts.length > 6) return false
     const namePartPattern = /^(?:[A-Za-z][A-Za-z.'-]*|[A-Z])$/
-    return parts.every((part) => namePartPattern.test(part))
+    return parts.every((part) => namePartPattern.test(part)) && isLikelyPersonName(name, { allowAllCaps: true, ownerContext: true, minConfidence: 55 })
 }
 
 function candidateNamesFromValue(value: string | null | undefined) {

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import { normalisePersonName } from "./person-name-normalizer.js"
 
 export type PollStageKey = "seed" | "business_validation" | "owner_identity" | "owner_phone" | "phone_validation"
 
@@ -55,7 +56,8 @@ function asString(value: unknown) {
 }
 
 function ownerNameFromClaim(value: Record<string, unknown>) {
-    return asString(value.owner_name) ?? asString(value.full_name) ?? asString(value.person_name) ?? asString(value.name)
+    const raw = asString(value.owner_name) ?? asString(value.full_name) ?? asString(value.person_name) ?? asString(value.name)
+    return normalisePersonName(raw, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 58 })
 }
 
 function ownerPhoneFromClaim(value: Record<string, unknown>) {

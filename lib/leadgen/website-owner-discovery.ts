@@ -1,3 +1,5 @@
+import { normalisePersonName } from "./person-name-normalizer.js"
+
 export type WebsiteStageKey = "business_validation" | "owner_identity" | "owner_phone" | "phone_validation"
 
 export type PageExtraction = {
@@ -97,37 +99,17 @@ function visibleTextFromHtml(html: string) {
         .replace(/<noscript[\s\S]*?<\/noscript>/gi, " "))
 }
 
-function titleCaseAllCaps(value: string) {
-    if (!/^[A-Z .'-]+$/.test(value) || /[a-z]/.test(value)) return value
-    return value.toLowerCase().replace(/\b([a-z])([a-z.'-]*)/g, (_match, first: string, rest: string) => `${first.toUpperCase()}${rest}`)
+function ownerishContext(value: string | null | undefined) {
+    return new RegExp(String.raw`\b(?:${OWNER_ROLE_PATTERN}|owned by|founded by|led by|managed by|owned and operated by)\b`, "i").test(value ?? "")
 }
 
-function normaliseOwnerName(value: string | null | undefined) {
-    let clean = (value ?? "")
-        .replace(/\s+/g, " ")
-        .replace(/^c\/o\s+/i, "")
-        .replace(/^attn\.?\s+/i, "")
-        .replace(new RegExp(String.raw`^\s*(?:${OWNER_ROLE_PATTERN})\s*[:\-]\s*`, "i"), "")
-        .replace(new RegExp(String.raw`\s*[,;:/|\-]\s*(?:${OWNER_ROLE_PATTERN})\.?\s*$`, "i"), "")
-        .trim()
-    const comma = clean.match(/^([A-Za-z][A-Za-z.' -]{1,45}),\s*([A-Za-z][A-Za-z.' -]{1,45})$/)
-    if (comma) clean = `${comma[2]} ${comma[1]}`
-    clean = clean.replace(/[^A-Za-z .'-]/g, " ").replace(/\s+/g, " ").trim()
-    clean = titleCaseAllCaps(clean)
-    return isLikelyPersonName(clean) ? clean : null
-}
-
-function isLikelyPersonName(value: string | null | undefined) {
-    const cleaned = (value ?? "").replace(/\s+/g, " ").trim()
-    if (!cleaned || cleaned.length < 5 || cleaned.length > 80) return false
-    if (/\d|@|www\.|https?:/i.test(cleaned)) return false
-    const words = cleaned.split(" ")
-    if (words.length < 2 || words.length > 6) return false
-    if (/^(?:and|or|the|our|call|contact|email|text|schedule|request|learn|read|view|click|meet)\b/i.test(cleaned)) return false
-    if (/\b(?:call|contact|email|text|schedule|request|learn|read|view|click|directly|today|repairs?|services?)\b/i.test(cleaned)) return false
-    if (/\b(llc|l\.l\.c|inc|corp|corporation|company|co|ltd|services|service|systems|group|holdings|construction|contractors?|roofing|plumbing|electric|hvac|flooring|painting|landscaping|cleaning|pest|waste|auto|repair|team|privacy|terms|testimonial|review|customer|client|homeowner)\b/i.test(cleaned)) return false
-    if (cleaned.toLowerCase() === cleaned) return false
-    return words.every((word) => /^(?:[A-Za-z][A-Za-z.'-]*|[A-Z])$/.test(word))
+function normaliseOwnerName(value: string | null | undefined, context: string | null | undefined = null) {
+    const ownerContext = ownerishContext(`${value ?? ""} ${context ?? ""}`)
+    return normalisePersonName(value, {
+        allowExtraction: true,
+        ownerContext,
+        minConfidence: ownerContext ? 58 : 66,
+    })
 }
 
 function extractPhones(text: string) {
@@ -174,7 +156,8 @@ function ownerCandidate(input: {
     snippet?: string | null
     confidence?: number | null
 }): WebsiteOwnerCandidate | null {
-    const name = normaliseOwnerName(input.name)
+    const context = [input.role, input.snippet, input.source].filter(Boolean).join(" ")
+    const name = normaliseOwnerName(input.name, context)
     if (!name) return null
     return {
         name,
@@ -239,7 +222,14 @@ function htmlBlocks(html: string) {
 
 function headingNamesFromHtml(html: string) {
     return [...html.matchAll(/<h[1-4]\b[^>]*>([\s\S]{2,160}?)<\/h[1-4]>/gi)]
-        .map((match) => normaliseOwnerName(stripHtml(match[1] ?? "")))
+        .map((match) => {
+            const heading = stripHtml(match[1] ?? "")
+            return normalisePersonName(heading, {
+                allowExtraction: ownerishContext(heading),
+                ownerContext: ownerishContext(heading),
+                minConfidence: ownerishContext(heading) ? 58 : 70,
+            })
+        })
         .filter((name): name is string => Boolean(name))
 }
 
@@ -459,14 +449,14 @@ function flattenJsonLd(value: unknown): Record<string, unknown>[] {
 }
 
 function jsonLdName(value: unknown): string | null {
-    if (typeof value === "string") return normaliseOwnerName(value)
+    if (typeof value === "string") return normalisePersonName(value, { allowExtraction: false, ownerContext: true, minConfidence: 58 })
     if (!value || typeof value !== "object") return null
     const record = value as Record<string, unknown>
-    const direct = normaliseOwnerName(typeof record.name === "string" ? record.name : null)
+    const direct = normalisePersonName(typeof record.name === "string" ? record.name : null, { allowExtraction: false, ownerContext: true, minConfidence: 58 })
     if (direct) return direct
     const given = typeof record.givenName === "string" ? record.givenName.trim() : null
     const family = typeof record.familyName === "string" ? record.familyName.trim() : null
-    return normaliseOwnerName([given, family].filter(Boolean).join(" "))
+    return normalisePersonName([given, family].filter(Boolean).join(" "), { allowExtraction: false, ownerContext: true, minConfidence: 58 })
 }
 
 function jsonLdPhone(value: unknown) {

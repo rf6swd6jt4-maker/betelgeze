@@ -77,3 +77,61 @@ test("extracts founder from JSON-LD when visible copy is thin", () => {
     assert.equal(result.owner_source, "json_ld")
     assert.ok(result.evidence.some((item) => item.startsWith("json_ld_owner:")))
 })
+
+test("cleans noisy owner phrases down to person spans", () => {
+    const html = `
+        <html>
+            <body>
+                <section class="team-card">
+                    <h2>SPILLMAN EXCAVATING Joe Spillman</h2>
+                    <p>Owner and operator serving Austin contractors.</p>
+                </section>
+            </body>
+        </html>
+    `
+
+    const result = extractPageEvidence("https://example.com/about", html)
+
+    assert.equal(result.owner_name, "Joe Spillman")
+    assert.equal(result.owner_source, "team_card")
+})
+
+test("rejects navigation and project headings as owner names", () => {
+    const html = `
+        <html>
+            <head><title>Startech Electric | Frequently Asked Questions</title></head>
+            <body>
+                <section class="team-card">
+                    <h2>Frequently Asked Questions</h2>
+                    <p>Owner questions about our electrical services.</p>
+                </section>
+                <section class="team-card">
+                    <h2>Featured Project</h2>
+                    <p>Principal lighting installation portfolio.</p>
+                </section>
+            </body>
+        </html>
+    `
+
+    const result = extractPageEvidence("https://example.com/about", html)
+
+    assert.equal(result.owner_name, null)
+    assert.equal(result.evidence.some((item) => item.startsWith("owner:")), false)
+})
+
+test("does not turn repeated about-page fragments into owner names", () => {
+    const html = `
+        <html>
+            <body>
+                <section class="team-card">
+                    <h2>About Kyle</h2>
+                    <p>Kyle is a life-long Austin resident and electrician.</p>
+                </section>
+            </body>
+        </html>
+    `
+
+    const result = extractPageEvidence("https://example.com/about-kyle", html)
+
+    assert.equal(result.owner_name, null)
+})

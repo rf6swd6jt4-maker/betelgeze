@@ -5,6 +5,18 @@ import { queryOverturePlaces, type OverturePlaceRecord } from "@/lib/leadgen/ove
 import { queryAllThePlaces, queryFoursquareOsPlaces, type PlaceSeedRecord } from "@/lib/leadgen/place-seed-sources"
 import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
 import type { PollStageKey } from "@/lib/leadgen/staged-poll"
+import { runWithConcurrency } from "@/lib/leadgen/task-execution"
+import {
+    crawlScore,
+    defaultWebsiteUrls,
+    discoverSitemapUrls,
+    discoverWebsiteUrlsFromHtml,
+    extractPageEvidence,
+    fetchWebsitePage,
+    sameSiteUrl,
+    type PageExtraction,
+    type WebsiteStageKey,
+} from "./website-owner-discovery"
 
 type CompanySeed = {
     id: string
@@ -14,14 +26,6 @@ type CompanySeed = {
     profile_url: string | null
     source_key: string
     source_record_id: string
-}
-
-type PageExtraction = {
-    url: string
-    owner_name: string | null
-    phone: string | null
-    phones: string[]
-    evidence: string[]
 }
 
 type PipelineTask = {
@@ -67,14 +71,18 @@ const SOURCE_STAGE: Partial<Record<LeadgenSourceKey, string>> = {
 }
 
 const PIPELINE_SEED_SOURCES = new Set<LeadgenSourceKey>(["overture", "alltheplaces", "foursquare_os_places"])
-const WEBSITE_MAX_HTML_CHARS = 700_000
-const WEBSITE_JSON_LD_MAX_CHARS = 160_000
 const WEBSITE_STALE_TASK_MS = 90_000
 const WEBSITE_CRAWL_LIMITS: Record<Exclude<PollStageKey, "seed">, { maxPages: number; timeoutSeconds: number; budgetMs: number }> = {
     business_validation: { maxPages: 1, timeoutSeconds: 4, budgetMs: 6_000 },
     owner_identity: { maxPages: 6, timeoutSeconds: 5, budgetMs: 22_000 },
     owner_phone: { maxPages: 8, timeoutSeconds: 5, budgetMs: 30_000 },
     phone_validation: { maxPages: 0, timeoutSeconds: 1, budgetMs: 1_000 },
+}
+const WEBSITE_TASK_CONCURRENCY: Record<Exclude<PollStageKey, "seed">, number> = {
+    business_validation: 2,
+    owner_identity: 3,
+    owner_phone: 3,
+    phone_validation: 1,
 }
 
 function compactErrorMessage(error: unknown) {
@@ -83,9 +91,12 @@ function compactErrorMessage(error: unknown) {
 }
 
 class SamGovQuotaError extends Error {
-    constructor(message: string, readonly nextAccessTime: string | null) {
+    readonly nextAccessTime: string | null
+
+    constructor(message: string, nextAccessTime: string | null) {
         super(message)
         this.name = "SamGovQuotaError"
+        this.nextAccessTime = nextAccessTime
     }
 }
 
@@ -142,229 +153,6 @@ function domainFromUrl(value: string | null | undefined) {
 
 function numberValue(value: unknown) {
     return typeof value === "number" && Number.isFinite(value) ? value : null
-}
-
-function extractPhones(text: string) {
-    const candidates = [
-        ...text.matchAll(/href=["']tel:([^"']+)["']/gi),
-        ...text.matchAll(/telephone["']?\s*[:=]\s*["']([^"']+)["']/gi),
-        ...text.matchAll(/phone["']?\s*[:=]\s*["']([^"']+)["']/gi),
-        ...text.matchAll(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g),
-    ]
-        .map((match) => normalisePhone(match[1] ?? match[0]))
-        .filter((phone): phone is string => Boolean(phone))
-    return uniqueValues(candidates)
-}
-
-function phoneMatches(text: string) {
-    return [...text.matchAll(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g)]
-        .map((match) => ({ phone: normalisePhone(match[0]), index: match.index ?? -1 }))
-        .filter((match): match is { phone: string; index: number } => Boolean(match.phone && match.index >= 0))
-}
-
-function isLikelyPersonName(value: string) {
-    const cleaned = value.replace(/\s+/g, " ").trim()
-    if (!cleaned) return false
-    const words = cleaned.split(" ")
-    if (words.length < 2 || words.length > 4) return false
-    const lower = cleaned.toLowerCase()
-    const rejectedWords = new Set([
-        "and",
-        "been",
-        "business",
-        "call",
-        "company",
-        "connect",
-        "contact",
-        "contractor",
-        "daily",
-        "directly",
-        "for",
-        "from",
-        "home",
-        "our",
-        "run",
-        "service",
-        "services",
-        "team",
-        "the",
-        "this",
-        "with",
-        "your",
-    ])
-    if (words.some((word) => rejectedWords.has(word.toLowerCase()))) return false
-    if (/\b(llc|inc|corp|company|co|ltd|services|service|remodel|remodeling|roofing|plumbing|construction|flooring|painting|landscaping|contractors?)\b/i.test(cleaned)) return false
-    if (lower === cleaned) return false
-    return words.every((word) => /^(?:[A-Z]\.?|[A-Z][a-z]+(?:[-'][A-Z][a-z]+)?)$/.test(word))
-}
-
-function extractOwnerMatch(text: string) {
-    const person = String.raw`([A-Z][A-Za-z.'-]+(?:\s+(?:[A-Z]\.?\s+)?[A-Z][A-Za-z.'-]+){1,3})`
-    const patterns = [
-        new RegExp(String.raw`\b(?:Owner|Founder|Co-Founder|Principal|President|Managing Partner|Managing Member|Operator|CEO|Chief Executive Officer|License Holder|Qualifier)\s*(?:is|:|\-|–)?\s*${person}`, "g"),
-        new RegExp(String.raw`${person}\s*,?\s+(?:owner|founder|co-founder|principal|president|managing partner|managing member|operator|ceo|chief executive officer|license holder|qualifier)\b`, "g"),
-        new RegExp(String.raw`\b(?:owned and operated by|founded by|led by|run by|started by)\s+${person}`, "gi"),
-        new RegExp(String.raw`\b[Mm]eet\s+(?:the\s+owner|our\s+owner|the founder|our founder)?\s*${person}`, "g"),
-    ]
-    for (const pattern of patterns) {
-        for (const match of text.matchAll(pattern)) {
-            const value = match[1]?.replace(/\s+/g, " ").trim()
-            if (value && isLikelyPersonName(value)) return { name: value, index: match.index ?? -1 }
-        }
-    }
-    return null
-}
-
-function ownerAssociatedPhone(text: string, ownerIndex: number) {
-    if (ownerIndex < 0) return null
-    const nearbyPhones = phoneMatches(text)
-        .filter((match) => Math.abs(match.index - ownerIndex) <= 900)
-        .map((match) => match.phone)
-    return uniqueValues(nearbyPhones)[0] ?? null
-}
-
-function urlsToInspect(baseUrl: string, depth: number, stageKey: Exclude<PollStageKey, "seed">) {
-    const url = new URL(baseUrl.startsWith("http") ? baseUrl : `https://${baseUrl}`)
-    const limits = WEBSITE_CRAWL_LIMITS[stageKey] ?? WEBSITE_CRAWL_LIMITS.owner_identity
-    const stagePaths = stageKey === "business_validation"
-        ? ["/"]
-        : stageKey === "owner_phone"
-            ? [
-                "/",
-                "/contact",
-                "/contact-us",
-                "/about",
-                "/about-us",
-                "/team",
-                "/our-team",
-                "/owners",
-                "/staff",
-                "/leadership",
-            ]
-            : [
-            "/",
-            "/about",
-            "/about-us",
-            "/our-company",
-            "/company",
-            "/who-we-are",
-            "/team",
-            "/our-team",
-            "/meet-the-team",
-            "/staff",
-            "/leadership",
-            "/owners",
-            "/owner",
-            "/contact",
-            "/contact-us",
-        ]
-    const depthPageCount = depth <= 1 ? 1 : depth === 2 ? Math.min(5, limits.maxPages) : limits.maxPages
-    return [...new Set(stagePaths.slice(0, Math.max(0, depthPageCount)).map((path) => new URL(path, url.origin).toString()))]
-}
-
-async function fetchPage(url: string, timeoutSeconds: number): Promise<{ html: string; visibleText: string } | null> {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), timeoutSeconds * 1000)
-    try {
-        const response = await fetch(url, {
-            headers: { "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)", Accept: "text/html,text/plain" },
-            cache: "no-store",
-            signal: controller.signal,
-        })
-        if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`)
-        const contentType = response.headers.get("content-type") ?? ""
-        if (!contentType.includes("text/html") && !contentType.includes("text/plain")) return null
-        const html = (await response.text()).slice(0, WEBSITE_MAX_HTML_CHARS)
-        const visibleText = html
-            .replace(/<script(?![^>]*application\/ld\+json)[\s\S]*?<\/script>/gi, " ")
-            .replace(/<style[\s\S]*?<\/style>/gi, " ")
-            .replace(/<[^>]+>/g, " ")
-            .replace(/\s+/g, " ")
-            .trim()
-        return { html, visibleText }
-    } finally {
-        clearTimeout(timeout)
-    }
-}
-
-function jsonLdScripts(html: string) {
-    return [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
-        .map((match) => match[1]?.replace(/<!--|-->/g, "").trim())
-        .map((value) => value && value.length > WEBSITE_JSON_LD_MAX_CHARS ? null : value)
-        .filter((value): value is string => Boolean(value))
-}
-
-function flattenJsonLd(value: unknown): Record<string, unknown>[] {
-    if (Array.isArray(value)) return value.flatMap(flattenJsonLd)
-    if (!value || typeof value !== "object") return []
-    const record = value as Record<string, unknown>
-    const graph = Array.isArray(record["@graph"]) ? record["@graph"].flatMap(flattenJsonLd) : []
-    return [record, ...graph]
-}
-
-function jsonLdName(value: unknown): string | null {
-    if (typeof value === "string") return isLikelyPersonName(value) ? value : null
-    if (!value || typeof value !== "object") return null
-    const record = value as Record<string, unknown>
-    const directName = typeof record.name === "string" ? record.name.trim() : null
-    if (directName && isLikelyPersonName(directName)) return directName
-    const given = typeof record.givenName === "string" ? record.givenName.trim() : null
-    const family = typeof record.familyName === "string" ? record.familyName.trim() : null
-    const full = [given, family].filter(Boolean).join(" ")
-    return full && isLikelyPersonName(full) ? full : null
-}
-
-function extractJsonLdOwnerName(html: string) {
-    for (const script of jsonLdScripts(html)) {
-        try {
-            const nodes = flattenJsonLd(JSON.parse(script))
-            for (const node of nodes) {
-                const type = Array.isArray(node["@type"]) ? node["@type"].map(String) : [String(node["@type"] ?? "")]
-                if (type.some((item) => item.toLowerCase() === "person")) {
-                    const role = [node.jobTitle, node.title, node.description].map((value) => typeof value === "string" ? value : "").join(" ")
-                    const personName = jsonLdName(node)
-                    if (personName && /\b(owner|founder|principal|president|ceo|managing partner|managing member|operator|license holder|qualifier)\b/i.test(role)) return personName
-                }
-                for (const key of ["founder", "founders", "owner", "employee", "member", "foundingTeam"]) {
-                    const name = jsonLdName(node[key])
-                    if (name) return name
-                    if (Array.isArray(node[key])) {
-                        const arrayName = node[key].map(jsonLdName).find(Boolean)
-                        if (arrayName) return arrayName
-                    }
-                }
-            }
-        } catch {
-            continue
-        }
-    }
-    return null
-}
-
-function fallbackOwnerPhone(url: string, visibleText: string, phones: string[], ownerName: string | null) {
-    if (!ownerName || phones.length !== 1) return null
-    const ownerishPage = /\/(about|about-us|team|our-team|meet-the-team|staff|leadership|owner|owners|contact|contact-us)(?:\/|$)/i.test(new URL(url).pathname)
-    const ownerishText = /\b(owner|founder|principal|president|managed by|owned and operated|founded by)\b/i.test(visibleText)
-    return ownerishPage && ownerishText ? phones[0] : null
-}
-
-function extractPageEvidence(url: string, html: string, visibleText: string): PageExtraction {
-    const phones = extractPhones(`${html} ${visibleText}`)
-    const ownerMatch = extractOwnerMatch(visibleText)
-    const jsonLdOwnerName = extractJsonLdOwnerName(html)
-    const ownerName = ownerMatch?.name ?? jsonLdOwnerName ?? null
-    const ownerPhone = ownerMatch
-        ? ownerAssociatedPhone(visibleText, ownerMatch.index) ?? fallbackOwnerPhone(url, visibleText, phones, ownerName)
-        : fallbackOwnerPhone(url, visibleText, phones, ownerName)
-    const evidence = [
-        phones.length ? `phone:${phones.join(",")}` : null,
-        ownerName ? `owner:${ownerName}` : null,
-        ownerPhone ? `owner_phone:${ownerPhone}` : null,
-        jsonLdOwnerName ? `json_ld_owner:${jsonLdOwnerName}` : null,
-        /application\/ld\+json/i.test(html) ? "json_ld_present" : null,
-        /href=["']tel:/i.test(html) ? "tel_link_present" : null,
-    ].filter((value): value is string => Boolean(value))
-    return { url, owner_name: ownerName, phone: ownerPhone, phones, evidence }
 }
 
 async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspaceId: string; pollId: string; plan: LeadgenSourcePlanItem }) {
@@ -1045,7 +833,7 @@ async function processWebsiteTask(task: PipelineTask) {
     if (!companyId || !websiteUrl) throw new Error("Website crawler task is missing a company or website URL.")
     const workspaceId = typeof task.source_query.workspace_id === "string" ? task.source_query.workspace_id : ""
     const pollId = typeof task.source_query.poll_id === "string" ? task.source_query.poll_id : null
-    const stageKey = task.stage_key === "seed" ? "business_validation" : task.stage_key
+    const stageKey: WebsiteStageKey = task.stage_key === "seed" ? "business_validation" : task.stage_key
     if (workspaceId && pollId) {
         await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "website", stageKey, status: "running" })
         await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "web.json_ld", stageKey, status: "running" })
@@ -1055,28 +843,63 @@ async function processWebsiteTask(task: PipelineTask) {
     const timeoutSeconds = Math.min(crawlLimits.timeoutSeconds, Math.max(2, Number(task.source_query.timeout_seconds) || crawlLimits.timeoutSeconds))
     const deadline = Date.now() + crawlLimits.budgetMs
     const inspected: PageExtraction[] = []
+    const maxPages = depth <= 1 ? 1 : depth === 2 ? Math.min(crawlLimits.maxPages, stageKey === "owner_phone" ? 6 : 5) : crawlLimits.maxPages
+    const sitemapUrls = Date.now() < deadline - 1500
+        ? await discoverSitemapUrls(websiteUrl, stageKey, depth, Math.min(timeoutSeconds, Math.max(1, Math.ceil((deadline - Date.now()) / 1000)))).catch(() => [])
+        : []
+    const queued = new Set<string>()
+    const queue: string[] = []
+    const enqueue = (urls: string[]) => {
+        const sorted = urls
+            .filter((url) => sameSiteUrl(url, websiteUrl))
+            .sort((left, right) => crawlScore(right, stageKey) - crawlScore(left, stageKey))
+        for (const url of sorted) {
+            if (queued.has(url) || crawlScore(url, stageKey) <= -20) continue
+            queued.add(url)
+            queue.push(url)
+        }
+    }
+    enqueue([...defaultWebsiteUrls(websiteUrl, depth, stageKey), ...sitemapUrls])
     let ownerName: string | null = null
     let ownerPhone: string | null = null
+    let ownerRole: string | null = null
+    let ownerSourceUrl: string | null = null
+    let ownerConfidence: number | null = null
     let businessPhone: string | null = null
-    for (const url of urlsToInspect(websiteUrl, depth, stageKey)) {
+    while (queue.length && inspected.length < maxPages) {
+        const url = queue.shift()!
         if (Date.now() >= deadline) {
             inspected.push({ url, owner_name: null, phone: null, phones: [], evidence: ["crawl_budget_exhausted"] })
             break
         }
         try {
             const remainingSeconds = Math.max(1, Math.ceil((deadline - Date.now()) / 1000))
-            const page = await fetchPage(url, Math.min(timeoutSeconds, remainingSeconds))
+            const page = await fetchWebsitePage(url, Math.min(timeoutSeconds, remainingSeconds))
             if (!page) {
                 inspected.push({ url, owner_name: null, phone: null, phones: [], evidence: ["non_text_response"] })
                 continue
             }
-            const extracted = extractPageEvidence(url, page.html, page.visibleText)
+            const extracted = extractPageEvidence(url, page.html, page.visibleText, page.title, page.metaDescription)
+            const discoveredLinks = discoverWebsiteUrlsFromHtml(websiteUrl, url, page.html, stageKey, depth)
+            extracted.discovered_links = discoveredLinks.slice(0, 8)
+            if (inspected.length + queue.length < maxPages + 8) enqueue(discoveredLinks)
             const pageOwner = extracted.owner_name
             const pageOwnerPhone = extracted.phone
             const pageBusinessPhone = extracted.phones[0] ?? null
             inspected.push(extracted)
-            ownerName ||= pageOwner
-            ownerPhone ||= pageOwnerPhone
+            if (pageOwner) {
+                const currentScore = (ownerConfidence ?? 0) + (ownerPhone ? 25 : 0)
+                const nextScore = (extracted.owner_confidence ?? 0) + (pageOwnerPhone ? 25 : 0)
+                if (!ownerName || nextScore > currentScore) {
+                    ownerName = pageOwner
+                    ownerPhone = pageOwnerPhone
+                    ownerRole = extracted.owner_role ?? null
+                    ownerSourceUrl = extracted.url
+                    ownerConfidence = extracted.owner_confidence ?? null
+                } else if (!ownerPhone && pageOwner.toLowerCase() === ownerName.toLowerCase() && pageOwnerPhone) {
+                    ownerPhone = pageOwnerPhone
+                }
+            }
             businessPhone ||= pageBusinessPhone
             if (stageKey === "owner_identity" && ownerName) break
             if (ownerName && ownerPhone) break
@@ -1090,9 +913,18 @@ async function processWebsiteTask(task: PipelineTask) {
         poll_id: pollId,
         source_key: "website",
         evidence_kind: "website_owner_phone_extract",
-        confidence: ownerName && ownerPhone ? 74 : ownerName ? 45 : businessPhone ? 25 : 15,
-        value: { owner_name: ownerName, owner_phone: ownerPhone, business_phone: businessPhone, phones: uniqueValues(inspected.flatMap((page) => page.phones)) },
-        raw_payload: { inspected },
+        confidence: ownerName && ownerPhone ? Math.max(74, ownerConfidence ?? 0) : ownerName ? Math.max(45, ownerConfidence ?? 0) : businessPhone ? 25 : 15,
+        value: {
+            owner_name: ownerName,
+            owner_phone: ownerPhone,
+            owner_role: ownerRole,
+            owner_source_url: ownerSourceUrl,
+            business_phone: businessPhone,
+            phones: uniqueValues(inspected.flatMap((page) => page.phones)),
+            social_links: uniqueValues(inspected.flatMap((page) => page.social_links ?? [])),
+            profile_links: uniqueValues(inspected.flatMap((page) => page.profile_links ?? [])),
+        },
+        raw_payload: { inspected, crawl_strategy: { max_pages: maxPages, sitemap_urls: sitemapUrls.slice(0, 12), queued_urls: [...queued].slice(0, 30) } },
     })
     if (evidenceError) throw evidenceError
     if (workspaceId && pollId) {
@@ -1105,8 +937,8 @@ async function processWebsiteTask(task: PipelineTask) {
             pointsAwarded: 1,
             confidence: 35,
             provenanceUrl: websiteUrl,
-            claimValue: { website_url: websiteUrl, pages_inspected: inspected.length },
-            rawPayload: { inspected },
+            claimValue: { website_url: websiteUrl, pages_inspected: inspected.length, sitemap_urls: sitemapUrls.length },
+            rawPayload: { inspected, crawl_strategy: { max_pages: maxPages, sitemap_urls: sitemapUrls.slice(0, 12) } },
         })
         if (businessPhone) {
             await recordEvidenceClaim({
@@ -1130,9 +962,16 @@ async function processWebsiteTask(task: PipelineTask) {
                 sourceKey: "website",
                 claimKind: "owner_identity",
                 pointsAwarded: 2,
-                confidence: ownerPhone ? 74 : 45,
-                provenanceUrl: websiteUrl,
-                claimValue: { owner_name: ownerName },
+                confidence: ownerPhone ? Math.max(74, ownerConfidence ?? 0) : Math.max(45, ownerConfidence ?? 0),
+                provenanceUrl: ownerSourceUrl ?? websiteUrl,
+                claimValue: {
+                    owner_name: ownerName,
+                    role: ownerRole,
+                    source_url: ownerSourceUrl,
+                    snippets: inspected.flatMap((page) => page.snippets ?? []).filter((snippet) => snippet.name === ownerName).slice(0, 3),
+                    social_links: uniqueValues(inspected.flatMap((page) => page.social_links ?? [])).slice(0, 8),
+                    profile_links: uniqueValues(inspected.flatMap((page) => page.profile_links ?? [])).slice(0, 8),
+                },
                 rawPayload: { inspected },
             })
         }
@@ -1144,9 +983,9 @@ async function processWebsiteTask(task: PipelineTask) {
                 sourceKey: "website",
                 claimKind: "owner_phone",
                 pointsAwarded: 2,
-                confidence: 74,
-                provenanceUrl: websiteUrl,
-                claimValue: { owner_name: ownerName, owner_phone: ownerPhone },
+                confidence: Math.max(74, ownerConfidence ?? 0),
+                provenanceUrl: ownerSourceUrl ?? websiteUrl,
+                claimValue: { owner_name: ownerName, owner_phone: ownerPhone, role: ownerRole, source_url: ownerSourceUrl },
                 rawPayload: { inspected },
             })
         }
@@ -1182,9 +1021,9 @@ async function processWebsiteTask(task: PipelineTask) {
         if (ownerName && ownerPhone) {
             updatePayload.owner_name = ownerName
             updatePayload.owner_source_key = "website"
-            updatePayload.owner_evidence = { source: "website", inspected, extracted_at: new Date().toISOString() }
+            updatePayload.owner_evidence = { source: "website", owner_role: ownerRole, owner_source_url: ownerSourceUrl, inspected, extracted_at: new Date().toISOString() }
             updatePayload.owner_phone = ownerPhone
-            updatePayload.owner_confidence = 74
+            updatePayload.owner_confidence = Math.max(74, ownerConfidence ?? 0)
         }
         if (businessPhone) updatePayload.phone = businessPhone
         const { error } = await supabaseAdmin
@@ -1193,7 +1032,7 @@ async function processWebsiteTask(task: PipelineTask) {
             .eq("id", companyId)
         if (error) throw error
     }
-    return { rawCount: inspected.length, companyCount: ownerName && ownerPhone ? 1 : 0 }
+    return { rawCount: inspected.length, companyCount: ownerName || ownerPhone || businessPhone ? 1 : 0 }
 }
 
 async function cancelStaleWebsiteTasks(workspaceId: string, pollId: string, stageKey?: PollStageKey) {
@@ -1245,7 +1084,33 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
         return
     }
     const tasks = (tasksResult.data ?? []) as PipelineTask[]
-    for (const [index, task] of tasks.entries()) {
+    const failWebsiteInvestigationRows = async (task: PipelineTask, message: string) => {
+        const companyId = typeof task.source_query?.company_id === "string" ? task.source_query.company_id : null
+        if (sourceKey !== "website" || !companyId) return
+        const query = { ...(task.source_query ?? {}), workspace_id: workspaceId, poll_id: pollId }
+        const stageKey = task.stage_key === "seed" ? "business_validation" : task.stage_key
+        await updateInvestigationTask({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "website",
+            stageKey,
+            status: "failed",
+            error: message,
+            rawPayload: query,
+        })
+        await updateInvestigationTask({
+            workspaceId,
+            pollId,
+            companyId,
+            sourceKey: "web.json_ld",
+            stageKey,
+            status: "failed",
+            error: message,
+            rawPayload: query,
+        })
+    }
+    const processTask = async (task: PipelineTask) => {
         await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "running", started_at: new Date().toISOString(), error: null }).eq("id", task.id)
         try {
             const query = { ...(task.source_query ?? {}), workspace_id: workspaceId, poll_id: pollId }
@@ -1264,38 +1129,29 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
                 .update({ status: "completed", raw_count: result?.rawCount ?? 0, company_count: result?.companyCount ?? 0, completed_at: new Date().toISOString(), error: null })
                 .eq("id", task.id)
         } catch (error) {
-            const companyId = typeof task.source_query?.company_id === "string" ? task.source_query.company_id : null
             const message = compactErrorMessage(error)
-            if (sourceKey === "website" && companyId) {
-                const query = { ...(task.source_query ?? {}), workspace_id: workspaceId, poll_id: pollId }
-                const stageKey = task.stage_key === "seed" ? "business_validation" : task.stage_key
-                await updateInvestigationTask({
-                    workspaceId,
-                    pollId,
-                    companyId,
-                    sourceKey: "website",
-                    stageKey,
-                    status: "failed",
-                    error: message,
-                    rawPayload: query,
-                })
-                await updateInvestigationTask({
-                    workspaceId,
-                    pollId,
-                    companyId,
-                    sourceKey: "web.json_ld",
-                    stageKey,
-                    status: "failed",
-                    error: message,
-                    rawPayload: query,
-                })
-            }
+            await failWebsiteInvestigationRows(task, message)
             if (error instanceof SamGovQuotaError) {
-                const remainingTaskIds = tasks.slice(index + 1).map((remainingTask) => remainingTask.id)
                 await supabaseAdmin
                     .from("leadgen_poll_tasks")
                     .update({ status: "failed", completed_at: new Date().toISOString(), error: message })
                     .eq("id", task.id)
+                throw error
+            }
+            await supabaseAdmin
+                .from("leadgen_poll_tasks")
+                .update({ status: "failed", completed_at: new Date().toISOString(), error: compactErrorMessage(error) })
+                .eq("id", task.id)
+        }
+    }
+    if (sourceKey === "sam_gov") {
+        for (const [index, task] of tasks.entries()) {
+            try {
+                await processTask(task)
+            } catch (error) {
+                if (!(error instanceof SamGovQuotaError)) throw error
+                const message = compactErrorMessage(error)
+                const remainingTaskIds = tasks.slice(index + 1).map((remainingTask) => remainingTask.id)
                 if (remainingTaskIds.length) {
                     await supabaseAdmin
                         .from("leadgen_poll_tasks")
@@ -1304,11 +1160,15 @@ export async function processPipelineSourcePoll(pollId: string, workspaceId: str
                 }
                 break
             }
-            await supabaseAdmin
-                .from("leadgen_poll_tasks")
-                .update({ status: "failed", completed_at: new Date().toISOString(), error: compactErrorMessage(error) })
-                .eq("id", task.id)
         }
+    } else {
+        const stageKey = options.stageKey === "seed" ? "business_validation" : options.stageKey
+        const concurrency = sourceKey === "website"
+            ? WEBSITE_TASK_CONCURRENCY[stageKey ?? "owner_identity"]
+            : 1
+        await runWithConcurrency(tasks, concurrency, async (task) => {
+            await processTask(task)
+        })
     }
     await refreshLeadgenPollCounts(pollId, workspaceId)
     if (options.finalize !== false) await refreshLeadgenPollCounts(pollId, workspaceId)

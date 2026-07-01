@@ -1,6 +1,7 @@
 import { buildSourcePlan, executableLeadgenSources, seedLeadgenSources, stateLicensingSourceKeys, type LeadgenSourceConfig, type LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
 import { createOsmTasksForPoll, finalizeLeadgenPoll, processOsmPoll, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
 import { createPipelineTasksForPoll, createWebsiteTasksForPoll, processPipelineSourcePoll } from "@/lib/leadgen/pipeline-workers"
+import { resolveCompanyIdentitiesFromEvidence } from "@/lib/leadgen/company-identity-resolution"
 import { processPublicRecordsPoll } from "@/lib/leadgen/public-records-worker"
 import { createStateLicensingEnrichmentTasksForPoll, processStateLicensingPoll } from "@/lib/leadgen/state-licensing-worker"
 import { createInvestigationTasksForPoll, scorePollCompanies } from "@/lib/leadgen/evidence-scoring"
@@ -65,6 +66,11 @@ function isStateLicensingSource(sourceKey: string) {
     return stateLicensingSourceKeys.has(sourceKey as LeadgenSourcePlanItem["key"])
 }
 
+function stageProcessorErrorMessage(error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown processor error"
+    return message.length > 260 ? `${message.slice(0, 260)}...` : message
+}
+
 async function processStageEvidence({
     workspaceId,
     pollId,
@@ -83,20 +89,38 @@ async function processStageEvidence({
     websitePlan: LeadgenSourcePlanItem | null
 }) {
     if (companyIds.length === 0) return
+    const processors: Array<{ label: string; run: () => Promise<void> }> = []
     const publicRecordSourceKeys = sourceKeys.filter((sourceKey) => !isWebsiteSource(sourceKey) && !isStateLicensingSource(sourceKey))
     if (publicRecordSourceKeys.length) {
         await createInvestigationTasksForPoll({ workspaceId, pollId, enabledSourceKeys: publicRecordSourceKeys, companyIds, stageKey })
-        await processPublicRecordsPoll(pollId, workspaceId, { finalize: false, stageKey })
+        processors.push({
+            label: "public records",
+            run: () => processPublicRecordsPoll(pollId, workspaceId, { finalize: false, stageKey }),
+        })
     }
-    for (const stateLicensingPlan of stateLicensingPlans.filter((plan) => sourceKeys.includes(plan.key))) {
+    const activeStateLicensingPlans = stateLicensingPlans.filter((plan) => sourceKeys.includes(plan.key))
+    for (const stateLicensingPlan of activeStateLicensingPlans) {
         await createStateLicensingEnrichmentTasksForPoll({ workspaceId, pollId, plan: { ...stateLicensingPlan, limit: Math.min(MAX_SEED_CANDIDATES, Math.max(1, stateLicensingPlan.limit ?? MAX_SEED_CANDIDATES)) }, companyIds, stageKey })
     }
-    if (stateLicensingPlans.some((plan) => sourceKeys.includes(plan.key))) {
-        await processStateLicensingPoll(pollId, workspaceId, { finalize: false, stageKey })
+    if (activeStateLicensingPlans.length) {
+        processors.push({
+            label: "state licensing",
+            run: () => processStateLicensingPoll(pollId, workspaceId, { finalize: false, stageKey }),
+        })
     }
     if (websitePlan && sourceKeys.includes("website")) {
         await createWebsiteTasksForPoll({ workspaceId, pollId, plan: { ...websitePlan, limit: MAX_SEED_CANDIDATES }, companyIds, stageKey })
-        await processPipelineSourcePoll(pollId, workspaceId, "website", { finalize: false, stageKey })
+        processors.push({
+            label: "website",
+            run: () => processPipelineSourcePoll(pollId, workspaceId, "website", { finalize: false, stageKey }),
+        })
+    }
+    const results = await Promise.allSettled(processors.map((processor) => processor.run()))
+    const failures = results.flatMap((result, index) => result.status === "rejected"
+        ? [`${processors[index].label}: ${stageProcessorErrorMessage(result.reason)}`]
+        : [])
+    if (failures.length) {
+        throw new Error(`Owner discovery processors failed after other source families were given a chance to run: ${failures.join("; ")}`)
     }
 }
 
@@ -137,6 +161,8 @@ export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId:
         await finalizeLeadgenPoll(pollId, workspaceId)
         return { processed: true }
     }
+
+    await resolveCompanyIdentitiesFromEvidence({ workspaceId, pollId, companyIds: validatedCompanyIds })
 
     await startPollStage({ workspaceId, pollId, stageKey: "owner_identity", targetCount: validatedCompanyIds.length, inputCount: validatedCompanyIds.length })
     const ownerIdentitySourceKeys = await loadStageSourceKeys("owner_identity", enabledInvestigationSourceKeys)

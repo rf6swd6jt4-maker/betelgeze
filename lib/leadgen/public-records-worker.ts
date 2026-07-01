@@ -1,8 +1,25 @@
 import { createHash } from "crypto"
 
+import { identityPayloadForCompany, identityProfileFromOfficialRecord, mergeIdentityForCompany } from "@/lib/leadgen/company-identity-resolution"
 import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
+import {
+    assessOfficialRecordMatch,
+    buildOfficialRecordSearchTerms,
+    candidateDomain,
+    officialRecordMatchesCandidate,
+    sharedTokenScore,
+    strongBusinessNameMatch,
+    summarizeOfficialRecordRejections,
+} from "@/lib/leadgen/official-record-matching"
+import { candidatePrimaryCity, candidatePrimaryPostcode, candidatePrimaryState } from "@/lib/leadgen/location-resolution"
+import {
+    isLikelyPublicRecordPersonName,
+    publicRecordPersonCandidates,
+} from "@/lib/leadgen/public-record-person-extraction"
 import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
+import { looksLikeGuardedOrAppShell, publicRecordPollUnsafeReason } from "@/lib/leadgen/public-record-source-safety"
 import type { PollStageKey } from "@/lib/leadgen/staged-poll"
+import { groupByKey, runWithConcurrency } from "@/lib/leadgen/task-execution"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
 type SourceCatalog = {
@@ -26,10 +43,25 @@ type InvestigationTask = {
 type CompanyCandidate = {
     id: string
     display_name: string
+    canonical_name: string | null
+    legal_name: string | null
+    dba_name: string | null
+    entity_number: string | null
+    filing_id: string | null
+    registered_address: Record<string, unknown> | null
+    known_aliases: string[] | null
+    identity_resolution: Record<string, unknown> | null
+    identity_source_key: string | null
+    identity_confidence: number | null
+    identity_resolved_at: string | null
     phone: string | null
     website_domain: string | null
     website_url: string | null
+    profile_url: string | null
+    source_record_id: string | null
     address: Record<string, unknown> | null
+    latitude: number | null
+    longitude: number | null
     industry_value: string | null
     location_value: string | null
 }
@@ -48,6 +80,12 @@ type MatchResult = {
     latitude: number | null
     longitude: number | null
     confidence: number
+    matchReasons: string[]
+    matchSignals: Record<string, unknown>
+    personRole: string | null
+    personSourceField: string | null
+    personConfidence: number | null
+    personCandidates: Array<Record<string, unknown>>
 }
 
 const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
@@ -59,22 +97,12 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "registry.tx.comptroller",
     "state_license.tx.tda_pest",
     "regulated.tx.tceq_waste",
-    "registry.fl.sunbiz",
-    "state_license.fl.fdacs_pest",
-    "state_license.fl.fdacs_auto_repair",
     "registry.fl.orlando_btr",
-    "registry.fl.miami_dade_lbt",
-    "registry.fl.tampa_btr",
-    "registry.fl.jacksonville_btr",
     "state_license.ca.cslb",
     "state_license.ca.bar_auto_repair",
     "state_license.ca.pest_control",
-    "registry.ca.bizfile",
     "registry.ca.los_angeles_fbn",
     "regulated.ca.calrecycle_waste",
-    "state_license.az.roc",
-    "state_license.az.pest_management",
-    "registry.az.corp_commission",
     "safety.osha",
     "transport.fmcsa_safer",
     "regulated.epa_echo",
@@ -91,9 +119,35 @@ function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+const PUBLIC_RECORD_SOURCE_CONCURRENCY: Record<Exclude<PollStageKey, "seed">, number> = {
+    business_validation: 3,
+    owner_identity: 5,
+    owner_phone: 4,
+    phone_validation: 1,
+}
+
+function publicRecordSourceDelay(source: SourceCatalog) {
+    return Math.min(5000, Math.max(0, source.rate_limit_ms ?? 1000))
+}
+
+function publicRecordSourcePriority(source: SourceCatalog | undefined, stageKey: Exclude<PollStageKey, "seed"> | undefined) {
+    if (!source) return -1000
+    const identityPoints = Number(source.owner_identity_points) || 0
+    const phonePoints = Number(source.owner_phone_points) || 0
+    const supportPoints = Number(source.business_support_points) || 0
+    const delayPenalty = publicRecordSourceDelay(source) / 1000
+    if (stageKey === "owner_phone") return phonePoints * 120 + identityPoints * 30 + supportPoints * 8 - delayPenalty
+    if (stageKey === "owner_identity") return identityPoints * 120 + phonePoints * 45 + supportPoints * 8 - delayPenalty
+    return supportPoints * 100 + identityPoints * 25 + phonePoints * 15 - delayPenalty
+}
+
 function compactErrorMessage(error: unknown) {
     const message = error instanceof Error ? error.message : "Public-record source task failed."
     return message.length > 900 ? `${message.slice(0, 900)}…` : message
+}
+
+function missingIdentityColumn(error: { code?: string; message?: string } | null) {
+    return error?.code === "42703" || /legal_name|dba_name|entity_number|identity_resolution|known_aliases/i.test(error?.message ?? "")
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -120,19 +174,6 @@ function normalisePhone(value: string | null | undefined) {
     return digits.length >= 7 ? `+${digits}` : null
 }
 
-function domainFromUrl(value: string | null | undefined) {
-    if (!value) return null
-    try {
-        return new URL(value.startsWith("http") ? value : `https://${value}`).hostname.toLowerCase().replace(/^www\./, "") || null
-    } catch {
-        return null
-    }
-}
-
-function candidateDomain(candidate: CompanyCandidate) {
-    return domainFromUrl(candidate.website_domain) ?? domainFromUrl(candidate.website_url)
-}
-
 function decodeHtml(value: string) {
     return value
         .replace(/&nbsp;/gi, " ")
@@ -147,56 +188,12 @@ function stripHtml(value: string) {
     return cleanText(decodeHtml(value.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, " ")))
 }
 
-function stripLegalSuffixes(value: string | null | undefined) {
-    return cleanText(value ?? "")
-        .replace(/\b(d\/b\/a|dba|llc|l\.l\.c\.|inc|incorporated|corp|corporation|co|company|ltd|limited|lp|llp|pllc|pa|systems|services)\b\.?/gi, " ")
-        .replace(/\b(the|and|&)\b/gi, " ")
-        .replace(/[^a-z0-9]+/gi, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase()
-}
-
-function nameTokens(value: string | null | undefined) {
-    return stripLegalSuffixes(value)
-        .split(" ")
-        .filter((token) => token.length >= 3)
-}
-
-function sharedTokenScore(left: string | null | undefined, right: string | null | undefined) {
-    const leftTokens = new Set(nameTokens(left))
-    const rightTokens = new Set(nameTokens(right))
-    if (leftTokens.size === 0 || rightTokens.size === 0) return 0
-    const shared = [...leftTokens].filter((token) => rightTokens.has(token)).length
-    return shared / Math.max(leftTokens.size, rightTokens.size)
-}
-
-function strongBusinessNameMatch(candidateName: string, ...recordNames: Array<string | null | undefined>) {
-    const candidateCanonical = stripLegalSuffixes(candidateName)
-    if (!candidateCanonical) return false
-    return recordNames.some((recordName) => {
-        const recordCanonical = stripLegalSuffixes(recordName)
-        if (!recordCanonical) return false
-        return recordCanonical.includes(candidateCanonical)
-            || candidateCanonical.includes(recordCanonical)
-            || sharedTokenScore(candidateCanonical, recordCanonical) >= 0.62
-    })
-}
-
-function firstSearchTerm(candidateName: string) {
-    const tokens = nameTokens(candidateName)
-    return tokens.slice(0, Math.min(4, Math.max(1, tokens.length))).join(" ")
-}
-
 function candidateCity(candidate: CompanyCandidate) {
-    const address = candidate.address ?? {}
-    return asString(address.city) ?? asString(address.locality) ?? asString(address.town) ?? asString(address.municipality)
+    return candidatePrimaryCity(candidate)
 }
 
 function candidatePostcode(candidate: CompanyCandidate) {
-    const address = candidate.address ?? {}
-    const value = asString(address.postcode) ?? asString(address.postal_code) ?? asString(address.zip)
-    return value?.slice(0, 10) ?? null
+    return candidatePrimaryPostcode(candidate)
 }
 
 function parseCsvLine(line: string) {
@@ -261,28 +258,12 @@ function usDate(date: Date) {
     return `${parts.month}/${parts.day}/${parts.year}`
 }
 
-function looksLikeChallengePage(text: string) {
-    return /Just a moment|Cloudflare|Attention Required|Incapsula|Request unsuccessful|captcha|recaptcha|Error 403|outside the United States/i.test(text)
-}
-
 function assertNotChallenge(sourceLabel: string, text: string) {
-    if (looksLikeChallengePage(text)) throw new Error(`${sourceLabel} returned an anti-bot, captcha, or geo-block challenge instead of public records.`)
+    if (looksLikeGuardedOrAppShell(text)) throw new Error(`${sourceLabel} returned an anti-bot, captcha, app shell, or geo-block challenge instead of public records.`)
 }
 
 function looksLikePersonName(value: string | null | undefined) {
-    const clean = cleanText(value ?? "")
-    if (!clean || /\b(LLC|INC|CORP|COMPANY|CONSTRUCTION|SERVICES|SYSTEMS|CONTRACTORS?|HOMES?|ROOFING|PLUMBING|ELECTRIC|HVAC)\b/i.test(clean)) return false
-    const parts = clean.split(/\s+/).filter(Boolean)
-    return parts.length >= 2 && parts.length <= 5 && parts.every((part) => /^[A-Za-z.'-]+$/.test(part))
-}
-
-function buildOwnerName(row: SocrataRecord, fields: string[]) {
-    const direct = pickString(row, fields)
-    if (direct) return direct
-    const first = pickString(row, ["principal_first_name", "applicant_first_name", "owner_first_name"])
-    const middle = pickString(row, ["principal_middle_name", "owner_middle_name"])
-    const last = pickString(row, ["principal_last_name", "applicant_last_name", "owner_last_name"])
-    return [first, middle, last].map((part) => cleanText(part ?? "")).filter(Boolean).join(" ") || null
+    return isLikelyPublicRecordPersonName(value)
 }
 
 function personFromContractorField(value: string | null | undefined) {
@@ -306,9 +287,7 @@ function pickString(row: SocrataRecord, fields: string[]) {
 }
 
 function candidateState(candidate: CompanyCandidate) {
-    const address = candidate.address ?? {}
-    const direct = asString(address.state) ?? asString(address.region) ?? asString(address.state_code) ?? asString(address.region_code)
-    return direct && /^[A-Z]{2}$/i.test(direct) ? direct.toUpperCase() : null
+    return candidatePrimaryState(candidate)
 }
 
 function extractPoint(row: SocrataRecord, fields: string[]) {
@@ -699,13 +678,20 @@ async function fetchTexasAgriculturePestRows(searchTerm: string, metadata: Recor
         for (const row of csvRowsWithHeaders(csv)) {
             const legalName = asString(row.LEGAL_BUSINESS_NAME)
             const dbaName = asString(row.DBA)
-            if (!strongBusinessNameMatch(company.display_name, legalName, dbaName, asString(row.BUSINESS_NAME))) continue
+            const preliminaryRow = {
+                ...row,
+                business_name: dbaName ?? legalName ?? asString(row.BUSINESS_NAME),
+                legal_business_name: legalName,
+                dba_name: dbaName,
+                state: "TX",
+            }
+            if (!officialRecordMatchesCandidate(preliminaryRow, company, metadata)) continue
             if (state && state !== "TX") continue
             if (county && asString(row.COUNTY) && sharedTokenScore(county, asString(row.COUNTY)) < 0.6 && !strongBusinessNameMatch(company.display_name, legalName, dbaName)) continue
             const responsibleApplicator = asString(row.RESPONSIBLE_APPLICATOR)
             const operator = asString(row.OPERATOR)
             rows.push({
-                ...row,
+                ...preliminaryRow,
                 business_name: dbaName ?? legalName,
                 legal_business_name: legalName,
                 owner_name: looksLikePersonName(responsibleApplicator) ? responsibleApplicator : looksLikePersonName(operator) ? operator : null,
@@ -771,7 +757,7 @@ async function fetchTceqRows(searchTerm: string, metadata: Record<string, unknow
         const sourceUrl = new URL(link, "https://www15.tceq.texas.gov/crpub/").toString()
         const detailHtml = await fetchTextWithTimeout(sourceUrl)
         const regulatedName = labelledHtmlValue(detailHtml, "Name")
-        if (!regulatedName || !strongBusinessNameMatch(company.display_name, regulatedName)) continue
+        if (!regulatedName) continue
         const rnNumber = detailHtml.match(/RN\s*&nbsp;Number:[\s\S]*?(RN\d+)/i)?.[1] ?? detailHtml.match(/\b(RN\d{9})\b/i)?.[1] ?? null
         const primaryBusiness = labelledHtmlValue(detailHtml, "Primary Business")
         const county = labelledHtmlValue(detailHtml, "County")
@@ -780,7 +766,7 @@ async function fetchTceqRows(searchTerm: string, metadata: Record<string, unknow
         const physicalLocation = labelledHtmlValue(detailHtml, "Physical Location")
         const customerRows = tableRows(detailHtml).filter((cells) => cells.some((cell) => /^CN\d+/i.test(cell)))
         if (customerRows.length === 0) {
-            rows.push({
+            const resultRow = {
                 regulated_entity_name: regulatedName,
                 business_name: regulatedName,
                 rn_number: rnNumber,
@@ -793,13 +779,14 @@ async function fetchTceqRows(searchTerm: string, metadata: Record<string, unknow
                 state: "TX",
                 postcode: zip,
                 source_url: sourceUrl,
-            })
+            }
+            if (officialRecordMatchesCandidate(resultRow, company, metadata)) rows.push(resultRow)
         }
         for (const cells of customerRows.slice(0, 3)) {
             const cnNumber = cells.find((cell) => /^CN\d+/i.test(cell)) ?? null
             const customerName = cells.find((cell) => cell !== cnNumber && !/OWNER|OPERATOR|CUSTOMER|Details/i.test(cell)) ?? null
             const role = cells.find((cell) => /OWNER|OPERATOR|RESPONSIBLE|CUSTOMER/i.test(cell)) ?? "Affiliated customer"
-            rows.push({
+            const resultRow = {
                 regulated_entity_name: regulatedName,
                 business_name: regulatedName,
                 owner_name: looksLikePersonName(customerName) ? customerName : null,
@@ -817,7 +804,8 @@ async function fetchTceqRows(searchTerm: string, metadata: Record<string, unknow
                 postcode: zip,
                 source_url: sourceUrl,
                 additional_match_name: customerName,
-            })
+            }
+            if (officialRecordMatchesCandidate(resultRow, company, metadata)) rows.push(resultRow)
         }
         await sleep(160)
     }
@@ -921,7 +909,16 @@ async function fetchCslbRows(searchTerm: string, metadata: Record<string, unknow
     const rows: SocrataRecord[] = []
     const limit = Math.min(8, Math.max(1, Number(metadata.query_limit) || 5))
     for (const result of cslbRowsFromSearch(searchHtml).slice(0, limit)) {
-        if (!strongBusinessNameMatch(company.display_name, result.businessName)) continue
+        const preliminaryRow = {
+            business_name: result.businessName,
+            contractor_name: result.businessName,
+            license_number: result.licenseNumber,
+            city: result.city,
+            state: "CA",
+            status: result.status,
+        }
+        const preliminaryAssessment = assessOfficialRecordMatch(preliminaryRow, company, metadata)
+        if (!preliminaryAssessment.matched && Number(preliminaryAssessment.signals.name_score) < 0.28 && Number(preliminaryAssessment.signals.address_score) < 0.34) continue
         const sourceUrl = `https://www.cslb.ca.gov/OnlineServices/checklicenseII/LicenseDetail.aspx?LicNum=${encodeURIComponent(result.licenseNumber)}`
         let detail = cslbBusinessInfo("")
         try {
@@ -999,7 +996,6 @@ async function fetchPhoenixPermitRows(searchTerm: string, metadata: Record<strin
     }).toString()}`
     const csv = await fetchCachedCsv(url)
     return csvRowsWithHeaders(csv)
-        .filter((row) => strongBusinessNameMatch(company.display_name, asString(row.Contractor)))
         .map((row) => ({
             ...row,
             business_name: asString(row.Contractor),
@@ -1015,6 +1011,7 @@ async function fetchPhoenixPermitRows(searchTerm: string, metadata: Record<strin
             source_url: "https://apps-secure.phoenix.gov/PDD/Search/IssuedPermit",
             additional_match_name: asString(row.Contractor),
         }))
+        .filter((row) => officialRecordMatchesCandidate(row, company, metadata))
         .slice(0, Math.min(20, Math.max(1, Number(metadata.query_limit) || 10)))
 }
 
@@ -1057,9 +1054,11 @@ async function fetchDcaRows(searchTerm: string, metadata: Record<string, unknown
     }))
 }
 
-async function fetchGuardedHtmlRows(source: SourceCatalog, searchTerm: string, metadata: Record<string, unknown>) {
+async function fetchGuardedHtmlRows(source: SourceCatalog, searchTerm: string, metadata: Record<string, unknown>, company: CompanyCandidate) {
     const searchUrlTemplate = asString(metadata.search_url)
     const label = source.label
+    const unsafeReason = publicRecordPollUnsafeReason(source.source_key, label, metadata)
+    if (unsafeReason) throw new Error(unsafeReason)
     if (!searchUrlTemplate) throw new Error(`${label} is missing search_url metadata.`)
     const searchUrl = searchUrlTemplate.replace("{query}", encodeURIComponent(searchTerm))
     const html = await fetchTextWithTimeout(searchUrl)
@@ -1067,9 +1066,8 @@ async function fetchGuardedHtmlRows(source: SourceCatalog, searchTerm: string, m
     const rows = tableRows(html)
     const mappedRows = rows.slice(0, Math.min(20, Math.max(1, Number(metadata.query_limit) || 10))).flatMap((cells) => {
         const joined = cells.join(" ")
-        if (!strongBusinessNameMatch(searchTerm, joined)) return []
         const phoneCell = cells.find((cell) => Boolean(normalisePhone(cell)))
-        return [{
+        const mappedRow = {
             business_name: cells.find((cell) => strongBusinessNameMatch(searchTerm, cell)) ?? joined,
             owner_name: cells.find((cell) => looksLikePersonName(cell)) ?? null,
             phone: normalisePhone(phoneCell),
@@ -1078,7 +1076,8 @@ async function fetchGuardedHtmlRows(source: SourceCatalog, searchTerm: string, m
             record_type: asString(metadata.default_record_type) ?? label,
             source_url: searchUrl,
             raw_cells: cells,
-        }]
+        }
+        return officialRecordMatchesCandidate(mappedRow, company, metadata) ? [mappedRow] : []
     })
     if (mappedRows.length === 0 && /<html/i.test(html)) {
         throw new Error(`${label} responded, but no parseable public-record rows were found for "${searchTerm}".`)
@@ -1156,6 +1155,8 @@ async function fetchCertificateTransparencyRows(company: CompanyCandidate) {
 
 async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, company: CompanyCandidate) {
     const adapter = asString(source.metadata?.adapter) ?? "socrata_public_records"
+    const unsafeReason = publicRecordPollUnsafeReason(source.source_key, source.label, source.metadata)
+    if (unsafeReason) throw new Error(unsafeReason)
     if (adapter === "fmcsa_safer_snapshot") return fetchFmcsaRows(searchTerm)
     if (adapter === "osha_establishment_search") return fetchOshaRows(searchTerm, company)
     if (adapter === "epa_echo_cwa_facility_info") return fetchEpaEchoRows(searchTerm, company)
@@ -1168,7 +1169,7 @@ async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, com
     if (adapter === "arcgis_feature_service") return fetchArcgisRows(source.metadata ?? {}, searchTerm)
     if (adapter === "phoenix_issued_permit_csv") return fetchPhoenixPermitRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "dca_search_api") return fetchDcaRows(searchTerm, source.metadata ?? {})
-    if (adapter === "guarded_html_search") return fetchGuardedHtmlRows(source, searchTerm, source.metadata ?? {})
+    if (adapter === "guarded_html_search") return fetchGuardedHtmlRows(source, searchTerm, source.metadata ?? {}, company)
     if (adapter === "rdap_domain") return fetchRdapRows(company)
     if (adapter === "certificate_transparency") return fetchCertificateTransparencyRows(company)
     return fetchSocrataRows(source.metadata ?? {}, searchTerm)
@@ -1178,21 +1179,22 @@ function rowToMatch(row: SocrataRecord, candidate: CompanyCandidate, metadata: R
     const fieldMap = asRecord(metadata.field_map)
     const businessName = pickString(row, asStringArray(fieldMap.business_name))
     const contractorName = pickString(row, asStringArray(fieldMap.contractor_name))
-    const ownerName = buildOwnerName(row, asStringArray(fieldMap.owner_name))
-    const applicantName = buildOwnerName(row, asStringArray(fieldMap.applicant_name))
-    const personName = ownerName ?? applicantName ?? personFromContractorField(contractorName)
-    const phone = normalisePhone(pickString(row, asStringArray(fieldMap.phone)))
-    const permitNumber = pickString(row, asStringArray(fieldMap.record_id))
-    const status = pickString(row, asStringArray(fieldMap.status))
-    const recordType = pickString(row, asStringArray(fieldMap.record_type))
-    const recordNames = [businessName, contractorName, ownerName, applicantName, pickString(row, asStringArray(fieldMap.additional_match_name))]
-    if (!strongBusinessNameMatch(candidate.display_name, ...recordNames)) return null
+    const personCandidates = publicRecordPersonCandidates(row, metadata)
+    const bestPerson = personCandidates[0] ?? null
+    const contractorPerson = !bestPerson ? personFromContractorField(contractorName) : null
+    const personName = bestPerson?.name ?? contractorPerson
+    const phone = normalisePhone(pickString(row, [...asStringArray(fieldMap.phone), "phone", "business_phone", "telephone", "telephone_number", "contact_phone", "Cont Phone"]))
+    const permitNumber = pickString(row, [...asStringArray(fieldMap.record_id), "record_id", "license_number", "permit_number", "registration_number", "taxpayer_id", "sos_file_number", "npi", "usdot_number"])
+    const status = pickString(row, [...asStringArray(fieldMap.status), "status", "license_status", "primary_status", "sos_registration_status"])
+    const recordType = pickString(row, [...asStringArray(fieldMap.record_type), "record_type", "license_type", "entity_type", "permit_type"])
+    const assessment = assessOfficialRecordMatch(row, candidate, metadata)
+    if (!assessment.matched) return null
     const { latitude, longitude } = extractPoint(row, asStringArray(fieldMap.geopoint))
     const directLatitude = Number(pickString(row, ["latitude"]))
     const directLongitude = Number(pickString(row, ["longitude"]))
     return {
         row,
-        businessName: businessName ?? contractorName ?? candidate.display_name,
+        businessName: businessName ?? contractorName ?? assessment.bestRecordName ?? candidate.display_name,
         personName,
         phone,
         permitNumber,
@@ -1201,7 +1203,19 @@ function rowToMatch(row: SocrataRecord, candidate: CompanyCandidate, metadata: R
         address: addressFromRow(row, metadata),
         latitude: latitude ?? (Number.isFinite(directLatitude) ? directLatitude : null),
         longitude: longitude ?? (Number.isFinite(directLongitude) ? directLongitude : null),
-        confidence: sharedTokenScore(candidate.display_name, businessName ?? contractorName) >= 0.8 ? 86 : 72,
+        confidence: assessment.confidence,
+        matchReasons: assessment.reasons,
+        matchSignals: assessment.signals,
+        personRole: bestPerson?.role ?? (contractorPerson ? "contractor_person_name" : null),
+        personSourceField: bestPerson?.sourceField ?? (contractorPerson ? "contractor_name" : null),
+        personConfidence: bestPerson?.confidence ?? (contractorPerson ? 58 : null),
+        personCandidates: personCandidates.map((person) => ({
+            name: person.name,
+            role: person.role,
+            source_field: person.sourceField,
+            confidence: person.confidence,
+            reason: person.reason,
+        })),
     }
 }
 
@@ -1211,8 +1225,76 @@ function chooseBestMatch(matches: MatchResult[]) {
             const rightHasOwnerPhone = Number(Boolean(right.personName && right.phone))
             const leftHasOwnerPhone = Number(Boolean(left.personName && left.phone))
             if (rightHasOwnerPhone !== leftHasOwnerPhone) return rightHasOwnerPhone - leftHasOwnerPhone
+            const rightHasPerson = Number(Boolean(right.personName))
+            const leftHasPerson = Number(Boolean(left.personName))
+            if (rightHasPerson !== leftHasPerson) return rightHasPerson - leftHasPerson
+            if ((right.personConfidence ?? 0) !== (left.personConfidence ?? 0)) return (right.personConfidence ?? 0) - (left.personConfidence ?? 0)
             return right.confidence - left.confidence
         })[0] ?? null
+}
+
+const SEARCH_TERM_INSENSITIVE_ADAPTERS = new Set([
+    "texas_agriculture_spcs_csv",
+    "phoenix_issued_permit_csv",
+    "rdap_domain",
+    "certificate_transparency",
+])
+
+const BROAD_TEXT_SEARCH_ADAPTERS = new Set([
+    "socrata_public_records",
+    "arcgis_feature_service",
+    "guarded_html_search",
+])
+
+function sourceAdapter(source: SourceCatalog) {
+    return asString(source.metadata?.adapter) ?? "socrata_public_records"
+}
+
+function searchTermsForSource(source: SourceCatalog, company: CompanyCandidate) {
+    const adapter = sourceAdapter(source)
+    const includeNonNameSignals = BROAD_TEXT_SEARCH_ADAPTERS.has(adapter)
+    const maxTerms = Math.min(10, Math.max(1, Number(source.metadata?.search_term_limit) || (includeNonNameSignals ? 7 : 5)))
+    const terms = buildOfficialRecordSearchTerms(company, { includeNonNameSignals, maxTerms })
+    if (SEARCH_TERM_INSENSITIVE_ADAPTERS.has(adapter)) return terms.slice(0, 1)
+    return terms
+}
+
+function isFatalSearchError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return /anti-bot|captcha|geo-block|guarded|app-shell|poll-time activation|generic guarded HTML|stable .*endpoint|requires|missing .*metadata|missing .*key|HTTP 401|HTTP 403/i.test(message)
+}
+
+async function fetchRowsForSearchTerms(source: SourceCatalog, searchTerms: string[], company: CompanyCandidate) {
+    const rows: SocrataRecord[] = []
+    const seen = new Set<string>()
+    const attempts: Array<Record<string, unknown>> = []
+    const maxRows = Math.min(200, Math.max(20, Number(source.metadata?.max_rows_to_match) || 100))
+    const errors: string[] = []
+    for (const searchTerm of searchTerms) {
+        try {
+            const termRows = await fetchRowsForSource(source, searchTerm, company)
+            let added = 0
+            for (const row of termRows) {
+                const key = hashRecord(row)
+                if (seen.has(key)) continue
+                seen.add(key)
+                rows.push(row)
+                added += 1
+                if (rows.length >= maxRows) break
+            }
+            attempts.push({ search_term: searchTerm, returned_rows: termRows.length, new_rows: added })
+            if (rows.length >= maxRows) break
+        } catch (error) {
+            const message = compactErrorMessage(error)
+            attempts.push({ search_term: searchTerm, error: message })
+            errors.push(message)
+            if (isFatalSearchError(error)) throw error
+        }
+    }
+    if (rows.length === 0 && errors.length === searchTerms.length) {
+        throw new Error(errors[0] ?? "Public-record source search failed for every search term.")
+    }
+    return { rows, attempts }
 }
 
 async function insertEvidence({
@@ -1235,6 +1317,15 @@ async function insertEvidence({
     const ownerIdentityPoints = Math.min(3, Math.max(0, Number(metadata.owner_identity_points_on_match) || 0))
     const ownerPhonePoints = result.personName && result.phone ? Math.min(3, Math.max(0, Number(metadata.owner_phone_points_on_match) || 0)) : 0
     const businessSupportPoints = Math.min(3, Math.max(0, Number(metadata.business_support_points_on_match) || source.business_support_points || 1))
+    const identityProfile = identityProfileFromOfficialRecord(result.row, {
+        sourceKey: source.source_key,
+        sourceLabel: source.label,
+        confidence: result.confidence,
+        seedDisplayName: company.display_name,
+    })
+    const mergedIdentity = identityProfile ? mergeIdentityForCompany(company, [identityProfile]) : null
+    const identityPayload = mergedIdentity ? identityPayloadForCompany(mergedIdentity) : {}
+    if (mergedIdentity) Object.assign(company, identityPayload)
     const rawPayload = {
         source_key: source.source_key,
         source_label: source.label,
@@ -1246,6 +1337,21 @@ async function insertEvidence({
         status: result.status,
         record_type: result.recordType,
         source_url: profileUrl,
+        match_reasons: result.matchReasons,
+        match_signals: result.matchSignals,
+        extracted_person_role: result.personRole,
+        extracted_person_source_field: result.personSourceField,
+        extracted_person_confidence: result.personConfidence,
+        extracted_person_candidates: result.personCandidates,
+        identity_profile: identityProfile ? {
+            legal_name: identityProfile.legalName,
+            dba_name: identityProfile.dbaName,
+            entity_number: identityProfile.entityNumber,
+            filing_id: identityProfile.filingId,
+            registered_address: identityProfile.registeredAddress,
+            known_aliases: identityProfile.knownAliases,
+            confidence: identityProfile.confidence,
+        } : null,
         row: result.row,
     }
     const { error: sourceRecordError } = await supabaseAdmin.from("leadgen_source_records").upsert({
@@ -1330,7 +1436,7 @@ async function insertEvidence({
             pointsAwarded: ownerIdentityPoints,
             confidence: result.confidence,
             provenanceUrl: profileUrl,
-            claimValue: { owner_name: result.personName, role: asString(metadata.person_role) ?? "public_record_principal" },
+            claimValue: { owner_name: result.personName, role: result.personRole ?? asString(metadata.person_role) ?? "public_record_principal", source_field: result.personSourceField },
             rawPayload,
         })
     }
@@ -1364,6 +1470,7 @@ async function insertEvidence({
     const updatePayload: Record<string, unknown> = {
         last_seen_at: new Date().toISOString(),
         owner_evidence: rawPayload,
+        ...identityPayload,
     }
     if (profileUrl) updatePayload.profile_url = profileUrl
     if (result.phone) updatePayload.phone = result.phone
@@ -1373,19 +1480,29 @@ async function insertEvidence({
         updatePayload.owner_confidence = result.confidence
         if (result.phone && ownerPhonePoints > 0) updatePayload.owner_phone = result.phone
     }
-    const { error } = await supabaseAdmin
+    const updateResult = await supabaseAdmin
         .from("leadgen_companies")
         .update(updatePayload)
         .eq("workspace_id", workspaceId)
         .eq("id", company.id)
-    if (error) throw error
+    if (updateResult.error && missingIdentityColumn(updateResult.error) && Object.keys(identityPayload).length) {
+        for (const key of Object.keys(identityPayload)) delete updatePayload[key]
+        const retryResult = await supabaseAdmin
+            .from("leadgen_companies")
+            .update(updatePayload)
+            .eq("workspace_id", workspaceId)
+            .eq("id", company.id)
+        if (retryResult.error) throw retryResult.error
+    } else if (updateResult.error) {
+        throw updateResult.error
+    }
     return { ownerIdentityPoints, ownerPhonePoints, businessSupportPoints, rawPayload }
 }
 
 async function processTask({ workspaceId, pollId, task, company, source }: { workspaceId: string; pollId: string; task: InvestigationTask; company: CompanyCandidate; source: SourceCatalog }) {
     await updateInvestigationTask({ workspaceId, pollId, companyId: company.id, sourceKey: task.source_key, stageKey: task.stage_key, status: "running" })
-    const searchTerm = firstSearchTerm(company.display_name)
-    if (!searchTerm) {
+    const searchTerms = searchTermsForSource(source, company)
+    if (searchTerms.length === 0) {
         await updateInvestigationTask({
             workspaceId,
             pollId,
@@ -1398,7 +1515,7 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
         })
         return
     }
-    const rows = await fetchRowsForSource(source, searchTerm, company)
+    const { rows, attempts } = await fetchRowsForSearchTerms(source, searchTerms, company)
     const matches = rows
         .map((row) => rowToMatch(row, company, source.metadata ?? {}))
         .filter((match): match is MatchResult => Boolean(match))
@@ -1413,7 +1530,12 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
             status: "completed",
             matched: false,
             skipReason: `${source.label} returned ${rows.length} public row${rows.length === 1 ? "" : "s"}, but none matched this candidate strongly enough.`,
-            rawPayload: { search_term: searchTerm, returned_rows: rows.length },
+            rawPayload: {
+                search_terms: searchTerms,
+                search_attempts: attempts,
+                returned_rows: rows.length,
+                closest_rejected_rows: summarizeOfficialRecordRejections(rows, company, source.metadata ?? {}),
+            },
         })
         return
     }
@@ -1457,7 +1579,7 @@ export async function processPublicRecordsPoll(pollId: string, workspaceId: stri
             .in("source_key", sourceKeys),
         supabaseAdmin
             .from("leadgen_companies")
-            .select("id, display_name, phone, website_domain, website_url, address, industry_value, location_value")
+            .select("id, canonical_name, display_name, legal_name, dba_name, entity_number, filing_id, registered_address, known_aliases, identity_resolution, identity_source_key, identity_confidence, identity_resolved_at, phone, website_domain, website_url, profile_url, source_record_id, address, latitude, longitude, industry_value, location_value")
             .eq("workspace_id", workspaceId)
             .in("id", companyIds),
     ])
@@ -1465,25 +1587,52 @@ export async function processPublicRecordsPoll(pollId: string, workspaceId: stri
     if (companiesResult.error) throw new Error(`Could not load public-record candidate companies: ${companiesResult.error.message}`)
     const sources = new Map(((sourcesResult.data ?? []) as SourceCatalog[]).map((source) => [source.source_key, source]))
     const companies = new Map(((companiesResult.data ?? []) as CompanyCandidate[]).map((company) => [company.id, company]))
-    for (const task of tasks) {
-        const source = sources.get(task.source_key)
-        const company = companies.get(task.company_id)
-        if (!source || !company) continue
-        try {
-            await processTask({ workspaceId, pollId, task, company, source })
-        } catch (error) {
-            await updateInvestigationTask({
+    const sourceGroups = [...groupByKey(tasks, (task) => task.source_key)]
+        .map(([sourceKey, sourceTasks]) => ({ sourceKey, source: sources.get(sourceKey), tasks: sourceTasks }))
+        .sort((left, right) => publicRecordSourcePriority(right.source, options.stageKey) - publicRecordSourcePriority(left.source, options.stageKey))
+    await runWithConcurrency(sourceGroups, PUBLIC_RECORD_SOURCE_CONCURRENCY[options.stageKey ?? "business_validation"], async (group) => {
+        if (!group.source) {
+            await Promise.all(group.tasks.map((task) => updateInvestigationTask({
                 workspaceId,
                 pollId,
                 companyId: task.company_id,
                 sourceKey: task.source_key,
                 stageKey: task.stage_key,
                 status: "failed",
-                error: compactErrorMessage(error),
-            })
+                error: "Public-record source metadata was unavailable when this task was processed.",
+            })))
+            return
         }
-        await sleep(Math.min(5000, Math.max(0, source.rate_limit_ms ?? 1000)))
-    }
+        for (const [index, task] of group.tasks.entries()) {
+            const company = companies.get(task.company_id)
+            if (!company) {
+                await updateInvestigationTask({
+                    workspaceId,
+                    pollId,
+                    companyId: task.company_id,
+                    sourceKey: task.source_key,
+                    stageKey: task.stage_key,
+                    status: "skipped",
+                    skipReason: "Candidate company was no longer available when this public-record task was processed.",
+                })
+                continue
+            }
+            try {
+                await processTask({ workspaceId, pollId, task, company: { ...company }, source: group.source })
+            } catch (error) {
+                await updateInvestigationTask({
+                    workspaceId,
+                    pollId,
+                    companyId: task.company_id,
+                    sourceKey: task.source_key,
+                    stageKey: task.stage_key,
+                    status: "failed",
+                    error: compactErrorMessage(error),
+                })
+            }
+            if (index < group.tasks.length - 1) await sleep(publicRecordSourceDelay(group.source))
+        }
+    })
     await refreshLeadgenPollCounts(pollId, workspaceId)
     if (options.finalize !== false) await refreshLeadgenPollCounts(pollId, workspaceId)
 }

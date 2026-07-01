@@ -1,5 +1,11 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { PollStageKey } from "@/lib/leadgen/staged-poll"
+import {
+    candidateLocationAppliesToState,
+    locationTargetMapFromRows,
+    sourceCoverageApplies,
+    type LeadgenLocationTarget,
+} from "@/lib/leadgen/location-resolution"
 
 type ClaimKind = "owner_identity" | "owner_phone" | "business_phone" | "business_support" | "permit_activity" | "licence_activity" | "officer_identity"
 
@@ -41,21 +47,11 @@ const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set([
     "regulated.tx.tceq_waste",
     "state_license.fl.dbpr",
     "state_license.fl.electrical",
-    "registry.fl.sunbiz",
-    "state_license.fl.fdacs_pest",
-    "state_license.fl.fdacs_auto_repair",
-    "registry.fl.miami_dade_lbt",
-    "registry.fl.tampa_btr",
-    "registry.fl.jacksonville_btr",
     "state_license.ca.cslb",
     "state_license.ca.bar_auto_repair",
     "state_license.ca.pest_control",
-    "registry.ca.bizfile",
     "registry.ca.los_angeles_fbn",
     "regulated.ca.calrecycle_waste",
-    "state_license.az.roc",
-    "state_license.az.pest_management",
-    "registry.az.corp_commission",
     "state_license.nc.general_contractors",
     "permits.tx.dallas",
     "permits.tx.austin",
@@ -89,16 +85,6 @@ function asString(value: unknown) {
     return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
-function domainFromUrl(value: unknown) {
-    const text = asString(value)
-    if (!text) return null
-    try {
-        return new URL(text.startsWith("http") ? text : `https://${text}`).hostname.toLowerCase().replace(/^www\./, "") || null
-    } catch {
-        return null
-    }
-}
-
 function normalisePhone(value: string | null | undefined) {
     const digits = value?.replace(/\D/g, "") ?? ""
     if (digits.length === 10) return `+1${digits}`
@@ -113,42 +99,13 @@ function phoneLooksCallable(value: string | null | undefined) {
     return digits.length >= 10 && digits.length <= 15
 }
 
-function companyState(company: { address?: unknown }) {
-    const address = asRecord(company.address)
-    const direct = asString(address.state) ?? asString(address.region) ?? asString(address.state_code) ?? asString(address.region_code)
-    return direct && /^[A-Z]{2}$/i.test(direct) ? direct.toUpperCase() : null
-}
-
-function companyCity(company: { address?: unknown }) {
-    const address = asRecord(company.address)
-    return asString(address.city) ?? asString(address.locality) ?? asString(address.town) ?? asString(address.municipality)
-}
-
-function normaliseCity(value: string) {
-    return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
-}
-
-function sourceAppliesToCompany(source: { source_key: string; coverage?: unknown }, company: { address?: unknown; industry_value?: string | null; website_domain?: string | null; website_url?: string | null }) {
-    if (source.source_key === "website" || source.source_key === "web.json_ld") return true
-    if ((source.source_key === "web.rdap_whois" || source.source_key === "web.certificate_transparency") && !domainFromUrl(company.website_domain) && !domainFromUrl(company.website_url)) return false
-    const state = companyState(company)
-    if (source.source_key === "state_license.tx.tdlr") return state === "TX"
-    if (source.source_key === "state_license.tx.plumbing") return state === "TX" && company.industry_value === "plumbers"
-    if (source.source_key === "state_license.fl.dbpr") return state === "FL" && ["general_contractors", "home_builders", "remodellers", "roofers", "hvac_contractors", "plumbers", "pool_builders", "solar_installers", "flooring_contractors", "lighting_contractors"].includes(company.industry_value ?? "")
-    if (source.source_key === "state_license.fl.electrical") return state === "FL" && ["electricians", "lighting_contractors", "solar_installers", "pool_builders", "hvac_contractors", "general_contractors"].includes(company.industry_value ?? "")
-    if (source.source_key === "state_license.nc.general_contractors") return state === "NC" && ["concrete_contractors", "deck_builders", "fencing_contractors", "general_contractors", "hardscaping_contractors", "home_builders", "insulation_contractors", "kitchen_remodelling", "masonry_contractors", "patio_contractors", "pool_builders", "remodellers", "restoration_companies", "roofers", "siding_contractors", "window_and_door_contractors"].includes(company.industry_value ?? "")
-    const coverage = asRecord(source.coverage)
-    const states = Array.isArray(coverage.states) ? coverage.states.map(String).map((value) => value.toUpperCase()) : []
-    const cities = Array.isArray(coverage.cities) ? coverage.cities.map(String).map(normaliseCity).filter(Boolean) : []
-    const industries = Array.isArray(coverage.industries) ? coverage.industries.map(String) : []
-    if (industries.length > 0 && (!company.industry_value || !industries.includes(company.industry_value))) return false
-    if (states.length > 0 && state && !states.includes(state)) return false
-    if (cities.length > 0) {
-        const city = companyCity(company)
-        if (!city) return false
-        return cities.includes(normaliseCity(city))
-    }
-    return true
+function sourceAppliesToCompany(source: { source_key: string; coverage?: unknown }, company: { address?: Record<string, unknown> | null; registered_address?: Record<string, unknown> | null; location_value?: string | null; industry_value?: string | null; website_domain?: string | null; website_url?: string | null }, locationTargets?: Map<string, LeadgenLocationTarget>) {
+    if (source.source_key === "state_license.tx.tdlr") return candidateLocationAppliesToState(company, "TX", locationTargets)
+    if (source.source_key === "state_license.tx.plumbing") return candidateLocationAppliesToState(company, "TX", locationTargets) && company.industry_value === "plumbers"
+    if (source.source_key === "state_license.fl.dbpr") return candidateLocationAppliesToState(company, "FL", locationTargets) && ["general_contractors", "home_builders", "remodellers", "roofers", "hvac_contractors", "plumbers", "pool_builders", "solar_installers", "flooring_contractors", "lighting_contractors"].includes(company.industry_value ?? "")
+    if (source.source_key === "state_license.fl.electrical") return candidateLocationAppliesToState(company, "FL", locationTargets) && ["electricians", "lighting_contractors", "solar_installers", "pool_builders", "hvac_contractors", "general_contractors"].includes(company.industry_value ?? "")
+    if (source.source_key === "state_license.nc.general_contractors") return candidateLocationAppliesToState(company, "NC", locationTargets) && ["concrete_contractors", "deck_builders", "fencing_contractors", "general_contractors", "hardscaping_contractors", "home_builders", "insulation_contractors", "kitchen_remodelling", "masonry_contractors", "patio_contractors", "pool_builders", "remodellers", "restoration_companies", "roofers", "siding_contractors", "window_and_door_contractors"].includes(company.industry_value ?? "")
+    return sourceCoverageApplies(source, company, locationTargets)
 }
 
 export async function recordEvidenceClaim(input: EvidenceClaimInput) {
@@ -195,7 +152,7 @@ export async function updateInvestigationTask(input: InvestigationTaskUpdate) {
 export async function createInvestigationTasksForPoll({ workspaceId, pollId, enabledSourceKeys, companyIds, stageKey = "business_validation" }: { workspaceId: string; pollId: string; enabledSourceKeys?: string[]; companyIds?: string[]; stageKey?: Exclude<PollStageKey, "seed"> }) {
     let companiesQuery = supabaseAdmin
         .from("leadgen_companies")
-        .select("id, address, industry_value, website_domain, website_url")
+        .select("id, address, registered_address, location_value, industry_value, website_domain, website_url")
         .eq("workspace_id", workspaceId)
         .eq("first_seen_poll_id", pollId)
     if (companyIds?.length) companiesQuery = companiesQuery.in("id", companyIds)
@@ -211,13 +168,22 @@ export async function createInvestigationTasksForPoll({ workspaceId, pollId, ena
     if (companiesResult.error) throw companiesResult.error
     if (catalogResult.error) throw catalogResult.error
     const companies = companiesResult.data ?? []
+    const locationValues = [...new Set(companies.map((company) => asString(company.location_value)).filter((value): value is string => Boolean(value)))]
+    const locationTargetsResult = locationValues.length
+        ? await supabaseAdmin
+            .from("leadgen_icp_locations")
+            .select("value, label, location_kind, country, region, locality, metadata")
+            .in("value", locationValues)
+        : { data: [], error: null }
+    if (locationTargetsResult.error) throw locationTargetsResult.error
+    const locationTargets = locationTargetMapFromRows((locationTargetsResult.data ?? []) as LeadgenLocationTarget[])
     const enabledSet = new Set((enabledSourceKeys ?? []).map(String))
     const restrictToWorkspaceSources = Array.isArray(enabledSourceKeys)
     const catalog = (catalogResult.data ?? [])
         .filter((source) => !restrictToWorkspaceSources || enabledSet.has(source.source_key))
         .filter((source) => source.enabled || source.implementation_status === "planned")
         .filter((source) => CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES.has(source.source_key) || source.implementation_status === "planned")
-    const tasks = companies.flatMap((company) => catalog.filter((source) => sourceAppliesToCompany(source, company)).map((source) => {
+    const tasks = companies.flatMap((company) => catalog.filter((source) => sourceAppliesToCompany(source, company, locationTargets)).map((source) => {
         const executable = source.enabled && CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES.has(source.source_key)
         return {
             workspace_id: workspaceId,

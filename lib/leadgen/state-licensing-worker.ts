@@ -3,6 +3,15 @@ import type { LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
 import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
 import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
 import type { PollStageKey } from "@/lib/leadgen/staged-poll"
+import { groupByKey, runWithConcurrency } from "@/lib/leadgen/task-execution"
+import {
+    candidateLocationAppliesToState,
+    candidatePrimaryCity,
+    candidatePrimaryPostcode,
+    candidatePrimaryState,
+    locationTargetMapFromRows,
+    type LeadgenLocationTarget,
+} from "@/lib/leadgen/location-resolution"
 
 type SourceOption = {
     value: string
@@ -142,6 +151,20 @@ const NC_CLASSIFICATIONS_BY_INDUSTRY: Record<string, string[]> = {
 }
 
 const STATE_LICENSE_SOURCE_KEYS = ["state_licensing", "state_license.tx.tdlr", "state_license.tx.plumbing", "state_license.fl.dbpr", "state_license.fl.electrical", "state_license.nc.general_contractors"]
+const STATE_LICENSING_GROUP_CONCURRENCY: Record<Exclude<PollStageKey, "seed">, number> = {
+    business_validation: 2,
+    owner_identity: 3,
+    owner_phone: 3,
+    phone_validation: 1,
+}
+const STATE_LICENSE_SOURCE_PRIORITY: Record<string, number> = {
+    "state_license.tx.plumbing": 100,
+    "state_license.fl.dbpr": 95,
+    "state_license.nc.general_contractors": 90,
+    "state_license.tx.tdlr": 82,
+    "state_license.fl.electrical": 78,
+    state_licensing: 60,
+}
 const TDLR_SOURCE_KEY = "state_license.tx.tdlr"
 const TX_PLUMBING_SOURCE_KEY = "state_license.tx.plumbing"
 const FL_DBPR_CONSTRUCTION_SOURCE_KEY = "state_license.fl.dbpr"
@@ -168,6 +191,21 @@ const FALLBACK_TDLR_MAPPINGS: Record<string, { status: string; endorsement?: str
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function licensingTaskBoard(task: LicensingTask) {
+    return typeof task.source_query?.board === "string" ? task.source_query.board : "tdlr"
+}
+
+function licensingTaskGroupKey(task: LicensingTask) {
+    return `${task.source_key}:${licensingTaskBoard(task)}`
+}
+
+function licensingTaskPriority(task: LicensingTask, stageKey: Exclude<PollStageKey, "seed"> | undefined) {
+    const sourcePriority = STATE_LICENSE_SOURCE_PRIORITY[task.source_key] ?? 50
+    const stageBoost = stageKey === "owner_identity" || stageKey === "owner_phone" ? 25 : 0
+    const boardBoost = /plumbing|construction|general|dbpr/i.test(licensingTaskBoard(task)) ? 10 : 0
+    return sourcePriority + stageBoost + boardBoost
 }
 
 function cleanText(value: string | null | undefined) {
@@ -225,24 +263,16 @@ function asString(value: unknown) {
     return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
-function candidateState(candidate: CompanyCandidate) {
-    const address = candidate.address ?? {}
-    const direct = asString(address.state) ?? asString(address.region) ?? asString(address.state_code) ?? asString(address.region_code)
-    if (direct && /^[A-Z]{2}$/i.test(direct)) return direct.toUpperCase()
-    const freeform = [address.freeform, address.locality, address.postcode, address.country].map(asString).filter(Boolean).join(" ")
-    const match = freeform.match(/\b([A-Z]{2})\b/)
-    return match ? match[1].toUpperCase() : null
+function candidateState(candidate: CompanyCandidate, locationTargets?: Map<string, LeadgenLocationTarget>) {
+    return candidatePrimaryState(candidate, locationTargets)
 }
 
-function candidateCity(candidate: CompanyCandidate) {
-    const address = candidate.address ?? {}
-    return asString(address.city) ?? asString(address.locality) ?? asString(address.town) ?? asString(address.municipality)
+function candidateCity(candidate: CompanyCandidate, locationTargets?: Map<string, LeadgenLocationTarget>) {
+    return candidatePrimaryCity(candidate, locationTargets)
 }
 
-function candidatePostcode(candidate: CompanyCandidate) {
-    const address = candidate.address ?? {}
-    const value = asString(address.postcode) ?? asString(address.postal_code) ?? asString(address.zip)
-    return value?.slice(0, 10) ?? null
+function candidatePostcode(candidate: CompanyCandidate, locationTargets?: Map<string, LeadgenLocationTarget>) {
+    return candidatePrimaryPostcode(candidate, locationTargets)
 }
 
 function stripLegalSuffixes(value: string) {
@@ -1273,6 +1303,15 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
     const nativeIndustries = [...new Set(industryMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
     const nativeLocations = [...new Set(locationMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
     const nativeValuesByIndustry = new Map(industryMappings.map((mapping) => [mapping.icp_industry_value, mapping.native_values ?? []]))
+    const locationTargetValues = [...new Set([...plan.locations, ...candidates.map((candidate) => candidate.location_value).filter((value): value is string => Boolean(value))])]
+    const locationTargetsResult = locationTargetValues.length
+        ? await supabaseAdmin
+            .from("leadgen_icp_locations")
+            .select("value, label, location_kind, country, region, locality, metadata")
+            .in("value", locationTargetValues)
+        : { data: [], error: null }
+    if (locationTargetsResult.error) throw new Error(`Could not load state licensing enrichment location targets: ${locationTargetsResult.error.message}`)
+    const locationTargets = locationTargetMapFromRows((locationTargetsResult.data ?? []) as LeadgenLocationTarget[])
     let industries: SourceOption[] = []
     let locations: SourceOption[] = []
     if (sourceKey === TDLR_SOURCE_KEY && nativeIndustries.length > 0 && nativeLocations.length > 0) {
@@ -1296,7 +1335,7 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
         status: string
         source_query: Record<string, unknown>
     }> = sourceKey === TDLR_SOURCE_KEY ? candidates.flatMap((candidate) => industries.flatMap((industry) => {
-        if (candidateState(candidate) !== "TX") return []
+        if (!candidateLocationAppliesToState(candidate, "TX", locationTargets)) return []
         if (!mappedIndustries.has(candidate.industry_value ?? "") || !mappedLocations.has(candidate.location_value ?? "")) return []
         const mapping = tdlrMapping(industry)
         if (!mapping) return []
@@ -1324,7 +1363,7 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
         }))
     })) : []
     const dbprElectricalTasks = sourceKey === FL_DBPR_ELECTRICAL_SOURCE_KEY ? candidates
-        .filter((candidate) => candidateState(candidate) === "FL")
+        .filter((candidate) => candidateLocationAppliesToState(candidate, "FL", locationTargets))
         .filter((candidate) => mappedIndustries.has(candidate.industry_value ?? "") && mappedLocations.has(candidate.location_value ?? ""))
         .filter((candidate) => DBPR_ELECTRICAL_INDUSTRIES.has(candidate.industry_value ?? ""))
         .map((candidate) => ({
@@ -1343,14 +1382,14 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
                 candidate_company_id: candidate.id,
                 candidate_company_name: candidate.display_name,
                 candidate_state: "FL",
-                candidate_city: candidateCity(candidate),
-                candidate_postcode: candidatePostcode(candidate),
+                candidate_city: candidateCity(candidate, locationTargets),
+                candidate_postcode: candidatePostcode(candidate, locationTargets),
                 file_url: DBPR_ELECTRICAL_CSV_URL,
                 limit: 3,
             },
         })) : []
     const txPlumbingTasks = sourceKey === TX_PLUMBING_SOURCE_KEY ? candidates
-        .filter((candidate) => candidateState(candidate) === "TX")
+        .filter((candidate) => candidateLocationAppliesToState(candidate, "TX", locationTargets))
         .filter((candidate) => mappedIndustries.has(candidate.industry_value ?? "") && mappedLocations.has(candidate.location_value ?? ""))
         .filter((candidate) => candidate.industry_value === "plumbers")
         .map((candidate) => ({
@@ -1369,14 +1408,14 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
                 candidate_company_id: candidate.id,
                 candidate_company_name: candidate.display_name,
                 candidate_state: "TX",
-                candidate_city: candidateCity(candidate),
-                candidate_postcode: candidatePostcode(candidate),
+                candidate_city: candidateCity(candidate, locationTargets),
+                candidate_postcode: candidatePostcode(candidate, locationTargets),
                 file_url: TSBPE_RMP_CSV_URL,
                 limit: 5,
             },
         })) : []
     const dbprConstructionTasks = sourceKey === FL_DBPR_CONSTRUCTION_SOURCE_KEY ? candidates
-        .filter((candidate) => candidateState(candidate) === "FL")
+        .filter((candidate) => candidateLocationAppliesToState(candidate, "FL", locationTargets))
         .filter((candidate) => mappedIndustries.has(candidate.industry_value ?? "") && mappedLocations.has(candidate.location_value ?? ""))
         .filter((candidate) => DBPR_CONSTRUCTION_INDUSTRIES.has(candidate.industry_value ?? ""))
         .map((candidate) => ({
@@ -1395,15 +1434,15 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
                 candidate_company_id: candidate.id,
                 candidate_company_name: candidate.display_name,
                 candidate_state: "FL",
-                candidate_city: candidateCity(candidate),
-                candidate_postcode: candidatePostcode(candidate),
+                candidate_city: candidateCity(candidate, locationTargets),
+                candidate_postcode: candidatePostcode(candidate, locationTargets),
                 native_values: nativeValuesByIndustry.get(candidate.industry_value ?? "") ?? [],
                 file_url: DBPR_CONSTRUCTION_CSV_URL,
                 limit: 3,
             },
         })) : []
     const ncGeneralTasks = sourceKey === NC_GENERAL_CONTRACTORS_SOURCE_KEY ? candidates
-        .filter((candidate) => candidateState(candidate) === "NC")
+        .filter((candidate) => candidateLocationAppliesToState(candidate, "NC", locationTargets))
         .filter((candidate) => mappedIndustries.has(candidate.industry_value ?? "") && mappedLocations.has(candidate.location_value ?? ""))
         .flatMap((candidate) => {
             const classifications = NC_CLASSIFICATIONS_BY_INDUSTRY[candidate.industry_value ?? ""] ?? []
@@ -1424,8 +1463,8 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
                     candidate_company_id: candidate.id,
                     candidate_company_name: candidate.display_name,
                     candidate_state: "NC",
-                    candidate_city: candidateCity(candidate),
-                    candidate_postcode: candidatePostcode(candidate),
+                    candidate_city: candidateCity(candidate, locationTargets),
+                    candidate_postcode: candidatePostcode(candidate, locationTargets),
                     classification_id: classificationId,
                     limit: 3,
                 },
@@ -1694,30 +1733,35 @@ export async function processStateLicensingPoll(pollId: string, workspaceId: str
         if (options.finalize !== false) await setLeadgenPollStatus(pollId, workspaceId, "failed", "No queued state licensing tasks were available for this poll.")
         return
     }
-    for (const task of tasks) {
-        await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "running", started_at: new Date().toISOString(), error: null }).eq("id", task.id)
-        try {
-            const board = typeof task.source_query?.board === "string" ? task.source_query.board : "tdlr"
-            const { rawCount, companyCount } = board === "fl_dbpr_electrical"
-                ? await processDbprElectricalTask({ task, workspaceId, pollId })
-                : board === "fl_dbpr_construction"
-                    ? await processDbprConstructionTask({ task, workspaceId, pollId })
-                    : board === "tx_plumbing"
-                        ? await processTsbpeTask({ task, workspaceId, pollId })
-                        : board === "nc_general_contractors"
-                            ? await processNcGeneralTask({ task, workspaceId, pollId })
-                            : await processTdlrTask({ task, workspaceId, pollId })
-            await supabaseAdmin
-                .from("leadgen_poll_tasks")
-                .update({ status: "completed", raw_count: rawCount, company_count: companyCount, completed_at: new Date().toISOString(), error: null })
-                .eq("id", task.id)
-        } catch (error) {
-            await supabaseAdmin
-                .from("leadgen_poll_tasks")
-                .update({ status: "failed", completed_at: new Date().toISOString(), error: compactErrorMessage(error) })
-                .eq("id", task.id)
+    const taskGroups = [...groupByKey(tasks, licensingTaskGroupKey)]
+        .map(([groupKey, groupTasks]) => ({ groupKey, tasks: groupTasks }))
+        .sort((left, right) => licensingTaskPriority(right.tasks[0], options.stageKey) - licensingTaskPriority(left.tasks[0], options.stageKey))
+    await runWithConcurrency(taskGroups, STATE_LICENSING_GROUP_CONCURRENCY[options.stageKey ?? "business_validation"], async (group) => {
+        for (const [index, task] of group.tasks.entries()) {
+            await supabaseAdmin.from("leadgen_poll_tasks").update({ status: "running", started_at: new Date().toISOString(), error: null }).eq("id", task.id)
+            try {
+                const board = licensingTaskBoard(task)
+                const { rawCount, companyCount } = board === "fl_dbpr_electrical"
+                    ? await processDbprElectricalTask({ task, workspaceId, pollId })
+                    : board === "fl_dbpr_construction"
+                        ? await processDbprConstructionTask({ task, workspaceId, pollId })
+                        : board === "tx_plumbing"
+                            ? await processTsbpeTask({ task, workspaceId, pollId })
+                            : board === "nc_general_contractors"
+                                ? await processNcGeneralTask({ task, workspaceId, pollId })
+                                : await processTdlrTask({ task, workspaceId, pollId })
+                await supabaseAdmin
+                    .from("leadgen_poll_tasks")
+                    .update({ status: "completed", raw_count: rawCount, company_count: companyCount, completed_at: new Date().toISOString(), error: null })
+                    .eq("id", task.id)
+            } catch (error) {
+                await supabaseAdmin
+                    .from("leadgen_poll_tasks")
+                    .update({ status: "failed", completed_at: new Date().toISOString(), error: compactErrorMessage(error) })
+                    .eq("id", task.id)
+            }
+            if (index < group.tasks.length - 1) await sleep(STATE_LICENSING_REQUEST_DELAY_MS)
         }
-        await sleep(STATE_LICENSING_REQUEST_DELAY_MS)
-    }
+    })
     await refreshLeadgenPollCounts(pollId, workspaceId)
 }

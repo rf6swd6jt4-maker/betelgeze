@@ -7,6 +7,14 @@ import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evid
 import type { PollStageKey } from "@/lib/leadgen/staged-poll"
 import { runWithConcurrency } from "@/lib/leadgen/task-execution"
 import {
+    seedIndustryMappingsWithFallbacks,
+    seedLocationMappingsWithFallbacks,
+    type SeedIndustryMapping,
+    type SeedLocationMapping,
+    type SeedLocationTarget,
+    type SeedSourceKey,
+} from "@/lib/leadgen/seed-source-fallbacks"
+import {
     crawlScore,
     defaultWebsiteUrls,
     discoverSitemapUrls,
@@ -159,7 +167,8 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
     const sourceStage = SOURCE_STAGE[plan.key]
     if (!sourceStage) return 0
     if (plan.key === "website") return createWebsiteTasksForPoll({ workspaceId, pollId, plan })
-    const [industryMappingsResult, locationMappingsResult] = await Promise.all([
+    const usesSeedFallbacks = PIPELINE_SEED_SOURCES.has(plan.key)
+    const [industryMappingsResult, locationMappingsResult, icpTargetsResult, geoTargetsResult] = await Promise.all([
         supabaseAdmin
             .from("leadgen_source_industry_mappings")
             .select("icp_industry_value, native_values, native_label, metadata")
@@ -172,11 +181,37 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
             .eq("source_key", plan.key)
             .eq("enabled", true)
             .in("icp_location_value", plan.locations),
+        usesSeedFallbacks
+            ? supabaseAdmin
+                .from("leadgen_icp_locations")
+                .select("value, label, location_kind, country, region, locality, latitude, longitude, radius_meters")
+                .eq("enabled", true)
+                .in("value", plan.locations)
+            : Promise.resolve({ data: [], error: null }),
+        usesSeedFallbacks
+            ? supabaseAdmin
+                .from("leadgen_geo_targets")
+                .select("value, label, country, region, locality, latitude, longitude, radius_meters")
+                .eq("enabled", true)
+                .in("value", plan.locations)
+            : Promise.resolve({ data: [], error: null }),
     ])
     if (industryMappingsResult.error) throw new Error(`Could not load ${plan.label} industry mappings: ${industryMappingsResult.error.message}`)
     if (locationMappingsResult.error) throw new Error(`Could not load ${plan.label} location mappings: ${locationMappingsResult.error.message}`)
-    const industryMappings = industryMappingsResult.data ?? []
-    const locationMappings = locationMappingsResult.data ?? []
+    if (icpTargetsResult.error) throw new Error(`Could not load ${plan.label} ICP location targets: ${icpTargetsResult.error.message}`)
+    if (geoTargetsResult.error) throw new Error(`Could not load ${plan.label} geo targets: ${geoTargetsResult.error.message}`)
+    const rawIndustryMappings = (industryMappingsResult.data ?? []) as SeedIndustryMapping[]
+    const rawLocationMappings = (locationMappingsResult.data ?? []) as SeedLocationMapping[]
+    const locationTargets = [
+        ...((icpTargetsResult.data ?? []) as SeedLocationTarget[]),
+        ...((geoTargetsResult.data ?? []) as SeedLocationTarget[]),
+    ]
+    const industryMappings = usesSeedFallbacks
+        ? seedIndustryMappingsWithFallbacks(plan.key as SeedSourceKey, plan.industries, rawIndustryMappings)
+        : rawIndustryMappings
+    const locationMappings = usesSeedFallbacks
+        ? seedLocationMappingsWithFallbacks(plan.locations, rawLocationMappings, locationTargets)
+        : rawLocationMappings
     const tasks = industryMappings.flatMap((industry) => locationMappings.flatMap((location) => {
         const industryValues = Array.isArray(industry.native_values) ? industry.native_values : []
         const locationValues = Array.isArray(location.native_values) ? location.native_values : []

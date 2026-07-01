@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
 import { recordEvidenceClaim } from "@/lib/leadgen/evidence-scoring"
+import { seedIndustryMappingsWithFallbacks, seedLocationMappingsWithFallbacks } from "@/lib/leadgen/seed-source-fallbacks"
 
 type GeoTarget = {
     value: string
@@ -386,7 +387,7 @@ export async function createOsmTasksForPoll({ workspaceId, pollId, plan }: { wor
     ])
     if (targetsResult.error) throw new Error(`Could not load OSM target location mappings: ${targetsResult.error.message}`)
     if (mappingsResult.error) throw new Error(`Could not load OSM category mappings: ${mappingsResult.error.message}`)
-    const locationMappings = (targetsResult.data ?? []) as LocationMapping[]
+    const locationMappings = seedLocationMappingsWithFallbacks(plan.locations, (targetsResult.data ?? []) as LocationMapping[]) as LocationMapping[]
     const mappedTargetValues = [...new Set(locationMappings.flatMap((mapping) => Array.isArray(mapping.native_values) ? mapping.native_values : []))]
     if (mappedTargetValues.length === 0) return 0
     const [geoTargetsResult, icpTargetsResult] = await Promise.all([
@@ -405,7 +406,7 @@ export async function createOsmTasksForPoll({ workspaceId, pollId, plan }: { wor
     const targetsByValue = new Map<string, GeoTarget>()
     for (const target of (icpTargetsResult.data ?? []) as GeoTarget[]) targetsByValue.set(target.value, target)
     for (const target of (geoTargetsResult.data ?? []) as GeoTarget[]) targetsByValue.set(target.value, target)
-    const mappings = (mappingsResult.data ?? []) as CategoryMapping[]
+    const mappings = seedIndustryMappingsWithFallbacks("osm", plan.industries, (mappingsResult.data ?? []) as CategoryMapping[]) as CategoryMapping[]
     const tasks = mappings.flatMap((mapping) => locationMappings.flatMap((locationMapping) => (locationMapping.native_values ?? [])
         .map((nativeLocation) => targetsByValue.get(nativeLocation))
         .filter((target): target is GeoTarget => Boolean(target && typeof target.latitude === "number" && typeof target.longitude === "number"))

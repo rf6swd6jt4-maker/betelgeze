@@ -17,10 +17,9 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   applicationName: "Betelgeze",
-  metadataBase: new URL("https://app.betelgeze.com"),
+  metadataBase: new URL("https://betelgeze.com"),
   title: "Betelgeze",
   description: "Business automation dashboards",
-  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/icon.svg?v=20260624",
     shortcut: "/icon.svg?v=20260624",
@@ -30,16 +29,8 @@ export const metadata: Metadata = {
       type: "image/png",
     },
   },
-  appleWebApp: {
-    capable: true,
-    title: "Betelgeze",
-    statusBarStyle: "black-translucent",
-  },
   formatDetection: {
     telephone: false,
-  },
-  other: {
-    "mobile-web-app-capable": "yes",
   },
 };
 

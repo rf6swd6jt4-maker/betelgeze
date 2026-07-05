@@ -4,8 +4,19 @@ import Link from "next/link";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 
 export const metadata: Metadata = {
+  applicationName: "Betelgeze",
+  metadataBase: new URL("https://app.betelgeze.com"),
   title: "Install Betelgeze",
   description: "Install Betelgeze as an app on Apple, Android, Windows, and desktop devices.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Betelgeze",
+    statusBarStyle: "black-translucent",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export default function InstallPage() {

@@ -6,6 +6,7 @@ export function ServiceWorkerRegistrar() {
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") return;
     if (!("serviceWorker" in navigator)) return;
+    if (window.location.hostname !== "app.betelgeze.com") return;
 
     let cancelled = false;
     const register = () => {

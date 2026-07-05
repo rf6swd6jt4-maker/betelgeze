@@ -104,6 +104,12 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(destination)
     }
 
+    if ((domain === "betelgeze.com" || domain === "www.betelgeze.com") && path === "/install") {
+        const destination = new URL(`https://${APP_HOST}/install`)
+        destination.search = request.nextUrl.search
+        return NextResponse.redirect(destination)
+    }
+
     if (domain === DASHBOARD_HOST && (path === "/login" || path === "/mfa")) {
         const next = appReturnUrl(domain, request.nextUrl.searchParams.get("next"))
         return NextResponse.redirect(new URL(`${path}?next=${encodeURIComponent(next)}`, `https://${AUTH_HOST}`))

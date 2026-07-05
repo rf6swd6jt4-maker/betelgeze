@@ -1,11 +1,20 @@
 import { redirect } from "next/navigation"
+import { headers } from "next/headers"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { BrandLockup } from "@/components/brand/BrandLockup"
 
-const leadgenUrl = "https://leadgen.betelgeze.com/"
+function leadgenReturnUrl(host: string | null) {
+  const hostname = host?.split(":")[0]?.toLowerCase()
+  if (hostname === "app.betelgeze.com" || hostname === "dashboard.betelgeze.com") {
+    return `https://${hostname}/leadgen`
+  }
+  return "https://leadgen.betelgeze.com/"
+}
 
 export default async function LeadgenIndexPage() {
+  const requestHeaders = await headers()
+  const leadgenUrl = leadgenReturnUrl(requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host"))
   const supabase = await createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect(`https://auth.betelgeze.com/login?next=${encodeURIComponent(leadgenUrl)}`)

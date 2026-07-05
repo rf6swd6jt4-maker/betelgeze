@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { GlobalLoadingOverlay } from "@/components/GlobalLoadingOverlay";
+import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -15,8 +16,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  applicationName: "Betelgeze",
+  metadataBase: new URL("https://app.betelgeze.com"),
   title: "Betelgeze",
   description: "Business automation dashboards",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/icon.svg?v=20260624",
     shortcut: "/icon.svg?v=20260624",
@@ -26,6 +30,22 @@ export const metadata: Metadata = {
       type: "image/png",
     },
   },
+  appleWebApp: {
+    capable: true,
+    title: "Betelgeze",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
+};
+
+export const viewport: Viewport = {
+  colorScheme: "dark",
+  themeColor: "#0a0a0a",
 };
 
 export default function RootLayout({
@@ -40,6 +60,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         {children}
+        <ServiceWorkerRegistrar />
         <Suspense fallback={null}>
           <GlobalLoadingOverlay />
         </Suspense>

@@ -18,6 +18,7 @@ function requestHostname(request: NextRequest) {
 }
 
 const DASHBOARD_HOST = "dashboard.betelgeze.com"
+const APP_HOST = "app.betelgeze.com"
 const ONBOARDING_HOST = "onboarding.betelgeze.com"
 const AUTH_HOST = "auth.betelgeze.com"
 const LEADGEN_HOST = "leadgen.betelgeze.com"
@@ -40,9 +41,22 @@ function withRedirect(request: NextRequest, pathname: string) {
 }
 
 function isPlatformHost(domain: string) {
-    if (["betelgeze.com", "www.betelgeze.com", DASHBOARD_HOST, ONBOARDING_HOST, AUTH_HOST, LEADGEN_HOST].includes(domain)) return true
+    if (["betelgeze.com", "www.betelgeze.com", APP_HOST, DASHBOARD_HOST, ONBOARDING_HOST, AUTH_HOST, LEADGEN_HOST].includes(domain)) return true
     if (!process.env.NEXT_PUBLIC_SITE_URL) return false
     return new URL(process.env.NEXT_PUBLIC_SITE_URL).hostname.toLowerCase() === domain
+}
+
+function isAppHost(domain: string | null) {
+    return domain === APP_HOST || domain === DASHBOARD_HOST
+}
+
+function appReturnUrl(domain: string | null, nextParam: string | null) {
+    if (nextParam && /^https:\/\/(app|dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(nextParam)) {
+        return nextParam
+    }
+    const host = domain ?? APP_HOST
+    if (nextParam?.startsWith("/") && !nextParam.startsWith("//")) return `https://${host}${nextParam}`
+    return `https://${host}/`
 }
 
 async function getCustomDomainWorkspace(domain: string) {
@@ -90,7 +104,12 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(destination)
     }
 
-    if (domain === DASHBOARD_HOST && isCentralAuthRoute) {
+    if (isAppHost(domain) && (path === "/login" || path === "/mfa")) {
+        const next = appReturnUrl(domain, request.nextUrl.searchParams.get("next"))
+        return NextResponse.redirect(new URL(`${path}?next=${encodeURIComponent(next)}`, `https://${AUTH_HOST}`))
+    }
+
+    if (isAppHost(domain) && isCentralAuthRoute) {
         const destination = new URL(`https://${AUTH_HOST}${path}`)
         destination.search = request.nextUrl.search
         return NextResponse.redirect(destination)
@@ -99,11 +118,7 @@ export async function proxy(request: NextRequest) {
     // Keep the existing route tree intact while presenting clean product URLs.
     // The redirects also clean up legacy /dashboard links copied from old emails
     // or rendered by pages that have not yet been converted to relative links.
-    if (domain === DASHBOARD_HOST) {
-        if (path === "/login" || path === "/mfa") {
-            const next = `https://${DASHBOARD_HOST}${request.nextUrl.searchParams.get("next") ?? "/"}`
-            return NextResponse.redirect(new URL(`${path}?next=${encodeURIComponent(next)}`, `https://${AUTH_HOST}`))
-        }
+    if (isAppHost(domain)) {
         if (path === "/leadgen" || path.startsWith("/leadgen/")) {
             const headers = new Headers(request.headers)
             const workspaceSlug = path.match(/^\/leadgen\/([a-z0-9][a-z0-9-]*)/i)?.[1]
@@ -128,7 +143,7 @@ export async function proxy(request: NextRequest) {
 
         const publicDashboardPaths = [
             "/login", "/sign-up", "/forgot-password", "/update-password",
-            "/mfa", "/logout", "/privacy", "/users", "/invites", "/auth", "/workspaces",
+            "/mfa", "/logout", "/privacy", "/users", "/invites", "/auth", "/workspaces", "/install",
         ]
         const isPublicDashboardPath = publicDashboardPaths.some(
             (publicPath) => path === publicPath || path.startsWith(`${publicPath}/`)

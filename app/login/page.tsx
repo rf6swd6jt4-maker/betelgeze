@@ -22,8 +22,8 @@ function LoginForm() {
             setError(result.error ?? "Invalid login credentials."); setLoading(false); return
         }
         const invite = searchParams.get("invite"); const next = searchParams.get("next")
-        const trustedNext = next && /^https:\/\/(dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(next)
-        const destination = trustedNext ? next : invite ? `/invites/accept?token=${invite}` : "https://dashboard.betelgeze.com/"
+        const trustedNext = next && /^https:\/\/(app|dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(next)
+        const destination = trustedNext ? next : invite ? `/invites/accept?token=${invite}` : "https://app.betelgeze.com/"
         router.replace(`/mfa?next=${encodeURIComponent(destination)}`); router.refresh()
     }
 

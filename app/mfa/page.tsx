@@ -7,9 +7,9 @@ type MfaState = "checking" | "verify" | "start-setup" | "setup"
 
 function destination() {
     const next = new URLSearchParams(window.location.search).get("next")
-    if (next && /^https:\/\/(dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(next)) return next
-    if (next?.startsWith("/invites/accept?") && !next.startsWith("//")) return `https://dashboard.betelgeze.com${next}`
-    return "https://dashboard.betelgeze.com/"
+    if (next && /^https:\/\/(app|dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(next)) return next
+    if (next?.startsWith("/invites/accept?") && !next.startsWith("//")) return `https://app.betelgeze.com${next}`
+    return "https://app.betelgeze.com/"
 }
 
 export default function MfaPage() {

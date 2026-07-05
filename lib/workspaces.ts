@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation"
+import type { User } from "@supabase/supabase-js"
+import { redirectToLogin, redirectToMfa } from "@/lib/auth/server-redirects"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
@@ -42,14 +44,14 @@ export async function getCurrentUser() {
 export async function requireWorkspace(
     slug: string,
     minimumRole: WorkspaceRole = "member"
-) {
+): Promise<{ user: User; workspace: Workspace; role: WorkspaceRole }> {
     const supabase = await createSupabaseServerClient()
     const { data: userData } = await supabase.auth.getUser()
     const user = userData.user
-    if (!user) redirect("/login")
+    if (!user) return await redirectToLogin()
 
     const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
-    if (assurance?.currentLevel !== "aal2") redirect("/mfa")
+    if (assurance?.currentLevel !== "aal2") return await redirectToMfa()
 
     const workspaceResult = await supabaseAdmin
         .from("workspaces")

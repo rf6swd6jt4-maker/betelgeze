@@ -2,14 +2,13 @@
 
 import { useEffect, useState } from "react"
 import { BrandLockup } from "@/components/brand/BrandLockup"
+import { resolveClientDestination } from "@/lib/auth/redirects"
 
 type MfaState = "checking" | "verify" | "start-setup" | "setup"
 
 function destination() {
     const next = new URLSearchParams(window.location.search).get("next")
-    if (next && /^https:\/\/(app|dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(next)) return next
-    if (next?.startsWith("/invites/accept?") && !next.startsWith("//")) return `https://app.betelgeze.com${next}`
-    return "https://app.betelgeze.com/"
+    return resolveClientDestination(next)
 }
 
 export default function MfaPage() {

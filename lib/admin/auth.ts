@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "crypto"
-import { redirect } from "next/navigation"
 import { headers } from "next/headers"
+import { redirectToLogin } from "@/lib/auth/server-redirects"
 import { getRequiredEnv } from "@/lib/env"
 import { requireWorkspace } from "@/lib/workspaces"
 
@@ -30,12 +30,12 @@ export function getAdminSessionSecret() {
 
 export async function requireAdmin() {
     const workspaceSlug = (await headers()).get("x-betelgeze-workspace-slug")
-    if (!workspaceSlug) redirect("/login")
+    if (!workspaceSlug) return await redirectToLogin()
     return requireWorkspace(workspaceSlug, "admin")
 }
 
 export async function requireWorkspaceMember() {
     const workspaceSlug = (await headers()).get("x-betelgeze-workspace-slug")
-    if (!workspaceSlug) redirect("/login")
+    if (!workspaceSlug) return await redirectToLogin()
     return requireWorkspace(workspaceSlug, "member")
 }

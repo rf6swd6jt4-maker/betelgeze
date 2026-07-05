@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
+import { redirectToLogin } from "@/lib/auth/server-redirects"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getCurrentUser } from "@/lib/workspaces"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
@@ -12,7 +13,7 @@ type PageProps = { params: Promise<{ username: string }> }
 export default async function UserAccountPage({ params }: PageProps) {
     const { username } = await params
     const user = await getCurrentUser()
-    if (!user?.email) redirect("/login")
+    if (!user?.email) return await redirectToLogin()
 
     const { data: profile } = await supabaseAdmin
         .from("user_profiles")
@@ -20,7 +21,7 @@ export default async function UserAccountPage({ params }: PageProps) {
         .eq("user_id", user.id)
         .maybeSingle()
 
-    if (!profile) redirect("/login")
+    if (!profile) return await redirectToLogin()
     if (profile.username !== username) redirect(`/users/${profile.username}`)
 
     const avatarSrc = profile.avatar_path
@@ -99,7 +100,7 @@ export default async function UserAccountPage({ params }: PageProps) {
                             return (
                                 <div key={membership.workspace_id} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-neutral-800 bg-neutral-900 p-5">
                                     <div>
-                                        <Link href={`/dashboard/${workspace.slug}`} className="font-medium hover:underline">{workspace.name}</Link>
+                                        <Link href={`/${workspace.slug}`} className="font-medium hover:underline">{workspace.name}</Link>
                                         <p className="mt-1 text-sm capitalize text-neutral-500">{membership.role}</p>
                                     </div>
                                     <LeaveWorkspaceForm workspaceId={membership.workspace_id} action={leaveWorkspace.bind(null, profile.username)} />

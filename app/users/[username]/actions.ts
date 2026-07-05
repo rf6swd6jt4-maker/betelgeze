@@ -1,6 +1,7 @@
 "use server"
 
 import { redirect } from "next/navigation"
+import { redirectToLogin } from "@/lib/auth/server-redirects"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getCurrentUser } from "@/lib/workspaces"
 import { deleteOnboardingUploads, storeProfileAvatar } from "@/lib/onboarding/uploads"
@@ -9,7 +10,7 @@ const usernamePattern = /^[a-z0-9][a-z0-9-]{1,27}[a-z0-9]$/
 
 export async function updateUsername(_: { error?: string; username?: string }, formData: FormData) {
     const user = await getCurrentUser()
-    if (!user) redirect("/login")
+    if (!user) return await redirectToLogin()
     const username = String(formData.get("username") ?? "").trim().toLowerCase()
     if (!usernamePattern.test(username)) return { error: "Use 3–30 lowercase letters, numbers, or hyphens." }
     const { error } = await supabaseAdmin.from("user_profiles").update({ username }).eq("user_id", user.id)
@@ -19,19 +20,19 @@ export async function updateUsername(_: { error?: string; username?: string }, f
 
 export async function createWorkspace(username: string, formData: FormData) {
     const user = await getCurrentUser()
-    if (!user) redirect("/login")
+    if (!user) return await redirectToLogin()
     const name = String(formData.get("name") ?? "").trim()
     const slug = String(formData.get("slug") ?? "").trim().toLowerCase()
     if (name.length < 2 || !/^[a-z0-9](?:[a-z0-9-]{1,48}[a-z0-9])?$/.test(slug)) throw new Error("Choose a workspace name and a valid URL slug.")
     const { data: workspace, error } = await supabaseAdmin.from("workspaces").insert({ name, slug }).select("id, slug").single()
     if (error || !workspace) throw new Error(error?.code === "23505" ? "That dashboard URL is already taken." : "Could not create dashboard.")
     await supabaseAdmin.from("workspace_memberships").insert({ workspace_id: workspace.id, user_id: user.id, role: "owner" })
-    redirect(`/dashboard/${workspace.slug}`)
+    redirect(`/${workspace.slug}`)
 }
 
 export async function acceptWorkspaceInvitation(username: string, formData: FormData) {
     const user = await getCurrentUser()
-    if (!user?.email) redirect("/login")
+    if (!user?.email) return await redirectToLogin()
     const token = String(formData.get("token") ?? "")
     const { data: invite } = await supabaseAdmin.from("workspace_invitations").select("id, workspace_id, email, role, expires_at, accepted_at").eq("id", token).maybeSingle()
     if (!invite || invite.accepted_at || new Date(invite.expires_at) < new Date() || invite.email.toLowerCase() !== user.email.toLowerCase()) throw new Error("This invitation is no longer available.")
@@ -42,7 +43,7 @@ export async function acceptWorkspaceInvitation(username: string, formData: Form
 }
 
 export async function uploadProfileAvatar(username: string, formData: FormData) {
-    const user = await getCurrentUser(); if (!user) redirect("/login")
+    const user = await getCurrentUser(); if (!user) return await redirectToLogin()
     const file = formData.get("avatar")
     if (!file || typeof file !== "object" || !("arrayBuffer" in file) || !("size" in file) || !file.size) throw new Error("Choose an image.")
     const upload = file as File
@@ -58,7 +59,7 @@ export async function uploadProfileAvatar(username: string, formData: FormData) 
 }
 
 export async function deleteAccount() {
-    const user = await getCurrentUser(); if (!user) redirect("/login")
+    const user = await getCurrentUser(); if (!user) return await redirectToLogin()
     const { data: profile } = await supabaseAdmin
         .from("user_profiles")
         .select("avatar_path")
@@ -72,7 +73,7 @@ export async function deleteAccount() {
 
 export async function leaveWorkspace(username: string, formData: FormData) {
     const user = await getCurrentUser()
-    if (!user) redirect("/login")
+    if (!user) return await redirectToLogin()
     const workspaceId = String(formData.get("workspaceId") ?? "")
     const { data: membership } = await supabaseAdmin
         .from("workspace_memberships")

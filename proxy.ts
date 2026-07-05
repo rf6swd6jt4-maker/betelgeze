@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
 async function refreshSession(request: NextRequest) {
-    const response = NextResponse.next({ request: { headers: new Headers(request.headers) } })
+    const headers = requestHeadersWithCurrentPath(request)
+    const response = NextResponse.next({ request: { headers } })
     const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { cookieOptions: { name: "betelgeze-auth", domain: process.env.SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com" }, cookies: { getAll: () => request.cookies.getAll(), setAll: (items) => items.forEach(({ name, value, options }) => response.cookies.set(name, value, { ...options, domain: process.env.SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com" })) } })
     await supabase.auth.getUser()
     return response
@@ -31,7 +32,7 @@ const APEX_ACCOUNT_PATHS = ["/sign-up", "/invitation"]
 function withRewrite(request: NextRequest, pathname: string, headers = request.headers) {
     const url = request.nextUrl.clone()
     url.pathname = pathname
-    return NextResponse.rewrite(url, { request: { headers: new Headers(headers) } })
+    return NextResponse.rewrite(url, { request: { headers: requestHeadersWithCurrentPath(request, headers) } })
 }
 
 function withRedirect(request: NextRequest, pathname: string) {
@@ -44,6 +45,16 @@ function isPlatformHost(domain: string) {
     if (["betelgeze.com", "www.betelgeze.com", APP_HOST, DASHBOARD_HOST, ONBOARDING_HOST, AUTH_HOST, LEADGEN_HOST].includes(domain)) return true
     if (!process.env.NEXT_PUBLIC_SITE_URL) return false
     return new URL(process.env.NEXT_PUBLIC_SITE_URL).hostname.toLowerCase() === domain
+}
+
+function requestCurrentPath(request: NextRequest) {
+    return `${request.nextUrl.pathname}${request.nextUrl.search}`
+}
+
+function requestHeadersWithCurrentPath(request: NextRequest, headers = request.headers) {
+    const nextHeaders = new Headers(headers)
+    nextHeaders.set("x-betelgeze-current-path", requestCurrentPath(request))
+    return nextHeaders
 }
 
 function isAppHost(domain: string | null) {

@@ -1,19 +1,21 @@
 import { redirect } from "next/navigation"
+import { redirectToLogin, redirectToMfa } from "@/lib/auth/server-redirects"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
 export default async function DashboardIndex() {
     const supabase = await createSupabaseServerClient()
     const { data: userData } = await supabase.auth.getUser()
-    if (!userData.user) redirect("/login")
+    const user = userData.user
+    if (!user) return await redirectToLogin()
 
     const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
-    if (assurance?.currentLevel !== "aal2") redirect("/mfa")
+    if (assurance?.currentLevel !== "aal2") return await redirectToMfa()
 
     const { data: memberships } = await supabaseAdmin
         .from("workspace_memberships")
         .select("workspaces!inner(slug, status)")
-        .eq("user_id", userData.user.id)
+        .eq("user_id", user.id)
 
     const active = (memberships ?? []).filter(
         (membership) =>
@@ -21,14 +23,13 @@ export default async function DashboardIndex() {
             "active"
     )
     if (active.length === 1) {
-        redirect(
-            `/dashboard/${(active[0].workspaces as unknown as { slug: string }).slug}`
-        )
+        redirect(`/${(active[0].workspaces as unknown as { slug: string }).slug}`)
     }
     const { data: profile } = await supabaseAdmin
         .from("user_profiles")
         .select("username")
-        .eq("user_id", userData.user.id)
+        .eq("user_id", user.id)
         .maybeSingle()
-    redirect(profile ? `/users/${profile.username}` : "/login")
+    if (!profile) return await redirectToLogin()
+    redirect(`/users/${profile.username}`)
 }

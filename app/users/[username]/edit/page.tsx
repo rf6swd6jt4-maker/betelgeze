@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
+import { redirectToLogin } from "@/lib/auth/server-redirects"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getCurrentUser } from "@/lib/workspaces"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
@@ -11,7 +12,7 @@ import { deleteAccount, updateUsername, uploadProfileAvatar } from "../actions"
 export default async function EditProfile({ params }: { params: Promise<{ username: string }> }) {
     const { username } = await params
     const user = await getCurrentUser()
-    if (!user) redirect("/login")
+    if (!user) return await redirectToLogin()
     const { data: profile } = await supabaseAdmin.from("user_profiles").select("username, avatar_path").eq("user_id", user.id).maybeSingle()
     if (!profile || profile.username !== username) redirect(`/users/${profile?.username ?? ""}`)
     const avatarSrc = profile.avatar_path ? await createUploadSignedUrl(profile.avatar_path) : null

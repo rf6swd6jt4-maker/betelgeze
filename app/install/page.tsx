@@ -17,7 +17,7 @@ export default function InstallPage() {
             <Image src="/brand/betelgeze-logo-inverted-no-background.svg" alt="Betelgeze" width={32} height={32} priority />
             <span>Betelgeze</span>
           </Link>
-          <Link href="https://auth.betelgeze.com/login?next=https%3A%2F%2Fapp.betelgeze.com%2F" className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:border-neutral-400">
+          <Link href="https://app.betelgeze.com/login?next=https%3A%2F%2Fapp.betelgeze.com%2F" className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:border-neutral-400">
             Log in
           </Link>
         </nav>

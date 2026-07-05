@@ -18,7 +18,7 @@ function LoginForm() {
         const response = await fetch("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ identifier: String(values.get("identifier") ?? ""), password: String(values.get("password") ?? "") }) })
         const result = await response.json().catch(() => ({}))
         if (!response.ok) {
-            if (result.code === "email_unconfirmed") { window.location.assign(`https://auth.betelgeze.com/check-email?email=${encodeURIComponent(result.email ?? String(values.get("identifier") ?? ""))}`); return }
+            if (result.code === "email_unconfirmed") { window.location.assign(`/check-email?email=${encodeURIComponent(result.email ?? String(values.get("identifier") ?? ""))}`); return }
             setError(result.error ?? "Invalid login credentials."); setLoading(false); return
         }
         const invite = searchParams.get("invite"); const next = searchParams.get("next")

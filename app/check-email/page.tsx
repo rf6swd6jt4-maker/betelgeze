@@ -25,7 +25,7 @@ function CheckEmailScreen() {
         else setMessage("A fresh confirmation email is on its way.")
         setSending(false)
     }
-    async function logOut() { await createSupabaseBrowserClient().auth.signOut(); window.location.assign("https://auth.betelgeze.com/login") }
+    async function logOut() { await createSupabaseBrowserClient().auth.signOut(); window.location.assign("/login") }
     return <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-6 text-white"><section className="w-full max-w-sm rounded-2xl border border-neutral-800 bg-neutral-900 p-7"><BrandLockup compact /><p className="mt-5 text-sm text-neutral-400">Betelgeze security</p><h1 className="mt-3 text-2xl font-semibold">Confirm your email</h1><p className="mt-3 text-neutral-300">We sent a confirmation link{email ? ` to ${email}` : ""}. Confirm it before signing in or joining a workspace.</p>{message && <p className="mt-4 text-sm text-emerald-300">{message}</p>}{error && <p className="mt-4 text-sm text-red-400">{error}</p>}<button type="button" onClick={resend} disabled={sending || !email} className="mt-6 w-full rounded-lg bg-white px-4 py-3 font-medium text-black disabled:opacity-50">{sending ? "Sending…" : "Resend confirmation email"}</button><button type="button" onClick={logOut} className="mt-3 w-full rounded-lg border border-neutral-700 px-4 py-3 font-medium text-white">Log out</button></section></main>
 }
 

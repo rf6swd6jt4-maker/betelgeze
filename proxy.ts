@@ -104,12 +104,12 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(destination)
     }
 
-    if (isAppHost(domain) && (path === "/login" || path === "/mfa")) {
+    if (domain === DASHBOARD_HOST && (path === "/login" || path === "/mfa")) {
         const next = appReturnUrl(domain, request.nextUrl.searchParams.get("next"))
         return NextResponse.redirect(new URL(`${path}?next=${encodeURIComponent(next)}`, `https://${AUTH_HOST}`))
     }
 
-    if (isAppHost(domain) && isCentralAuthRoute) {
+    if (domain === DASHBOARD_HOST && isCentralAuthRoute) {
         const destination = new URL(`https://${AUTH_HOST}${path}`)
         destination.search = request.nextUrl.search
         return NextResponse.redirect(destination)

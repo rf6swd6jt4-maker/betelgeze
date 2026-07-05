@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     const type = url.searchParams.get("type")
     const confirmedRedirect = url.searchParams.get("confirmed_redirect") === "1"
     const requestedNext = url.searchParams.get("next") || "/confirmed"
-    const suiteNext = /^https:\/\/(dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(requestedNext)
+    const suiteNext = /^https:\/\/(app|dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(requestedNext)
     const next = suiteNext ? requestedNext : requestedNext.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/dashboard"
     const response = NextResponse.redirect(new URL(next, url.origin))
 

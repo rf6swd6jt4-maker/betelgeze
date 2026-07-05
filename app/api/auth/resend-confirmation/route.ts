@@ -5,6 +5,11 @@ import { getRequiredEnv } from "@/lib/env"
 
 const authOrigin = "https://auth.betelgeze.com"
 
+function authOriginForRequest(request: NextRequest) {
+    const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host"))?.split(":")[0]?.toLowerCase()
+    return host === "app.betelgeze.com" ? "https://app.betelgeze.com" : authOrigin
+}
+
 export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => null)
     const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : ""
@@ -32,7 +37,7 @@ export async function POST(request: NextRequest) {
     const { error } = await supabase.auth.resend({
         type: "signup",
         email,
-        options: { emailRedirectTo: `${authOrigin}/auth/callback?next=${encodeURIComponent(confirmationNext)}` },
+        options: { emailRedirectTo: `${authOriginForRequest(request)}/auth/callback?next=${encodeURIComponent(confirmationNext)}` },
     })
 
     if (error) {

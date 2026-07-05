@@ -1,25 +1,45 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 
-export const metadata: Metadata = {
-  applicationName: "Betelgeze",
-  metadataBase: new URL("https://app.betelgeze.com"),
-  title: "Install Betelgeze",
-  description: "Install Betelgeze as an app on Apple, Android, Windows, and desktop devices.",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    title: "Betelgeze",
-    statusBarStyle: "black-translucent",
-  },
-  other: {
-    "mobile-web-app-capable": "yes",
-  },
-};
+const appOrigin = "https://app.betelgeze.com";
+const appInstallUrl = `${appOrigin}/install`;
 
-export default function InstallPage() {
+function hostnameFromHeaders(requestHeaders: Headers) {
+  return (requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "").split(":")[0].toLowerCase();
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const isAppHost = hostnameFromHeaders(await headers()) === "app.betelgeze.com";
+  const metadata: Metadata = {
+    applicationName: "Betelgeze",
+    metadataBase: new URL(appOrigin),
+    title: "Install Betelgeze",
+    description: "Install Betelgeze as an app on Apple, Android, Windows, and desktop devices.",
+  };
+
+  if (!isAppHost) return metadata;
+
+  return {
+    ...metadata,
+    manifest: "/manifest.webmanifest",
+    appleWebApp: {
+      capable: true,
+      title: "Betelgeze",
+      statusBarStyle: "black-translucent",
+    },
+    other: {
+      "mobile-web-app-capable": "yes",
+    },
+  };
+}
+
+export default async function InstallPage() {
+  const isAppHost = hostnameFromHeaders(await headers()) === "app.betelgeze.com";
+  const loginHref = `${appOrigin}/login?next=${encodeURIComponent(`${appOrigin}/`)}`;
+
   return (
     <main className="min-h-screen bg-neutral-950 px-5 py-6 text-white sm:px-6 sm:py-10">
       <div className="mx-auto max-w-5xl">
@@ -28,7 +48,7 @@ export default function InstallPage() {
             <Image src="/brand/betelgeze-logo-inverted-no-background.svg" alt="Betelgeze" width={32} height={32} priority />
             <span>Betelgeze</span>
           </Link>
-          <Link href="https://app.betelgeze.com/login?next=https%3A%2F%2Fapp.betelgeze.com%2F" className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:border-neutral-400">
+          <Link href={loginHref} className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:border-neutral-400">
             Log in
           </Link>
         </nav>
@@ -43,7 +63,20 @@ export default function InstallPage() {
           </p>
         </section>
 
-        <InstallPrompt />
+        {isAppHost ? (
+          <InstallPrompt />
+        ) : (
+          <section className="rounded-lg border border-neutral-800 bg-neutral-950 p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">App domain required</p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight">Open the app domain before installing.</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">
+              Safari installs the current website. Use the app domain so the Dock icon opens the Betelgeze app, not the marketing site.
+            </p>
+            <Link href={appInstallUrl} className="mt-6 inline-flex rounded-lg bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-neutral-200">
+              Open app install page
+            </Link>
+          </section>
+        )}
 
         <section className="mt-6 grid gap-3 sm:grid-cols-3">
           {[

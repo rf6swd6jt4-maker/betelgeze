@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { redirectToLogin, redirectToMfa } from "@/lib/auth/server-redirects"
+import { redirectToLogin } from "@/lib/auth/server-redirects"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
@@ -8,9 +8,6 @@ export default async function DashboardIndex() {
     const { data: userData } = await supabase.auth.getUser()
     const user = userData.user
     if (!user) return await redirectToLogin()
-
-    const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
-    if (assurance?.currentLevel !== "aal2") return await redirectToMfa()
 
     const { data: memberships } = await supabaseAdmin
         .from("workspace_memberships")

@@ -1,10 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { Suspense, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { BrandLockup } from "@/components/brand/BrandLockup"
-import { normalizeAuthNext } from "@/lib/auth/redirects"
+import { normalizeAuthNext, resolveClientDestination } from "@/lib/auth/redirects"
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
 
 function LoginForm() {
     const router = useRouter()
@@ -12,6 +13,19 @@ function LoginForm() {
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
     const [identifier, setIdentifier] = useState(searchParams.get("email") ?? "")
+    const invite = searchParams.get("invite")
+    const next = searchParams.get("next")
+    const inviteDestination = invite ? `/invites/accept?token=${invite}` : null
+
+    useEffect(() => {
+        let cancelled = false
+        void createSupabaseBrowserClient().auth.getUser().then(({ data }) => {
+            if (cancelled || !data.user) return
+            const destination = next ? resolveClientDestination(next) : inviteDestination ? resolveClientDestination(inviteDestination) : "https://app.betelgeze.com/"
+            window.location.replace(destination)
+        })
+        return () => { cancelled = true }
+    }, [inviteDestination, next])
 
     async function submit(event: React.FormEvent<HTMLFormElement>) {
         event.preventDefault(); setLoading(true); setError(null)
@@ -22,8 +36,7 @@ function LoginForm() {
             if (result.code === "email_unconfirmed") { window.location.assign(`/check-email?email=${encodeURIComponent(result.email ?? String(values.get("identifier") ?? ""))}`); return }
             setError(result.error ?? "Invalid login credentials."); setLoading(false); return
         }
-        const invite = searchParams.get("invite"); const next = searchParams.get("next")
-        const destination = next ? normalizeAuthNext(next) : invite ? `/invites/accept?token=${invite}` : "https://app.betelgeze.com/"
+        const destination = next ? normalizeAuthNext(next) : inviteDestination ?? "https://app.betelgeze.com/"
         router.replace(`/mfa?next=${encodeURIComponent(destination)}`); router.refresh()
     }
 

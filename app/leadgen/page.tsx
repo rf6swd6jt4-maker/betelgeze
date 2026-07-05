@@ -12,7 +12,7 @@ function leadgenReturnUrl(host: string | null) {
   return "https://leadgen.betelgeze.com/"
 }
 
-function authReturnUrl(host: string | null, path: "/login" | "/mfa", next: string) {
+function authReturnUrl(host: string | null, path: "/login", next: string) {
   const hostname = host?.split(":")[0]?.toLowerCase()
   if (hostname === "app.betelgeze.com") return `https://app.betelgeze.com${path}?next=${encodeURIComponent(next)}`
   return `https://auth.betelgeze.com${path}?next=${encodeURIComponent(next)}`
@@ -25,11 +25,6 @@ export default async function LeadgenIndexPage() {
   const supabase = await createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect(authReturnUrl(host, "/login", leadgenUrl))
-
-  const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
-  if (assurance?.currentLevel !== "aal2") {
-    redirect(authReturnUrl(host, "/mfa", leadgenUrl))
-  }
 
   const { data: memberships } = await supabaseAdmin
     .from("workspace_memberships")

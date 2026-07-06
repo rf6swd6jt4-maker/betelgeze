@@ -8,14 +8,16 @@ import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
-import { removeLeadgenCompany } from "./actions"
+import { promoteLeadgenCompanyToRelationship, removeLeadgenCompany } from "./actions"
+import { relationshipHubHref } from "@/lib/relationships"
 
 export const dynamic = "force-dynamic"
 
-type PageProps = { params: Promise<{ workspaceSlug: string }> }
+type PageProps = { params: Promise<{ workspaceSlug: string }>; searchParams: Promise<{ relationshipError?: string }> }
 
-export default async function LeadgenWorkspacePage({ params }: PageProps) {
+export default async function LeadgenWorkspacePage({ params, searchParams }: PageProps) {
     const { workspaceSlug } = await params
+    const { relationshipError } = await searchParams
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
     const latestPollResult = await supabaseAdmin
         .from("leadgen_polls")
@@ -35,6 +37,14 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
         .order("created_at", { ascending: false })
         .limit(100)
     const companies = (companiesResult.error ? [] : companiesResult.data ?? []).filter((company) => Boolean(company.owner_name && company.owner_phone))
+    const relationshipResult = companies.length
+        ? await supabaseAdmin
+            .from("relationships")
+            .select("id, leadgen_company_id")
+            .eq("workspace_id", workspace.id)
+            .in("leadgen_company_id", companies.map((company) => company.id))
+        : { data: [] as Array<{ id: string; leadgen_company_id: string | null }>, error: null }
+    const relationshipByCompanyId = new Map((relationshipResult.error ? [] : relationshipResult.data ?? []).map((relationship) => [relationship.leadgen_company_id, relationship.id]))
     const callable = companies.filter((company) => Boolean(company.owner_phone)).length
     const withProfiles = companies.filter((company) => Boolean(company.profile_url || company.website_url)).length
     function locationLabel(address: unknown) {
@@ -66,6 +76,10 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
 
             <LeadgenTabs workspaceSlug={workspace.slug} active="leads" />
 
+            {relationshipError && <div className="mt-5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                {relationshipError === "not-ready" ? "This lead needs a person and contact path before it can become a Relationship." : "Relationships are not ready in the database yet. Apply the latest Supabase migration, then try again."}
+            </div>}
+
             <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:grid-cols-3">
                 {[
                     ["Qualified leads", companies.length],
@@ -88,7 +102,9 @@ export default async function LeadgenWorkspacePage({ params }: PageProps) {
                     const scoreLine = `Score ${company.lead_score ?? 0} · owner ${company.owner_identity_points ?? 0}/${company.owner_phone_points ?? 0}`
                     const copyLine = `${ownerName}: ${bestPhone ?? "No owner phone"} - ${company.display_name}, ${industry}, ${location}. ${scoreLine}`
                     const phoneStatus = <span className={`inline-flex items-center gap-2 text-sm ${bestPhone ? "text-emerald-200" : "text-neutral-400"}`}><span className={`h-2 w-2 rotate-45 ${bestPhone ? "bg-emerald-300" : "bg-neutral-500"}`} />{bestPhone ? "Callable" : "No phone"}</span>
+                    const relationshipId = relationshipByCompanyId.get(company.id)
                     const leadActions = [
+                        relationshipId ? { label: "Open relationship", href: relationshipHubHref(workspace.slug, relationshipId) } : { label: "Create relationship", action: promoteLeadgenCompanyToRelationship.bind(null, workspace.slug, company.id) },
                         sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
                         { label: "Copy lead details", copyText: copyLine },
                         { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },

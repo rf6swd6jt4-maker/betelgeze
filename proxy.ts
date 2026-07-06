@@ -148,7 +148,7 @@ export async function proxy(request: NextRequest) {
             const workspaceSlug = referer
                 ? new URL(referer).pathname.match(/^\/([a-z0-9][a-z0-9-]*)/i)?.[1] ?? "scaylup"
                 : "scaylup"
-            const suffix = (legacyAdminPath[1] ?? "").replace(/^new$/, "clients/new")
+            const suffix = (legacyAdminPath[1] ?? "").replace(/^new$/, "clients/new").replace(/^client\/(.+)$/, "clients/$1")
             return withRedirect(request, `/${workspaceSlug}${suffix ? `/${suffix}` : ""}`)
         }
 
@@ -164,10 +164,15 @@ export async function proxy(request: NextRequest) {
             const [, workspaceSlug, suffix = ""] = workspacePath
             const headers = new Headers(request.headers)
             headers.set("x-betelgeze-workspace-slug", workspaceSlug)
-            if (suffix === "settings" || suffix === "users") {
+            if (suffix === "settings" || suffix === "users" || suffix === "work" || suffix === "relationships" || suffix.startsWith("relationships/")) {
                 return withRewrite(request, `/dashboard/${workspaceSlug}/${suffix}`, headers)
             }
+            if (suffix === "leadgen" || suffix.startsWith("leadgen/")) {
+                const leadgenSuffix = suffix.replace(/^leadgen\/?/, "")
+                return withRewrite(request, `/leadgen/${workspaceSlug}${leadgenSuffix ? `/${leadgenSuffix}` : ""}`, headers)
+            }
             const adminSuffix = suffix.replace(/^clients\/new$/, "new")
+                .replace(/^clients\/(.+)$/, "client/$1")
             return withRewrite(request, `/admin${adminSuffix ? `/${adminSuffix}` : ""}`, headers)
         }
         if (path === "/") return withRewrite(request, "/dashboard")
@@ -262,7 +267,8 @@ export async function proxy(request: NextRequest) {
     const dashboardMatch = path.match(/^\/dashboard\/([^/]+)(?:\/(.*))?$/)
     if (dashboardMatch) {
         const [, workspaceSlug, suffix = ""] = dashboardMatch
-        if (suffix !== "users" && suffix !== "settings") {
+        const isNewWorkspaceSurface = suffix === "work" || suffix === "relationships" || suffix.startsWith("relationships/")
+        if (suffix !== "users" && suffix !== "settings" && !isNewWorkspaceSurface) {
             const headers = new Headers(request.headers)
             headers.set("x-betelgeze-workspace-slug", workspaceSlug)
             const url = request.nextUrl.clone()

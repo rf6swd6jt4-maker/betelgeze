@@ -26,6 +26,7 @@ import { ClientActionsMenu } from "./ClientActionsMenu"
 import { Avatar } from "@/components/account/Avatar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { getOnboardingUrl } from "@/lib/onboarding/client-creation"
+import { getRelationshipHubHrefForClient } from "@/lib/relationships"
 import {
     addClientNote,
     archiveClient,
@@ -222,6 +223,7 @@ export default async function ClientDetailPage({
         workspace.custom_onboarding_domain,
         workspace.custom_onboarding_domain_status === "verified"
     )
+    const relationshipHubHref = await getRelationshipHubHrefForClient(workspace.slug, workspace.id, client.id)
 
     const timelineItems = [
         ...(progressRows ?? []).map((row) => {
@@ -308,6 +310,13 @@ export default async function ClientDetailPage({
                     </div>
 
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                        <Link
+                            href={relationshipHubHref}
+                            className="rounded-lg border border-neutral-700 px-3 py-2 text-center text-sm font-medium text-neutral-200 hover:border-neutral-500 hover:text-white"
+                        >
+                            View in Relationship Hub
+                        </Link>
+
                         <Link
                             href={`/admin/client/${client.id}/edit`}
                             className="rounded-lg bg-white px-3 py-2 text-center text-sm font-medium text-black"

@@ -6,6 +6,7 @@ import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { configObject, createInitialLeadgenPollTasks, MAX_SEED_CANDIDATES, planLeadgenSources, processLeadgenPoll, TARGET_VALIDATED_BUSINESSES } from "@/lib/leadgen/poll-runner"
 import { executableLeadgenSources, leadgenSourceRuntimeConfigured, seedLeadgenSources } from "@/lib/leadgen/sources"
+import { relationshipHubHref } from "@/lib/relationships"
 
 type EnabledIcpValueRow = { value: string }
 
@@ -131,4 +132,58 @@ export async function removeLeadgenCompany(slug: string, companyId: string) {
     const { workspace } = await requireWorkspace(slug, "admin")
     await supabaseAdmin.from("leadgen_companies").delete().eq("id", companyId).eq("workspace_id", workspace.id)
     revalidatePath(`/leadgen/${slug}`)
+}
+
+export async function promoteLeadgenCompanyToRelationship(slug: string, companyId: string) {
+    const { workspace } = await requireWorkspace(slug, "admin")
+    const { data: existingRelationship } = await supabaseAdmin
+        .from("relationships")
+        .select("id")
+        .eq("workspace_id", workspace.id)
+        .eq("leadgen_company_id", companyId)
+        .maybeSingle()
+
+    if (existingRelationship?.id) {
+        redirect(relationshipHubHref(workspace.slug, existingRelationship.id))
+    }
+
+    const { data: company } = await supabaseAdmin
+        .from("leadgen_companies")
+        .select("id, display_name, owner_name, owner_phone, phone, website_url, qualification_status, lead_score, source_key")
+        .eq("id", companyId)
+        .eq("workspace_id", workspace.id)
+        .maybeSingle()
+
+    if (!company || company.qualification_status !== "qualified" || (!company.owner_name && !company.owner_phone)) {
+        redirect(`/leadgen/${slug}?relationshipError=not-ready`)
+    }
+
+    const { data: relationship, error } = await supabaseAdmin
+        .from("relationships")
+        .insert({
+            workspace_id: workspace.id,
+            leadgen_company_id: company.id,
+            source_type: "leadgen",
+            primary_person_name: company.owner_name ?? company.owner_phone ?? company.display_name,
+            primary_phone: company.owner_phone ?? company.phone ?? null,
+            business_name: company.display_name,
+            website_url: company.website_url ?? null,
+            lifecycle_phase: "qualified",
+            status: "active",
+            source_metadata: {
+                source_key: company.source_key,
+                lead_score: company.lead_score,
+                promoted_from: "leadgen_companies",
+            },
+        })
+        .select("id")
+        .single()
+
+    if (error || !relationship) {
+        redirect(`/leadgen/${slug}?relationshipError=schema`)
+    }
+
+    revalidatePath(`/leadgen/${slug}`)
+    revalidatePath(`/dashboard/${slug}/relationships`)
+    redirect(relationshipHubHref(workspace.slug, relationship.id))
 }

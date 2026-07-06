@@ -19,7 +19,7 @@ import {
     defaultWebsiteUrls,
     discoverSitemapUrls,
     discoverWebsiteUrlsFromHtml,
-    extractPageEvidence,
+    extractPageEvidenceWithPersonGate,
     fetchWebsitePage,
     sameSiteUrl,
     type PageExtraction,
@@ -915,7 +915,7 @@ async function processWebsiteTask(task: PipelineTask) {
                 inspected.push({ url, owner_name: null, phone: null, phones: [], evidence: ["non_text_response"] })
                 continue
             }
-            const extracted = extractPageEvidence(url, page.html, page.visibleText, page.title, page.metaDescription, { businessNames: [companyName] })
+            const extracted = await extractPageEvidenceWithPersonGate(url, page.html, page.visibleText, page.title, page.metaDescription, { businessNames: [companyName], stageKey })
             const discoveredLinks = discoverWebsiteUrlsFromHtml(websiteUrl, url, page.html, stageKey, depth)
             extracted.discovered_links = discoveredLinks.slice(0, 8)
             if (inspected.length + queue.length < maxPages + 8) enqueue(discoveredLinks)
@@ -924,8 +924,9 @@ async function processWebsiteTask(task: PipelineTask) {
             const pageBusinessPhone = extracted.phones[0] ?? null
             inspected.push(extracted)
             if (pageOwner) {
-                const currentScore = (ownerConfidence ?? 0) + (ownerPhone ? 25 : 0)
-                const nextScore = (extracted.owner_confidence ?? 0) + (pageOwnerPhone ? 25 : 0)
+                const phoneBonus = stageKey === "owner_phone" ? 25 : 0
+                const currentScore = (ownerConfidence ?? 0) + (ownerPhone ? phoneBonus : 0)
+                const nextScore = (extracted.owner_confidence ?? 0) + (pageOwnerPhone ? phoneBonus : 0)
                 if (!ownerName || nextScore > currentScore) {
                     ownerName = pageOwner
                     ownerPhone = pageOwnerPhone
@@ -937,7 +938,6 @@ async function processWebsiteTask(task: PipelineTask) {
                 }
             }
             businessPhone ||= pageBusinessPhone
-            if (stageKey === "owner_identity" && ownerName) break
             if (ownerName && ownerPhone) break
         } catch {
             inspected.push({ url, owner_name: null, phone: null, phones: [], evidence: ["fetch_failed"] })

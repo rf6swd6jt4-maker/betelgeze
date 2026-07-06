@@ -163,3 +163,41 @@ test("does not turn repeated about-page fragments into owner names", () => {
 
     assert.equal(result.owner_name, null)
 })
+
+test("rejects owner-ish website snippets that are not real person names", () => {
+    const html = `
+        <html>
+            <body>
+                <section class="team-card">
+                    <h2>Where We Work</h2>
+                    <p>Locally owned by Where We Work for every neighborhood we serve.</p>
+                </section>
+                <section class="team-card">
+                    <h2>Our Team</h2>
+                    <p>Run by Our Team with trusted service professionals.</p>
+                </section>
+            </body>
+        </html>
+    `
+
+    const result = extractPageEvidence("https://example.com/about", html)
+
+    assert.equal(result.owner_name, null)
+    assert.equal(result.evidence.some((item) => item.startsWith("owner:")), false)
+})
+
+test("rejects repeated name sentence fragments instead of returning fake full names", () => {
+    const html = `
+        <html>
+            <body>
+                <p>Owned by John Smith John is a licensed contractor with twenty years of experience.</p>
+            </body>
+        </html>
+    `
+
+    const result = extractPageEvidence("https://example.com/about", html, undefined, undefined, undefined, {
+        businessNames: ["Smith Contracting"],
+    })
+
+    assert.equal(result.owner_name, null)
+})

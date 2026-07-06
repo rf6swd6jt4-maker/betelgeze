@@ -1,4 +1,5 @@
 import { normalisePersonName } from "./person-name-normalizer.js"
+import { deterministicPersonNameGate, gatePersonNameCandidates, type PersonNameGateResult } from "./person-name-gate.js"
 
 export type WebsiteStageKey = "business_validation" | "owner_identity" | "owner_phone" | "phone_validation"
 
@@ -19,6 +20,7 @@ export type PageExtraction = {
 
 export type PageExtractionOptions = {
     businessNames?: Array<string | null | undefined>
+    stageKey?: WebsiteStageKey
 }
 
 export type WebsitePage = {
@@ -38,6 +40,7 @@ type WebsiteOwnerCandidate = {
     confidence: number
     index: number
     snippet: string
+    gate?: PersonNameGateResult
 }
 
 const WEBSITE_MAX_HTML_CHARS = 700_000
@@ -104,7 +107,7 @@ function visibleTextFromHtml(html: string) {
 }
 
 function ownerishContext(value: string | null | undefined) {
-    return new RegExp(String.raw`\b(?:${OWNER_ROLE_PATTERN}|owned by|founded by|led by|managed by|owned and operated by)\b`, "i").test(value ?? "")
+    return new RegExp(String.raw`\b(?:${OWNER_ROLE_PATTERN}|owned by|founded by|led by|managed by|run by|owned and operated by)\b`, "i").test(value ?? "")
 }
 
 function normaliseOwnerName(value: string | null | undefined, context: string | null | undefined = null, businessNames: Array<string | null | undefined> = []) {
@@ -521,26 +524,83 @@ function dedupeOwnerCandidates(candidates: WebsiteOwnerCandidate[]) {
     for (const candidate of candidates) {
         const key = candidate.name.toLowerCase().replace(/[^a-z]/g, "")
         const existing = best.get(key)
-        if (!existing || candidate.confidence > existing.confidence || (candidate.phone && !existing.phone)) best.set(key, candidate)
+        if (!existing || candidateIdentityScore(candidate) > candidateIdentityScore(existing) || (candidateIdentityScore(candidate) === candidateIdentityScore(existing) && candidate.phone && !existing.phone)) best.set(key, candidate)
     }
-    return [...best.values()].sort((left, right) => {
+    return [...best.values()]
+}
+
+function candidateSourceTrust(candidate: WebsiteOwnerCandidate) {
+    const role = `${candidate.role ?? ""} ${candidate.snippet}`.toLowerCase()
+    if (candidate.source === "json_ld" && /\b(owner|founder|co-founder)\b/.test(role)) return 28
+    if (candidate.source === "json_ld") return 20
+    if (candidate.source === "team_card" && /\b(owner|founder|co-founder|principal|president|ceo|managing partner|managing member)\b/.test(role)) return 18
+    if (candidate.source === "team_card") return 10
+    if (/\b(owner|founder|owned by|founded by|managed by|led by|run by|principal|president|ceo)\b/.test(role)) return 8
+    return 0
+}
+
+function candidateIdentityScore(candidate: WebsiteOwnerCandidate) {
+    return candidate.confidence + candidateSourceTrust(candidate) + (candidate.gate?.accepted ? Math.min(18, Math.max(0, candidate.gate.confidence - 70)) : 0)
+}
+
+function sortOwnerCandidates(candidates: WebsiteOwnerCandidate[], stageKey: WebsiteStageKey) {
+    return [...candidates].sort((left, right) => {
+        if (stageKey === "owner_phone") {
+            const phoneDelta = Number(Boolean(right.phone)) - Number(Boolean(left.phone))
+            if (phoneDelta) return phoneDelta
+        }
+        const identityDelta = candidateIdentityScore(right) - candidateIdentityScore(left)
+        if (identityDelta) return identityDelta
         const phoneDelta = Number(Boolean(right.phone)) - Number(Boolean(left.phone))
         if (phoneDelta) return phoneDelta
         return right.confidence - left.confidence
     })
 }
 
-export function extractPageEvidence(url: string, html: string, visibleText = visibleTextFromHtml(html), title: string | null = pageTitle(html), metaDescription: string | null = metaContent(html, ["description", "og:description", "twitter:description"]), options: PageExtractionOptions = {}): PageExtraction {
-    const phones = extractPhones(`${html} ${visibleText}`)
-    const links = extractLinks(html, url)
-    const businessNames = options.businessNames ?? []
-    const candidates = dedupeOwnerCandidates([
+function pageOwnerCandidates(url: string, html: string, visibleText: string, title: string | null, metaDescription: string | null, businessNames: Array<string | null | undefined>) {
+    return [
         ...extractOwnerCandidatesFromText(url, visibleText, "visible_text", businessNames),
         ...extractTitleCandidates(url, title, metaDescription, businessNames),
         ...extractOwnerCandidatesFromCards(url, html, businessNames),
         ...extractJsonLdOwnerCandidates(url, html, businessNames),
-    ])
-    const bestCandidate = candidates[0] ?? null
+    ]
+}
+
+function gateInputsForCandidates(candidates: WebsiteOwnerCandidate[], businessNames: Array<string | null | undefined>) {
+    return candidates.map((candidate, index) => ({
+        id: `${index}`,
+        candidateName: candidate.name,
+        text: candidate.snippet,
+        source: candidate.source,
+        role: candidate.role,
+        businessNames,
+    }))
+}
+
+function applyDeterministicGate(candidates: WebsiteOwnerCandidate[], businessNames: Array<string | null | undefined>) {
+    const inputs = gateInputsForCandidates(candidates, businessNames)
+    return candidates.flatMap((candidate, index) => {
+        const gate = deterministicPersonNameGate(inputs[index])
+        if (!gate.accepted || !gate.name) return []
+        return [{ ...candidate, name: gate.name, confidence: Math.max(candidate.confidence, gate.confidence), gate }]
+    })
+}
+
+async function applyPersonNameGate(candidates: WebsiteOwnerCandidate[], businessNames: Array<string | null | undefined>) {
+    const inputs = gateInputsForCandidates(candidates, businessNames)
+    const gates = await gatePersonNameCandidates(inputs)
+    return candidates.flatMap((candidate, index) => {
+        const gate = gates[index]
+        if (!gate.accepted || !gate.name) return []
+        return [{ ...candidate, name: gate.name, confidence: Math.max(candidate.confidence, gate.confidence), gate }]
+    })
+}
+
+function buildPageExtraction(url: string, html: string, visibleText: string, candidates: WebsiteOwnerCandidate[], stageKey: WebsiteStageKey): PageExtraction {
+    const phones = extractPhones(`${html} ${visibleText}`)
+    const links = extractLinks(html, url)
+    const sortedCandidates = sortOwnerCandidates(dedupeOwnerCandidates(candidates), stageKey)
+    const bestCandidate = sortedCandidates[0] ?? null
     const ownerName = bestCandidate?.name ?? null
     const ownerPhone = bestCandidate?.phone ?? fallbackOwnerPhone(url, visibleText, phones, ownerName)
     const socials = socialLinks(links)
@@ -568,14 +628,29 @@ export function extractPageEvidence(url: string, html: string, visibleText = vis
         owner_confidence: bestCandidate?.confidence ?? null,
         social_links: socials,
         profile_links: profiles,
-        snippets: candidates.slice(0, 6).map((candidate) => ({
+        snippets: sortedCandidates.slice(0, 6).map((candidate) => ({
             name: candidate.name,
             role: candidate.role,
             source: candidate.source,
             confidence: candidate.confidence,
+            gate: candidate.gate,
             phone: candidate.phone,
             snippet: candidate.snippet,
             url: candidate.sourceUrl,
         })),
     }
+}
+
+export function extractPageEvidence(url: string, html: string, visibleText = visibleTextFromHtml(html), title: string | null = pageTitle(html), metaDescription: string | null = metaContent(html, ["description", "og:description", "twitter:description"]), options: PageExtractionOptions = {}): PageExtraction {
+    const businessNames = options.businessNames ?? []
+    const stageKey = options.stageKey ?? "owner_identity"
+    const candidates = applyDeterministicGate(pageOwnerCandidates(url, html, visibleText, title, metaDescription, businessNames), businessNames)
+    return buildPageExtraction(url, html, visibleText, candidates, stageKey)
+}
+
+export async function extractPageEvidenceWithPersonGate(url: string, html: string, visibleText = visibleTextFromHtml(html), title: string | null = pageTitle(html), metaDescription: string | null = metaContent(html, ["description", "og:description", "twitter:description"]), options: PageExtractionOptions = {}): Promise<PageExtraction> {
+    const businessNames = options.businessNames ?? []
+    const stageKey = options.stageKey ?? "owner_identity"
+    const candidates = await applyPersonNameGate(pageOwnerCandidates(url, html, visibleText, title, metaDescription, businessNames), businessNames)
+    return buildPageExtraction(url, html, visibleText, candidates, stageKey)
 }

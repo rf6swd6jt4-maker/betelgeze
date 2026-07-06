@@ -113,7 +113,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                     </button>
                     <label className="relative min-w-0 flex-1">
                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
-                        <input readOnly aria-label="Search Betelgeze" placeholder="Search Betelgeze" className="h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 text-sm text-neutral-300 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
+                        <input readOnly aria-label="Search Betelgeze" placeholder="Search Betelgeze..." className="h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 text-sm text-neutral-300 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
                     </label>
                 </div>
 

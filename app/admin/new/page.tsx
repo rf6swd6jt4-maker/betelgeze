@@ -1,4 +1,3 @@
-import Link from "next/link"
 import { requireAdmin } from "@/lib/admin/auth"
 import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
@@ -31,12 +30,7 @@ export default async function NewClientPage({ searchParams }: PageProps) {
         <main className="min-h-screen bg-neutral-950 px-6 pb-10 text-white">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-2xl">
-                <div className="flex items-center gap-4 text-sm text-neutral-400">
-                    <Link href="/admin">← Back to clients</Link>
-                    <Link href="/admin/invoices">Invoices</Link>
-                </div>
-
-                <h1 className="mt-6 text-3xl font-semibold tracking-tight">
+                <h1 className="text-3xl font-semibold tracking-tight">
                     Add manual client
                 </h1>
 

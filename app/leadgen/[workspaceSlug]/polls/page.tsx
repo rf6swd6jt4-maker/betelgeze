@@ -236,8 +236,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     </div>
                     </div>
                 }) : <div className="p-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">No polls yet</p>
-                    <h3 className="mt-3 text-xl font-semibold">Run your first test poll.</h3>
+                    <h3 className="text-xl font-semibold">Run your first test poll.</h3>
                     <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">This will queue a poll record and run the configured sources.</p>
                 </div>}
             </section>

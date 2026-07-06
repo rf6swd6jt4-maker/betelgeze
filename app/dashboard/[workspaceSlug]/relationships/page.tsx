@@ -46,10 +46,7 @@ export default async function RelationshipsPage({ params }: PageProps) {
             <div className="mx-auto max-w-7xl">
                 <header className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 sm:flex-row sm:items-end">
                     <div>
-                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                            Relationship centre
-                        </p>
-                        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+                        <h1 className="text-3xl font-semibold tracking-tight">
                             Relationships
                         </h1>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">

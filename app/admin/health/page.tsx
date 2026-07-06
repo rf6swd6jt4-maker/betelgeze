@@ -620,10 +620,7 @@ export default async function AdminHealthPage() {
                 <section className="mt-5">
                     <div className="mb-3 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
                         <div>
-                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                                Live usage
-                            </p>
-                            <h2 className="mt-1 text-lg font-semibold">
+                            <h2 className="text-lg font-semibold">
                                 Limits and connected services
                             </h2>
                         </div>
@@ -644,7 +641,7 @@ export default async function AdminHealthPage() {
                                 >
                                     <div className="flex items-start justify-between gap-3">
                                         <div>
-                                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                                            <p className="text-sm text-neutral-500">
                                                 {metric.provider}
                                             </p>
                                             <h3 className="mt-1 font-medium text-neutral-100">
@@ -688,10 +685,7 @@ export default async function AdminHealthPage() {
                 <section className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
                     <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
                         <div>
-                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                                Triage
-                            </p>
-                            <h2 className="mt-1 text-lg font-semibold">
+                            <h2 className="text-lg font-semibold">
                                 Needs attention
                             </h2>
                         </div>
@@ -745,10 +739,7 @@ export default async function AdminHealthPage() {
                 <section className="mt-5">
                     <div className="mb-3 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
                         <div>
-                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                                Platforms
-                            </p>
-                            <h2 className="mt-1 text-lg font-semibold">
+                            <h2 className="text-lg font-semibold">
                                 Provider overview
                             </h2>
                         </div>
@@ -831,7 +822,7 @@ export default async function AdminHealthPage() {
                                 >
                                     <div className="flex items-start justify-between gap-4">
                                         <div>
-                                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                                            <p className="text-sm text-neutral-500">
                                                 {check.provider}
                                             </p>
                                             <h3 className="mt-1 font-medium text-neutral-100">
@@ -870,10 +861,7 @@ export default async function AdminHealthPage() {
                 <section className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
                     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
                         <div>
-                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                                WhatsApp bridge
-                            </p>
-                            <h2 className="mt-1 text-lg font-semibold">
+                            <h2 className="text-lg font-semibold">
                                 Unmatched message diagnostics
                             </h2>
                         </div>

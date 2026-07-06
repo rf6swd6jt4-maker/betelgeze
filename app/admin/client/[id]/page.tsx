@@ -248,20 +248,9 @@ export default async function ClientDetailPage({
         <main className="min-h-screen bg-neutral-950 px-4 pb-6 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-7xl">
-                <Link
-                    href="/admin"
-                    className="text-sm text-neutral-400 hover:text-white"
-                >
-                    ← Back to dashboard
-                </Link>
-
-                <div className="mt-5 flex flex-col justify-between gap-4 md:flex-row md:items-start">
+                <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
                     <div>
-                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                            Client details
-                        </p>
-
-                        <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+                        <h1 className="text-2xl font-semibold tracking-tight">
                             {client.name ?? "Unnamed client"}
                         </h1>
 
@@ -353,7 +342,7 @@ export default async function ClientDetailPage({
 
                 <div className="mt-5 grid gap-3 lg:grid-cols-4">
                     <section className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 lg:col-span-2">
-                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                        <p className="text-sm text-neutral-400">
                             Progress
                         </p>
 
@@ -371,7 +360,7 @@ export default async function ClientDetailPage({
                     </section>
 
                     <section className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 lg:col-span-2">
-                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                        <p className="text-sm text-neutral-400">
                             Assigned modules
                         </p>
 
@@ -395,7 +384,7 @@ export default async function ClientDetailPage({
                 </div>
 
                 <section className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-                    <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    <p className="text-sm text-neutral-400">
                         Fulfilment services
                     </p>
 
@@ -427,7 +416,7 @@ export default async function ClientDetailPage({
                 <section className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
                     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                         <div className="min-w-0">
-                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                            <p className="text-sm text-neutral-400">
                                 Onboarding link
                             </p>
 
@@ -447,7 +436,7 @@ export default async function ClientDetailPage({
                 <section className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
                     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                         <div>
-                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                            <p className="text-sm text-neutral-400">
                                 Client messages bridge
                             </p>
 
@@ -627,7 +616,7 @@ export default async function ClientDetailPage({
 
                 <section className="mt-3 grid gap-3 lg:grid-cols-2">
                     <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                        <p className="text-sm text-neutral-400">
                             Notes
                         </p>
 
@@ -711,7 +700,7 @@ export default async function ClientDetailPage({
                     </div>
 
                     <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                        <p className="text-sm text-neutral-400">
                             Timeline
                         </p>
 
@@ -807,7 +796,7 @@ export default async function ClientDetailPage({
                 </div>
 
                 <details className="mt-6 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-                    <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    <summary className="cursor-pointer text-sm text-neutral-400">
                         Recent bridged messages
                     </summary>
 
@@ -950,7 +939,7 @@ export default async function ClientDetailPage({
                 </div>
 
                 <div className="mt-6 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-                    <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    <p className="text-sm text-neutral-400">
                         Session token
                     </p>
 

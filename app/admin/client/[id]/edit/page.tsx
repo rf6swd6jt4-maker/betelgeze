@@ -58,14 +58,7 @@ export default async function EditClientPage({
         <main className="min-h-screen bg-neutral-950 px-6 pb-10 text-white">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-2xl">
-                <Link
-                    href={`/admin/client/${client.id}`}
-                    className="text-sm text-neutral-400"
-                >
-                    ← Back to client
-                </Link>
-
-                <h1 className="mt-6 text-3xl font-semibold tracking-tight">
+                <h1 className="text-3xl font-semibold tracking-tight">
                     Edit client
                 </h1>
 

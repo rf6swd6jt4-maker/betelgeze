@@ -1,4 +1,3 @@
-import Link from "next/link"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { leadgenSourceFamilyLabels, sourceHealthMap, sourceMetadataNote, sourceStatusMeta, type LeadgenSourceCatalogRow, type LeadgenSourceHealthRow } from "@/lib/leadgen/source-catalog-ui"
@@ -107,20 +106,8 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
     return <main className="min-h-screen bg-neutral-950 px-4 pb-5 text-white sm:px-8 sm:pb-8">
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
         <div className="mx-auto max-w-5xl">
-            <header className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 sm:flex-row sm:items-center sm:pb-6">
-                <div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-neutral-400">
-                        <Link href={`/leadgen/${workspace.slug}`}>← Leads</Link>
-                        <Link href={`/leadgen/${workspace.slug}/polls`}>Poll history</Link>
-                        <Link href={`/leadgen/${workspace.slug}/settings`}>Settings</Link>
-                    </div>
-                </div>
-                <p className="text-sm text-neutral-500">{workspace.name}</p>
-            </header>
-
             <section className="py-6 sm:py-10">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">New poll</p>
-                <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:mt-3 sm:text-3xl">Confirm candidate investigation</h1>
+                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Confirm candidate investigation</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">This poll will seed new businesses from the current ICP, then investigate each candidate across active free/public adapters. Sources that are validation-only, bulk-refresh, or endpoint-specific are shown here but will not pretend to run.</p>
             </section>
 
@@ -144,7 +131,7 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
                         ["Ready seeds", readySeedSources.length],
                         ["Ready enrichment", readyPollTimeSources.length],
                     ].map(([label, value], index) => <div key={String(label)} className={`px-3 py-3 ${index % 2 === 0 ? "border-r" : ""} border-neutral-800 md:border-r md:last:border-r-0`}>
-                        <p className="text-[10px] uppercase tracking-[0.12em] text-neutral-600">{label}</p>
+                        <p className="text-xs text-neutral-500">{label}</p>
                         <p className="mt-1 text-lg font-semibold text-neutral-100">{value}</p>
                     </div>)}
                 </div>
@@ -154,13 +141,13 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
                         <h3 className="text-sm font-semibold text-neutral-100">Targets</h3>
                         <div className="mt-3 grid gap-4 sm:grid-cols-2">
                             <div>
-                                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-600">Industries</p>
+                                <p className="text-sm text-neutral-400">Industries</p>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                     {selectedIndustries.length ? selectedIndustries.map((value) => <span key={value} className="rounded-full bg-black px-3 py-1 text-xs text-neutral-200">{industryLabels.get(value) ?? value.replace(/_/g, " ")}</span>) : <span className="text-sm text-amber-200">No supported industries selected</span>}
                                 </div>
                             </div>
                             <div>
-                                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-600">Locations</p>
+                                <p className="text-sm text-neutral-400">Locations</p>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                     {selectedLocations.length ? selectedLocations.map((value) => <span key={value} className="rounded-full bg-black px-3 py-1 text-xs text-neutral-200">{locationLabels.get(value) ?? value.replace(/_/g, " ")}</span>) : <span className="text-sm text-amber-200">No supported locations selected</span>}
                                 </div>

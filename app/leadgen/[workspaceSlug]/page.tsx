@@ -138,12 +138,11 @@ export default async function LeadgenWorkspacePage({ params, searchParams }: Pag
                     </div>
                 }) : <div className="grid gap-4 p-5 lg:grid-cols-[1.1fr_0.9fr]">
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Starting clean</p>
-                        <h3 className="mt-3 text-xl font-semibold">{latestPoll ? "This poll did not return qualified leads." : "No real companies have been collected yet."}</h3>
+                        <h3 className="text-xl font-semibold">{latestPoll ? "This poll did not return qualified leads." : "No real companies have been collected yet."}</h3>
                         <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">{latestPoll ? "The Leads tab only shows companies from the latest poll where source-backed owner identity and owner phone evidence both cleared the qualification threshold. Raw candidates, skipped checks, and rejected reasons are preserved inside the poll detail page." : "Configure Overture plus ICP industries and locations in Settings, then run a poll. Candidates will be investigated across the active public-source catalogue before anything appears here."}</p>
                     </div>
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Next action</p>
+                        <h3 className="text-xl font-semibold">Next action</h3>
                         <ul className="mt-3 space-y-2 text-sm text-neutral-300">
                             <li>• Check Settings to confirm Overture and the active fan-out catalogue are ready.</li>
                             <li>• Run a 10-business test poll from New Poll.</li>

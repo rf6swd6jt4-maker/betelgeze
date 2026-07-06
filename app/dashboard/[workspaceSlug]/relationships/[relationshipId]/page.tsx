@@ -71,13 +71,7 @@ export default async function RelationshipHubPage({ params, searchParams }: Page
             <div className="mx-auto max-w-7xl">
                 <div className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 lg:flex-row lg:items-end">
                     <div>
-                        <Link href={workspaceHref(workspace.slug, "relationships")} className="text-sm text-neutral-400 hover:text-white">
-                            Back to Relationships
-                        </Link>
-                        <p className="mt-5 text-xs font-medium uppercase tracking-wide text-neutral-500">
-                            Relationship Hub
-                        </p>
-                        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+                        <h1 className="text-3xl font-semibold tracking-tight">
                             {relationship.primary_person_name}
                         </h1>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
@@ -143,15 +137,15 @@ export default async function RelationshipHubPage({ params, searchParams }: Page
 
                 <section className="mt-5 grid gap-3 lg:grid-cols-3">
                     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Current phase</p>
+                        <p className="text-sm text-neutral-400">Current phase</p>
                         <p className={`mt-2 text-lg font-semibold ${phaseTone[relationship.lifecycle_phase].text}`}>{phaseLabel(relationship.lifecycle_phase)}</p>
                     </div>
                     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Source</p>
+                        <p className="text-sm text-neutral-400">Source</p>
                         <p className="mt-2 text-lg font-semibold capitalize">{relationship.source_type}</p>
                     </div>
                     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Last updated</p>
+                        <p className="text-sm text-neutral-400">Last updated</p>
                         <p className="mt-2 text-lg font-semibold">{formatRelativeTime(relationship.updated_at)}</p>
                     </div>
                 </section>

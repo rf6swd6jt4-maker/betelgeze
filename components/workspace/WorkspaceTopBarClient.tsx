@@ -166,6 +166,16 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
     }, [])
 
     useEffect(() => {
+        document.body.dataset.workspaceSidebarOpen = sidebarOpen ? "true" : "false"
+        document.documentElement.style.setProperty("--workspace-sidebar-width", sidebarOpen ? "18rem" : "0px")
+
+        return () => {
+            document.body.dataset.workspaceSidebarOpen = "false"
+            document.documentElement.style.setProperty("--workspace-sidebar-width", "0px")
+        }
+    }, [sidebarOpen])
+
+    useEffect(() => {
         const trimmed = query.trim()
         if (trimmed.length < 2) {
             deferNavigationStateUpdate(() => {
@@ -231,7 +241,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
     ]
 
     return <>
-        <header className="fixed left-0 top-0 z-50 h-14 w-full border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/20 backdrop-blur">
+        <header data-workspace-topbar className="fixed left-0 top-0 z-50 h-14 w-full border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/20 backdrop-blur">
             <div className="grid h-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-4 sm:px-6 md:grid-cols-[minmax(0,1fr)_minmax(20rem,40rem)_minmax(0,1fr)]">
                 <div className="flex min-w-0 items-center gap-2.5">
                     <WorkspaceLogo src={workspaceLogoSrc} name={workspace.name} />
@@ -286,7 +296,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
             </div>
         </header>
 
-        <aside aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950/95 shadow-2xl shadow-black/30 transition-transform duration-200 ease-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950 transition-transform duration-200 ease-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex h-full flex-col gap-1 px-3 py-4">
                 {sidebarItems.map((item) => {
                     const active = pathname === item.href || pathname.startsWith(`${item.href}/`) || (item.href === `/${workspace.slug}` && pathname === "/admin")

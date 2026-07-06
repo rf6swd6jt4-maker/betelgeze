@@ -1,4 +1,3 @@
-import Link from "next/link"
 import { notFound } from "next/navigation"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { PollDuration } from "@/components/leadgen/PollDuration"
@@ -243,22 +242,10 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
         <PollLiveRefresh enabled={live} />
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
         <div className="mx-auto max-w-6xl">
-            <header className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 sm:flex-row sm:items-center sm:pb-6">
-                <div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-neutral-400">
-                        <Link href={`/leadgen/${workspace.slug}/polls`}>← Poll history</Link>
-                        <Link href={`/leadgen/${workspace.slug}`}>Leads</Link>
-                        <Link href={`/leadgen/${workspace.slug}/new`}>New poll</Link>
-                    </div>
-                </div>
-                <p className="text-sm text-neutral-500">{workspace.name}</p>
-            </header>
-
             <section className="py-6 sm:py-10">
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">Poll detail</p>
-                        <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:mt-3 sm:text-3xl">Poll {shortId(poll.id)}</h1>
+                        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Poll {shortId(poll.id)}</h1>
                         <p className="mt-2 text-sm text-neutral-400 sm:mt-3">{sourceNames(poll.source_snapshot, poll.source_count)} · {formatRelativeTime(poll.created_at)}</p>
                         {live ? <p className="mt-2 text-xs text-yellow-200">Live view refreshes every few seconds while the poll is active.</p> : null}
                     </div>

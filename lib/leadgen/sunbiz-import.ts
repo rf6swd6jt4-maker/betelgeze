@@ -45,6 +45,54 @@ function dbRow(row: SunbizOwnerIndexRow) {
     }
 }
 
+export async function clearSunbizOwnerIndex(sourceKey: SunbizImportSourceKey) {
+    const { error } = await supabaseAdmin
+        .from("leadgen_sunbiz_owner_index")
+        .delete()
+        .eq("source_key", sourceKey)
+    if (error) throw new Error(`Could not clear existing Sunbiz index rows: ${error.message}`)
+}
+
+export async function upsertSunbizOwnerIndexRows(rows: SunbizOwnerIndexRow[]) {
+    if (rows.length === 0) return 0
+    const { error } = await supabaseAdmin
+        .from("leadgen_sunbiz_owner_index")
+        .upsert(rows.map(dbRow), {
+            onConflict: "source_key,record_id,person_source_field,person_name",
+        })
+    if (error) throw new Error(`Could not import Sunbiz index rows: ${error.message}`)
+    return rows.length
+}
+
+export async function markSunbizOwnerIndexImportHealthy({
+    sourceKey,
+    mode,
+    parsedRows,
+    importedRows,
+    importer,
+}: {
+    sourceKey: SunbizImportSourceKey
+    mode: SunbizImportMode
+    parsedRows: number
+    importedRows: number
+    importer: string
+}) {
+    await supabaseAdmin
+        .from("leadgen_source_health")
+        .upsert({
+            source_key: sourceKey,
+            status: "healthy",
+            last_error: null,
+            last_success_at: new Date().toISOString(),
+            metadata: {
+                import_mode: mode,
+                imported_rows: importedRows,
+                parsed_rows: parsedRows,
+                importer,
+            },
+        }, { onConflict: "source_key" })
+}
+
 export async function importSunbizOwnerIndexFromText({
     sourceKey,
     text,
@@ -66,41 +114,24 @@ export async function importSunbizOwnerIndexFromText({
     }
 
     if (mode === "replace") {
-        const { error } = await supabaseAdmin
-            .from("leadgen_sunbiz_owner_index")
-            .delete()
-            .eq("source_key", sourceKey)
-        if (error) throw new Error(`Could not clear existing Sunbiz index rows: ${error.message}`)
+        await clearSunbizOwnerIndex(sourceKey)
     }
 
     let importedRows = 0
     let batches = 0
     for (let index = 0; index < rows.length; index += safeBatchSize) {
-        const batch = rows.slice(index, index + safeBatchSize).map(dbRow)
-        const { error } = await supabaseAdmin
-            .from("leadgen_sunbiz_owner_index")
-            .upsert(batch, {
-                onConflict: "source_key,record_id,person_source_field,person_name",
-            })
-        if (error) throw new Error(`Could not import Sunbiz index batch ${batches + 1}: ${error.message}`)
-        importedRows += batch.length
+        const batch = rows.slice(index, index + safeBatchSize)
+        importedRows += await upsertSunbizOwnerIndexRows(batch)
         batches += 1
     }
 
-    await supabaseAdmin
-        .from("leadgen_source_health")
-        .upsert({
-            source_key: sourceKey,
-            status: "healthy",
-            last_error: null,
-            last_success_at: new Date().toISOString(),
-            metadata: {
-                import_mode: mode,
-                imported_rows: importedRows,
-                parsed_rows: rows.length,
-                importer: "leadgen_sunbiz_import_v5_4_1",
-            },
-        }, { onConflict: "source_key" })
+    await markSunbizOwnerIndexImportHealthy({
+        sourceKey,
+        mode,
+        parsedRows: rows.length,
+        importedRows,
+        importer: "leadgen_sunbiz_import_v5_4_1",
+    })
 
     return { sourceKey, mode, parsedRows: rows.length, importedRows, batches, dryRun: false }
 }

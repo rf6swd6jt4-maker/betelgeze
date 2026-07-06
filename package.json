@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON"
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+    "import:sunbiz": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/import-sunbiz-owner-index.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1057.0",

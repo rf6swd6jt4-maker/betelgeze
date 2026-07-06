@@ -150,13 +150,13 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
         <PollsAutoRefresh enabled intervalMs={5000} processUrl={`/api/leadgen/polls/process?workspace=${encodeURIComponent(workspace.slug)}`} />
         <div className="mx-auto max-w-7xl">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
-            <WorkspaceBanner bannerPath={workspace.leadgen_banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.leadgen_banner_height} position={workspace.leadgen_banner_position} />
+            <WorkspaceBanner bannerPath={workspace.banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.banner_height} position={workspace.banner_position} />
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div>
                     <h1 className="text-2xl font-semibold tracking-tight">{workspace.name}</h1>
                     <p className="mt-2 text-sm text-neutral-400">Track source polling, queue state, run durations, and pipeline counts. Signed in as {role}.</p>
                 </div>
-                <NewPollButton href={`/leadgen/${workspace.slug}/new`} />
+                <NewPollButton href={`/${workspace.slug}/leadgen/new`} />
             </div>
 
             <LeadgenTabs workspaceSlug={workspace.slug} active="polls" />
@@ -189,7 +189,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                     const statusMark = <span className={`inline-flex items-center gap-2 text-sm ${meta.text}`}><BetelgezeStatusMark className={meta.mark} />{meta.label}</span>
                     const duration = <span className="font-mono text-sm text-neutral-500"><PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live} /></span>
                     const triggerPill = <span className="w-fit rounded-md border border-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-400">{poll.trigger === "manual" ? "Manual" : "Automated"}</span>
-                    const pollHref = `/leadgen/${workspace.slug}/poll/${poll.id}`
+                    const pollHref = `/${workspace.slug}/leadgen/poll/${poll.id}`
                     const pollActions = [
                         { label: "Open poll", href: pollHref },
                         poll.status === "failed" ? { label: "Retry", action: retryLeadgenPoll.bind(null, workspace.slug, poll.id) } : {},

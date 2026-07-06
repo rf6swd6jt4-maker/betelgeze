@@ -11,6 +11,9 @@ import { attachOnboardingDomain, removeOnboardingDomain, verifyOnboardingDomain 
 import { allowDirectUploadsFromDomain, removeDirectUploadsFromDomain } from "@/lib/onboarding/r2-cors"
 
 function refresh(slug: string) {
+    revalidatePath(`/${slug}`)
+    revalidatePath(`/${slug}/leadgen`)
+    revalidatePath(`/${slug}/settings`)
     revalidatePath(`/dashboard/${slug}`)
     revalidatePath(`/dashboard/${slug}/settings`)
 }

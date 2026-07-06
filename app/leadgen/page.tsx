@@ -35,7 +35,7 @@ export default async function LeadgenIndexPage() {
     .map((membership) => membership.workspaces as unknown as { name: string; slug: string; status: string })
     .filter((workspace) => workspace.status === "active")
 
-  if (workspaces.length === 1) redirect(`/leadgen/${workspaces[0].slug}`)
+  if (workspaces.length === 1) redirect(`/${workspaces[0].slug}/leadgen`)
 
   return <main className="min-h-screen bg-neutral-950 px-6 py-16 text-white">
     <section className="mx-auto max-w-2xl rounded-2xl border border-neutral-800 bg-neutral-900 p-7 sm:p-8">
@@ -44,7 +44,7 @@ export default async function LeadgenIndexPage() {
       <h1 className="mt-3 text-3xl font-semibold tracking-tight">Choose a workspace</h1>
       <p className="mt-3 text-sm leading-6 text-neutral-400">Leadgen is now organised under the same Betelgeze workspaces as your dashboard.</p>
       {workspaces.length ? <div className="mt-7 grid gap-2">
-        {workspaces.map((workspace) => <a key={workspace.slug} href={`/leadgen/${workspace.slug}`} className="rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 hover:border-neutral-600">{workspace.name}</a>)}
+        {workspaces.map((workspace) => <a key={workspace.slug} href={`/${workspace.slug}/leadgen`} className="rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 hover:border-neutral-600">{workspace.name}</a>)}
       </div> : <div className="mt-7 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm leading-6 text-neutral-400">You do not have an active workspace yet. Create or join a workspace from your Betelgeze dashboard first.</div>}
     </section>
   </main>

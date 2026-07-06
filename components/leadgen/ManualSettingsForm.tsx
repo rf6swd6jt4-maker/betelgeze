@@ -69,7 +69,15 @@ function restoreSection(section: Element, baselineValues: ControlValue[]) {
     }
 }
 
-export function ManualSettingsForm({ action, children }: { action: (formData: FormData) => void | Promise<void>; children: ReactNode }) {
+export function ManualSettingsForm({
+    action,
+    children,
+    className = "mt-8 space-y-4",
+}: {
+    action: (formData: FormData) => void | Promise<void>
+    children: ReactNode
+    className?: string
+}) {
     const router = useRouter()
     const formRef = useRef<HTMLFormElement>(null)
     const baselineRef = useRef<Map<string, ControlValue[]>>(new Map())
@@ -124,7 +132,7 @@ export function ManualSettingsForm({ action, children }: { action: (formData: Fo
         onClick={(event) => {
             if (event.target instanceof HTMLElement && event.target.closest("[data-settings-control]")) scheduleDirtyCheck()
         }}
-        className="mt-8 space-y-4"
+        className={className}
         data-settings-saving={saving ? "true" : "false"}
     >
         {children}

@@ -14,6 +14,9 @@ const SOURCE_CATEGORY_KEYS = new Set<LeadgenSourceCategoryKey>(["general", "indu
 const SOURCE_STAGE_KEYS = new Set<LeadgenSourceStageKey>(["business_validation", "owner_identity", "owner_phone", "phone_validation"])
 
 function refresh(slug: string) {
+    revalidatePath(`/${slug}`)
+    revalidatePath(`/${slug}/leadgen`)
+    revalidatePath(`/${slug}/settings`)
     revalidatePath(`/leadgen/${slug}`)
     revalidatePath(`/leadgen/${slug}/settings`)
     revalidatePath(`/leadgen/${slug}/sources`)

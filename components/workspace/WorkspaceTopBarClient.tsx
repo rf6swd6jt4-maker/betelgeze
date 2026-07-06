@@ -97,10 +97,13 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const searchMenuId = useId()
-    const searchRef = useRef<HTMLDivElement>(null)
-    const searchInputRef = useRef<HTMLInputElement>(null)
+    const desktopSearchRef = useRef<HTMLDivElement>(null)
+    const mobileSearchRef = useRef<HTMLDivElement>(null)
+    const mobileSearchInputRef = useRef<HTMLInputElement>(null)
+    const sidebarTransitionTimeout = useRef<number | null>(null)
     const [sidebarOpen, setSidebarOpen] = useState(false)
     const [sidebarHydrated, setSidebarHydrated] = useState(false)
+    const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false)
     const [canGoBack, setCanGoBack] = useState(false)
     const [canGoForward, setCanGoForward] = useState(false)
     const [query, setQuery] = useState("")
@@ -156,7 +159,10 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
 
     useEffect(() => {
         const close = (event: MouseEvent) => {
-            if (searchRef.current && !searchRef.current.contains(event.target as Node)) setSearchOpen(false)
+            const target = event.target as Node
+            const inDesktopSearch = desktopSearchRef.current?.contains(target)
+            const inMobileSearch = mobileSearchRef.current?.contains(target)
+            if (!inDesktopSearch && !inMobileSearch) setSearchOpen(false)
         }
         const escape = (event: KeyboardEvent) => {
             if (event.key === "Escape") setSearchOpen(false)
@@ -182,18 +188,26 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
     }, [])
 
     useEffect(() => {
+        return () => {
+            if (sidebarTransitionTimeout.current) window.clearTimeout(sidebarTransitionTimeout.current)
+        }
+    }, [])
+
+    useEffect(() => {
         document.body.dataset.workspaceSidebarOpen = sidebarOpen ? "true" : "false"
+        document.body.dataset.workspaceSidebarTransition = sidebarTransitionEnabled ? "true" : "false"
         document.documentElement.style.setProperty("--workspace-sidebar-width", sidebarOpen ? "18rem" : "0px")
         if (sidebarHydrated) sessionStorage.setItem(sidebarStorageKey, sidebarOpen ? "true" : "false")
 
         return () => {
             document.body.dataset.workspaceSidebarOpen = "false"
+            document.body.dataset.workspaceSidebarTransition = "false"
             document.documentElement.style.setProperty("--workspace-sidebar-width", "0px")
         }
-    }, [sidebarOpen, sidebarHydrated])
+    }, [sidebarOpen, sidebarHydrated, sidebarTransitionEnabled])
 
     useEffect(() => {
-        if (searchOpen) searchInputRef.current?.focus()
+        if (searchOpen) mobileSearchInputRef.current?.focus()
     }, [searchOpen])
 
     useEffect(() => {
@@ -259,6 +273,21 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         })
     }
 
+    function openDesktopSearch() {
+        if (!searchOpen) window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: searchMenuId }))
+        setSearchOpen(true)
+    }
+
+    function toggleSidebar() {
+        if (sidebarTransitionTimeout.current) window.clearTimeout(sidebarTransitionTimeout.current)
+        setSidebarTransitionEnabled(true)
+        sidebarTransitionTimeout.current = window.setTimeout(() => {
+            setSidebarTransitionEnabled(false)
+            sidebarTransitionTimeout.current = null
+        }, 240)
+        setSidebarOpen((value) => !value)
+    }
+
     function closeSidebarAfterNavigation() {
         if (window.matchMedia("(max-width: 767px)").matches) setSidebarOpen(false)
     }
@@ -275,26 +304,57 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
 
     return <>
         <header data-workspace-topbar className="fixed left-0 top-0 z-50 h-14 w-full border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/20 backdrop-blur">
-            <div className="grid h-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 sm:px-6 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-4">
+            <div className="grid h-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 sm:px-6 md:grid-cols-[minmax(0,1fr)_minmax(20rem,40rem)_minmax(0,1fr)] md:gap-4">
                 <div className="flex min-w-0 items-center gap-2.5">
                     <WorkspaceLogo src={workspaceLogoSrc} name={workspace.name} />
                     <p className="min-w-0 truncate text-sm font-semibold text-neutral-100">{workspace.name}</p>
-                    <button data-icon-button type="button" onClick={() => setSidebarOpen((value) => !value)} aria-label="Toggle sidebar" aria-expanded={sidebarOpen} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-8 md:w-8">
+                    <button data-icon-button type="button" onClick={toggleSidebar} aria-label="Toggle sidebar" aria-expanded={sidebarOpen} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-8 md:w-8">
                         <SidebarIcon />
                     </button>
                 </div>
 
-                <div className="hidden items-center gap-1 md:flex">
+                <div ref={desktopSearchRef} className="relative hidden min-w-0 items-center gap-1 md:flex">
                     <button data-icon-button type="button" onClick={goBack} disabled={!canGoBack} aria-label="Go back" className={navButtonClass}>
                         <ArrowLeftIcon />
                     </button>
                     <button data-icon-button type="button" onClick={goForward} disabled={!canGoForward} aria-label="Go forward" className={navButtonClass}>
                         <ArrowRightIcon />
                     </button>
+                    <label className="relative block min-w-0 flex-1">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
+                        <input value={query} onChange={(event) => { setQuery(event.target.value); openDesktopSearch() }} onFocus={openDesktopSearch} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 text-sm text-neutral-300 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
+                    </label>
+                    {searchOpen && (
+                        <div className="absolute left-16 right-0 top-11 z-[70] max-h-[32rem] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/40">
+                            <div className="max-h-[32rem] overflow-y-auto">
+                                {query.trim().length < 2 && <p className="px-3 py-3 text-sm text-neutral-500">Type at least two characters.</p>}
+                                {query.trim().length >= 2 && searchLoading && <p className="px-3 py-3 text-sm text-neutral-500">Searching...</p>}
+                                {query.trim().length >= 2 && !searchLoading && searchResults.length === 0 && <p className="px-3 py-3 text-sm text-neutral-500">No core results found.</p>}
+                                {query.trim().length >= 2 && !searchLoading && searchResults.map((item) => (
+                                    <div key={item.id} className="border-b border-neutral-900 last:border-0">
+                                        <Link href={item.href} className="block px-3 py-2 hover:bg-neutral-900" onClick={() => setSearchOpen(false)}>
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-sm font-medium text-neutral-100">{item.label}</p>
+                                                    <p className="mt-0.5 truncate text-xs text-neutral-500">{item.description}</p>
+                                                </div>
+                                                <span className="shrink-0 rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500">{item.type}</span>
+                                            </div>
+                                        </Link>
+                                        {item.hubHref && item.hubHref !== item.href && (
+                                            <Link href={item.hubHref} className="block px-3 pb-2 text-xs text-neutral-500 hover:text-neutral-200" onClick={() => setSearchOpen(false)}>
+                                                View in Relationship Hub
+                                            </Link>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex justify-end gap-1.5">
-                    <div ref={searchRef} className="relative">
+                    <div ref={mobileSearchRef} className="relative md:hidden">
                         <button data-icon-button type="button" onClick={openSearch} aria-label="Search Betelgeze" aria-expanded={searchOpen} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <SearchIcon />
                         </button>
@@ -303,7 +363,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                                 <div className="border-b border-neutral-800 p-3">
                                     <label className="relative block">
                                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
-                                        <input ref={searchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-10 text-base text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10 md:h-9 md:text-sm" />
+                                        <input ref={mobileSearchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-10 text-base text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10 md:h-9 md:text-sm" />
                                     </label>
                                 </div>
                                 <div className="max-h-[calc(72vh-4.25rem)] overflow-y-auto sm:max-h-[27.75rem]">
@@ -337,7 +397,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
             </div>
         </header>
 
-        <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950 transition-transform duration-200 ease-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950 ${sidebarTransitionEnabled ? "transition-transform duration-200 ease-out" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex h-full flex-col gap-2 px-4 py-5 md:gap-1 md:px-3 md:py-4">
                 {sidebarItems.map((item) => {
                     const active = pathname === item.href || pathname.startsWith(`${item.href}/`) || (item.href === `/${workspace.slug}` && pathname === "/admin")

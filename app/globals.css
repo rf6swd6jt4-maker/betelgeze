@@ -38,7 +38,7 @@ body {
     width: 100%;
   }
 
-  body main {
+  body[data-workspace-sidebar-transition="true"] main {
     transition: margin-left 200ms ease, width 200ms ease;
   }
 }

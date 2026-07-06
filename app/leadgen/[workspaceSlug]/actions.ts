@@ -11,6 +11,9 @@ import { relationshipHubHref } from "@/lib/relationships"
 type EnabledIcpValueRow = { value: string }
 
 function refreshPolls(slug: string) {
+    revalidatePath(`/${slug}/leadgen`)
+    revalidatePath(`/${slug}/leadgen/polls`)
+    revalidatePath(`/${slug}/leadgen/new`)
     revalidatePath(`/leadgen/${slug}`)
     revalidatePath(`/leadgen/${slug}/polls`)
     revalidatePath(`/leadgen/${slug}/new`)
@@ -88,7 +91,7 @@ export async function createLeadgenPoll(slug: string) {
         }
     }
     refreshPolls(slug)
-    redirect(`/leadgen/${slug}/polls`)
+    redirect(`/${slug}/leadgen/polls`)
 }
 
 export async function cancelLeadgenPoll(slug: string, pollId: string) {
@@ -131,6 +134,7 @@ export async function removeLeadgenPoll(slug: string, pollId: string) {
 export async function removeLeadgenCompany(slug: string, companyId: string) {
     const { workspace } = await requireWorkspace(slug, "admin")
     await supabaseAdmin.from("leadgen_companies").delete().eq("id", companyId).eq("workspace_id", workspace.id)
+    revalidatePath(`/${slug}/leadgen`)
     revalidatePath(`/leadgen/${slug}`)
 }
 
@@ -155,7 +159,7 @@ export async function promoteLeadgenCompanyToRelationship(slug: string, companyI
         .maybeSingle()
 
     if (!company || company.qualification_status !== "qualified" || (!company.owner_name && !company.owner_phone)) {
-        redirect(`/leadgen/${slug}?relationshipError=not-ready`)
+        redirect(`/${slug}/leadgen?relationshipError=not-ready`)
     }
 
     const { data: relationship, error } = await supabaseAdmin
@@ -180,10 +184,12 @@ export async function promoteLeadgenCompanyToRelationship(slug: string, companyI
         .single()
 
     if (error || !relationship) {
-        redirect(`/leadgen/${slug}?relationshipError=schema`)
+        redirect(`/${slug}/leadgen?relationshipError=schema`)
     }
 
+    revalidatePath(`/${slug}/leadgen`)
     revalidatePath(`/leadgen/${slug}`)
+    revalidatePath(`/${slug}/relationships`)
     revalidatePath(`/dashboard/${slug}/relationships`)
     redirect(relationshipHubHref(workspace.slug, relationship.id))
 }

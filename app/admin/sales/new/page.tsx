@@ -34,7 +34,7 @@ export default async function NewSalePage({ searchParams }: PageProps) {
     return (
         <main className="min-h-screen bg-neutral-950 px-6 pb-10 text-white">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
-            <div className="mx-auto max-w-2xl">
+            <div className="mx-auto max-w-2xl pt-5">
                 <h1 className="text-3xl font-semibold tracking-tight">
                     Create Stripe invoice
                 </h1>

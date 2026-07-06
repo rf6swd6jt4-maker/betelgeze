@@ -105,7 +105,7 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
 
     return <main className="min-h-screen bg-neutral-950 px-4 pb-5 text-white sm:px-8 sm:pb-8">
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
-        <div className="mx-auto max-w-5xl">
+        <div className="mx-auto max-w-5xl pt-5">
             <section className="py-6 sm:py-10">
                 <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Confirm candidate investigation</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">This poll will seed new businesses from the current ICP, then investigate each candidate across active free/public adapters. Sources that are validation-only, bulk-refresh, or endpoint-specific are shown here but will not pretend to run.</p>

@@ -173,7 +173,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                 </div>)}
             </div>
 
-            <section className="mt-5 space-y-3 md:space-y-0 md:rounded-2xl md:border md:border-neutral-800 md:bg-black">
+            <section className="mt-5 space-y-3 2xl:space-y-0 2xl:rounded-2xl 2xl:border 2xl:border-neutral-800 2xl:bg-black">
                 {polls.length ? polls.map((poll) => {
                     const meta = statusMeta(poll.status)
                     const live = ["queued", "running"].includes(poll.status)
@@ -197,8 +197,8 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                         live ? { label: "Cancel", action: cancelLeadgenPoll.bind(null, workspace.slug, poll.id), danger: true, confirmMessage: "Cancel this running poll?" } : {},
                         { label: "Remove", action: removeLeadgenPoll.bind(null, workspace.slug, poll.id), danger: true },
                     ]
-                    return <div key={poll.id} className="md:border-b md:border-neutral-900 md:last:border-0">
-                        <MobileCardActionSurface actions={pollActions} className={`rounded-2xl border border-neutral-800 bg-black md:hidden ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>
+                    return <div key={poll.id} className="2xl:border-b 2xl:border-neutral-900 2xl:last:border-0">
+                        <MobileCardActionSurface actions={pollActions} className={`rounded-2xl border border-neutral-800 bg-black 2xl:hidden ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>
                             <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
                                 <Link href={pollHref} className="min-w-0 truncate text-base font-medium text-neutral-100 underline decoration-neutral-500 underline-offset-4 hover:text-white">
                                     {sourceNames(poll.source_snapshot, poll.source_count)} poll
@@ -216,7 +216,7 @@ export default async function LeadgenPollsPage({ params }: PageProps) {
                                 </div>
                             </div>
                         </MobileCardActionSurface>
-                        <div className={`hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(190px,1fr)_94px_170px_160px_130px_100px_120px_32px] md:items-center ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>
+                        <div className={`hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(190px,1fr)_94px_170px_160px_130px_100px_120px_32px] 2xl:items-center ${poll.status === "failed" ? "bg-red-950/[0.08]" : ""}`}>
                         <div className="min-w-0">
                             <p className="truncate text-base font-medium text-neutral-100">{sourceNames(poll.source_snapshot, poll.source_count)} poll</p>
                         </div>

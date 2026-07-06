@@ -91,7 +91,7 @@ export default async function LeadgenWorkspacePage({ params, searchParams }: Pag
                 </div>)}
             </div>
 
-            <section className="mt-5 space-y-3 md:space-y-0 md:rounded-2xl md:border md:border-neutral-800 md:bg-black">
+            <section className="mt-5 space-y-3 2xl:space-y-0 2xl:rounded-2xl 2xl:border 2xl:border-neutral-800 2xl:bg-black">
                 {companies.length ? companies.map((company) => {
                     const sourceUrl = company.website_url ?? company.profile_url ?? null
                     const bestPhone = company.owner_phone
@@ -109,8 +109,8 @@ export default async function LeadgenWorkspacePage({ params, searchParams }: Pag
                         { label: "Copy lead details", copyText: copyLine },
                         { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },
                     ]
-                    return <div key={company.id} className="md:border-b md:border-neutral-900 md:last:border-0">
-                        <MobileCardActionSurface actions={leadActions} className="rounded-2xl border border-neutral-800 bg-black md:hidden">
+                    return <div key={company.id} className="2xl:border-b 2xl:border-neutral-900 2xl:last:border-0">
+                        <MobileCardActionSurface actions={leadActions} className="rounded-2xl border border-neutral-800 bg-black 2xl:hidden">
                             <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
                                 <p className="min-w-0 flex-1 truncate text-base font-medium text-neutral-100">{titleLine}</p>
                                 {phoneStatus}
@@ -122,7 +122,7 @@ export default async function LeadgenWorkspacePage({ params, searchParams }: Pag
                                 <p className="text-sm whitespace-nowrap text-neutral-500">{formatRelativeTime(company.created_at)}</p>
                             </div>
                         </MobileCardActionSurface>
-                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(210px,1.1fr)_150px_minmax(190px,0.9fr)_130px_110px_110px_120px_120px_32px] md:items-center">
+                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(210px,1.1fr)_150px_minmax(190px,0.9fr)_130px_110px_110px_120px_120px_32px] 2xl:items-center">
                         <div className="min-w-0">
                             <p className="truncate text-base font-medium text-neutral-100">{titleLine}</p>
                         </div>

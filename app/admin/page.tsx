@@ -308,7 +308,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
                 <ListToolbar sortOptions={[{ value: "created-new", label: "Date added: newest" }, { value: "created-old", label: "Date added: oldest" }, { value: "name-az", label: "Client name: A–Z" }, { value: "progress-low", label: "Progress: low to high" }, { value: "progress-high", label: "Progress: high to low" }, { value: "activity-recent", label: "Last activity: recent" }]} filterGroups={[{ label: "Status", options: [{ value: "active", label: "Active" }, { value: "not-started", label: "Not started" }, { value: "complete", label: "Complete" }, { value: "stuck", label: "Stuck" }, { value: "test", label: "Test client" }] }, { label: "Added by", options: toolbarCreators }, { label: "Services", options: toolbarServices }]} />
 
-                <section className="mt-5 space-y-3 md:space-y-0 md:rounded-2xl md:border md:border-neutral-800 md:bg-black">
+                <section className="mt-5 space-y-3 2xl:space-y-0 2xl:rounded-2xl 2xl:border 2xl:border-neutral-800 2xl:bg-black">
                     {sortedClientSummaries.map(({ client, assignedServiceKeys, percentage, lastActivity, stuck, isFilterMatch }) => {
                         const creator = client.created_by ? clientCreatorById.get(client.created_by) : null
                         const creatorAvatar = creator?.avatar_path ? clientCreatorAvatarUrls.get(creator.avatar_path) : null
@@ -330,8 +330,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                             { label: "Open client", href: `/admin/client/${client.id}` },
                             { label: "Remove", action: removeClientFromList.bind(null, client.id), danger: true, confirmMessage: "Remove this client from the dashboard? This archives the client instead of hard-deleting their records." },
                         ]
-                        return <div key={client.id} className={`${isFilterMatch ? "" : "opacity-35"} md:border-b md:border-neutral-900 md:last:border-0`}>
-                            <MobileCardActionSurface actions={clientActions} className={`rounded-2xl border border-neutral-800 bg-black md:hidden ${stuck ? "bg-red-950/[0.08]" : ""}`}>
+                        return <div key={client.id} className={`${isFilterMatch ? "" : "opacity-35"} 2xl:border-b 2xl:border-neutral-900 2xl:last:border-0`}>
+                            <MobileCardActionSurface actions={clientActions} className={`rounded-2xl border border-neutral-800 bg-black 2xl:hidden ${stuck ? "bg-red-950/[0.08]" : ""}`}>
                                 <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
                                     <div className="flex min-w-0 items-center gap-2">
                                         <Link href={`/admin/client/${client.id}`} className="truncate text-base font-medium text-neutral-100 underline underline-offset-4">{client.name ?? "Unnamed client"}</Link>
@@ -357,7 +357,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                                     <ListCreatorAvatar src={creatorAvatar} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
                                 </div>
                             </MobileCardActionSurface>
-                            <div className={`hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(170px,0.9fr)_76px_120px_145px_minmax(190px,1.05fr)_145px_105px_120px_32px] md:items-center ${stuck ? "bg-red-950/[0.08]" : ""}`}>
+                            <div className={`hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(170px,0.9fr)_76px_120px_145px_minmax(190px,1.05fr)_145px_105px_120px_32px] 2xl:items-center ${stuck ? "bg-red-950/[0.08]" : ""}`}>
                             <div className="min-w-0">
                                 <Link href={`/admin/client/${client.id}`} className="truncate text-base font-medium text-neutral-100 underline-offset-4 hover:underline">{client.name ?? "Unnamed client"}</Link>
                             </div>

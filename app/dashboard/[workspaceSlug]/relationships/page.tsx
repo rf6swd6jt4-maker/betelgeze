@@ -43,7 +43,7 @@ export default async function RelationshipsPage({ params }: PageProps) {
     return (
         <main className="min-h-screen bg-neutral-950 px-4 pb-7 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
-            <div className="mx-auto max-w-7xl">
+            <div className="mx-auto max-w-7xl pt-5">
                 <header className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 sm:flex-row sm:items-end">
                     <div>
                         <h1 className="text-3xl font-semibold tracking-tight">

@@ -264,7 +264,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                         Apply the Stripe sales automation migration to show invoice automation status here.
                     </p>
                 ) : sales.length > 0 ? (
-                    <section className="mt-5 space-y-3 md:space-y-0 md:rounded-2xl md:border md:border-neutral-800 md:bg-black">
+                    <section className="mt-5 space-y-3 2xl:space-y-0 2xl:rounded-2xl 2xl:border 2xl:border-neutral-800 2xl:bg-black">
                         {sortedSales.map((sale) => {
                             const manualMigration = isManualMigration(sale.raw_payload)
                             const diagnostic = getAutomationDiagnostic(sale.raw_payload)
@@ -289,8 +289,8 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                                 diagnostic ? { label: "Open console", href: `#invoice-console-${sale.id}` } : {},
                                 { label: "Remove", action: removeInvoice.bind(null, sale.id), danger: true, confirmMessage: "Remove this invoice from Betelgeze? Stripe records will remain in Stripe." },
                             ]
-                            return <div key={sale.id} className={`${sale.isFilterMatch ? "" : "opacity-35"} md:border-b md:border-neutral-900 md:last:border-0`}>
-                                <MobileCardActionSurface actions={invoiceActions} className={`rounded-2xl border border-neutral-800 bg-black md:hidden ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
+                            return <div key={sale.id} className={`${sale.isFilterMatch ? "" : "opacity-35"} 2xl:border-b 2xl:border-neutral-900 2xl:last:border-0`}>
+                                <MobileCardActionSurface actions={invoiceActions} className={`rounded-2xl border border-neutral-800 bg-black 2xl:hidden ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
                                     <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
                                         {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="min-w-0 truncate text-base font-medium text-neutral-100 underline underline-offset-4">{sale.client_name}</Link> : <p className="min-w-0 truncate text-base font-medium text-neutral-100">{sale.client_name}</p>}
                                         <p className="shrink-0 whitespace-nowrap text-sm font-medium text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
@@ -305,7 +305,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                                         <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
                                     </div>
                                 </MobileCardActionSurface>
-                                <div className={`hidden min-h-14 gap-3 px-4 py-2.5 md:grid md:grid-cols-[minmax(180px,1fr)_92px_120px_165px_220px_100px_120px_32px] md:items-center ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
+                                <div className={`hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(180px,1fr)_92px_120px_165px_220px_100px_120px_32px] 2xl:items-center ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
                                 <div className="min-w-0">
                                     <p className="truncate text-base font-medium text-neutral-100">
                                         {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="underline-offset-4 hover:underline">{sale.client_name}</Link> : sale.client_name}

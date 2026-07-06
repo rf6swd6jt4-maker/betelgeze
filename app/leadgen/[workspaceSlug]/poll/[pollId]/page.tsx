@@ -241,7 +241,7 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
     return <main className="min-h-screen bg-neutral-950 px-4 pb-5 text-white sm:px-8 sm:pb-8">
         <PollLiveRefresh enabled={live} />
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-6xl pt-5">
             <section className="py-6 sm:py-10">
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>

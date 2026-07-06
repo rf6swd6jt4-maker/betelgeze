@@ -41,15 +41,6 @@ body {
   body main {
     transition: margin-left 200ms ease, width 200ms ease;
   }
-
-  header[data-workspace-topbar] {
-    transition: left 200ms ease, width 200ms ease;
-  }
-
-  body[data-workspace-sidebar-open="true"] header[data-workspace-topbar] {
-    left: var(--workspace-sidebar-width);
-    width: calc(100% - var(--workspace-sidebar-width));
-  }
 }
 
 @keyframes betelgeze-loader {

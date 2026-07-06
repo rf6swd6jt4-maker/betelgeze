@@ -247,7 +247,7 @@ export default async function ClientDetailPage({
     return (
         <main className="min-h-screen bg-neutral-950 px-4 pb-6 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
-            <div className="mx-auto max-w-7xl">
+            <div className="mx-auto max-w-7xl pt-5">
                 <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight">

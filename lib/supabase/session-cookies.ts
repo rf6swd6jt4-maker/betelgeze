@@ -1,30 +1,56 @@
 export const SESSION_COOKIE_NAME = "betelgeze-auth"
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
 
+function configuredCookieDomain(value: string | undefined) {
+    const domain = value?.trim()
+    return domain || undefined
+}
+
+function defaultSessionCookieDomain() {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
+    if (siteUrl) {
+        try {
+            const hostname = new URL(siteUrl).hostname.toLowerCase()
+            if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return undefined
+            if (hostname === "betelgeze.com" || hostname.endsWith(".betelgeze.com")) return ".betelgeze.com"
+            return undefined
+        } catch {
+            return ".betelgeze.com"
+        }
+    }
+
+    return ".betelgeze.com"
+}
+
 export function sessionCookieDomain() {
-    return process.env.SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com"
+    return configuredCookieDomain(process.env.SUPABASE_SESSION_DOMAIN) ?? defaultSessionCookieDomain()
 }
 
 export function browserSessionCookieDomain() {
-    return process.env.NEXT_PUBLIC_SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com"
+    return configuredCookieDomain(process.env.NEXT_PUBLIC_SUPABASE_SESSION_DOMAIN) ?? defaultSessionCookieDomain()
 }
 
-export function sessionCookieOptions(domain: string) {
-    return {
+export function sessionCookieOptions(domain?: string) {
+    const options = {
         name: SESSION_COOKIE_NAME,
-        domain,
         path: "/",
         sameSite: "lax" as const,
         maxAge: SESSION_MAX_AGE_SECONDS,
+        secure: process.env.NODE_ENV === "production",
     }
+
+    return domain ? { ...options, domain } : options
 }
 
 type SameSite = boolean | "lax" | "strict" | "none"
 
-export function persistentSessionOptions<T extends { maxAge?: number; domain?: string; path?: string; sameSite?: SameSite }>(options: T, domain: string) {
+export function persistentSessionOptions<T extends { maxAge?: number; domain?: string; path?: string; sameSite?: SameSite; secure?: boolean }>(options: T, domain?: string) {
+    const rest = { ...options }
+    delete rest.domain
+
     return {
-        ...options,
-        domain,
+        ...rest,
+        ...(domain ? { domain } : {}),
         path: options.path ?? "/",
         sameSite: options.sameSite ?? "lax" as const,
         maxAge: options.maxAge && options.maxAge > 0 ? Math.min(options.maxAge, SESSION_MAX_AGE_SECONDS) : options.maxAge,

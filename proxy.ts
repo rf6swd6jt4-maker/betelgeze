@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { clearLegacyHostOnlyAuthCookies } from "@/lib/supabase/legacy-cookies"
 import { persistentSessionOptions, sessionCookieDomain, sessionCookieOptions } from "@/lib/supabase/session-cookies"
 
 async function refreshSession(request: NextRequest) {
@@ -47,6 +48,12 @@ function isPlatformHost(domain: string) {
     if (["betelgeze.com", "www.betelgeze.com", APP_HOST, DASHBOARD_HOST, ONBOARDING_HOST, AUTH_HOST, LEADGEN_HOST].includes(domain)) return true
     if (!process.env.NEXT_PUBLIC_SITE_URL) return false
     return new URL(process.env.NEXT_PUBLIC_SITE_URL).hostname.toLowerCase() === domain
+}
+
+function shouldRefreshSessionForDomain(domain: string | null) {
+    if (!domain) return false
+    if (isPlatformHost(domain)) return true
+    return domain === "localhost" || domain === "127.0.0.1" || domain === "::1"
 }
 
 function requestCurrentPath(request: NextRequest) {
@@ -99,6 +106,21 @@ async function getCustomDomainWorkspace(domain: string) {
 export async function proxy(request: NextRequest) {
     const path = request.nextUrl.pathname
     const domain = requestHostname(request)
+    let sessionResponsePromise: Promise<NextResponse> | null = null
+
+    async function refreshedSessionResponse() {
+        if (!shouldRefreshSessionForDomain(domain)) {
+            return NextResponse.next({ request: { headers: requestHeadersWithCurrentPath(request) } })
+        }
+        sessionResponsePromise ??= refreshSession(request)
+        return sessionResponsePromise
+    }
+
+    async function withSession(response: NextResponse) {
+        const responseWithSession = carryCookies(response, await refreshedSessionResponse())
+        clearLegacyHostOnlyAuthCookies(request, responseWithSession)
+        return responseWithSession
+    }
 
     const isCentralAuthRoute = AUTH_PATHS.some((authPath) => path === authPath || path.startsWith(`${authPath}/`))
     const isApexAccountRoute = APEX_ACCOUNT_PATHS.some((accountPath) => path === accountPath || path.startsWith(`${accountPath}/`))
@@ -106,7 +128,7 @@ export async function proxy(request: NextRequest) {
     if (domain && domain !== "betelgeze.com" && domain !== "www.betelgeze.com" && isApexAccountRoute) {
         const destination = new URL(`https://betelgeze.com${path}`)
         destination.search = request.nextUrl.search
-        return NextResponse.redirect(destination)
+        return withSession(NextResponse.redirect(destination))
     }
 
     if ((domain === "betelgeze.com" || domain === "www.betelgeze.com") && path === "/" && (request.nextUrl.searchParams.has("code") || request.nextUrl.searchParams.has("token_hash"))) {
@@ -114,18 +136,18 @@ export async function proxy(request: NextRequest) {
         request.nextUrl.searchParams.forEach((value, key) => destination.searchParams.set(key, value))
         if (!destination.searchParams.has("next")) destination.searchParams.set("next", "/confirmed")
         destination.searchParams.set("confirmed_redirect", "1")
-        return NextResponse.redirect(destination)
+        return withSession(NextResponse.redirect(destination))
     }
 
     if (domain === DASHBOARD_HOST && (path === "/login" || path === "/mfa")) {
         const next = appReturnUrl(domain, request.nextUrl.searchParams.get("next"))
-        return NextResponse.redirect(new URL(`${path}?next=${encodeURIComponent(next)}`, `https://${AUTH_HOST}`))
+        return withSession(NextResponse.redirect(new URL(`${path}?next=${encodeURIComponent(next)}`, `https://${AUTH_HOST}`)))
     }
 
     if (domain === DASHBOARD_HOST && isCentralAuthRoute) {
         const destination = new URL(`https://${AUTH_HOST}${path}`)
         destination.search = request.nextUrl.search
-        return NextResponse.redirect(destination)
+        return withSession(NextResponse.redirect(destination))
     }
 
     // Keep the existing route tree intact while presenting clean product URLs.
@@ -136,10 +158,10 @@ export async function proxy(request: NextRequest) {
             const headers = new Headers(request.headers)
             const workspaceSlug = path.match(/^\/leadgen\/([a-z0-9][a-z0-9-]*)/i)?.[1]
             if (workspaceSlug) headers.set("x-betelgeze-workspace-slug", workspaceSlug.toLowerCase())
-            return withRewrite(request, path, headers)
+            return withSession(withRewrite(request, path, headers))
         }
-        if (path === "/dashboard") return withRedirect(request, "/")
-        if (path.startsWith("/dashboard/")) return withRedirect(request, path.slice("/dashboard".length))
+        if (path === "/dashboard") return withSession(withRedirect(request, "/"))
+        if (path.startsWith("/dashboard/")) return withSession(withRedirect(request, path.slice("/dashboard".length)))
 
         // The mature dashboard is implemented under /admin. Translate both
         // old internal links and the clean public workspace URLs before a
@@ -151,7 +173,7 @@ export async function proxy(request: NextRequest) {
                 ? new URL(referer).pathname.match(/^\/([a-z0-9][a-z0-9-]*)/i)?.[1] ?? "scaylup"
                 : "scaylup"
             const suffix = (legacyAdminPath[1] ?? "").replace(/^new$/, "clients/new").replace(/^client\/(.+)$/, "clients/$1")
-            return withRedirect(request, `/${workspaceSlug}${suffix ? `/${suffix}` : ""}`)
+            return withSession(withRedirect(request, `/${workspaceSlug}${suffix ? `/${suffix}` : ""}`))
         }
 
         const publicDashboardPaths = [
@@ -167,26 +189,26 @@ export async function proxy(request: NextRequest) {
             const headers = new Headers(request.headers)
             headers.set("x-betelgeze-workspace-slug", workspaceSlug)
             if (suffix === "settings" || suffix === "users" || suffix === "work" || suffix === "relationships" || suffix.startsWith("relationships/")) {
-                return withRewrite(request, `/dashboard/${workspaceSlug}/${suffix}`, headers)
+                return withSession(withRewrite(request, `/dashboard/${workspaceSlug}/${suffix}`, headers))
             }
             if (suffix === "leadgen" || suffix.startsWith("leadgen/")) {
                 const leadgenSuffix = suffix.replace(/^leadgen\/?/, "")
-                return withRewrite(request, `/leadgen/${workspaceSlug}${leadgenSuffix ? `/${leadgenSuffix}` : ""}`, headers)
+                return withSession(withRewrite(request, `/leadgen/${workspaceSlug}${leadgenSuffix ? `/${leadgenSuffix}` : ""}`, headers))
             }
             const adminSuffix = suffix.replace(/^clients\/new$/, "new")
                 .replace(/^clients\/(.+)$/, "client/$1")
-            return withRewrite(request, `/admin${adminSuffix ? `/${adminSuffix}` : ""}`, headers)
+            return withSession(withRewrite(request, `/admin${adminSuffix ? `/${adminSuffix}` : ""}`, headers))
         }
-        if (path === "/") return withRewrite(request, "/dashboard")
+        if (path === "/") return withSession(withRewrite(request, "/dashboard"))
     }
 
     if (domain === AUTH_HOST) {
-        if (path === "/") return withRewrite(request, "/login")
+        if (path === "/") return withSession(withRewrite(request, "/login"))
         const isAuthPath = AUTH_PATHS.some((authPath) => path === authPath || path.startsWith(`${authPath}/`))
         if (!isAuthPath) {
             const destination = new URL(`https://${DASHBOARD_HOST}${path}`)
             destination.search = request.nextUrl.search
-            return NextResponse.redirect(destination)
+            return withSession(NextResponse.redirect(destination))
         }
     }
 
@@ -197,44 +219,44 @@ export async function proxy(request: NextRequest) {
         if (isCentralAuthRoute) {
             const destination = new URL(`https://${AUTH_HOST}${path}`)
             destination.search = request.nextUrl.search
-            return NextResponse.redirect(destination)
+            return withSession(NextResponse.redirect(destination))
         }
         if (path === "/leadgen" || path.startsWith("/leadgen/")) {
             const headers = new Headers(request.headers)
             const workspaceSlug = path.match(/^\/leadgen\/([a-z0-9][a-z0-9-]*)/i)?.[1]
             if (workspaceSlug) headers.set("x-betelgeze-workspace-slug", workspaceSlug.toLowerCase())
-            return withRewrite(request, path, headers)
+            return withSession(withRewrite(request, path, headers))
         }
         if (path === "/dashboard" || path.startsWith("/dashboard/")) {
             const destination = new URL(`https://${DASHBOARD_HOST}${path === "/dashboard" ? "/" : path.slice("/dashboard".length)}`)
             destination.search = request.nextUrl.search
-            return NextResponse.redirect(destination)
+            return withSession(NextResponse.redirect(destination))
         }
-        if (path === "/" || path === "/leadgen") return withRewrite(request, "/leadgen")
+        if (path === "/" || path === "/leadgen") return withSession(withRewrite(request, "/leadgen"))
         const workspacePath = path.match(/^\/([a-z0-9][a-z0-9-]*)(?:\/(.*))?$/i)
         if (workspacePath) {
             const headers = new Headers(request.headers)
             headers.set("x-betelgeze-workspace-slug", workspacePath[1].toLowerCase())
             const suffix = workspacePath[2] ? `/${workspacePath[2].replace(/\/$/, "")}` : ""
-            return withRewrite(request, `/leadgen/${workspacePath[1].toLowerCase()}${suffix}`, headers)
+            return withSession(withRewrite(request, `/leadgen/${workspacePath[1].toLowerCase()}${suffix}`, headers))
         }
     }
 
     if ((domain === "betelgeze.com" || domain === "www.betelgeze.com") && isCentralAuthRoute) {
         const destination = new URL(`https://${AUTH_HOST}${path}`)
         destination.search = request.nextUrl.search
-        return NextResponse.redirect(destination)
+        return withSession(NextResponse.redirect(destination))
     }
 
     if (domain === ONBOARDING_HOST) {
         const canonicalOnboarding = path.match(/^\/onboarding\/[a-z0-9][a-z0-9-]*\/([a-f0-9]{64})$/i)
-        if (canonicalOnboarding) return withRedirect(request, `/${canonicalOnboarding[1]}`)
+        if (canonicalOnboarding) return withSession(withRedirect(request, `/${canonicalOnboarding[1]}`))
 
         const token = path.match(/^\/([a-f0-9]{64})$/i)
         if (token) {
             const headers = new Headers(request.headers)
             headers.set("x-betelgeze-custom-onboarding-domain", domain)
-            return withRewrite(request, `/session/${token[1]}`, headers)
+            return withSession(withRewrite(request, `/session/${token[1]}`, headers))
         }
     }
 
@@ -255,7 +277,8 @@ export async function proxy(request: NextRequest) {
         }
     }
 
-    const sessionResponse = await refreshSession(request)
+    const refreshedResponse = await refreshedSessionResponse()
+    clearLegacyHostOnlyAuthCookies(request, refreshedResponse)
     const legacyMatch = path.match(/^\/admin(?:\/(.*))?$/)
     if (legacyMatch) {
         const referer = request.headers.get("referer")
@@ -263,7 +286,7 @@ export async function proxy(request: NextRequest) {
         const suffix = (legacyMatch[1] ?? "").replace(/^new$/, "clients/new").replace(/^client\/(.+)$/, "clients/$1")
         const url = request.nextUrl.clone()
         url.pathname = `/dashboard/${workspaceSlug}${suffix ? `/${suffix}` : ""}`
-        return carryCookies(NextResponse.redirect(url), sessionResponse)
+        return carryCookies(NextResponse.redirect(url), refreshedResponse)
     }
 
     const dashboardMatch = path.match(/^\/dashboard\/([^/]+)(?:\/(.*))?$/)
@@ -276,17 +299,17 @@ export async function proxy(request: NextRequest) {
             const url = request.nextUrl.clone()
             const legacyDestination = suffix.replace(/^clients\/new$/, "new").replace(/^clients\/(.+)$/, "client/$1")
             url.pathname = `/admin${legacyDestination ? `/${legacyDestination}` : ""}`
-            return carryCookies(NextResponse.rewrite(url, { request: { headers } }), sessionResponse)
+            return carryCookies(NextResponse.rewrite(url, { request: { headers } }), refreshedResponse)
         }
     }
 
     const onboarding = path.match(/^\/onboarding\/([a-z0-9][a-z0-9-]*)\/([a-f0-9]+)$/i)
-    if (!onboarding) return sessionResponse
+    if (!onboarding) return refreshedResponse
     const headers = new Headers(request.headers)
     headers.set("x-betelgeze-workspace-slug", onboarding[1].toLowerCase())
     const url = request.nextUrl.clone()
     url.pathname = `/session/${onboarding[2]}`
-    return carryCookies(NextResponse.rewrite(url, { request: { headers } }), sessionResponse)
+    return carryCookies(NextResponse.rewrite(url, { request: { headers } }), refreshedResponse)
 }
 
 export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"] }

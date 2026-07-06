@@ -44,7 +44,7 @@ export function looksLikeGuardedOrAppShell(text: string) {
 
 export function publicRecordPollUnsafeReason(sourceKey: string, label: string, metadata: Record<string, unknown> | null | undefined) {
     const adapter = publicRecordAdapter(metadata)
-    if (fragileHtmlPublicRecordSources.has(sourceKey) && metadata?.poll_safe_html !== true) {
+    if (fragileHtmlPublicRecordSources.has(sourceKey) && adapter === guardedHtmlAdapter && metadata?.poll_safe_html !== true) {
         return `${label} is a guarded or app-shell public-record source. It needs a stable API, data-download index, or source-specific endpoint before poll-time activation.`
     }
     if (adapter === guardedHtmlAdapter && metadata?.poll_safe_html !== true) {

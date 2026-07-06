@@ -24,6 +24,7 @@ import {
     type PublicRecordFailureClassification,
     type PublicRecordSourceHealthStatus,
 } from "@/lib/leadgen/public-record-source-safety"
+import { normaliseSunbizIndexSearchText } from "@/lib/leadgen/sunbiz-bulk-index"
 import type { PollStageKey } from "@/lib/leadgen/staged-poll"
 import { groupByKey, runWithConcurrency } from "@/lib/leadgen/task-execution"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -508,6 +509,38 @@ async function fetchSocrataRows(metadata: Record<string, unknown>, searchTerm: s
     } finally {
         clearTimeout(timeout)
     }
+}
+
+async function fetchSunbizOwnerIndexRows(source: SourceCatalog, searchTerm: string) {
+    const searchText = normaliseSunbizIndexSearchText(searchTerm)
+    if (!searchText) return []
+    const limit = Math.min(50, Math.max(1, Number(source.metadata?.query_limit) || 15))
+    const { data, error } = await supabaseAdmin
+        .from("leadgen_sunbiz_owner_index")
+        .select("record_id, business_name, status, record_type, person_name, person_role, person_source_field, person_type, address, raw_payload")
+        .eq("source_key", source.source_key)
+        .ilike("search_text", `%${searchText}%`)
+        .limit(limit)
+    if (error) throw new Error(`Could not query Sunbiz owner index: ${error.message}`)
+    return (data ?? []).map((row) => {
+        const address = asRecord(row.address)
+        return {
+            business_name: asString(row.business_name),
+            owner_name: asString(row.person_name),
+            person_name: asString(row.person_name),
+            person_role: asString(row.person_role),
+            person_source_field: asString(row.person_source_field),
+            person_type: asString(row.person_type),
+            record_id: asString(row.record_id),
+            status: asString(row.status),
+            record_type: asString(row.record_type),
+            address: asString(address.street),
+            city: asString(address.city),
+            state: asString(address.state),
+            postcode: asString(address.postcode),
+            raw_payload: asRecord(row.raw_payload),
+        }
+    })
 }
 
 function parseFmcsaLabel(html: string, label: string) {
@@ -1370,6 +1403,7 @@ async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, com
     if (adapter === "nppes_registry") return fetchNppesRows(searchTerm, company)
     if (adapter === "usaspending_awards") return fetchUsaspendingRows(searchTerm)
     if (adapter === "texas_comptroller_franchise_tax") return fetchTexasComptrollerRows(searchTerm, source.metadata ?? {})
+    if (adapter === "sunbiz_owner_index") return fetchSunbizOwnerIndexRows(source, searchTerm)
     if (adapter === "fmcsa_company_census") return fetchFmcsaCensusRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "texas_agriculture_spcs_csv") return fetchTexasAgriculturePestRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "tceq_central_registry") return fetchTceqRows(searchTerm, source.metadata ?? {}, company)
@@ -1452,6 +1486,7 @@ const BROAD_TEXT_SEARCH_ADAPTERS = new Set([
     "socrata_public_records",
     "arcgis_feature_service",
     "guarded_html_search",
+    "sunbiz_owner_index",
 ])
 
 function sourceAdapter(source: SourceCatalog) {

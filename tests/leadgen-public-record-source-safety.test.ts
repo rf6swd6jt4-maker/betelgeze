@@ -1,26 +1,29 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { executableLeadgenSources, type LeadgenSourceKey } from "../lib/leadgen/sources.ts"
 import {
     fragileHtmlPublicRecordSources,
     looksLikeGuardedOrAppShell,
     publicRecordPollUnsafeReason,
 } from "../lib/leadgen/public-record-source-safety.ts"
 
-test("fragile guarded public-record sources are not runnable leadgen sources", () => {
-    for (const sourceKey of fragileHtmlPublicRecordSources) {
-        assert.equal(executableLeadgenSources.has(sourceKey as LeadgenSourceKey), false, sourceKey)
-    }
-})
-
-test("fragile source keys are unsafe even when stale metadata still says active", () => {
+test("fragile source keys require explicit poll-safe metadata before poll-time activation", () => {
     const reason = publicRecordPollUnsafeReason("registry.fl.sunbiz", "Florida Sunbiz officers", {
         adapter: "guarded_html_search",
         search_url: "https://search.sunbiz.org/Inquiry/CorporationSearch/SearchResults/EntityName/{query}/Page1",
     })
 
     assert.match(reason ?? "", /stable API, data-download index, or source-specific endpoint/)
+})
+
+test("fragile source keys can opt in to guarded poll attempts explicitly", () => {
+    for (const sourceKey of fragileHtmlPublicRecordSources) {
+        assert.equal(publicRecordPollUnsafeReason(sourceKey, sourceKey, {
+            adapter: "guarded_html_search",
+            poll_safe_html: true,
+            search_url: "https://example.test/search?q={query}",
+        }), null, sourceKey)
+    }
 })
 
 test("generic guarded html adapters are not poll safe by default", () => {

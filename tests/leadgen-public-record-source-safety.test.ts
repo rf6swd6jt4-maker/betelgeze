@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+    classifyPublicRecordFailure,
     fragileHtmlPublicRecordSources,
     looksLikeGuardedOrAppShell,
     publicRecordPollUnsafeReason,
@@ -49,4 +50,28 @@ test("detects challenge pages and client app shells before parsing rows", () => 
     assert.equal(looksLikeGuardedOrAppShell("<body><app-root></app-root><script src=\"https://www.google.com/recaptcha/api.js\"></script></body>"), true)
     assert.equal(looksLikeGuardedOrAppShell("<div id=\"auraLoadingBox\"><span>Loading</span></div><div id=\"auraErrorMask\"></div>"), true)
     assert.equal(looksLikeGuardedOrAppShell("<table><tr><td>Austin Flooring Pros LLC</td><td>Active</td></tr></table>"), false)
+})
+
+test("classifies source-scoped public-record failures for circuit breaking", () => {
+    assert.deepEqual(classifyPublicRecordFailure(new Error("Florida Sunbiz returned an anti-bot, captcha, app shell, or geo-block challenge instead of public records.")), {
+        kind: "challenge",
+        healthStatus: "blocked",
+        sourceScoped: true,
+        skipRemainingTasks: true,
+    })
+    assert.deepEqual(classifyPublicRecordFailure(new Error("https://example.test timed out after 18 seconds.")), {
+        kind: "timeout",
+        healthStatus: "degraded",
+        sourceScoped: true,
+        skipRemainingTasks: true,
+    })
+})
+
+test("does not circuit-break the whole source for parser misses", () => {
+    assert.deepEqual(classifyPublicRecordFailure(new Error("Example Registry responded, but no parseable public-record rows were found.")), {
+        kind: "parser",
+        healthStatus: "degraded",
+        sourceScoped: false,
+        skipRemainingTasks: false,
+    })
 })

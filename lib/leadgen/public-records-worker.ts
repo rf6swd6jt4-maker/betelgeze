@@ -17,7 +17,13 @@ import {
     publicRecordPersonCandidates,
 } from "@/lib/leadgen/public-record-person-extraction"
 import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
-import { looksLikeGuardedOrAppShell, publicRecordPollUnsafeReason } from "@/lib/leadgen/public-record-source-safety"
+import {
+    classifyPublicRecordFailure,
+    looksLikeGuardedOrAppShell,
+    publicRecordPollUnsafeReason,
+    type PublicRecordFailureClassification,
+    type PublicRecordSourceHealthStatus,
+} from "@/lib/leadgen/public-record-source-safety"
 import type { PollStageKey } from "@/lib/leadgen/staged-poll"
 import { groupByKey, runWithConcurrency } from "@/lib/leadgen/task-execution"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -88,6 +94,12 @@ type MatchResult = {
     personCandidates: Array<Record<string, unknown>>
 }
 
+type TaskProcessOutcome = {
+    sourceTouched: boolean
+    matched: boolean
+    returnedRows?: number
+}
+
 const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "permits.tx.dallas",
     "permits.tx.austin",
@@ -155,6 +167,78 @@ function publicRecordSourcePriority(source: SourceCatalog | undefined, stageKey:
 function compactErrorMessage(error: unknown) {
     const message = error instanceof Error ? error.message : "Public-record source task failed."
     return message.length > 900 ? `${message.slice(0, 900)}…` : message
+}
+
+function compactSkipReason(value: string) {
+    return value.length > 700 ? `${value.slice(0, 700)}…` : value
+}
+
+function isRetryablePublicRecordFetchError(error: unknown) {
+    return ["timeout", "rate_limited", "server_error", "network"].includes(classifyPublicRecordFailure(error).kind)
+}
+
+async function recordPublicRecordSourceHealth({
+    sourceKey,
+    status,
+    pollId,
+    stageKey,
+    lastError,
+    classification,
+    sourceTouched,
+}: {
+    sourceKey: string
+    status: PublicRecordSourceHealthStatus
+    pollId: string
+    stageKey: Exclude<PollStageKey, "seed"> | undefined
+    lastError?: string | null
+    classification?: PublicRecordFailureClassification
+    sourceTouched?: boolean
+}) {
+    const now = new Date().toISOString()
+    try {
+        const existingResult = await supabaseAdmin
+            .from("leadgen_source_health")
+            .select("metadata")
+            .eq("source_key", sourceKey)
+            .maybeSingle()
+        const metadata = {
+            ...asRecord(existingResult.data?.metadata),
+            worker: "public_records",
+            last_poll_id: pollId,
+            last_stage_key: stageKey ?? null,
+            last_checked_at: now,
+            last_source_touched: Boolean(sourceTouched),
+            ...(classification ? {
+                last_failure_kind: classification.kind,
+                last_failure_source_scoped: classification.sourceScoped,
+                last_failure_skipped_remaining_tasks: classification.skipRemainingTasks,
+            } : {
+                last_failure_kind: null,
+                last_failure_source_scoped: null,
+                last_failure_skipped_remaining_tasks: null,
+            }),
+        }
+        const payload: Record<string, unknown> = {
+            source_key: sourceKey,
+            status,
+            last_error: lastError ?? null,
+            metadata,
+            updated_at: now,
+        }
+        if (status === "healthy") payload.last_success_at = now
+        else payload.last_failure_at = now
+        const { error } = await supabaseAdmin
+            .from("leadgen_source_health")
+            .upsert(payload, { onConflict: "source_key" })
+        if (error) console.warn(`Could not update leadgen source health for ${sourceKey}: ${error.message}`)
+    } catch (error) {
+        console.warn(`Could not update leadgen source health for ${sourceKey}: ${compactErrorMessage(error)}`)
+    }
+}
+
+function sourceScopedSkipReason(source: SourceCatalog, classification: PublicRecordFailureClassification, errorMessage: string) {
+    const label = classification.healthStatus === "blocked" ? "blocked" : "degraded"
+    return compactSkipReason(`${source.label} was marked ${label} for this poll after a ${classification.kind.replace(/_/g, " ")} response. Remaining tasks were skipped instead of repeating the same source-level failure. Last error: ${errorMessage}`)
 }
 
 function missingIdentityColumn(error: { code?: string; message?: string } | null) {
@@ -349,28 +433,46 @@ function sourceProfileUrl(sourceKey: string, metadata: Record<string, unknown>, 
 }
 
 async function fetchTextWithTimeout(url: string, init?: RequestInit) {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), PUBLIC_RECORD_FETCH_TIMEOUT_MS)
-    try {
-        const response = await fetch(url, {
-            ...init,
-            headers: {
-                Accept: "text/html,application/json,*/*",
-                "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)",
-                ...(init?.headers ?? {}),
-            },
-            cache: "no-store",
-            signal: controller.signal,
-        })
-        const text = await response.text()
-        if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}: ${stripHtml(text).slice(0, 280)}`)
-        return text
-    } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") throw new Error(`${url} timed out after ${Math.round(PUBLIC_RECORD_FETCH_TIMEOUT_MS / 1000)} seconds.`)
-        throw error
-    } finally {
-        clearTimeout(timeout)
+    const attempts = 2
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), PUBLIC_RECORD_FETCH_TIMEOUT_MS)
+        try {
+            const response = await fetch(url, {
+                ...init,
+                headers: {
+                    Accept: "text/html,application/json,*/*",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)",
+                    ...(init?.headers ?? {}),
+                },
+                cache: "no-store",
+                signal: controller.signal,
+            })
+            const text = await response.text()
+            if (!response.ok) {
+                const error = new Error(`${url} returned HTTP ${response.status}: ${stripHtml(text).slice(0, 280)}`)
+                if (attempt < attempts && isRetryablePublicRecordFetchError(error)) {
+                    await sleep(350 * attempt)
+                    continue
+                }
+                throw error
+            }
+            return text
+        } catch (error) {
+            const wrappedError = error instanceof Error && error.name === "AbortError"
+                ? new Error(`${url} timed out after ${Math.round(PUBLIC_RECORD_FETCH_TIMEOUT_MS / 1000)} seconds.`)
+                : error
+            if (attempt < attempts && isRetryablePublicRecordFetchError(wrappedError)) {
+                await sleep(350 * attempt)
+                continue
+            }
+            throw wrappedError
+        } finally {
+            clearTimeout(timeout)
+        }
     }
+    throw new Error(`${url} failed after ${attempts} attempts.`)
 }
 
 async function fetchSocrataRows(metadata: Record<string, unknown>, searchTerm: string) {
@@ -1090,9 +1192,6 @@ async function fetchGuardedHtmlRows(source: SourceCatalog, searchTerm: string, m
         }
         return officialRecordMatchesCandidate(mappedRow, company, metadata) ? [mappedRow] : []
     })
-    if (mappedRows.length === 0 && /<html/i.test(html)) {
-        throw new Error(`${label} responded, but no parseable public-record rows were found for "${searchTerm}".`)
-    }
     return mappedRows
 }
 
@@ -1263,16 +1362,16 @@ function sourceAdapter(source: SourceCatalog) {
 
 function searchTermsForSource(source: SourceCatalog, company: CompanyCandidate) {
     const adapter = sourceAdapter(source)
-    const includeNonNameSignals = BROAD_TEXT_SEARCH_ADAPTERS.has(adapter)
-    const maxTerms = Math.min(10, Math.max(1, Number(source.metadata?.search_term_limit) || (includeNonNameSignals ? 7 : 5)))
+    const guardedHtml = adapter === "guarded_html_search"
+    const includeNonNameSignals = BROAD_TEXT_SEARCH_ADAPTERS.has(adapter) && !guardedHtml
+    const maxTerms = Math.min(10, Math.max(1, Number(source.metadata?.search_term_limit) || (guardedHtml ? 4 : includeNonNameSignals ? 7 : 5)))
     const terms = buildOfficialRecordSearchTerms(company, { includeNonNameSignals, maxTerms })
     if (SEARCH_TERM_INSENSITIVE_ADAPTERS.has(adapter)) return terms.slice(0, 1)
     return terms
 }
 
 function isFatalSearchError(error: unknown) {
-    const message = error instanceof Error ? error.message : String(error)
-    return /anti-bot|captcha|geo-block|guarded|app-shell|poll-time activation|generic guarded HTML|stable .*endpoint|requires|missing .*metadata|missing .*key|HTTP 401|HTTP 403/i.test(message)
+    return classifyPublicRecordFailure(error).sourceScoped
 }
 
 async function fetchRowsForSearchTerms(source: SourceCatalog, searchTerms: string[], company: CompanyCandidate) {
@@ -1524,7 +1623,7 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
             matched: false,
             skipReason: "Could not build a useful business-name search term for this public-record source.",
         })
-        return
+        return { sourceTouched: false, matched: false } satisfies TaskProcessOutcome
     }
     const { rows, attempts } = await fetchRowsForSearchTerms(source, searchTerms, company)
     const matches = rows
@@ -1548,7 +1647,7 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
                 closest_rejected_rows: summarizeOfficialRecordRejections(rows, company, source.metadata ?? {}),
             },
         })
-        return
+        return { sourceTouched: true, matched: false, returnedRows: rows.length } satisfies TaskProcessOutcome
     }
     const evidence = await insertEvidence({ workspaceId, pollId, company, source, result })
     await updateInvestigationTask({
@@ -1564,6 +1663,7 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
         businessSupportPoints: evidence.businessSupportPoints,
         rawPayload: evidence.rawPayload,
     })
+    return { sourceTouched: true, matched: true, returnedRows: rows.length } satisfies TaskProcessOutcome
 }
 
 export async function processPublicRecordsPoll(pollId: string, workspaceId: string, options: { finalize?: boolean; stageKey?: Exclude<PollStageKey, "seed"> } = {}) {
@@ -1614,7 +1714,25 @@ export async function processPublicRecordsPoll(pollId: string, workspaceId: stri
             })))
             return
         }
+        let sourceTouched = false
+        let sourceScopedFailure: { classification: PublicRecordFailureClassification; errorMessage: string } | null = null
         for (const [index, task] of group.tasks.entries()) {
+            if (sourceScopedFailure) {
+                await updateInvestigationTask({
+                    workspaceId,
+                    pollId,
+                    companyId: task.company_id,
+                    sourceKey: task.source_key,
+                    stageKey: task.stage_key,
+                    status: "skipped",
+                    skipReason: sourceScopedSkipReason(group.source, sourceScopedFailure.classification, sourceScopedFailure.errorMessage),
+                    rawPayload: {
+                        skipped_after_source_failure: true,
+                        source_failure_kind: sourceScopedFailure.classification.kind,
+                    },
+                })
+                continue
+            }
             const company = companies.get(task.company_id)
             if (!company) {
                 await updateInvestigationTask({
@@ -1629,8 +1747,11 @@ export async function processPublicRecordsPoll(pollId: string, workspaceId: stri
                 continue
             }
             try {
-                await processTask({ workspaceId, pollId, task, company: { ...company }, source: group.source })
+                const outcome = await processTask({ workspaceId, pollId, task, company: { ...company }, source: group.source })
+                sourceTouched ||= outcome.sourceTouched
             } catch (error) {
+                const errorMessage = compactErrorMessage(error)
+                const classification = classifyPublicRecordFailure(error)
                 await updateInvestigationTask({
                     workspaceId,
                     pollId,
@@ -1638,10 +1759,33 @@ export async function processPublicRecordsPoll(pollId: string, workspaceId: stri
                     sourceKey: task.source_key,
                     stageKey: task.stage_key,
                     status: "failed",
-                    error: compactErrorMessage(error),
+                    error: errorMessage,
+                    rawPayload: {
+                        source_failure_kind: classification.kind,
+                        source_failure_source_scoped: classification.sourceScoped,
+                    },
                 })
+                await recordPublicRecordSourceHealth({
+                    sourceKey: group.source.source_key,
+                    status: classification.healthStatus,
+                    pollId,
+                    stageKey: task.stage_key,
+                    lastError: errorMessage,
+                    classification,
+                    sourceTouched,
+                })
+                if (classification.skipRemainingTasks) sourceScopedFailure = { classification, errorMessage }
             }
-            if (index < group.tasks.length - 1) await sleep(publicRecordSourceDelay(group.source))
+            if (!sourceScopedFailure && index < group.tasks.length - 1) await sleep(publicRecordSourceDelay(group.source))
+        }
+        if (sourceTouched && !sourceScopedFailure) {
+            await recordPublicRecordSourceHealth({
+                sourceKey: group.source.source_key,
+                status: "healthy",
+                pollId,
+                stageKey: options.stageKey,
+                sourceTouched: true,
+            })
         }
     })
     await refreshLeadgenPollCounts(pollId, workspaceId)

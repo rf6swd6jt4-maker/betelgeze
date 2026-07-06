@@ -89,6 +89,10 @@ function LeadIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 3 5-7" /></svg>
 }
 
+function HealthIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M4 13h4l2-7 4 12 2-5h4" /><path d="M4 19h16" /></svg>
+}
+
 function SettingsIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><circle cx="12" cy="12" r="3" /><path d="M12 3v3" /><path d="M12 18v3" /><path d="M3 12h3" /><path d="M18 12h3" /><path d="m5.6 5.6 2.1 2.1" /><path d="m16.3 16.3 2.1 2.1" /><path d="m18.4 5.6-2.1 2.1" /><path d="m7.7 16.3-2.1 2.1" /></svg>
 }
@@ -315,6 +319,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         { label: "Work Queue", href: `/${workspace.slug}/work`, icon: <WorkIcon /> },
         { label: "Lead Gen", href: `/${workspace.slug}/leadgen`, icon: <LeadIcon /> },
         { label: "Onboarding", href: `/${workspace.slug}?filter=active`, icon: <WorkIcon /> },
+        { label: "System Health", href: `/${workspace.slug}/health`, icon: <HealthIcon /> },
         { label: "Settings", href: `/${workspace.slug}/settings`, icon: <SettingsIcon /> },
     ]
 

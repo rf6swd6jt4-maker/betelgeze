@@ -273,12 +273,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                         Invoices
                     </Link>
                     <Link
-                        href="/admin/health"
-                        className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2"
-                    >
-                        System health
-                    </Link>
-                    <Link
                         href={`/dashboard/${workspace.slug}/settings`}
                         className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2"
                     >

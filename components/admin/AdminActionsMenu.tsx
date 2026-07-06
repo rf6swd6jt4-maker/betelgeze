@@ -75,14 +75,6 @@ export function AdminActionsMenu() {
                     >
                         Create manual client
                     </Link>
-
-                    <Link
-                        href="/admin/health"
-                        className="block min-h-10 px-3 py-2.5 text-sm text-neutral-200 hover:bg-neutral-800"
-                        role="menuitem"
-                    >
-                        System health
-                    </Link>
                 </div>
             )}
         </div>

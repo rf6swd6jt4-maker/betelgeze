@@ -15,6 +15,7 @@ type CliOptions = {
     sourceKey: SunbizImportSourceKey | null
     mode: SunbizImportMode
     dryRun: boolean
+    skipClear: boolean
     batchSize: number
     files: string[]
 }
@@ -78,6 +79,7 @@ function parseArgs(argv: string[]): CliOptions {
         sourceKey: null,
         mode: "append",
         dryRun: false,
+        skipClear: false,
         batchSize: 500,
         files: [],
     }
@@ -95,6 +97,8 @@ function parseArgs(argv: string[]): CliOptions {
             options.mode = "append"
         } else if (arg === "--dry-run") {
             options.dryRun = true
+        } else if (arg === "--skip-clear") {
+            options.skipClear = true
         } else if (arg === "--batch-size") {
             options.batchSize = Math.min(1000, Math.max(50, Number(argv[index + 1]) || 500))
             index += 1
@@ -110,11 +114,46 @@ function usage() {
         "Usage:",
         "  npm run import:sunbiz -- --source registry.fl.fictitious_names --mode replace /Users/jedryszczyk/Downloads/FICFILE.txt",
         "  npm run import:sunbiz -- --source registry.fl.sunbiz --mode replace /Users/jedryszczyk/Downloads/cordata*.txt",
+        "  npm run import:sunbiz -- --source registry.fl.sunbiz --mode replace --skip-clear /Users/jedryszczyk/Downloads/cordata*.txt",
         "",
         "Options:",
         "  --dry-run              Parse files without writing to Supabase.",
+        "  --skip-clear           Do not delete existing rows before a replace import; useful for retrying/resuming.",
         "  --batch-size 500       Supabase upsert batch size, 50-1000.",
     ].join("\n")
+}
+
+function wait(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function describeSupabaseError(error: unknown) {
+    if (!error) return "Unknown Supabase error"
+    if (error instanceof Error) return error.message
+    if (typeof error === "object" && error !== null && "message" in error) {
+        return String((error as { message?: unknown }).message)
+    }
+    return String(error)
+}
+
+async function withSupabaseRetry<T>(
+    label: string,
+    operation: () => PromiseLike<{ data?: T | null; error?: unknown }>
+) {
+    const maxAttempts = 4
+    let lastError: unknown = null
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const { data, error } = await operation()
+        if (!error) return data ?? null
+        lastError = error
+        const message = describeSupabaseError(error)
+        if (attempt < maxAttempts) {
+            const delayMs = 750 * attempt
+            console.warn(`${label} failed on attempt ${attempt}/${maxAttempts}: ${message}. Retrying in ${delayMs}ms...`)
+            await wait(delayMs)
+        }
+    }
+    throw new Error(`${label} failed after ${maxAttempts} attempts: ${describeSupabaseError(lastError)}`)
 }
 
 async function loadSunbizParsers() {
@@ -162,13 +201,14 @@ async function importFiles(options: ResolvedCliOptions) {
     let parsedRows = 0
     let importedRows = 0
     let batches = 0
-    if (options.mode === "replace" && !options.dryRun) {
+    if (options.mode === "replace" && options.skipClear) {
+        console.log(`Skipping clear for ${options.sourceKey}; existing matching rows will be overwritten by upsert.`)
+    } else if (options.mode === "replace" && !options.dryRun) {
         console.log(`Clearing existing ${options.sourceKey} rows...`)
-        const { error } = await supabase
+        await withSupabaseRetry("Clearing existing Sunbiz index rows", () => supabase
             .from("leadgen_sunbiz_owner_index")
             .delete()
-            .eq("source_key", options.sourceKey)
-        if (error) throw new Error(`Could not clear existing Sunbiz index rows: ${error.message}`)
+            .eq("source_key", options.sourceKey))
     }
 
     for (const file of options.files) {
@@ -193,10 +233,9 @@ async function importFiles(options: ResolvedCliOptions) {
                 batch = []
                 batches += 1
                 if (!options.dryRun) {
-                    const { error } = await supabase
+                    await withSupabaseRetry(`Importing Sunbiz index batch ${batches}`, () => supabase
                         .from("leadgen_sunbiz_owner_index")
-                        .upsert(currentBatch.map(dbRow), { onConflict: "source_key,record_id,person_source_field,person_name" })
-                    if (error) throw new Error(`Could not import Sunbiz index batch ${batches}: ${error.message}`)
+                        .upsert(currentBatch.map(dbRow), { onConflict: "source_key,record_id,person_source_field,person_name" }))
                     importedRows += currentBatch.length
                     fileImportedRows += currentBatch.length
                 }
@@ -205,10 +244,9 @@ async function importFiles(options: ResolvedCliOptions) {
         if (batch.length > 0) {
             batches += 1
             if (!options.dryRun) {
-                const { error } = await supabase
+                await withSupabaseRetry(`Importing Sunbiz index batch ${batches}`, () => supabase
                     .from("leadgen_sunbiz_owner_index")
-                    .upsert(batch.map(dbRow), { onConflict: "source_key,record_id,person_source_field,person_name" })
-                if (error) throw new Error(`Could not import Sunbiz index batch ${batches}: ${error.message}`)
+                    .upsert(batch.map(dbRow), { onConflict: "source_key,record_id,person_source_field,person_name" }))
                 importedRows += batch.length
                 fileImportedRows += batch.length
             }
@@ -224,7 +262,7 @@ async function importFiles(options: ResolvedCliOptions) {
 
     if (parsedRows === 0) throw new Error("No importable Sunbiz owner/officer rows were parsed from the provided files.")
     if (!options.dryRun) {
-        await supabase
+        await withSupabaseRetry("Marking Sunbiz source health healthy", () => supabase
             .from("leadgen_source_health")
             .upsert({
                 source_key: options.sourceKey,
@@ -237,7 +275,7 @@ async function importFiles(options: ResolvedCliOptions) {
                     parsed_rows: parsedRows,
                     importer: "local_sunbiz_owner_index_import",
                 },
-            }, { onConflict: "source_key" })
+            }, { onConflict: "source_key" }))
     }
     return { parsedRows, importedRows, batches }
 }

@@ -31,6 +31,8 @@ type SearchResult = {
     description: string
     href: string
     hubHref?: string
+    path?: string
+    recordId?: string
 }
 
 function WorkspaceLogo({ src, name }: { src?: string | null; name: string }) {
@@ -55,6 +57,20 @@ function SidebarIcon() {
 
 function SearchIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg>
+}
+
+function SearchResultContent({ item, mobile = false }: { item: SearchResult; mobile?: boolean }) {
+    return (
+        <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-neutral-100">{item.label}</p>
+                {item.path && <p className="mt-0.5 truncate text-[11px] text-neutral-400">{item.path}</p>}
+                <p className={`mt-0.5 text-xs text-neutral-500 ${mobile ? "line-clamp-2" : "truncate"}`}>{item.description}</p>
+                {item.recordId && <p className="mt-1 truncate font-mono text-[10px] text-neutral-600">ID {item.recordId}</p>}
+            </div>
+            <span className="shrink-0 rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500">{item.type}</span>
+        </div>
+    )
 }
 
 function HomeIcon() {
@@ -333,13 +349,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                                 {query.trim().length >= 2 && !searchLoading && searchResults.map((item) => (
                                     <div key={item.id} className="border-b border-neutral-900 last:border-0">
                                         <Link href={item.href} className="block px-3 py-2 hover:bg-neutral-900" onClick={() => setSearchOpen(false)}>
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="min-w-0">
-                                                    <p className="truncate text-sm font-medium text-neutral-100">{item.label}</p>
-                                                    <p className="mt-0.5 truncate text-xs text-neutral-500">{item.description}</p>
-                                                </div>
-                                                <span className="shrink-0 rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500">{item.type}</span>
-                                            </div>
+                                            <SearchResultContent item={item} />
                                         </Link>
                                         {item.hubHref && item.hubHref !== item.href && (
                                             <Link href={item.hubHref} className="block px-3 pb-2 text-xs text-neutral-500 hover:text-neutral-200" onClick={() => setSearchOpen(false)}>
@@ -353,7 +363,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                     )}
                 </div>
 
-                <div className="flex justify-end gap-1.5">
+                <div className="flex justify-end gap-2.5">
                     <div ref={mobileSearchRef} className="relative md:hidden">
                         <button data-icon-button type="button" onClick={openSearch} aria-label="Search Betelgeze" aria-expanded={searchOpen} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <SearchIcon />
@@ -373,13 +383,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                                     {query.trim().length >= 2 && !searchLoading && searchResults.map((item) => (
                                         <div key={item.id} className="border-b border-neutral-900 last:border-0">
                                             <Link href={item.href} className="block px-3 py-3 hover:bg-neutral-900 md:py-2" onClick={() => setSearchOpen(false)}>
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div className="min-w-0">
-                                                        <p className="truncate text-sm font-medium text-neutral-100">{item.label}</p>
-                                                        <p className="mt-0.5 line-clamp-2 text-xs text-neutral-500 md:truncate">{item.description}</p>
-                                                    </div>
-                                                    <span className="shrink-0 rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500">{item.type}</span>
-                                                </div>
+                                                <SearchResultContent item={item} mobile />
                                             </Link>
                                             {item.hubHref && item.hubHref !== item.href && (
                                                 <Link href={item.hubHref} className="block px-3 pb-3 text-xs text-neutral-500 hover:text-neutral-200 md:pb-2" onClick={() => setSearchOpen(false)}>
@@ -392,7 +396,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                             </div>
                         )}
                     </div>
-                    <AccountMenu username={username} email={email} avatarSrc={avatarSrc} workspaceId={workspace.id} workspaceName={workspace.name} leaveAction={leaveAction} buttonClassName="h-10 w-10 md:h-9 md:w-9" />
+                    <AccountMenu username={username} email={email} avatarSrc={avatarSrc} workspaceId={workspace.id} workspaceName={workspace.name} leaveAction={leaveAction} buttonClassName="h-9 w-9" />
                 </div>
             </div>
         </header>

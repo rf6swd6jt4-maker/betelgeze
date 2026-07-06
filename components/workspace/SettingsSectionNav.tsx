@@ -41,10 +41,10 @@ export function SettingsSectionNav({ sections, scrollRootId }: { sections: Setti
 
     return (
         <nav className="sticky top-20 hidden self-start lg:block">
-            <div className="relative space-y-2 border-l border-neutral-800 pl-5">
+            <div className="relative space-y-2 pl-5">
                 <span
                     aria-hidden="true"
-                    className="absolute -left-px top-0 h-16 w-px bg-white transition-transform duration-300 ease-out"
+                    className="absolute left-0 top-2 h-8 w-1 rounded-full bg-white transition-transform duration-300 ease-out"
                     style={{ transform: `translateY(${activeIndex * 4.5}rem)` }}
                 />
                 {sections.map((section) => {

@@ -171,6 +171,7 @@ export default async function SettingsPage({ params }: PageProps) {
                                 action={saveWorkspaceConnection.bind(null, workspace.slug)}
                                 verifyAction={verifyWorkspaceConnection.bind(null, workspace.slug)}
                                 canManage={isOwner}
+                                showHeader={false}
                             />
                         </UnifiedSection>
 

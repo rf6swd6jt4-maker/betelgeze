@@ -6,6 +6,7 @@ import Link from "next/link"
 import { useEffect, useId, useRef, useState } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { AccountMenu } from "@/components/account/AccountMenu"
+import { LEADGEN_POLLING_SYSTEM_VERSION_LABEL } from "@/lib/leadgen/version"
 
 const historyKey = "betelgeze:workspace-history"
 const sidebarStorageKey = "betelgeze:workspace-sidebar-open"
@@ -317,7 +318,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         { label: "Home", href: `/${workspace.slug}`, icon: <HomeIcon /> },
         { label: "Relationships", href: `/${workspace.slug}/relationships`, icon: <RelationshipsIcon /> },
         { label: "Work Queue", href: `/${workspace.slug}/work`, icon: <WorkIcon /> },
-        { label: "Lead Gen", href: `/${workspace.slug}/leadgen`, icon: <LeadIcon /> },
+        { label: "Lead Gen", meta: LEADGEN_POLLING_SYSTEM_VERSION_LABEL, href: `/${workspace.slug}/leadgen`, icon: <LeadIcon /> },
         { label: "Onboarding", href: `/${workspace.slug}?filter=active`, icon: <WorkIcon /> },
         { label: "System Health", href: `/${workspace.slug}/health`, icon: <HealthIcon /> },
         { label: "Settings", href: `/${workspace.slug}/settings`, icon: <SettingsIcon /> },
@@ -413,7 +414,8 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                     return (
                         <Link key={item.label} href={item.href} onClick={closeSidebarAfterNavigation} className={`flex min-h-12 items-center gap-3 rounded-lg px-4 text-base transition md:min-h-10 md:px-3 md:text-sm ${active ? "bg-neutral-900 text-white" : "text-neutral-400 hover:bg-neutral-900/70 hover:text-white"}`}>
                             <span className="shrink-0">{item.icon}</span>
-                            <span>{item.label}</span>
+                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                            {"meta" in item && item.meta && <span className="shrink-0 font-mono text-[11px] text-neutral-500">{item.meta}</span>}
                         </Link>
                     )
                 })}

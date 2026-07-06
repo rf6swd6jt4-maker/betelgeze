@@ -72,6 +72,7 @@ function fallbackSourceStages(sourceKey: LeadgenSourceKey): LeadgenSourceStageKe
     if (sourceKey === "phone.basic_format_validation") return ["phone_validation"]
     if (sourceKey === "sam_gov") return ["business_validation"]
     if (sourceKey === "transport.fmcsa_safer") return ["business_validation"]
+    if (sourceKey === "transport.fmcsa_census") return ["owner_identity"]
     if (sourceKey === "safety.osha" || sourceKey === "procurement.usaspending" || sourceKey === "web.rdap_whois" || sourceKey === "web.certificate_transparency") return ["business_validation"]
     if (sourceKey.startsWith("permits.") || sourceKey === "regulated.epa_echo") return ["business_validation"]
     if (sourceKey === "regulated.tx.tceq_waste" || sourceKey === "regulated.ca.calrecycle_waste") return ["owner_identity"]

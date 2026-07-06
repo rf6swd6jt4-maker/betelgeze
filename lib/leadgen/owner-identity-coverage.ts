@@ -82,11 +82,31 @@ export const pass1CoreOwnerIdentitySourcesByState: Record<OwnerIdentityCoverageL
     AZ: ["registry.az.corp_commission"],
 }
 
+export const pass2TransportOwnerIdentityIndustries = [
+    "dumpster_rental",
+    "freight_forwarders",
+    "hauling_services",
+    "moving_companies",
+    "trucking_companies",
+    "waste_disposal",
+] as const
+
+export const pass2NationalOwnerIdentitySources = ["transport.fmcsa_census"] as const
+
 export function pass1OwnerIdentitySourcesForCombo(industryValue: string, locationValue: string) {
     if (!selectableOwnerIdentityIndustries.includes(industryValue as (typeof selectableOwnerIdentityIndustries)[number])) return []
     const location = selectableOwnerIdentityLocations.find((item) => item.value === locationValue)
     if (!location) return []
     return pass1CoreOwnerIdentitySourcesByState[location.state]
+}
+
+export function pass2OwnerIdentitySourcesForCombo(industryValue: string, locationValue: string) {
+    const pass1Sources = pass1OwnerIdentitySourcesForCombo(industryValue, locationValue)
+    const hasLocation = selectableOwnerIdentityLocations.some((item) => item.value === locationValue)
+    const transportSources = hasLocation && pass2TransportOwnerIdentityIndustries.includes(industryValue as (typeof pass2TransportOwnerIdentityIndustries)[number])
+        ? [...pass2NationalOwnerIdentitySources]
+        : []
+    return [...new Set([...pass1Sources, ...transportSources])]
 }
 
 export function pass1OwnerIdentityCoverageGaps() {

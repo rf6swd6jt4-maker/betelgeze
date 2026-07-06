@@ -74,6 +74,7 @@ const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set([
     "registry.fl.orlando_btr",
     "safety.osha",
     "transport.fmcsa_safer",
+    "transport.fmcsa_census",
     "regulated.epa_echo",
     "regulated.nppes",
     "procurement.usaspending",

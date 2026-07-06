@@ -34,6 +34,7 @@ export type LeadgenEnrichmentSourceKey =
     | "registry.fl.orlando_btr"
     | "safety.osha"
     | "transport.fmcsa_safer"
+    | "transport.fmcsa_census"
     | "regulated.epa_echo"
     | "regulated.nppes"
     | "procurement.usaspending"
@@ -133,6 +134,7 @@ export const enrichmentLeadgenSources = new Set<LeadgenSourceKey>([
     "registry.fl.orlando_btr",
     "safety.osha",
     "transport.fmcsa_safer",
+    "transport.fmcsa_census",
     "regulated.epa_echo",
     "regulated.nppes",
     "procurement.usaspending",
@@ -184,6 +186,7 @@ export const executableLeadgenSources = new Set<LeadgenSourceKey>([
     "registry.fl.orlando_btr",
     "safety.osha",
     "transport.fmcsa_safer",
+    "transport.fmcsa_census",
     "regulated.epa_echo",
     "regulated.nppes",
     "procurement.usaspending",
@@ -627,6 +630,17 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         category: "industry",
         implemented: true,
         setupHint: "No API key is needed. Betelgeze uses the public FMCSA SAFER snapshot lookup with conservative per-candidate requests.",
+    },
+    {
+        value: "transport.fmcsa_census",
+        label: "FMCSA Company Census officers",
+        detail: "Official FMCSA Company Census File lookup for trucking, moving, hauling, freight, dumpster, and waste candidates. Exposes company officer names from MCS-150 records.",
+        statusLabel: "Executable from public DOT API",
+        notesPlaceholder: "Carrier status filters, officer confidence rules, or transport-category caveats.",
+        kind: "enrichment",
+        category: "industry",
+        implemented: true,
+        setupHint: "No API key is needed. Betelgeze queries the public DOT Socrata API and treats Company Officer fields as owner/principal identity evidence.",
     },
     {
         value: "regulated.epa_echo",

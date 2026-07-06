@@ -128,6 +128,7 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "registry.az.corp_commission",
     "safety.osha",
     "transport.fmcsa_safer",
+    "transport.fmcsa_census",
     "regulated.epa_echo",
     "regulated.nppes",
     "procurement.usaspending",
@@ -560,6 +561,99 @@ async function fetchFmcsaRows(searchTerm: string) {
             source_url: sourceUrl,
             ...parseFmcsaPhysicalAddress(physicalAddress),
         })
+    }
+    return rows
+}
+
+function fmcsaCensusStatus(value: string | null) {
+    if (value === "A") return "Active"
+    if (value === "I") return "Inactive"
+    if (value === "P") return "Pending"
+    return value
+}
+
+async function fetchFmcsaCensusRows(searchTerm: string, metadata: Record<string, unknown>, company: CompanyCandidate) {
+    if (!searchTerm) return []
+    const domain = asString(metadata.domain) ?? "data.transportation.gov"
+    const datasetId = asString(metadata.dataset_id) ?? "az4n-8mr2"
+    const limit = Math.min(25, Math.max(1, Number(metadata.query_limit) || 12))
+    const params = new URLSearchParams({
+        "$limit": String(limit),
+        "$q": searchTerm,
+        "$select": [
+            "dot_number",
+            "status_code",
+            "legal_name",
+            "dba_name",
+            "phy_street",
+            "phy_city",
+            "phy_state",
+            "phy_zip",
+            "phy_cnty",
+            "phone",
+            "cell_phone",
+            "email_address",
+            "company_officer_1",
+            "company_officer_2",
+            "carrier_operation",
+        ].join(","),
+        status_code: "A",
+    })
+    const state = candidateState(company)
+    if (state) params.set("phy_state", state)
+    const text = await fetchTextWithTimeout(`https://${domain}/resource/${datasetId}.json?${params.toString()}`, { headers: { Accept: "application/json" } })
+    const parsed = JSON.parse(text) as unknown
+    const records = Array.isArray(parsed) ? parsed.map(asRecord) : []
+    const rows: SocrataRecord[] = []
+    for (const record of records) {
+        const legalName = asString(record.legal_name)
+        const dbaName = asString(record.dba_name)
+        const dotNumber = asString(record.dot_number)
+        const preliminaryRow = {
+            business_name: dbaName ?? legalName,
+            legal_name: legalName,
+            dba_name: dbaName,
+            dot_number: dotNumber,
+            street: asString(record.phy_street),
+            city: asString(record.phy_city),
+            state: asString(record.phy_state),
+            postcode: asString(record.phy_zip),
+            county: asString(record.phy_cnty),
+            status: fmcsaCensusStatus(asString(record.status_code)),
+        }
+        if (!officialRecordMatchesCandidate(preliminaryRow, company, metadata)) continue
+        const phone = normalisePhone(asString(record.phone)) ?? normalisePhone(asString(record.cell_phone))
+        const officers = [asString(record.company_officer_1), asString(record.company_officer_2)]
+            .filter((officer): officer is string => Boolean(officer && looksLikePersonName(officer)))
+        const sourceUrl = dotNumber
+            ? `https://safer.fmcsa.dot.gov/query.asp?searchtype=ANY&query_type=queryCarrierSnapshot&query_param=USDOT&query_string=${encodeURIComponent(dotNumber)}`
+            : `https://${domain}/d/${datasetId}`
+        if (officers.length === 0) {
+            rows.push({
+                ...preliminaryRow,
+                phone,
+                email: asString(record.email_address),
+                carrier_operation: asString(record.carrier_operation),
+                record_id: dotNumber,
+                record_type: "FMCSA Company Census carrier record",
+                source_url: sourceUrl,
+            })
+            continue
+        }
+        for (const officerName of officers) {
+            rows.push({
+                ...preliminaryRow,
+                owner_name: officerName,
+                officer_name: officerName,
+                officer_title: "Company Officer",
+                phone,
+                email: asString(record.email_address),
+                carrier_operation: asString(record.carrier_operation),
+                record_id: dotNumber ? `${dotNumber}:${officerName}` : `${legalName ?? dbaName}:${officerName}`,
+                record_type: "FMCSA Company Census officer",
+                source_url: sourceUrl,
+            })
+        }
     }
     return rows
 }
@@ -1273,6 +1367,7 @@ async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, com
     if (adapter === "nppes_registry") return fetchNppesRows(searchTerm, company)
     if (adapter === "usaspending_awards") return fetchUsaspendingRows(searchTerm)
     if (adapter === "texas_comptroller_franchise_tax") return fetchTexasComptrollerRows(searchTerm, source.metadata ?? {})
+    if (adapter === "fmcsa_company_census") return fetchFmcsaCensusRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "texas_agriculture_spcs_csv") return fetchTexasAgriculturePestRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "tceq_central_registry") return fetchTceqRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "cslb_license_search") return fetchCslbRows(searchTerm, source.metadata ?? {}, company)
@@ -1534,8 +1629,9 @@ async function insertEvidence({
         })
     }
     if (result.personName && ownerIdentityPoints > 0) {
-        const identityClaimKind = asString(metadata.identity_claim_kind) === "owner_identity"
-            ? "owner_identity"
+        const configuredIdentityClaimKind = asString(metadata.identity_claim_kind)
+        const identityClaimKind = configuredIdentityClaimKind === "owner_identity" || configuredIdentityClaimKind === "officer_identity"
+            ? configuredIdentityClaimKind
             : source.family === "registries" ? "officer_identity" : "owner_identity"
         await recordEvidenceClaim({
             workspaceId,

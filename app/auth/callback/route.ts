@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createSupabaseRouteClient } from "@/lib/supabase/route"
+import { clearLegacyHostOnlyAuthCookies } from "@/lib/supabase/legacy-cookies"
 
 export async function GET(request: NextRequest) {
     const url = request.nextUrl
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest) {
         }
 
         const { data } = await supabase.auth.getUser()
+        clearLegacyHostOnlyAuthCookies(request, response)
         if (next === "/login" || next === "/confirmed" || next.startsWith("/confirmed?")) {
             const confirmed = new URL("/confirmed", url.origin)
             confirmed.searchParams.set("email", data.user?.email ?? "")

@@ -1,10 +1,12 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { persistentSessionOptions, sessionCookieDomain, sessionCookieOptions } from "@/lib/supabase/session-cookies"
 
 async function refreshSession(request: NextRequest) {
     const headers = requestHeadersWithCurrentPath(request)
     const response = NextResponse.next({ request: { headers } })
-    const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { cookieOptions: { name: "betelgeze-auth", domain: process.env.SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com" }, cookies: { getAll: () => request.cookies.getAll(), setAll: (items) => items.forEach(({ name, value, options }) => response.cookies.set(name, value, { ...options, domain: process.env.SUPABASE_SESSION_DOMAIN ?? ".betelgeze.com" })) } })
+    const sessionDomain = sessionCookieDomain()
+    const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { cookieOptions: sessionCookieOptions(sessionDomain), cookies: { getAll: () => request.cookies.getAll(), setAll: (items) => items.forEach(({ name, value, options }) => response.cookies.set(name, value, persistentSessionOptions(options, sessionDomain))) } })
     await supabase.auth.getUser()
     return response
 }

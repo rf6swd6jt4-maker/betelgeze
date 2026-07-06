@@ -21,6 +21,7 @@ export type LeadgenEnrichmentSourceKey =
     | "state_license.ca.pest_control"
     | "registry.ca.bizfile"
     | "registry.ca.los_angeles_fbn"
+    | "registry.ca.san_francisco_business_locations"
     | "regulated.ca.calrecycle_waste"
     | "state_license.az.roc"
     | "state_license.az.pest_management"
@@ -121,6 +122,7 @@ export const enrichmentLeadgenSources = new Set<LeadgenSourceKey>([
     "state_license.ca.pest_control",
     "registry.ca.bizfile",
     "registry.ca.los_angeles_fbn",
+    "registry.ca.san_francisco_business_locations",
     "regulated.ca.calrecycle_waste",
     "state_license.az.roc",
     "state_license.az.pest_management",
@@ -173,6 +175,7 @@ export const executableLeadgenSources = new Set<LeadgenSourceKey>([
     "state_license.ca.pest_control",
     "registry.ca.bizfile",
     "registry.ca.los_angeles_fbn",
+    "registry.ca.san_francisco_business_locations",
     "regulated.ca.calrecycle_waste",
     "state_license.az.roc",
     "state_license.az.pest_management",
@@ -493,6 +496,17 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         category: "location",
         implemented: true,
         setupHint: "No API key is needed. Betelgeze queries LA County's public Fictitious Business Name ArcGIS table.",
+    },
+    {
+        value: "registry.ca.san_francisco_business_locations",
+        label: "San Francisco registered businesses",
+        detail: "DataSF registered business locations dataset from the San Francisco Treasurer & Tax Collector. Exposes ownership-name fields for Bay Area owner identity discovery.",
+        statusLabel: "Executable from public API",
+        notesPlaceholder: "Ownership-name confidence rules, Bay Area city filters, or DBA matching caveats.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+        setupHint: "No API key is needed. Betelgeze queries DataSF's public Socrata API and only records ownership names that pass the real-person name gate.",
     },
     {
         value: "regulated.ca.calrecycle_waste",

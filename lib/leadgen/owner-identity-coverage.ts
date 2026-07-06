@@ -93,6 +93,12 @@ export const pass2TransportOwnerIdentityIndustries = [
 
 export const pass2NationalOwnerIdentitySources = ["transport.fmcsa_census"] as const
 
+export const pass3BayAreaOwnerIdentitySources = ["registry.ca.san_francisco_business_locations"] as const
+
+export const pass3LocalOwnerIdentitySourcesByLocation: Record<string, readonly string[]> = {
+    bay_area_ca: pass3BayAreaOwnerIdentitySources,
+}
+
 export function pass1OwnerIdentitySourcesForCombo(industryValue: string, locationValue: string) {
     if (!selectableOwnerIdentityIndustries.includes(industryValue as (typeof selectableOwnerIdentityIndustries)[number])) return []
     const location = selectableOwnerIdentityLocations.find((item) => item.value === locationValue)
@@ -107,6 +113,13 @@ export function pass2OwnerIdentitySourcesForCombo(industryValue: string, locatio
         ? [...pass2NationalOwnerIdentitySources]
         : []
     return [...new Set([...pass1Sources, ...transportSources])]
+}
+
+export function pass3OwnerIdentitySourcesForCombo(industryValue: string, locationValue: string) {
+    const pass2Sources = pass2OwnerIdentitySourcesForCombo(industryValue, locationValue)
+    const hasIndustry = selectableOwnerIdentityIndustries.includes(industryValue as (typeof selectableOwnerIdentityIndustries)[number])
+    const localSources = hasIndustry ? pass3LocalOwnerIdentitySourcesByLocation[locationValue] ?? [] : []
+    return [...new Set([...pass2Sources, ...localSources])]
 }
 
 export function pass1OwnerIdentityCoverageGaps() {

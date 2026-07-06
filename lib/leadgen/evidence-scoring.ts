@@ -60,6 +60,7 @@ const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set([
     "state_license.ca.pest_control",
     "registry.ca.bizfile",
     "registry.ca.los_angeles_fbn",
+    "registry.ca.san_francisco_business_locations",
     "regulated.ca.calrecycle_waste",
     "state_license.az.roc",
     "state_license.az.pest_management",

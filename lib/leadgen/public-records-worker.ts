@@ -122,6 +122,7 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "state_license.ca.pest_control",
     "registry.ca.bizfile",
     "registry.ca.los_angeles_fbn",
+    "registry.ca.san_francisco_business_locations",
     "regulated.ca.calrecycle_waste",
     "state_license.az.roc",
     "state_license.az.pest_management",
@@ -483,6 +484,8 @@ async function fetchSocrataRows(metadata: Record<string, unknown>, searchTerm: s
     if (!searchTerm) return []
     const limit = Math.min(50, Math.max(1, Number(metadata.query_limit) || 15))
     const params = new URLSearchParams({ "$limit": String(limit), "$q": searchTerm })
+    const whereClause = asString(metadata.where_clause)
+    if (whereClause) params.set("$where", whereClause)
     const url = `https://${domain}/resource/${datasetId}.json?${params.toString()}`
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), PUBLIC_RECORD_FETCH_TIMEOUT_MS)

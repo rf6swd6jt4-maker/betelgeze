@@ -30,7 +30,6 @@ import {
 export const dynamic = "force-dynamic"
 
 const settingsSections = [
-    { id: "workspace-identity", label: "Workspace", detail: "Name, banner, and logo" },
     { id: "onboarding-domain", label: "Onboarding Domain", detail: "Client portal hostname" },
     { id: "connections", label: "Connections", detail: "Stripe, WhatsApp, ClickUp" },
     { id: "users", label: "Users", detail: "Access and invitations" },
@@ -51,7 +50,7 @@ function UnifiedSection({
     children: ReactNode
 }) {
     return (
-        <section id={id} className="scroll-mt-24">
+        <section id={id} className="scroll-mt-5">
             <div className="mb-4">
                 <h2 className="text-xl font-semibold tracking-tight text-white">{title}</h2>
                 <p className="mt-1 text-sm leading-6 text-neutral-400">{description}</p>
@@ -100,43 +99,38 @@ export default async function SettingsPage({ params }: PageProps) {
     ) as Parameters<typeof WorkspaceConnections>[0]["connections"]
 
     return (
-        <main className="min-h-screen bg-neutral-950 px-4 pb-8 text-white sm:px-6">
+        <main className="min-h-screen bg-neutral-950 px-4 pb-8 text-white sm:px-6 lg:h-screen lg:overflow-hidden lg:pb-0">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
-            <div className="mx-auto max-w-7xl pt-5">
-                <header className="border-b border-neutral-800 pb-5">
-                    <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-                    <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
-                        One workspace-wide settings panel for onboarding, lead generation, connections, users, and shared workspace presentation.
-                    </p>
-                </header>
+            <div className="mx-auto max-w-7xl pt-5 lg:flex lg:h-[calc(100vh-3.5rem)] lg:flex-col lg:overflow-hidden">
+                <div className="lg:shrink-0">
+                    <WorkspaceIdentityEditor
+                        workspace={{
+                            name: workspace.name,
+                            slug: workspace.slug,
+                            bannerHeight: workspace.banner_height,
+                            bannerPosition: workspace.banner_position,
+                            bannerSrc,
+                            logoSrc,
+                        }}
+                        updateName={updateWorkspaceName.bind(null, workspace.slug)}
+                        updateCoverLayout={updateWorkspaceCoverLayout.bind(null, workspace.slug)}
+                        uploadBanner={uploadWorkspaceBanner.bind(null, workspace.slug)}
+                        uploadLogo={uploadWorkspaceLogo.bind(null, workspace.slug)}
+                        description="Edit the shared presentation shown across Betelgeze."
+                        bannerLabel="workspace banner"
+                    />
+                    <header className="mt-6 border-b border-neutral-800 pb-5">
+                        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
+                        <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
+                            One workspace-wide settings panel for onboarding, lead generation, connections, users, and shared workspace presentation.
+                        </p>
+                    </header>
+                </div>
 
-                <div className="mt-6 grid gap-8 lg:grid-cols-[16rem_minmax(0,1fr)]">
-                    <SettingsSectionNav sections={settingsSections} />
+                <div className="mt-6 grid gap-8 lg:min-h-0 lg:flex-1 lg:grid-cols-[16rem_minmax(0,1fr)]">
+                    <SettingsSectionNav sections={settingsSections} scrollRootId="workspace-settings-scroll" />
 
-                    <div className="space-y-10">
-                        <UnifiedSection
-                            id="workspace-identity"
-                            title="Workspace"
-                            description="This banner and logo now represent the workspace across Betelgeze. More granular banners can come back later as a dedicated feature."
-                        >
-                            <WorkspaceIdentityEditor
-                                workspace={{
-                                    name: workspace.name,
-                                    slug: workspace.slug,
-                                    bannerHeight: workspace.banner_height,
-                                    bannerPosition: workspace.banner_position,
-                                    bannerSrc,
-                                    logoSrc,
-                                }}
-                                updateName={updateWorkspaceName.bind(null, workspace.slug)}
-                                updateCoverLayout={updateWorkspaceCoverLayout.bind(null, workspace.slug)}
-                                uploadBanner={uploadWorkspaceBanner.bind(null, workspace.slug)}
-                                uploadLogo={uploadWorkspaceLogo.bind(null, workspace.slug)}
-                                description="Edit the shared workspace presentation shown across onboarding and lead generation."
-                                bannerLabel="workspace banner"
-                            />
-                        </UnifiedSection>
-
+                    <div id="workspace-settings-scroll" className="space-y-10 lg:min-h-0 lg:overflow-y-auto lg:pb-8 lg:pr-2">
                         <UnifiedSection
                             id="onboarding-domain"
                             title="Onboarding Domain"
@@ -279,10 +273,9 @@ export default async function SettingsPage({ params }: PageProps) {
                                 />
                             </ManualSettingsForm>
                         </UnifiedSection>
+                        <p className="pt-2 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
                     </div>
                 </div>
-
-                <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
             </div>
         </main>
     )

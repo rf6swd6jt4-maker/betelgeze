@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import {
     listWorkQueueItems,
@@ -35,19 +36,26 @@ export default async function WorkQueuePage({ params }: PageProps) {
         <main className="min-h-screen bg-neutral-950 px-4 pb-7 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-7xl pt-5">
-                <header className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 sm:flex-row sm:items-end">
+                <WorkspaceBanner bannerPath={workspace.banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.banner_height} position={workspace.banner_position} />
+                <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
-                        <h1 className="text-3xl font-semibold tracking-tight">
+                        <h1 className="text-2xl font-semibold tracking-tight">
                             Work Queue
                         </h1>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
                             Shared next actions across Relationships. This is the start of project management without creating a separate, disconnected task universe.
                         </p>
                     </div>
-                    <Link href={workspaceHref(workspace.slug, "relationships")} className="w-fit rounded-lg border border-neutral-800 px-3 py-2 text-sm text-neutral-300 hover:border-neutral-600 hover:text-white">
+                </header>
+
+                <div className="mt-5 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+                    <Link href={workspaceHref(workspace.slug, "relationships")} className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2">
                         Relationships
                     </Link>
-                </header>
+                    <Link href={workspaceHref(workspace.slug, "work")} className="shrink-0 rounded-lg bg-white px-3 py-2.5 font-medium text-black sm:py-2">
+                        Work Queue
+                    </Link>
+                </div>
 
                 <section className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
                     {[

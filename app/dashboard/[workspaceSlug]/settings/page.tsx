@@ -30,6 +30,7 @@ import {
 export const dynamic = "force-dynamic"
 
 const settingsSections = [
+    { id: "workspace", label: "Workspace", detail: "Name and identity" },
     { id: "onboarding-domain", label: "Onboarding Domain", detail: "Client portal hostname" },
     { id: "connections", label: "Connections", detail: "Stripe, WhatsApp, ClickUp" },
     { id: "users", label: "Users", detail: "Access and invitations" },
@@ -99,10 +100,10 @@ export default async function SettingsPage({ params }: PageProps) {
     ) as Parameters<typeof WorkspaceConnections>[0]["connections"]
 
     return (
-        <main className="min-h-screen bg-neutral-950 px-4 pb-8 text-white sm:px-6 lg:h-screen lg:overflow-hidden lg:pb-0">
+        <main className="min-h-screen bg-neutral-950 px-4 pb-8 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
-            <div className="mx-auto max-w-7xl pt-5 lg:flex lg:h-[calc(100vh-3.5rem)] lg:flex-col lg:overflow-hidden">
-                <div className="lg:shrink-0">
+            <div className="mx-auto max-w-7xl pt-5">
+                <div>
                     <WorkspaceIdentityEditor
                         workspace={{
                             name: workspace.name,
@@ -116,21 +117,33 @@ export default async function SettingsPage({ params }: PageProps) {
                         updateCoverLayout={updateWorkspaceCoverLayout.bind(null, workspace.slug)}
                         uploadBanner={uploadWorkspaceBanner.bind(null, workspace.slug)}
                         uploadLogo={uploadWorkspaceLogo.bind(null, workspace.slug)}
-                        description="Edit the shared presentation shown across Betelgeze."
+                        description={null}
                         bannerLabel="workspace banner"
+                        displayName="Settings"
+                        showNameEditor={false}
                     />
-                    <header className="mt-6 border-b border-neutral-800 pb-5">
-                        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-                        <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
-                            One workspace-wide settings panel for onboarding, lead generation, connections, users, and shared workspace presentation.
-                        </p>
-                    </header>
                 </div>
 
-                <div className="mt-6 grid gap-8 lg:min-h-0 lg:flex-1 lg:grid-cols-[16rem_minmax(0,1fr)]">
+                <div className="mt-8 grid gap-8 lg:grid-cols-[16rem_minmax(0,1fr)]">
                     <SettingsSectionNav sections={settingsSections} scrollRootId="workspace-settings-scroll" />
 
-                    <div id="workspace-settings-scroll" className="space-y-10 lg:min-h-0 lg:overflow-y-auto lg:pb-8 lg:pr-2">
+                    <div id="workspace-settings-scroll" className="space-y-10 lg:max-h-[calc(100vh-24rem)] lg:overflow-y-auto lg:pb-8 lg:pr-2">
+                        <UnifiedSection
+                            id="workspace"
+                            title="Workspace"
+                            description="Edit the workspace name shown in the top bar, menus, and account areas."
+                        >
+                            <form action={updateWorkspaceName.bind(null, workspace.slug)} className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
+                                <label className="block text-sm text-neutral-300">
+                                    Workspace name
+                                    <input name="name" required defaultValue={workspace.name} className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" />
+                                </label>
+                                <button className="mt-4 inline-flex min-h-10 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium leading-none text-black transition hover:bg-neutral-200">
+                                    Save workspace
+                                </button>
+                            </form>
+                        </UnifiedSection>
+
                         <UnifiedSection
                             id="onboarding-domain"
                             title="Onboarding Domain"

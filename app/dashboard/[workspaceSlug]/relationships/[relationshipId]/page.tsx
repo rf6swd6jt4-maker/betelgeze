@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
+import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import {
     RELATIONSHIP_PHASES,
@@ -69,9 +70,10 @@ export default async function RelationshipHubPage({ params, searchParams }: Page
         <main className="min-h-screen bg-neutral-950 px-4 pb-7 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-7xl pt-5">
+                <WorkspaceBanner bannerPath={workspace.banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.banner_height} position={workspace.banner_position} />
                 <div className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 lg:flex-row lg:items-end">
                     <div>
-                        <h1 className="text-3xl font-semibold tracking-tight">
+                        <h1 className="text-2xl font-semibold tracking-tight">
                             {relationship.primary_person_name}
                         </h1>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">

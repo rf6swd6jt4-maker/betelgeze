@@ -68,7 +68,7 @@ export default async function LeadgenWorkspacePage({ params, searchParams }: Pag
             <WorkspaceBanner bannerPath={workspace.banner_path} logoPath={workspace.logo_path} name={workspace.name} height={workspace.banner_height} position={workspace.banner_position} />
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div>
-                    <h1 className="text-2xl font-semibold tracking-tight">{workspace.name}</h1>
+                    <h1 className="text-2xl font-semibold tracking-tight">Lead Gen</h1>
                     <p className="mt-2 text-sm text-neutral-400">Review qualified owner-phone leads from the latest poll. Research candidates and rejected evidence stay on the poll detail page. Signed in as {role}.</p>
                 </div>
                 <NewPollButton href={`/${workspace.slug}/leadgen/new`} />

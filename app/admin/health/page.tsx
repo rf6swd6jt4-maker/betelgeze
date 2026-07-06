@@ -457,7 +457,7 @@ export default async function AdminHealthPage() {
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight">
-                            {workspace.banner_path || workspace.logo_path ? workspace.name : "System health"}
+                            System health
                         </h1>
 
                         <p className="mt-2 text-sm text-neutral-400">

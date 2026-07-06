@@ -238,7 +238,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight">
-                            {workspace.name}
+                            Clients
                         </h1>
 
                         <p className="mt-2 text-sm text-neutral-400">

@@ -40,7 +40,7 @@ export function SettingsSectionNav({ sections, scrollRootId }: { sections: Setti
     const activeIndex = Math.max(0, sections.findIndex((section) => section.id === active))
 
     return (
-        <nav className="hidden max-h-full overflow-y-auto lg:block">
+        <nav className="sticky top-20 hidden self-start lg:block">
             <div className="relative space-y-2 border-l border-neutral-800 pl-5">
                 <span
                     aria-hidden="true"

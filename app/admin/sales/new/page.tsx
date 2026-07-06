@@ -2,6 +2,7 @@ import Link from "next/link"
 import { SERVICES } from "@/lib/onboarding/services"
 import { requireAdmin } from "@/lib/admin/auth"
 import { FormPendingOverlay } from "@/components/FormPendingOverlay"
+import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { createSaleInvoice } from "./actions"
 
 export const dynamic = "force-dynamic"
@@ -15,7 +16,7 @@ type PageProps = {
 const currency = process.env.STRIPE_DEFAULT_CURRENCY ?? "usd"
 
 export default async function NewSalePage({ searchParams }: PageProps) {
-    await requireAdmin()
+    const { workspace, user } = await requireAdmin()
 
     const { error } = await searchParams
     const errorMessage =
@@ -32,7 +33,8 @@ export default async function NewSalePage({ searchParams }: PageProps) {
                     : null
 
     return (
-        <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
+        <main className="min-h-screen bg-neutral-950 px-6 pb-10 text-white">
+            <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-2xl">
                 <div className="flex items-center gap-4 text-sm text-neutral-400">
                     <Link href="/admin/invoices">← Back to invoices</Link>

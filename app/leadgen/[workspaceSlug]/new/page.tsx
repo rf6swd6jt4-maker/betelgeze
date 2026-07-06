@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
-import { BrandLockup } from "@/components/brand/BrandLockup"
+import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { leadgenSourceFamilyLabels, sourceHealthMap, sourceMetadataNote, sourceStatusMeta, type LeadgenSourceCatalogRow, type LeadgenSourceHealthRow } from "@/lib/leadgen/source-catalog-ui"
 import { buildSourcePlan, executableLeadgenSources, leadgenSourceOptions, leadgenSourceRuntimeConfigured, seedLeadgenSources, type LeadgenSourceConfig, type LeadgenSourceKey } from "@/lib/leadgen/sources"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -23,7 +23,7 @@ function sourceRequirement(sourceKey: LeadgenSourceKey, hasSeedSource: boolean) 
 
 export default async function NewLeadgenPollPage({ params }: PageProps) {
     const { workspaceSlug } = await params
-    const { workspace } = await requireWorkspace(workspaceSlug, "admin")
+    const { workspace, user } = await requireWorkspace(workspaceSlug, "admin")
     const settingsResult = await supabaseAdmin
         .from("leadgen_workspace_settings")
         .select("enabled_sources, source_config")
@@ -104,12 +104,12 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
     const preflightMark = canRun ? warnings.length ? "bg-amber-300" : "bg-emerald-300" : "bg-red-300"
     const preflightText = canRun ? warnings.length ? "text-amber-200" : "text-emerald-200" : "text-red-200"
 
-    return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-8 sm:py-8">
+    return <main className="min-h-screen bg-neutral-950 px-4 pb-5 text-white sm:px-8 sm:pb-8">
+        <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
         <div className="mx-auto max-w-5xl">
             <header className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 sm:flex-row sm:items-center sm:pb-6">
                 <div>
-                    <BrandLockup href={`/leadgen/${workspace.slug}`} />
-                    <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm text-neutral-400 sm:mt-5">
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-neutral-400">
                         <Link href={`/leadgen/${workspace.slug}`}>← Leads</Link>
                         <Link href={`/leadgen/${workspace.slug}/polls`}>Poll history</Link>
                         <Link href={`/leadgen/${workspace.slug}/settings`}>Settings</Link>

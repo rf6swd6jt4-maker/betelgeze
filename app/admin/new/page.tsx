@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { requireAdmin } from "@/lib/admin/auth"
 import { FormPendingOverlay } from "@/components/FormPendingOverlay"
+import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { createClient } from "./actions"
 export const dynamic = "force-dynamic"
 
@@ -12,7 +13,7 @@ type PageProps = {
 }
 
 export default async function NewClientPage({ searchParams }: PageProps) {
-    await requireAdmin()
+    const { workspace, user } = await requireAdmin()
 
     const { error, created } = await searchParams
     const errorMessage =
@@ -27,7 +28,8 @@ export default async function NewClientPage({ searchParams }: PageProps) {
     const showSuccess = created === "consent-sent"
 
     return (
-        <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
+        <main className="min-h-screen bg-neutral-950 px-6 pb-10 text-white">
+            <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-2xl">
                 <div className="flex items-center gap-4 text-sm text-neutral-400">
                     <Link href="/admin">← Back to clients</Link>

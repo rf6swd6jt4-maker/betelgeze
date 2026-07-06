@@ -6,6 +6,7 @@ import { splitProjectTimeframeDays } from "@/lib/onboarding/project-timeframe"
 import { requireAdmin } from "@/lib/admin/auth"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 import { FormPendingOverlay } from "@/components/FormPendingOverlay"
+import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { updateClient } from "./actions"
 
 type PageProps = {
@@ -21,7 +22,7 @@ export default async function EditClientPage({
     params,
     searchParams,
 }: PageProps) {
-    const { workspace } = await requireAdmin()
+    const { workspace, user } = await requireAdmin()
 
     const { id } = await params
     const { error } = await searchParams
@@ -54,7 +55,8 @@ export default async function EditClientPage({
     )
 
     return (
-        <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
+        <main className="min-h-screen bg-neutral-950 px-6 pb-10 text-white">
+            <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-2xl">
                 <Link
                     href={`/admin/client/${client.id}`}

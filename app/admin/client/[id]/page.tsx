@@ -19,6 +19,7 @@ import {
     normalizeMessageAddress,
 } from "@/lib/client-messages/addresses"
 import { AdminCopyButton } from "@/components/admin/AdminCopyButton"
+import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 import { FormResponsesSummary } from "@/components/admin/FormResponsesSummary"
 import { ClientActionsMenu } from "./ClientActionsMenu"
@@ -242,7 +243,8 @@ export default async function ClientDetailPage({
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
     return (
-        <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
+        <main className="min-h-screen bg-neutral-950 px-4 pb-6 text-white sm:px-6">
+            <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-7xl">
                 <Link
                     href="/admin"

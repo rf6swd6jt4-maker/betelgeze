@@ -1,9 +1,9 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
-import { BrandLockup } from "@/components/brand/BrandLockup"
 import { PollDuration } from "@/components/leadgen/PollDuration"
 import { PollLiveRefresh } from "@/components/leadgen/PollLiveRefresh"
+import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { sourceCatalogMap, sourceHumanLabel, type LeadgenSourceCatalogRow } from "@/lib/leadgen/source-catalog-ui"
 import { sourceLabel } from "@/lib/leadgen/sources"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
@@ -128,7 +128,7 @@ function plural(value: number, singular: string, pluralLabel = `${singular}s`) {
 
 export default async function LeadgenPollObjectPage({ params }: PageProps) {
     const { workspaceSlug, pollId } = await params
-    const { workspace } = await requireWorkspace(workspaceSlug)
+    const { workspace, user } = await requireWorkspace(workspaceSlug)
     const pollResult = await supabaseAdmin
         .from("leadgen_polls")
         .select("id, requested_by, status, trigger, source_count, source_snapshot, icp_snapshot, candidate_count, normalised_count, deduped_count, enriched_count, qualified_count, current_stage, target_validated_count, max_seed_candidates, seeded_count, validation_passed_count, owner_identity_count, owner_phone_count, callable_phone_count, stage_summary, created_at, started_at, completed_at, error")
@@ -239,13 +239,13 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
         phone_validation: poll.callable_phone_count ?? stageRunsByKey.get("phone_validation")?.passed_count ?? poll.qualified_count,
     }
 
-    return <main className="min-h-screen bg-neutral-950 px-4 py-5 text-white sm:px-8 sm:py-8">
+    return <main className="min-h-screen bg-neutral-950 px-4 pb-5 text-white sm:px-8 sm:pb-8">
         <PollLiveRefresh enabled={live} />
+        <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
         <div className="mx-auto max-w-6xl">
             <header className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 sm:flex-row sm:items-center sm:pb-6">
                 <div>
-                    <BrandLockup href={`/leadgen/${workspace.slug}`} />
-                    <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm text-neutral-400 sm:mt-5">
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-neutral-400">
                         <Link href={`/leadgen/${workspace.slug}/polls`}>← Poll history</Link>
                         <Link href={`/leadgen/${workspace.slug}`}>Leads</Link>
                         <Link href={`/leadgen/${workspace.slug}/new`}>New poll</Link>

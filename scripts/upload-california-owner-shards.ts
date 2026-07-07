@@ -1,13 +1,16 @@
 import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import path from "node:path"
 
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
+import { HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
 
 type CliOptions = {
     dir: string
     prefix: string
     dryRun: boolean
     concurrency: number
+    skipExisting: boolean
+    maxAttempts: number
+    retryBaseMs: number
 }
 
 function loadEnvFile(filePath: string) {
@@ -37,6 +40,9 @@ function usage() {
         "Options:",
         "  --dry-run              Print upload keys without writing to R2.",
         "  --concurrency 8        Number of parallel R2 uploads.",
+        "  --skip-existing        Skip objects that already exist in R2. Default.",
+        "  --no-skip-existing     Re-upload every shard object.",
+        "  --max-attempts 6       Upload attempts per shard file.",
     ].join("\n")
 }
 
@@ -46,6 +52,9 @@ function parseArgs(argv: string[]): CliOptions {
         prefix: process.env.CA_OWNER_R2_PREFIX ?? "leadgen/ca-owner",
         dryRun: false,
         concurrency: 8,
+        skipExisting: true,
+        maxAttempts: 6,
+        retryBaseMs: 750,
     }
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index]
@@ -59,6 +68,16 @@ function parseArgs(argv: string[]): CliOptions {
             options.dryRun = true
         } else if (arg === "--concurrency") {
             options.concurrency = Math.min(24, Math.max(1, Number(argv[index + 1]) || options.concurrency))
+            index += 1
+        } else if (arg === "--skip-existing") {
+            options.skipExisting = true
+        } else if (arg === "--no-skip-existing") {
+            options.skipExisting = false
+        } else if (arg === "--max-attempts") {
+            options.maxAttempts = Math.min(12, Math.max(1, Number(argv[index + 1]) || options.maxAttempts))
+            index += 1
+        } else if (arg === "--retry-base-ms") {
+            options.retryBaseMs = Math.min(10_000, Math.max(100, Number(argv[index + 1]) || options.retryBaseMs))
             index += 1
         }
     }
@@ -102,6 +121,90 @@ function formatBytes(bytes: number) {
     return `${value.toFixed(value >= 10 ? 1 : 2)} ${unit}`
 }
 
+function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function compactError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return message.length > 220 ? `${message.slice(0, 220)}...` : message
+}
+
+function errorName(error: unknown) {
+    return error && typeof error === "object" && "name" in error ? String((error as { name?: unknown }).name ?? "") : ""
+}
+
+function httpStatus(error: unknown) {
+    return error && typeof error === "object" && "$metadata" in error
+        ? Number((error as { $metadata?: { httpStatusCode?: unknown } }).$metadata?.httpStatusCode ?? 0)
+        : 0
+}
+
+function objectMissing(error: unknown) {
+    const status = httpStatus(error)
+    const name = errorName(error)
+    return status === 404 || name === "NotFound" || name === "NoSuchKey"
+}
+
+function retryableUploadError(error: unknown) {
+    const status = httpStatus(error)
+    const name = errorName(error)
+    const message = compactError(error)
+    return (
+        status === 0 ||
+        status === 408 ||
+        status === 409 ||
+        status === 429 ||
+        status >= 500 ||
+        /Timeout|ECONNRESET|EAI_AGAIN|fetch failed|internal error|streaming request|SlowDown|RequestTimeout|NetworkingError/i.test(`${name} ${message}`)
+    )
+}
+
+async function objectExists(client: S3Client, bucket: string, key: string) {
+    try {
+        await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+        return true
+    } catch (error) {
+        if (objectMissing(error)) return false
+        throw error
+    }
+}
+
+async function uploadObjectWithRetry({
+    client,
+    bucket,
+    key,
+    file,
+    maxAttempts,
+    retryBaseMs,
+}: {
+    client: S3Client
+    bucket: string
+    key: string
+    file: string
+    maxAttempts: number
+    retryBaseMs: number
+}) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+            await client.send(new PutObjectCommand({
+                Bucket: bucket,
+                Key: key,
+                Body: createReadStream(file),
+                ContentType: "application/x-ndjson; charset=utf-8",
+                ContentEncoding: "gzip",
+                CacheControl: "public, max-age=86400, immutable",
+            }))
+            return
+        } catch (error) {
+            if (attempt >= maxAttempts || !retryableUploadError(error)) throw error
+            const delayMs = retryBaseMs * attempt
+            console.log(`stage=retry key=${key} attempt=${attempt}/${maxAttempts} delay=${delayMs}ms error=${compactError(error)}`)
+            await sleep(delayMs)
+        }
+    }
+}
+
 async function runWithConcurrency<T>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<void>) {
     let index = 0
     const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
@@ -119,6 +222,7 @@ async function uploadShards(options: CliOptions) {
     if (files.length === 0) throw new Error(`No .jsonl.gz shard files found under ${options.dir}`)
     const totalBytes = files.reduce((total, file) => total + statSync(file).size, 0)
     console.log(`Uploading ${files.length.toLocaleString()} California owner shard file${files.length === 1 ? "" : "s"} (${formatBytes(totalBytes)}) to R2 prefix ${options.prefix}...`)
+    if (options.skipExisting) console.log("Existing R2 objects will be skipped.")
     if (options.dryRun) {
         for (const file of files.slice(0, 20)) console.log(objectKey(options.prefix, options.dir, file))
         if (files.length > 20) console.log(`...${(files.length - 20).toLocaleString()} more`)
@@ -127,21 +231,29 @@ async function uploadShards(options: CliOptions) {
     const client = r2Client()
     const bucket = requiredEnv("R2_BUCKET_NAME")
     const startedAt = Date.now()
+    let uploaded = 0
+    let skipped = 0
     await runWithConcurrency(files, options.concurrency, async (file, index) => {
         const key = objectKey(options.prefix, options.dir, file)
-        await client.send(new PutObjectCommand({
-            Bucket: bucket,
-            Key: key,
-            Body: createReadStream(file),
-            ContentType: "application/x-ndjson; charset=utf-8",
-            ContentEncoding: "gzip",
-            CacheControl: "public, max-age=86400, immutable",
-        }))
+        if (options.skipExisting && await objectExists(client, bucket, key)) {
+            skipped += 1
+        } else {
+            await uploadObjectWithRetry({
+                client,
+                bucket,
+                key,
+                file,
+                maxAttempts: options.maxAttempts,
+                retryBaseMs: options.retryBaseMs,
+            })
+            uploaded += 1
+        }
         if ((index + 1) % 500 === 0 || index + 1 === files.length) {
             const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000))
-            console.log(`stage=upload progress=${(index + 1).toLocaleString()}/${files.length.toLocaleString()} elapsed=${elapsedSeconds}s`)
+            console.log(`stage=upload progress=${(index + 1).toLocaleString()}/${files.length.toLocaleString()} uploaded=${uploaded.toLocaleString()} skipped=${skipped.toLocaleString()} elapsed=${elapsedSeconds}s`)
         }
     })
+    console.log(`stage=complete uploaded=${uploaded.toLocaleString()} skipped=${skipped.toLocaleString()} total=${files.length.toLocaleString()}`)
 }
 
 async function main() {

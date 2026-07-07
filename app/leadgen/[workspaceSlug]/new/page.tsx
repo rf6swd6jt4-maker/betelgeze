@@ -2,6 +2,7 @@ import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { leadgenSourceFamilyLabels, sourceHealthMap, sourceMetadataNote, sourceStatusMeta, type LeadgenSourceCatalogRow, type LeadgenSourceHealthRow } from "@/lib/leadgen/source-catalog-ui"
 import { buildSourcePlan, executableLeadgenSources, leadgenSourceOptions, leadgenSourceRuntimeConfigured, seedLeadgenSources, type LeadgenSourceConfig, type LeadgenSourceKey } from "@/lib/leadgen/sources"
+import { LEADGEN_POLLING_SYSTEM_VERSION_LABEL } from "@/lib/leadgen/version"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
 import { createLeadgenPoll } from "../actions"
@@ -107,8 +108,9 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
         <div className="mx-auto max-w-5xl pt-5">
             <section className="py-6 sm:py-10">
-                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Confirm candidate investigation</h1>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">This poll will seed new businesses from the current ICP, then investigate each candidate across active free/public adapters. Sources that are validation-only, bulk-refresh, or endpoint-specific are shown here but will not pretend to run.</p>
+                <p className="font-mono text-xs text-neutral-500">Lead Gen {LEADGEN_POLLING_SYSTEM_VERSION_LABEL}</p>
+                <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Confirm owner-first candidate investigation</h1>
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">This poll will seed new businesses from the current ICP, then run the staged v5.4.11 owner-identity system. Florida targets now lean on Sunbiz external shards plus county property-appraiser records for owner discovery, while clerk filings mostly strengthen scoring/corroboration and only extract owner names from cautious DBA-style matches.</p>
             </section>
 
             <section className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
@@ -116,7 +118,7 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
                     <div>
                         <div className={`inline-flex items-center gap-2 text-sm ${preflightText}`}><BetelgezeStatusMark className={preflightMark} />{preflightStatus}</div>
                         <h2 className="mt-2 text-lg font-semibold">Poll preflight</h2>
-                        <p className="mt-1 max-w-2xl text-sm leading-5 text-neutral-500">Checks the selected target, enabled sources, source mappings, and runtime configuration before creating work.</p>
+                        <p className="mt-1 max-w-2xl text-sm leading-5 text-neutral-500">Checks the selected target, enabled sources, source mappings, runtime configuration, and whether the owner-identity stage has enough real pollable sources before creating work.</p>
                     </div>
                     <form action={createLeadgenPoll.bind(null, workspace.slug)} className="flex w-full flex-col gap-2 md:w-auto md:min-w-[220px]">
                         <button disabled={!canRun} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400">Start poll</button>
@@ -133,6 +135,17 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
                     ].map(([label, value], index) => <div key={String(label)} className={`px-3 py-3 ${index % 2 === 0 ? "border-r" : ""} border-neutral-800 md:border-r md:last:border-r-0`}>
                         <p className="text-xs text-neutral-500">{label}</p>
                         <p className="mt-1 text-lg font-semibold text-neutral-100">{value}</p>
+                    </div>)}
+                </div>
+
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                    {[
+                        ["Owner identities first", "The poll prioritises real owner/principal names before phone discovery, so phone steps are not starved by weak identity evidence."],
+                        ["Florida strengthened", "Sunbiz shards, Miami-Dade/Hillsborough property appraisers, and Hillsborough clerk records can now contribute to Florida evidence."],
+                        ["Cautious public records", "Property and clerk rows are matched strictly; clerk filings mainly score/corroborate and do not turn unrelated filing parties into owners."],
+                    ].map(([title, copy]) => <div key={title} className="rounded-lg border border-neutral-800 bg-black px-3 py-3">
+                        <p className="text-sm font-medium text-neutral-100">{title}</p>
+                        <p className="mt-1 text-xs leading-5 text-neutral-500">{copy}</p>
                     </div>)}
                 </div>
 

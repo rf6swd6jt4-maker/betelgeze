@@ -3,8 +3,8 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link"
-import { useEffect, useId, useRef, useState } from "react"
-import { usePathname, useSearchParams } from "next/navigation"
+import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { AccountMenu } from "@/components/account/AccountMenu"
 import { LEADGEN_POLLING_SYSTEM_VERSION_LABEL } from "@/lib/leadgen/version"
 
@@ -115,10 +115,12 @@ function deferNavigationStateUpdate(update: () => void) {
 }
 
 export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, email, avatarSrc, leaveAction }: Props) {
+    const router = useRouter()
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const searchMenuId = useId()
     const desktopSearchRef = useRef<HTMLDivElement>(null)
+    const desktopSearchInputRef = useRef<HTMLInputElement>(null)
     const mobileSearchRef = useRef<HTMLDivElement>(null)
     const mobileSearchInputRef = useRef<HTMLInputElement>(null)
     const sidebarTransitionTimeout = useRef<number | null>(null)
@@ -131,6 +133,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
     const [searchOpen, setSearchOpen] = useState(false)
     const [searchLoading, setSearchLoading] = useState(false)
     const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+    const [searchShortcutLabel, setSearchShortcutLabel] = useState("Ctrl+J")
 
     useEffect(() => {
         const query = searchParams.toString()
@@ -199,6 +202,24 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
             document.removeEventListener("keydown", escape)
             window.removeEventListener("betelgeze:dropdown-open", closeForOtherDropdown)
         }
+    }, [searchMenuId])
+
+    useEffect(() => {
+        const isMac = /Mac|iPhone|iPad|iPod/i.test(window.navigator.platform) || /Mac OS|iPhone|iPad|iPod/i.test(window.navigator.userAgent)
+        deferNavigationStateUpdate(() => setSearchShortcutLabel(isMac ? "⌘J" : "Ctrl+J"))
+        const openFromShortcut = (event: KeyboardEvent) => {
+            if (event.key.toLowerCase() !== "j") return
+            if (isMac ? !event.metaKey : !event.ctrlKey) return
+            event.preventDefault()
+            window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: searchMenuId }))
+            setSearchOpen(true)
+            window.requestAnimationFrame(() => {
+                if (window.matchMedia("(min-width: 768px)").matches) desktopSearchInputRef.current?.focus()
+                else mobileSearchInputRef.current?.focus()
+            })
+        }
+        document.addEventListener("keydown", openFromShortcut)
+        return () => document.removeEventListener("keydown", openFromShortcut)
     }, [searchMenuId])
 
     useEffect(() => {
@@ -299,6 +320,27 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         setSearchOpen(true)
     }
 
+    function directSearchHref(value: string) {
+        const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ")
+        if (normalized === "new poll" || normalized === "create poll" || normalized === "start poll" || normalized === "run poll") return `/${workspace.slug}/leadgen/new`
+        if (normalized === "invoices" || normalized === "invoice") return `/${workspace.slug}/invoices`
+        if (normalized === "new invoice" || normalized === "create invoice" || normalized === "send invoice") return `/${workspace.slug}/sales/new`
+        if (normalized === "manual client" || normalized === "add manual client" || normalized === "new client" || normalized === "add client") return `/${workspace.slug}/clients/new`
+        if (normalized === "general sources" || normalized === "general source category") return `/${workspace.slug}/settings#leadgen-sources-general`
+        if (normalized === "industry sources" || normalized === "industry source category") return `/${workspace.slug}/settings#leadgen-sources-industry`
+        if (normalized === "location sources" || normalized === "location source category") return `/${workspace.slug}/settings#leadgen-sources-location`
+        return null
+    }
+
+    function submitSearch(event: ReactKeyboardEvent<HTMLInputElement>) {
+        if (event.key !== "Enter") return
+        const href = searchResults[0]?.href ?? directSearchHref(query)
+        if (!href) return
+        event.preventDefault()
+        setSearchOpen(false)
+        router.push(href)
+    }
+
     function toggleSidebar() {
         if (sidebarTransitionTimeout.current) window.clearTimeout(sidebarTransitionTimeout.current)
         setSidebarTransitionEnabled(true)
@@ -344,7 +386,8 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                     </button>
                     <label className="relative block min-w-0 flex-1">
                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
-                        <input value={query} onChange={(event) => { setQuery(event.target.value); openDesktopSearch() }} onFocus={openDesktopSearch} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 text-sm text-neutral-300 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
+                        <input ref={desktopSearchInputRef} value={query} onKeyDown={submitSearch} onChange={(event) => { setQuery(event.target.value); openDesktopSearch() }} onFocus={openDesktopSearch} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 pr-16 text-sm text-neutral-300 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
+                        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-neutral-800 px-1.5 py-0.5 text-[10px] leading-none text-neutral-500">{searchShortcutLabel}</span>
                     </label>
                     {searchOpen && (
                         <div className="absolute left-16 right-0 top-11 z-[70] max-h-[32rem] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/40">
@@ -379,7 +422,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                                 <div className="border-b border-neutral-800 p-3">
                                     <label className="relative block">
                                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
-                                        <input ref={mobileSearchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-10 text-base text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10 md:h-9 md:text-sm" />
+                                        <input ref={mobileSearchInputRef} value={query} onKeyDown={submitSearch} onChange={(event) => setQuery(event.target.value)} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-10 text-base text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10 md:h-9 md:text-sm" />
                                     </label>
                                 </div>
                                 <div className="max-h-[calc(72vh-4.25rem)] overflow-y-auto sm:max-h-[27.75rem]">

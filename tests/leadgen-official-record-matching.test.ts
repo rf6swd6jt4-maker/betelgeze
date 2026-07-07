@@ -4,7 +4,6 @@ import test from "node:test"
 import {
     assessOfficialRecordMatch,
     buildOfficialRecordSearchTerms,
-    officialRecordMatchAllowedByPolicy,
 } from "../lib/leadgen/official-record-matching.ts"
 
 const candidate = {
@@ -133,54 +132,4 @@ test("uses resolved legal entity fields to match later owner-source rows", () =>
     assert.ok(assessment.confidence >= 96)
     assert.ok(terms.includes("JJS Home Services LLC"))
     assert.ok(terms.includes("32012345678"))
-})
-
-test("allows exact California owner-shard matches without extra address evidence", () => {
-    const californiaCandidate = {
-        ...candidate,
-        display_name: "Golden State Roofing LLC",
-        canonical_name: "Golden State Roofing LLC",
-        phone: null,
-        website_domain: null,
-        website_url: null,
-        address: { state: "CA" },
-        latitude: null,
-        longitude: null,
-    }
-    const assessment = assessOfficialRecordMatch({
-        business_name: "GOLDEN STATE ROOFING LLC",
-        owner_name: "Maria Santos",
-        record_id: "2024123456",
-        city: "Los Angeles",
-        state: "CA",
-    }, californiaCandidate)
-
-    assert.equal(assessment.matched, true)
-    assert.equal(officialRecordMatchAllowedByPolicy(assessment, {
-        adapter: "california_owner_shard_lookup",
-        require_address_or_locality_match: true,
-    }), true)
-})
-
-test("keeps exact name-only matches strict for non-California shard sources", () => {
-    const assessment = assessOfficialRecordMatch({
-        business_name: "Austin Flooring Pros",
-        owner_name: "Maria Santos",
-        city: "Austin",
-        state: "TX",
-    }, {
-        ...candidate,
-        phone: null,
-        website_domain: null,
-        website_url: null,
-        address: { state: "TX" },
-        latitude: null,
-        longitude: null,
-    })
-
-    assert.equal(assessment.matched, true)
-    assert.equal(officialRecordMatchAllowedByPolicy(assessment, {
-        adapter: "socrata_public_records",
-        require_address_or_locality_match: true,
-    }), false)
 })

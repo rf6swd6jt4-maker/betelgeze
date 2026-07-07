@@ -10,9 +10,7 @@
     "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
     "import:sunbiz": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/import-sunbiz-owner-index.ts",
     "build:sunbiz-shards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/build-sunbiz-shards.ts",
-    "upload:sunbiz-shards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/upload-sunbiz-shards.ts",
-    "build:ca-owner-shards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/build-california-owner-shards.ts",
-    "upload:ca-owner-shards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/upload-california-owner-shards.ts"
+    "upload:sunbiz-shards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/upload-sunbiz-shards.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1057.0",

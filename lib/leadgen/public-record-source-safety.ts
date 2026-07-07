@@ -50,9 +50,6 @@ export function publicRecordPollUnsafeReason(sourceKey: string, label: string, m
     if (adapter === "sunbiz_external_lookup_required") {
         return `${label} needs an external Sunbiz file/shard lookup before poll-time activation.`
     }
-    if (adapter === "california_external_lookup_required") {
-        return `${label} needs a stable California bulk/API lookup before poll-time activation.`
-    }
     if (fragileHtmlPublicRecordSources.has(sourceKey) && adapter === guardedHtmlAdapter && metadata?.poll_safe_html !== true) {
         return `${label} is a guarded or app-shell public-record source. It needs a stable API, data-download index, or source-specific endpoint before poll-time activation.`
     }

@@ -63,16 +63,6 @@ test("Sunbiz requires the external shard adapter before poll-time activation", (
     }), null)
 })
 
-test("California Bizfile requires a stable external lookup before poll-time activation", () => {
-    assert.match(publicRecordPollUnsafeReason("registry.ca.bizfile", "California Bizfile officers", {
-        adapter: "california_external_lookup_required",
-    }) ?? "", /stable California bulk\/API lookup/)
-
-    assert.equal(publicRecordPollUnsafeReason("registry.ca.los_angeles_fbn", "Los Angeles County FBN", {
-        adapter: "california_owner_shard_lookup",
-    }), null)
-})
-
 test("detects challenge pages and client app shells before parsing rows", () => {
     assert.equal(looksLikeGuardedOrAppShell("<title>Just a moment...</title><span>Enable JavaScript and cookies to continue</span>"), true)
     assert.equal(looksLikeGuardedOrAppShell("<body><app-root></app-root><script src=\"https://www.google.com/recaptcha/api.js\"></script></body>"), true)

@@ -18,6 +18,7 @@ type CliOptions = {
     skipClear: boolean
     probe: boolean
     batchSize: number
+    progressLines: number
     files: string[]
 }
 type ResolvedCliOptions = Omit<CliOptions, "sourceKey"> & {
@@ -118,7 +119,8 @@ function parseArgs(argv: string[]): CliOptions {
         dryRun: false,
         skipClear: false,
         probe: false,
-        batchSize: 50,
+        batchSize: 250,
+        progressLines: 50_000,
         files: [],
     }
     for (let index = 0; index < argv.length; index += 1) {
@@ -140,7 +142,10 @@ function parseArgs(argv: string[]): CliOptions {
         } else if (arg === "--probe") {
             options.probe = true
         } else if (arg === "--batch-size") {
-            options.batchSize = Math.min(1000, Math.max(1, Number(argv[index + 1]) || 50))
+            options.batchSize = Math.min(1000, Math.max(1, Number(argv[index + 1]) || 250))
+            index += 1
+        } else if (arg === "--progress-lines") {
+            options.progressLines = Math.max(1_000, Number(argv[index + 1]) || 50_000)
             index += 1
         } else {
             options.files.push(arg)
@@ -160,7 +165,8 @@ function usage() {
         "  --dry-run              Parse files without writing to Supabase.",
         "  --skip-clear           Do not delete existing rows before a replace import; useful for retrying/resuming.",
         "  --probe                Check Supabase REST connectivity before reading files.",
-        "  --batch-size 50        Supabase upsert batch size, 1-1000.",
+        "  --batch-size 250       Supabase upsert batch size, 1-1000.",
+        "  --progress-lines 50000 Print progress while processing large files.",
     ].join("\n")
 }
 
@@ -286,18 +292,26 @@ function parserFor(
 }
 
 function progressLine(input: {
+    stage: "progress" | "complete"
     file: string
+    fileIndex: number
+    fileCount: number
     lineCount: number
     parsedRows: number
     importedRows: number
     batches: number
+    elapsedMs: number
 }) {
+    const elapsedSeconds = Math.max(1, Math.round(input.elapsedMs / 1000))
     return [
+        `stage=${input.stage}`,
+        `file=${input.fileIndex}/${input.fileCount}`,
         `file=${path.basename(input.file)}`,
         `lines=${input.lineCount.toLocaleString()}`,
         `parsed=${input.parsedRows.toLocaleString()}`,
         `imported=${input.importedRows.toLocaleString()}`,
         `batches=${input.batches.toLocaleString()}`,
+        `elapsed=${elapsedSeconds}s`,
     ].join(" ")
 }
 
@@ -331,12 +345,15 @@ async function importFiles(options: ResolvedCliOptions) {
             .eq("source_key", options.sourceKey))
     }
 
-    for (const file of options.files) {
+    for (const [fileIndex, file] of options.files.entries()) {
         if (!existsSync(file)) throw new Error(`File does not exist: ${file}`)
+        const fileStartedAt = Date.now()
         let lineCount = 0
         let fileParsedRows = 0
         let fileImportedRows = 0
+        let nextProgressLine = options.progressLines
         let batch: SunbizOwnerIndexRow[] = []
+        console.log(`Starting ${path.basename(file)} (${fileIndex + 1}/${options.files.length})...`)
         const reader = createInterface({
             input: createReadStream(file, { encoding: "utf8" }),
             crlfDelay: Infinity,
@@ -360,6 +377,20 @@ async function importFiles(options: ResolvedCliOptions) {
                     fileImportedRows += currentBatch.length
                 }
             }
+            if (lineCount >= nextProgressLine) {
+                console.log(progressLine({
+                    stage: "progress",
+                    file,
+                    fileIndex: fileIndex + 1,
+                    fileCount: options.files.length,
+                    lineCount,
+                    parsedRows: fileParsedRows,
+                    importedRows: fileImportedRows,
+                    batches,
+                    elapsedMs: Date.now() - fileStartedAt,
+                }))
+                nextProgressLine += options.progressLines
+            }
         }
         if (batch.length > 0) {
             batches += 1
@@ -372,11 +403,15 @@ async function importFiles(options: ResolvedCliOptions) {
             }
         }
         console.log(progressLine({
+            stage: "complete",
             file,
+            fileIndex: fileIndex + 1,
+            fileCount: options.files.length,
             lineCount,
             parsedRows: fileParsedRows,
             importedRows: fileImportedRows,
             batches,
+            elapsedMs: Date.now() - fileStartedAt,
         }))
     }
 

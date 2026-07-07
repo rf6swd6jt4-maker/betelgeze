@@ -1,4 +1,4 @@
-export const LEADGEN_POLLING_SYSTEM_VERSION = "5.4.5"
+export const LEADGEN_POLLING_SYSTEM_VERSION = "5.4.6"
 export const LEADGEN_POLLING_SYSTEM_VERSION_LABEL = `v${LEADGEN_POLLING_SYSTEM_VERSION}`
 
 export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
@@ -12,4 +12,5 @@ export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
     { version: "5.4.3", note: "Resumable Sunbiz owner index import retries." },
     { version: "5.4.4", note: "Adaptive Sunbiz import batches and connectivity probe." },
     { version: "5.4.5", note: "Sunbiz import access and service-role validation." },
+    { version: "5.4.6", note: "Sunbiz import progress logging and larger batches." },
 ] as const

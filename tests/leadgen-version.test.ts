@@ -7,9 +7,9 @@ import {
     LEADGEN_POLLING_SYSTEM_VERSION_LABEL,
 } from "../lib/leadgen/version.ts"
 
-test("leadgen polling system version is bumped for the v5.4.5 source pass", () => {
-    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION, "5.4.5")
-    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION_LABEL, "v5.4.5")
-    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION_HISTORY.at(-1)?.version, "5.4.5")
+test("leadgen polling system version is bumped for the v5.4.6 source pass", () => {
+    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION, "5.4.6")
+    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION_LABEL, "v5.4.6")
+    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION_HISTORY.at(-1)?.version, "5.4.6")
     assert.equal(LEADGEN_POLLING_SYSTEM_VERSION_HISTORY.some((entry) => entry.version === "5.1.1"), true)
 })

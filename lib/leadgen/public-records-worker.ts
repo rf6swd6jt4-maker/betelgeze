@@ -12,6 +12,10 @@ import {
     strongBusinessNameMatch,
     summarizeOfficialRecordRejections,
 } from "@/lib/leadgen/official-record-matching"
+import {
+    cautiousCountyPropertyOwnerName,
+    hillsboroughOfficialRecordRowsFromResults,
+} from "@/lib/leadgen/florida-county-records"
 import { candidatePrimaryCity, candidatePrimaryPostcode, candidatePrimaryState } from "@/lib/leadgen/location-resolution"
 import {
     isLikelyPublicRecordPersonName,
@@ -128,6 +132,9 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "registry.fl.tampa_btr",
     "registry.fl.jacksonville_btr",
     "registry.fl.orlando_btr",
+    "property.fl.miamidade_appraiser",
+    "property.fl.hillsborough_appraiser",
+    "clerk.fl.hillsborough_official_records",
     "state_license.ca.cslb",
     "state_license.ca.bar_auto_repair",
     "state_license.ca.pest_control",
@@ -1491,6 +1498,276 @@ async function fetchCertificateTransparencyRows(company: CompanyCandidate) {
     }).slice(0, 5)
 }
 
+function candidateAddressRecord(company: CompanyCandidate) {
+    return asRecord(company.address)
+}
+
+function candidateRegisteredAddressRecord(company: CompanyCandidate) {
+    return asRecord(company.registered_address)
+}
+
+function addressField(record: Record<string, unknown>, fields: string[]) {
+    for (const field of fields) {
+        const value = asString(record[field])
+        if (value) return value
+    }
+    return null
+}
+
+function candidateStreetLine(company: CompanyCandidate) {
+    const address = candidateAddressRecord(company)
+    const registered = candidateRegisteredAddressRecord(company)
+    return addressField(address, ["street", "address", "address_line_1", "line1"])
+        ?? addressField(registered, ["street", "address", "address_line_1", "line1"])
+}
+
+function stripUnitFromStreet(value: string | null | undefined) {
+    return cleanText(value)
+        .replace(/\s+(?:suite|ste|unit|apt|apartment|#)\s+[a-z0-9-]+$/i, "")
+        .replace(/\s+#\s*[a-z0-9-]+$/i, "")
+}
+
+function streetNumber(value: string | null | undefined) {
+    return cleanText(value).match(/\b\d{1,7}\b/)?.[0] ?? null
+}
+
+function withoutStreetNumber(value: string | null | undefined) {
+    return stripUnitFromStreet(value).replace(/\b\d{1,7}\b/, " ")
+}
+
+function sameStreetAddress(candidateStreet: string | null | undefined, recordStreet: string | null | undefined) {
+    const leftNumber = streetNumber(candidateStreet)
+    const rightNumber = streetNumber(recordStreet)
+    if (!leftNumber || !rightNumber || leftNumber !== rightNumber) return false
+    return sharedTokenScore(withoutStreetNumber(candidateStreet), withoutStreetNumber(recordStreet)) >= 0.35
+}
+
+function candidateLocationText(company: CompanyCandidate) {
+    const address = candidateAddressRecord(company)
+    const registered = candidateRegisteredAddressRecord(company)
+    return [
+        company.location_value,
+        candidateCity(company),
+        candidateState(company),
+        addressField(address, ["city", "locality"]),
+        addressField(registered, ["city", "locality"]),
+        addressField(address, ["county"]),
+        addressField(registered, ["county"]),
+    ].filter(Boolean).join(" ").toLowerCase()
+}
+
+function floridaCountySourceApplies(sourceKey: string, company: CompanyCandidate) {
+    const state = candidateState(company)
+    if (state && state.toUpperCase() !== "FL") return false
+    const text = candidateLocationText(company)
+    if (!text && state?.toUpperCase() !== "FL") return false
+    if (company.location_value === "florida") return true
+    if (sourceKey === "property.fl.miamidade_appraiser") return /\b(?:miami|dade|miami_dade|miami-dade)\b/i.test(text)
+    if (sourceKey === "property.fl.hillsborough_appraiser" || sourceKey === "clerk.fl.hillsborough_official_records") {
+        return /\b(?:hillsborough|tampa|brandon|riverview|plant\s+city|temple\s+terrace|valrico|seffner|apollo\s+beach|lutz|ruskin|gibsonton|lithia|thonotosassa|wimauma|sun\s+city\s+center|odessa|carrollwood)\b/i.test(text)
+    }
+    return false
+}
+
+function propertyOwnerBusinessMatches(candidate: CompanyCandidate, ownerValues: string[]) {
+    const ownerText = ownerValues.join("; ")
+    return [
+        candidate.display_name,
+        candidate.legal_name,
+        candidate.dba_name,
+    ].some((name) => Boolean(name && strongBusinessNameMatch(name, ownerText)))
+}
+
+function miamiDadePropertyInfos(payload: unknown) {
+    const record = asRecord(payload)
+    const directRows = Array.isArray(record.MinimumPropertyInfos) ? record.MinimumPropertyInfos : []
+    const nested = asRecord(record.Data)
+    const nestedRows = Array.isArray(nested.MinimumPropertyInfos) ? nested.MinimumPropertyInfos : []
+    return [...directRows, ...nestedRows].map(asRecord)
+}
+
+function miamiDadeAppraiserRow(record: Record<string, unknown>, company: CompanyCandidate, queryKind: string) {
+    const ownerValues = [
+        asString(record.Owner1),
+        asString(record.Owner2),
+        asString(record.Owner3),
+    ].filter((value): value is string => Boolean(value))
+    const siteAddress = asString(record.SiteAddress) ?? asString(record.PropertyAddress)
+    const sameAddress = sameStreetAddress(candidateStreetLine(company), siteAddress)
+    const ownerBusinessMatch = propertyOwnerBusinessMatches(company, ownerValues)
+    if (!sameAddress && !ownerBusinessMatch) return null
+    const businessName = ownerBusinessMatch ? ownerValues.join("; ") : company.display_name
+    const strap = asString(record.Strap) ?? asString(record.Folio)
+    return {
+        business_name: businessName,
+        owner_business_name: ownerValues.join("; ") || null,
+        owner_name: sameAddress ? cautiousCountyPropertyOwnerName(ownerValues, { lastNameFirst: true }) : null,
+        property_owner_1: asString(record.Owner1),
+        property_owner_2: asString(record.Owner2),
+        property_owner_3: asString(record.Owner3),
+        address: siteAddress,
+        site_address: siteAddress,
+        city: asString(record.Municipality),
+        state: "FL",
+        postcode: asString(record.ZipCode) ?? asString(record.PostalCode),
+        record_id: strap,
+        folio: strap,
+        status: asString(record.Status),
+        record_type: "Miami-Dade property appraiser parcel",
+        query_kind: queryKind,
+        source_url: "https://apps.miamidadepa.gov/propertysearch/",
+    }
+}
+
+async function fetchMiamiDadePropertyAppraiserRows(source: SourceCatalog, searchTerm: string, company: CompanyCandidate) {
+    if (!floridaCountySourceApplies(source.source_key, company)) return []
+    const limit = Math.min(10, Math.max(1, Number(source.metadata?.query_limit) || 5))
+    const rows: SocrataRecord[] = []
+    const baseUrl = "https://apps.miamidadepa.gov/PApublicServiceProxy/PaServicesProxy.ashx"
+    const street = stripUnitFromStreet(candidateStreetLine(company))
+    const requests: Array<{ kind: string; params: URLSearchParams }> = []
+    if (street) {
+        requests.push({
+            kind: "address",
+            params: new URLSearchParams({
+                Operation: "GetAddress",
+                clientAppName: "PropertySearch",
+                from: "1",
+                myAddress: street,
+                to: String(limit),
+            }),
+        })
+    }
+    if (searchTerm && !/^\d/.test(searchTerm)) {
+        requests.push({
+            kind: "owner",
+            params: new URLSearchParams({
+                Operation: "GetOwners",
+                clientAppName: "PropertySearch",
+                from: "1",
+                ownerName: searchTerm,
+                to: String(limit),
+            }),
+        })
+    }
+    for (const request of requests) {
+        const text = await fetchTextWithTimeout(`${baseUrl}?${request.params.toString()}`, { headers: { Accept: "application/json,text/plain,*/*" } })
+        const parsed = JSON.parse(text) as unknown
+        for (const record of miamiDadePropertyInfos(parsed)) {
+            const row = miamiDadeAppraiserRow(record, company, request.kind)
+            if (row) rows.push(row)
+            if (rows.length >= limit) break
+        }
+        if (rows.length >= limit) break
+    }
+    return rows
+}
+
+function hillsboroughAppraiserResults(payload: unknown) {
+    if (Array.isArray(payload)) return payload.map(asRecord)
+    const record = asRecord(payload)
+    for (const field of ["results", "Results", "data", "Data", "items"]) {
+        const rows = record[field]
+        if (Array.isArray(rows)) return rows.map(asRecord)
+    }
+    return []
+}
+
+function hillsboroughAppraiserRow(record: Record<string, unknown>, company: CompanyCandidate, queryKind: string) {
+    const owner = asString(record.owner)
+    const siteAddress = asString(record.address)
+    const sameAddress = sameStreetAddress(candidateStreetLine(company), siteAddress)
+    const ownerBusinessMatch = propertyOwnerBusinessMatches(company, [owner].filter((value): value is string => Boolean(value)))
+    if (!sameAddress && !ownerBusinessMatch) return null
+    const folio = asString(record.folio)
+    const pin = asString(record.pin)
+    return {
+        business_name: ownerBusinessMatch ? owner : company.display_name,
+        owner_business_name: owner,
+        owner_name: sameAddress ? cautiousCountyPropertyOwnerName([owner], { lastNameFirst: true }) : null,
+        address: siteAddress,
+        site_address: siteAddress,
+        city: asString(record.city),
+        state: "FL",
+        postcode: asString(record.zip) ?? asString(record.postcode),
+        county: "Hillsborough",
+        record_id: folio ?? pin,
+        folio,
+        pin,
+        land_use: asString(record.landUse),
+        homestead: asString(record.homestead),
+        sale_date: asString(record.saleDate),
+        sale_price: asString(record.salePrice),
+        status: asString(record.landUse),
+        record_type: "Hillsborough property appraiser parcel",
+        query_kind: queryKind,
+        source_url: pin
+            ? `https://gis.hcpafl.org/PropertySearch/#/parcel/basic/${encodeURIComponent(pin)}`
+            : "https://gis.hcpafl.org/propertysearch/",
+    }
+}
+
+async function fetchHillsboroughPropertyAppraiserRows(source: SourceCatalog, searchTerm: string, company: CompanyCandidate) {
+    if (!floridaCountySourceApplies(source.source_key, company)) return []
+    const limit = Math.min(10, Math.max(1, Number(source.metadata?.query_limit) || 5))
+    const rows: SocrataRecord[] = []
+    const requests: Array<{ kind: string; params: URLSearchParams }> = []
+    const street = stripUnitFromStreet(candidateStreetLine(company))
+    if (street) requests.push({ kind: "address", params: new URLSearchParams({ address: street, page: "1", pagesize: String(limit) }) })
+    if (searchTerm && !/^\d/.test(searchTerm)) requests.push({ kind: "owner", params: new URLSearchParams({ owner: searchTerm, page: "1", pagesize: String(limit) }) })
+    for (const request of requests) {
+        const text = await fetchTextWithTimeout(`https://gis.hcpafl.org/CommonServices/property/search/BasicSearch?${request.params.toString()}`, { headers: { Accept: "application/json,text/plain,*/*" } })
+        const parsed = JSON.parse(text) as unknown
+        for (const record of hillsboroughAppraiserResults(parsed)) {
+            const row = hillsboroughAppraiserRow(record, company, request.kind)
+            if (row) rows.push(row)
+            if (rows.length >= limit) break
+        }
+        if (rows.length >= limit) break
+    }
+    return rows
+}
+
+async function fetchFloridaCountyPropertyAppraiserRows(source: SourceCatalog, searchTerm: string, company: CompanyCandidate) {
+    if (source.source_key === "property.fl.miamidade_appraiser") return fetchMiamiDadePropertyAppraiserRows(source, searchTerm, company)
+    if (source.source_key === "property.fl.hillsborough_appraiser") return fetchHillsboroughPropertyAppraiserRows(source, searchTerm, company)
+    return []
+}
+
+function subtractMonths(date: Date, months: number) {
+    const next = new Date(date)
+    next.setUTCMonth(next.getUTCMonth() - months)
+    return next
+}
+
+async function fetchHillsboroughClerkOfficialRecordRows(source: SourceCatalog, searchTerm: string, company: CompanyCandidate) {
+    if (!floridaCountySourceApplies(source.source_key, company)) return []
+    if (!searchTerm || /^\d/.test(searchTerm) || /@|www\.|https?:|\.[a-z]{2,}$/i.test(searchTerm)) return []
+    const metadata = source.metadata ?? {}
+    const lookbackMonths = Math.min(60, Math.max(3, Number(metadata.lookback_months) || 24))
+    const docTypes = asStringArray(metadata.doc_types).length
+        ? asStringArray(metadata.doc_types)
+        : ["(NOC) NOTICE OF COMMENCEMENT"]
+    const now = new Date()
+    const payload = {
+        PartyName: [searchTerm],
+        DocType: docTypes,
+        RecordDateBegin: usDate(subtractMonths(now, lookbackMonths)),
+        RecordDateEnd: usDate(now),
+    }
+    const text = await fetchTextWithTimeout("https://publicaccess.hillsclerk.com/Public/ORIUtilities/DocumentSearch/api/Search", {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    })
+    const parsed = JSON.parse(text) as unknown
+    return hillsboroughOfficialRecordRowsFromResults(parsed, {
+        candidateName: company.display_name,
+        searchTerm,
+        maxRows: Math.min(25, Math.max(1, Number(metadata.query_limit) || 10)),
+    })
+}
+
 async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, company: CompanyCandidate) {
     const adapter = asString(source.metadata?.adapter) ?? "socrata_public_records"
     const unsafeReason = publicRecordPollUnsafeReason(source.source_key, source.label, source.metadata)
@@ -1513,6 +1790,8 @@ async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, com
     if (adapter === "guarded_html_search") return fetchGuardedHtmlRows(source, searchTerm, source.metadata ?? {}, company)
     if (adapter === "rdap_domain") return fetchRdapRows(company)
     if (adapter === "certificate_transparency") return fetchCertificateTransparencyRows(company)
+    if (adapter === "fl_county_property_appraiser") return fetchFloridaCountyPropertyAppraiserRows(source, searchTerm, company)
+    if (adapter === "hillsborough_clerk_official_records") return fetchHillsboroughClerkOfficialRecordRows(source, searchTerm, company)
     return fetchSocrataRows(source.metadata ?? {}, searchTerm)
 }
 

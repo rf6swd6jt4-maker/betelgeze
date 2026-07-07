@@ -16,6 +16,9 @@ export type LeadgenEnrichmentSourceKey =
     | "registry.fl.miami_dade_lbt"
     | "registry.fl.tampa_btr"
     | "registry.fl.jacksonville_btr"
+    | "property.fl.miamidade_appraiser"
+    | "property.fl.hillsborough_appraiser"
+    | "clerk.fl.hillsborough_official_records"
     | "state_license.ca.cslb"
     | "state_license.ca.bar_auto_repair"
     | "state_license.ca.pest_control"
@@ -117,6 +120,9 @@ export const enrichmentLeadgenSources = new Set<LeadgenSourceKey>([
     "registry.fl.miami_dade_lbt",
     "registry.fl.tampa_btr",
     "registry.fl.jacksonville_btr",
+    "property.fl.miamidade_appraiser",
+    "property.fl.hillsborough_appraiser",
+    "clerk.fl.hillsborough_official_records",
     "state_license.ca.cslb",
     "state_license.ca.bar_auto_repair",
     "state_license.ca.pest_control",
@@ -170,6 +176,9 @@ export const executableLeadgenSources = new Set<LeadgenSourceKey>([
     "registry.fl.miami_dade_lbt",
     "registry.fl.tampa_btr",
     "registry.fl.jacksonville_btr",
+    "property.fl.miamidade_appraiser",
+    "property.fl.hillsborough_appraiser",
+    "clerk.fl.hillsborough_official_records",
     "state_license.ca.cslb",
     "state_license.ca.bar_auto_repair",
     "state_license.ca.pest_control",
@@ -386,6 +395,39 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         implemented: true,
         envVar: "SUNBIZ_SHARD_BASE_URL",
         setupHint: "Set SUNBIZ_SHARD_BASE_URL in Vercel after uploading generated Sunbiz shards to R2 or another public object store.",
+    },
+    {
+        value: "property.fl.miamidade_appraiser",
+        label: "Miami-Dade property appraiser",
+        detail: "Miami-Dade Property Appraiser public parcel search. Strengthens Florida owner discovery when the candidate address or owner/entity record matches the business.",
+        statusLabel: "Executable, no key",
+        notesPlaceholder: "Parcel-owner caution rules, address-match confidence, or Miami-Dade query notes.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+        setupHint: "No API key is needed. Betelgeze uses the public county property-search service and only records parcel-owner names after strict person-name and parcel-match checks.",
+    },
+    {
+        value: "property.fl.hillsborough_appraiser",
+        label: "Hillsborough property appraiser",
+        detail: "Hillsborough County Property Appraiser public parcel search. Useful for Tampa-area owner discovery when property ownership corroborates the candidate business.",
+        statusLabel: "Executable, no key",
+        notesPlaceholder: "Parcel-owner caution rules, Tampa-area address matching, or Hillsborough query notes.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+        setupHint: "No API key is needed. Betelgeze queries the public parcel search and treats parcel-owner names cautiously because property owners can be customers or landlords.",
+    },
+    {
+        value: "clerk.fl.hillsborough_official_records",
+        label: "Hillsborough clerk official records",
+        detail: "Hillsborough Clerk official records search for recent notices of commencement and related filings. Mostly strengthens business scoring/corroboration, with only cautious DBA-style owner extraction.",
+        statusLabel: "Executable, no key",
+        notesPlaceholder: "Document-type filters, lookback window, or cautious DBA owner-extraction notes.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+        setupHint: "No API key is needed. Clerk filings are mainly evidence that a business is active; Betelgeze does not treat unrelated filing parties as owner identities.",
     },
     {
         value: "state_license.fl.fdacs_pest",

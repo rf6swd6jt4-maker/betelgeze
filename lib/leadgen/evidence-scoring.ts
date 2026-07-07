@@ -58,7 +58,6 @@ const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set([
     "property.fl.miamidade_appraiser",
     "property.fl.hillsborough_appraiser",
     "clerk.fl.hillsborough_official_records",
-    "state_license.ca.cslb",
     "state_license.ca.bar_auto_repair",
     "state_license.ca.pest_control",
     "registry.ca.los_angeles_fbn",

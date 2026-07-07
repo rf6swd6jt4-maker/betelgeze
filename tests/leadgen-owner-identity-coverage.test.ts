@@ -71,11 +71,12 @@ test("pass 3 Bay Area owner-identity source is listed, runnable, and mapped acro
     }
 })
 
-test("v5.5 California owner discovery uses stable executable sources instead of Bizfile", () => {
+test("v5.5.2 California owner discovery uses stable executable shards instead of live CSLB or Bizfile", () => {
     const settingsSourceKeys = new Set(leadgenSourceOptions.map((source) => source.value))
     const californiaCoreSources = pass1CoreOwnerIdentitySourcesByState.CA
 
-    assert.deepEqual(californiaCoreSources, ["state_license.ca.cslb"])
+    assert.deepEqual(californiaCoreSources, ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations"])
+    assert.equal(executableLeadgenSources.has("state_license.ca.cslb"), false)
     assert.equal(californiaCoreSources.includes("registry.ca.bizfile"), false)
     assert.equal(executableLeadgenSources.has("registry.ca.bizfile"), false)
 
@@ -90,7 +91,9 @@ test("v5.5 California owner discovery uses stable executable sources instead of 
     for (const industry of selectableOwnerIdentityIndustries) {
         for (const location of selectableOwnerIdentityLocations.filter((item) => item.state === "CA")) {
             const sources = pass5OwnerIdentitySourcesForCombo(industry, location.value)
-            assert.equal(sources.includes("state_license.ca.cslb"), true, `${industry}/${location.value} does not include California CSLB`)
+            assert.equal(sources.includes("state_license.ca.cslb"), false, `${industry}/${location.value} still depends on live California CSLB`)
+            assert.equal(sources.includes("registry.ca.los_angeles_fbn"), true, `${industry}/${location.value} does not include California FBN shards`)
+            assert.equal(sources.includes("registry.ca.san_francisco_business_locations"), true, `${industry}/${location.value} does not include California registered-business shards`)
             assert.equal(sources.includes("registry.ca.bizfile"), false, `${industry}/${location.value} still depends on Bizfile`)
             assert.equal(sources.includes("website"), false, `${industry}/${location.value} fell back to the crawler`)
         }
@@ -98,5 +101,7 @@ test("v5.5 California owner discovery uses stable executable sources instead of 
 
     assert.equal(pass5OwnerIdentitySourcesForCombo("fencing_contractors", "los_angeles_ca").includes("registry.ca.los_angeles_fbn"), true)
     assert.equal(pass5OwnerIdentitySourcesForCombo("fencing_contractors", "bay_area_ca").includes("registry.ca.san_francisco_business_locations"), true)
+    assert.equal(pass5OwnerIdentitySourcesForCombo("fencing_contractors", "san_diego_ca").includes("registry.ca.los_angeles_fbn"), true)
+    assert.equal(pass5OwnerIdentitySourcesForCombo("fencing_contractors", "san_diego_ca").includes("registry.ca.san_francisco_business_locations"), true)
     assert.equal(pass5OwnerIdentitySourcesForCombo("waste_disposal", "san_diego_ca").includes("regulated.ca.calrecycle_waste"), true)
 })

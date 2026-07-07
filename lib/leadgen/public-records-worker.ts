@@ -145,7 +145,6 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "property.fl.miamidade_appraiser",
     "property.fl.hillsborough_appraiser",
     "clerk.fl.hillsborough_official_records",
-    "state_license.ca.cslb",
     "state_license.ca.bar_auto_repair",
     "state_license.ca.pest_control",
     "registry.ca.los_angeles_fbn",
@@ -1916,6 +1915,7 @@ function rowToMatch(row: SocrataRecord, candidate: CompanyCandidate, metadata: R
     const recordType = pickString(row, [...asStringArray(fieldMap.record_type), "record_type", "license_type", "entity_type", "permit_type"])
     const assessment = assessOfficialRecordMatch(row, candidate, metadata)
     if (!assessment.matched) return null
+    if (!officialRecordMatchAllowedByPolicy(assessment, metadata)) return null
     const { latitude, longitude } = extractPoint(row, asStringArray(fieldMap.geopoint))
     const directLatitude = Number(pickString(row, ["latitude"]))
     const directLongitude = Number(pickString(row, ["longitude"]))
@@ -1978,6 +1978,20 @@ const BROAD_TEXT_SEARCH_ADAPTERS = new Set([
 
 function sourceAdapter(source: SourceCatalog) {
     return asString(source.metadata?.adapter) ?? "socrata_public_records"
+}
+
+function numberSignal(value: unknown) {
+    return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+function officialRecordMatchAllowedByPolicy(assessment: ReturnType<typeof assessOfficialRecordMatch>, metadata: Record<string, unknown>) {
+    if (metadata.require_address_or_locality_match !== true) return true
+    const minimumAddressScore = Math.min(1, Math.max(0, Number(metadata.minimum_locality_address_score) || 0.34))
+    const addressScore = numberSignal(assessment.signals.address_score)
+    const phoneScore = numberSignal(assessment.signals.phone_score)
+    const domainScore = numberSignal(assessment.signals.domain_score)
+    const identifierScore = numberSignal(assessment.signals.identifier_score)
+    return addressScore >= minimumAddressScore || phoneScore >= 0.8 || domainScore >= 1 || identifierScore >= 1
 }
 
 function searchTermsForSource(source: SourceCatalog, company: CompanyCandidate) {

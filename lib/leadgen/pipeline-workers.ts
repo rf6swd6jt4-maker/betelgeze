@@ -34,6 +34,10 @@ type CompanySeed = {
     profile_url: string | null
     source_key: string
     source_record_id: string
+    address?: Record<string, unknown> | null
+    registered_address?: Record<string, unknown> | null
+    industry_value?: string | null
+    location_value?: string | null
 }
 
 type PipelineTask = {
@@ -92,6 +96,7 @@ const WEBSITE_TASK_CONCURRENCY: Record<Exclude<PollStageKey, "seed">, number> = 
     owner_phone: 4,
     phone_validation: 1,
 }
+const CALIFORNIA_LOCATION_VALUES = new Set(["california", "los_angeles_ca", "san_diego_ca", "bay_area_ca", "san_francisco_ca", "oakland_ca", "san_jose_ca"])
 
 function compactErrorMessage(error: unknown) {
     const message = error instanceof Error ? error.message : "Leadgen source task failed."
@@ -144,6 +149,18 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asString(value: unknown) {
     return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function recordState(value: unknown) {
+    const record = asRecord(value)
+    const state = asString(record?.state) ?? asString(record?.region) ?? asString(record?.state_code) ?? asString(record?.region_code)
+    return state && /^[A-Z]{2}$/i.test(state) ? state.toUpperCase() : null
+}
+
+function companyTargetsCalifornia(company: Pick<CompanySeed, "address" | "registered_address" | "location_value">) {
+    return recordState(company.address) === "CA"
+        || recordState(company.registered_address) === "CA"
+        || CALIFORNIA_LOCATION_VALUES.has(company.location_value ?? "")
 }
 
 function titleCaseFromValue(value: string | null | undefined) {
@@ -250,7 +267,7 @@ export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan, com
     if (plan.key !== "website") return 0
     let companiesQuery = supabaseAdmin
         .from("leadgen_companies")
-        .select("id, display_name, phone, website_url, profile_url, source_key, source_record_id")
+        .select("id, display_name, phone, website_url, profile_url, source_key, source_record_id, address, registered_address, industry_value, location_value")
         .eq("workspace_id", workspaceId)
         .eq("first_seen_poll_id", pollId)
         .not("website_url", "is", null)
@@ -276,6 +293,7 @@ export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan, com
             crawl_depth: plan.crawlDepth ?? 2,
             timeout_seconds: plan.timeoutSeconds ?? 10,
             respect_robots: plan.respectRobots !== false,
+            california_owner_identity_boost: stageKey === "owner_identity" && companyTargetsCalifornia(company),
         },
     }] : [])
     if (tasks.length === 0) return 0
@@ -886,16 +904,20 @@ async function processWebsiteTask(task: PipelineTask) {
     const workspaceId = typeof task.source_query.workspace_id === "string" ? task.source_query.workspace_id : ""
     const pollId = typeof task.source_query.poll_id === "string" ? task.source_query.poll_id : null
     const stageKey: WebsiteStageKey = task.stage_key === "seed" ? "business_validation" : task.stage_key
+    const californiaOwnerIdentityBoost = stageKey === "owner_identity" && task.source_query.california_owner_identity_boost === true
     if (workspaceId && pollId) {
         await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "website", stageKey, status: "running" })
         await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "web.json_ld", stageKey, status: "running" })
     }
     const crawlLimits = WEBSITE_CRAWL_LIMITS[stageKey] ?? WEBSITE_CRAWL_LIMITS.owner_identity
-    const depth = Math.min(5, Math.max(1, Number(task.source_query.crawl_depth) || 2))
+    const configuredDepth = Math.min(5, Math.max(1, Number(task.source_query.crawl_depth) || 2))
+    const depth = californiaOwnerIdentityBoost ? Math.max(3, configuredDepth) : configuredDepth
     const timeoutSeconds = Math.min(crawlLimits.timeoutSeconds, Math.max(2, Number(task.source_query.timeout_seconds) || crawlLimits.timeoutSeconds))
-    const deadline = Date.now() + crawlLimits.budgetMs
+    const crawlBudgetMs = californiaOwnerIdentityBoost ? Math.max(crawlLimits.budgetMs, 26_000) : crawlLimits.budgetMs
+    const deadline = Date.now() + crawlBudgetMs
     const inspected: PageExtraction[] = []
-    const maxPages = depth <= 1 ? 1 : depth === 2 ? Math.min(crawlLimits.maxPages, stageKey === "owner_phone" ? 6 : 5) : crawlLimits.maxPages
+    const baseMaxPages = depth <= 1 ? 1 : depth === 2 ? Math.min(crawlLimits.maxPages, stageKey === "owner_phone" ? 6 : 5) : crawlLimits.maxPages
+    const maxPages = californiaOwnerIdentityBoost ? Math.max(baseMaxPages, 8) : baseMaxPages
     const sitemapUrls = Date.now() < deadline - 1500
         ? await discoverSitemapUrls(websiteUrl, stageKey, depth, Math.min(timeoutSeconds, Math.max(1, Math.ceil((deadline - Date.now()) / 1000)))).catch(() => [])
         : []
@@ -976,7 +998,7 @@ async function processWebsiteTask(task: PipelineTask) {
             social_links: uniqueValues(inspected.flatMap((page) => page.social_links ?? [])),
             profile_links: uniqueValues(inspected.flatMap((page) => page.profile_links ?? [])),
         },
-        raw_payload: { inspected, crawl_strategy: { max_pages: maxPages, sitemap_urls: sitemapUrls.slice(0, 12), queued_urls: [...queued].slice(0, 30) } },
+        raw_payload: { inspected, crawl_strategy: { max_pages: maxPages, sitemap_urls: sitemapUrls.slice(0, 12), queued_urls: [...queued].slice(0, 30), california_owner_identity_boost: californiaOwnerIdentityBoost } },
     })
     if (evidenceError) throw evidenceError
     if (workspaceId && pollId) {
@@ -990,7 +1012,7 @@ async function processWebsiteTask(task: PipelineTask) {
             confidence: 35,
             provenanceUrl: websiteUrl,
             claimValue: { website_url: websiteUrl, pages_inspected: inspected.length, sitemap_urls: sitemapUrls.length },
-            rawPayload: { inspected, crawl_strategy: { max_pages: maxPages, sitemap_urls: sitemapUrls.slice(0, 12) } },
+            rawPayload: { inspected, crawl_strategy: { max_pages: maxPages, sitemap_urls: sitemapUrls.slice(0, 12), california_owner_identity_boost: californiaOwnerIdentityBoost } },
         })
         if (businessPhone) {
             await recordEvidenceClaim({

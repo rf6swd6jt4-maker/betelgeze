@@ -78,7 +78,7 @@ export const selectableOwnerIdentityLocations: OwnerIdentityCoverageLocation[] =
 export const pass1CoreOwnerIdentitySourcesByState: Record<OwnerIdentityCoverageLocation["state"], string[]> = {
     TX: ["registry.tx.comptroller"],
     FL: ["registry.fl.sunbiz", "registry.fl.fictitious_names"],
-    CA: ["state_license.ca.cslb"],
+    CA: ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations"],
     AZ: ["registry.az.corp_commission"],
 }
 
@@ -100,7 +100,9 @@ export const pass3LocalOwnerIdentitySourcesByLocation: Record<string, readonly s
 }
 
 export const pass5CaliforniaLocalOwnerIdentitySourcesByLocation: Record<string, readonly string[]> = {
+    california: ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations"],
     los_angeles_ca: ["registry.ca.los_angeles_fbn"],
+    san_diego_ca: ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations"],
     bay_area_ca: ["registry.ca.san_francisco_business_locations"],
 }
 

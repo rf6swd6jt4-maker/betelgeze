@@ -389,7 +389,8 @@ export function sourceCoverageApplies(
     if ((source.source_key === "web.rdap_whois" || source.source_key === "web.certificate_transparency") && !domainFromUrl(company.website_domain) && !domainFromUrl(company.website_url)) return false
     const coverage = asRecord(source.coverage)
     const industries = asStringArray(coverage.industries)
-    if (industries.length > 0 && (!company.industry_value || !industries.includes(company.industry_value))) return false
+    const allIndustries = industries.includes("all_enabled") || industries.includes("all") || industries.includes("*")
+    if (!allIndustries && industries.length > 0 && (!company.industry_value || !industries.includes(company.industry_value))) return false
 
     const sourceStates = asStringArray(coverage.states).map(normalizeStateCode).filter((state): state is string => Boolean(state))
     const sourceCities = asStringArray(coverage.cities).map(normaliseCoveragePlace).filter(Boolean)

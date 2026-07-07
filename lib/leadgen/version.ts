@@ -1,4 +1,4 @@
-export const LEADGEN_POLLING_SYSTEM_VERSION = "5.4.9"
+export const LEADGEN_POLLING_SYSTEM_VERSION = "5.4.10"
 export const LEADGEN_POLLING_SYSTEM_VERSION_LABEL = `v${LEADGEN_POLLING_SYSTEM_VERSION}`
 
 export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
@@ -16,4 +16,5 @@ export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
     { version: "5.4.7", note: "Slim active-only Sunbiz bulk import defaults." },
     { version: "5.4.8", note: "Retired Supabase Sunbiz index from poll fan-out." },
     { version: "5.4.9", note: "Florida Sunbiz external shard lookup." },
+    { version: "5.4.10", note: "Sunbiz statewide all-industry task fan-out fix." },
 ] as const

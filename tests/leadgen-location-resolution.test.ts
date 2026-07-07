@@ -87,6 +87,17 @@ test("maps city targets to county-level local sources", () => {
     }, { address: null, location_value: "miami_fl", industry_value: "cleaning_companies" }), true)
 })
 
+test("lets statewide all-industry registry sources run for any selected industry", () => {
+    assert.equal(sourceCoverageApplies({
+        source_key: "registry.fl.sunbiz",
+        coverage: { states: ["FL"], industries: ["all_enabled"] },
+    }, { address: null, location_value: "miami_fl", industry_value: "fencing_contractors" }), true)
+    assert.equal(sourceCoverageApplies({
+        source_key: "registry.fl.sunbiz",
+        coverage: { states: ["FL"], industries: ["all_enabled"] },
+    }, { address: null, location_value: "phoenix_az", industry_value: "fencing_contractors" }), false)
+})
+
 test("normalises state names and address freeform fields as a fallback", () => {
     const company = {
         address: {

@@ -1,4 +1,5 @@
 import { createHash } from "crypto"
+import { gunzipSync } from "node:zlib"
 
 import { identityPayloadForCompany, identityProfileFromOfficialRecord, mergeIdentityForCompany } from "@/lib/leadgen/company-identity-resolution"
 import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
@@ -25,6 +26,15 @@ import {
     type PublicRecordSourceHealthStatus,
 } from "@/lib/leadgen/public-record-source-safety"
 import { normaliseSunbizIndexSearchText } from "@/lib/leadgen/sunbiz-bulk-index"
+import {
+    filterSunbizShardRecords,
+    parseSunbizShardJsonl,
+    SUNBIZ_DEFAULT_SHARD_PREFIX_LENGTH,
+    SUNBIZ_SHARD_VERSION,
+    sunbizShardKeysForName,
+    sunbizShardUrl,
+    type SunbizShardRecord,
+} from "@/lib/leadgen/sunbiz-shards"
 import type { PollStageKey } from "@/lib/leadgen/staged-poll"
 import { groupByKey, runWithConcurrency } from "@/lib/leadgen/task-execution"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -140,6 +150,7 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
 
 const PUBLIC_RECORD_FETCH_TIMEOUT_MS = 18_000
 const CSV_CACHE = new Map<string, Promise<string>>()
+const SUNBIZ_SHARD_CACHE = new Map<string, Promise<SunbizShardRecord[]>>()
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -541,6 +552,93 @@ async function fetchSunbizOwnerIndexRows(source: SourceCatalog, searchTerm: stri
             raw_payload: asRecord(row.raw_payload),
         }
     })
+}
+
+function isSunbizShardSourceKey(sourceKey: string): sourceKey is "registry.fl.sunbiz" | "registry.fl.fictitious_names" {
+    return sourceKey === "registry.fl.sunbiz" || sourceKey === "registry.fl.fictitious_names"
+}
+
+function sunbizShardBaseUrl(metadata: Record<string, unknown>) {
+    return asString(metadata.shard_base_url) ?? process.env.SUNBIZ_SHARD_BASE_URL?.trim() ?? null
+}
+
+async function fetchSunbizShardRecords(url: string) {
+    const cached = SUNBIZ_SHARD_CACHE.get(url)
+    if (cached) return cached
+    const promise = (async () => {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), PUBLIC_RECORD_FETCH_TIMEOUT_MS)
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    Accept: "application/x-ndjson,application/json,text/plain,*/*",
+                    "Accept-Encoding": "gzip",
+                    "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)",
+                },
+                cache: "force-cache",
+                signal: controller.signal,
+            })
+            if (response.status === 404) return []
+            const bytes = Buffer.from(await response.arrayBuffer())
+            if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}: ${bytes.toString("utf8").slice(0, 280)}`)
+            let text: string
+            try {
+                text = gunzipSync(bytes).toString("utf8")
+            } catch {
+                text = bytes.toString("utf8")
+            }
+            return parseSunbizShardJsonl(text)
+        } catch (error) {
+            if (error instanceof Error && error.name === "AbortError") throw new Error(`${url} timed out after ${Math.round(PUBLIC_RECORD_FETCH_TIMEOUT_MS / 1000)} seconds.`)
+            throw error
+        } finally {
+            clearTimeout(timeout)
+        }
+    })()
+    SUNBIZ_SHARD_CACHE.set(url, promise)
+    return promise
+}
+
+async function fetchSunbizShardLookupRows(source: SourceCatalog, searchTerm: string) {
+    if (!isSunbizShardSourceKey(source.source_key)) throw new Error(`${source.label} is not a supported Sunbiz shard source.`)
+    const sourceKey = source.source_key
+    const metadata = source.metadata ?? {}
+    const baseUrl = sunbizShardBaseUrl(metadata)
+    if (!baseUrl) throw new Error(`${source.label} requires SUNBIZ_SHARD_BASE_URL before poll-time activation.`)
+    const prefixLength = Math.min(5, Math.max(1, Number(metadata.shard_prefix_length) || SUNBIZ_DEFAULT_SHARD_PREFIX_LENGTH))
+    const shardKeys = sunbizShardKeysForName(searchTerm, prefixLength)
+    if (shardKeys.length === 0) return []
+    const version = asString(metadata.shard_version) ?? process.env.SUNBIZ_SHARD_VERSION?.trim() ?? SUNBIZ_SHARD_VERSION
+    const limit = Math.min(50, Math.max(1, Number(metadata.query_limit) || 20))
+    const records = (await Promise.all(shardKeys.map(async (shardKey) => {
+        const url = sunbizShardUrl({ baseUrl, sourceKey, shardKey, version })
+        return fetchSunbizShardRecords(url)
+    }))).flat()
+    const seenRecords = new Set<string>()
+    const uniqueRecords = records.filter((record) => {
+        const key = `${record.s}:${record.r}:${record.p}`
+        if (seenRecords.has(key)) return false
+        seenRecords.add(key)
+        return true
+    })
+    return filterSunbizShardRecords(uniqueRecords, searchTerm, limit).map((record) => ({
+        business_name: record.b,
+        owner_name: record.p,
+        person_name: record.p,
+        person_role: record.role,
+        person_source_field: record.field,
+        record_id: record.r,
+        status: record.status,
+        record_type: record.rt,
+        city: record.city,
+        state: record.state,
+        postcode: record.zip,
+        raw_payload: {
+            shard_keys: shardKeys,
+            normalized_business_name: record.n,
+            source_key: record.s,
+        },
+    }))
 }
 
 function parseFmcsaLabel(html: string, label: string) {
@@ -1404,6 +1502,7 @@ async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, com
     if (adapter === "usaspending_awards") return fetchUsaspendingRows(searchTerm)
     if (adapter === "texas_comptroller_franchise_tax") return fetchTexasComptrollerRows(searchTerm, source.metadata ?? {})
     if (adapter === "sunbiz_owner_index") return fetchSunbizOwnerIndexRows(source, searchTerm)
+    if (adapter === "sunbiz_shard_lookup") return fetchSunbizShardLookupRows(source, searchTerm)
     if (adapter === "fmcsa_company_census") return fetchFmcsaCensusRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "texas_agriculture_spcs_csv") return fetchTexasAgriculturePestRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "tceq_central_registry") return fetchTceqRows(searchTerm, source.metadata ?? {}, company)

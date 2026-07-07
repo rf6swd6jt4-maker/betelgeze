@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/.sunbiz-shards
 
 # next.js
 /.next/

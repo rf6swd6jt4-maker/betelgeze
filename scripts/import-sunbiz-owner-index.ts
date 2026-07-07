@@ -63,6 +63,27 @@ function validateSupabaseUrl(value: string) {
     }
 }
 
+function decodeJwtPayload(token: string) {
+    const [, payload] = token.split(".")
+    if (!payload) return null
+    try {
+        return JSON.parse(Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")) as Record<string, unknown>
+    } catch {
+        return null
+    }
+}
+
+function validateServiceRoleKey(value: string) {
+    const payload = decodeJwtPayload(value)
+    const role = payload?.role
+    if (role && role !== "service_role") {
+        throw new Error(`SUPABASE_SERVICE_ROLE_KEY contains a ${String(role)} JWT, not a service_role JWT. Use Supabase Project Settings > API > service_role key for local imports.`)
+    }
+    if (!payload) {
+        console.warn("Could not decode SUPABASE_SERVICE_ROLE_KEY as a JWT; continuing, but imports require a real Supabase service_role key.")
+    }
+}
+
 function normaliseSunbizImportSourceKey(value: string | null | undefined): SunbizImportSourceKey | null {
     const sourceKey = String(value ?? "").trim()
     return SUNBIZ_IMPORT_SOURCES.has(sourceKey as SunbizImportSourceKey) ? sourceKey as SunbizImportSourceKey : null
@@ -286,6 +307,7 @@ async function importFiles(options: ResolvedCliOptions) {
     const supabaseUrl = needsSupabase ? requiredEnv("NEXT_PUBLIC_SUPABASE_URL") : null
     const serviceRoleKey = needsSupabase ? requiredEnv("SUPABASE_SERVICE_ROLE_KEY") : null
     if (supabaseUrl) validateSupabaseUrl(supabaseUrl)
+    if (serviceRoleKey) validateServiceRoleKey(serviceRoleKey)
     const supabase = supabaseUrl && serviceRoleKey
         ? createClient(supabaseUrl, serviceRoleKey)
         : null

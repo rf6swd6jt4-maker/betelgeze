@@ -83,8 +83,15 @@ function sourceCategoryIntentKey(stageKey: SourceStageKey, category: LeadgenSour
     return `${stageKey}:${category}` as LeadgenSourceCategoryIntentKey
 }
 
-function sourceCategoryAnchorId(category: LeadgenSourceCategoryKey) {
-    return `leadgen-sources-${category}`
+function sourceStageAnchorId(stageKey: SourceStageKey | "seed") {
+    return stageKey === "seed" ? "leadgen-sources-seed" : `leadgen-sources-${stageKey.replace(/_/g, "-")}`
+}
+
+function sourceStageKeyFromHash(hash: string) {
+    const value = hash.replace(/^#leadgen-sources-/, "")
+    if (value === "seed") return "seed"
+    const stageKey = value.replace(/-/g, "_")
+    return SOURCE_STAGE_CARDS.some((stage) => stage.key === stageKey) ? stageKey as SourceStageKey : null
 }
 
 function categoryChecked(sources: SourceSettingsItem[], enabledValues: Set<LeadgenSourceKey>) {
@@ -515,27 +522,20 @@ export function SourceSettingsCard({ sources, sourceCategoryIntents = {}, catalo
     }, [initialCategoryIntentValues, initialEnabledValues, sectionSourcesByKey, sourceStageCards])
 
     useEffect(() => {
-        const handleSourceCategoryHash = () => {
-            const category = window.location.hash.replace(/^#leadgen-sources-/, "") as LeadgenSourceCategoryKey
-            if (!SOURCE_CATEGORIES.some((item) => item.key === category)) return
-            setExpandedCategories((current) => {
-                const next = new Set(current)
-                for (const stage of sourceStageCards) {
-                    if (stage.categories.some((item) => item.key === category)) next.add(`${stage.key}:${category}`)
-                }
-                return next
-            })
+        const handleSourceStageHash = () => {
+            const stageKey = sourceStageKeyFromHash(window.location.hash)
+            if (!stageKey) return
             window.setTimeout(() => {
-                document.querySelector(`[data-source-category-anchor="${sourceCategoryAnchorId(category)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })
+                document.querySelector(`[data-source-stage-anchor="${sourceStageAnchorId(stageKey)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })
             }, 0)
         }
-        handleSourceCategoryHash()
-        window.addEventListener("hashchange", handleSourceCategoryHash)
-        return () => window.removeEventListener("hashchange", handleSourceCategoryHash)
-    }, [sourceStageCards])
+        handleSourceStageHash()
+        window.addEventListener("hashchange", handleSourceStageHash)
+        return () => window.removeEventListener("hashchange", handleSourceStageHash)
+    }, [])
 
     return <div className="space-y-3 sm:space-y-4">
-        <section ref={seedSectionRef} data-settings-section="seed-sources" data-source-category-anchor={sourceCategoryAnchorId("general")} onChange={scheduleSourceDirtyCheck} onInput={scheduleSourceDirtyCheck} className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+        <section ref={seedSectionRef} data-settings-section="seed-sources" data-source-stage-anchor={sourceStageAnchorId("seed")} onChange={scheduleSourceDirtyCheck} onInput={scheduleSourceDirtyCheck} className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
             {[...enabledValues].filter((value) => seedKeys.has(value)).map((value) => <input key={value} type="hidden" name="sources" value={value} />)}
             <div className="border-b border-neutral-800 bg-neutral-900 px-3 py-3 sm:px-5 sm:py-4">
                 <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
@@ -566,6 +566,7 @@ export function SourceSettingsCard({ sources, sourceCategoryIntents = {}, catalo
                 key={stage.key}
                 ref={(node) => { stageSectionRefs.current[section] = node }}
                 data-settings-section={section}
+                data-source-stage-anchor={sourceStageAnchorId(stage.key)}
                 onChange={scheduleSourceDirtyCheck}
                 onInput={scheduleSourceDirtyCheck}
                 className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900"
@@ -593,7 +594,7 @@ export function SourceSettingsCard({ sources, sourceCategoryIntents = {}, catalo
                         const expanded = expandedCategories.has(categoryKey)
                         const categoryCounts = groupCounts(category.sources)
                         const categoryOn = categoryIntentActive(stage.key, category.key, category.sources)
-                        return <div key={category.key} data-source-category-anchor={sourceCategoryAnchorId(category.key)} className="bg-neutral-950/40">
+                        return <div key={category.key} className="bg-neutral-950/40">
                             <div className="grid grid-cols-[64px_minmax(0,1fr)_32px] items-center gap-x-2 bg-neutral-950/60 px-3 py-1.5 sm:grid-cols-[84px_minmax(0,1fr)_auto_36px] sm:gap-3 sm:px-5 sm:py-3">
                                 <CategoryToggle sources={category.sources} enabledValues={enabledValues} checked={categoryOn} onToggle={(checked) => toggleCategory(stage.key, category.key, category.sources, checked)} />
                                 <div className="min-w-0 self-center">

@@ -326,9 +326,11 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         if (normalized === "invoices" || normalized === "invoice") return `/${workspace.slug}/invoices`
         if (normalized === "new invoice" || normalized === "create invoice" || normalized === "send invoice") return `/${workspace.slug}/sales/new`
         if (normalized === "manual client" || normalized === "add manual client" || normalized === "new client" || normalized === "add client") return `/${workspace.slug}/clients/new`
-        if (normalized === "general sources" || normalized === "general source category") return `/${workspace.slug}/settings#leadgen-sources-general`
-        if (normalized === "industry sources" || normalized === "industry source category") return `/${workspace.slug}/settings#leadgen-sources-industry`
-        if (normalized === "location sources" || normalized === "location source category") return `/${workspace.slug}/settings#leadgen-sources-location`
+        if (normalized === "seed sources" || normalized === "seed source category") return `/${workspace.slug}/settings#leadgen-sources-seed`
+        if (normalized === "business validation" || normalized === "business validation sources") return `/${workspace.slug}/settings#leadgen-sources-business-validation`
+        if (normalized === "owner identity" || normalized === "owner identity discovery" || normalized === "owner discovery") return `/${workspace.slug}/settings#leadgen-sources-owner-identity`
+        if (normalized === "owner phone" || normalized === "owner phone sources" || normalized === "phone discovery") return `/${workspace.slug}/settings#leadgen-sources-owner-phone`
+        if (normalized === "phone validation" || normalized === "phone validation sources") return `/${workspace.slug}/settings#leadgen-sources-phone-validation`
         return null
     }
 

@@ -1,4 +1,4 @@
-export const LEADGEN_POLLING_SYSTEM_VERSION = "5.5.5"
+export const LEADGEN_POLLING_SYSTEM_VERSION = "5.5.6"
 export const LEADGEN_POLLING_SYSTEM_VERSION_LABEL = `v${LEADGEN_POLLING_SYSTEM_VERSION}`
 
 export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
@@ -25,4 +25,5 @@ export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
     { version: "5.5.3", note: "California owner-identity recovery for strong website owners and exact CA shard matches." },
     { version: "5.5.4", note: "California owner-identity fallback crawl URL ordering and profile-URL filtering." },
     { version: "5.5.5", note: "California San Diego owner shards and CA poll console transparency." },
+    { version: "5.5.6", note: "California San Diego task scheduling and multi-location seed balancing fix." },
 ] as const

@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { normalisePersonName } from "./person-name-normalizer.js"
+import { selectBalancedValidatedCompanies } from "./stage-selection"
 
 export type PollStageKey = "seed" | "business_validation" | "owner_identity" | "owner_phone" | "phone_validation"
 
@@ -14,7 +15,7 @@ type EvidenceClaim = {
     points_awarded: number | null
 }
 
-type StageCompany = {
+export type StageCompany = {
     id: string
     display_name: string
     phone: string | null
@@ -25,6 +26,8 @@ type StageCompany = {
     owner_identity_points: number | null
     owner_phone_points: number | null
     business_support_points: number | null
+    industry_value?: string | null
+    location_value?: string | null
     created_at?: string | null
 }
 
@@ -291,7 +294,7 @@ export async function loadStageSourceKeys(stageKey: PollStageKey, enabledSourceK
 export async function loadPollCompanies(workspaceId: string, pollId: string, limit = 500) {
     const { data, error } = await supabaseAdmin
         .from("leadgen_companies")
-        .select("id, display_name, phone, website_url, profile_url, owner_name, owner_phone, owner_identity_points, owner_phone_points, business_support_points, created_at")
+        .select("id, display_name, phone, website_url, profile_url, owner_name, owner_phone, owner_identity_points, owner_phone_points, business_support_points, industry_value, location_value, created_at")
         .eq("workspace_id", workspaceId)
         .eq("first_seen_poll_id", pollId)
         .order("created_at", { ascending: true })
@@ -410,7 +413,7 @@ export async function recordBusinessValidationStage({ workspaceId, pollId, targe
         return { company, metrics, valid: metrics.businessSupportPoints > 0 }
     })
     const valid = evaluated.filter((item) => item.valid)
-    const selected = valid.slice(0, targetCount)
+    const selected = selectBalancedValidatedCompanies(valid, targetCount)
     const selectedIds = new Set(selected.map((item) => item.company.id))
     const now = new Date().toISOString()
     await upsertCompanyStages(evaluated.map((item) => {

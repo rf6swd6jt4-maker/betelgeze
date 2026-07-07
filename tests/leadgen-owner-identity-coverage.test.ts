@@ -16,6 +16,9 @@ import {
     selectableOwnerIdentityLocations,
 } from "../lib/leadgen/owner-identity-coverage.ts"
 import {
+    CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES,
+} from "../lib/leadgen/investigation-sources.ts"
+import {
     executableLeadgenSources,
     leadgenSourceOptions,
     type LeadgenSourceKey,
@@ -36,6 +39,7 @@ test("pass 1 core owner-identity sources are listed in Settings and runnable by 
         assert.notEqual(sourceKey, "website")
         assert.equal(settingsSourceKeys.has(sourceKey as Exclude<LeadgenSourceKey, "state_licensing">), true, `${sourceKey} is missing from Settings source options`)
         assert.equal(executableLeadgenSources.has(sourceKey as LeadgenSourceKey), true, `${sourceKey} is not runnable by the poll source planner`)
+        assert.equal(CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES.has(sourceKey), true, `${sourceKey} is not scheduled by the investigation task creator`)
     }
 })
 

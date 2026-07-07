@@ -148,6 +148,12 @@ function uniqueValues(values: Array<string | null | undefined>) {
     return [...new Set(values.filter((value): value is string => Boolean(value)))]
 }
 
+function perSeedTaskLimit(plan: LeadgenSourcePlanItem, taskCount: number) {
+    const pollLimit = Math.min(500, Math.max(1, Number(plan.limit) || 25))
+    if (taskCount <= 1) return pollLimit
+    return Math.min(50, Math.max(3, Math.ceil(pollLimit / taskCount)))
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
 }
@@ -234,7 +240,8 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
     const locationMappings = usesSeedFallbacks
         ? seedLocationMappingsWithFallbacks(plan.locations, rawLocationMappings, locationTargets)
         : rawLocationMappings
-    const tasks = industryMappings.flatMap((industry) => locationMappings.flatMap((location) => {
+    const seedSource = PIPELINE_SEED_SOURCES.has(plan.key)
+    const taskRows = industryMappings.flatMap((industry) => locationMappings.flatMap((location) => {
         const industryValues = Array.isArray(industry.native_values) ? industry.native_values : []
         const locationValues = Array.isArray(location.native_values) ? location.native_values : []
         if (industryValues.length === 0 || locationValues.length === 0) return []
@@ -242,7 +249,7 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
             poll_id: pollId,
             workspace_id: workspaceId,
             source_key: plan.key,
-            stage_key: PIPELINE_SEED_SOURCES.has(plan.key) ? "seed" : "business_validation",
+            stage_key: seedSource ? "seed" : "business_validation",
             stage: sourceStage,
             industry_value: industry.icp_industry_value,
             location_value: location.icp_location_value,
@@ -256,13 +263,33 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
                 industry_mapping: industry,
                 location_mapping: location,
                 limit: plan.limit ?? 25,
-                candidate_target_count: PIPELINE_SEED_SOURCES.has(plan.key) ? plan.limit ?? 10 : null,
+                candidate_target_count: seedSource ? plan.limit ?? 10 : null,
                 radius_meters: plan.radiusMeters,
                 release: plan.release,
             },
         }]
     }))
+    const seedTaskLimit = seedSource ? perSeedTaskLimit(plan, taskRows.length) : null
+    const tasks = seedTaskLimit
+        ? taskRows.map((task) => ({
+            ...task,
+            source_query: {
+                ...task.source_query,
+                limit: seedTaskLimit,
+                candidate_target_count: seedTaskLimit,
+            },
+        }))
+        : taskRows
     if (tasks.length === 0) return 0
+    if (seedSource && CALIFORNIA_LOCATION_VALUES.has(plan.locations.find((location) => CALIFORNIA_LOCATION_VALUES.has(location)) ?? "")) {
+        logCaliforniaOwnerDebug("seed_task_budget", {
+            source_key: plan.key,
+            task_count: tasks.length,
+            per_task_limit: seedTaskLimit,
+            industries: plan.industries,
+            locations: plan.locations,
+        })
+    }
     const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(tasks)
     if (error) throw error
     return tasks.length
@@ -757,6 +784,9 @@ async function processOvertureTask(task: PipelineTask) {
         .select("id", { count: "exact", head: true })
         .eq("workspace_id", workspaceId)
         .eq("first_seen_poll_id", pollId)
+        .eq("source_key", "overture")
+        .eq("industry_value", task.industry_value ?? "")
+        .eq("location_value", task.location_value ?? "")
     if (existingPollCompaniesResult.error) throw existingPollCompaniesResult.error
     const remainingCandidateSlots = candidateTargetCount - (existingPollCompaniesResult.count ?? 0)
     if (remainingCandidateSlots <= 0) return { rawCount: 0, companyCount: 0 }

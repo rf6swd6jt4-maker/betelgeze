@@ -17,6 +17,8 @@ type CliOptions = {
     dryRun: boolean
     skipClear: boolean
     probe: boolean
+    includeInactive: boolean
+    fullPayload: boolean
     batchSize: number
     progressLines: number
     files: string[]
@@ -119,6 +121,8 @@ function parseArgs(argv: string[]): CliOptions {
         dryRun: false,
         skipClear: false,
         probe: false,
+        includeInactive: false,
+        fullPayload: false,
         batchSize: 250,
         progressLines: 50_000,
         files: [],
@@ -141,6 +145,10 @@ function parseArgs(argv: string[]): CliOptions {
             options.skipClear = true
         } else if (arg === "--probe") {
             options.probe = true
+        } else if (arg === "--include-inactive") {
+            options.includeInactive = true
+        } else if (arg === "--full-payload") {
+            options.fullPayload = true
         } else if (arg === "--batch-size") {
             options.batchSize = Math.min(1000, Math.max(1, Number(argv[index + 1]) || 250))
             index += 1
@@ -165,6 +173,8 @@ function usage() {
         "  --dry-run              Parse files without writing to Supabase.",
         "  --skip-clear           Do not delete existing rows before a replace import; useful for retrying/resuming.",
         "  --probe                Check Supabase REST connectivity before reading files.",
+        "  --include-inactive     Import inactive/cancelled/expired records too; active-only is the default.",
+        "  --full-payload         Store parser raw_payload JSON; slim empty payloads are the default.",
         "  --batch-size 250       Supabase upsert batch size, 1-1000.",
         "  --progress-lines 50000 Print progress while processing large files.",
     ].join("\n")
@@ -291,6 +301,16 @@ function parserFor(
         : parsers.parseSunbizFictitiousNameOwnerRows
 }
 
+function shouldImportRow(row: SunbizOwnerIndexRow, options: Pick<ResolvedCliOptions, "includeInactive">) {
+    return options.includeInactive || row.status === "Active"
+}
+
+function importDbRow(row: SunbizOwnerIndexRow, options: Pick<ResolvedCliOptions, "fullPayload">) {
+    const nextRow = dbRow(row)
+    if (!options.fullPayload) nextRow.raw_payload = {}
+    return nextRow
+}
+
 function progressLine(input: {
     stage: "progress" | "complete"
     file: string
@@ -299,6 +319,7 @@ function progressLine(input: {
     lineCount: number
     parsedRows: number
     importedRows: number
+    skippedRows: number
     batches: number
     elapsedMs: number
 }) {
@@ -310,6 +331,7 @@ function progressLine(input: {
         `lines=${input.lineCount.toLocaleString()}`,
         `parsed=${input.parsedRows.toLocaleString()}`,
         `imported=${input.importedRows.toLocaleString()}`,
+        `skipped=${input.skippedRows.toLocaleString()}`,
         `batches=${input.batches.toLocaleString()}`,
         `elapsed=${elapsedSeconds}s`,
     ].join(" ")
@@ -351,9 +373,10 @@ async function importFiles(options: ResolvedCliOptions) {
         let lineCount = 0
         let fileParsedRows = 0
         let fileImportedRows = 0
+        let fileSkippedRows = 0
         let nextProgressLine = options.progressLines
         let batch: SunbizOwnerIndexRow[] = []
-        console.log(`Starting ${path.basename(file)} (${fileIndex + 1}/${options.files.length})...`)
+        console.log(`Starting ${path.basename(file)} (${fileIndex + 1}/${options.files.length}) with ${options.includeInactive ? "all statuses" : "active records only"} and ${options.fullPayload ? "full payloads" : "slim payloads"}...`)
         const reader = createInterface({
             input: createReadStream(file, { encoding: "utf8" }),
             crlfDelay: Infinity,
@@ -364,7 +387,9 @@ async function importFiles(options: ResolvedCliOptions) {
             if (rows.length === 0) continue
             parsedRows += rows.length
             fileParsedRows += rows.length
-            batch.push(...rows)
+            const importableRows = rows.filter((row) => shouldImportRow(row, options))
+            fileSkippedRows += rows.length - importableRows.length
+            batch.push(...importableRows)
             if (batch.length >= batchSize) {
                 const currentBatch = batch
                 batch = []
@@ -372,7 +397,7 @@ async function importFiles(options: ResolvedCliOptions) {
                 if (!options.dryRun && supabase) {
                     await withAdaptiveSupabaseUpsert(`Importing Sunbiz index batch ${batches}`, currentBatch, (rowsToImport) => supabase
                         .from("leadgen_sunbiz_owner_index")
-                        .upsert(rowsToImport.map(dbRow), { onConflict: "source_key,record_id,person_source_field,person_name" }))
+                        .upsert(rowsToImport.map((row) => importDbRow(row, options)), { onConflict: "source_key,record_id,person_source_field,person_name" }))
                     importedRows += currentBatch.length
                     fileImportedRows += currentBatch.length
                 }
@@ -385,7 +410,8 @@ async function importFiles(options: ResolvedCliOptions) {
                     fileCount: options.files.length,
                     lineCount,
                     parsedRows: fileParsedRows,
-                    importedRows: fileImportedRows,
+                    importedRows: options.dryRun ? fileParsedRows - fileSkippedRows : fileImportedRows,
+                    skippedRows: fileSkippedRows,
                     batches,
                     elapsedMs: Date.now() - fileStartedAt,
                 }))
@@ -397,7 +423,7 @@ async function importFiles(options: ResolvedCliOptions) {
             if (!options.dryRun && supabase) {
                 await withAdaptiveSupabaseUpsert(`Importing Sunbiz index batch ${batches}`, batch, (rowsToImport) => supabase
                     .from("leadgen_sunbiz_owner_index")
-                    .upsert(rowsToImport.map(dbRow), { onConflict: "source_key,record_id,person_source_field,person_name" }))
+                    .upsert(rowsToImport.map((row) => importDbRow(row, options)), { onConflict: "source_key,record_id,person_source_field,person_name" }))
                 importedRows += batch.length
                 fileImportedRows += batch.length
             }
@@ -409,7 +435,8 @@ async function importFiles(options: ResolvedCliOptions) {
             fileCount: options.files.length,
             lineCount,
             parsedRows: fileParsedRows,
-            importedRows: fileImportedRows,
+            importedRows: options.dryRun ? fileParsedRows - fileSkippedRows : fileImportedRows,
+            skippedRows: fileSkippedRows,
             batches,
             elapsedMs: Date.now() - fileStartedAt,
         }))
@@ -426,6 +453,8 @@ async function importFiles(options: ResolvedCliOptions) {
                 last_success_at: new Date().toISOString(),
                 metadata: {
                     import_mode: options.mode,
+                    include_inactive: options.includeInactive,
+                    full_payload: options.fullPayload,
                     imported_rows: importedRows,
                     parsed_rows: parsedRows,
                     importer: "local_sunbiz_owner_index_import",

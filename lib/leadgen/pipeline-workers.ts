@@ -4,6 +4,7 @@ import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/os
 import { queryOverturePlaces, type OverturePlaceRecord } from "@/lib/leadgen/overture-duckdb"
 import { queryAllThePlaces, queryFoursquareOsPlaces, type PlaceSeedRecord } from "@/lib/leadgen/place-seed-sources"
 import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
+import { californiaOwnerIdentityWebsiteUrls, isCaliforniaOwnerIdentityProfileUrl } from "@/lib/leadgen/california-owner-website"
 import type { PollStageKey } from "@/lib/leadgen/staged-poll"
 import { runWithConcurrency } from "@/lib/leadgen/task-execution"
 import {
@@ -276,26 +277,30 @@ export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan, com
     const companiesResult = await companiesQuery
     if (companiesResult.error) throw new Error(`Could not load companies for website crawling: ${companiesResult.error.message}`)
     const companies = (companiesResult.data ?? []) as CompanySeed[]
-    const tasks = companies.flatMap((company) => company.website_url ? [{
-        poll_id: pollId,
-        workspace_id: workspaceId,
-        source_key: "website",
-        stage_key: stageKey,
-        stage: "owner_phone_extraction",
-        candidate_id: null,
-        industry_value: null,
-        location_value: null,
-        status: "queued",
-        source_query: {
-            company_id: company.id,
-            company_name: company.display_name,
-            website_url: company.website_url,
-            crawl_depth: plan.crawlDepth ?? 2,
-            timeout_seconds: plan.timeoutSeconds ?? 10,
-            respect_robots: plan.respectRobots !== false,
-            california_owner_identity_boost: stageKey === "owner_identity" && companyTargetsCalifornia(company),
-        },
-    }] : [])
+    const tasks = companies.flatMap((company) => {
+        const californiaOwnerIdentityBoost = stageKey === "owner_identity" && companyTargetsCalifornia(company)
+        if (!company.website_url || californiaOwnerIdentityBoost && isCaliforniaOwnerIdentityProfileUrl(company.website_url)) return []
+        return [{
+            poll_id: pollId,
+            workspace_id: workspaceId,
+            source_key: "website",
+            stage_key: stageKey,
+            stage: "owner_phone_extraction",
+            candidate_id: null,
+            industry_value: null,
+            location_value: null,
+            status: "queued",
+            source_query: {
+                company_id: company.id,
+                company_name: company.display_name,
+                website_url: company.website_url,
+                crawl_depth: plan.crawlDepth ?? 2,
+                timeout_seconds: plan.timeoutSeconds ?? 10,
+                respect_robots: plan.respectRobots !== false,
+                california_owner_identity_boost: californiaOwnerIdentityBoost,
+            },
+        }]
+    })
     if (tasks.length === 0) return 0
     const existingResult = await supabaseAdmin
         .from("leadgen_poll_tasks")
@@ -923,17 +928,22 @@ async function processWebsiteTask(task: PipelineTask) {
         : []
     const queued = new Set<string>()
     const queue: string[] = []
-    const enqueue = (urls: string[]) => {
-        const sorted = urls
+    const enqueue = (urls: string[], options: { sort?: boolean } = {}) => {
+        const candidates = urls
             .filter((url) => sameSiteUrl(url, websiteUrl))
-            .sort((left, right) => crawlScore(right, stageKey) - crawlScore(left, stageKey))
-        for (const url of sorted) {
+        const ordered = options.sort === false ? candidates : candidates.sort((left, right) => crawlScore(right, stageKey) - crawlScore(left, stageKey))
+        for (const url of ordered) {
             if (queued.has(url) || crawlScore(url, stageKey) <= -20) continue
             queued.add(url)
             queue.push(url)
         }
     }
-    enqueue([...defaultWebsiteUrls(websiteUrl, depth, stageKey), ...sitemapUrls])
+    if (californiaOwnerIdentityBoost) {
+        enqueue(californiaOwnerIdentityWebsiteUrls(websiteUrl, depth, stageKey), { sort: false })
+        enqueue(sitemapUrls)
+    } else {
+        enqueue([...defaultWebsiteUrls(websiteUrl, depth, stageKey), ...sitemapUrls])
+    }
     let ownerName: string | null = null
     let ownerPhone: string | null = null
     let ownerRole: string | null = null

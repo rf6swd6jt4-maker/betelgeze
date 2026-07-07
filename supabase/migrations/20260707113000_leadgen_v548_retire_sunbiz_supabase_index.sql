@@ -87,15 +87,15 @@ insert into public.leadgen_source_health (source_key, status, last_error, metada
 values
     (
         'registry.fl.sunbiz',
-        'needs_external_lookup',
+        'blocked',
         'Retired Supabase Sunbiz owner index exceeded database storage tier; configure external Sunbiz lookup before poll-time activation.',
-        '{"disabled_by":"20260707113000_leadgen_v548_retire_sunbiz_supabase_index","retired_index_table":"leadgen_sunbiz_owner_index"}'::jsonb
+        '{"disabled_by":"20260707113000_leadgen_v548_retire_sunbiz_supabase_index","status_detail":"needs_external_lookup","retired_index_table":"leadgen_sunbiz_owner_index"}'::jsonb
     ),
     (
         'registry.fl.fictitious_names',
-        'needs_external_lookup',
+        'blocked',
         'Retired Supabase Sunbiz fictitious-name index exceeded database storage tier; configure external Sunbiz lookup before poll-time activation.',
-        '{"disabled_by":"20260707113000_leadgen_v548_retire_sunbiz_supabase_index","retired_index_table":"leadgen_sunbiz_owner_index"}'::jsonb
+        '{"disabled_by":"20260707113000_leadgen_v548_retire_sunbiz_supabase_index","status_detail":"needs_external_lookup","retired_index_table":"leadgen_sunbiz_owner_index"}'::jsonb
     )
 on conflict (source_key) do update set
     status = excluded.status,

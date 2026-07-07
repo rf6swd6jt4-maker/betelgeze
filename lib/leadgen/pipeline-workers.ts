@@ -82,14 +82,14 @@ const PIPELINE_SEED_SOURCES = new Set<LeadgenSourceKey>(["overture", "alltheplac
 const WEBSITE_STALE_TASK_MS = 90_000
 const WEBSITE_CRAWL_LIMITS: Record<Exclude<PollStageKey, "seed">, { maxPages: number; timeoutSeconds: number; budgetMs: number }> = {
     business_validation: { maxPages: 1, timeoutSeconds: 4, budgetMs: 6_000 },
-    owner_identity: { maxPages: 6, timeoutSeconds: 5, budgetMs: 22_000 },
-    owner_phone: { maxPages: 8, timeoutSeconds: 5, budgetMs: 30_000 },
+    owner_identity: { maxPages: 4, timeoutSeconds: 4, budgetMs: 16_000 },
+    owner_phone: { maxPages: 6, timeoutSeconds: 4, budgetMs: 22_000 },
     phone_validation: { maxPages: 0, timeoutSeconds: 1, budgetMs: 1_000 },
 }
 const WEBSITE_TASK_CONCURRENCY: Record<Exclude<PollStageKey, "seed">, number> = {
     business_validation: 2,
-    owner_identity: 3,
-    owner_phone: 3,
+    owner_identity: 4,
+    owner_phone: 4,
     phone_validation: 1,
 }
 
@@ -279,9 +279,25 @@ export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan, com
         },
     }] : [])
     if (tasks.length === 0) return 0
-    const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(tasks)
+    const existingResult = await supabaseAdmin
+        .from("leadgen_poll_tasks")
+        .select("source_query")
+        .eq("workspace_id", workspaceId)
+        .eq("poll_id", pollId)
+        .eq("source_key", "website")
+        .eq("stage_key", stageKey)
+    if (existingResult.error) throw new Error(`Could not inspect existing website crawl tasks: ${existingResult.error.message}`)
+    const existingCompanyIds = new Set((existingResult.data ?? [])
+        .map((task) => asRecord(task.source_query)?.company_id)
+        .filter((value): value is string => typeof value === "string" && value.length > 0))
+    const newTasks = tasks.filter((task) => {
+        const companyId = typeof task.source_query.company_id === "string" ? task.source_query.company_id : null
+        return companyId && !existingCompanyIds.has(companyId)
+    })
+    if (newTasks.length === 0) return 0
+    const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(newTasks)
     if (error) throw error
-    return tasks.length
+    return newTasks.length
 }
 
 export async function createPipelineTasksForPoll({ workspaceId, pollId, plans }: { workspaceId: string; pollId: string; plans: LeadgenSourcePlanItem[] }) {

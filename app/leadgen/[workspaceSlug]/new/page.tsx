@@ -110,7 +110,7 @@ export default async function NewLeadgenPollPage({ params }: PageProps) {
             <section className="py-6 sm:py-10">
                 <p className="font-mono text-xs text-neutral-500">Lead Gen {LEADGEN_POLLING_SYSTEM_VERSION_LABEL}</p>
                 <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Confirm owner-first candidate investigation</h1>
-                <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">This poll will seed new businesses from the current ICP, then run the staged v5.4.11 owner-identity system. Florida targets now lean on Sunbiz external shards plus county property-appraiser records for owner discovery, while clerk filings mostly strengthen scoring/corroboration and only extract owner names from cautious DBA-style matches.</p>
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">This poll will seed new businesses from the current ICP, then run the staged v5.4.12 owner-identity system. Florida targets lean on Sunbiz external shards plus county property-appraiser records for owner discovery; the runner now resumes completed stages safely and uses website crawling as a targeted fallback instead of rechecking companies already solved by stronger records.</p>
             </section>
 
             <section className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">

@@ -263,6 +263,10 @@ function asString(value: unknown) {
     return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
 function candidateState(candidate: CompanyCandidate, locationTargets?: Map<string, LeadgenLocationTarget>) {
     return candidatePrimaryState(candidate, locationTargets)
 }
@@ -1472,9 +1476,39 @@ export async function createStateLicensingEnrichmentTasksForPoll({ workspaceId, 
         }) : []
     tasks.push(...txPlumbingTasks, ...dbprConstructionTasks, ...dbprElectricalTasks, ...ncGeneralTasks)
     if (tasks.length === 0) return 0
-    const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(tasks)
+    const existingResult = await supabaseAdmin
+        .from("leadgen_poll_tasks")
+        .select("source_key, stage_key, source_query")
+        .eq("workspace_id", workspaceId)
+        .eq("poll_id", pollId)
+        .eq("stage_key", stageKey)
+        .in("source_key", [...new Set(tasks.map((task) => task.source_key))])
+    if (existingResult.error) throw new Error(`Could not inspect existing state licensing tasks: ${existingResult.error.message}`)
+    const fingerprint = (task: { source_key: string; stage_key: string; source_query: Record<string, unknown> }) => {
+        const query = task.source_query
+        return [
+            task.source_key,
+            task.stage_key,
+            asString(query.candidate_company_id),
+            asString(query.board),
+            asString(query.adapter_source_key),
+            asString(query.county),
+            asString(query.classification_id),
+            asString(query.tdlr_status),
+            asString(query.tdlr_endorsement),
+            asString(query.file_url),
+        ].join("|")
+    }
+    const existingFingerprints = new Set((existingResult.data ?? []).map((task) => fingerprint({
+        source_key: String(task.source_key),
+        stage_key: String(task.stage_key),
+        source_query: asRecord(task.source_query),
+    })))
+    const newTasks = tasks.filter((task) => !existingFingerprints.has(fingerprint(task)))
+    if (newTasks.length === 0) return 0
+    const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(newTasks)
     if (error) throw error
-    return tasks.length
+    return newTasks.length
 }
 
 async function processTdlrTask({ task, workspaceId, pollId }: { task: LicensingTask; workspaceId: string; pollId: string }) {

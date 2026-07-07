@@ -3,7 +3,7 @@ import { normalisePersonName } from "./person-name-normalizer.js"
 
 export type PollStageKey = "seed" | "business_validation" | "owner_identity" | "owner_phone" | "phone_validation"
 
-type StageStatus = "queued" | "running" | "completed" | "failed" | "skipped"
+export type StageStatus = "queued" | "running" | "completed" | "failed" | "skipped"
 type CompanyStageStatus = "passed" | "failed" | "skipped"
 
 type EvidenceClaim = {
@@ -37,6 +37,20 @@ type StageMetrics = {
     ownerName: string | null
     ownerPhone: string | null
     sourceKeys: string[]
+}
+
+export type PollStageRun = {
+    stage_key: PollStageKey
+    status: StageStatus
+    input_count: number | null
+    passed_count: number | null
+    failed_count: number | null
+    skipped_count: number | null
+    replaced_count: number | null
+    target_count: number | null
+    started_at: string | null
+    completed_at: string | null
+    created_at: string | null
 }
 
 const STAGE_ORDER: Record<PollStageKey, number> = {
@@ -119,8 +133,53 @@ async function updatePollStageColumns(workspaceId: string, pollId: string) {
     if (updateError && !missingStagedSchema(updateError)) throw updateError
 }
 
+export function reusableStageRun(run: Pick<PollStageRun, "status" | "completed_at"> | undefined) {
+    return Boolean(run?.completed_at && ["completed", "skipped"].includes(run.status))
+}
+
+export async function loadPollStageRuns(workspaceId: string, pollId: string) {
+    const { data, error } = await supabaseAdmin
+        .from("leadgen_poll_stage_runs")
+        .select("stage_key, status, input_count, passed_count, failed_count, skipped_count, replaced_count, target_count, started_at, completed_at, created_at")
+        .eq("workspace_id", workspaceId)
+        .eq("poll_id", pollId)
+    if (error) {
+        if (missingStagedSchema(error)) return new Map<PollStageKey, PollStageRun>()
+        throw error
+    }
+    return new Map((data ?? []).map((stage) => [stage.stage_key as PollStageKey, stage as PollStageRun]))
+}
+
+export async function loadPassedStageCompanyIds(workspaceId: string, pollId: string, stageKey: Exclude<PollStageKey, "seed">) {
+    const { data, error } = await supabaseAdmin
+        .from("leadgen_company_stage_status")
+        .select("company_id")
+        .eq("workspace_id", workspaceId)
+        .eq("poll_id", pollId)
+        .eq("stage_key", stageKey)
+        .eq("status", "passed")
+    if (error) {
+        if (missingStagedSchema(error)) return []
+        throw error
+    }
+    return (data ?? []).map((row) => String(row.company_id)).filter(Boolean)
+}
+
 export async function startPollStage({ workspaceId, pollId, stageKey, targetCount = null, inputCount = 0 }: { workspaceId: string; pollId: string; stageKey: PollStageKey; targetCount?: number | null; inputCount?: number }) {
     const now = new Date().toISOString()
+    const existingResult = await supabaseAdmin
+        .from("leadgen_poll_stage_runs")
+        .select("status, started_at, completed_at")
+        .eq("workspace_id", workspaceId)
+        .eq("poll_id", pollId)
+        .eq("stage_key", stageKey)
+        .maybeSingle()
+    if (existingResult.error) {
+        if (missingStagedSchema(existingResult.error)) return
+        throw existingResult.error
+    }
+    if (reusableStageRun(existingResult.data as PollStageRun | undefined)) return
+    const startedAt = existingResult.data?.started_at ?? now
     const { error } = await supabaseAdmin
         .from("leadgen_poll_stage_runs")
         .upsert({
@@ -132,7 +191,7 @@ export async function startPollStage({ workspaceId, pollId, stageKey, targetCoun
             target_count: targetCount,
             input_count: inputCount,
             error: null,
-            started_at: now,
+            started_at: startedAt,
             completed_at: null,
         }, { onConflict: "poll_id,stage_key" })
     if (error) {

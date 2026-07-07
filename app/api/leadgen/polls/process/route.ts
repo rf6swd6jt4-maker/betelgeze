@@ -6,12 +6,27 @@ import { processLeadgenPoll } from "@/lib/leadgen/poll-runner"
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
-const STALE_RUNNING_POLL_MS = 8 * 60 * 1000
+const STALE_RUNNING_POLL_MS = 6 * 60 * 1000
+const ACTIVE_TASK_GRACE_MS = 2 * 60 * 1000
 
 function runningPollIsStale(startedAt: string | null | undefined) {
     if (!startedAt) return true
     const started = new Date(startedAt).getTime()
     return !Number.isFinite(started) || Date.now() - started > STALE_RUNNING_POLL_MS
+}
+
+async function runningPollShouldResume(workspaceId: string, pollId: string, startedAt: string | null | undefined) {
+    if (!runningPollIsStale(startedAt)) return false
+    const activeStartedAfter = new Date(Date.now() - ACTIVE_TASK_GRACE_MS).toISOString()
+    const activeTasksResult = await supabaseAdmin
+        .from("leadgen_poll_tasks")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .eq("poll_id", pollId)
+        .eq("status", "running")
+        .gte("started_at", activeStartedAfter)
+    if (!activeTasksResult.error && (activeTasksResult.count ?? 0) > 0) return false
+    return true
 }
 
 export async function POST(request: Request) {
@@ -47,7 +62,7 @@ export async function POST(request: Request) {
         .limit(1)
         .maybeSingle()
     if (runningResult.data?.id) {
-        if (!runningPollIsStale(runningResult.data.started_at)) return NextResponse.json({ status: "already_running", pollId: runningResult.data.id })
+        if (!await runningPollShouldResume(workspace.id, runningResult.data.id, runningResult.data.started_at)) return NextResponse.json({ status: "already_running", pollId: runningResult.data.id })
         await processLeadgenPoll({ workspaceId: workspace.id, pollId: runningResult.data.id })
         return NextResponse.json({ status: "resumed_stale_running", pollId: runningResult.data.id })
     }

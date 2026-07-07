@@ -7,6 +7,7 @@ import {
     assessOfficialRecordMatch,
     buildOfficialRecordSearchTerms,
     candidateDomain,
+    officialRecordMatchAllowedByPolicy,
     officialRecordMatchesCandidate,
     sharedTokenScore,
     strongBusinessNameMatch,
@@ -1978,20 +1979,6 @@ const BROAD_TEXT_SEARCH_ADAPTERS = new Set([
 
 function sourceAdapter(source: SourceCatalog) {
     return asString(source.metadata?.adapter) ?? "socrata_public_records"
-}
-
-function numberSignal(value: unknown) {
-    return typeof value === "number" && Number.isFinite(value) ? value : 0
-}
-
-function officialRecordMatchAllowedByPolicy(assessment: ReturnType<typeof assessOfficialRecordMatch>, metadata: Record<string, unknown>) {
-    if (metadata.require_address_or_locality_match !== true) return true
-    const minimumAddressScore = Math.min(1, Math.max(0, Number(metadata.minimum_locality_address_score) || 0.34))
-    const addressScore = numberSignal(assessment.signals.address_score)
-    const phoneScore = numberSignal(assessment.signals.phone_score)
-    const domainScore = numberSignal(assessment.signals.domain_score)
-    const identifierScore = numberSignal(assessment.signals.identifier_score)
-    return addressScore >= minimumAddressScore || phoneScore >= 0.8 || domainScore >= 1 || identifierScore >= 1
 }
 
 function searchTermsForSource(source: SourceCatalog, company: CompanyCandidate) {

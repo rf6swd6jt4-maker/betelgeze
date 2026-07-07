@@ -490,7 +490,7 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         kind: "enrichment",
         category: "location",
         implemented: false,
-        setupHint: "The public CSLB form can return anti-bot/app-shell challenges from serverless runtimes. Keep it listed for future external shard or bulk implementation; v5.5.2 does not run it in polls.",
+        setupHint: "The public CSLB form can return anti-bot/app-shell challenges from serverless runtimes. Keep it listed for future external shard or bulk implementation; v5.5.3 does not run it in polls.",
     },
     {
         value: "state_license.ca.bar_auto_repair",

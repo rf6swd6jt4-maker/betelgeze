@@ -44,6 +44,7 @@ const BUSINESS_TOKENS = new Set([
 
 const TRUSTED_SOURCES = new Set(["official_field", "public_record", "state_license"])
 const WEAK_WEBSITE_SOURCES = new Set(["visible_text", "title_or_meta", "website"])
+const STRONG_WEBSITE_OWNER_CONFIDENCE = 78
 
 function boolEnv(value: string | undefined, defaultValue = false) {
     if (value == null || value === "") return defaultValue
@@ -184,6 +185,7 @@ function shouldAskNer(input: PersonNameGateInput, deterministic: PersonNameGateR
     if (!nerEnabled() || !nerEndpoint() || !deterministic.name) return false
     const source = sourceKey(input)
     if (TRUSTED_SOURCES.has(source) || source === "json_ld") return false
+    if (WEAK_WEBSITE_SOURCES.has(source) && deterministic.accepted && deterministic.confidence >= STRONG_WEBSITE_OWNER_CONFIDENCE) return false
     if (WEAK_WEBSITE_SOURCES.has(source)) return true
     return deterministic.confidence < 84
 }

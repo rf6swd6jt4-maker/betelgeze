@@ -800,6 +800,31 @@ export function officialRecordMatchesCandidate(row: Record<string, unknown>, can
     return assessOfficialRecordMatch(row, candidate, metadata).matched
 }
 
+function metadataString(value: unknown) {
+    return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function metadataNumber(value: unknown) {
+    return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+export function officialRecordMatchAllowedByPolicy(assessment: OfficialRecordAssessment, metadata: Record<string, unknown>) {
+    if (metadata.require_address_or_locality_match !== true) return true
+    const minimumAddressScore = Math.min(1, Math.max(0, Number(metadata.minimum_locality_address_score) || 0.34))
+    const addressScore = metadataNumber(assessment.signals.address_score)
+    const phoneScore = metadataNumber(assessment.signals.phone_score)
+    const domainScore = metadataNumber(assessment.signals.domain_score)
+    const identifierScore = metadataNumber(assessment.signals.identifier_score)
+    if (addressScore >= minimumAddressScore || phoneScore >= 0.8 || domainScore >= 1 || identifierScore >= 1) return true
+
+    const adapter = metadataString(metadata.adapter)
+    const nameScore = metadataNumber(assessment.signals.name_score)
+    const recordAddress = asRecord(assessment.signals.record_address)
+    const recordState = metadataString(recordAddress.state)?.toUpperCase()
+    const stateConflicts = assessment.signals.state_conflicts === true
+    return adapter === "california_owner_shard_lookup" && nameScore >= 0.93 && recordState === "CA" && !stateConflicts
+}
+
 export function summarizeOfficialRecordRejections(rows: Record<string, unknown>[], candidate: OfficialRecordCandidate, metadata: Record<string, unknown>, limit = 5) {
     return rows
         .map((row) => assessOfficialRecordMatch(row, candidate, metadata))

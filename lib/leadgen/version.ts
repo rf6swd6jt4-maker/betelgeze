@@ -1,4 +1,4 @@
-export const LEADGEN_POLLING_SYSTEM_VERSION = "5.5.2"
+export const LEADGEN_POLLING_SYSTEM_VERSION = "5.5.3"
 export const LEADGEN_POLLING_SYSTEM_VERSION_LABEL = `v${LEADGEN_POLLING_SYSTEM_VERSION}`
 
 export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
@@ -22,4 +22,5 @@ export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
     { version: "5.5", note: "California contractor owner identity pass with CSLB and external owner shards." },
     { version: "5.5.1", note: "California CSLB adapter cookie handling fix." },
     { version: "5.5.2", note: "California stable owner-source routing without live CSLB form dependency." },
+    { version: "5.5.3", note: "California owner-identity recovery for strong website owners and exact CA shard matches." },
 ] as const

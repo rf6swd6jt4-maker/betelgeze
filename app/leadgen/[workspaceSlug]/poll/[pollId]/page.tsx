@@ -29,6 +29,11 @@ function jsonPreview(value: unknown) {
     return JSON.stringify(value ?? {}, null, 2)
 }
 
+function JsonPreviewBlock({ value, maxHeight = "max-h-72", tone = "black" }: { value: unknown; maxHeight?: "max-h-72" | "max-h-80"; tone?: "black" | "neutral" }) {
+    const background = tone === "neutral" ? "bg-neutral-950" : "bg-black"
+    return <pre className={`mt-3 block ${maxHeight} w-full max-w-full overflow-auto rounded-lg border border-neutral-800 ${background} p-3 text-xs text-neutral-300 whitespace-pre`}>{jsonPreview(value)}</pre>
+}
+
 function sourceNames(snapshot: unknown, count: number) {
     if (!Array.isArray(snapshot) || snapshot.length === 0) return count ? `${count} configured sources` : "No source snapshot"
     return snapshot
@@ -356,12 +361,12 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                                 </div>
                                 <span className="flex h-8 w-5 items-center justify-center justify-self-end text-lg leading-none text-neutral-500 transition group-open:rotate-90 group-hover:text-neutral-300" aria-hidden="true">›</span>
                             </summary>
-                            <div className="border-t border-neutral-900 bg-neutral-950/40 px-3 py-2.5 sm:px-5 sm:py-3">
+                            <div className="min-w-0 border-t border-neutral-900 bg-neutral-950/40 px-3 py-2.5 sm:px-5 sm:py-3">
                                 <p className="mb-2 text-xs leading-5 text-neutral-500 sm:hidden">{stage.detail}</p>
-                                <div className="grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
-                                    <section className="rounded-lg border border-neutral-800 bg-black p-3 sm:p-4">
+                                <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                                    <section className="min-w-0 overflow-hidden rounded-lg border border-neutral-800 bg-black p-3 sm:p-4">
                                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                            <div>
+                                            <div className="min-w-0">
                                                 <h4 className="text-sm font-semibold text-neutral-100">Lead overview</h4>
                                                 <p className="mt-1 text-xs leading-5 text-neutral-500">Businesses that passed this step, ranked by total score so far.</p>
                                             </div>
@@ -385,23 +390,23 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                                                 const company = outcome.company
                                                 const ownerName = company?.owner_name ?? outcome.score?.best_owner_name ?? null
                                                 const ownerPhone = company?.owner_phone ?? outcome.score?.best_owner_phone ?? null
-                                                return <details key={outcome.id} className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
-                                                    <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs sm:grid-cols-[minmax(0,1fr)_80px_90px_minmax(0,1fr)] sm:text-sm">
-                                                        <span className="truncate font-medium text-neutral-100">{company?.display_name ?? shortId(outcome.companyId)}</span>
+                                                return <details key={outcome.id} className="min-w-0 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
+                                                    <summary className="grid min-w-0 cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs sm:grid-cols-[minmax(0,1fr)_80px_90px_minmax(0,1fr)] sm:text-sm">
+                                                        <span className="min-w-0 truncate font-medium text-neutral-100">{company?.display_name ?? shortId(outcome.companyId)}</span>
                                                         <span className="text-neutral-300">score {outcome.totalScore}</span>
                                                         <span className="text-neutral-500">{plural(outcome.sourceChecks, "check")}</span>
-                                                        <span className="col-span-2 truncate text-neutral-500 sm:col-auto">{ownerName ? `Owner: ${ownerName}` : ownerPhone ? `Owner phone: ${ownerPhone}` : outcome.reason}</span>
+                                                        <span className="col-span-2 min-w-0 truncate text-neutral-500 sm:col-auto">{ownerName ? `Owner: ${ownerName}` : ownerPhone ? `Owner phone: ${ownerPhone}` : outcome.reason}</span>
                                                     </summary>
-                                                    <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-black p-3 text-xs text-neutral-300">{jsonPreview({ stage_result: outcome.row, company, score: outcome.score })}</pre>
+                                                    <JsonPreviewBlock value={{ stage_result: outcome.row, company, score: outcome.score }} />
                                                 </details>
                                             })}
                                             {leadOutcomes.length > visibleLeadOutcomes.length ? <p className="text-xs text-neutral-500">+{leadOutcomes.length - visibleLeadOutcomes.length} more passed businesses in the full company list below.</p> : null}
                                             {leadOutcomes.length === 0 ? <p className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-500">No businesses have passed this step yet.</p> : null}
                                         </div>
                                     </section>
-                                    <section className="rounded-lg border border-neutral-800 bg-black p-3 sm:p-4">
+                                    <section className="min-w-0 overflow-hidden rounded-lg border border-neutral-800 bg-black p-3 sm:p-4">
                                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                            <div>
+                                            <div className="min-w-0">
                                                 <h4 className="text-sm font-semibold text-neutral-100">Tasks</h4>
                                                 <p className="mt-1 text-xs leading-5 text-neutral-500">Worker rows and source queries are collapsed until you need them.</p>
                                             </div>
@@ -431,32 +436,32 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                                                 <span>Task rows</span>
                                                 <span className="text-lg leading-none text-neutral-500 transition group-open:rotate-90" aria-hidden="true">›</span>
                                             </summary>
-                                            <div className="mt-3 space-y-2">
+                                            <div className="mt-3 min-w-0 space-y-2">
                                                 {sourceTasks.map((task) => {
                                                     const taskMeta = statusMeta(task.status)
-                                                    return <details key={task.id} className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
-                                                        <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs sm:grid-cols-[130px_minmax(0,1fr)_90px_90px_minmax(0,1fr)] sm:text-sm">
-                                                            <span className="truncate text-neutral-200 sm:col-start-2 sm:row-start-1">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
+                                                    return <details key={task.id} className="min-w-0 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
+                                                        <summary className="grid min-w-0 cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs sm:grid-cols-[130px_minmax(0,1fr)_90px_90px_minmax(0,1fr)] sm:text-sm">
+                                                            <span className="min-w-0 truncate text-neutral-200 sm:col-start-2 sm:row-start-1">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
                                                             <span className={`inline-flex items-center justify-end gap-1.5 whitespace-nowrap sm:col-start-1 sm:row-start-1 sm:justify-start sm:gap-2 ${taskMeta.text}`}><BetelgezeStatusMark className={taskMeta.mark} />{taskMeta.label}</span>
                                                             <span className="text-neutral-500">{task.raw_count ?? 0} raw</span>
                                                             <span className="hidden text-neutral-500 sm:block">{task.company_count ?? 0} outputs</span>
-                                                            <span className="col-span-2 truncate text-neutral-500 sm:hidden">{task.stage ?? "source task"} · {task.company_count ?? 0} outputs</span>
-                                                            <span className="hidden truncate text-neutral-500 sm:block">{task.stage ?? "source task"}</span>
+                                                            <span className="col-span-2 min-w-0 truncate text-neutral-500 sm:hidden">{task.stage ?? "source task"} · {task.company_count ?? 0} outputs</span>
+                                                            <span className="hidden min-w-0 truncate text-neutral-500 sm:block">{task.stage ?? "source task"}</span>
                                                         </summary>
-                                                        <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-black p-3 text-xs text-neutral-300">{jsonPreview(task.source_query)}</pre>
+                                                        <JsonPreviewBlock value={task.source_query} />
                                                     </details>
                                                 })}
                                                 {investigationTasks.map((task) => {
                                                     const taskMeta = statusMeta(task.status === "skipped" ? "queued" : task.status)
-                                                    return <details key={task.id} className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
-                                                        <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs sm:grid-cols-[130px_minmax(0,1fr)_90px_120px_minmax(0,1fr)] sm:text-sm">
-                                                            <span className="truncate text-neutral-200 sm:col-start-2 sm:row-start-1">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
+                                                    return <details key={task.id} className="min-w-0 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
+                                                        <summary className="grid min-w-0 cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs sm:grid-cols-[130px_minmax(0,1fr)_90px_120px_minmax(0,1fr)] sm:text-sm">
+                                                            <span className="min-w-0 truncate text-neutral-200 sm:col-start-2 sm:row-start-1">{sourceHumanLabel(task.source_key, sourcesByKey, sourceLabel)}</span>
                                                             <span className={`inline-flex items-center justify-end gap-1.5 whitespace-nowrap sm:col-start-1 sm:row-start-1 sm:justify-start sm:gap-2 ${task.status === "skipped" ? "text-neutral-500" : taskMeta.text}`}><BetelgezeStatusMark className={task.status === "skipped" ? "bg-neutral-600" : taskMeta.mark} />{task.status}</span>
                                                             <span className="text-neutral-500">{task.matched ? "matched" : "no match"}</span>
                                                             <span className="text-neutral-500">{evidenceSignalLabel(task)}</span>
-                                                            <span className="col-span-2 truncate text-neutral-500 sm:col-auto">{task.error ?? task.skip_reason ?? "candidate check"}</span>
+                                                            <span className="col-span-2 min-w-0 truncate text-neutral-500 sm:col-auto">{task.error ?? task.skip_reason ?? "candidate check"}</span>
                                                         </summary>
-                                                        <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-black p-3 text-xs text-neutral-300">{jsonPreview(task)}</pre>
+                                                        <JsonPreviewBlock value={task} />
                                                     </details>
                                                 })}
                                                 {sourceTasks.length === 0 && investigationTasks.length === 0 ? <p className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-500">No task rows recorded for this stage yet.</p> : null}
@@ -483,38 +488,38 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
                     <h2 className="font-semibold">Companies returned</h2>
                     <p className="mt-1 text-sm text-neutral-500">Normalised companies from this poll, including owner and phone fields.</p>
                 </div>
-                {companies.length ? companies.map((company) => <details key={company.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
-                    <summary className="grid cursor-pointer gap-3 md:grid-cols-[minmax(180px,1fr)_170px_170px_130px_120px] md:items-center">
-                        <span className="truncate text-sm font-medium text-neutral-100">{company.display_name}</span>
-                        <span className="truncate text-sm text-neutral-300">{company.owner_name ? `Owner: ${company.owner_name}` : "No owner"}</span>
-                        <span className="truncate text-sm text-neutral-300">{company.owner_phone ?? "No owner phone"}</span>
-                        <span className="truncate text-sm text-neutral-500">{scoreByCompany.get(company.id)?.qualification_status ?? company.qualification_status} · score {scoreByCompany.get(company.id)?.total_score ?? company.lead_score ?? 0}</span>
+                {companies.length ? companies.map((company) => <details key={company.id} className="min-w-0 overflow-hidden border-b border-neutral-900 px-4 py-3 last:border-0">
+                    <summary className="grid min-w-0 cursor-pointer gap-3 md:grid-cols-[minmax(180px,1fr)_170px_170px_130px_120px] md:items-center">
+                        <span className="min-w-0 truncate text-sm font-medium text-neutral-100">{company.display_name}</span>
+                        <span className="min-w-0 truncate text-sm text-neutral-300">{company.owner_name ? `Owner: ${company.owner_name}` : "No owner"}</span>
+                        <span className="min-w-0 truncate text-sm text-neutral-300">{company.owner_phone ?? "No owner phone"}</span>
+                        <span className="min-w-0 truncate text-sm text-neutral-500">{scoreByCompany.get(company.id)?.qualification_status ?? company.qualification_status} · score {scoreByCompany.get(company.id)?.total_score ?? company.lead_score ?? 0}</span>
                         <span className="font-mono text-xs text-neutral-500">{shortId(company.id)}</span>
                     </summary>
-                    <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(company)}</pre>
+                    <JsonPreviewBlock value={company} maxHeight="max-h-80" tone="neutral" />
                 </details>) : <p className="p-5 text-sm text-neutral-500">No companies were normalised.</p>}
             </section>
 
             <section className="mt-5 grid gap-5 lg:grid-cols-2">
-                <div className="rounded-2xl border border-neutral-800 bg-black">
+                <div className="min-w-0 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
                     <div className="border-b border-neutral-800 px-5 py-4">
                         <h2 className="font-semibold">Raw source records</h2>
                     </div>
-                    {records.length ? records.map((record) => <details key={record.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
-                        <summary className="cursor-pointer text-sm text-neutral-200">{record.company_name} <span className="ml-2 text-neutral-500">{record.phone ?? "no phone"}</span></summary>
-                        <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(record)}</pre>
+                    {records.length ? records.map((record) => <details key={record.id} className="min-w-0 overflow-hidden border-b border-neutral-900 px-4 py-3 last:border-0">
+                        <summary className="min-w-0 cursor-pointer truncate text-sm text-neutral-200">{record.company_name} <span className="ml-2 text-neutral-500">{record.phone ?? "no phone"}</span></summary>
+                        <JsonPreviewBlock value={record} tone="neutral" />
                     </details>) : <p className="p-5 text-sm text-neutral-500">No raw source records stored.</p>}
                 </div>
-                <div className="rounded-2xl border border-neutral-800 bg-black">
+                <div className="min-w-0 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
                     <div className="border-b border-neutral-800 px-5 py-4">
                         <h2 className="font-semibold">Evidence claims</h2>
                     </div>
-                    {claims.length ? claims.map((item) => <details key={item.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
-                        <summary className="cursor-pointer text-sm text-neutral-200">{item.claim_kind} <span className="ml-2 text-neutral-500">{sourceHumanLabel(item.source_key, sourcesByKey, sourceLabel)} · weight {item.points_awarded} · {item.confidence ?? "—"}%</span></summary>
-                        <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(item)}</pre>
-                    </details>) : evidence.length ? evidence.map((item) => <details key={item.id} className="border-b border-neutral-900 px-4 py-3 last:border-0">
-                        <summary className="cursor-pointer text-sm text-neutral-200">{item.evidence_kind} <span className="ml-2 text-neutral-500">{sourceHumanLabel(item.source_key, sourcesByKey, sourceLabel)} · {item.confidence ?? "—"}%</span></summary>
-                        <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">{jsonPreview(item)}</pre>
+                    {claims.length ? claims.map((item) => <details key={item.id} className="min-w-0 overflow-hidden border-b border-neutral-900 px-4 py-3 last:border-0">
+                        <summary className="min-w-0 cursor-pointer truncate text-sm text-neutral-200">{item.claim_kind} <span className="ml-2 text-neutral-500">{sourceHumanLabel(item.source_key, sourcesByKey, sourceLabel)} · weight {item.points_awarded} · {item.confidence ?? "—"}%</span></summary>
+                        <JsonPreviewBlock value={item} tone="neutral" />
+                    </details>) : evidence.length ? evidence.map((item) => <details key={item.id} className="min-w-0 overflow-hidden border-b border-neutral-900 px-4 py-3 last:border-0">
+                        <summary className="min-w-0 cursor-pointer truncate text-sm text-neutral-200">{item.evidence_kind} <span className="ml-2 text-neutral-500">{sourceHumanLabel(item.source_key, sourcesByKey, sourceLabel)} · {item.confidence ?? "—"}%</span></summary>
+                        <JsonPreviewBlock value={item} tone="neutral" />
                     </details>) : <p className="p-5 text-sm text-neutral-500">No source evidence stored.</p>}
                 </div>
             </section>

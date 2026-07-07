@@ -1261,8 +1261,19 @@ function htmlFormValue(html: string, name: string) {
 }
 
 function responseCookies(response: Response) {
-    const getSetCookie = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie
-    const cookies = getSetCookie?.() ?? (response.headers.get("set-cookie") ? [response.headers.get("set-cookie") as string] : [])
+    const headers = response.headers as Headers & { getSetCookie?: () => string[] }
+    let cookies: string[] = []
+    if (typeof headers.getSetCookie === "function") {
+        try {
+            cookies = headers.getSetCookie.call(headers)
+        } catch {
+            cookies = []
+        }
+    }
+    if (cookies.length === 0) {
+        const cookie = response.headers.get("set-cookie")
+        if (cookie) cookies = [cookie]
+    }
     return cookies.map((cookie) => cookie.split(";")[0]).filter(Boolean).join("; ")
 }
 

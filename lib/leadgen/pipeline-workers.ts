@@ -4,7 +4,6 @@ import { refreshLeadgenPollCounts, setLeadgenPollStatus } from "@/lib/leadgen/os
 import { queryOverturePlaces, type OverturePlaceRecord } from "@/lib/leadgen/overture-duckdb"
 import { queryAllThePlaces, queryFoursquareOsPlaces, type PlaceSeedRecord } from "@/lib/leadgen/place-seed-sources"
 import { recordEvidenceClaim, updateInvestigationTask } from "@/lib/leadgen/evidence-scoring"
-import { californiaOwnerIdentityWebsiteUrls, isCaliforniaOwnerIdentityProfileUrl } from "@/lib/leadgen/california-owner-website"
 import type { PollStageKey } from "@/lib/leadgen/staged-poll"
 import { runWithConcurrency } from "@/lib/leadgen/task-execution"
 import {
@@ -35,10 +34,6 @@ type CompanySeed = {
     profile_url: string | null
     source_key: string
     source_record_id: string
-    address?: Record<string, unknown> | null
-    registered_address?: Record<string, unknown> | null
-    industry_value?: string | null
-    location_value?: string | null
 }
 
 type PipelineTask = {
@@ -97,15 +92,10 @@ const WEBSITE_TASK_CONCURRENCY: Record<Exclude<PollStageKey, "seed">, number> = 
     owner_phone: 4,
     phone_validation: 1,
 }
-const CALIFORNIA_LOCATION_VALUES = new Set(["california", "los_angeles_ca", "san_diego_ca", "bay_area_ca", "san_francisco_ca", "oakland_ca", "san_jose_ca"])
 
 function compactErrorMessage(error: unknown) {
     const message = error instanceof Error ? error.message : "Leadgen source task failed."
     return message.length > 900 ? `${message.slice(0, 900)}…` : message
-}
-
-function logCaliforniaOwnerDebug(event: string, payload: Record<string, unknown>) {
-    console.info(`[leadgen:ca-owner] ${event}`, JSON.stringify(payload))
 }
 
 class SamGovQuotaError extends Error {
@@ -148,30 +138,12 @@ function uniqueValues(values: Array<string | null | undefined>) {
     return [...new Set(values.filter((value): value is string => Boolean(value)))]
 }
 
-function perSeedTaskLimit(plan: LeadgenSourcePlanItem, taskCount: number) {
-    const pollLimit = Math.min(500, Math.max(1, Number(plan.limit) || 25))
-    if (taskCount <= 1) return pollLimit
-    return Math.min(50, Math.max(3, Math.ceil(pollLimit / taskCount)))
-}
-
 function asRecord(value: unknown): Record<string, unknown> | null {
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
 }
 
 function asString(value: unknown) {
     return typeof value === "string" && value.trim() ? value.trim() : null
-}
-
-function recordState(value: unknown) {
-    const record = asRecord(value)
-    const state = asString(record?.state) ?? asString(record?.region) ?? asString(record?.state_code) ?? asString(record?.region_code)
-    return state && /^[A-Z]{2}$/i.test(state) ? state.toUpperCase() : null
-}
-
-function companyTargetsCalifornia(company: Pick<CompanySeed, "address" | "registered_address" | "location_value">) {
-    return recordState(company.address) === "CA"
-        || recordState(company.registered_address) === "CA"
-        || CALIFORNIA_LOCATION_VALUES.has(company.location_value ?? "")
 }
 
 function titleCaseFromValue(value: string | null | undefined) {
@@ -240,8 +212,7 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
     const locationMappings = usesSeedFallbacks
         ? seedLocationMappingsWithFallbacks(plan.locations, rawLocationMappings, locationTargets)
         : rawLocationMappings
-    const seedSource = PIPELINE_SEED_SOURCES.has(plan.key)
-    const taskRows = industryMappings.flatMap((industry) => locationMappings.flatMap((location) => {
+    const tasks = industryMappings.flatMap((industry) => locationMappings.flatMap((location) => {
         const industryValues = Array.isArray(industry.native_values) ? industry.native_values : []
         const locationValues = Array.isArray(location.native_values) ? location.native_values : []
         if (industryValues.length === 0 || locationValues.length === 0) return []
@@ -249,7 +220,7 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
             poll_id: pollId,
             workspace_id: workspaceId,
             source_key: plan.key,
-            stage_key: seedSource ? "seed" : "business_validation",
+            stage_key: PIPELINE_SEED_SOURCES.has(plan.key) ? "seed" : "business_validation",
             stage: sourceStage,
             industry_value: industry.icp_industry_value,
             location_value: location.icp_location_value,
@@ -263,33 +234,13 @@ async function createMappedTasksForPoll({ workspaceId, pollId, plan }: { workspa
                 industry_mapping: industry,
                 location_mapping: location,
                 limit: plan.limit ?? 25,
-                candidate_target_count: seedSource ? plan.limit ?? 10 : null,
+                candidate_target_count: PIPELINE_SEED_SOURCES.has(plan.key) ? plan.limit ?? 10 : null,
                 radius_meters: plan.radiusMeters,
                 release: plan.release,
             },
         }]
     }))
-    const seedTaskLimit = seedSource ? perSeedTaskLimit(plan, taskRows.length) : null
-    const tasks = seedTaskLimit
-        ? taskRows.map((task) => ({
-            ...task,
-            source_query: {
-                ...task.source_query,
-                limit: seedTaskLimit,
-                candidate_target_count: seedTaskLimit,
-            },
-        }))
-        : taskRows
     if (tasks.length === 0) return 0
-    if (seedSource && CALIFORNIA_LOCATION_VALUES.has(plan.locations.find((location) => CALIFORNIA_LOCATION_VALUES.has(location)) ?? "")) {
-        logCaliforniaOwnerDebug("seed_task_budget", {
-            source_key: plan.key,
-            task_count: tasks.length,
-            per_task_limit: seedTaskLimit,
-            industries: plan.industries,
-            locations: plan.locations,
-        })
-    }
     const { error } = await supabaseAdmin.from("leadgen_poll_tasks").insert(tasks)
     if (error) throw error
     return tasks.length
@@ -299,7 +250,7 @@ export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan, com
     if (plan.key !== "website") return 0
     let companiesQuery = supabaseAdmin
         .from("leadgen_companies")
-        .select("id, display_name, phone, website_url, profile_url, source_key, source_record_id, address, registered_address, industry_value, location_value")
+        .select("id, display_name, phone, website_url, profile_url, source_key, source_record_id")
         .eq("workspace_id", workspaceId)
         .eq("first_seen_poll_id", pollId)
         .not("website_url", "is", null)
@@ -308,40 +259,25 @@ export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan, com
     const companiesResult = await companiesQuery
     if (companiesResult.error) throw new Error(`Could not load companies for website crawling: ${companiesResult.error.message}`)
     const companies = (companiesResult.data ?? []) as CompanySeed[]
-    const tasks = companies.flatMap((company) => {
-        const californiaOwnerIdentityBoost = stageKey === "owner_identity" && companyTargetsCalifornia(company)
-        if (!company.website_url) return []
-        if (californiaOwnerIdentityBoost && isCaliforniaOwnerIdentityProfileUrl(company.website_url)) {
-            logCaliforniaOwnerDebug("website_profile_url_skipped", {
-                poll_id: pollId,
-                company_id: company.id,
-                company_name: company.display_name,
-                website_url: company.website_url,
-                location_value: company.location_value,
-            })
-            return []
-        }
-        return [{
-            poll_id: pollId,
-            workspace_id: workspaceId,
-            source_key: "website",
-            stage_key: stageKey,
-            stage: "owner_phone_extraction",
-            candidate_id: null,
-            industry_value: null,
-            location_value: null,
-            status: "queued",
-            source_query: {
-                company_id: company.id,
-                company_name: company.display_name,
-                website_url: company.website_url,
-                crawl_depth: plan.crawlDepth ?? 2,
-                timeout_seconds: plan.timeoutSeconds ?? 10,
-                respect_robots: plan.respectRobots !== false,
-                california_owner_identity_boost: californiaOwnerIdentityBoost,
-            },
-        }]
-    })
+    const tasks = companies.flatMap((company) => company.website_url ? [{
+        poll_id: pollId,
+        workspace_id: workspaceId,
+        source_key: "website",
+        stage_key: stageKey,
+        stage: "owner_phone_extraction",
+        candidate_id: null,
+        industry_value: null,
+        location_value: null,
+        status: "queued",
+        source_query: {
+            company_id: company.id,
+            company_name: company.display_name,
+            website_url: company.website_url,
+            crawl_depth: plan.crawlDepth ?? 2,
+            timeout_seconds: plan.timeoutSeconds ?? 10,
+            respect_robots: plan.respectRobots !== false,
+        },
+    }] : [])
     if (tasks.length === 0) return 0
     const existingResult = await supabaseAdmin
         .from("leadgen_poll_tasks")
@@ -784,9 +720,6 @@ async function processOvertureTask(task: PipelineTask) {
         .select("id", { count: "exact", head: true })
         .eq("workspace_id", workspaceId)
         .eq("first_seen_poll_id", pollId)
-        .eq("source_key", "overture")
-        .eq("industry_value", task.industry_value ?? "")
-        .eq("location_value", task.location_value ?? "")
     if (existingPollCompaniesResult.error) throw existingPollCompaniesResult.error
     const remainingCandidateSlots = candidateTargetCount - (existingPollCompaniesResult.count ?? 0)
     if (remainingCandidateSlots <= 0) return { rawCount: 0, companyCount: 0 }
@@ -953,52 +886,32 @@ async function processWebsiteTask(task: PipelineTask) {
     const workspaceId = typeof task.source_query.workspace_id === "string" ? task.source_query.workspace_id : ""
     const pollId = typeof task.source_query.poll_id === "string" ? task.source_query.poll_id : null
     const stageKey: WebsiteStageKey = task.stage_key === "seed" ? "business_validation" : task.stage_key
-    const californiaOwnerIdentityBoost = stageKey === "owner_identity" && task.source_query.california_owner_identity_boost === true
     if (workspaceId && pollId) {
         await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "website", stageKey, status: "running" })
         await updateInvestigationTask({ workspaceId, pollId, companyId, sourceKey: "web.json_ld", stageKey, status: "running" })
     }
     const crawlLimits = WEBSITE_CRAWL_LIMITS[stageKey] ?? WEBSITE_CRAWL_LIMITS.owner_identity
-    const configuredDepth = Math.min(5, Math.max(1, Number(task.source_query.crawl_depth) || 2))
-    const depth = californiaOwnerIdentityBoost ? Math.max(3, configuredDepth) : configuredDepth
+    const depth = Math.min(5, Math.max(1, Number(task.source_query.crawl_depth) || 2))
     const timeoutSeconds = Math.min(crawlLimits.timeoutSeconds, Math.max(2, Number(task.source_query.timeout_seconds) || crawlLimits.timeoutSeconds))
-    const crawlBudgetMs = californiaOwnerIdentityBoost ? Math.max(crawlLimits.budgetMs, 26_000) : crawlLimits.budgetMs
-    const deadline = Date.now() + crawlBudgetMs
+    const deadline = Date.now() + crawlLimits.budgetMs
     const inspected: PageExtraction[] = []
-    const baseMaxPages = depth <= 1 ? 1 : depth === 2 ? Math.min(crawlLimits.maxPages, stageKey === "owner_phone" ? 6 : 5) : crawlLimits.maxPages
-    const maxPages = californiaOwnerIdentityBoost ? Math.max(baseMaxPages, 8) : baseMaxPages
+    const maxPages = depth <= 1 ? 1 : depth === 2 ? Math.min(crawlLimits.maxPages, stageKey === "owner_phone" ? 6 : 5) : crawlLimits.maxPages
     const sitemapUrls = Date.now() < deadline - 1500
         ? await discoverSitemapUrls(websiteUrl, stageKey, depth, Math.min(timeoutSeconds, Math.max(1, Math.ceil((deadline - Date.now()) / 1000)))).catch(() => [])
         : []
     const queued = new Set<string>()
     const queue: string[] = []
-    const enqueue = (urls: string[], options: { sort?: boolean } = {}) => {
-        const candidates = urls
+    const enqueue = (urls: string[]) => {
+        const sorted = urls
             .filter((url) => sameSiteUrl(url, websiteUrl))
-        const ordered = options.sort === false ? candidates : candidates.sort((left, right) => crawlScore(right, stageKey) - crawlScore(left, stageKey))
-        for (const url of ordered) {
+            .sort((left, right) => crawlScore(right, stageKey) - crawlScore(left, stageKey))
+        for (const url of sorted) {
             if (queued.has(url) || crawlScore(url, stageKey) <= -20) continue
             queued.add(url)
             queue.push(url)
         }
     }
-    if (californiaOwnerIdentityBoost) {
-        enqueue(californiaOwnerIdentityWebsiteUrls(websiteUrl, depth, stageKey), { sort: false })
-        enqueue(sitemapUrls)
-        logCaliforniaOwnerDebug("website_crawl_start", {
-            poll_id: pollId,
-            company_id: companyId,
-            company_name: companyName,
-            website_url: websiteUrl,
-            depth,
-            max_pages: maxPages,
-            budget_ms: crawlBudgetMs,
-            sitemap_urls: sitemapUrls.length,
-            queued_urls: queue.slice(0, 12),
-        })
-    } else {
-        enqueue([...defaultWebsiteUrls(websiteUrl, depth, stageKey), ...sitemapUrls])
-    }
+    enqueue([...defaultWebsiteUrls(websiteUrl, depth, stageKey), ...sitemapUrls])
     let ownerName: string | null = null
     let ownerPhone: string | null = null
     let ownerRole: string | null = null
@@ -1063,7 +976,7 @@ async function processWebsiteTask(task: PipelineTask) {
             social_links: uniqueValues(inspected.flatMap((page) => page.social_links ?? [])),
             profile_links: uniqueValues(inspected.flatMap((page) => page.profile_links ?? [])),
         },
-        raw_payload: { inspected, crawl_strategy: { max_pages: maxPages, sitemap_urls: sitemapUrls.slice(0, 12), queued_urls: [...queued].slice(0, 30), california_owner_identity_boost: californiaOwnerIdentityBoost } },
+        raw_payload: { inspected, crawl_strategy: { max_pages: maxPages, sitemap_urls: sitemapUrls.slice(0, 12), queued_urls: [...queued].slice(0, 30) } },
     })
     if (evidenceError) throw evidenceError
     if (workspaceId && pollId) {
@@ -1077,7 +990,7 @@ async function processWebsiteTask(task: PipelineTask) {
             confidence: 35,
             provenanceUrl: websiteUrl,
             claimValue: { website_url: websiteUrl, pages_inspected: inspected.length, sitemap_urls: sitemapUrls.length },
-            rawPayload: { inspected, crawl_strategy: { max_pages: maxPages, sitemap_urls: sitemapUrls.slice(0, 12), california_owner_identity_boost: californiaOwnerIdentityBoost } },
+            rawPayload: { inspected, crawl_strategy: { max_pages: maxPages, sitemap_urls: sitemapUrls.slice(0, 12) } },
         })
         if (businessPhone) {
             await recordEvidenceClaim({
@@ -1151,18 +1064,6 @@ async function processWebsiteTask(task: PipelineTask) {
             matched: inspected.some((page) => page.evidence.includes("json_ld_present")),
             businessSupportPoints: inspected.some((page) => page.evidence.includes("json_ld_present")) ? 1 : 0,
             rawPayload: { inspected },
-        })
-    }
-    if (californiaOwnerIdentityBoost) {
-        logCaliforniaOwnerDebug("website_crawl_complete", {
-            poll_id: pollId,
-            company_id: companyId,
-            company_name: companyName,
-            inspected_pages: inspected.length,
-            owner_name: ownerName,
-            owner_phone_found: Boolean(ownerPhone),
-            business_phone_found: Boolean(businessPhone),
-            evidence: uniqueValues(inspected.flatMap((page) => page.evidence)).slice(0, 12),
         })
     }
     if (ownerName || ownerPhone || businessPhone) {

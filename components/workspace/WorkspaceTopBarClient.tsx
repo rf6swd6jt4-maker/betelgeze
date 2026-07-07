@@ -110,86 +110,8 @@ function parseStoredHistory(fallbackUrl: string): WorkspaceHistoryState {
     }
 }
 
-function writeStoredHistory(state: WorkspaceHistoryState) {
-    sessionStorage.setItem(historyKey, JSON.stringify(state))
-}
-
 function deferNavigationStateUpdate(update: () => void) {
     queueMicrotask(update)
-}
-
-function workspaceHref(workspaceSlug: string, suffix = "") {
-    const cleanSuffix = suffix.replace(/^\/+/, "")
-    return `/${workspaceSlug}${cleanSuffix ? `/${cleanSuffix}` : ""}`
-}
-
-function normalizeSearch(value: string) {
-    return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ")
-}
-
-type LocalSearchResult = SearchResult & { path: string; keywords: string[] }
-
-function localResult(id: string, type: string, label: string, description: string, href: string, path: string, keywords: string[] = []): LocalSearchResult {
-    return { id, type, label, description, href, path, keywords }
-}
-
-function localSearchResults(workspace: { name: string; slug: string }, value: string): SearchResult[] {
-    const query = normalizeSearch(value)
-    if (query.length < 2) return []
-    const settingsPath = `${workspace.name} > Settings`
-    const entries = [
-        localResult("page-home", "Page", "Home", "Workspace home and onboarding overview", workspaceHref(workspace.slug), workspace.name, ["dashboard", "clients", "onboarding"]),
-        localResult("page-relationships", "Page", "Relationships", "Relationship Hub list", workspaceHref(workspace.slug, "relationships"), `${workspace.name} > Relationships`, ["crm", "clients", "people"]),
-        localResult("page-work", "Page", "Work Queue", "Shared relationship work items", workspaceHref(workspace.slug, "work"), `${workspace.name} > Work Queue`, ["tasks", "project management", "queue"]),
-        localResult("page-leadgen", "Page", "Lead Gen", "Lead generation dashboard", workspaceHref(workspace.slug, "leadgen"), `${workspace.name} > Lead Gen`, ["leads", "lead generation"]),
-        localResult("action-new-poll", "Action", "New Poll", "Create and preflight a new lead-generation poll", workspaceHref(workspace.slug, "leadgen/new"), `${workspace.name} > Lead Gen > New Poll`, ["create poll", "start poll", "run poll", "poll preflight", "leadgen new"]),
-        localResult("page-polls", "Tab", "Polls", "Lead generation poll history", workspaceHref(workspace.slug, "leadgen/polls"), `${workspace.name} > Lead Gen > Polls`, ["runs", "automation history"]),
-        localResult("page-invoices", "Page", "Invoices", "Client invoices and sales", workspaceHref(workspace.slug, "invoices"), `${workspace.name} > Invoices`, ["sales", "stripe"]),
-        localResult("action-create-invoice", "Action", "Create Invoice", "Create and send a Stripe invoice", workspaceHref(workspace.slug, "sales/new"), `${workspace.name} > Invoices > Create Invoice`, ["new invoice", "invoice", "stripe invoice", "send invoice", "sales invoice"]),
-        localResult("action-manual-client", "Action", "Add Manual Client", "Add a client manually without invoice automation", workspaceHref(workspace.slug, "clients/new"), `${workspace.name} > Relationships > Manual Client`, ["manual client", "new client", "add client", "create client", "client manually"]),
-        localResult("page-settings", "Page", "Settings", "Unified workspace settings", workspaceHref(workspace.slug, "settings"), settingsPath, ["workspace settings"]),
-        localResult("settings-leadgen-sources-seed", "Settings", "Seed Sources", "Candidate creation sources required before staged validation and owner discovery can run", workspaceHref(workspace.slug, "settings#leadgen-sources-seed"), `${settingsPath} > Lead Gen Sources > Seed Sources`, ["lead gen source category", "source categories", "seed sources", "candidate sources"]),
-        localResult("settings-leadgen-sources-business-validation", "Settings", "Business Validation Sources", "Sources that confirm a seeded business is real enough to enter the owner pipeline", workspaceHref(workspace.slug, "settings#leadgen-sources-business-validation"), `${settingsPath} > Lead Gen Sources > Business Validation Sources`, ["lead gen source category", "source categories", "business validation", "validation sources"]),
-        localResult("settings-leadgen-sources-owner-identity", "Settings", "Owner Identity Discovery", "Sources that can find credible owner, principal, license holder, or authorised official names", workspaceHref(workspace.slug, "settings#leadgen-sources-owner-identity"), `${settingsPath} > Lead Gen Sources > Owner Identity Discovery`, ["lead gen source category", "source categories", "owner identity", "owner discovery", "owner name sources"]),
-        localResult("settings-leadgen-sources-owner-phone", "Settings", "Owner Phone Sources", "Sources that can attach phone numbers to discovered owners or principals", workspaceHref(workspace.slug, "settings#leadgen-sources-owner-phone"), `${settingsPath} > Lead Gen Sources > Owner Phone Sources`, ["lead gen source category", "source categories", "owner phone", "phone discovery"]),
-        localResult("settings-leadgen-sources-phone-validation", "Settings", "Phone Validation Sources", "Sources that check owner-phone format and future reachability signals", workspaceHref(workspace.slug, "settings#leadgen-sources-phone-validation"), `${settingsPath} > Lead Gen Sources > Phone Validation Sources`, ["lead gen source category", "source categories", "phone validation", "validate phones"]),
-    ]
-
-    return entries
-        .filter((entry) => [entry.label, entry.description, entry.path, ...entry.keywords].some((item) => normalizeSearch(item).includes(query)))
-        .map((entry) => ({
-            id: entry.id,
-            type: entry.type,
-            label: entry.label,
-            description: entry.description,
-            href: entry.href,
-            path: entry.path,
-        }))
-        .slice(0, 8)
-}
-
-function directSearchHref(workspaceSlug: string, value: string) {
-    const normalized = normalizeSearch(value)
-    if (normalized === "new poll" || normalized === "create poll" || normalized === "start poll" || normalized === "run poll") return workspaceHref(workspaceSlug, "leadgen/new")
-    if (normalized === "invoices" || normalized === "invoice") return workspaceHref(workspaceSlug, "invoices")
-    if (normalized === "new invoice" || normalized === "create invoice" || normalized === "send invoice") return workspaceHref(workspaceSlug, "sales/new")
-    if (normalized === "manual client" || normalized === "add manual client" || normalized === "new client" || normalized === "add client") return workspaceHref(workspaceSlug, "clients/new")
-    if (normalized === "seed sources" || normalized === "seed source category") return workspaceHref(workspaceSlug, "settings#leadgen-sources-seed")
-    if (normalized === "business validation" || normalized === "business validation sources") return workspaceHref(workspaceSlug, "settings#leadgen-sources-business-validation")
-    if (normalized === "owner identity" || normalized === "owner identity discovery" || normalized === "owner discovery") return workspaceHref(workspaceSlug, "settings#leadgen-sources-owner-identity")
-    if (normalized === "owner phone" || normalized === "owner phone sources" || normalized === "phone discovery") return workspaceHref(workspaceSlug, "settings#leadgen-sources-owner-phone")
-    if (normalized === "phone validation" || normalized === "phone validation sources") return workspaceHref(workspaceSlug, "settings#leadgen-sources-phone-validation")
-    return null
-}
-
-function mergeSearchResults(primary: SearchResult[], secondary: SearchResult[]) {
-    const seen = new Set<string>()
-    return [...primary, ...secondary].filter((item) => {
-        const key = `${item.id}:${item.href}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-    }).slice(0, 20)
 }
 
 export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, email, avatarSrc, leaveAction }: Props) {
@@ -202,7 +124,6 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
     const mobileSearchRef = useRef<HTMLDivElement>(null)
     const mobileSearchInputRef = useRef<HTMLInputElement>(null)
     const sidebarTransitionTimeout = useRef<number | null>(null)
-    const searchCache = useRef<Map<string, SearchResult[]>>(new Map())
     const [sidebarOpen, setSidebarOpen] = useState(false)
     const [sidebarHydrated, setSidebarHydrated] = useState(false)
     const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false)
@@ -213,12 +134,10 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
     const [searchLoading, setSearchLoading] = useState(false)
     const [searchResults, setSearchResults] = useState<SearchResult[]>([])
     const [searchShortcutLabel, setSearchShortcutLabel] = useState("Ctrl+J")
-    const workspaceName = workspace.name
-    const workspaceSlug = workspace.slug
-    const searchParamString = searchParams.toString()
 
     useEffect(() => {
-        const current = `${pathname}${searchParamString ? `?${searchParamString}` : ""}`
+        const query = searchParams.toString()
+        const current = `${pathname}${query ? `?${query}` : ""}`
         let { stack, index } = parseStoredHistory(current)
 
         if (stack[index] !== current) {
@@ -231,16 +150,12 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
             }
         }
 
-        writeStoredHistory({ stack, index })
-        const previousUrl = index > 0 ? stack[index - 1] : null
-        const nextUrl = index < stack.length - 1 ? stack[index + 1] : null
-        if (previousUrl?.startsWith("/")) router.prefetch(previousUrl)
-        if (nextUrl?.startsWith("/")) router.prefetch(nextUrl)
+        sessionStorage.setItem(historyKey, JSON.stringify({ stack, index }))
         deferNavigationStateUpdate(() => {
-            setCanGoBack(index > 0)
+            setCanGoBack(index > 0 || window.history.length > 1)
             setCanGoForward(index < stack.length - 1)
         })
-    }, [pathname, router, searchParamString])
+    }, [pathname, searchParams])
 
     useEffect(() => {
         function updateFromPopState() {
@@ -252,8 +167,8 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                 stack = [...stack, current].slice(-50)
                 index = stack.length - 1
             }
-            writeStoredHistory({ stack, index })
-            setCanGoBack(index > 0)
+            sessionStorage.setItem(historyKey, JSON.stringify({ stack, index }))
+            setCanGoBack(index > 0 || window.history.length > 1)
             setCanGoForward(index < stack.length - 1)
         }
 
@@ -347,74 +262,49 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
             return
         }
 
-        const normalized = normalizeSearch(trimmed)
-        const localResults = localSearchResults({ name: workspaceName, slug: workspaceSlug }, trimmed)
-        const directHref = directSearchHref(workspaceSlug, trimmed)
-        deferNavigationStateUpdate(() => {
-            setSearchResults(localResults)
-            setSearchLoading(localResults.length === 0)
-        })
-
-        if (directHref && localResults[0]?.href === directHref) {
-            deferNavigationStateUpdate(() => setSearchLoading(false))
-            return
-        }
-
-        const cached = searchCache.current.get(normalized)
-        if (cached) {
-            deferNavigationStateUpdate(() => {
-                setSearchResults(mergeSearchResults(localResults, cached))
-                setSearchLoading(false)
-            })
-            return
-        }
-
         const controller = new AbortController()
         const timeout = window.setTimeout(async () => {
-            if (localResults.length === 0) setSearchLoading(true)
+            setSearchLoading(true)
             try {
-                const response = await fetch(`/api/workspaces/${workspaceSlug}/search?q=${encodeURIComponent(trimmed)}`, {
+                const response = await fetch(`/api/workspaces/${workspace.slug}/search?q=${encodeURIComponent(trimmed)}`, {
                     signal: controller.signal,
                 })
                 if (!response.ok) throw new Error("Search failed")
                 const payload = await response.json() as { results?: SearchResult[] }
-                const remoteResults = payload.results ?? []
-                searchCache.current.set(normalized, remoteResults)
-                setSearchResults(mergeSearchResults(localResults, remoteResults))
+                setSearchResults(payload.results ?? [])
             } catch (error) {
-                if ((error as Error).name !== "AbortError") setSearchResults(localResults)
+                if ((error as Error).name !== "AbortError") setSearchResults([])
             } finally {
                 setSearchLoading(false)
             }
-        }, localResults.length ? 90 : 120)
+        }, 180)
 
         return () => {
             controller.abort()
             window.clearTimeout(timeout)
         }
-    }, [query, workspaceName, workspaceSlug])
+    }, [query, workspace.slug])
 
     function moveHistoryIndex(step: -1 | 1) {
         const current = `${window.location.pathname}${window.location.search}`
         const { stack, index } = parseStoredHistory(current)
         const nextIndex = index + step
-        if (nextIndex < 0 || nextIndex >= stack.length) return null
-        writeStoredHistory({ stack, index: nextIndex })
-        setCanGoBack(nextIndex > 0)
+        if (nextIndex < 0 || nextIndex >= stack.length) return
+        sessionStorage.setItem(historyKey, JSON.stringify({ stack, index: nextIndex }))
+        setCanGoBack(nextIndex > 0 || window.history.length > 1)
         setCanGoForward(nextIndex < stack.length - 1)
-        return stack[nextIndex]
     }
 
     function goBack() {
         if (!canGoBack) return
-        const href = moveHistoryIndex(-1)
-        if (href) router.replace(href)
+        moveHistoryIndex(-1)
+        window.history.back()
     }
 
     function goForward() {
         if (!canGoForward) return
-        const href = moveHistoryIndex(1)
-        if (href) router.replace(href)
+        moveHistoryIndex(1)
+        window.history.forward()
     }
 
     function openSearch() {
@@ -430,9 +320,23 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         setSearchOpen(true)
     }
 
+    function directSearchHref(value: string) {
+        const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ")
+        if (normalized === "new poll" || normalized === "create poll" || normalized === "start poll" || normalized === "run poll") return `/${workspace.slug}/leadgen/new`
+        if (normalized === "invoices" || normalized === "invoice") return `/${workspace.slug}/invoices`
+        if (normalized === "new invoice" || normalized === "create invoice" || normalized === "send invoice") return `/${workspace.slug}/sales/new`
+        if (normalized === "manual client" || normalized === "add manual client" || normalized === "new client" || normalized === "add client") return `/${workspace.slug}/clients/new`
+        if (normalized === "seed sources" || normalized === "seed source category") return `/${workspace.slug}/settings#leadgen-sources-seed`
+        if (normalized === "business validation" || normalized === "business validation sources") return `/${workspace.slug}/settings#leadgen-sources-business-validation`
+        if (normalized === "owner identity" || normalized === "owner identity discovery" || normalized === "owner discovery") return `/${workspace.slug}/settings#leadgen-sources-owner-identity`
+        if (normalized === "owner phone" || normalized === "owner phone sources" || normalized === "phone discovery") return `/${workspace.slug}/settings#leadgen-sources-owner-phone`
+        if (normalized === "phone validation" || normalized === "phone validation sources") return `/${workspace.slug}/settings#leadgen-sources-phone-validation`
+        return null
+    }
+
     function submitSearch(event: ReactKeyboardEvent<HTMLInputElement>) {
         if (event.key !== "Enter") return
-        const href = directSearchHref(workspaceSlug, query) ?? searchResults[0]?.href
+        const href = searchResults[0]?.href ?? directSearchHref(query)
         if (!href) return
         event.preventDefault()
         setSearchOpen(false)

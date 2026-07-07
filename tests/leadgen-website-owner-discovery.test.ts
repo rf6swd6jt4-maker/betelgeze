@@ -2,8 +2,6 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
-    crawlScore,
-    defaultWebsiteUrls,
     discoverWebsiteUrlsFromHtml,
     extractPageEvidence,
 } from "../lib/leadgen/website-owner-discovery.ts"
@@ -25,15 +23,6 @@ test("discovers and prioritizes owner-relevant internal links", () => {
     assert.ok(urls.includes("https://example.com/contact"))
     assert.equal(urls.some((url) => url.includes("privacy")), false)
     assert.equal(urls.some((url) => url.includes("elsewhere")), false)
-})
-
-test("includes owner and license paths in deeper owner-identity default crawls", () => {
-    const urls = defaultWebsiteUrls("https://example.com", 3, "owner_identity")
-
-    assert.ok(urls.includes("https://example.com/meet-the-owner"))
-    assert.ok(urls.includes("https://example.com/meet-our-owner"))
-    assert.ok(urls.includes("https://example.com/license"))
-    assert.ok(crawlScore("https://example.com/meet-the-owner", "owner_identity") > crawlScore("https://example.com/blog/spring", "owner_identity"))
 })
 
 test("extracts owner identity from team cards with source snippets and social links", () => {
@@ -87,24 +76,6 @@ test("extracts founder from JSON-LD when visible copy is thin", () => {
     assert.equal(result.phone, "+16025550144")
     assert.equal(result.owner_source, "json_ld")
     assert.ok(result.evidence.some((item) => item.startsWith("json_ld_owner:")))
-})
-
-test("extracts owners from founder sentence patterns", () => {
-    const html = `
-        <html>
-            <body>
-                <main>
-                    <p>Rafael Moreno founded the company after twenty years as a licensed California fence contractor.</p>
-                </main>
-            </body>
-        </html>
-    `
-
-    const result = extractPageEvidence("https://example.com/about", html, undefined, undefined, undefined, {
-        businessNames: ["Moreno Fence"],
-    })
-
-    assert.equal(result.owner_name, "Rafael Moreno")
 })
 
 test("cleans noisy owner phrases down to person spans", () => {

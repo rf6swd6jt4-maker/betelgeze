@@ -25,7 +25,6 @@ export type LeadgenEnrichmentSourceKey =
     | "registry.ca.bizfile"
     | "registry.ca.los_angeles_fbn"
     | "registry.ca.san_francisco_business_locations"
-    | "registry.ca.san_diego_business_tax"
     | "regulated.ca.calrecycle_waste"
     | "state_license.az.roc"
     | "state_license.az.pest_management"
@@ -127,9 +126,9 @@ export const enrichmentLeadgenSources = new Set<LeadgenSourceKey>([
     "state_license.ca.cslb",
     "state_license.ca.bar_auto_repair",
     "state_license.ca.pest_control",
+    "registry.ca.bizfile",
     "registry.ca.los_angeles_fbn",
     "registry.ca.san_francisco_business_locations",
-    "registry.ca.san_diego_business_tax",
     "regulated.ca.calrecycle_waste",
     "state_license.az.roc",
     "state_license.az.pest_management",
@@ -180,11 +179,12 @@ export const executableLeadgenSources = new Set<LeadgenSourceKey>([
     "property.fl.miamidade_appraiser",
     "property.fl.hillsborough_appraiser",
     "clerk.fl.hillsborough_official_records",
+    "state_license.ca.cslb",
     "state_license.ca.bar_auto_repair",
     "state_license.ca.pest_control",
+    "registry.ca.bizfile",
     "registry.ca.los_angeles_fbn",
     "registry.ca.san_francisco_business_locations",
-    "registry.ca.san_diego_business_tax",
     "regulated.ca.calrecycle_waste",
     "state_license.az.roc",
     "state_license.az.pest_management",
@@ -487,13 +487,13 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
     {
         value: "state_license.ca.cslb",
         label: "California CSLB contractor licenses",
-        detail: "California Contractors State License Board licensing records. Catalogued for contractor owner discovery, but the live public form is challenge-prone and is not used in polls until a stable external/bulk path exists.",
-        statusLabel: "Catalogued; needs stable bulk/API path",
-        notesPlaceholder: "External CSLB data source, license-class filters, personnel roles, or shard notes.",
+        detail: "California Contractors State License Board search for contractor businesses, license personnel, and home-improvement salesperson records across CA trades.",
+        statusLabel: "Executable from public form search",
+        notesPlaceholder: "License-class filters, personnel roles, or captcha/form-post notes.",
         kind: "enrichment",
         category: "location",
-        implemented: false,
-        setupHint: "The public CSLB form can return anti-bot/app-shell challenges from serverless runtimes. Keep it listed for future external shard or bulk implementation; v5.5.4 does not run it in polls.",
+        implemented: true,
+        setupHint: "No API key is needed. Betelgeze posts the public CSLB business-name form and parses contractor result rows.",
     },
     {
         value: "state_license.ca.bar_auto_repair",
@@ -522,13 +522,13 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
     {
         value: "registry.ca.bizfile",
         label: "California Bizfile officers",
-        detail: "California Secretary of State Bizfile entity search. Catalogued for CA entity officer/agent discovery, but held out of poll-time execution until a stable bulk or API path is available.",
-        statusLabel: "Catalogued; needs stable bulk/API path",
+        detail: "California Secretary of State Bizfile entity search. Intended to connect CA businesses to registered agents, officers, managers, or entity filings.",
+        statusLabel: "Executable from guarded public search",
         notesPlaceholder: "Entity-search endpoint, filing-title filters, or registered-agent confidence notes.",
         kind: "enrichment",
         category: "location",
-        implemented: false,
-        setupHint: "The public Bizfile HTML route is challenge-prone, so v5.5 does not run it in polls. Keep it listed for future external/bulk implementation.",
+        implemented: true,
+        setupHint: "No API key is needed. The public Bizfile HTML route can challenge automation; the worker records that as a failed source task instead of a false owner result.",
     },
     {
         value: "registry.ca.los_angeles_fbn",
@@ -539,8 +539,7 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         kind: "enrichment",
         category: "location",
         implemented: true,
-        envVar: "CA_OWNER_SHARD_BASE_URL",
-        setupHint: "Set CA_OWNER_SHARD_BASE_URL in Vercel after uploading generated California owner shards to R2 or another public object store.",
+        setupHint: "No API key is needed. Betelgeze queries LA County's public Fictitious Business Name ArcGIS table.",
     },
     {
         value: "registry.ca.san_francisco_business_locations",
@@ -551,20 +550,7 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         kind: "enrichment",
         category: "location",
         implemented: true,
-        envVar: "CA_OWNER_SHARD_BASE_URL",
-        setupHint: "Set CA_OWNER_SHARD_BASE_URL in Vercel after uploading generated California owner shards to R2 or another public object store.",
-    },
-    {
-        value: "registry.ca.san_diego_business_tax",
-        label: "San Diego business tax certificates",
-        detail: "City of San Diego active business tax certificate records. Exposes DBA and business-owner fields for San Diego owner identity discovery, with corporate owner names filtered by the person-name gate.",
-        statusLabel: "Executable from public CSV shards",
-        notesPlaceholder: "Business-owner field confidence, active-certificate refresh cadence, or DBA matching caveats.",
-        kind: "enrichment",
-        category: "location",
-        implemented: true,
-        envVar: "CA_OWNER_SHARD_BASE_URL",
-        setupHint: "Rebuild and upload California owner shards after v5.5.5 so the san_diego_business_tax shard folder exists under CA_OWNER_SHARD_BASE_URL.",
+        setupHint: "No API key is needed. Betelgeze queries DataSF's public Socrata API and only records ownership names that pass the real-person name gate.",
     },
     {
         value: "regulated.ca.calrecycle_waste",
@@ -575,8 +561,7 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         kind: "enrichment",
         category: "industry",
         implemented: true,
-        envVar: "CA_OWNER_SHARD_BASE_URL",
-        setupHint: "Set CA_OWNER_SHARD_BASE_URL in Vercel after uploading generated California owner shards to R2 or another public object store.",
+        setupHint: "No API key is needed. Betelgeze queries the public CalRecycle SWIS ArcGIS feature service.",
     },
     {
         value: "state_license.az.roc",

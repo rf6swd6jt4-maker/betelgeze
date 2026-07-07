@@ -31,6 +31,16 @@ import {
 } from "@/lib/leadgen/public-record-source-safety"
 import { normaliseSunbizIndexSearchText } from "@/lib/leadgen/sunbiz-bulk-index"
 import {
+    CALIFORNIA_OWNER_DEFAULT_SHARD_PREFIX_LENGTH,
+    CALIFORNIA_OWNER_SHARD_VERSION,
+    californiaOwnerShardKeysForName,
+    californiaOwnerShardUrl,
+    filterCaliforniaOwnerShardRecords,
+    isCaliforniaOwnerShardSourceKey,
+    parseCaliforniaOwnerShardJsonl,
+    type CaliforniaOwnerShardRecord,
+} from "@/lib/leadgen/california-owner-shards"
+import {
     filterSunbizShardRecords,
     parseSunbizShardJsonl,
     SUNBIZ_DEFAULT_SHARD_PREFIX_LENGTH,
@@ -138,7 +148,6 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "state_license.ca.cslb",
     "state_license.ca.bar_auto_repair",
     "state_license.ca.pest_control",
-    "registry.ca.bizfile",
     "registry.ca.los_angeles_fbn",
     "registry.ca.san_francisco_business_locations",
     "regulated.ca.calrecycle_waste",
@@ -158,6 +167,7 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
 const PUBLIC_RECORD_FETCH_TIMEOUT_MS = 18_000
 const CSV_CACHE = new Map<string, Promise<string>>()
 const SUNBIZ_SHARD_CACHE = new Map<string, Promise<SunbizShardRecord[]>>()
+const CALIFORNIA_OWNER_SHARD_CACHE = new Map<string, Promise<CaliforniaOwnerShardRecord[]>>()
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -640,6 +650,91 @@ async function fetchSunbizShardLookupRows(source: SourceCatalog, searchTerm: str
         city: record.city,
         state: record.state,
         postcode: record.zip,
+        raw_payload: {
+            shard_keys: shardKeys,
+            normalized_business_name: record.n,
+            source_key: record.s,
+        },
+    }))
+}
+
+function californiaOwnerShardBaseUrl(metadata: Record<string, unknown>) {
+    return asString(metadata.shard_base_url) ?? process.env.CA_OWNER_SHARD_BASE_URL?.trim() ?? null
+}
+
+async function fetchCaliforniaOwnerShardRecords(url: string) {
+    const cached = CALIFORNIA_OWNER_SHARD_CACHE.get(url)
+    if (cached) return cached
+    const promise = (async () => {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), PUBLIC_RECORD_FETCH_TIMEOUT_MS)
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    Accept: "application/x-ndjson,application/json,text/plain,*/*",
+                    "Accept-Encoding": "gzip",
+                    "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)",
+                },
+                cache: "force-cache",
+                signal: controller.signal,
+            })
+            if (response.status === 404) return []
+            const bytes = Buffer.from(await response.arrayBuffer())
+            if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}: ${bytes.toString("utf8").slice(0, 280)}`)
+            let text: string
+            try {
+                text = gunzipSync(bytes).toString("utf8")
+            } catch {
+                text = bytes.toString("utf8")
+            }
+            return parseCaliforniaOwnerShardJsonl(text)
+        } catch (error) {
+            if (error instanceof Error && error.name === "AbortError") throw new Error(`${url} timed out after ${Math.round(PUBLIC_RECORD_FETCH_TIMEOUT_MS / 1000)} seconds.`)
+            throw error
+        } finally {
+            clearTimeout(timeout)
+        }
+    })()
+    CALIFORNIA_OWNER_SHARD_CACHE.set(url, promise)
+    return promise
+}
+
+async function fetchCaliforniaOwnerShardLookupRows(source: SourceCatalog, searchTerm: string) {
+    if (!isCaliforniaOwnerShardSourceKey(source.source_key)) throw new Error(`${source.label} is not a supported California owner shard source.`)
+    const sourceKey = source.source_key
+    const metadata = source.metadata ?? {}
+    const baseUrl = californiaOwnerShardBaseUrl(metadata)
+    if (!baseUrl) throw new Error(`${source.label} requires CA_OWNER_SHARD_BASE_URL before poll-time activation.`)
+    const prefixLength = Math.min(5, Math.max(1, Number(metadata.shard_prefix_length) || CALIFORNIA_OWNER_DEFAULT_SHARD_PREFIX_LENGTH))
+    const shardKeys = californiaOwnerShardKeysForName(searchTerm, prefixLength)
+    if (shardKeys.length === 0) return []
+    const version = asString(metadata.shard_version) ?? process.env.CA_OWNER_SHARD_VERSION?.trim() ?? CALIFORNIA_OWNER_SHARD_VERSION
+    const limit = Math.min(50, Math.max(1, Number(metadata.query_limit) || 20))
+    const records = (await Promise.all(shardKeys.map(async (shardKey) => {
+        const url = californiaOwnerShardUrl({ baseUrl, sourceKey, shardKey, version })
+        return fetchCaliforniaOwnerShardRecords(url)
+    }))).flat()
+    const seenRecords = new Set<string>()
+    const uniqueRecords = records.filter((record) => {
+        const key = `${record.s}:${record.r}:${record.p}`
+        if (seenRecords.has(key)) return false
+        seenRecords.add(key)
+        return true
+    })
+    return filterCaliforniaOwnerShardRecords(uniqueRecords, searchTerm, limit).map((record) => ({
+        business_name: record.b,
+        owner_name: record.p,
+        person_name: record.p,
+        person_role: record.role,
+        person_source_field: record.field,
+        record_id: record.r,
+        status: record.status,
+        record_type: record.rt,
+        address: record.street,
+        city: record.city,
+        state: record.state,
+        postcode: record.zip,
+        source_url: record.url,
         raw_payload: {
             shard_keys: shardKeys,
             normalized_business_name: record.n,
@@ -1780,6 +1875,7 @@ async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, com
     if (adapter === "texas_comptroller_franchise_tax") return fetchTexasComptrollerRows(searchTerm, source.metadata ?? {})
     if (adapter === "sunbiz_owner_index") return fetchSunbizOwnerIndexRows(source, searchTerm)
     if (adapter === "sunbiz_shard_lookup") return fetchSunbizShardLookupRows(source, searchTerm)
+    if (adapter === "california_owner_shard_lookup") return fetchCaliforniaOwnerShardLookupRows(source, searchTerm)
     if (adapter === "fmcsa_company_census") return fetchFmcsaCensusRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "texas_agriculture_spcs_csv") return fetchTexasAgriculturePestRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "tceq_central_registry") return fetchTceqRows(searchTerm, source.metadata ?? {}, company)
@@ -1865,6 +1961,8 @@ const BROAD_TEXT_SEARCH_ADAPTERS = new Set([
     "arcgis_feature_service",
     "guarded_html_search",
     "sunbiz_owner_index",
+    "sunbiz_shard_lookup",
+    "california_owner_shard_lookup",
 ])
 
 function sourceAdapter(source: SourceCatalog) {

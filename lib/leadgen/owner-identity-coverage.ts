@@ -78,7 +78,7 @@ export const selectableOwnerIdentityLocations: OwnerIdentityCoverageLocation[] =
 export const pass1CoreOwnerIdentitySourcesByState: Record<OwnerIdentityCoverageLocation["state"], string[]> = {
     TX: ["registry.tx.comptroller"],
     FL: ["registry.fl.sunbiz", "registry.fl.fictitious_names"],
-    CA: ["registry.ca.bizfile"],
+    CA: ["state_license.ca.cslb"],
     AZ: ["registry.az.corp_commission"],
 }
 
@@ -98,6 +98,13 @@ export const pass3BayAreaOwnerIdentitySources = ["registry.ca.san_francisco_busi
 export const pass3LocalOwnerIdentitySourcesByLocation: Record<string, readonly string[]> = {
     bay_area_ca: pass3BayAreaOwnerIdentitySources,
 }
+
+export const pass5CaliforniaLocalOwnerIdentitySourcesByLocation: Record<string, readonly string[]> = {
+    los_angeles_ca: ["registry.ca.los_angeles_fbn"],
+    bay_area_ca: ["registry.ca.san_francisco_business_locations"],
+}
+
+export const pass5CaliforniaWasteOwnerIdentitySources = ["regulated.ca.calrecycle_waste"] as const
 
 export function pass1OwnerIdentitySourcesForCombo(industryValue: string, locationValue: string) {
     if (!selectableOwnerIdentityIndustries.includes(industryValue as (typeof selectableOwnerIdentityIndustries)[number])) return []
@@ -120,6 +127,15 @@ export function pass3OwnerIdentitySourcesForCombo(industryValue: string, locatio
     const hasIndustry = selectableOwnerIdentityIndustries.includes(industryValue as (typeof selectableOwnerIdentityIndustries)[number])
     const localSources = hasIndustry ? pass3LocalOwnerIdentitySourcesByLocation[locationValue] ?? [] : []
     return [...new Set([...pass2Sources, ...localSources])]
+}
+
+export function pass5OwnerIdentitySourcesForCombo(industryValue: string, locationValue: string) {
+    const pass3Sources = pass3OwnerIdentitySourcesForCombo(industryValue, locationValue)
+    const location = selectableOwnerIdentityLocations.find((item) => item.value === locationValue)
+    if (location?.state !== "CA") return pass3Sources
+    const localSources = pass5CaliforniaLocalOwnerIdentitySourcesByLocation[locationValue] ?? []
+    const wasteSources = industryValue === "waste_disposal" ? pass5CaliforniaWasteOwnerIdentitySources : []
+    return [...new Set([...pass3Sources, ...localSources, ...wasteSources])]
 }
 
 export function pass1OwnerIdentityCoverageGaps() {

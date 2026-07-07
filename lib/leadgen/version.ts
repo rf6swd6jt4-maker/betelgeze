@@ -1,4 +1,4 @@
-export const LEADGEN_POLLING_SYSTEM_VERSION = "5.4.12"
+export const LEADGEN_POLLING_SYSTEM_VERSION = "5.5"
 export const LEADGEN_POLLING_SYSTEM_VERSION_LABEL = `v${LEADGEN_POLLING_SYSTEM_VERSION}`
 
 export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
@@ -19,4 +19,5 @@ export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
     { version: "5.4.10", note: "Sunbiz statewide all-industry task fan-out fix." },
     { version: "5.4.11", note: "Florida county property appraiser and clerk record sources." },
     { version: "5.4.12", note: "Staged poll resume, reporting, and website fallback efficiency fix." },
+    { version: "5.5", note: "California contractor owner identity pass with CSLB and external owner shards." },
 ] as const

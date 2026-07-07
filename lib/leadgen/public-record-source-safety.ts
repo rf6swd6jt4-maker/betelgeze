@@ -44,6 +44,9 @@ export function looksLikeGuardedOrAppShell(text: string) {
 
 export function publicRecordPollUnsafeReason(sourceKey: string, label: string, metadata: Record<string, unknown> | null | undefined) {
     const adapter = publicRecordAdapter(metadata)
+    if (adapter === "sunbiz_owner_index") {
+        return `${label} uses the retired Supabase Sunbiz bulk index. The index table was removed because it exceeds the database storage tier; configure an external Sunbiz lookup before poll-time activation.`
+    }
     if (fragileHtmlPublicRecordSources.has(sourceKey) && adapter === guardedHtmlAdapter && metadata?.poll_safe_html !== true) {
         return `${label} is a guarded or app-shell public-record source. It needs a stable API, data-download index, or source-specific endpoint before poll-time activation.`
     }

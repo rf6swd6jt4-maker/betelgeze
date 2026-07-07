@@ -110,6 +110,18 @@ export function sourceStatusMeta(source: LeadgenSourceCatalogRow, health?: Leadg
         }
     }
 
+    if (stage === "external_lookup_required" || healthStatus === "needs_external_lookup") {
+        return {
+            key: "external_lookup",
+            label: "External lookup",
+            detail: "Needs an external file/shard lookup before it should run inside polls.",
+            mark: "bg-violet-300",
+            text: "text-violet-200",
+            border: "border-violet-400/20",
+            muted: false,
+        }
+    }
+
     if (stage === "source_specific_configuration") {
         return {
             key: "config",

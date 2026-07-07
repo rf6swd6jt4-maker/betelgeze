@@ -43,9 +43,14 @@ test("stable public-record adapters remain poll safe", () => {
     assert.equal(publicRecordPollUnsafeReason("registry.ca.los_angeles_fbn", "Los Angeles County FBN", {
         adapter: "arcgis_feature_service",
     }), null)
-    assert.equal(publicRecordPollUnsafeReason("registry.fl.sunbiz", "Florida Sunbiz officers", {
+})
+
+test("retired Supabase Sunbiz index is not poll safe", () => {
+    const reason = publicRecordPollUnsafeReason("registry.fl.sunbiz", "Florida Sunbiz officers", {
         adapter: "sunbiz_owner_index",
-    }), null)
+    })
+
+    assert.match(reason ?? "", /retired Supabase Sunbiz bulk index/)
 })
 
 test("detects challenge pages and client app shells before parsing rows", () => {

@@ -150,6 +150,7 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "state_license.ca.pest_control",
     "registry.ca.los_angeles_fbn",
     "registry.ca.san_francisco_business_locations",
+    "registry.ca.san_diego_business_tax",
     "regulated.ca.calrecycle_waste",
     "state_license.az.roc",
     "state_license.az.pest_management",
@@ -168,6 +169,14 @@ const PUBLIC_RECORD_FETCH_TIMEOUT_MS = 18_000
 const CSV_CACHE = new Map<string, Promise<string>>()
 const SUNBIZ_SHARD_CACHE = new Map<string, Promise<SunbizShardRecord[]>>()
 const CALIFORNIA_OWNER_SHARD_CACHE = new Map<string, Promise<CaliforniaOwnerShardRecord[]>>()
+
+function isCaliforniaOwnerDebugSource(sourceKey: string) {
+    return sourceKey.startsWith("registry.ca.") || sourceKey.startsWith("state_license.ca.") || sourceKey.startsWith("regulated.ca.")
+}
+
+function logCaliforniaOwnerDebug(event: string, payload: Record<string, unknown>) {
+    console.info(`[leadgen:ca-owner] ${event}`, JSON.stringify(payload))
+}
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -721,7 +730,16 @@ async function fetchCaliforniaOwnerShardLookupRows(source: SourceCatalog, search
         seenRecords.add(key)
         return true
     })
-    return filterCaliforniaOwnerShardRecords(uniqueRecords, searchTerm, limit).map((record) => ({
+    const filteredRecords = filterCaliforniaOwnerShardRecords(uniqueRecords, searchTerm, limit)
+    logCaliforniaOwnerDebug("shard_lookup", {
+        source_key: sourceKey,
+        search_term: searchTerm,
+        shard_keys: shardKeys,
+        downloaded_records: records.length,
+        unique_records: uniqueRecords.length,
+        matched_records: filteredRecords.length,
+    })
+    return filteredRecords.map((record) => ({
         business_name: record.b,
         owner_name: record.p,
         person_name: record.p,
@@ -2019,8 +2037,32 @@ async function fetchRowsForSearchTerms(source: SourceCatalog, searchTerms: strin
             const message = compactErrorMessage(error)
             attempts.push({ search_term: searchTerm, error: message })
             errors.push(message)
-            if (isFatalSearchError(error)) throw error
+            if (isFatalSearchError(error)) {
+                if (isCaliforniaOwnerDebugSource(source.source_key)) {
+                    logCaliforniaOwnerDebug("source_search_fatal", {
+                        source_key: source.source_key,
+                        company_id: company.id,
+                        company_name: company.display_name,
+                        search_term: searchTerm,
+                        error: message,
+                        attempts,
+                    })
+                }
+                throw error
+            }
         }
+    }
+    if (isCaliforniaOwnerDebugSource(source.source_key)) {
+        logCaliforniaOwnerDebug("source_search_complete", {
+            source_key: source.source_key,
+            company_id: company.id,
+            company_name: company.display_name,
+            location_value: company.location_value,
+            search_terms: searchTerms,
+            returned_rows: rows.length,
+            attempts,
+            errors,
+        })
     }
     if (rows.length === 0 && errors.length === searchTerms.length) {
         throw new Error(errors[0] ?? "Public-record source search failed for every search term.")
@@ -2234,6 +2276,17 @@ async function insertEvidence({
 async function processTask({ workspaceId, pollId, task, company, source }: { workspaceId: string; pollId: string; task: InvestigationTask; company: CompanyCandidate; source: SourceCatalog }) {
     await updateInvestigationTask({ workspaceId, pollId, companyId: company.id, sourceKey: task.source_key, stageKey: task.stage_key, status: "running" })
     const searchTerms = searchTermsForSource(source, company)
+    if (isCaliforniaOwnerDebugSource(source.source_key)) {
+        logCaliforniaOwnerDebug("task_start", {
+            poll_id: pollId,
+            company_id: company.id,
+            company_name: company.display_name,
+            source_key: source.source_key,
+            stage_key: task.stage_key,
+            location_value: company.location_value,
+            search_terms: searchTerms,
+        })
+    }
     if (searchTerms.length === 0) {
         await updateInvestigationTask({
             workspaceId,
@@ -2253,6 +2306,16 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
         .filter((match): match is MatchResult => Boolean(match))
     const result = chooseBestMatch(matches)
     if (!result) {
+        if (isCaliforniaOwnerDebugSource(source.source_key)) {
+            logCaliforniaOwnerDebug("task_no_match", {
+                poll_id: pollId,
+                company_id: company.id,
+                company_name: company.display_name,
+                source_key: source.source_key,
+                returned_rows: rows.length,
+                rejected_rows: Math.min(rows.length, 5),
+            })
+        }
         await updateInvestigationTask({
             workspaceId,
             pollId,
@@ -2272,6 +2335,20 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
         return { sourceTouched: true, matched: false, returnedRows: rows.length } satisfies TaskProcessOutcome
     }
     const evidence = await insertEvidence({ workspaceId, pollId, company, source, result })
+    if (isCaliforniaOwnerDebugSource(source.source_key)) {
+        logCaliforniaOwnerDebug("task_match", {
+            poll_id: pollId,
+            company_id: company.id,
+            company_name: company.display_name,
+            source_key: source.source_key,
+            returned_rows: rows.length,
+            owner_name: result.personName,
+            business_name: result.businessName,
+            record_id: result.permitNumber,
+            confidence: result.confidence,
+            reasons: result.matchReasons,
+        })
+    }
     await updateInvestigationTask({
         workspaceId,
         pollId,

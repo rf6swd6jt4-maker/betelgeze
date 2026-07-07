@@ -104,6 +104,10 @@ function compactErrorMessage(error: unknown) {
     return message.length > 900 ? `${message.slice(0, 900)}…` : message
 }
 
+function logCaliforniaOwnerDebug(event: string, payload: Record<string, unknown>) {
+    console.info(`[leadgen:ca-owner] ${event}`, JSON.stringify(payload))
+}
+
 class SamGovQuotaError extends Error {
     readonly nextAccessTime: string | null
 
@@ -279,7 +283,17 @@ export async function createWebsiteTasksForPoll({ workspaceId, pollId, plan, com
     const companies = (companiesResult.data ?? []) as CompanySeed[]
     const tasks = companies.flatMap((company) => {
         const californiaOwnerIdentityBoost = stageKey === "owner_identity" && companyTargetsCalifornia(company)
-        if (!company.website_url || californiaOwnerIdentityBoost && isCaliforniaOwnerIdentityProfileUrl(company.website_url)) return []
+        if (!company.website_url) return []
+        if (californiaOwnerIdentityBoost && isCaliforniaOwnerIdentityProfileUrl(company.website_url)) {
+            logCaliforniaOwnerDebug("website_profile_url_skipped", {
+                poll_id: pollId,
+                company_id: company.id,
+                company_name: company.display_name,
+                website_url: company.website_url,
+                location_value: company.location_value,
+            })
+            return []
+        }
         return [{
             poll_id: pollId,
             workspace_id: workspaceId,
@@ -941,6 +955,17 @@ async function processWebsiteTask(task: PipelineTask) {
     if (californiaOwnerIdentityBoost) {
         enqueue(californiaOwnerIdentityWebsiteUrls(websiteUrl, depth, stageKey), { sort: false })
         enqueue(sitemapUrls)
+        logCaliforniaOwnerDebug("website_crawl_start", {
+            poll_id: pollId,
+            company_id: companyId,
+            company_name: companyName,
+            website_url: websiteUrl,
+            depth,
+            max_pages: maxPages,
+            budget_ms: crawlBudgetMs,
+            sitemap_urls: sitemapUrls.length,
+            queued_urls: queue.slice(0, 12),
+        })
     } else {
         enqueue([...defaultWebsiteUrls(websiteUrl, depth, stageKey), ...sitemapUrls])
     }
@@ -1096,6 +1121,18 @@ async function processWebsiteTask(task: PipelineTask) {
             matched: inspected.some((page) => page.evidence.includes("json_ld_present")),
             businessSupportPoints: inspected.some((page) => page.evidence.includes("json_ld_present")) ? 1 : 0,
             rawPayload: { inspected },
+        })
+    }
+    if (californiaOwnerIdentityBoost) {
+        logCaliforniaOwnerDebug("website_crawl_complete", {
+            poll_id: pollId,
+            company_id: companyId,
+            company_name: companyName,
+            inspected_pages: inspected.length,
+            owner_name: ownerName,
+            owner_phone_found: Boolean(ownerPhone),
+            business_phone_found: Boolean(businessPhone),
+            evidence: uniqueValues(inspected.flatMap((page) => page.evidence)).slice(0, 12),
         })
     }
     if (ownerName || ownerPhone || businessPhone) {

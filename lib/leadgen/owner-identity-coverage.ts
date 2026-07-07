@@ -78,7 +78,7 @@ export const selectableOwnerIdentityLocations: OwnerIdentityCoverageLocation[] =
 export const pass1CoreOwnerIdentitySourcesByState: Record<OwnerIdentityCoverageLocation["state"], string[]> = {
     TX: ["registry.tx.comptroller"],
     FL: ["registry.fl.sunbiz", "registry.fl.fictitious_names"],
-    CA: ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations"],
+    CA: ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations", "registry.ca.san_diego_business_tax"],
     AZ: ["registry.az.corp_commission"],
 }
 
@@ -100,9 +100,9 @@ export const pass3LocalOwnerIdentitySourcesByLocation: Record<string, readonly s
 }
 
 export const pass5CaliforniaLocalOwnerIdentitySourcesByLocation: Record<string, readonly string[]> = {
-    california: ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations"],
+    california: ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations", "registry.ca.san_diego_business_tax"],
     los_angeles_ca: ["registry.ca.los_angeles_fbn"],
-    san_diego_ca: ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations"],
+    san_diego_ca: ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations", "registry.ca.san_diego_business_tax"],
     bay_area_ca: ["registry.ca.san_francisco_business_locations"],
 }
 

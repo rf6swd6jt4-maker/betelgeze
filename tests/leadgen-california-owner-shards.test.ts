@@ -28,6 +28,11 @@ test("builds stable California owner shard keys and URLs", () => {
         shardKey: "bay",
         version: "v1",
     }), "https://assets.example.test/leadgen/ca-owner/v1/san_francisco_business_locations/bay.jsonl.gz")
+    assert.equal(californiaOwnerShardRelativePath({
+        sourceKey: "registry.ca.san_diego_business_tax",
+        shardKey: "uni",
+        version: "v1",
+    }), "v1/san_diego_business_tax/uni.jsonl.gz")
 })
 
 test("converts California owner rows to compact shard records", () => {
@@ -67,9 +72,11 @@ test("parses and filters California owner shard records for candidate search ter
     const rows: CaliforniaOwnerShardRecord[] = [
         { v: 1, s: "registry.ca.los_angeles_fbn", n: "golden state roofing", b: "GOLDEN STATE ROOFING LLC", r: "1", p: "Maria Santos", role: "registered_fbn_owner", field: "RegisteredOwnerName", status: "Original", rt: "FBN", street: "123 Main", city: "Los Angeles", state: "CA", zip: "90012", url: "https://example.test/la" },
         { v: 1, s: "registry.ca.san_francisco_business_locations", n: "bay area pool service", b: "BAY AREA POOL SERVICE INC", r: "2", p: "Ana Rivera", role: "business_owner", field: "ownership_name", status: "Active", rt: "Registered business", street: "99 Market", city: "San Francisco", state: "CA", zip: "94103", url: "https://example.test/sf" },
+        { v: 1, s: "registry.ca.san_diego_business_tax", n: "university mechanical engineering contractors", b: "UNIVERSITY MECHANICAL & ENGINEERING CONTRACTORS", r: "3", p: "Carlos Rivera", role: "business_tax_certificate_owner", field: "business_owner_name", status: "Active", rt: "SOLE", street: "1168 Fesler St", city: "El Cajon", state: "CA", zip: "92020", url: "https://example.test/sd" },
     ]
-    const parsed = parseCaliforniaOwnerShardJsonl(`${JSON.stringify(rows[0])}\nnot-json\n${JSON.stringify(rows[1])}\n`)
+    const parsed = parseCaliforniaOwnerShardJsonl(`${JSON.stringify(rows[0])}\nnot-json\n${JSON.stringify(rows[1])}\n${JSON.stringify(rows[2])}\n`)
 
-    assert.equal(parsed.length, 2)
+    assert.equal(parsed.length, 3)
     assert.deepEqual(filterCaliforniaOwnerShardRecords(parsed, "Golden State Roofing Los Angeles", 5).map((row) => row.p), ["Maria Santos"])
+    assert.deepEqual(filterCaliforniaOwnerShardRecords(parsed, "University Mechanical Contractors", 5).map((row) => row.p), ["Carlos Rivera"])
 })

@@ -71,11 +71,11 @@ test("pass 3 Bay Area owner-identity source is listed, runnable, and mapped acro
     }
 })
 
-test("v5.5.2 California owner discovery uses stable executable shards instead of live CSLB or Bizfile", () => {
+test("v5.5.5 California owner discovery uses stable executable shards instead of live CSLB or Bizfile", () => {
     const settingsSourceKeys = new Set(leadgenSourceOptions.map((source) => source.value))
     const californiaCoreSources = pass1CoreOwnerIdentitySourcesByState.CA
 
-    assert.deepEqual(californiaCoreSources, ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations"])
+    assert.deepEqual(californiaCoreSources, ["registry.ca.los_angeles_fbn", "registry.ca.san_francisco_business_locations", "registry.ca.san_diego_business_tax"])
     assert.equal(executableLeadgenSources.has("state_license.ca.cslb"), false)
     assert.equal(californiaCoreSources.includes("registry.ca.bizfile"), false)
     assert.equal(executableLeadgenSources.has("registry.ca.bizfile"), false)
@@ -94,6 +94,7 @@ test("v5.5.2 California owner discovery uses stable executable shards instead of
             assert.equal(sources.includes("state_license.ca.cslb"), false, `${industry}/${location.value} still depends on live California CSLB`)
             assert.equal(sources.includes("registry.ca.los_angeles_fbn"), true, `${industry}/${location.value} does not include California FBN shards`)
             assert.equal(sources.includes("registry.ca.san_francisco_business_locations"), true, `${industry}/${location.value} does not include California registered-business shards`)
+            assert.equal(sources.includes("registry.ca.san_diego_business_tax"), true, `${industry}/${location.value} does not include San Diego business-tax shards`)
             assert.equal(sources.includes("registry.ca.bizfile"), false, `${industry}/${location.value} still depends on Bizfile`)
             assert.equal(sources.includes("website"), false, `${industry}/${location.value} fell back to the crawler`)
         }
@@ -103,5 +104,6 @@ test("v5.5.2 California owner discovery uses stable executable shards instead of
     assert.equal(pass5OwnerIdentitySourcesForCombo("fencing_contractors", "bay_area_ca").includes("registry.ca.san_francisco_business_locations"), true)
     assert.equal(pass5OwnerIdentitySourcesForCombo("fencing_contractors", "san_diego_ca").includes("registry.ca.los_angeles_fbn"), true)
     assert.equal(pass5OwnerIdentitySourcesForCombo("fencing_contractors", "san_diego_ca").includes("registry.ca.san_francisco_business_locations"), true)
+    assert.equal(pass5OwnerIdentitySourcesForCombo("fencing_contractors", "san_diego_ca").includes("registry.ca.san_diego_business_tax"), true)
     assert.equal(pass5OwnerIdentitySourcesForCombo("waste_disposal", "san_diego_ca").includes("regulated.ca.calrecycle_waste"), true)
 })

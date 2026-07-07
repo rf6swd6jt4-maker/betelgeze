@@ -4,6 +4,7 @@ export const CALIFORNIA_OWNER_DEFAULT_SHARD_PREFIX_LENGTH = 3
 export const californiaOwnerShardSourceKeys = [
     "registry.ca.los_angeles_fbn",
     "registry.ca.san_francisco_business_locations",
+    "registry.ca.san_diego_business_tax",
     "regulated.ca.calrecycle_waste",
 ] as const
 
@@ -81,6 +82,7 @@ export function normaliseCaliforniaOwnerShardSearchText(value: string | null | u
 export function californiaOwnerShardSourcePath(sourceKey: CaliforniaOwnerShardSourceKey) {
     if (sourceKey === "registry.ca.los_angeles_fbn") return "los_angeles_fbn"
     if (sourceKey === "registry.ca.san_francisco_business_locations") return "san_francisco_business_locations"
+    if (sourceKey === "registry.ca.san_diego_business_tax") return "san_diego_business_tax"
     return "calrecycle_waste"
 }
 

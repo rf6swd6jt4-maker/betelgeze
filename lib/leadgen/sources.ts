@@ -25,6 +25,7 @@ export type LeadgenEnrichmentSourceKey =
     | "registry.ca.bizfile"
     | "registry.ca.los_angeles_fbn"
     | "registry.ca.san_francisco_business_locations"
+    | "registry.ca.san_diego_business_tax"
     | "regulated.ca.calrecycle_waste"
     | "state_license.az.roc"
     | "state_license.az.pest_management"
@@ -128,6 +129,7 @@ export const enrichmentLeadgenSources = new Set<LeadgenSourceKey>([
     "state_license.ca.pest_control",
     "registry.ca.los_angeles_fbn",
     "registry.ca.san_francisco_business_locations",
+    "registry.ca.san_diego_business_tax",
     "regulated.ca.calrecycle_waste",
     "state_license.az.roc",
     "state_license.az.pest_management",
@@ -182,6 +184,7 @@ export const executableLeadgenSources = new Set<LeadgenSourceKey>([
     "state_license.ca.pest_control",
     "registry.ca.los_angeles_fbn",
     "registry.ca.san_francisco_business_locations",
+    "registry.ca.san_diego_business_tax",
     "regulated.ca.calrecycle_waste",
     "state_license.az.roc",
     "state_license.az.pest_management",
@@ -550,6 +553,18 @@ export const leadgenSourceOptions: LeadgenSourceOption[] = [
         implemented: true,
         envVar: "CA_OWNER_SHARD_BASE_URL",
         setupHint: "Set CA_OWNER_SHARD_BASE_URL in Vercel after uploading generated California owner shards to R2 or another public object store.",
+    },
+    {
+        value: "registry.ca.san_diego_business_tax",
+        label: "San Diego business tax certificates",
+        detail: "City of San Diego active business tax certificate records. Exposes DBA and business-owner fields for San Diego owner identity discovery, with corporate owner names filtered by the person-name gate.",
+        statusLabel: "Executable from public CSV shards",
+        notesPlaceholder: "Business-owner field confidence, active-certificate refresh cadence, or DBA matching caveats.",
+        kind: "enrichment",
+        category: "location",
+        implemented: true,
+        envVar: "CA_OWNER_SHARD_BASE_URL",
+        setupHint: "Rebuild and upload California owner shards after v5.5.5 so the san_diego_business_tax shard folder exists under CA_OWNER_SHARD_BASE_URL.",
     },
     {
         value: "regulated.ca.calrecycle_waste",

@@ -85,7 +85,7 @@ function usage() {
         "  npm run build:ca-owner-shards -- --source registry.ca.los_angeles_fbn --out .california-owner-shards",
         "",
         "Options:",
-        "  --source all|registry.ca.los_angeles_fbn|registry.ca.san_francisco_business_locations|regulated.ca.calrecycle_waste",
+        "  --source all|registry.ca.los_angeles_fbn|registry.ca.san_francisco_business_locations|registry.ca.san_diego_business_tax|regulated.ca.calrecycle_waste",
         "  --prefix-length 3      Business-name shard prefix length.",
         "  --page-size 2000       API page size for source downloads.",
         "  --limit 10000          Optional source-row cap for dry test builds.",
@@ -159,6 +159,58 @@ async function fetchJson(url: string) {
     const text = await response.text()
     if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}: ${text.slice(0, 280)}`)
     return JSON.parse(text) as unknown
+}
+
+async function fetchText(url: string) {
+    const response = await fetch(url, {
+        headers: {
+            Accept: "text/csv,text/plain,*/*",
+            "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)",
+        },
+    })
+    const text = await response.text()
+    if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}: ${text.slice(0, 280)}`)
+    return text
+}
+
+function parseCsvLine(line: string) {
+    const cells: string[] = []
+    let current = ""
+    let quoted = false
+    for (let index = 0; index < line.length; index += 1) {
+        const char = line[index]
+        const next = line[index + 1]
+        if (char === "\"" && quoted && next === "\"") {
+            current += "\""
+            index += 1
+            continue
+        }
+        if (char === "\"") {
+            quoted = !quoted
+            continue
+        }
+        if (char === "," && !quoted) {
+            cells.push(cleanName(current))
+            current = ""
+            continue
+        }
+        current += char
+    }
+    cells.push(cleanName(current))
+    return cells
+}
+
+function csvRowsWithHeaders(csv: string) {
+    const [headerLine, ...lines] = csv.split(/\r?\n/).filter((line) => line.trim())
+    const headers = parseCsvLine(headerLine ?? "")
+    return lines.map((line) => {
+        const cells = parseCsvLine(line)
+        return Object.fromEntries(headers.map((header, index) => [header, cells[index] ?? ""]))
+    })
+}
+
+function joinStreetParts(row: Record<string, unknown>, fields: string[]) {
+    return cleanName(fields.map((field) => pickString(row, [field])).filter(Boolean).join(" ")) || null
 }
 
 async function *fetchArcgisAttributes({
@@ -290,6 +342,37 @@ async function *fetchSanFranciscoBusinessRows(options: CliOptions): AsyncGenerat
     }
 }
 
+async function *fetchSanDiegoBusinessTaxRows(options: CliOptions): AsyncGenerator<CaliforniaOwnerIndexRow> {
+    const sourceUrl = "https://seshat.datasd.org/business_tax_certificates/sd_businesses_active_datasd.csv"
+    const csv = await fetchText(sourceUrl)
+    let emitted = 0
+    for (const row of csvRowsWithHeaders(csv)) {
+        if (options.limit !== null && emitted >= options.limit) break
+        const businessName = pickString(row, ["dba_name"])
+        const personName = cleanName(pickString(row, ["business_owner_name"]))
+        if (!businessName || !personName) continue
+        emitted += 1
+        yield {
+            source_key: "registry.ca.san_diego_business_tax",
+            business_name: businessName,
+            record_id: stableRecordId("registry.ca.san_diego_business_tax", row, ["account_key"]),
+            person_name: personName,
+            person_role: "business_tax_certificate_owner",
+            person_source_field: "business_owner_name",
+            status: pickString(row, ["account_status"]) ?? "Active",
+            record_type: pickString(row, ["ownership_type"]) ?? "San Diego business tax certificate",
+            address: {
+                street: joinStreetParts(row, ["address_no", "address_pd", "address_road", "address_sfx", "address_no_fraction", "address_suite"]),
+                city: pickString(row, ["address_city"]) ?? "San Diego",
+                state: pickString(row, ["address_state"]) ?? "CA",
+                postcode: pickString(row, ["address_zip"]),
+            },
+            source_url: "https://data.sandiego.gov/datasets/business-tax-certificates/",
+            raw_payload: row,
+        }
+    }
+}
+
 async function *fetchCalRecycleRows(options: CliOptions): AsyncGenerator<CaliforniaOwnerIndexRow> {
     const serviceUrl = "https://services3.arcgis.com/6CawrotsIAWp4yUX/ArcGIS/rest/services/CalRecycle_Solid_Waste_Facilities/FeatureServer/0"
     for await (const row of fetchArcgisAttributes({ serviceUrl, pageSize: options.pageSize, limit: options.limit })) {
@@ -327,6 +410,11 @@ const SOURCE_DEFINITIONS: Record<CaliforniaOwnerShardSourceKey, SourceDefinition
         sourceKey: "registry.ca.san_francisco_business_locations",
         label: "San Francisco registered businesses",
         fetchRows: fetchSanFranciscoBusinessRows,
+    },
+    "registry.ca.san_diego_business_tax": {
+        sourceKey: "registry.ca.san_diego_business_tax",
+        label: "San Diego business tax certificates",
+        fetchRows: fetchSanDiegoBusinessTaxRows,
     },
     "regulated.ca.calrecycle_waste": {
         sourceKey: "regulated.ca.calrecycle_waste",

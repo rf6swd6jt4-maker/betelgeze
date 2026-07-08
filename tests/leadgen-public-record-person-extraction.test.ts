@@ -36,6 +36,13 @@ test("normalises all-caps surname-first public-record names when given name evid
     assert.equal(normalisePublicRecordPersonName("DE LA CRUZ MARIA"), "Maria de la Cruz")
 })
 
+test("uses fast frequency scoring to resolve probable surname-first public-record names", () => {
+    assert.equal(normalisePublicRecordPersonName("Williams Robert"), "Robert Williams")
+    assert.equal(normalisePublicRecordPersonName("SALAS JUAN"), "Juan Salas")
+    assert.equal(normalisePublicRecordPersonName("Robert Williams"), "Robert Williams")
+    assert.equal(normalisePublicRecordPersonName("Juan Carlos Salas Garcia"), "Juan Carlos Salas Garcia")
+})
+
 test("builds a person from first middle last fragments", () => {
     const candidate = bestPublicRecordPerson({
         principal_first_name: "Ana",

@@ -79,7 +79,7 @@ export const pass1CoreOwnerIdentitySourcesByState: Record<OwnerIdentityCoverageL
     TX: ["registry.tx.comptroller"],
     FL: ["registry.fl.sunbiz", "registry.fl.fictitious_names"],
     CA: ["registry.ca.bizfile"],
-    AZ: ["registry.az.corp_commission"],
+    AZ: ["registry.az.corp_commission", "registry.az.trade_names"],
 }
 
 export const pass2TransportOwnerIdentityIndustries = [

@@ -68,6 +68,7 @@ const CURRENTLY_EXECUTABLE_INVESTIGATION_SOURCES = new Set([
     "state_license.az.roc",
     "state_license.az.pest_management",
     "registry.az.corp_commission",
+    "registry.az.trade_names",
     "state_license.nc.general_contractors",
     "permits.tx.dallas",
     "permits.tx.austin",

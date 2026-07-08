@@ -39,6 +39,16 @@ import {
     sunbizShardUrl,
     type SunbizShardRecord,
 } from "@/lib/leadgen/sunbiz-shards"
+import {
+    ARIZONA_OWNER_DEFAULT_SHARD_PREFIX_LENGTH,
+    ARIZONA_OWNER_SHARD_VERSION,
+    arizonaOwnerShardKeysForName,
+    arizonaOwnerShardUrl,
+    filterArizonaOwnerShardRecords,
+    parseArizonaOwnerShardJsonl,
+    type ArizonaOwnerShardRecord,
+    type ArizonaOwnerShardSourceKey,
+} from "@/lib/leadgen/arizona-owner-shards"
 import type { PollStageKey } from "@/lib/leadgen/staged-poll"
 import { groupByKey, runWithConcurrency } from "@/lib/leadgen/task-execution"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -145,6 +155,7 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "state_license.az.roc",
     "state_license.az.pest_management",
     "registry.az.corp_commission",
+    "registry.az.trade_names",
     "safety.osha",
     "transport.fmcsa_safer",
     "transport.fmcsa_census",
@@ -158,6 +169,7 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
 const PUBLIC_RECORD_FETCH_TIMEOUT_MS = 18_000
 const CSV_CACHE = new Map<string, Promise<string>>()
 const SUNBIZ_SHARD_CACHE = new Map<string, Promise<SunbizShardRecord[]>>()
+const ARIZONA_OWNER_SHARD_CACHE = new Map<string, Promise<ArizonaOwnerShardRecord[]>>()
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -643,6 +655,132 @@ async function fetchSunbizShardLookupRows(source: SourceCatalog, searchTerm: str
             state: record.state,
             postcode: record.zip,
             raw_payload: {
+                shard_keys: shardKeys,
+                normalized_business_name: record.n,
+                raw_person_name: record.p,
+                source_key: record.s,
+            },
+        }
+    })
+}
+
+function isArizonaOwnerShardSourceKey(sourceKey: string): sourceKey is ArizonaOwnerShardSourceKey {
+    return sourceKey === "registry.az.corp_commission" || sourceKey === "registry.az.trade_names"
+}
+
+function arizonaOwnerShardBaseUrl(metadata: Record<string, unknown>) {
+    return asString(metadata.shard_base_url) ?? process.env.AZ_OWNER_SHARD_BASE_URL?.trim() ?? null
+}
+
+async function fetchArizonaOwnerShardRecords(url: string) {
+    const cached = ARIZONA_OWNER_SHARD_CACHE.get(url)
+    if (cached) return cached
+    const promise = (async () => {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), PUBLIC_RECORD_FETCH_TIMEOUT_MS)
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    Accept: "application/x-ndjson,application/json,text/plain,*/*",
+                    "Accept-Encoding": "gzip",
+                    "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)",
+                },
+                cache: "force-cache",
+                signal: controller.signal,
+            })
+            if (response.status === 404) return []
+            const bytes = Buffer.from(await response.arrayBuffer())
+            if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}: ${bytes.toString("utf8").slice(0, 280)}`)
+            let text: string
+            try {
+                text = gunzipSync(bytes).toString("utf8")
+            } catch {
+                text = bytes.toString("utf8")
+            }
+            return parseArizonaOwnerShardJsonl(text)
+        } catch (error) {
+            if (error instanceof Error && error.name === "AbortError") throw new Error(`${url} timed out after ${Math.round(PUBLIC_RECORD_FETCH_TIMEOUT_MS / 1000)} seconds.`)
+            throw error
+        } finally {
+            clearTimeout(timeout)
+        }
+    })()
+    ARIZONA_OWNER_SHARD_CACHE.set(url, promise)
+    return promise
+}
+
+function arizonaOwnerRoleFields(sourceKey: ArizonaOwnerShardSourceKey, record: ArizonaOwnerShardRecord, personName: string) {
+    const role = record.role.toLowerCase()
+    if (sourceKey === "registry.az.trade_names") {
+        return {
+            owner_name: personName,
+            registrant_name: personName,
+        }
+    }
+    if (/agent/.test(role)) {
+        return {
+            registered_agent_name: personName,
+            statutory_agent_name: personName,
+        }
+    }
+    if (/member|manager/.test(role)) {
+        return {
+            owner_name: personName,
+            member_name: personName,
+            manager_name: personName,
+            principal_name: personName,
+        }
+    }
+    return {
+        owner_name: personName,
+        officer_name: personName,
+        principal_name: personName,
+    }
+}
+
+async function fetchArizonaOwnerShardLookupRows(source: SourceCatalog, searchTerm: string) {
+    if (!isArizonaOwnerShardSourceKey(source.source_key)) throw new Error(`${source.label} is not a supported Arizona owner shard source.`)
+    const sourceKey = source.source_key
+    const metadata = source.metadata ?? {}
+    const baseUrl = arizonaOwnerShardBaseUrl(metadata)
+    if (!baseUrl) throw new Error(`${source.label} requires AZ_OWNER_SHARD_BASE_URL before poll-time activation.`)
+    const prefixLength = Math.min(5, Math.max(1, Number(metadata.shard_prefix_length) || ARIZONA_OWNER_DEFAULT_SHARD_PREFIX_LENGTH))
+    const shardKeys = arizonaOwnerShardKeysForName(searchTerm, prefixLength)
+    if (shardKeys.length === 0) return []
+    const version = asString(metadata.shard_version) ?? process.env.AZ_OWNER_SHARD_VERSION?.trim() ?? ARIZONA_OWNER_SHARD_VERSION
+    const limit = Math.min(50, Math.max(1, Number(metadata.query_limit) || 20))
+    const records = (await Promise.all(shardKeys.map(async (shardKey) => {
+        const url = arizonaOwnerShardUrl({ baseUrl, sourceKey, shardKey, version })
+        return fetchArizonaOwnerShardRecords(url)
+    }))).flat()
+    const seenRecords = new Set<string>()
+    const uniqueRecords = records.filter((record) => {
+        const key = `${record.s}:${record.r}:${record.p}:${record.role}`
+        if (record.s !== sourceKey || seenRecords.has(key)) return false
+        seenRecords.add(key)
+        return true
+    })
+    return filterArizonaOwnerShardRecords(uniqueRecords, searchTerm, limit).map((record) => {
+        const personName = record.p
+        return {
+            business_name: record.b,
+            legal_name: sourceKey === "registry.az.corp_commission" ? record.b : null,
+            trade_name: sourceKey === "registry.az.trade_names" ? record.b : null,
+            person_name: personName,
+            person_role: record.role,
+            person_source_field: record.field,
+            record_id: record.r,
+            status: record.status,
+            record_type: record.rt,
+            city: record.city,
+            state: record.state,
+            postcode: record.zip,
+            source_url: sourceKey === "registry.az.trade_names"
+                ? "https://apps.azsos.gov/apps/tntp/index.html"
+                : "https://arizonabusinesscenter.azcc.gov/EntitySearch/Index",
+            ...arizonaOwnerRoleFields(sourceKey, record, personName),
+            raw_payload: {
+                ...record.raw,
                 shard_keys: shardKeys,
                 normalized_business_name: record.n,
                 raw_person_name: record.p,
@@ -1784,6 +1922,7 @@ async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, com
     if (adapter === "texas_comptroller_franchise_tax") return fetchTexasComptrollerRows(searchTerm, source.metadata ?? {})
     if (adapter === "sunbiz_owner_index") return fetchSunbizOwnerIndexRows(source, searchTerm)
     if (adapter === "sunbiz_shard_lookup") return fetchSunbizShardLookupRows(source, searchTerm)
+    if (adapter === "az_owner_shard_lookup") return fetchArizonaOwnerShardLookupRows(source, searchTerm)
     if (adapter === "fmcsa_company_census") return fetchFmcsaCensusRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "texas_agriculture_spcs_csv") return fetchTexasAgriculturePestRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "tceq_central_registry") return fetchTceqRows(searchTerm, source.metadata ?? {}, company)
@@ -1855,6 +1994,14 @@ function chooseBestMatch(matches: MatchResult[]) {
             if ((right.personConfidence ?? 0) !== (left.personConfidence ?? 0)) return (right.personConfidence ?? 0) - (left.personConfidence ?? 0)
             return right.confidence - left.confidence
         })[0] ?? null
+}
+
+function ownerIdentityPointsForMatch(metadata: Record<string, unknown>, result: MatchResult) {
+    const base = Math.min(3, Math.max(0, Number(metadata.owner_identity_points_on_match) || 0))
+    if (!/agent/i.test(result.personRole ?? "")) return base
+    const agentPoints = Number(metadata.registered_agent_owner_identity_points_on_match)
+    if (!Number.isFinite(agentPoints)) return Math.min(base, 1)
+    return Math.min(base, Math.min(3, Math.max(0, agentPoints)))
 }
 
 const SEARCH_TERM_INSENSITIVE_ADAPTERS = new Set([
@@ -1940,7 +2087,7 @@ async function insertEvidence({
     const profileUrl = sourceProfileUrl(source.source_key, metadata, result)
     const sourceRecordId = `${source.source_key}:${result.permitNumber ?? hashRecord(result.row)}`
     const rawPersonName = asString(result.row.owner_name) ?? asString(result.row.person_name)
-    const ownerIdentityPoints = Math.min(3, Math.max(0, Number(metadata.owner_identity_points_on_match) || 0))
+    const ownerIdentityPoints = ownerIdentityPointsForMatch(metadata, result)
     const ownerPhonePoints = result.personName && result.phone ? Math.min(3, Math.max(0, Number(metadata.owner_phone_points_on_match) || 0)) : 0
     const businessSupportPoints = Math.min(3, Math.max(0, Number(metadata.business_support_points_on_match) || source.business_support_points || 1))
     const identityProfile = identityProfileFromOfficialRecord(result.row, {

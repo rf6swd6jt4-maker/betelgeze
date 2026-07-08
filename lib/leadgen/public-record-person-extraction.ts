@@ -1,4 +1,4 @@
-import { isLikelyPersonName, normalisePersonName } from "./person-name-normalizer.js"
+import { isLikelyPersonName, maybeNormaliseLastNameFirstPersonName, normalisePersonName } from "./person-name-normalizer.js"
 
 export type PublicRecordPersonCandidate = {
     name: string
@@ -164,7 +164,7 @@ export function normalisePublicRecordPersonName(value: string | null | undefined
     clean = clean.replace(/\s+(?:and|&)\s+.+$/i, "")
     clean = clean.split(/[;\n|]/)[0] ?? clean
     clean = normaliseCommaName(stripRoleText(clean))
-    return normalisePersonName(clean, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 55 })
+    return maybeNormaliseLastNameFirstPersonName(clean, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 55 })
 }
 
 export function isLikelyPublicRecordPersonName(value: string | null | undefined) {

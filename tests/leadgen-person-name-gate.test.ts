@@ -10,6 +10,7 @@ test("person gate rejects website fragments that look capitalized but are not pe
         "Our Team",
         "Featured Project",
         "Service Areas",
+        "de la",
     ]
 
     for (const fragment of fragments) {

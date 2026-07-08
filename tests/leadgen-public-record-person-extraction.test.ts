@@ -31,6 +31,11 @@ test("normalises comma-reversed public-record names and strips role suffixes", (
     assert.equal(isLikelyPublicRecordPersonName("SMITH, JOHN A - MANAGER"), true)
 })
 
+test("normalises all-caps surname-first public-record names when given name evidence is strong", () => {
+    assert.equal(normalisePublicRecordPersonName("SENOR MIRIAM"), "Miriam Senor")
+    assert.equal(normalisePublicRecordPersonName("DE LA CRUZ MARIA"), "Maria de la Cruz")
+})
+
 test("builds a person from first middle last fragments", () => {
     const candidate = bestPublicRecordPerson({
         principal_first_name: "Ana",
@@ -68,4 +73,5 @@ test("does not treat property owners or business names as lead-owner identities"
     }), null)
     assert.equal(isLikelyPublicRecordPersonName("Austin Flooring Pros LLC"), false)
     assert.equal(isLikelyPublicRecordPersonName("Capitol Registered Agents LLC"), false)
+    assert.equal(isLikelyPublicRecordPersonName("de la"), false)
 })

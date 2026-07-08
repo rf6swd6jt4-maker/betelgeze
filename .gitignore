@@ -13,7 +13,6 @@
 # testing
 /coverage
 /.sunbiz-shards
-/.california-owner-shards
 
 # next.js
 /.next/

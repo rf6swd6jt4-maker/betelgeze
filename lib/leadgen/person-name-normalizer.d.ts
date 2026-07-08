@@ -11,6 +11,7 @@ export type PersonNameOptions = {
     ownerContext?: boolean
     minConfidence?: number
     contextNames?: Array<string | null | undefined>
+    nameOrder?: "first_last" | "last_first" | "unknown"
 }
 
 export function extractPersonNameCandidate(value: string | null | undefined, options?: PersonNameOptions): PersonNameCandidate | null

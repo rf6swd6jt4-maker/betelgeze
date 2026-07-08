@@ -19,6 +19,8 @@ test("splits and normalises county property owner people without accepting entit
     )
     assert.equal(cautiousCountyPropertyOwnerName(["CLOVER KENNEDY LLC"], { lastNameFirst: true }), null)
     assert.equal(cautiousCountyPropertyOwnerName(["SMITH DAVID A TRUSTEE"], { lastNameFirst: true }), null)
+    assert.equal(cautiousCountyPropertyOwnerName(["SENOR MIRIAM"], { lastNameFirst: true }), "Miriam Senor")
+    assert.equal(cautiousCountyPropertyOwnerName(["DE LA"], { lastNameFirst: true }), null)
 })
 
 test("official-record clerk rows score matched businesses without extracting cross-party owners", () => {

@@ -1,4 +1,4 @@
-import { isLikelyPersonName, normalisePersonName } from "./person-name-normalizer.js"
+import { isLikelyPersonName, maybeNormaliseLastNameFirstPersonName, normalisePersonName } from "./person-name-normalizer.js"
 
 type RecordLike = Record<string, unknown>
 
@@ -24,7 +24,7 @@ const COMMON_GIVEN_NAME_KEYS = new Set([
     "ana", "andrew", "angel", "anthony", "antonio", "barbara", "ben", "brad", "brandon", "brian", "carlos", "charles",
     "chris", "christopher", "daniel", "david", "edward", "elizabeth", "emily", "eric", "frank", "gary", "george",
     "hector", "jack", "james", "jason", "jeff", "jennifer", "john", "jose", "joseph", "juan", "kevin", "laura",
-    "linda", "lisa", "luis", "maria", "mark", "mary", "matthew", "michael", "michelle", "paul", "peter", "priya",
+    "linda", "lisa", "luis", "maria", "mark", "mary", "matthew", "michael", "michelle", "miriam", "paul", "peter", "priya",
     "rafael", "ramon", "richard", "robert", "sam", "sarah", "scott", "stephen", "steven", "susan", "thomas",
     "tobias", "william",
 ])
@@ -154,7 +154,9 @@ export function cautiousCountyPropertyOwnerName(
     for (const part of values.flatMap(splitCountyOwnerNames)) {
         if (looksUnsafePropertyOwnerName(part)) continue
         const candidate = options.lastNameFirst ? maybeLastFirstName(part) : part
-        const normalised = normalisePublicRecordPersonName(candidate)
+        const normalised = options.lastNameFirst
+            ? maybeNormaliseLastNameFirstPersonName(candidate, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 55 })
+            : normalisePublicRecordPersonName(candidate)
         if (normalised && isLikelyPublicRecordPersonName(normalised)) return preserveFullCountyName(candidate, normalised)
     }
     return null

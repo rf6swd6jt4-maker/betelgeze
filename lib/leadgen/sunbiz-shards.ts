@@ -1,4 +1,5 @@
 import type { SunbizOwnerIndexRow } from "./sunbiz-bulk-index"
+import { normaliseSunbizPersonName } from "./sunbiz-person-name.js"
 
 export const SUNBIZ_SHARD_VERSION = "v1"
 export const SUNBIZ_DEFAULT_SHARD_PREFIX_LENGTH = 3
@@ -93,13 +94,14 @@ export function sunbizShardRecordFromOwnerRow(row: SunbizOwnerIndexRow): SunbizS
     const normalisedBusinessName = normaliseSunbizShardSearchText(row.business_name)
     if (!normalisedBusinessName || !row.person_name) return null
     const address = row.address ?? {}
+    const personName = normaliseSunbizPersonName(row.person_name) ?? row.person_name
     return {
         v: 1,
         s: row.source_key,
         n: normalisedBusinessName,
         b: row.business_name,
         r: row.record_id,
-        p: row.person_name,
+        p: personName,
         role: row.person_role,
         field: row.person_source_field,
         status: row.status,

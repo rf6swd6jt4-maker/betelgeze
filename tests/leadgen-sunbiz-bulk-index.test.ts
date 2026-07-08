@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+    normaliseSunbizPersonName,
     normaliseSunbizIndexSearchText,
     parseSunbizCorporateOwnerRows,
     parseSunbizFictitiousNameOwnerRows,
@@ -28,7 +29,7 @@ test("parses Sunbiz corporate officer person rows from fixed-width downloads", (
         { start: 335, length: 10, value: "33602" },
         { start: 669, length: 4, value: "MGR" },
         { start: 673, length: 1, value: "P" },
-        { start: 674, length: 42, value: "Maria Santos" },
+        { start: 674, length: 42, value: "SANTOS              MARIA" },
         { start: 716, length: 42, value: "200 OAK AVE" },
         { start: 758, length: 28, value: "TAMPA" },
         { start: 786, length: 2, value: "FL" },
@@ -58,7 +59,7 @@ test("parses Sunbiz fictitious-name owner person rows from fixed-width downloads
         { start: 337, length: 2, value: "US" },
         { start: 352, length: 1, value: "A" },
         { start: 389, length: 12, value: "G24000054321" },
-        { start: 401, length: 55, value: "Ana Rivera" },
+        { start: 401, length: 55, value: "RIVERA              ANA" },
         { start: 456, length: 1, value: "P" },
         { start: 457, length: 40, value: "55 BEACH RD" },
         { start: 497, length: 28, value: "MIAMI" },
@@ -77,4 +78,12 @@ test("parses Sunbiz fictitious-name owner person rows from fixed-width downloads
 
 test("normalises Sunbiz index search text for business-name matching", () => {
     assert.equal(normaliseSunbizIndexSearchText("Gulf Coast Roofing, LLC"), "gulf coast roofing")
+})
+
+test("normalises Sunbiz fixed-width surname-first person fields", () => {
+    assert.equal(normaliseSunbizPersonName("MARTINS             CHARLES"), "Charles Martins")
+    assert.equal(normaliseSunbizPersonName("RUDNITSKY           ALEKSANDR"), "Aleksandr Rudnitsky")
+    assert.equal(normaliseSunbizPersonName("BLANDFORD           JASON"), "Jason Blandford")
+    assert.equal(normaliseSunbizPersonName("LORD                PHILLIPPE"), "Phillippe Lord")
+    assert.equal(normaliseSunbizPersonName("Bunch               Susan"), "Susan Bunch")
 })

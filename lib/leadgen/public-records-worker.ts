@@ -29,7 +29,7 @@ import {
     type PublicRecordFailureClassification,
     type PublicRecordSourceHealthStatus,
 } from "@/lib/leadgen/public-record-source-safety"
-import { normaliseSunbizIndexSearchText } from "@/lib/leadgen/sunbiz-bulk-index"
+import { normaliseSunbizIndexSearchText, normaliseSunbizPersonName } from "@/lib/leadgen/sunbiz-bulk-index"
 import {
     filterSunbizShardRecords,
     parseSunbizShardJsonl,
@@ -628,24 +628,28 @@ async function fetchSunbizShardLookupRows(source: SourceCatalog, searchTerm: str
         seenRecords.add(key)
         return true
     })
-    return filterSunbizShardRecords(uniqueRecords, searchTerm, limit).map((record) => ({
-        business_name: record.b,
-        owner_name: record.p,
-        person_name: record.p,
-        person_role: record.role,
-        person_source_field: record.field,
-        record_id: record.r,
-        status: record.status,
-        record_type: record.rt,
-        city: record.city,
-        state: record.state,
-        postcode: record.zip,
-        raw_payload: {
-            shard_keys: shardKeys,
-            normalized_business_name: record.n,
-            source_key: record.s,
-        },
-    }))
+    return filterSunbizShardRecords(uniqueRecords, searchTerm, limit).map((record) => {
+        const personName = normaliseSunbizPersonName(record.p) ?? record.p
+        return {
+            business_name: record.b,
+            owner_name: personName,
+            person_name: personName,
+            person_role: record.role,
+            person_source_field: record.field,
+            record_id: record.r,
+            status: record.status,
+            record_type: record.rt,
+            city: record.city,
+            state: record.state,
+            postcode: record.zip,
+            raw_payload: {
+                shard_keys: shardKeys,
+                normalized_business_name: record.n,
+                raw_person_name: record.p,
+                source_key: record.s,
+            },
+        }
+    })
 }
 
 function parseFmcsaLabel(html: string, label: string) {
@@ -1935,6 +1939,7 @@ async function insertEvidence({
     const claimProfile = asString(metadata.claim_profile) ?? "public_record_support"
     const profileUrl = sourceProfileUrl(source.source_key, metadata, result)
     const sourceRecordId = `${source.source_key}:${result.permitNumber ?? hashRecord(result.row)}`
+    const rawPersonName = asString(result.row.owner_name) ?? asString(result.row.person_name)
     const ownerIdentityPoints = Math.min(3, Math.max(0, Number(metadata.owner_identity_points_on_match) || 0))
     const ownerPhonePoints = result.personName && result.phone ? Math.min(3, Math.max(0, Number(metadata.owner_phone_points_on_match) || 0)) : 0
     const businessSupportPoints = Math.min(3, Math.max(0, Number(metadata.business_support_points_on_match) || source.business_support_points || 1))
@@ -2058,7 +2063,7 @@ async function insertEvidence({
             pointsAwarded: ownerIdentityPoints,
             confidence: result.confidence,
             provenanceUrl: profileUrl,
-            claimValue: { owner_name: result.personName, role: result.personRole ?? asString(metadata.person_role) ?? "public_record_principal", source_field: result.personSourceField },
+            claimValue: { owner_name: result.personName, role: result.personRole ?? asString(metadata.person_role) ?? "public_record_principal", source_field: result.personSourceField, name_order: "first_last", raw_owner_name: rawPersonName },
             rawPayload,
         })
     }
@@ -2072,7 +2077,7 @@ async function insertEvidence({
             pointsAwarded: ownerPhonePoints,
             confidence: result.confidence,
             provenanceUrl: profileUrl,
-            claimValue: { owner_name: result.personName, owner_phone: result.phone, phone_source: claimProfile },
+            claimValue: { owner_name: result.personName, owner_phone: result.phone, phone_source: claimProfile, name_order: "first_last", raw_owner_name: rawPersonName },
             rawPayload,
         })
     } else if (result.phone) {

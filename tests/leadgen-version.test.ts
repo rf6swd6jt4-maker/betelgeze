@@ -7,9 +7,9 @@ import {
     LEADGEN_POLLING_SYSTEM_VERSION_LABEL,
 } from "../lib/leadgen/version.ts"
 
-test("leadgen polling system version is bumped for the v5.4.14 name-order scoring fix", () => {
-    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION, "5.4.14")
-    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION_LABEL, "v5.4.14")
-    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION_HISTORY.at(-1)?.version, "5.4.14")
+test("leadgen polling system version is bumped for the v5.4.15 source-backed name-order fix", () => {
+    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION, "5.4.15")
+    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION_LABEL, "v5.4.15")
+    assert.equal(LEADGEN_POLLING_SYSTEM_VERSION_HISTORY.at(-1)?.version, "5.4.15")
     assert.equal(LEADGEN_POLLING_SYSTEM_VERSION_HISTORY.some((entry) => entry.version === "5.1.1"), true)
 })

@@ -7,7 +7,6 @@ import {
     assessOfficialRecordMatch,
     buildOfficialRecordSearchTerms,
     candidateDomain,
-    officialRecordMatchAllowedByPolicy,
     officialRecordMatchesCandidate,
     sharedTokenScore,
     strongBusinessNameMatch,
@@ -30,17 +29,7 @@ import {
     type PublicRecordFailureClassification,
     type PublicRecordSourceHealthStatus,
 } from "@/lib/leadgen/public-record-source-safety"
-import { normaliseSunbizIndexSearchText } from "@/lib/leadgen/sunbiz-bulk-index"
-import {
-    CALIFORNIA_OWNER_DEFAULT_SHARD_PREFIX_LENGTH,
-    CALIFORNIA_OWNER_SHARD_VERSION,
-    californiaOwnerShardKeysForName,
-    californiaOwnerShardUrl,
-    filterCaliforniaOwnerShardRecords,
-    isCaliforniaOwnerShardSourceKey,
-    parseCaliforniaOwnerShardJsonl,
-    type CaliforniaOwnerShardRecord,
-} from "@/lib/leadgen/california-owner-shards"
+import { normaliseSunbizIndexSearchText, normaliseSunbizPersonName } from "@/lib/leadgen/sunbiz-bulk-index"
 import {
     filterSunbizShardRecords,
     parseSunbizShardJsonl,
@@ -146,11 +135,12 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
     "property.fl.miamidade_appraiser",
     "property.fl.hillsborough_appraiser",
     "clerk.fl.hillsborough_official_records",
+    "state_license.ca.cslb",
     "state_license.ca.bar_auto_repair",
     "state_license.ca.pest_control",
+    "registry.ca.bizfile",
     "registry.ca.los_angeles_fbn",
     "registry.ca.san_francisco_business_locations",
-    "registry.ca.san_diego_business_tax",
     "regulated.ca.calrecycle_waste",
     "state_license.az.roc",
     "state_license.az.pest_management",
@@ -168,15 +158,6 @@ const EXECUTABLE_PUBLIC_RECORD_SOURCES = new Set([
 const PUBLIC_RECORD_FETCH_TIMEOUT_MS = 18_000
 const CSV_CACHE = new Map<string, Promise<string>>()
 const SUNBIZ_SHARD_CACHE = new Map<string, Promise<SunbizShardRecord[]>>()
-const CALIFORNIA_OWNER_SHARD_CACHE = new Map<string, Promise<CaliforniaOwnerShardRecord[]>>()
-
-function isCaliforniaOwnerDebugSource(sourceKey: string) {
-    return sourceKey.startsWith("registry.ca.") || sourceKey.startsWith("state_license.ca.") || sourceKey.startsWith("regulated.ca.")
-}
-
-function logCaliforniaOwnerDebug(event: string, payload: Record<string, unknown>) {
-    console.info(`[leadgen:ca-owner] ${event}`, JSON.stringify(payload))
-}
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -647,118 +628,28 @@ async function fetchSunbizShardLookupRows(source: SourceCatalog, searchTerm: str
         seenRecords.add(key)
         return true
     })
-    return filterSunbizShardRecords(uniqueRecords, searchTerm, limit).map((record) => ({
-        business_name: record.b,
-        owner_name: record.p,
-        person_name: record.p,
-        person_role: record.role,
-        person_source_field: record.field,
-        record_id: record.r,
-        status: record.status,
-        record_type: record.rt,
-        city: record.city,
-        state: record.state,
-        postcode: record.zip,
-        raw_payload: {
-            shard_keys: shardKeys,
-            normalized_business_name: record.n,
-            source_key: record.s,
-        },
-    }))
-}
-
-function californiaOwnerShardBaseUrl(metadata: Record<string, unknown>) {
-    return asString(metadata.shard_base_url) ?? process.env.CA_OWNER_SHARD_BASE_URL?.trim() ?? null
-}
-
-async function fetchCaliforniaOwnerShardRecords(url: string) {
-    const cached = CALIFORNIA_OWNER_SHARD_CACHE.get(url)
-    if (cached) return cached
-    const promise = (async () => {
-        const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), PUBLIC_RECORD_FETCH_TIMEOUT_MS)
-        try {
-            const response = await fetch(url, {
-                headers: {
-                    Accept: "application/x-ndjson,application/json,text/plain,*/*",
-                    "Accept-Encoding": "gzip",
-                    "User-Agent": "BetelgezeLeadgen/1.0 (contact: hello@betelgeze.com)",
-                },
-                cache: "force-cache",
-                signal: controller.signal,
-            })
-            if (response.status === 404) return []
-            const bytes = Buffer.from(await response.arrayBuffer())
-            if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}: ${bytes.toString("utf8").slice(0, 280)}`)
-            let text: string
-            try {
-                text = gunzipSync(bytes).toString("utf8")
-            } catch {
-                text = bytes.toString("utf8")
-            }
-            return parseCaliforniaOwnerShardJsonl(text)
-        } catch (error) {
-            if (error instanceof Error && error.name === "AbortError") throw new Error(`${url} timed out after ${Math.round(PUBLIC_RECORD_FETCH_TIMEOUT_MS / 1000)} seconds.`)
-            throw error
-        } finally {
-            clearTimeout(timeout)
+    return filterSunbizShardRecords(uniqueRecords, searchTerm, limit).map((record) => {
+        const personName = normaliseSunbizPersonName(record.p) ?? record.p
+        return {
+            business_name: record.b,
+            owner_name: personName,
+            person_name: personName,
+            person_role: record.role,
+            person_source_field: record.field,
+            record_id: record.r,
+            status: record.status,
+            record_type: record.rt,
+            city: record.city,
+            state: record.state,
+            postcode: record.zip,
+            raw_payload: {
+                shard_keys: shardKeys,
+                normalized_business_name: record.n,
+                raw_person_name: record.p,
+                source_key: record.s,
+            },
         }
-    })()
-    CALIFORNIA_OWNER_SHARD_CACHE.set(url, promise)
-    return promise
-}
-
-async function fetchCaliforniaOwnerShardLookupRows(source: SourceCatalog, searchTerm: string) {
-    if (!isCaliforniaOwnerShardSourceKey(source.source_key)) throw new Error(`${source.label} is not a supported California owner shard source.`)
-    const sourceKey = source.source_key
-    const metadata = source.metadata ?? {}
-    const baseUrl = californiaOwnerShardBaseUrl(metadata)
-    if (!baseUrl) throw new Error(`${source.label} requires CA_OWNER_SHARD_BASE_URL before poll-time activation.`)
-    const prefixLength = Math.min(5, Math.max(1, Number(metadata.shard_prefix_length) || CALIFORNIA_OWNER_DEFAULT_SHARD_PREFIX_LENGTH))
-    const shardKeys = californiaOwnerShardKeysForName(searchTerm, prefixLength)
-    if (shardKeys.length === 0) return []
-    const version = asString(metadata.shard_version) ?? process.env.CA_OWNER_SHARD_VERSION?.trim() ?? CALIFORNIA_OWNER_SHARD_VERSION
-    const limit = Math.min(50, Math.max(1, Number(metadata.query_limit) || 20))
-    const records = (await Promise.all(shardKeys.map(async (shardKey) => {
-        const url = californiaOwnerShardUrl({ baseUrl, sourceKey, shardKey, version })
-        return fetchCaliforniaOwnerShardRecords(url)
-    }))).flat()
-    const seenRecords = new Set<string>()
-    const uniqueRecords = records.filter((record) => {
-        const key = `${record.s}:${record.r}:${record.p}`
-        if (seenRecords.has(key)) return false
-        seenRecords.add(key)
-        return true
     })
-    const filteredRecords = filterCaliforniaOwnerShardRecords(uniqueRecords, searchTerm, limit)
-    logCaliforniaOwnerDebug("shard_lookup", {
-        source_key: sourceKey,
-        search_term: searchTerm,
-        shard_keys: shardKeys,
-        downloaded_records: records.length,
-        unique_records: uniqueRecords.length,
-        matched_records: filteredRecords.length,
-    })
-    return filteredRecords.map((record) => ({
-        business_name: record.b,
-        owner_name: record.p,
-        person_name: record.p,
-        person_role: record.role,
-        person_source_field: record.field,
-        record_id: record.r,
-        status: record.status,
-        record_type: record.rt,
-        address: record.street,
-        city: record.city,
-        state: record.state,
-        postcode: record.zip,
-        source_url: record.url,
-        raw_payload: {
-            shard_keys: shardKeys,
-            normalized_business_name: record.n,
-            source_key: record.s,
-        },
-    }))
 }
 
 function parseFmcsaLabel(html: string, label: string) {
@@ -1279,19 +1170,8 @@ function htmlFormValue(html: string, name: string) {
 }
 
 function responseCookies(response: Response) {
-    const headers = response.headers as Headers & { getSetCookie?: () => string[] }
-    let cookies: string[] = []
-    if (typeof headers.getSetCookie === "function") {
-        try {
-            cookies = headers.getSetCookie.call(headers)
-        } catch {
-            cookies = []
-        }
-    }
-    if (cookies.length === 0) {
-        const cookie = response.headers.get("set-cookie")
-        if (cookie) cookies = [cookie]
-    }
+    const getSetCookie = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie
+    const cookies = getSetCookie?.() ?? (response.headers.get("set-cookie") ? [response.headers.get("set-cookie") as string] : [])
     return cookies.map((cookie) => cookie.split(";")[0]).filter(Boolean).join("; ")
 }
 
@@ -1904,7 +1784,6 @@ async function fetchRowsForSource(source: SourceCatalog, searchTerm: string, com
     if (adapter === "texas_comptroller_franchise_tax") return fetchTexasComptrollerRows(searchTerm, source.metadata ?? {})
     if (adapter === "sunbiz_owner_index") return fetchSunbizOwnerIndexRows(source, searchTerm)
     if (adapter === "sunbiz_shard_lookup") return fetchSunbizShardLookupRows(source, searchTerm)
-    if (adapter === "california_owner_shard_lookup") return fetchCaliforniaOwnerShardLookupRows(source, searchTerm)
     if (adapter === "fmcsa_company_census") return fetchFmcsaCensusRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "texas_agriculture_spcs_csv") return fetchTexasAgriculturePestRows(searchTerm, source.metadata ?? {}, company)
     if (adapter === "tceq_central_registry") return fetchTceqRows(searchTerm, source.metadata ?? {}, company)
@@ -1934,7 +1813,6 @@ function rowToMatch(row: SocrataRecord, candidate: CompanyCandidate, metadata: R
     const recordType = pickString(row, [...asStringArray(fieldMap.record_type), "record_type", "license_type", "entity_type", "permit_type"])
     const assessment = assessOfficialRecordMatch(row, candidate, metadata)
     if (!assessment.matched) return null
-    if (!officialRecordMatchAllowedByPolicy(assessment, metadata)) return null
     const { latitude, longitude } = extractPoint(row, asStringArray(fieldMap.geopoint))
     const directLatitude = Number(pickString(row, ["latitude"]))
     const directLongitude = Number(pickString(row, ["longitude"]))
@@ -1991,8 +1869,6 @@ const BROAD_TEXT_SEARCH_ADAPTERS = new Set([
     "arcgis_feature_service",
     "guarded_html_search",
     "sunbiz_owner_index",
-    "sunbiz_shard_lookup",
-    "california_owner_shard_lookup",
 ])
 
 function sourceAdapter(source: SourceCatalog) {
@@ -2037,32 +1913,8 @@ async function fetchRowsForSearchTerms(source: SourceCatalog, searchTerms: strin
             const message = compactErrorMessage(error)
             attempts.push({ search_term: searchTerm, error: message })
             errors.push(message)
-            if (isFatalSearchError(error)) {
-                if (isCaliforniaOwnerDebugSource(source.source_key)) {
-                    logCaliforniaOwnerDebug("source_search_fatal", {
-                        source_key: source.source_key,
-                        company_id: company.id,
-                        company_name: company.display_name,
-                        search_term: searchTerm,
-                        error: message,
-                        attempts,
-                    })
-                }
-                throw error
-            }
+            if (isFatalSearchError(error)) throw error
         }
-    }
-    if (isCaliforniaOwnerDebugSource(source.source_key)) {
-        logCaliforniaOwnerDebug("source_search_complete", {
-            source_key: source.source_key,
-            company_id: company.id,
-            company_name: company.display_name,
-            location_value: company.location_value,
-            search_terms: searchTerms,
-            returned_rows: rows.length,
-            attempts,
-            errors,
-        })
     }
     if (rows.length === 0 && errors.length === searchTerms.length) {
         throw new Error(errors[0] ?? "Public-record source search failed for every search term.")
@@ -2087,6 +1939,7 @@ async function insertEvidence({
     const claimProfile = asString(metadata.claim_profile) ?? "public_record_support"
     const profileUrl = sourceProfileUrl(source.source_key, metadata, result)
     const sourceRecordId = `${source.source_key}:${result.permitNumber ?? hashRecord(result.row)}`
+    const rawPersonName = asString(result.row.owner_name) ?? asString(result.row.person_name)
     const ownerIdentityPoints = Math.min(3, Math.max(0, Number(metadata.owner_identity_points_on_match) || 0))
     const ownerPhonePoints = result.personName && result.phone ? Math.min(3, Math.max(0, Number(metadata.owner_phone_points_on_match) || 0)) : 0
     const businessSupportPoints = Math.min(3, Math.max(0, Number(metadata.business_support_points_on_match) || source.business_support_points || 1))
@@ -2210,7 +2063,7 @@ async function insertEvidence({
             pointsAwarded: ownerIdentityPoints,
             confidence: result.confidence,
             provenanceUrl: profileUrl,
-            claimValue: { owner_name: result.personName, role: result.personRole ?? asString(metadata.person_role) ?? "public_record_principal", source_field: result.personSourceField },
+            claimValue: { owner_name: result.personName, role: result.personRole ?? asString(metadata.person_role) ?? "public_record_principal", source_field: result.personSourceField, name_order: "first_last", raw_owner_name: rawPersonName },
             rawPayload,
         })
     }
@@ -2224,7 +2077,7 @@ async function insertEvidence({
             pointsAwarded: ownerPhonePoints,
             confidence: result.confidence,
             provenanceUrl: profileUrl,
-            claimValue: { owner_name: result.personName, owner_phone: result.phone, phone_source: claimProfile },
+            claimValue: { owner_name: result.personName, owner_phone: result.phone, phone_source: claimProfile, name_order: "first_last", raw_owner_name: rawPersonName },
             rawPayload,
         })
     } else if (result.phone) {
@@ -2276,17 +2129,6 @@ async function insertEvidence({
 async function processTask({ workspaceId, pollId, task, company, source }: { workspaceId: string; pollId: string; task: InvestigationTask; company: CompanyCandidate; source: SourceCatalog }) {
     await updateInvestigationTask({ workspaceId, pollId, companyId: company.id, sourceKey: task.source_key, stageKey: task.stage_key, status: "running" })
     const searchTerms = searchTermsForSource(source, company)
-    if (isCaliforniaOwnerDebugSource(source.source_key)) {
-        logCaliforniaOwnerDebug("task_start", {
-            poll_id: pollId,
-            company_id: company.id,
-            company_name: company.display_name,
-            source_key: source.source_key,
-            stage_key: task.stage_key,
-            location_value: company.location_value,
-            search_terms: searchTerms,
-        })
-    }
     if (searchTerms.length === 0) {
         await updateInvestigationTask({
             workspaceId,
@@ -2306,16 +2148,6 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
         .filter((match): match is MatchResult => Boolean(match))
     const result = chooseBestMatch(matches)
     if (!result) {
-        if (isCaliforniaOwnerDebugSource(source.source_key)) {
-            logCaliforniaOwnerDebug("task_no_match", {
-                poll_id: pollId,
-                company_id: company.id,
-                company_name: company.display_name,
-                source_key: source.source_key,
-                returned_rows: rows.length,
-                rejected_rows: Math.min(rows.length, 5),
-            })
-        }
         await updateInvestigationTask({
             workspaceId,
             pollId,
@@ -2335,20 +2167,6 @@ async function processTask({ workspaceId, pollId, task, company, source }: { wor
         return { sourceTouched: true, matched: false, returnedRows: rows.length } satisfies TaskProcessOutcome
     }
     const evidence = await insertEvidence({ workspaceId, pollId, company, source, result })
-    if (isCaliforniaOwnerDebugSource(source.source_key)) {
-        logCaliforniaOwnerDebug("task_match", {
-            poll_id: pollId,
-            company_id: company.id,
-            company_name: company.display_name,
-            source_key: source.source_key,
-            returned_rows: rows.length,
-            owner_name: result.personName,
-            business_name: result.businessName,
-            record_id: result.permitNumber,
-            confidence: result.confidence,
-            reasons: result.matchReasons,
-        })
-    }
     await updateInvestigationTask({
         workspaceId,
         pollId,

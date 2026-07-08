@@ -44,7 +44,6 @@ const BUSINESS_TOKENS = new Set([
 
 const TRUSTED_SOURCES = new Set(["official_field", "public_record", "state_license"])
 const WEAK_WEBSITE_SOURCES = new Set(["visible_text", "title_or_meta", "website"])
-const STRONG_WEBSITE_OWNER_CONFIDENCE = 78
 
 function boolEnv(value: string | undefined, defaultValue = false) {
     if (value == null || value === "") return defaultValue
@@ -85,7 +84,7 @@ function sourceTrust(input: PersonNameGateInput) {
     if (source === "json_ld") return 82
     if (source === "team_card" && /\b(owner|founder|co-founder|principal|president|ceo|managing partner|managing member)\b/.test(role)) return 84
     if (source === "team_card") return 74
-    if (/\b(owner|founder|owned by|founded by|founded|started|established|opened|launched|managed by|led by|run by|principal|president|ceo)\b/.test(role)) return 72
+    if (/\b(owner|founder|owned by|founded by|managed by|led by|run by|principal|president|ceo)\b/.test(role)) return 72
     return 62
 }
 
@@ -153,7 +152,7 @@ export function deterministicPersonNameGate(input: PersonNameGateInput): PersonN
     if (hardReject) return { accepted: false, name: null, confidence: 0, method: "rejected", reason: hardReject }
     const trust = sourceTrust(input)
     const roleText = `${input.role ?? ""} ${input.text ?? ""}`.toLowerCase()
-    const ownerContextBoost = /\b(owner|founder|co-founder|principal|president|ceo|managed by|owned by|founded by|founded|started|established|opened|launched|led by|run by)\b/.test(roleText) ? 6 : 0
+    const ownerContextBoost = /\b(owner|founder|co-founder|principal|president|ceo|managed by|owned by|founded by|led by|run by)\b/.test(roleText) ? 6 : 0
     const confidence = Math.min(98, trust + ownerContextBoost)
     const source = sourceKey(input)
     const method = source === "json_ld" ? "json_ld" : TRUSTED_SOURCES.has(source) ? "official_field" : "heuristic"
@@ -185,7 +184,6 @@ function shouldAskNer(input: PersonNameGateInput, deterministic: PersonNameGateR
     if (!nerEnabled() || !nerEndpoint() || !deterministic.name) return false
     const source = sourceKey(input)
     if (TRUSTED_SOURCES.has(source) || source === "json_ld") return false
-    if (WEAK_WEBSITE_SOURCES.has(source) && deterministic.accepted && deterministic.confidence >= STRONG_WEBSITE_OWNER_CONFIDENCE) return false
     if (WEAK_WEBSITE_SOURCES.has(source)) return true
     return deterministic.confidence < 84
 }

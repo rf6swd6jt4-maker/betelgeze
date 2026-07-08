@@ -31,6 +31,24 @@ test("normalises comma-reversed public-record names and strips role suffixes", (
     assert.equal(isLikelyPublicRecordPersonName("SMITH, JOHN A - MANAGER"), true)
 })
 
+test("normalises all-caps surname-first public-record names when given name evidence is strong", () => {
+    assert.equal(normalisePublicRecordPersonName("SENOR MIRIAM"), "Miriam Senor")
+    assert.equal(normalisePublicRecordPersonName("DE LA CRUZ MARIA"), "Maria de la Cruz")
+})
+
+test("uses fast frequency scoring to resolve probable surname-first public-record names", () => {
+    assert.equal(normalisePublicRecordPersonName("Williams Robert"), "Robert Williams")
+    assert.equal(normalisePublicRecordPersonName("SALAS JUAN"), "Juan Salas")
+    assert.equal(normalisePublicRecordPersonName("Martins Charles"), "Charles Martins")
+    assert.equal(normalisePublicRecordPersonName("Rudnitsky Aleksandr"), "Aleksandr Rudnitsky")
+    assert.equal(normalisePublicRecordPersonName("Blandford Jason"), "Jason Blandford")
+    assert.equal(normalisePublicRecordPersonName("Bunch Susan"), "Susan Bunch")
+    assert.equal(normalisePublicRecordPersonName("Robert Williams"), "Robert Williams")
+    assert.equal(normalisePublicRecordPersonName("David Collins"), "David Collins")
+    assert.equal(normalisePublicRecordPersonName("Susan Bunch"), "Susan Bunch")
+    assert.equal(normalisePublicRecordPersonName("Juan Carlos Salas Garcia"), "Juan Carlos Salas Garcia")
+})
+
 test("builds a person from first middle last fragments", () => {
     const candidate = bestPublicRecordPerson({
         principal_first_name: "Ana",
@@ -68,4 +86,5 @@ test("does not treat property owners or business names as lead-owner identities"
     }), null)
     assert.equal(isLikelyPublicRecordPersonName("Austin Flooring Pros LLC"), false)
     assert.equal(isLikelyPublicRecordPersonName("Capitol Registered Agents LLC"), false)
+    assert.equal(isLikelyPublicRecordPersonName("de la"), false)
 })

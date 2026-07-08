@@ -37,7 +37,7 @@ test("converts owner index rows to compact shard records", () => {
         business_name: "GULF COAST ROOFING LLC",
         status: "Active",
         record_type: "FLAL",
-        person_name: "Maria Santos",
+        person_name: "SANTOS              MARIA",
         person_role: "officer_mgr",
         person_source_field: "officer_1_name",
         person_type: "Person",
@@ -65,11 +65,11 @@ test("converts owner index rows to compact shard records", () => {
 
 test("parses and filters Sunbiz shard records for candidate search terms", () => {
     const rows: SunbizShardRecord[] = [
-        { v: 1, s: "registry.fl.sunbiz", n: "gulf coast roofing", b: "GULF COAST ROOFING LLC", r: "1", p: "Maria Santos", role: "officer_mgr", field: "officer_1_name", status: "Active", rt: "FLAL", city: "TAMPA", state: "FL", zip: "33603" },
+        { v: 1, s: "registry.fl.sunbiz", n: "gulf coast roofing", b: "GULF COAST ROOFING LLC", r: "1", p: "SANTOS              MARIA", role: "officer_mgr", field: "officer_1_name", status: "Active", rt: "FLAL", city: "TAMPA", state: "FL", zip: "33603" },
         { v: 1, s: "registry.fl.sunbiz", n: "atlantic pool service", b: "ATLANTIC POOL SERVICE INC", r: "2", p: "Ana Rivera", role: "officer_p", field: "officer_1_name", status: "Active", rt: "DOMP", city: "MIAMI", state: "FL", zip: "33101" },
     ]
     const parsed = parseSunbizShardJsonl(`${JSON.stringify(rows[0])}\nnot-json\n${JSON.stringify(rows[1])}\n`)
 
     assert.equal(parsed.length, 2)
-    assert.deepEqual(filterSunbizShardRecords(parsed, "Gulf Coast Roofing Tampa", 5).map((row) => row.p), ["Maria Santos"])
+    assert.deepEqual(filterSunbizShardRecords(parsed, "Gulf Coast Roofing Tampa", 5).map((row) => row.p), ["SANTOS              MARIA"])
 })

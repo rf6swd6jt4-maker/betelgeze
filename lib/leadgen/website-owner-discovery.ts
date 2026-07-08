@@ -47,7 +47,6 @@ const WEBSITE_MAX_HTML_CHARS = 700_000
 const WEBSITE_JSON_LD_MAX_CHARS = 160_000
 const OWNER_ROLE_PATTERN = String.raw`owner|founder|co-founder|co owner|principal|president|managing partner|managing member|operator|ceo|chief executive officer|license holder|qualifier|qualifying individual|general manager|operations manager`
 const PERSON_PATTERN = String.raw`([A-Z][A-Za-z.'-]+(?:\s+(?:[A-Z]\.?\s+)?[A-Z][A-Za-z.'-]+){1,4})`
-const SIMPLE_PERSON_PATTERN = String.raw`([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3})`
 
 function normalisePhone(value: string | null | undefined) {
     const raw = value?.trim()
@@ -108,7 +107,7 @@ function visibleTextFromHtml(html: string) {
 }
 
 function ownerishContext(value: string | null | undefined) {
-    return new RegExp(String.raw`\b(?:${OWNER_ROLE_PATTERN}|owned by|founded by|founded|started|established|opened|launched|led by|managed by|run by|owned and operated by)\b`, "i").test(value ?? "")
+    return new RegExp(String.raw`\b(?:${OWNER_ROLE_PATTERN}|owned by|founded by|led by|managed by|run by|owned and operated by)\b`, "i").test(value ?? "")
 }
 
 function normaliseOwnerName(value: string | null | undefined, context: string | null | undefined = null, businessNames: Array<string | null | undefined> = []) {
@@ -191,11 +190,10 @@ function ownerAssociatedPhone(text: string, ownerIndex: number) {
 
 function extractOwnerCandidatesFromText(url: string, text: string, source = "visible_text", businessNames: Array<string | null | undefined> = []) {
     const patterns: Array<{ regex: RegExp; nameGroup: number; roleGroup?: number; confidence?: number }> = [
-        { regex: new RegExp(String.raw`\b(${OWNER_ROLE_PATTERN})\s*(?:is|:|,|-|\u2013)?\s*${PERSON_PATTERN}`, "gi"), roleGroup: 1, nameGroup: 2, confidence: 86 },
+        { regex: new RegExp(String.raw`\b(${OWNER_ROLE_PATTERN})\s*(?:is|:|-|\u2013)?\s*${PERSON_PATTERN}`, "gi"), roleGroup: 1, nameGroup: 2, confidence: 86 },
         { regex: new RegExp(String.raw`${PERSON_PATTERN}\s*(?:,|-|\u2013|\||/)?\s*(?:the\s+)?(${OWNER_ROLE_PATTERN})\b`, "gi"), nameGroup: 1, roleGroup: 2, confidence: 84 },
         { regex: new RegExp(String.raw`\b(?:owned and operated by|owned by|founded by|led by|run by|started by|locally owned by|family owned by)\s+${PERSON_PATTERN}`, "gi"), nameGroup: 1, confidence: 84 },
-        { regex: new RegExp(String.raw`\b[Mm]eet\s+(?:the|our)?\s*(?:owner|founder|president|principal|team)?\s*${PERSON_PATTERN}`, "g"), nameGroup: 1, confidence: 70 },
-        { regex: new RegExp(String.raw`${SIMPLE_PERSON_PATTERN}\s+(?:founded|started|established|opened|launched)\b`, "g"), nameGroup: 1, confidence: 78 },
+        { regex: new RegExp(String.raw`\b[Mm]eet\s+(?:the\s+)?(?:owner|founder|team)?\s*${PERSON_PATTERN}`, "g"), nameGroup: 1, confidence: 70 },
     ]
     const candidates: WebsiteOwnerCandidate[] = []
     for (const pattern of patterns) {
@@ -321,8 +319,7 @@ export function crawlScore(url: string, stageKey: WebsiteStageKey) {
     const path = new URL(url).pathname.toLowerCase()
     if (path === "/" || path === "") score += stageKey === "business_validation" ? 100 : 45
     if (/\/(?:about|about-us|our-company|company|who-we-are|our-story)(?:\/|$|-)/.test(path)) score += 75
-    if (/\/(?:team|our-team|meet-the-team|meet-our-team|staff|leadership|people|owners?|founders?|meet-the-owner|meet-our-owner|meet-the-founder|bio|profile)(?:\/|$|-)/.test(path)) score += 110
-    if (/\/(?:license|licenses|licensing|certifications?|credentials?)(?:\/|$|-)/.test(path)) score += stageKey === "owner_identity" ? 40 : 15
+    if (/\/(?:team|our-team|meet-the-team|staff|leadership|people|owners?|founders?|bio|profile)(?:\/|$|-)/.test(path)) score += 100
     if (/\/(?:contact|contact-us|locations?)(?:\/|$|-)/.test(path)) score += stageKey === "owner_phone" ? 80 : 35
     if (/\/(?:blog|news|privacy|terms|login|cart|checkout|careers?|jobs?|gallery|portfolio|project|coupon|financing|wp-content|tag|category)(?:\/|$|-)/.test(path)) score -= 80
     if (/\.(?:pdf|jpg|jpeg|png|gif|webp|svg|zip|docx?)$/i.test(path)) score -= 100
@@ -341,24 +338,18 @@ export function defaultWebsiteUrls(baseUrl: string, depth: number, stageKey: Web
             "/our-company",
             "/company",
             "/who-we-are",
-            "/meet-the-owner",
-            "/meet-our-owner",
-            "/meet-the-founder",
             "/team",
             "/our-team",
             "/meet-the-team",
-            "/meet-our-team",
             "/staff",
             "/leadership",
             "/owners",
             "/owner",
             "/founder",
-            "/license",
-            "/licenses",
             "/contact",
             "/contact-us",
         ]
-    const maxDefaults = depth <= 1 ? 1 : depth === 2 ? 9 : stagePaths.length
+    const maxDefaults = depth <= 1 ? 1 : depth === 2 ? 7 : stagePaths.length
     return stagePaths.slice(0, maxDefaults).map((path) => new URL(path, url.origin).toString())
 }
 
@@ -544,7 +535,7 @@ function candidateSourceTrust(candidate: WebsiteOwnerCandidate) {
     if (candidate.source === "json_ld") return 20
     if (candidate.source === "team_card" && /\b(owner|founder|co-founder|principal|president|ceo|managing partner|managing member)\b/.test(role)) return 18
     if (candidate.source === "team_card") return 10
-    if (/\b(owner|founder|owned by|founded by|founded|started|established|opened|launched|managed by|led by|run by|principal|president|ceo)\b/.test(role)) return 8
+    if (/\b(owner|founder|owned by|founded by|managed by|led by|run by|principal|president|ceo)\b/.test(role)) return 8
     return 0
 }
 

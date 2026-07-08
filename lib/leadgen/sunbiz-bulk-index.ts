@@ -1,3 +1,7 @@
+import { normaliseSunbizPersonName } from "./sunbiz-person-name.js"
+
+export { normaliseSunbizPersonName } from "./sunbiz-person-name.js"
+
 export type SunbizOwnerIndexRow = {
     source_key: "registry.fl.sunbiz" | "registry.fl.fictitious_names"
     record_id: string
@@ -96,7 +100,7 @@ export function parseSunbizCorporateOwnerRows(line: string): SunbizOwnerIndexRow
                 business_name: businessName,
                 status: statusLabel(status),
                 record_type: recordType || "Florida corporate filing",
-                person_name: officer.name,
+                person_name: normaliseSunbizPersonName(officer.name) ?? officer.name,
                 person_role: officerRole(officer.title),
                 person_source_field: `officer_${officer.slot}_name`,
                 person_type: personTypeLabel(officer.type),
@@ -146,7 +150,7 @@ export function parseSunbizFictitiousNameOwnerRows(line: string): SunbizOwnerInd
             business_name: businessName,
             status: statusLabel(status),
             record_type: "Florida fictitious name registration",
-            person_name: owner.name,
+            person_name: normaliseSunbizPersonName(owner.name) ?? owner.name,
             person_role: "fictitious_name_owner",
             person_source_field: `owner_${owner.slot}_name`,
             person_type: personTypeLabel(owner.type),

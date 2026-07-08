@@ -1,4 +1,4 @@
-import { isLikelyPersonName, normalisePersonName } from "./person-name-normalizer.js"
+import { isLikelyPersonName, maybeNormaliseLastNameFirstPersonName, normalisePersonName } from "./person-name-normalizer.js"
 
 type RecordLike = Record<string, unknown>
 
@@ -20,14 +20,6 @@ const UNSAFE_PROPERTY_OWNER_WORD_PATTERN = /\b(?:LLC|L\.L\.C|INC|INCORPORATED|CO
 const BUSINESS_WORD_PATTERN = /\b(?:LLC|L\.L\.C|INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|LTD|LIMITED|LP|LLP|PLLC|PA|PC|DBA|D\/B\/A|SERVICES?|SYSTEMS?|GROUP|HOLDINGS?|ENTERPRISES?|CONSTRUCTION|CONTRACTORS?|HOMES?|BUILDERS?|ROOFING|PLUMBING|ELECTRIC|ELECTRICAL|HVAC|AIR\s+CONDITIONING|LANDSCAP(?:E|ING)|FLOORING|PAINTING|CLEANING|REMODELING|REMODELLING|PEST|WASTE|DISPOSAL|AUTO|AUTOMOTIVE|REPAIR|RECYCLING|COUNTY|CITY|STATE|DEPARTMENT|BOARD|DIVISION|TRUST|ESTATE|BANK|UNIVERSITY|SCHOOL|CHURCH)\b/i
 const STATUS_WORD_PATTERN = /\b(?:active|inactive|expired|current|registered|open|closed|details|unknown|not\s+on\s+file|none|n\/a|na|null|pending|revoked|suspended)\b/i
 const DBA_PATTERN = /\b(?:D\/B\/A|DBA|DOING\s+BUSINESS\s+AS)\b/i
-const COMMON_GIVEN_NAME_KEYS = new Set([
-    "ana", "andrew", "angel", "anthony", "antonio", "barbara", "ben", "brad", "brandon", "brian", "carlos", "charles",
-    "chris", "christopher", "daniel", "david", "edward", "elizabeth", "emily", "eric", "frank", "gary", "george",
-    "hector", "jack", "james", "jason", "jeff", "jennifer", "john", "jose", "joseph", "juan", "kevin", "laura",
-    "linda", "lisa", "luis", "maria", "mark", "mary", "matthew", "michael", "michelle", "paul", "peter", "priya",
-    "rafael", "ramon", "richard", "robert", "sam", "sarah", "scott", "stephen", "steven", "susan", "thomas",
-    "tobias", "william",
-])
 
 function asRecord(value: unknown): RecordLike {
     return value && typeof value === "object" && !Array.isArray(value) ? value as RecordLike : {}
@@ -122,15 +114,6 @@ function strongBusinessNameMatch(candidateName: string | null | undefined, recor
     return shared / Math.max(leftTokens.size, rightTokens.size) >= 0.64
 }
 
-function maybeLastFirstName(value: string) {
-    const clean = cleanText(value.replace(/,/g, " "))
-    if (!/^[A-Z .'-]+$/.test(clean) || /[a-z]/.test(clean)) return clean
-    const parts = clean.split(/\s+/).filter(Boolean)
-    if (parts.length < 2 || parts.length > 4) return clean
-    if (COMMON_GIVEN_NAME_KEYS.has(parts[0].toLowerCase())) return clean
-    return [...parts.slice(1), parts[0]].join(" ")
-}
-
 function titleCaseName(value: string) {
     return cleanText(value)
         .toLowerCase()
@@ -153,9 +136,10 @@ export function cautiousCountyPropertyOwnerName(
 ) {
     for (const part of values.flatMap(splitCountyOwnerNames)) {
         if (looksUnsafePropertyOwnerName(part)) continue
-        const candidate = options.lastNameFirst ? maybeLastFirstName(part) : part
-        const normalised = normalisePublicRecordPersonName(candidate)
-        if (normalised && isLikelyPublicRecordPersonName(normalised)) return preserveFullCountyName(candidate, normalised)
+        const normalised = options.lastNameFirst
+            ? maybeNormaliseLastNameFirstPersonName(part, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 55, nameOrder: "last_first" })
+            : normalisePublicRecordPersonName(part)
+        if (normalised && isLikelyPublicRecordPersonName(normalised)) return preserveFullCountyName(part, normalised)
     }
     return null
 }
@@ -192,7 +176,7 @@ export function cautiousClerkOwnerNameFromMatchedParty(party: string | null | un
     if (!humanSide || !businessSide) return null
     if (!strongBusinessNameMatch(candidateName, businessSide)) return null
     if (looksUnsafePropertyOwnerName(humanSide)) return null
-    const normalised = normalisePublicRecordPersonName(maybeLastFirstName(humanSide))
+    const normalised = maybeNormaliseLastNameFirstPersonName(humanSide, { allowExtraction: true, allowAllCaps: true, ownerContext: true, minConfidence: 55, nameOrder: "last_first" })
     return normalised && isLikelyPublicRecordPersonName(normalised) ? normalised : null
 }
 

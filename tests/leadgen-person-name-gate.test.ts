@@ -10,6 +10,7 @@ test("person gate rejects website fragments that look capitalized but are not pe
         "Our Team",
         "Featured Project",
         "Service Areas",
+        "de la",
     ]
 
     for (const fragment of fragments) {
@@ -69,36 +70,6 @@ test("NER can rescue plausible weak website names", async () => {
         assert.equal(result.accepted, true)
         assert.equal(result.name, "Kyle Anderson")
         assert.equal(result.method, "ner")
-    } finally {
-        globalThis.fetch = originalFetch
-        if (originalEnabled === undefined) delete process.env.LEADGEN_NER_ENABLED
-        else process.env.LEADGEN_NER_ENABLED = originalEnabled
-        if (originalEndpoint === undefined) delete process.env.LEADGEN_NER_ENDPOINT
-        else process.env.LEADGEN_NER_ENDPOINT = originalEndpoint
-    }
-})
-
-test("strong owner-context website names survive when NER returns no PERSON match", async () => {
-    const originalFetch = globalThis.fetch
-    const originalEnabled = process.env.LEADGEN_NER_ENABLED
-    const originalEndpoint = process.env.LEADGEN_NER_ENDPOINT
-    process.env.LEADGEN_NER_ENABLED = "true"
-    process.env.LEADGEN_NER_ENDPOINT = "https://ner.example.test/person-ner"
-    globalThis.fetch = (async () => new Response(JSON.stringify({
-        items: [{ id: "0", persons: [], confidence: 20 }],
-    }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch
-
-    try {
-        const [result] = await gatePersonNameCandidates([{
-            candidateName: "Maria Lopez",
-            text: "Locally owned by Maria Lopez, founder and president.",
-            source: "visible_text",
-            businessNames: ["Lopez Fence Co"],
-        }])
-
-        assert.equal(result.accepted, true)
-        assert.equal(result.name, "Maria Lopez")
-        assert.equal(result.method, "heuristic")
     } finally {
         globalThis.fetch = originalFetch
         if (originalEnabled === undefined) delete process.env.LEADGEN_NER_ENABLED

@@ -1,4 +1,4 @@
-export const LEADGEN_POLLING_SYSTEM_VERSION = "5.5.6"
+export const LEADGEN_POLLING_SYSTEM_VERSION = "5.4.15"
 export const LEADGEN_POLLING_SYSTEM_VERSION_LABEL = `v${LEADGEN_POLLING_SYSTEM_VERSION}`
 
 export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
@@ -19,11 +19,7 @@ export const LEADGEN_POLLING_SYSTEM_VERSION_HISTORY = [
     { version: "5.4.10", note: "Sunbiz statewide all-industry task fan-out fix." },
     { version: "5.4.11", note: "Florida county property appraiser and clerk record sources." },
     { version: "5.4.12", note: "Staged poll resume, reporting, and website fallback efficiency fix." },
-    { version: "5.5", note: "California contractor owner identity pass with CSLB and external owner shards." },
-    { version: "5.5.1", note: "California CSLB adapter cookie handling fix." },
-    { version: "5.5.2", note: "California stable owner-source routing without live CSLB form dependency." },
-    { version: "5.5.3", note: "California owner-identity recovery for strong website owners and exact CA shard matches." },
-    { version: "5.5.4", note: "California owner-identity fallback crawl URL ordering and profile-URL filtering." },
-    { version: "5.5.5", note: "California San Diego owner shards and CA poll console transparency." },
-    { version: "5.5.6", note: "California San Diego task scheduling and multi-location seed balancing fix." },
+    { version: "5.4.13", note: "Public-record owner-name normalization and surname-order guardrails." },
+    { version: "5.4.14", note: "Fast probabilistic owner-name order scoring for surname-first records." },
+    { version: "5.4.15", note: "Source-backed US name-frequency scoring and deterministic Sunbiz surname-first normalization." },
 ] as const

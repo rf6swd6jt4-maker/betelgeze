@@ -4,6 +4,7 @@ import test from "node:test"
 import {
     classifyPublicRecordFailure,
     fragileHtmlPublicRecordSources,
+    guardedHtmlReplacementRequiredSources,
     looksLikeGuardedOrAppShell,
     publicRecordPollUnsafeReason,
 } from "../lib/leadgen/public-record-source-safety.ts"
@@ -19,11 +20,22 @@ test("fragile source keys require explicit poll-safe metadata before poll-time a
 
 test("fragile source keys can opt in to guarded poll attempts explicitly", () => {
     for (const sourceKey of fragileHtmlPublicRecordSources) {
+        if (guardedHtmlReplacementRequiredSources.has(sourceKey)) continue
         assert.equal(publicRecordPollUnsafeReason(sourceKey, sourceKey, {
             adapter: "guarded_html_search",
             poll_safe_html: true,
             search_url: "https://example.test/search?q={query}",
         }), null, sourceKey)
+    }
+})
+
+test("Arizona guarded HTML sources require replacement adapters even with poll-safe metadata", () => {
+    for (const sourceKey of guardedHtmlReplacementRequiredSources) {
+        assert.match(publicRecordPollUnsafeReason(sourceKey, sourceKey, {
+            adapter: "guarded_html_search",
+            poll_safe_html: true,
+            search_url: "https://example.test/search?q={query}",
+        }) ?? "", /external shard lookup|source-specific endpoint/, sourceKey)
     }
 })
 
@@ -60,6 +72,17 @@ test("Sunbiz requires the external shard adapter before poll-time activation", (
 
     assert.equal(publicRecordPollUnsafeReason("registry.fl.sunbiz", "Florida Sunbiz officers", {
         adapter: "sunbiz_shard_lookup",
+    }), null)
+})
+
+test("Arizona owner shards are poll safe while guarded trade-name HTML is not", () => {
+    assert.match(publicRecordPollUnsafeReason("registry.az.trade_names", "Arizona Secretary of State trade names", {
+        adapter: "guarded_html_search",
+        search_url: "https://apps.azsos.gov/apps/tntp/index.html",
+    }) ?? "", /stable API, data-download index, external shard lookup, or source-specific endpoint/)
+
+    assert.equal(publicRecordPollUnsafeReason("registry.az.trade_names", "Arizona Secretary of State trade names", {
+        adapter: "az_owner_shard_lookup",
     }), null)
 })
 

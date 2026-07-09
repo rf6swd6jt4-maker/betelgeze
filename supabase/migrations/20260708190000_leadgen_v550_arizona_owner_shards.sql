@@ -199,15 +199,15 @@ values
     ),
     (
         'state_license.az.roc',
-        'needs_endpoint',
+        'blocked',
         'Arizona ROC remains disabled until a stable endpoint, official export, or shard input replaces guarded HTML polling.',
-        '{"disabled_by":"20260708190000_leadgen_v550_arizona_owner_shards","future_release":"v5.5.2"}'::jsonb
+        '{"disabled_by":"20260708190000_leadgen_v550_arizona_owner_shards","future_release":"v5.5.2","source_status":"needs_endpoint"}'::jsonb
     ),
     (
         'state_license.az.pest_management',
-        'needs_endpoint',
+        'blocked',
         'Arizona pest-management records remain disabled until a stable endpoint, official export, or shard input replaces guarded HTML polling.',
-        '{"disabled_by":"20260708190000_leadgen_v550_arizona_owner_shards","future_release":"v5.5.4"}'::jsonb
+        '{"disabled_by":"20260708190000_leadgen_v550_arizona_owner_shards","future_release":"v5.5.4","source_status":"needs_endpoint"}'::jsonb
     )
 on conflict (source_key) do update set
     status = excluded.status,

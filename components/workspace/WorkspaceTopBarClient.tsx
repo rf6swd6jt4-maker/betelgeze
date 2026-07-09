@@ -363,7 +363,7 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         { label: "Relationships", href: `/${workspace.slug}/relationships`, icon: <RelationshipsIcon /> },
         { label: "Work Queue", href: `/${workspace.slug}/work`, icon: <WorkIcon /> },
         { label: "Lead Gen", meta: LEADGEN_POLLING_SYSTEM_VERSION_LABEL, href: `/${workspace.slug}/leadgen`, icon: <LeadIcon /> },
-        { label: "Onboarding", href: `/${workspace.slug}?filter=active`, icon: <WorkIcon /> },
+        { label: "Onboarding", href: `/${workspace.slug}`, icon: <WorkIcon /> },
         { label: "System Health", href: `/${workspace.slug}/health`, icon: <HealthIcon /> },
         { label: "Settings", href: `/${workspace.slug}/settings`, icon: <SettingsIcon /> },
     ]

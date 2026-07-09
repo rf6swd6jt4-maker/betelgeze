@@ -125,9 +125,9 @@ export default async function SettingsPage({ params }: PageProps) {
                 </div>
 
                 <div className="mt-8 grid gap-8 lg:grid-cols-[16rem_minmax(0,1fr)]">
-                    <SettingsSectionNav sections={settingsSections} scrollRootId="workspace-settings-scroll" />
+                    <SettingsSectionNav sections={settingsSections} />
 
-                    <div id="workspace-settings-scroll" className="space-y-10 lg:max-h-[calc(100vh-24rem)] lg:overflow-y-auto lg:pb-8 lg:pr-2">
+                    <div id="workspace-settings-scroll" className="min-w-0 space-y-10 pb-8 lg:pr-2">
                         <UnifiedSection
                             id="workspace"
                             title="Workspace"

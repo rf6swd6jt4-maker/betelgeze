@@ -8,7 +8,7 @@ export type SettingsSectionNavItem = {
     detail: string
 }
 
-export function SettingsSectionNav({ sections, scrollRootId }: { sections: SettingsSectionNavItem[]; scrollRootId?: string }) {
+export function SettingsSectionNav({ sections }: { sections: SettingsSectionNavItem[] }) {
     const [active, setActive] = useState(sections[0]?.id ?? "")
 
     useEffect(() => {
@@ -17,21 +17,19 @@ export function SettingsSectionNav({ sections, scrollRootId }: { sections: Setti
             .filter((node): node is HTMLElement => Boolean(node))
         if (!nodes.length) return
 
-        const root = scrollRootId ? document.getElementById(scrollRootId) : null
         const observer = new IntersectionObserver((entries) => {
             const visible = entries
                 .filter((entry) => entry.isIntersecting)
                 .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
             if (visible?.target.id) setActive(visible.target.id)
         }, {
-            root,
             rootMargin: "-14% 0px -64% 0px",
             threshold: [0.05, 0.15, 0.3, 0.6],
         })
 
         nodes.forEach((node) => observer.observe(node))
         return () => observer.disconnect()
-    }, [sections, scrollRootId])
+    }, [sections])
 
     function scrollToSection(id: string) {
         document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -40,7 +38,7 @@ export function SettingsSectionNav({ sections, scrollRootId }: { sections: Setti
     const activeIndex = Math.max(0, sections.findIndex((section) => section.id === active))
 
     return (
-        <nav className="sticky top-20 hidden self-start lg:block">
+        <nav className="sticky top-5 hidden self-start lg:block">
             <div className="relative space-y-2 pl-5">
                 <span
                     aria-hidden="true"

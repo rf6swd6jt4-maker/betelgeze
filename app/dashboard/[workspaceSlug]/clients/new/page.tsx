@@ -9,7 +9,7 @@ export default async function NewWorkspaceClientPage({ params }: PageProps) {
     return (
         <main className="min-h-screen bg-neutral-950 px-6 text-white">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
-            <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center">
+            <div className="flex min-h-screen items-center justify-center">
                 <form action={createWorkspaceClient.bind(null, workspace.slug)} className="w-full max-w-lg rounded-2xl border border-neutral-800 bg-neutral-900 p-7">
                     <h1 className="text-2xl font-semibold">Add client</h1>
                     <p className="mt-2 text-sm text-neutral-400">This creates a secure onboarding link. External automations are unavailable until this workspace connects them.</p>

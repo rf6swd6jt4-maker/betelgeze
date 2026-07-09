@@ -2,10 +2,13 @@
 
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 
 export function DashboardAutoRefresh() {
     const router = useRouter()
+    const tabActive = useWorkspaceTabActive()
     useEffect(() => {
+        if (!tabActive) return
         const refresh = () => {
             if (document.visibilityState === "visible") router.refresh()
         }
@@ -15,6 +18,6 @@ export function DashboardAutoRefresh() {
             window.clearInterval(interval)
             window.removeEventListener("focus", refresh)
         }
-    }, [router])
+    }, [router, tabActive])
     return null
 }

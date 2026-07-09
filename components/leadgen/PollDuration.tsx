@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 
 function formatDuration(ms: number) {
     const seconds = Math.max(0, Math.floor(ms / 1000))
@@ -12,14 +13,15 @@ function formatDuration(ms: number) {
 
 export function PollDuration({ startedAt, createdAt, completedAt, live }: { startedAt: string | null; createdAt: string; completedAt: string | null; live: boolean }) {
     const [now, setNow] = useState(() => Date.now())
+    const tabActive = useWorkspaceTabActive()
     const start = useMemo(() => new Date(startedAt ?? createdAt).getTime(), [createdAt, startedAt])
     const end = completedAt ? new Date(completedAt).getTime() : now
 
     useEffect(() => {
-        if (!live) return
+        if (!live || !tabActive) return
         const timer = window.setInterval(() => setNow(Date.now()), 1000)
         return () => window.clearInterval(timer)
-    }, [live])
+    }, [live, tabActive])
 
     return <span>{formatDuration(end - start)}</span>
 }

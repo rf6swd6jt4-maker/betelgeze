@@ -32,8 +32,19 @@ body {
     width: calc(100% - var(--workspace-sidebar-width));
   }
 
+  body[data-workspace-sidebar-open="true"] [data-workspace-tab-panels] {
+    left: var(--workspace-sidebar-width);
+    width: calc(100% - var(--workspace-sidebar-width));
+  }
+
   body[data-workspace-sidebar-open="false"] [data-workspace-tabbar],
   body:not([data-workspace-sidebar-open]) [data-workspace-tabbar] {
+    left: 0;
+    width: 100%;
+  }
+
+  body[data-workspace-sidebar-open="false"] [data-workspace-tab-panels],
+  body:not([data-workspace-sidebar-open]) [data-workspace-tab-panels] {
     left: 0;
     width: 100%;
   }
@@ -55,7 +66,8 @@ body {
 }
 
 @media (max-width: 767px) {
-  [data-workspace-tabbar] {
+  [data-workspace-tabbar],
+  [data-workspace-tab-panels] {
     left: 0;
     width: 100%;
   }

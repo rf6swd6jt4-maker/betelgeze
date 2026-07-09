@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { GlobalLoadingOverlay } from "@/components/GlobalLoadingOverlay";
 import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
+import { WorkspaceTabFrameGuard } from "@/components/workspace/WorkspaceTabFrameGuard";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -50,6 +51,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <Suspense fallback={null}>
+          <WorkspaceTabFrameGuard />
+        </Suspense>
         {children}
         <ServiceWorkerRegistrar />
         <Suspense fallback={null}>

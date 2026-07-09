@@ -9,7 +9,6 @@ import {
 } from "@/lib/onboarding/project-timeframe"
 import { requireAdmin } from "@/lib/admin/auth"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
-import { updateClickUpFolder } from "@/lib/client-messages/clickup"
 
 export async function updateClient(clientId: string, formData: FormData) {
     const { workspace } = await requireAdmin()
@@ -36,6 +35,13 @@ export async function updateClient(clientId: string, formData: FormData) {
         redirect(`/admin/client/${clientId}/edit?error=missing-fields`)
     }
 
+    const { data: client } = await supabaseAdmin
+        .from("clients")
+        .select("relationship_id")
+        .eq("id", clientId)
+        .eq("workspace_id", workspace.id)
+        .maybeSingle()
+
     await supabaseAdmin
         .from("clients")
         .update({
@@ -57,25 +63,17 @@ export async function updateClient(clientId: string, formData: FormData) {
         .eq("client_id", clientId)
         .eq("provider", "meta_whatsapp")
 
-    const { data: clickupFolderItem } = await supabaseAdmin
-        .from("client_clickup_items")
-        .select("clickup_id")
-        .eq("client_id", clientId)
-        .eq("item_key", "folder")
-        .maybeSingle()
-
-    if (clickupFolderItem?.clickup_id) {
-        try {
-            await updateClickUpFolder({
-                folderId: clickupFolderItem.clickup_id,
-                name,
+    if (client?.relationship_id) {
+        await supabaseAdmin
+            .from("relationships")
+            .update({
+                primary_person_name: name,
+                primary_email: email || null,
+                primary_phone: phone,
+                updated_at: new Date().toISOString(),
             })
-        } catch (error) {
-            console.warn(
-                "Could not update ClickUp client Folder name.",
-                error instanceof Error ? error.message : error
-            )
-        }
+            .eq("id", client.relationship_id)
+            .eq("workspace_id", workspace.id)
     }
 
     await supabaseAdmin.from("client_modules").delete().eq("client_id", clientId)
@@ -83,6 +81,8 @@ export async function updateClient(clientId: string, formData: FormData) {
     await supabaseAdmin.from("client_modules").insert(
         moduleKeys.map((moduleKey) => ({
             client_id: clientId,
+            workspace_id: workspace.id,
+            relationship_id: client?.relationship_id ?? null,
             module_key: moduleKey,
         }))
     )
@@ -93,6 +93,8 @@ export async function updateClient(clientId: string, formData: FormData) {
         await supabaseAdmin.from("client_services").insert(
             selectedServices.map((serviceKey) => ({
                 client_id: clientId,
+                workspace_id: workspace.id,
+                relationship_id: client?.relationship_id ?? null,
                 service_key: serviceKey,
             }))
         )

@@ -1,10 +1,9 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
 export const RELATIONSHIP_PHASES = [
-    { key: "found", label: "Found" },
-    { key: "qualified", label: "Qualified" },
-    { key: "contacted", label: "Contacted" },
-    { key: "sold", label: "Sold" },
+    { key: "lead", label: "Lead" },
+    { key: "nurturing", label: "Nurturing" },
+    { key: "potential_client", label: "Potential Client" },
     { key: "invoiced", label: "Invoiced" },
     { key: "onboarding", label: "Onboarding" },
     { key: "onboarding_complete", label: "Onboarding Complete" },
@@ -16,6 +15,7 @@ export const RELATIONSHIP_PHASES = [
 export type RelationshipPhase = (typeof RELATIONSHIP_PHASES)[number]["key"]
 export type RelationshipStatus = "active" | "waiting" | "blocked" | "completed" | "lost" | "archived"
 export type RelationshipWorkItemStatus = "todo" | "doing" | "waiting" | "blocked" | "done" | "canceled"
+export type RelationshipAssetType = "file" | "link" | "note" | "message" | "invoice" | "form_submission" | "lead_evidence" | "document" | "other"
 
 export type RelationshipRecord = {
     id: string
@@ -28,6 +28,13 @@ export type RelationshipRecord = {
     primary_phone: string | null
     business_name: string | null
     website_url: string | null
+    industry_value: string | null
+    location_value: string | null
+    address: Record<string, unknown>
+    source_label: string | null
+    primary_contact_role: string | null
+    notes_summary: string | null
+    started_onboarding_at: string | null
     lifecycle_phase: RelationshipPhase
     status: RelationshipStatus
     source_metadata: Record<string, unknown>
@@ -61,7 +68,24 @@ export type RelationshipWorkItem = {
 }
 
 export type WorkQueueItem = RelationshipWorkItem & {
-    relationship: Pick<RelationshipRecord, "id" | "primary_person_name" | "business_name" | "client_id">
+    relationship: Pick<RelationshipRecord, "id" | "primary_person_name" | "business_name" | "client_id" | "lifecycle_phase">
+}
+
+export type RelationshipAsset = {
+    id: string
+    workspace_id: string
+    relationship_id: string
+    asset_type: RelationshipAssetType
+    title: string
+    description: string | null
+    storage_path: string | null
+    external_url: string | null
+    native_kind: string | null
+    native_id: string | null
+    metadata: Record<string, unknown>
+    created_by: string | null
+    created_at: string
+    updated_at: string
 }
 
 type QueryError = { message?: string; code?: string } | null | undefined
@@ -76,6 +100,9 @@ type ClientRow = {
     is_test?: boolean | null
 }
 
+const RELATIONSHIP_SELECT = "id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, business_name, website_url, industry_value, location_value, address, source_label, primary_contact_role, notes_summary, started_onboarding_at, lifecycle_phase, status, source_metadata, created_at, updated_at"
+const RELATIONSHIP_LEGACY_SELECT = "id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, business_name, website_url, lifecycle_phase, status, source_metadata, created_at, updated_at"
+
 function isMissingRelationshipSchema(error: QueryError) {
     const message = error?.message?.toLowerCase() ?? ""
     return (
@@ -88,7 +115,20 @@ function isMissingRelationshipSchema(error: QueryError) {
     )
 }
 
-function safePhase(value: unknown, fallback: RelationshipPhase = "found"): RelationshipPhase {
+function isRelationshipColumnDrift(error: QueryError) {
+    const message = error?.message?.toLowerCase() ?? ""
+    return Boolean(error && (
+        message.includes("industry_value") ||
+        message.includes("location_value") ||
+        message.includes("primary_contact_role") ||
+        message.includes("started_onboarding_at") ||
+        message.includes("relationship_assets")
+    ))
+}
+
+export function normalizeRelationshipPhase(value: unknown, fallback: RelationshipPhase = "lead"): RelationshipPhase {
+    if (value === "found" || value === "qualified") return "lead"
+    if (value === "contacted" || value === "sold") return "potential_client"
     return RELATIONSHIP_PHASES.some((phase) => phase.key === value)
         ? value as RelationshipPhase
         : fallback
@@ -128,6 +168,13 @@ function fallbackRelationshipFromClient(client: ClientRow): RelationshipRecord {
         primary_phone: client.phone ?? null,
         business_name: client.name ?? null,
         website_url: null,
+        industry_value: null,
+        location_value: null,
+        address: {},
+        source_label: "Legacy onboarding",
+        primary_contact_role: null,
+        notes_summary: null,
+        started_onboarding_at: client.archived_at ? null : client.created_at,
         lifecycle_phase: client.archived_at ? "completed_lost" : "onboarding",
         status: client.archived_at ? "archived" : "active",
         source_metadata: { fallback_from: "clients", is_test: Boolean(client.is_test) },
@@ -149,14 +196,22 @@ async function listClientFallbackRelationships(workspaceId: string) {
 }
 
 export async function listRelationshipsForWorkspace(workspaceId: string): Promise<RelationshipRecord[]> {
-    const [relationshipsResult, clients] = await Promise.all([
-        supabaseAdmin
+    const clientsPromise = listClientFallbackRelationships(workspaceId)
+    let relationshipsResult: { data: unknown[] | null; error: { message?: string } | null } = await supabaseAdmin
+        .from("relationships")
+        .select(RELATIONSHIP_SELECT)
+        .eq("workspace_id", workspaceId)
+        .order("updated_at", { ascending: false })
+
+    if (isRelationshipColumnDrift(relationshipsResult.error)) {
+        relationshipsResult = await supabaseAdmin
             .from("relationships")
-            .select("id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, business_name, website_url, lifecycle_phase, status, source_metadata, created_at, updated_at")
+            .select(RELATIONSHIP_LEGACY_SELECT)
             .eq("workspace_id", workspaceId)
-            .order("updated_at", { ascending: false }),
-        listClientFallbackRelationships(workspaceId),
-    ])
+            .order("updated_at", { ascending: false })
+    }
+
+    const clients = await clientsPromise
 
     if (isMissingRelationshipSchema(relationshipsResult.error)) {
         return clients
@@ -164,8 +219,15 @@ export async function listRelationshipsForWorkspace(workspaceId: string): Promis
 
     const relationships = ((relationshipsResult.data ?? []) as RelationshipRecord[]).map((relationship) => ({
         ...relationship,
-        lifecycle_phase: safePhase(relationship.lifecycle_phase),
+        lifecycle_phase: normalizeRelationshipPhase(relationship.lifecycle_phase),
         source_metadata: relationship.source_metadata ?? {},
+        address: relationship.address ?? {},
+        industry_value: relationship.industry_value ?? null,
+        location_value: relationship.location_value ?? null,
+        source_label: relationship.source_label ?? null,
+        primary_contact_role: relationship.primary_contact_role ?? null,
+        notes_summary: relationship.notes_summary ?? null,
+        started_onboarding_at: relationship.started_onboarding_at ?? null,
     }))
     const wrappedClientIds = new Set(relationships.map((relationship) => relationship.client_id).filter(Boolean))
     const missingClientFallbacks = clients.filter((client) => client.client_id && !wrappedClientIds.has(client.client_id))
@@ -173,29 +235,60 @@ export async function listRelationshipsForWorkspace(workspaceId: string): Promis
 }
 
 export async function getRelationship(workspaceId: string, relationshipId: string): Promise<RelationshipRecord | null> {
-    const byId = await supabaseAdmin
+    let byId: { data: unknown | null; error: { message?: string } | null } = await supabaseAdmin
         .from("relationships")
-        .select("id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, business_name, website_url, lifecycle_phase, status, source_metadata, created_at, updated_at")
+        .select(RELATIONSHIP_SELECT)
         .eq("workspace_id", workspaceId)
         .eq("id", relationshipId)
         .maybeSingle()
 
+    if (isRelationshipColumnDrift(byId.error)) {
+        byId = await supabaseAdmin
+            .from("relationships")
+            .select(RELATIONSHIP_LEGACY_SELECT)
+            .eq("workspace_id", workspaceId)
+            .eq("id", relationshipId)
+            .maybeSingle()
+    }
+
     if (byId.data) {
         const relationship = byId.data as RelationshipRecord
-        return { ...relationship, lifecycle_phase: safePhase(relationship.lifecycle_phase), source_metadata: relationship.source_metadata ?? {} }
+        return {
+            ...relationship,
+            lifecycle_phase: normalizeRelationshipPhase(relationship.lifecycle_phase),
+            source_metadata: relationship.source_metadata ?? {},
+            address: relationship.address ?? {},
+            industry_value: relationship.industry_value ?? null,
+            location_value: relationship.location_value ?? null,
+            source_label: relationship.source_label ?? null,
+            primary_contact_role: relationship.primary_contact_role ?? null,
+            notes_summary: relationship.notes_summary ?? null,
+            started_onboarding_at: relationship.started_onboarding_at ?? null,
+        }
     }
 
     if (!isMissingRelationshipSchema(byId.error)) {
         const byClient = await supabaseAdmin
             .from("relationships")
-            .select("id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, business_name, website_url, lifecycle_phase, status, source_metadata, created_at, updated_at")
+            .select(RELATIONSHIP_SELECT)
             .eq("workspace_id", workspaceId)
             .eq("client_id", relationshipId)
             .maybeSingle()
 
         if (byClient.data) {
             const relationship = byClient.data as RelationshipRecord
-            return { ...relationship, lifecycle_phase: safePhase(relationship.lifecycle_phase), source_metadata: relationship.source_metadata ?? {} }
+            return {
+                ...relationship,
+                lifecycle_phase: normalizeRelationshipPhase(relationship.lifecycle_phase),
+                source_metadata: relationship.source_metadata ?? {},
+                address: relationship.address ?? {},
+                industry_value: relationship.industry_value ?? null,
+                location_value: relationship.location_value ?? null,
+                source_label: relationship.source_label ?? null,
+                primary_contact_role: relationship.primary_contact_role ?? null,
+                notes_summary: relationship.notes_summary ?? null,
+                started_onboarding_at: relationship.started_onboarding_at ?? null,
+            }
         }
     }
 
@@ -222,8 +315,6 @@ export async function getRelationshipHubHrefForClient(workspaceSlug: string, wor
 }
 
 function relationshipNativeHref(workspaceSlug: string, relationship: RelationshipRecord) {
-    if (relationship.client_id) return clientNativeHref(workspaceSlug, relationship.client_id)
-    if (relationship.leadgen_company_id) return workspaceHref(workspaceSlug, "leadgen")
     return relationshipHubHref(workspaceSlug, relationship.id)
 }
 
@@ -251,7 +342,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
         ? []
         : ((storedResult.data ?? []) as RelationshipWorkItem[]).map((item) => ({
             ...item,
-            lifecycle_phase: safePhase(item.lifecycle_phase),
+            lifecycle_phase: normalizeRelationshipPhase(item.lifecycle_phase),
             metadata: item.metadata ?? {},
         }))
 
@@ -265,13 +356,13 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
             relationship_id: relationship.id,
             title: "Qualified lead promoted",
             description: "Human-created Relationship from a qualified leadgen company.",
-            lifecycle_phase: "qualified",
+            lifecycle_phase: "lead",
             status: "done",
             priority: 2,
             is_key_task: true,
             native_kind: "leadgen_company",
             native_id: relationship.leadgen_company_id,
-            native_href: workspaceHref(workspaceSlug, "leadgen"),
+                native_href: workspaceHref(workspaceSlug, "leadgen"),
             planned_start_date: null,
             planned_end_date: null,
             actual_start_at: relationship.created_at,
@@ -312,9 +403,9 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
             id: `client-${relationship.client_id}`,
             workspace_id: relationship.workspace_id,
             relationship_id: relationship.id,
-            title: "Onboarding opened",
-            description: "Client onboarding record exists in Betelgeze.",
-            lifecycle_phase: "onboarding",
+                title: "Onboarding opened",
+                description: "Client onboarding record exists in Betelgeze.",
+                lifecycle_phase: "onboarding",
             status: relationship.status === "archived" ? "done" : "doing",
             priority: 2,
             is_key_task: true,
@@ -449,7 +540,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
 export async function listWorkQueueItems(workspaceSlug: string, workspaceId: string): Promise<WorkQueueItem[]> {
     const result = await supabaseAdmin
         .from("relationship_work_items")
-        .select("id, workspace_id, relationship_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, planned_end_date, actual_start_at, actual_completed_at, sort_order, metadata, created_at, updated_at, relationships!inner(id, primary_person_name, business_name, client_id)")
+        .select("id, workspace_id, relationship_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, planned_end_date, actual_start_at, actual_completed_at, sort_order, metadata, created_at, updated_at, relationships!inner(id, primary_person_name, business_name, client_id, lifecycle_phase)")
         .eq("workspace_id", workspaceId)
         .not("status", "in", "(done,canceled)")
         .order("priority", { ascending: true })
@@ -460,10 +551,13 @@ export async function listWorkQueueItems(workspaceSlug: string, workspaceId: str
         return result.data.map((row) => {
             const relationship = Array.isArray(row.relationships) ? row.relationships[0] : row.relationships
             return {
-                ...row,
-                lifecycle_phase: safePhase(row.lifecycle_phase),
+            ...row,
+                lifecycle_phase: normalizeRelationshipPhase(row.lifecycle_phase),
                 metadata: row.metadata ?? {},
-                relationship,
+                relationship: {
+                    ...relationship,
+                    lifecycle_phase: normalizeRelationshipPhase(relationship.lifecycle_phase),
+                },
             } as WorkQueueItem
         })
     }
@@ -499,13 +593,13 @@ export async function listWorkQueueItems(workspaceSlug: string, workspaceId: str
                 primary_person_name: relationship.primary_person_name,
                 business_name: relationship.business_name,
                 client_id: relationship.client_id,
+                lifecycle_phase: relationship.lifecycle_phase,
             },
         }))
 }
 
 export function nativeItemHref(workspaceSlug: string, item: RelationshipWorkItem) {
-    if (item.native_kind === "client" && item.native_id) return clientNativeHref(workspaceSlug, item.native_id)
-    if (item.native_href?.startsWith("/admin/client/") && item.native_id) return clientNativeHref(workspaceSlug, item.native_id)
+    if (item.native_kind === "client" || item.native_href?.startsWith("/admin/client/")) return relationshipHubHref(workspaceSlug, item.relationship_id)
     if (item.native_href?.startsWith("/")) return item.native_href
     return relationshipHubHref(workspaceSlug, item.relationship_id)
 }
@@ -517,10 +611,66 @@ export function relationshipSearchHaystack(relationship: RelationshipRecord) {
         relationship.primary_phone,
         relationship.business_name,
         relationship.website_url,
+        relationship.industry_value,
+        relationship.location_value,
+        relationship.source_label,
+        relationship.primary_contact_role,
+        relationship.notes_summary,
         relationship.lifecycle_phase,
     ].filter(Boolean).join(" ").toLowerCase()
 }
 
 export function relationshipNativeLocation(workspaceSlug: string, relationship: RelationshipRecord) {
     return relationshipNativeHref(workspaceSlug, relationship)
+}
+
+export function relationshipLocationLabel(relationship: Pick<RelationshipRecord, "address" | "location_value">) {
+    const address = relationship.address && typeof relationship.address === "object" ? relationship.address : {}
+    const city = typeof address.city === "string" && address.city.trim() ? address.city.trim() : ""
+    const locality = typeof address.locality === "string" && address.locality.trim() ? address.locality.trim() : ""
+    const state = typeof address.state === "string" && address.state.trim()
+        ? address.state.trim()
+        : typeof address.region === "string" && address.region.trim()
+            ? address.region.trim()
+            : ""
+    const place = [city || locality, state].filter(Boolean).join(", ")
+    if (place) return place
+    return relationship.location_value ? relationship.location_value.replace(/_/g, " ") : null
+}
+
+export function relationshipIndustryLabel(value: string | null | undefined) {
+    return value ? value.replace(/_/g, " ") : null
+}
+
+export async function listRelationshipAssets(workspaceId: string, relationshipId: string): Promise<RelationshipAsset[]> {
+    const result = await supabaseAdmin
+        .from("relationship_assets")
+        .select("id, workspace_id, relationship_id, asset_type, title, description, storage_path, external_url, native_kind, native_id, metadata, created_by, created_at, updated_at")
+        .eq("workspace_id", workspaceId)
+        .eq("relationship_id", relationshipId)
+        .order("created_at", { ascending: false })
+        .limit(120)
+
+    if (isMissingRelationshipSchema(result.error) || isRelationshipColumnDrift(result.error)) return []
+
+    return ((result.data ?? []) as RelationshipAsset[]).map((asset) => ({
+        ...asset,
+        metadata: asset.metadata ?? {},
+    }))
+}
+
+export async function countOpenWorkItemsByRelationship(workspaceId: string) {
+    const result = await supabaseAdmin
+        .from("relationship_work_items")
+        .select("relationship_id, status")
+        .eq("workspace_id", workspaceId)
+        .not("status", "in", "(done,canceled)")
+        .limit(500)
+
+    const counts = new Map<string, number>()
+    if (isMissingRelationshipSchema(result.error)) return counts
+    for (const row of result.data ?? []) {
+        counts.set(row.relationship_id, (counts.get(row.relationship_id) ?? 0) + 1)
+    }
+    return counts
 }

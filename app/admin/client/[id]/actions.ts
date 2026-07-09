@@ -7,15 +7,7 @@ import { requireAdmin, requireWorkspaceMember } from "@/lib/admin/auth"
 import { getUploadPathsFromResponse } from "@/lib/onboarding/response-files"
 import { deleteOnboardingUploads } from "@/lib/onboarding/uploads"
 import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
-import {
-    checkClientClickUpConnection,
-    deleteClientClickUpResources,
-    ensureClientClickUpChannel,
-    resetClientOnboardingClickUpTasks,
-} from "@/lib/client-messages/clickup-channel-setup"
-import { clearClickUpChatChannelMessages } from "@/lib/client-messages/clickup"
 import { checkMetaWhatsAppAccess } from "@/lib/client-messages/meta-whatsapp"
-import { requireLegacyProviderAccess } from "@/lib/workspace-integrations"
 
 async function requireScopedClient(clientId: string) {
     const { workspace } = await requireAdmin()
@@ -88,8 +80,6 @@ export async function clearClientProgress(clientId: string) {
             getUploadPathsFromResponse(row.response)
         ) ?? []
 
-    await resetClientOnboardingClickUpTasks(clientId)
-
     await deleteOnboardingUploads(uploadPaths)
 
     await Promise.all([
@@ -147,33 +137,21 @@ export async function updateClientCommunication(
     const externalAddress = normalizeMessageAddress(
         String(formData.get("external_address") ?? "")
     )
-    const clickupWorkspaceId = String(
-        formData.get("clickup_workspace_id") ?? ""
-    ).trim()
-    const clickupChannelId = String(formData.get("clickup_channel_id") ?? "")
-        .trim()
     const isActive = formData.get("is_active") === "on"
 
-    if (!externalAddress || !clickupChannelId) {
+    if (!externalAddress) {
         redirect(`/admin/client/${clientId}?bridgeError=missing-fields`)
     }
-
-    const { data: existingChannel } = await supabaseAdmin
-        .from("client_communication_channels")
-        .select("clickup_space_id, clickup_folder_id")
-        .eq("client_id", clientId)
-        .eq("provider", "meta_whatsapp")
-        .maybeSingle()
 
     await supabaseAdmin.from("client_communication_channels").upsert(
         {
             client_id: clientId,
             provider: "meta_whatsapp",
             external_address: externalAddress,
-            clickup_workspace_id: clickupWorkspaceId || null,
-            clickup_space_id: existingChannel?.clickup_space_id ?? null,
-            clickup_folder_id: existingChannel?.clickup_folder_id ?? null,
-            clickup_channel_id: clickupChannelId,
+            clickup_workspace_id: null,
+            clickup_space_id: null,
+            clickup_folder_id: null,
+            clickup_channel_id: null,
             is_active: isActive,
             updated_at: new Date().toISOString(),
         },
@@ -187,24 +165,6 @@ export async function updateClientCommunication(
         "communication_updated",
         "Client communication bridge updated"
     )
-
-    redirect(`/admin/client/${clientId}`)
-}
-
-export async function createClientClickUpChannel(clientId: string) {
-    const workspace = await requireScopedClient(clientId)
-    await requireLegacyProviderAccess(workspace.id, "clickup")
-
-    await ensureClientClickUpChannel(clientId)
-
-    redirect(`/admin/client/${clientId}`)
-}
-
-export async function checkClickUpConnection(clientId: string) {
-    const workspace = await requireScopedClient(clientId)
-    await requireLegacyProviderAccess(workspace.id, "clickup")
-
-    await checkClientClickUpConnection(clientId)
 
     redirect(`/admin/client/${clientId}`)
 }
@@ -244,24 +204,7 @@ export async function checkMetaWhatsAppConnection(clientId: string) {
 export async function clearClientBridgeMessages(clientId: string) {
     await requireScopedClient(clientId)
 
-    const { data: channel } = await supabaseAdmin
-        .from("client_communication_channels")
-        .select("id, clickup_workspace_id, clickup_channel_id")
-        .eq("client_id", clientId)
-        .eq("provider", "meta_whatsapp")
-        .maybeSingle()
-
     try {
-        let deletedClickUpMessages = 0
-
-        if (channel?.clickup_channel_id) {
-            const result = await clearClickUpChatChannelMessages({
-                workspaceId: channel.clickup_workspace_id,
-                channelId: channel.clickup_channel_id,
-            })
-            deletedClickUpMessages = result.deleted
-        }
-
         await supabaseAdmin
             .from("client_messages")
             .delete()
@@ -270,7 +213,7 @@ export async function clearClientBridgeMessages(clientId: string) {
         await addActivity(
             clientId,
             "client_messages_cleared",
-            `Bridge message log cleared. Deleted ${deletedClickUpMessages} ClickUp Chat messages. WhatsApp client chats cannot be cleared remotely.`
+            "Message log cleared. WhatsApp client chats cannot be cleared remotely."
         )
     } catch (error) {
         await addActivity(
@@ -281,7 +224,7 @@ export async function clearClientBridgeMessages(clientId: string) {
                 : "Message clear failed"
         )
 
-        redirect(`/admin/client/${clientId}?clearError=clickup-clear`)
+        redirect(`/admin/client/${clientId}?clearError=message-clear`)
     }
 
     redirect(`/admin/client/${clientId}`)
@@ -305,18 +248,6 @@ export async function archiveClient(clientId: string) {
 
 export async function deleteClient(clientId: string) {
     await requireScopedClient(clientId)
-
-    const clickUpCleanup = await deleteClientClickUpResources(clientId)
-
-    if (!clickUpCleanup.ok) {
-        await addActivity(
-            clientId,
-            "client_delete_blocked",
-            `Client delete blocked: ClickUp cleanup failed: ${clickUpCleanup.error}`
-        )
-
-        redirect(`/admin/client/${clientId}?deleteError=clickup-cleanup`)
-    }
 
     await supabaseAdmin.from("clients").delete().eq("id", clientId)
 

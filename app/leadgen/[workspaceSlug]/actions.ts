@@ -155,7 +155,7 @@ export async function promoteLeadgenCompanyToRelationship(slug: string, companyI
 
     const { data: company } = await supabaseAdmin
         .from("leadgen_companies")
-        .select("id, display_name, owner_name, owner_phone, phone, website_url, qualification_status, lead_score, source_key")
+        .select("id, display_name, owner_name, owner_phone, phone, website_url, qualification_status, lead_score, source_key, industry_value, location_value, address, owner_identity_points, owner_phone_points, business_support_points")
         .eq("id", companyId)
         .eq("workspace_id", workspace.id)
         .maybeSingle()
@@ -174,11 +174,19 @@ export async function promoteLeadgenCompanyToRelationship(slug: string, companyI
             primary_phone: company.owner_phone ?? company.phone ?? null,
             business_name: company.display_name,
             website_url: company.website_url ?? null,
-            lifecycle_phase: "qualified",
+            industry_value: company.industry_value ?? null,
+            location_value: company.location_value ?? null,
+            address: company.address ?? {},
+            source_label: company.source_key,
+            primary_contact_role: company.owner_name ? "Owner" : null,
+            lifecycle_phase: "lead",
             status: "active",
             source_metadata: {
                 source_key: company.source_key,
                 lead_score: company.lead_score,
+                owner_identity_points: company.owner_identity_points,
+                owner_phone_points: company.owner_phone_points,
+                business_support_points: company.business_support_points,
                 promoted_from: "leadgen_companies",
             },
         })

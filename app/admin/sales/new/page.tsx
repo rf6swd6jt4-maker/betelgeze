@@ -2,6 +2,7 @@ import { SERVICES } from "@/lib/onboarding/services"
 import { requireAdmin } from "@/lib/admin/auth"
 import { FormPendingOverlay } from "@/components/FormPendingOverlay"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
+import { getRelationship } from "@/lib/relationships"
 import { createSaleInvoice } from "./actions"
 
 export const dynamic = "force-dynamic"
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic"
 type PageProps = {
     searchParams: Promise<{
         error?: string
+        relationshipId?: string
     }>
 }
 
@@ -17,7 +19,10 @@ const currency = process.env.STRIPE_DEFAULT_CURRENCY ?? "usd"
 export default async function NewSalePage({ searchParams }: PageProps) {
     const { workspace, user } = await requireAdmin()
 
-    const { error } = await searchParams
+    const { error, relationshipId } = await searchParams
+    const relationship = relationshipId
+        ? await getRelationship(workspace.id, relationshipId)
+        : null
     const errorMessage =
         error === "schema-missing"
             ? "The database is missing the Stripe sales automation migration."
@@ -42,7 +47,7 @@ export default async function NewSalePage({ searchParams }: PageProps) {
                 <p className="mt-3 text-neutral-400">
                     Send a Stripe invoice now. After payment, the system sends
                     the approved WhatsApp consent template, waits for CONFIRM,
-                    then creates onboarding and ClickUp resources.
+                    then creates the onboarding session for this relationship.
                 </p>
 
                 {errorMessage && (
@@ -56,33 +61,54 @@ export default async function NewSalePage({ searchParams }: PageProps) {
                     className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6"
                 >
                     <FormPendingOverlay />
+                    {relationship && (
+                        <input
+                            type="hidden"
+                            name="relationship_id"
+                            value={relationship.id}
+                        />
+                    )}
+
+                    {relationship && (
+                        <div className="mb-6 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+                            This invoice will be attached to{" "}
+                            {relationship.primary_person_name}.
+                        </div>
+                    )}
 
                     <label className="block text-sm text-neutral-300">
-                        Client name
+                        Relationship name
                     </label>
                     <input
                         name="name"
                         required
+                        defaultValue={
+                            relationship?.primary_person_name ??
+                            relationship?.business_name ??
+                            ""
+                        }
                         className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
                     />
 
                     <label className="mt-6 block text-sm text-neutral-300">
-                        Client email for Stripe invoice
+                        Email for Stripe invoice
                     </label>
                     <input
                         name="email"
                         type="email"
                         required
+                        defaultValue={relationship?.primary_email ?? ""}
                         className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
                     />
 
                     <label className="mt-6 block text-sm text-neutral-300">
-                        Client WhatsApp number
+                        WhatsApp number
                     </label>
                     <input
                         name="phone"
                         type="tel"
                         required
+                        defaultValue={relationship?.primary_phone ?? ""}
                         placeholder="+353..."
                         className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none"
                     />

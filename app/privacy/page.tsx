@@ -33,7 +33,7 @@ const SECTIONS = [
         title: "Service Providers",
         body: [
             "We use trusted service providers to operate our systems, including hosting, database, file storage, project management, analytics, and communication providers. These providers process information only as needed to support our services.",
-            "Examples may include Vercel, Supabase, Cloudflare R2, ClickUp, Meta WhatsApp Business Platform, and similar operational tools.",
+            "Examples may include Vercel, Supabase, Cloudflare R2, Meta WhatsApp Business Platform, and similar operational tools.",
         ],
     },
     {

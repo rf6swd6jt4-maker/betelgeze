@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react"
 import Link from "next/link"
 
-export function AdminActionsMenu() {
+export function AdminActionsMenu({ workspaceSlug }: { workspaceSlug?: string }) {
     const [open, setOpen] = useState(false)
     const menuId = useId()
     const menuRef = useRef<HTMLDivElement>(null)
@@ -69,11 +69,11 @@ export function AdminActionsMenu() {
                     role="menu"
                 >
                     <Link
-                        href="/admin/new"
+                        href={workspaceSlug ? `/${workspaceSlug}/relationships/new` : "/relationships/new"}
                         className="block min-h-10 px-3 py-2.5 text-sm text-neutral-200 hover:bg-neutral-800"
                         role="menuitem"
                     >
-                        Create manual client
+                        Start new relationship
                     </Link>
                 </div>
             )}

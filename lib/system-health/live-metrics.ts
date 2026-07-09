@@ -1,4 +1,3 @@
-import { getAuthorizedClickUpWorkspaces, hasClickUpConfig } from "@/lib/client-messages/clickup"
 import { checkMetaWhatsAppAccess, hasMetaWhatsAppConfig } from "@/lib/client-messages/meta-whatsapp"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getStripeBalance, hasStripeConfig } from "@/lib/stripe/api"
@@ -261,34 +260,6 @@ async function getStripeMetric(): Promise<LiveMetric> {
     }
 }
 
-async function getClickUpMetric(): Promise<LiveMetric> {
-    if (!hasClickUpConfig()) {
-        return missingMetric("ClickUp", "Workspace access", "ClickUp credentials are not configured.")
-    }
-
-    try {
-        const workspaces = await withTimeout(getAuthorizedClickUpWorkspaces(), "ClickUp workspace lookup")
-        return {
-            id: "clickup-workspace-access",
-            provider: "ClickUp",
-            name: "Workspace access",
-            status: workspaces.length > 0 ? "ok" : "warning",
-            value: `${workspaces.length} workspace${workspaces.length === 1 ? "" : "s"}`,
-            detail: "Live ClickUp API access check.",
-            chartValue: workspaces.length,
-        }
-    } catch (error) {
-        return {
-            id: "clickup-workspace-access",
-            provider: "ClickUp",
-            name: "Workspace access",
-            status: "critical",
-            value: "Connection failed",
-            detail: error instanceof Error ? error.message : "Unknown ClickUp API error",
-        }
-    }
-}
-
 async function getVercelMetric(): Promise<LiveMetric> {
     const token = process.env.VERCEL_API_TOKEN?.trim()
     const projectId = process.env.VERCEL_PROJECT_ID?.trim()
@@ -353,12 +324,11 @@ async function getVercelMetric(): Promise<LiveMetric> {
 }
 
 export async function getLiveHealthMetrics() {
-    const [supabaseResult, r2Result, metaResult, stripeResult, clickupResult, vercelResult] = await Promise.allSettled([
+    const [supabaseResult, r2Result, metaResult, stripeResult, vercelResult] = await Promise.allSettled([
         getSupabaseMetric(),
         getR2Metric(),
         getMetaMetrics(),
         getStripeMetric(),
-        getClickUpMetric(),
         getVercelMetric(),
     ])
 
@@ -394,14 +364,10 @@ export async function getLiveHealthMetrics() {
         stripeResult.status === "fulfilled"
             ? stripeResult.value
             : failedMetric("Stripe", "Available balance", stripeResult)
-    const clickup =
-        clickupResult.status === "fulfilled"
-            ? clickupResult.value
-            : failedMetric("ClickUp", "Workspace access", clickupResult)
     const vercel =
         vercelResult.status === "fulfilled"
             ? vercelResult.value
             : failedMetric("Vercel", "Production deployment", vercelResult)
 
-    return [supabase, r2, ...meta, stripe, clickup, vercel]
+    return [supabase, r2, ...meta, stripe, vercel]
 }

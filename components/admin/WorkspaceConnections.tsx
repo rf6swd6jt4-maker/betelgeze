@@ -6,15 +6,14 @@ type Props = { connections: Connection[]; action: (provider: IntegrationProvider
 const fields: Record<IntegrationProvider, Array<[string, string, string]>> = {
     stripe: [["secret_key", "Stripe secret key", "sk_live_… or sk_test_…"], ["webhook_secret", "Webhook signing secret", "whsec_…"], ["default_currency", "Default currency", "usd"]],
     meta_whatsapp: [["access_token", "Meta access token", "Permanent access token"], ["phone_number_id", "WhatsApp phone number ID", "From Meta"], ["webhook_verify_token", "Webhook verification token", "Choose a long random value"], ["consent_template_name", "Consent template name", "Template name"], ["consent_template_language", "Template language", "en_US"]],
-    clickup: [["api_token", "ClickUp API token", "pk_…"], ["workspace_id", "ClickUp workspace ID", "Numeric workspace ID"], ["clients_space_id", "Clients space ID", "Space ID"], ["client_folder_template_id", "Client folder template ID", "Template folder ID"]],
 }
-const titles: Record<IntegrationProvider, string> = { stripe: "Stripe", meta_whatsapp: "Meta WhatsApp", clickup: "ClickUp" }
+const titles: Record<IntegrationProvider, string> = { stripe: "Stripe", meta_whatsapp: "Meta WhatsApp" }
 
 function detail(connection: Connection) {
     const hint = connection.config_hint
     if (connection.provider === "stripe") return [hint.account_id, hint.mode, hint.currency].filter(Boolean).join(" · ")
     if (connection.provider === "meta_whatsapp") return [hint.display_phone_number ?? hint.phone_number_id, hint.verified_name ?? hint.template].filter(Boolean).join(" · ")
-    return [hint.workspace_id, hint.space_id].filter(Boolean).join(" · ")
+    return ""
 }
 
 export function WorkspaceConnections({ connections, action, verifyAction, canManage, showHeader = true }: Props) {

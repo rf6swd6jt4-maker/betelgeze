@@ -11,6 +11,7 @@ import {
 } from "@/lib/onboarding/project-timeframe"
 import { createAndSendStripeInvoice } from "@/lib/stripe/api"
 import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
+import { workspaceHref } from "@/lib/relationships"
 
 const DEFAULT_CURRENCY = "usd"
 
@@ -46,10 +47,22 @@ function getSaleErrorCode(error: unknown) {
     return "create-failed"
 }
 
+function newInvoiceHref(
+    workspaceSlug: string,
+    error: string,
+    relationshipId?: string | null
+) {
+    const params = new URLSearchParams({ error })
+    if (relationshipId) params.set("relationshipId", relationshipId)
+    return workspaceHref(workspaceSlug, `sales/new?${params.toString()}`)
+}
+
 export async function createSaleInvoice(formData: FormData) {
     const { workspace, user } = await requireAdmin()
     const stripeConfig = await getWorkspaceProviderConfig(workspace.id, "stripe")
 
+    const relationshipId =
+        String(formData.get("relationship_id") ?? "").trim() || null
     const name = String(formData.get("name") ?? "").trim()
     const email = String(formData.get("email") ?? "").trim().toLowerCase()
     const phone = normalizeMessageAddress(String(formData.get("phone") ?? ""))
@@ -84,8 +97,21 @@ export async function createSaleInvoice(formData: FormData) {
         .filter((lineItem) => lineItem.amount > 0)
     const billableServiceKeys = lineItems.map((lineItem) => lineItem.serviceKey)
 
+    const { data: relationship } = relationshipId
+        ? await supabaseAdmin
+              .from("relationships")
+              .select("id")
+              .eq("id", relationshipId)
+              .eq("workspace_id", workspace.id)
+              .maybeSingle()
+        : { data: null }
+
+    if (relationshipId && !relationship) {
+        redirect(newInvoiceHref(workspace.slug, "create-failed", relationshipId))
+    }
+
     if (!name || !email || !phone || billableServiceKeys.length === 0) {
-        redirect("/admin/sales/new?error=missing-fields")
+        redirect(newInvoiceHref(workspace.slug, "missing-fields", relationshipId))
     }
 
     const totalAmount = lineItems.reduce(
@@ -94,13 +120,14 @@ export async function createSaleInvoice(formData: FormData) {
     )
 
     if (currency === "usd" && totalAmount < 50) {
-        redirect("/admin/sales/new?error=amount-too-low")
+        redirect(newInvoiceHref(workspace.slug, "amount-too-low", relationshipId))
     }
 
     const { data: sale, error: saleError } = await supabaseAdmin
         .from("client_sales")
         .insert({
             workspace_id: workspace.id,
+            relationship_id: relationshipId,
             client_name: name,
             client_email: email,
             client_phone: phone,
@@ -117,7 +144,7 @@ export async function createSaleInvoice(formData: FormData) {
         .single()
 
     if (saleError || !sale) {
-        redirect("/admin/sales/new?error=schema-missing")
+        redirect(newInvoiceHref(workspace.slug, "schema-missing", relationshipId))
     }
 
     let invoiceId: string
@@ -149,6 +176,37 @@ export async function createSaleInvoice(formData: FormData) {
                 updated_at: new Date().toISOString(),
             })
             .eq("id", sale.id)
+        if (relationshipId) {
+            await Promise.all([
+                supabaseAdmin
+                    .from("relationships")
+                    .update({
+                        primary_person_name: name,
+                        primary_email: email,
+                        primary_phone: phone,
+                        lifecycle_phase: "invoiced",
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq("id", relationshipId)
+                    .eq("workspace_id", workspace.id),
+                supabaseAdmin.from("relationship_assets").insert({
+                    workspace_id: workspace.id,
+                    relationship_id: relationshipId,
+                    asset_type: "invoice",
+                    title: `Stripe invoice ${invoice.invoiceId}`,
+                    description: `${lineItems.length} line item${lineItems.length === 1 ? "" : "s"} · ${currency.toUpperCase()} ${(totalAmount / 100).toFixed(2)}`,
+                    external_url: invoice.hostedInvoiceUrl,
+                    native_kind: "invoice",
+                    native_id: sale.id,
+                    metadata: {
+                        stripe_invoice_id: invoice.invoiceId,
+                        stripe_invoice_status: invoice.invoiceStatus,
+                        invoice_pdf: invoice.invoicePdf,
+                    },
+                    created_by: user.id,
+                }),
+            ])
+        }
         invoiceId = invoice.invoiceId
     } catch (error) {
         await supabaseAdmin
@@ -162,8 +220,8 @@ export async function createSaleInvoice(formData: FormData) {
             })
             .eq("id", sale.id)
 
-        redirect(`/admin/sales/new?error=${getSaleErrorCode(error)}`)
+        redirect(newInvoiceHref(workspace.slug, getSaleErrorCode(error), relationshipId))
     }
 
-    redirect(`/admin/invoices?invoice=${invoiceId}`)
+    redirect(workspaceHref(workspace.slug, `invoices?invoice=${invoiceId}`))
 }

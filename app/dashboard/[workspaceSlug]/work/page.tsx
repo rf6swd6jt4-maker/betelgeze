@@ -28,7 +28,9 @@ function statusTone(status: RelationshipWorkItemStatus) {
 export default async function WorkQueuePage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user } = await requireWorkspace(workspaceSlug)
-    const items = await listWorkQueueItems(workspace.slug, workspace.id)
+    const allItems = await listWorkQueueItems(workspace.slug, workspace.id)
+    const items = allItems.filter((item) => item.lifecycle_phase === "fulfilment" || item.relationship.lifecycle_phase === "fulfilment")
+    const fulfilmentRelationshipIds = new Set(items.map((item) => item.relationship_id))
     const blockedCount = items.filter((item) => item.status === "blocked").length
     const dueCount = items.filter((item) => item.planned_end_date && new Date(item.planned_end_date) <= new Date()).length
 
@@ -40,10 +42,10 @@ export default async function WorkQueuePage({ params }: PageProps) {
                 <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight">
-                            Work Queue
+                            Project Management
                         </h1>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
-                            Shared next actions across Relationships. This is the start of project management without creating a separate, disconnected task universe.
+                            Fulfilment-stage relationships and their shared tasks. This uses the same work items visible from the relationship record.
                         </p>
                     </div>
                 </header>
@@ -53,13 +55,14 @@ export default async function WorkQueuePage({ params }: PageProps) {
                         Relationships
                     </Link>
                     <Link href={workspaceHref(workspace.slug, "work")} className="shrink-0 rounded-lg bg-white px-3 py-2.5 font-medium text-black sm:py-2">
-                        Work Queue
+                        Project Management
                     </Link>
                 </div>
 
-                <section className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+                <section className="mt-5 grid grid-cols-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:grid-cols-4">
                     {[
                         ["Open work", items.length],
+                        ["Relationships", fulfilmentRelationshipIds.size],
                         ["Blocked", blockedCount],
                         ["Due/ready", dueCount],
                     ].map(([label, value]) => (
@@ -98,9 +101,9 @@ export default async function WorkQueuePage({ params }: PageProps) {
                         })
                     ) : (
                         <div className="p-6">
-                            <p className="text-lg font-semibold">No queued work yet.</p>
+                            <p className="text-lg font-semibold">No fulfilment work yet.</p>
                             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">
-                                Relationship work items will collect here as onboarding, fulfilment, lead follow-up, and future project work begin sharing the same work primitive.
+                                Move a relationship into fulfilment or add fulfilment-stage tasks from a relationship page. Nothing here depends on ClickUp.
                             </p>
                         </div>
                     )}

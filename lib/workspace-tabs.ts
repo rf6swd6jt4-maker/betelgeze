@@ -34,7 +34,7 @@ export function normalizeWorkspaceUrl(value: string, workspaceSlug: string, orig
     if (adminMatch) {
         const suffix = adminMatch[1] ?? ""
         if (!suffix) return `${defaultWorkspaceUrl}${search}${hash}`
-        if (suffix === "new") return `${defaultWorkspaceUrl}/clients/new${search}${hash}`
+        if (suffix === "new") return `${defaultWorkspaceUrl}/relationships/new${search}${hash}`
         if (suffix === "health") return `${defaultWorkspaceUrl}/health${search}${hash}`
         if (suffix === "invoices") return `${defaultWorkspaceUrl}/invoices${search}${hash}`
         if (suffix === "sales/new") return `${defaultWorkspaceUrl}/sales/new${search}${hash}`

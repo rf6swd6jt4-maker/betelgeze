@@ -13,6 +13,7 @@ import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurfa
 import { compactText, formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { removeInvoice, retryInvoiceAutomation } from "./actions"
 import { ListToolbar } from "@/components/admin/ListToolbar"
+import { workspaceHref } from "@/lib/relationships"
 
 export const dynamic = "force-dynamic"
 
@@ -119,7 +120,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
     const { data: saleRows, error: saleError } = await supabaseAdmin
         .from("client_sales")
         .select(
-            "id, client_id, client_name, client_email, client_phone, status, total_amount, currency, stripe_invoice_id, stripe_hosted_invoice_url, consent_template_sent_at, consent_confirmed_at, onboarding_link_sent_at, raw_payload, created_at, updated_at, created_by"
+            "id, client_id, relationship_id, client_name, client_email, client_phone, status, total_amount, currency, stripe_invoice_id, stripe_hosted_invoice_url, consent_template_sent_at, consent_confirmed_at, onboarding_link_sent_at, raw_payload, created_at, updated_at, created_by"
         )
         .eq("workspace_id", workspace.id)
         .is("deleted_at", null)
@@ -199,16 +200,16 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                             Create invoice
                         </Link>
 
-                        <AdminActionsMenu />
+                        <AdminActionsMenu workspaceSlug={workspace.slug} />
                     </div>
                 </div>
 
                 <div className="mt-5 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
                     <Link
-                        href="/admin"
+                        href={workspaceHref(workspace.slug, "relationships")}
                         className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2"
                     >
-                        Clients
+                        Relationships
                     </Link>
                     <Link
                         href="/admin/invoices"
@@ -251,7 +252,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                     </p>
                 </div>
 
-                <ListToolbar sortOptions={[{ value: "created-new", label: "Created: newest" }, { value: "created-old", label: "Created: oldest" }, { value: "name-az", label: "Client name: A–Z" }, { value: "amount-low", label: "Amount: low to high" }, { value: "amount-high", label: "Amount: high to low" }, { value: "updated-recent", label: "Last updated: recent" }]} filterGroups={[{ label: "Status", options: [{ value: "attention", label: "Needs attention" }, { value: "paid", label: "Paid" }] }, { label: "Created by", options: invoiceCreators }]} />
+                <ListToolbar sortOptions={[{ value: "created-new", label: "Created: newest" }, { value: "created-old", label: "Created: oldest" }, { value: "name-az", label: "Relationship name: A-Z" }, { value: "amount-low", label: "Amount: low to high" }, { value: "amount-high", label: "Amount: high to low" }, { value: "updated-recent", label: "Last updated: recent" }]} filterGroups={[{ label: "Status", options: [{ value: "attention", label: "Needs attention" }, { value: "paid", label: "Paid" }] }, { label: "Created by", options: invoiceCreators }]} />
 
                 {missingMigration ? (
                     <p className="mt-5 rounded-lg bg-neutral-900 p-4 text-sm text-neutral-400">
@@ -276,17 +277,18 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                                 whatsappStatus.label === "WA consent template not sent" ? "WA not sent" :
                                 whatsappStatus.label
                             const mobileWhatsappStatusMark = <span className={`ml-auto inline-flex min-w-0 max-w-[11.5rem] items-center justify-end gap-2 text-right text-sm ${whatsappTone.text}`}><span className={`h-2.5 w-2.5 shrink-0 rotate-45 ${whatsappTone.mark}`} /><span className="truncate">{mobileWhatsappLabel}</span></span>
+                            const relationshipHref = sale.relationship_id ? workspaceHref(workspace.slug, `relationships/${sale.relationship_id}`) : null
                             const invoiceActions = [
                                 invoiceAttention ? { label: "Retry", action: retryInvoiceAutomation.bind(null, sale.id) } : {},
                                 sale.stripe_hosted_invoice_url ? { label: "Open invoice", href: sale.stripe_hosted_invoice_url, external: true } : {},
-                                sale.client_id ? { label: "Open client", href: `/admin/client/${sale.client_id}` } : {},
+                                relationshipHref ? { label: "Open relationship", href: relationshipHref } : {},
                                 diagnostic ? { label: "Open console", href: `#invoice-console-${sale.id}` } : {},
                                 { label: "Remove", action: removeInvoice.bind(null, sale.id), danger: true, confirmMessage: "Remove this invoice from Betelgeze? Stripe records will remain in Stripe." },
                             ]
                             return <div key={sale.id} className={`${sale.isFilterMatch ? "" : "opacity-35"} 2xl:border-b 2xl:border-neutral-900 2xl:last:border-0`}>
                                 <MobileCardActionSurface actions={invoiceActions} className={`rounded-2xl border border-neutral-800 bg-black 2xl:hidden ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
                                     <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
-                                        {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="min-w-0 truncate text-base font-medium text-neutral-100 underline underline-offset-4">{sale.client_name}</Link> : <p className="min-w-0 truncate text-base font-medium text-neutral-100">{sale.client_name}</p>}
+                                        {relationshipHref ? <Link href={relationshipHref} className="min-w-0 truncate text-base font-medium text-neutral-100 underline underline-offset-4">{sale.client_name}</Link> : <p className="min-w-0 truncate text-base font-medium text-neutral-100">{sale.client_name}</p>}
                                         <p className="shrink-0 whitespace-nowrap text-sm font-medium text-neutral-300">{manualMigration ? "No amount" : formatMoney(sale.total_amount, sale.currency)}</p>
                                     </div>
                                     <div className="grid grid-cols-[0.85fr_1.15fr] gap-3 border-b border-neutral-900 px-3.5 py-2">
@@ -302,7 +304,7 @@ export default async function AdminInvoicesPage({ searchParams }: { searchParams
                                 <div className={`hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(180px,1fr)_92px_120px_165px_220px_100px_120px_32px] 2xl:items-center ${diagnostic ? "bg-red-950/[0.08]" : ""}`}>
                                 <div className="min-w-0">
                                     <p className="truncate text-base font-medium text-neutral-100">
-                                        {sale.client_id ? <Link href={`/admin/client/${sale.client_id}`} className="underline-offset-4 hover:underline">{sale.client_name}</Link> : sale.client_name}
+                                        {relationshipHref ? <Link href={relationshipHref} className="underline-offset-4 hover:underline">{sale.client_name}</Link> : sale.client_name}
                                     </p>
                                 </div>
                                 <div>{labelPill("Manual")}</div>

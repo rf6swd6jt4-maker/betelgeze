@@ -10,14 +10,13 @@ import {
     OnboardingFormDefinition,
 } from "@/lib/onboarding/forms"
 import { createSignedOnboardingUpload } from "@/lib/onboarding/uploads"
-import { syncClientOnboardingStepToClickUp } from "@/lib/client-messages/clickup-channel-setup"
 
 async function getPublicSessionClient(token: string) {
     const workspaceSlug = (await headers()).get("x-betelgeze-workspace-slug")
     if (!workspaceSlug) throw new Error("Invalid onboarding session")
     const { data: client, error: clientError } = await supabaseAdmin
         .from("clients")
-        .select("id, workspace_id, is_test")
+        .select("id, workspace_id, relationship_id, is_test")
         .eq("session_token", token)
         .single()
     const { data: workspace } = client
@@ -38,19 +37,15 @@ async function getPublicSessionPath(workspaceSlug: string, token: string) {
 export async function completeStep(token: string, stepKey: string) {
     const { client, workspaceSlug } = await getPublicSessionClient(token)
 
-    const { error } = await saveStepCompletion(client.id, stepKey)
+    const { error } = await saveStepCompletion(client.id, stepKey, client.relationship_id)
 
     if (error) {
         throw new Error("Could not save progress")
     }
 
-    await syncClientOnboardingStepToClickUp({
-        clientId: client.id,
-        stepKey,
-    })
-
     revalidatePath(`/onboarding/${workspaceSlug}/${token}`)
     revalidatePath(`/dashboard/${workspaceSlug}`)
+    if (client.relationship_id) revalidatePath(`/dashboard/${workspaceSlug}/relationships/${client.relationship_id}`)
     revalidatePath("/admin")
 }
 
@@ -69,7 +64,7 @@ function createFillerResponse(form: OnboardingFormDefinition): FormResponse {
     return response
 }
 
-async function saveStepCompletion(clientId: string, stepKey: string) {
+async function saveStepCompletion(clientId: string, stepKey: string, relationshipId?: string | null) {
     const now = new Date().toISOString()
     const { data: existingProgress } = await supabaseAdmin
         .from("client_progress")
@@ -87,6 +82,7 @@ async function saveStepCompletion(clientId: string, stepKey: string) {
 
     return supabaseAdmin.from("client_progress").insert({
         client_id: clientId,
+        relationship_id: relationshipId ?? null,
         step_key: stepKey,
         completed_at: now,
     })
@@ -124,6 +120,8 @@ export async function submitPreparedFormStep(
 
     const responseRow = {
         client_id: client.id,
+        workspace_id: client.workspace_id,
+        relationship_id: client.relationship_id,
         step_key: stepKey,
         response,
         updated_at: now,
@@ -169,6 +167,8 @@ export async function skipTestStep(
             const now = new Date().toISOString()
             const responseRow = {
                 client_id: client.id,
+                workspace_id: client.workspace_id,
+                relationship_id: client.relationship_id,
                 step_key: stepKey,
                 response: createFillerResponse(form),
                 updated_at: now,
@@ -197,19 +197,15 @@ export async function skipTestStep(
         }
     }
 
-    const { error } = await saveStepCompletion(client.id, stepKey)
+    const { error } = await saveStepCompletion(client.id, stepKey, client.relationship_id)
 
     if (error) {
         throw new Error("Could not save progress")
     }
 
-    await syncClientOnboardingStepToClickUp({
-        clientId: client.id,
-        stepKey,
-    })
-
     revalidatePath(`/onboarding/${workspaceSlug}/${token}`)
     revalidatePath(`/dashboard/${workspaceSlug}`)
+    if (client.relationship_id) revalidatePath(`/dashboard/${workspaceSlug}/relationships/${client.relationship_id}`)
     revalidatePath("/admin")
     redirect(await getPublicSessionPath(workspaceSlug, token))
 }

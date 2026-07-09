@@ -2,7 +2,6 @@ import type { NextRequest } from "next/server"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import {
-    clientNativeHref,
     listRelationshipsForWorkspace,
     relationshipHubHref,
     relationshipNativeLocation,
@@ -39,21 +38,22 @@ function result(id: string, type: string, label: string, description: string, hr
 function staticNavigationResults(workspace: { name: string; slug: string }, query: string): SearchResult[] {
     const settingsPath = `${workspace.name} > Settings`
     const entries = [
-        { id: "page-home", type: "Page", label: "Home", description: "Workspace home and onboarding overview", href: workspaceHref(workspace.slug), path: workspace.name, keywords: ["dashboard", "clients", "onboarding"] },
-        { id: "page-relationships", type: "Page", label: "Relationships", description: "Relationship Hub list", href: workspaceHref(workspace.slug, "relationships"), path: `${workspace.name} > Relationships`, keywords: ["crm", "clients", "people"] },
-        { id: "page-work", type: "Page", label: "Work Queue", description: "Shared relationship work items", href: workspaceHref(workspace.slug, "work"), path: `${workspace.name} > Work Queue`, keywords: ["tasks", "project management", "queue"] },
+        { id: "page-home", type: "Page", label: "Relationships", description: "Workspace home relationship panel", href: workspaceHref(workspace.slug, "relationships"), path: workspace.name, keywords: ["dashboard", "crm", "relationships"] },
+        { id: "page-relationships", type: "Page", label: "Relationships", description: "Relationship Hub list", href: workspaceHref(workspace.slug, "relationships"), path: `${workspace.name} > Relationships`, keywords: ["crm", "people", "accounts"] },
+        { id: "page-onboarding", type: "Page", label: "Onboarding", description: "Relationship onboarding status and submissions", href: workspaceHref(workspace.slug, "onboarding"), path: `${workspace.name} > Onboarding`, keywords: ["forms", "submissions", "portal"] },
+        { id: "page-work", type: "Page", label: "Project Management", description: "Fulfilment relationship work items", href: workspaceHref(workspace.slug, "work"), path: `${workspace.name} > Project Management`, keywords: ["tasks", "project management", "queue", "fulfilment"] },
         { id: "page-leadgen", type: "Page", label: "Lead Gen", description: "Lead generation dashboard", href: workspaceHref(workspace.slug, "leadgen"), path: `${workspace.name} > Lead Gen`, keywords: ["leads", "lead generation"] },
         { id: "action-new-poll", type: "Action", label: "New Poll", description: "Create and preflight a new lead-generation poll", href: workspaceHref(workspace.slug, "leadgen/new"), path: `${workspace.name} > Lead Gen > New Poll`, keywords: ["create poll", "start poll", "run poll", "poll preflight", "leadgen new"] },
         { id: "page-leads", type: "Tab", label: "Leads", description: "Qualified and discovered lead list", href: workspaceHref(workspace.slug, "leadgen"), path: `${workspace.name} > Lead Gen > Leads`, keywords: ["leadgen companies", "lead list"] },
         { id: "page-polls", type: "Tab", label: "Polls", description: "Lead generation poll history", href: workspaceHref(workspace.slug, "leadgen/polls"), path: `${workspace.name} > Lead Gen > Polls`, keywords: ["runs", "automation history"] },
         { id: "page-invoices", type: "Page", label: "Invoices", description: "Client invoices and sales", href: workspaceHref(workspace.slug, "invoices"), path: `${workspace.name} > Invoices`, keywords: ["sales", "stripe"] },
         { id: "action-create-invoice", type: "Action", label: "Create Invoice", description: "Create and send a Stripe invoice", href: workspaceHref(workspace.slug, "sales/new"), path: `${workspace.name} > Invoices > Create Invoice`, keywords: ["new invoice", "invoice", "stripe invoice", "send invoice", "sales invoice"] },
-        { id: "action-manual-client", type: "Action", label: "Add Manual Client", description: "Add a client manually without invoice automation", href: workspaceHref(workspace.slug, "clients/new"), path: `${workspace.name} > Relationships > Manual Client`, keywords: ["manual client", "new client", "add client", "create client", "client manually"] },
-        { id: "page-health", type: "Page", label: "System Health", description: "Operational checks for invoices, WhatsApp, ClickUp, storage, and infrastructure", href: workspaceHref(workspace.slug, "health"), path: `${workspace.name} > System Health`, keywords: ["health", "status", "checks", "diagnostics", "integrations"] },
+        { id: "action-new-relationship", type: "Action", label: "Start New Relationship", description: "Create a relationship manually at any lifecycle stage", href: workspaceHref(workspace.slug, "relationships/new"), path: `${workspace.name} > Relationships > New`, keywords: ["manual relationship", "new relationship", "add relationship", "manual client", "new client", "add client"] },
+        { id: "page-health", type: "Page", label: "System Health", description: "Operational checks for invoices, WhatsApp, storage, and infrastructure", href: workspaceHref(workspace.slug, "health"), path: `${workspace.name} > System Health`, keywords: ["health", "status", "checks", "diagnostics", "integrations"] },
         { id: "page-settings", type: "Page", label: "Settings", description: "Unified workspace settings", href: workspaceHref(workspace.slug, "settings"), path: settingsPath, keywords: ["workspace settings"] },
         { id: "settings-workspace", type: "Settings", label: "Workspace", description: "Edit the workspace name", href: workspaceHref(workspace.slug, "settings#workspace"), path: `${settingsPath} > Workspace`, keywords: ["name", "identity"] },
         { id: "settings-onboarding-domain", type: "Settings", label: "Onboarding Domain", description: "Client portal hostname", href: workspaceHref(workspace.slug, "settings#onboarding-domain"), path: `${settingsPath} > Onboarding Domain`, keywords: ["custom domain", "hostname", "portal"] },
-        { id: "settings-connections", type: "Settings", label: "Connections", description: "Stripe, WhatsApp, and ClickUp credentials", href: workspaceHref(workspace.slug, "settings#connections"), path: `${settingsPath} > Connections`, keywords: ["stripe", "whatsapp", "meta", "clickup"] },
+        { id: "settings-connections", type: "Settings", label: "Connections", description: "Stripe and WhatsApp credentials", href: workspaceHref(workspace.slug, "settings#connections"), path: `${settingsPath} > Connections`, keywords: ["stripe", "whatsapp", "meta"] },
         { id: "settings-users", type: "Settings", label: "Users", description: "Access and invitations", href: workspaceHref(workspace.slug, "settings#users"), path: `${settingsPath} > Users`, keywords: ["team", "members", "invite"] },
         { id: "settings-leadgen-automation", type: "Settings", label: "Lead Gen Automation", description: "Poll cadence, candidate volume, and owner-evidence defaults", href: workspaceHref(workspace.slug, "settings#leadgen-automation"), path: `${settingsPath} > Lead Gen Automation`, keywords: ["poll automation", "automatic polls", "cadence"] },
         { id: "settings-leadgen-targeting", type: "Settings", label: "Lead Gen Targeting", description: "ICP industries and locations", href: workspaceHref(workspace.slug, "settings#leadgen-targeting"), path: `${settingsPath} > Lead Gen Targeting`, keywords: ["industries", "locations", "icp"] },
@@ -149,10 +149,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                 "Work item",
                 item.title,
                 relationship?.primary_person_name ?? item.description ?? "Relationship work",
-                item.native_href?.startsWith("/") ? item.native_href : relationship ? relationshipHubHref(workspace.slug, relationship.id) : workspaceHref(workspace.slug, "work"),
+                relationship ? relationshipHubHref(workspace.slug, relationship.id) : item.native_href?.startsWith("/") ? item.native_href : workspaceHref(workspace.slug, "work"),
                 {
                     hubHref: relationship ? relationshipHubHref(workspace.slug, relationship.id) : undefined,
-                    path: `${workspace.name} > Work Queue`,
+                    path: `${workspace.name} > Project Management`,
                     recordId: item.native_id ?? item.id,
                 }
             ))
@@ -166,10 +166,11 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
         { data: sales, error: salesError },
         { data: channels, error: channelError },
         { data: activities, error: activityError },
+        { data: assets, error: assetError },
     ] = await Promise.all([
         supabaseAdmin
             .from("clients")
-            .select("id, name, email, phone, created_at, archived_at")
+            .select("id, relationship_id, name, email, phone, created_at, archived_at")
             .eq("workspace_id", workspace.id)
             .is("archived_at", null)
             .order("created_at", { ascending: false })
@@ -203,6 +204,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
             .eq("workspace_id", workspace.id)
             .order("created_at", { ascending: false })
             .limit(60),
+        supabaseAdmin
+            .from("relationship_assets")
+            .select("id, relationship_id, asset_type, title, description, external_url, native_kind, native_id")
+            .eq("workspace_id", workspace.id)
+            .order("created_at", { ascending: false })
+            .limit(80),
     ])
 
     if (!clientError) {
@@ -210,14 +217,32 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
             const relationship = relationshipByClientId.get(client.id)
             results.push(result(
                 `client-${client.id}`,
-                "Client",
+                "Relationship",
                 client.name ?? client.email ?? "Unnamed client",
-                client.email ?? client.phone ?? "Onboarding client",
-                clientNativeHref(workspace.slug, client.id),
+                client.email ?? client.phone ?? "Onboarding relationship",
+                relationship ? relationshipHubHref(workspace.slug, relationship.id) : client.relationship_id ? relationshipHubHref(workspace.slug, client.relationship_id) : workspaceHref(workspace.slug, "relationships"),
                 {
-                    hubHref: relationship ? relationshipHubHref(workspace.slug, relationship.id) : relationshipHubHref(workspace.slug, client.id),
-                    path: `${workspace.name} > Onboarding > Clients`,
+                    hubHref: relationship ? relationshipHubHref(workspace.slug, relationship.id) : client.relationship_id ? relationshipHubHref(workspace.slug, client.relationship_id) : undefined,
+                    path: `${workspace.name} > Onboarding > Relationships`,
                     recordId: client.id,
+                }
+            ))
+        }
+    }
+
+    if (!assetError) {
+        for (const asset of (assets ?? []).filter((asset) => includesQuery([asset.id, asset.native_id, asset.asset_type, asset.title, asset.description, asset.external_url, asset.native_kind], query)).slice(0, 6)) {
+            const relationship = relationshipById.get(asset.relationship_id)
+            results.push(result(
+                `asset-${asset.id}`,
+                "Asset",
+                asset.title,
+                [asset.asset_type, relationship?.primary_person_name].filter(Boolean).join(" · ") || "Relationship asset",
+                relationship ? relationshipHubHref(workspace.slug, relationship.id) : workspaceHref(workspace.slug, "relationships"),
+                {
+                    hubHref: relationship ? relationshipHubHref(workspace.slug, relationship.id) : undefined,
+                    path: `${workspace.name} > Relationships > Assets`,
+                    recordId: asset.native_id ?? asset.id,
                 }
             ))
         }

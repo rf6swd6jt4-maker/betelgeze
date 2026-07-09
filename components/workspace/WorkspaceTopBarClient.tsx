@@ -203,16 +203,18 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                 ? path.slice(defaultWorkspaceUrl.length + 1)
                 : path.replace(/^\//, "")
 
-        if (!suffix) return "Onboarding"
+        if (!suffix) return "Relationships"
         if (suffix === "relationships") return "Relationships"
+        if (suffix === "relationships/new") return "New Relationship"
         if (suffix.startsWith("relationships/")) return "Relationship"
-        if (suffix === "work") return "Work Queue"
+        if (suffix === "onboarding") return "Onboarding"
+        if (suffix === "work") return "Project Management"
         if (suffix === "leadgen") return "Lead Gen"
         if (suffix === "leadgen/new") return "New Poll"
         if (suffix.startsWith("leadgen/poll/")) return "Lead Poll"
         if (suffix === "leadgen/polls") return "Polls"
-        if (suffix === "clients/new") return "New Client"
-        if (suffix.startsWith("clients/")) return "Client"
+        if (suffix === "clients/new") return "New Relationship"
+        if (suffix.startsWith("clients/")) return "Relationship"
         if (suffix === "invoices") return "Invoices"
         if (suffix === "sales/new") return "New Invoice"
         if (suffix === "settings") return "Settings"
@@ -520,7 +522,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         if (normalized === "new poll" || normalized === "create poll" || normalized === "start poll" || normalized === "run poll") return `/${workspace.slug}/leadgen/new`
         if (normalized === "invoices" || normalized === "invoice") return `/${workspace.slug}/invoices`
         if (normalized === "new invoice" || normalized === "create invoice" || normalized === "send invoice") return `/${workspace.slug}/sales/new`
-        if (normalized === "manual client" || normalized === "add manual client" || normalized === "new client" || normalized === "add client") return `/${workspace.slug}/clients/new`
+        if (normalized === "manual relationship" || normalized === "start relationship" || normalized === "new relationship" || normalized === "add relationship" || normalized === "manual client" || normalized === "add manual client" || normalized === "new client" || normalized === "add client") return `/${workspace.slug}/relationships/new`
         if (normalized === "seed sources" || normalized === "seed source category") return `/${workspace.slug}/settings#leadgen-sources-seed`
         if (normalized === "business validation" || normalized === "business validation sources") return `/${workspace.slug}/settings#leadgen-sources-business-validation`
         if (normalized === "owner identity" || normalized === "owner identity discovery" || normalized === "owner discovery") return `/${workspace.slug}/settings#leadgen-sources-owner-identity`
@@ -639,11 +641,10 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
     const navButtonClass = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400"
     const sidebarItems = [
-        { label: "Home", href: `/${workspace.slug}`, icon: <HomeIcon /> },
         { label: "Relationships", href: `/${workspace.slug}/relationships`, icon: <RelationshipsIcon /> },
-        { label: "Work Queue", href: `/${workspace.slug}/work`, icon: <WorkIcon /> },
+        { label: "Onboarding", href: `/${workspace.slug}/onboarding`, icon: <HomeIcon /> },
+        { label: "Project Management", href: `/${workspace.slug}/work`, icon: <WorkIcon /> },
         { label: "Lead Gen", meta: LEADGEN_POLLING_SYSTEM_VERSION_LABEL, href: `/${workspace.slug}/leadgen`, icon: <LeadIcon /> },
-        { label: "Onboarding", href: `/${workspace.slug}`, icon: <WorkIcon /> },
         { label: "System Health", href: `/${workspace.slug}/health`, icon: <HealthIcon /> },
         { label: "Settings", href: `/${workspace.slug}/settings`, icon: <SettingsIcon /> },
     ]

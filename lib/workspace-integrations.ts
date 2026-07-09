@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from "crypto"
 import { getRequiredEnv } from "@/lib/env"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
-export const INTEGRATION_PROVIDERS = ["stripe", "meta_whatsapp", "clickup"] as const
+export const INTEGRATION_PROVIDERS = ["stripe", "meta_whatsapp"] as const
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number]
 export type IntegrationConfig = Record<string, string>
 
@@ -32,7 +32,7 @@ export function decryptWorkspaceIntegration(value: string): IntegrationConfig {
 export function integrationHint(provider: IntegrationProvider, config: IntegrationConfig): Record<string, string | null> {
     if (provider === "stripe") return { key_suffix: config.secret_key?.slice(-4) ?? null, currency: config.default_currency || "usd" }
     if (provider === "meta_whatsapp") return { phone_number_id: config.phone_number_id || null, template: config.consent_template_name || null }
-    return { workspace_id: config.workspace_id || null, space_id: config.clients_space_id || null }
+    return {}
 }
 
 export async function saveWorkspaceIntegration(workspaceId: string, provider: IntegrationProvider, config: IntegrationConfig, userId: string) {
@@ -55,7 +55,7 @@ export async function verifyWorkspaceIntegration(workspaceId: string, provider: 
     const config = await getWorkspaceProviderConfig(workspaceId, provider)
     if (!config) throw new Error("This connection has not been configured yet.")
 
-    let hint: Record<string, string | null>
+    let hint: Record<string, string | null> = {}
 
     if (provider === "stripe") {
         const response = await fetch("https://api.stripe.com/v1/account", {
@@ -73,16 +73,6 @@ export async function verifyWorkspaceIntegration(workspaceId: string, provider: 
         if (!response.ok) throw new Error("Meta could not verify this WhatsApp connection.")
         const phone = await response.json() as { display_phone_number?: string; verified_name?: string }
         hint = { ...integrationHint(provider, config), display_phone_number: phone.display_phone_number ?? null, verified_name: phone.verified_name ?? null }
-    } else {
-        const response = await fetch("https://api.clickup.com/api/v2/team", {
-            headers: { Authorization: config.api_token },
-            cache: "no-store",
-        })
-        if (!response.ok) throw new Error("ClickUp could not verify this API token.")
-        const payload = await response.json() as { teams?: Array<{ id?: string }> }
-        const hasWorkspace = payload.teams?.some((team) => team.id === config.workspace_id)
-        if (!hasWorkspace) throw new Error("This ClickUp token cannot access the configured workspace.")
-        hint = integrationHint(provider, config)
     }
 
     const { error } = await supabaseAdmin

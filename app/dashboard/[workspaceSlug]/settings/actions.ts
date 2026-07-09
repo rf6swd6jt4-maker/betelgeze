@@ -88,7 +88,6 @@ export async function saveWorkspaceConnection(slug: string, provider: Integratio
     const required: Record<IntegrationProvider, string[]> = {
         stripe: ["secret_key", "webhook_secret"],
         meta_whatsapp: ["access_token", "phone_number_id", "webhook_verify_token"],
-        clickup: ["api_token", "workspace_id", "clients_space_id", "client_folder_template_id"],
     }
     if (required[provider].some((key) => !config[key]?.trim())) throw new Error("Fill in all required connection details before saving.")
     await saveWorkspaceIntegration(workspace.id, provider, config, user.id)

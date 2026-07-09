@@ -32,7 +32,7 @@ export const dynamic = "force-dynamic"
 const settingsSections = [
     { id: "workspace", label: "Workspace", detail: "Name and identity" },
     { id: "onboarding-domain", label: "Onboarding Domain", detail: "Client portal hostname" },
-    { id: "connections", label: "Connections", detail: "Stripe, WhatsApp, ClickUp" },
+    { id: "connections", label: "Connections", detail: "Stripe and WhatsApp" },
     { id: "users", label: "Users", detail: "Access and invitations" },
     { id: "leadgen-automation", label: "Lead Gen Automation", detail: "Poll cadence and limits" },
     { id: "leadgen-targeting", label: "Lead Gen Targeting", detail: "Industries and locations" },
@@ -94,7 +94,7 @@ export default async function SettingsPage({ params }: PageProps) {
         user: (await supabaseAdmin.auth.admin.getUserById(membership.user_id)).data.user,
     })))
     const isOwner = role === "owner"
-    const connections = ["stripe", "meta_whatsapp", "clickup"].map((provider) =>
+    const connections = ["stripe", "meta_whatsapp"].map((provider) =>
         integrationResult.data?.find((item) => item.provider === provider)
         ?? { provider, enabled: false, mode: "disabled", config_hint: {} }
     ) as Parameters<typeof WorkspaceConnections>[0]["connections"]
@@ -164,7 +164,7 @@ export default async function SettingsPage({ params }: PageProps) {
                         <UnifiedSection
                             id="connections"
                             title="Connections"
-                            description="Manage provider credentials and verify that the real external path works."
+                            description="Manage active provider credentials and verify that the real external path works."
                         >
                             <WorkspaceConnections
                                 connections={connections}

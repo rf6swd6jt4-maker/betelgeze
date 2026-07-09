@@ -1,7 +1,6 @@
 import { randomBytes } from "crypto"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
-import { ensureClientClickUpChannel } from "@/lib/client-messages/clickup-channel-setup"
 import { getOnboardingUrl as getPublicOnboardingUrl } from "@/lib/onboarding/custom-domain"
 
 type CreateOnboardingClientInput = {
@@ -13,6 +12,7 @@ type CreateOnboardingClientInput = {
     email?: string | null
     phone: string
     serviceKeys: string[]
+    relationshipId?: string | null
     projectTimeframeDays?: number | null
     isTest?: boolean
     createClickUpResources?: boolean
@@ -24,6 +24,7 @@ type CreateOnboardingClientInput = {
 
 export type CreateOnboardingClientResult = {
     id: string
+    relationshipId: string | null
     sessionToken: string
     onboardingUrl: string | null
 }
@@ -81,9 +82,9 @@ export async function createOnboardingClient({
     email,
     phone,
     serviceKeys,
+    relationshipId,
     projectTimeframeDays,
     isTest = false,
-    createClickUpResources = true,
     createOnboardingModules = true,
     createOnboardingWork = true,
     activitySource,
@@ -96,24 +97,53 @@ export async function createOnboardingClient({
         ? getModuleKeysForServices(selectedServices)
         : []
     const sessionToken = randomBytes(32).toString("hex")
+    const clientPayload: Record<string, unknown> = {
+        workspace_id: workspaceId,
+        relationship_id: relationshipId ?? null,
+        name,
+        email: email || null,
+        phone,
+        session_token: sessionToken,
+        is_test: isTest,
+        project_timeframe_days: projectTimeframeDays ?? null,
+        created_by: createdBy ?? null,
+    }
 
     const { data: client, error: clientError } = await supabaseAdmin
         .from("clients")
-        .insert({
-            workspace_id: workspaceId,
-            name,
-            email: email || null,
-            phone,
-            session_token: sessionToken,
-            is_test: isTest,
-            project_timeframe_days: projectTimeframeDays ?? null,
-            created_by: createdBy ?? null,
-        })
+        .insert(clientPayload)
         .select("id, session_token")
         .single()
 
     if (clientError || !client) {
         throw new Error(getCreateClientErrorCode(clientError))
+    }
+
+    let linkedRelationshipId = relationshipId ?? null
+
+    if (linkedRelationshipId) {
+        await supabaseAdmin
+            .from("relationships")
+            .update({
+                client_id: client.id,
+                primary_person_name: name,
+                primary_email: email || null,
+                primary_phone: phone || null,
+                business_name: name,
+                lifecycle_phase: "onboarding",
+                started_onboarding_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            })
+            .eq("id", linkedRelationshipId)
+            .eq("workspace_id", workspaceId)
+    } else {
+        const { data: relationship } = await supabaseAdmin
+            .from("relationships")
+            .select("id")
+            .eq("workspace_id", workspaceId)
+            .eq("client_id", client.id)
+            .maybeSingle()
+        linkedRelationshipId = relationship?.id ?? null
     }
 
     if (moduleKeys.length > 0) {
@@ -123,6 +153,7 @@ export async function createOnboardingClient({
                 moduleKeys.map((moduleKey) => ({
                     client_id: client.id,
                     workspace_id: workspaceId,
+                    relationship_id: linkedRelationshipId,
                     module_key: moduleKey,
                 }))
             )
@@ -139,6 +170,7 @@ export async function createOnboardingClient({
                 selectedServices.map((serviceKey) => ({
                     client_id: client.id,
                     workspace_id: workspaceId,
+                    relationship_id: linkedRelationshipId,
                     service_key: serviceKey,
                 }))
             )
@@ -148,8 +180,35 @@ export async function createOnboardingClient({
         }
     }
 
-    if (createClickUpResources) {
-        await ensureClientClickUpChannel(client.id, { createOnboardingWork })
+    if (linkedRelationshipId && createOnboardingWork && selectedServices.length > 0) {
+        const workItems = selectedServices.flatMap((serviceKey, serviceIndex) => {
+            const service = SERVICES[serviceKey]
+            if (!service) return []
+            return service.sopSteps.map((step, stepIndex) => ({
+                workspace_id: workspaceId,
+                relationship_id: linkedRelationshipId,
+                title: step.title,
+                description: step.description ?? service.description,
+                lifecycle_phase: "fulfilment",
+                status: "todo",
+                priority: 3,
+                is_key_task: stepIndex === 0,
+                native_kind: "service_sop_step",
+                native_id: null,
+                native_href: null,
+                sort_order: serviceIndex * 100 + stepIndex,
+                metadata: {
+                    service_key: serviceKey,
+                    service_title: service.title,
+                    step_key: step.key,
+                    auto_created: true,
+                },
+            }))
+        })
+
+        if (workItems.length > 0) {
+            await supabaseAdmin.from("relationship_work_items").insert(workItems)
+        }
     }
 
     const onboardingUrl = createOnboardingModules
@@ -169,6 +228,7 @@ export async function createOnboardingClient({
 
     return {
         id: client.id,
+        relationshipId: linkedRelationshipId,
         sessionToken: client.session_token,
         onboardingUrl,
     }

@@ -11,6 +11,7 @@ import { isConsentConfirmationText } from "@/lib/client-sales/consent"
 type ClientSale = {
     id: string
     client_id: string | null
+    relationship_id: string | null
     client_name: string
     client_email: string | null
     client_phone: string
@@ -335,7 +336,7 @@ async function findPendingConfirmedSale(fromAddress: string) {
     const { data: sales } = await supabaseAdmin
         .from("client_sales")
         .select(
-            "id, client_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload, workspace_id, created_by"
+            "id, client_id, relationship_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload, workspace_id, created_by"
         )
         .in("client_phone", equivalentAddresses)
         .in("status", [
@@ -373,6 +374,7 @@ export async function handleSaleConsentConfirmation({
     const flow = getSaleFlow(sale.raw_payload)
 
     let clientId = sale.client_id
+    let relationshipId = sale.relationship_id
     let onboardingUrl: string | null = null
 
     if (!clientId) {
@@ -390,6 +392,7 @@ export async function handleSaleConsentConfirmation({
             name: sale.client_name,
             email: sale.client_email,
             phone: fromAddress,
+            relationshipId,
             serviceKeys:
                 flow === "manual_migration"
                     ? []
@@ -397,7 +400,7 @@ export async function handleSaleConsentConfirmation({
                           (serviceKey) => serviceKey in SERVICES
                       ),
             projectTimeframeDays: sale.project_timeframe_days,
-            createClickUpResources: true,
+            createClickUpResources: false,
             createOnboardingModules: flow !== "manual_migration",
             createOnboardingWork: flow !== "manual_migration",
             activitySource:
@@ -407,12 +410,14 @@ export async function handleSaleConsentConfirmation({
             createdBy: sale.created_by,
         })
         clientId = client.id
+        relationshipId = client.relationshipId
         onboardingUrl = client.onboardingUrl
 
         await supabaseAdmin
             .from("client_sales")
             .update({
                 client_id: client.id,
+                relationship_id: relationshipId,
                 client_phone: fromAddress,
                 status:
                     flow === "manual_migration"
@@ -426,9 +431,10 @@ export async function handleSaleConsentConfirmation({
     } else {
         const { data: client } = await supabaseAdmin
             .from("clients")
-            .select("session_token, workspace_id")
+            .select("session_token, workspace_id, relationship_id")
             .eq("id", clientId)
             .single()
+        relationshipId = client?.relationship_id ?? relationshipId
 
         const { data: workspace } = client
             ? await supabaseAdmin.from("workspaces").select("slug, custom_onboarding_domain, custom_onboarding_domain_status").eq("id", client.workspace_id).single()
@@ -440,6 +446,7 @@ export async function handleSaleConsentConfirmation({
         await supabaseAdmin
             .from("client_sales")
             .update({
+                relationship_id: relationshipId,
                 status:
                     flow === "manual_migration"
                         ? "manual_workspace_created"
@@ -451,8 +458,22 @@ export async function handleSaleConsentConfirmation({
             .eq("id", sale.id)
     }
 
+    if (relationshipId && clientId) {
+        await supabaseAdmin
+            .from("relationships")
+            .update({
+                client_id: clientId,
+                lifecycle_phase: "onboarding",
+                started_onboarding_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            })
+            .eq("id", relationshipId)
+            .eq("workspace_id", sale.workspace_id)
+    }
+
     await supabaseAdmin.from("client_messages").insert({
         client_id: clientId,
+        relationship_id: relationshipId,
         direction: "inbound",
         provider: "meta_whatsapp",
         provider_message_id: messageId ?? null,
@@ -466,7 +487,7 @@ export async function handleSaleConsentConfirmation({
     if (flow === "manual_migration") {
         await addSaleActivity(
             sale.id,
-            "WhatsApp confirmed; ClickUp folder and chat channel created for manual client migration"
+            "WhatsApp confirmed; relationship workspace is ready for manual migration"
         )
         return { handled: true, ok: true }
     }
@@ -484,6 +505,7 @@ export async function handleSaleConsentConfirmation({
         .from("client_messages")
         .insert({
             client_id: clientId,
+            relationship_id: relationshipId,
             direction: "outbound",
             provider: "meta_whatsapp",
             to_address: fromAddress,

@@ -11,6 +11,7 @@ import {
     getHealthMetricHistories,
     recordHealthMetricSnapshots,
 } from "@/lib/system-health/snapshots"
+import { workspaceHref } from "@/lib/relationships"
 
 export const dynamic = "force-dynamic"
 
@@ -252,7 +253,7 @@ export default async function AdminHealthPage() {
         )
     )
     const activeChannels = channelCountResult.count ?? 0
-    const activeClients = clientsCountResult.count ?? 0
+    const activeOnboardingRecords = clientsCountResult.count ?? 0
     const recentFailedMessages = failedMessageResult.count ?? 0
     const unmatchedMessages = unmatchedMessageResult.count ?? 0
     const latestStripeEvent = stripeEventsResult.data?.[0]
@@ -279,7 +280,7 @@ export default async function AdminHealthPage() {
                 channelCountResult.error?.message ??
                 failedMessageResult.error?.message ??
                 undefined,
-            value: plural(activeClients, "active client"),
+            value: plural(activeOnboardingRecords, "active onboarding record"),
         },
         checkEnvGroup({
             id: "supabase-config",
@@ -375,18 +376,6 @@ export default async function AdminHealthPage() {
             value: plural(activeChannels, "active channel"),
         },
         checkEnvGroup({
-            id: "clickup-config",
-            provider: "ClickUp",
-            required: [
-                "CLICKUP_API_TOKEN",
-                "CLICKUP_WORKSPACE_ID",
-                "CLICKUP_CLIENTS_SPACE_ID",
-                "CLICKUP_CLIENT_FOLDER_TEMPLATE_ID",
-            ],
-            optional: ["CLIENT_MESSAGES_BRIDGE_SECRET"],
-            name: "Client workspace setup",
-        }),
-        checkEnvGroup({
             id: "r2-config",
             provider: "Cloudflare R2",
             required: [
@@ -462,7 +451,7 @@ export default async function AdminHealthPage() {
 
                         <p className="mt-2 text-sm text-neutral-400">
                             Check operational signals across invoices,
-                            WhatsApp, ClickUp, storage, and infrastructure.
+                            WhatsApp, storage, and infrastructure.
                         </p>
                     </div>
 
@@ -474,16 +463,16 @@ export default async function AdminHealthPage() {
                             Create invoice
                         </Link>
 
-                        <AdminActionsMenu />
+                        <AdminActionsMenu workspaceSlug={workspace.slug} />
                     </div>
                 </div>
 
                 <div className="mt-5 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
                     <Link
-                        href="/admin"
+                        href={workspaceHref(workspace.slug, "relationships")}
                         className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2"
                     >
-                        Clients
+                        Relationships
                     </Link>
                     <Link
                         href="/admin/invoices"
@@ -584,10 +573,10 @@ export default async function AdminHealthPage() {
                             <div className="mt-5 grid gap-3 text-sm">
                                 <div className="flex justify-between gap-4">
                                     <span className="text-neutral-500">
-                                        Active clients
+                                        Active onboarding records
                                     </span>
                                     <span className="font-medium">
-                                        {activeClients}
+                                        {activeOnboardingRecords}
                                     </span>
                                 </div>
                                 <div className="flex justify-between gap-4">
@@ -866,7 +855,7 @@ export default async function AdminHealthPage() {
 
                     <p className="mt-2 text-sm text-neutral-400">
                         Webhook events that reached the app but were not
-                        attached to a client.
+                        attached to a relationship.
                     </p>
 
                     <div className="mt-4 grid gap-2">

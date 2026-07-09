@@ -2,49 +2,9 @@
 
 import { redirect } from "next/navigation"
 import { requireAdmin } from "@/lib/admin/auth"
-import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
-import { supabaseAdmin } from "@/lib/supabase/admin"
-import { sendSaleConsentTemplate } from "@/lib/client-sales/automation"
-import { requireLegacyProviderAccess } from "@/lib/workspace-integrations"
+import { workspaceHref } from "@/lib/relationships"
 
-export async function createClient(formData: FormData) {
-    const { workspace, user } = await requireAdmin()
-    await requireLegacyProviderAccess(workspace.id, "meta_whatsapp")
-
-    const name = String(formData.get("name") ?? "").trim()
-    const email = String(formData.get("email") ?? "").trim().toLowerCase()
-    const phone = normalizeMessageAddress(String(formData.get("phone") ?? ""))
-    if (!name || !phone) {
-        redirect("/admin/new?error=missing-fields")
-    }
-
-    const { data: sale, error: saleError } = await supabaseAdmin
-        .from("client_sales")
-        .insert({
-            workspace_id: workspace.id,
-            client_name: name,
-            client_email: email || null,
-            client_phone: phone,
-            service_keys: [],
-            line_items: [],
-            currency: "usd",
-            total_amount: 0,
-            status: "manual_consent_pending",
-            raw_payload: { flow: "manual_migration" },
-            created_by: user.id,
-        })
-        .select("id")
-        .single()
-
-    if (saleError || !sale) {
-        redirect("/admin/new?error=schema-missing")
-    }
-
-    const consent = await sendSaleConsentTemplate(sale.id)
-
-    if (!consent.ok) {
-        redirect("/admin/new?error=consent-template-failed")
-    }
-
-    redirect("/admin/new?created=consent-sent")
+export async function createClient() {
+    const { workspace } = await requireAdmin()
+    redirect(workspaceHref(workspace.slug, "relationships/new"))
 }

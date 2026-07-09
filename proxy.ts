@@ -188,7 +188,10 @@ export async function proxy(request: NextRequest) {
             const [, workspaceSlug, suffix = ""] = workspacePath
             const headers = new Headers(request.headers)
             headers.set("x-betelgeze-workspace-slug", workspaceSlug)
-            if (suffix === "settings" || suffix === "users" || suffix === "work" || suffix === "relationships" || suffix.startsWith("relationships/")) {
+            if (!suffix) {
+                return withSession(withRewrite(request, `/dashboard/${workspaceSlug}/relationships`, headers))
+            }
+            if (suffix === "settings" || suffix === "users" || suffix === "work" || suffix === "onboarding" || suffix === "relationships" || suffix.startsWith("relationships/")) {
                 return withSession(withRewrite(request, `/dashboard/${workspaceSlug}/${suffix}`, headers))
             }
             if (suffix === "leadgen" || suffix.startsWith("leadgen/")) {

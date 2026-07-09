@@ -1,14 +1,9 @@
 import { NextRequest } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import {
-    formatClientInboundMessage,
     getEquivalentMessageAddresses,
     normalizeMessageAddress,
 } from "@/lib/client-messages/addresses"
-import {
-    createClickUpChatMessage,
-    createClickUpChatReply,
-} from "@/lib/client-messages/clickup"
 import {
     downloadMetaWhatsAppMedia,
     getMetaWhatsAppMedia,
@@ -95,21 +90,9 @@ type WhatsAppWebhookPayload = {
     }>
 }
 
-function getClickUpMessageId(response: unknown): string | null {
-    if (!response || typeof response !== "object") return null
-
-    const value = response as {
-        id?: string
-        data?: { id?: string }
-        message?: { id?: string }
-    }
-
-    return value.id ?? value.data?.id ?? value.message?.id ?? null
-}
-
 type InboundMessageContent = {
     body: string
-    clickupBody: string
+    logBody?: string
     media?: {
         id: string
         type: string
@@ -124,8 +107,6 @@ type ClientCommunicationChannel = {
     id: string
     client_id: string
     external_address: string
-    clickup_workspace_id: string | null
-    clickup_channel_id: string
 }
 
 function logDiagnosticInsertError(context: string, error: unknown) {
@@ -139,9 +120,7 @@ async function resolveInboundChannel(fromAddress: string) {
     const equivalentAddresses = getEquivalentMessageAddresses(fromAddress)
     const { data: exactChannel, error: exactChannelError } = await supabaseAdmin
         .from("client_communication_channels")
-        .select(
-            "id, client_id, external_address, clickup_workspace_id, clickup_channel_id"
-        )
+        .select("id, client_id, external_address")
         .eq("provider", "meta_whatsapp")
         .in("external_address", equivalentAddresses)
         .eq("is_active", true)
@@ -178,9 +157,7 @@ async function resolveInboundChannel(fromAddress: string) {
     const { data: clientChannel, error: clientChannelError } =
         await supabaseAdmin
             .from("client_communication_channels")
-            .select(
-                "id, client_id, external_address, clickup_workspace_id, clickup_channel_id"
-            )
+            .select("id, client_id, external_address")
             .eq("client_id", client.id)
             .eq("provider", "meta_whatsapp")
             .eq("is_active", true)
@@ -474,7 +451,7 @@ function titleCase(value: string) {
     return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-function formatMediaMessageForClickUp({
+function formatMediaMessageForLog({
     type,
     url,
     caption,
@@ -513,7 +490,7 @@ async function getInboundMessageContent({
     if (message.type === "text" && textBody) {
         return {
             body: textBody,
-            clickupBody: textBody,
+            logBody: textBody,
         }
     }
 
@@ -552,7 +529,7 @@ async function getInboundMessageContent({
         appBaseUrl,
     })
     const caption = mediaPayload.media.caption?.trim()
-    const clickupBody = formatMediaMessageForClickUp({
+    const logBody = formatMediaMessageForLog({
         type: mediaPayload.type,
         url: storedMedia.url,
         caption,
@@ -563,7 +540,7 @@ async function getInboundMessageContent({
         body: caption
             ? `[${titleCase(mediaPayload.type)}] ${caption}`
             : `[${titleCase(mediaPayload.type)}] ${fileName}`,
-        clickupBody,
+        logBody,
         media: {
             id: mediaPayload.media.id,
             type: mediaPayload.type,
@@ -644,44 +621,18 @@ async function handleInboundMessage({
         return
     }
 
-    const [{ data: client }, { data: lastMessage }] = await Promise.all([
-        supabaseAdmin
-            .from("clients")
-            .select("name, workspace_id")
-            .eq("id", channel.client_id)
-            .single(),
-        supabaseAdmin
-            .from("client_messages")
-            .select("direction, provider, created_at")
-            .eq("client_id", channel.client_id)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle(),
-    ])
-    const { data: repliedToMessage } = replyToWhatsAppMessageId
-        ? await supabaseAdmin
-              .from("client_messages")
-              .select("clickup_message_id")
-              .eq("client_id", channel.client_id)
-              .eq("whatsapp_message_id", replyToWhatsAppMessageId)
-              .not("clickup_message_id", "is", null)
-              .order("created_at", { ascending: false })
-              .limit(1)
-              .maybeSingle()
-        : { data: null }
-    const clientName = client?.name ?? "Client"
-    const tenMinutesAgo = Date.now() - 10 * 60 * 1000
-    const showClientName =
-        !lastMessage ||
-        lastMessage.direction !== "inbound" ||
-        lastMessage.provider !== "meta_whatsapp" ||
-        new Date(lastMessage.created_at).getTime() < tenMinutesAgo
+    const { data: client } = await supabaseAdmin
+        .from("clients")
+        .select("name, workspace_id, relationship_id")
+        .eq("id", channel.client_id)
+        .single()
     const initialBody =
         getInboundText(message) || `[${titleCase(message.type ?? "message")}]`
     const { data: insertedMessage, error: insertError } = await supabaseAdmin
         .from("client_messages")
         .insert({
             client_id: channel.client_id,
+            relationship_id: client?.relationship_id ?? null,
             communication_channel_id: channel.id,
             direction: "inbound",
             provider: "meta_whatsapp",
@@ -752,50 +703,11 @@ async function handleInboundMessage({
             body: content.body,
             raw_payload: {
                 ...payload,
+                log_body: content.logBody ?? content.body,
                 bridge_media: content.media ?? null,
             },
         })
         .eq("id", insertedMessage.id)
-
-    try {
-        const clickupContent = formatClientInboundMessage({
-            clientName,
-            body: content.clickupBody,
-            showClientName,
-        })
-        const clickupMessage = repliedToMessage?.clickup_message_id
-            ? await createClickUpChatReply({
-                  workspaceId: channel.clickup_workspace_id,
-                  messageId: repliedToMessage.clickup_message_id,
-                  content: clickupContent,
-              })
-            : await createClickUpChatMessage({
-                  workspaceId: channel.clickup_workspace_id,
-                  channelId: channel.clickup_channel_id,
-                  content: clickupContent,
-              })
-
-        await supabaseAdmin
-            .from("client_messages")
-            .update({
-                status: repliedToMessage?.clickup_message_id
-                    ? "posted_to_clickup_reply"
-                    : "posted_to_clickup",
-                clickup_message_id: getClickUpMessageId(clickupMessage),
-            })
-            .eq("id", insertedMessage.id)
-    } catch (error) {
-        await supabaseAdmin
-            .from("client_messages")
-            .update({
-                status: "clickup_failed",
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Unknown ClickUp error",
-            })
-            .eq("id", insertedMessage.id)
-    }
 }
 
 export async function GET(request: NextRequest) {

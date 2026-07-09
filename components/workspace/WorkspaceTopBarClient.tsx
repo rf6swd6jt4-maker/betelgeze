@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link"
-import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { AccountMenu } from "@/components/account/AccountMenu"
 import { LEADGEN_POLLING_SYSTEM_VERSION_LABEL } from "@/lib/leadgen/version"
@@ -14,6 +14,17 @@ const sidebarStorageKey = "betelgeze:workspace-sidebar-open"
 type WorkspaceHistoryState = {
     stack: string[]
     index: number
+}
+
+type WorkspaceTab = {
+    id: string
+    title: string
+    url: string
+}
+
+type WorkspaceTabsState = {
+    activeId: string
+    tabs: WorkspaceTab[]
 }
 
 type Props = {
@@ -110,6 +121,12 @@ function parseStoredHistory(fallbackUrl: string): WorkspaceHistoryState {
     }
 }
 
+function createTabId() {
+    return typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 function deferNavigationStateUpdate(update: () => void) {
     queueMicrotask(update)
 }
@@ -124,9 +141,14 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
     const mobileSearchRef = useRef<HTMLDivElement>(null)
     const mobileSearchInputRef = useRef<HTMLInputElement>(null)
     const sidebarTransitionTimeout = useRef<number | null>(null)
+    const activeTabIdRef = useRef("")
+    const tabsBootstrappedRef = useRef(false)
     const [sidebarOpen, setSidebarOpen] = useState(false)
     const [sidebarHydrated, setSidebarHydrated] = useState(false)
     const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false)
+    const [tabsHydrated, setTabsHydrated] = useState(false)
+    const [tabs, setTabs] = useState<WorkspaceTab[]>([])
+    const [activeTabId, setActiveTabId] = useState("")
     const [canGoBack, setCanGoBack] = useState(false)
     const [canGoForward, setCanGoForward] = useState(false)
     const [query, setQuery] = useState("")
@@ -134,6 +156,89 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
     const [searchLoading, setSearchLoading] = useState(false)
     const [searchResults, setSearchResults] = useState<SearchResult[]>([])
     const [searchShortcutLabel, setSearchShortcutLabel] = useState("Ctrl+J")
+    const defaultWorkspaceUrl = `/${workspace.slug}`
+    const tabsStorageKey = `betelgeze:workspace-tabs:${workspace.slug}`
+
+    const normalizeWorkspaceUrl = useCallback((value: string) => {
+        const parsed = new URL(value, window.location.origin)
+        const search = parsed.search
+        const path = parsed.pathname
+        const adminMatch = path.match(/^\/admin(?:\/(.*))?$/)
+        const dashboardMatch = path.match(new RegExp(`^/dashboard/${workspace.slug}(?:/(.*))?$`, "i"))
+        const leadgenMatch = path.match(new RegExp(`^/leadgen/${workspace.slug}(?:/(.*))?$`, "i"))
+
+        if (adminMatch) {
+            const suffix = adminMatch[1] ?? ""
+            if (!suffix) return `${defaultWorkspaceUrl}${search}`
+            if (suffix === "new") return `${defaultWorkspaceUrl}/clients/new${search}`
+            if (suffix === "health") return `${defaultWorkspaceUrl}/health${search}`
+            if (suffix === "invoices") return `${defaultWorkspaceUrl}/invoices${search}`
+            if (suffix === "sales/new") return `${defaultWorkspaceUrl}/sales/new${search}`
+            if (suffix.startsWith("client/")) return `${defaultWorkspaceUrl}/clients/${suffix.slice("client/".length)}${search}`
+            return `${defaultWorkspaceUrl}/${suffix}${search}`
+        }
+
+        if (dashboardMatch) return `${defaultWorkspaceUrl}${dashboardMatch[1] ? `/${dashboardMatch[1]}` : ""}${search}`
+        if (leadgenMatch) return `${defaultWorkspaceUrl}/leadgen${leadgenMatch[1] ? `/${leadgenMatch[1]}` : ""}${search}`
+        return `${path}${search}`
+    }, [defaultWorkspaceUrl, workspace.slug])
+
+    const titleForUrl = useCallback((url: string) => {
+        const parsed = new URL(url, window.location.origin)
+        const path = parsed.pathname
+        const suffix = path === defaultWorkspaceUrl
+            ? ""
+            : path.startsWith(`${defaultWorkspaceUrl}/`)
+                ? path.slice(defaultWorkspaceUrl.length + 1)
+                : path.replace(/^\//, "")
+
+        if (!suffix) return "Onboarding"
+        if (suffix === "relationships") return "Relationships"
+        if (suffix.startsWith("relationships/")) return "Relationship"
+        if (suffix === "work") return "Work Queue"
+        if (suffix === "leadgen") return "Lead Gen"
+        if (suffix === "leadgen/new") return "New Poll"
+        if (suffix.startsWith("leadgen/poll/")) return "Lead Poll"
+        if (suffix === "leadgen/polls") return "Polls"
+        if (suffix === "clients/new") return "New Client"
+        if (suffix.startsWith("clients/")) return "Client"
+        if (suffix === "invoices") return "Invoices"
+        if (suffix === "sales/new") return "New Invoice"
+        if (suffix === "settings") return "Settings"
+        if (suffix === "health") return "System Health"
+        if (suffix === "users") return "Users"
+        return suffix.split("/")[0]?.replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Tab"
+    }, [defaultWorkspaceUrl])
+
+    const saveTabsState = useCallback((nextTabs: WorkspaceTab[], nextActiveId: string) => {
+        sessionStorage.setItem(tabsStorageKey, JSON.stringify({ tabs: nextTabs, activeId: nextActiveId }))
+    }, [tabsStorageKey])
+
+    const readTabsState = useCallback((currentUrl: string): WorkspaceTabsState => {
+        try {
+            const stored = sessionStorage.getItem(tabsStorageKey)
+            const parsed = stored ? JSON.parse(stored) as Partial<WorkspaceTabsState> : {}
+            const storedTabs = Array.isArray(parsed.tabs)
+                ? parsed.tabs.filter((tab): tab is WorkspaceTab => Boolean(
+                    tab &&
+                    typeof tab.id === "string" &&
+                    typeof tab.url === "string" &&
+                    typeof tab.title === "string"
+                ))
+                : []
+            const tabsToUse = storedTabs.length ? storedTabs : [{ id: createTabId(), url: currentUrl, title: titleForUrl(currentUrl) }]
+            const activeId = typeof parsed.activeId === "string" && tabsToUse.some((tab) => tab.id === parsed.activeId)
+                ? parsed.activeId
+                : tabsToUse[0].id
+            return {
+                activeId,
+                tabs: tabsToUse.map((tab) => tab.id === activeId ? { ...tab, url: currentUrl, title: titleForUrl(currentUrl) } : tab),
+            }
+        } catch {
+            const tab = { id: createTabId(), url: currentUrl, title: titleForUrl(currentUrl) }
+            return { activeId: tab.id, tabs: [tab] }
+        }
+    }, [tabsStorageKey, titleForUrl])
 
     useEffect(() => {
         const query = searchParams.toString()
@@ -156,6 +261,42 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
             setCanGoForward(index < stack.length - 1)
         })
     }, [pathname, searchParams])
+
+    useEffect(() => {
+        if (tabsBootstrappedRef.current) return
+        tabsBootstrappedRef.current = true
+        const query = searchParams.toString()
+        const current = normalizeWorkspaceUrl(`${pathname}${query ? `?${query}` : ""}`)
+        const stored = readTabsState(current)
+        activeTabIdRef.current = stored.activeId
+        saveTabsState(stored.tabs, stored.activeId)
+        deferNavigationStateUpdate(() => {
+            setActiveTabId(stored.activeId)
+            setTabs(stored.tabs)
+            setTabsHydrated(true)
+        })
+    }, [normalizeWorkspaceUrl, pathname, readTabsState, saveTabsState, searchParams])
+
+    useEffect(() => {
+        activeTabIdRef.current = activeTabId
+    }, [activeTabId])
+
+    useEffect(() => {
+        if (!tabsHydrated) return
+        const query = searchParams.toString()
+        const current = normalizeWorkspaceUrl(`${pathname}${query ? `?${query}` : ""}`)
+
+        setTabs((existingTabs) => {
+            const activeId = activeTabIdRef.current
+            if (!activeId) return existingTabs
+            const nextTabs = existingTabs.length ? existingTabs : [{ id: activeId || createTabId(), title: titleForUrl(current), url: current }]
+            const nextActiveId = nextTabs.some((tab) => tab.id === activeId) ? activeId : nextTabs[0].id
+            const updatedTabs = nextTabs.map((tab) => tab.id === nextActiveId ? { ...tab, url: current, title: titleForUrl(current) } : tab)
+            activeTabIdRef.current = nextActiveId
+            saveTabsState(updatedTabs, nextActiveId)
+            return updatedTabs
+        })
+    }, [normalizeWorkspaceUrl, pathname, saveTabsState, searchParams, tabsHydrated, titleForUrl])
 
     useEffect(() => {
         function updateFromPopState() {
@@ -357,6 +498,38 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         if (window.matchMedia("(max-width: 767px)").matches) setSidebarOpen(false)
     }
 
+    function switchTab(tab: WorkspaceTab) {
+        activeTabIdRef.current = tab.id
+        setActiveTabId(tab.id)
+        saveTabsState(tabs, tab.id)
+        router.push(tab.url)
+    }
+
+    function addTab() {
+        const url = defaultWorkspaceUrl
+        const tab = { id: createTabId(), title: titleForUrl(url), url }
+        const nextTabs = [...tabs, tab].slice(-8)
+        activeTabIdRef.current = tab.id
+        setTabs(nextTabs)
+        setActiveTabId(tab.id)
+        saveTabsState(nextTabs, tab.id)
+        router.push(url)
+    }
+
+    function closeTab(tabId: string) {
+        if (tabs.length <= 1) return
+        const tabIndex = tabs.findIndex((tab) => tab.id === tabId)
+        const nextTabs = tabs.filter((tab) => tab.id !== tabId)
+        const nextActiveTab = tabId === activeTabId
+            ? nextTabs[Math.max(0, tabIndex - 1)] ?? nextTabs[0]
+            : nextTabs.find((tab) => tab.id === activeTabId) ?? nextTabs[0]
+        activeTabIdRef.current = nextActiveTab.id
+        setTabs(nextTabs)
+        setActiveTabId(nextActiveTab.id)
+        saveTabsState(nextTabs, nextActiveTab.id)
+        if (tabId === activeTabId) router.push(nextActiveTab.url)
+    }
+
     const navButtonClass = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400"
     const sidebarItems = [
         { label: "Home", href: `/${workspace.slug}`, icon: <HomeIcon /> },
@@ -367,6 +540,8 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         { label: "System Health", href: `/${workspace.slug}/health`, icon: <HealthIcon /> },
         { label: "Settings", href: `/${workspace.slug}/settings`, icon: <SettingsIcon /> },
     ]
+
+    const visibleTabs = tabsHydrated && tabs.length ? tabs : [{ id: "initial", title: titleForUrl(defaultWorkspaceUrl), url: defaultWorkspaceUrl }]
 
     return <>
         <header data-workspace-topbar className="fixed left-0 top-0 z-50 h-14 w-full border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/20 backdrop-blur">
@@ -452,6 +627,29 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
             </div>
         </header>
 
+        <div data-workspace-tabbar className={`fixed top-14 z-40 h-11 border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/10 backdrop-blur ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
+            <div className="flex h-full min-w-0 items-end gap-1 overflow-x-auto px-2 pt-1">
+                {visibleTabs.map((tab) => {
+                    const active = tab.id === activeTabId || (!tabsHydrated && tab.id === "initial")
+                    return (
+                        <div key={tab.id} className={`group flex h-9 min-w-32 max-w-56 shrink-0 items-center rounded-t-lg border px-2 text-sm ${active ? "border-neutral-700 border-b-neutral-950 bg-neutral-950 text-white" : "border-transparent bg-neutral-900/55 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"}`}>
+                            <button type="button" onClick={() => switchTab(tab)} className="min-w-0 flex-1 truncate text-left">
+                                {tab.title}
+                            </button>
+                            {visibleTabs.length > 1 && (
+                                <button data-icon-button type="button" onClick={() => closeTab(tab.id)} aria-label={`Close ${tab.title} tab`} className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-500 opacity-80 transition hover:bg-neutral-800 hover:text-white group-hover:opacity-100">
+                                    <span aria-hidden="true" className="text-base leading-none">×</span>
+                                </button>
+                            )}
+                        </div>
+                    )
+                })}
+                <button data-icon-button type="button" onClick={addTab} aria-label="Open new tab" className="mb-1 ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white">
+                    <span aria-hidden="true" className="text-xl leading-none">+</span>
+                </button>
+            </div>
+        </div>
+
         <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950 ${sidebarTransitionEnabled ? "transition-transform duration-200 ease-out" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex h-full flex-col gap-2 px-4 py-5 md:gap-1 md:px-3 md:py-4">
                 {sidebarItems.map((item) => {
@@ -466,6 +664,6 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                 })}
             </nav>
         </aside>
-        <div className="h-14" />
+        <div className="h-[6.25rem]" />
     </>
 }

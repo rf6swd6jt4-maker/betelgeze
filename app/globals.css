@@ -27,6 +27,17 @@ body {
 }
 
 @media (min-width: 768px) {
+  body[data-workspace-sidebar-open="true"] [data-workspace-tabbar] {
+    left: var(--workspace-sidebar-width);
+    width: calc(100% - var(--workspace-sidebar-width));
+  }
+
+  body[data-workspace-sidebar-open="false"] [data-workspace-tabbar],
+  body:not([data-workspace-sidebar-open]) [data-workspace-tabbar] {
+    left: 0;
+    width: 100%;
+  }
+
   body[data-workspace-sidebar-open="true"] main {
     margin-left: var(--workspace-sidebar-width);
     width: calc(100% - var(--workspace-sidebar-width));
@@ -40,6 +51,13 @@ body {
 
   body[data-workspace-sidebar-transition="true"] main {
     transition: margin-left 200ms ease, width 200ms ease;
+  }
+}
+
+@media (max-width: 767px) {
+  [data-workspace-tabbar] {
+    left: 0;
+    width: 100%;
   }
 }
 

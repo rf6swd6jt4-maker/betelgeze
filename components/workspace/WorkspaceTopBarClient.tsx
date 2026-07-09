@@ -10,10 +10,12 @@ import { WorkspaceTabBridge } from "@/components/workspace/WorkspaceTabBridge"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
 import { LEADGEN_POLLING_SYSTEM_VERSION_LABEL } from "@/lib/leadgen/version"
 import {
+    appendWorkspaceTabHistory,
     normalizeWorkspaceUrl as normalizeWorkspaceRoute,
     WORKSPACE_TAB_FRAME_NAME_PREFIX,
     WORKSPACE_TAB_FRAME_PARAM,
     WORKSPACE_TAB_MESSAGE_SOURCE,
+    workspaceTabHistoryStep,
     workspaceTabFrameUrl,
     type WorkspaceTabFrameMessage,
     type WorkspaceTabParentMessage,
@@ -309,8 +311,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                         if (tab.history[tab.historyIndex] === url) return { ...tab, url, title: titleForUrl(url) }
                         if (tab.history[tab.historyIndex - 1] === url) return { ...tab, url, title: titleForUrl(url), historyIndex: tab.historyIndex - 1 }
                         if (tab.history[tab.historyIndex + 1] === url) return { ...tab, url, title: titleForUrl(url), historyIndex: tab.historyIndex + 1 }
-                        const history = [...tab.history.slice(0, tab.historyIndex + 1), url].slice(-50)
-                        return { ...tab, url, title: titleForUrl(url), history, historyIndex: history.length - 1 }
+                        const nextHistory = appendWorkspaceTabHistory(tab.history, tab.historyIndex, url)
+                        return { ...tab, url, title: titleForUrl(url), ...nextHistory }
                     })
                     saveTabsState(updatedTabs, activeTabIdRef.current)
                     return updatedTabs
@@ -477,14 +479,27 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         return true
     }
 
+    function traverseHistory(step: -1 | 1) {
+        const tabId = activeTabIdRef.current
+        const tab = tabs.find((candidate) => candidate.id === tabId)
+        if (!tab) return
+        const destination = workspaceTabHistoryStep(tab.history, tab.historyIndex, step)
+        if (!destination) return
+
+        const nextTabs = tabs.map((candidate) => candidate.id === tabId
+            ? { ...candidate, url: destination.url, title: titleForUrl(destination.url), historyIndex: destination.historyIndex }
+            : candidate)
+        setTabs(nextTabs)
+        saveTabsState(nextTabs, tabId)
+        postToTab(tabId, { type: "traverse", url: destination.url })
+    }
+
     function goBack() {
-        if (!canGoBack) return
-        postToTab(activeTabIdRef.current, { type: "back" })
+        traverseHistory(-1)
     }
 
     function goForward() {
-        if (!canGoForward) return
-        postToTab(activeTabIdRef.current, { type: "forward" })
+        traverseHistory(1)
     }
 
     function openSearch() {
@@ -635,8 +650,9 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
     const visibleTabs = tabsHydrated && tabs.length ? tabs : [{ id: "initial", title: titleForUrl(defaultWorkspaceUrl), url: defaultWorkspaceUrl, history: [defaultWorkspaceUrl], historyIndex: 0, seenRevision: 0 }]
     const activeTab = visibleTabs.find((tab) => tab.id === activeTabId) ?? visibleTabs[0]
-    const canGoBack = activeTab.historyIndex > 0
-    const canGoForward = activeTab.historyIndex < activeTab.history.length - 1
+    const activeTabLoaded = loadedTabIds.has(activeTab.id)
+    const canGoBack = activeTabLoaded && activeTab.historyIndex > 0
+    const canGoForward = activeTabLoaded && activeTab.historyIndex < activeTab.history.length - 1
     const activePathname = new URL(activeTab.url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname
 
     return <div ref={shellRootRef} data-workspace-shell-root>

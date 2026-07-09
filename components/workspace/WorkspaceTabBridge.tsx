@@ -61,10 +61,9 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
 
             if (message.type === "navigate" && message.url) {
                 router.push(workspaceTabFrameUrl(message.url, tabId, window.location.origin))
-            } else if (message.type === "back") {
-                router.back()
-            } else if (message.type === "forward") {
-                router.forward()
+            } else if (message.type === "traverse" && message.url) {
+                window.dispatchEvent(new Event("betelgeze:clear-loading"))
+                router.replace(workspaceTabFrameUrl(message.url, tabId, window.location.origin), { scroll: false })
             } else if (message.type === "activate") {
                 document.body.dataset.workspaceTabActive = message.active ? "true" : "false"
                 window.dispatchEvent(new Event(WORKSPACE_TAB_VISIBILITY_EVENT))

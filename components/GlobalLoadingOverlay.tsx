@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { LoadingOverlay } from "@/components/LoadingOverlay"
+import { WORKSPACE_TAB_FRAME_PARAM } from "@/lib/workspace-tabs"
 
 function shouldIgnoreClick(event: MouseEvent) {
+    if (new URLSearchParams(window.location.search).has(WORKSPACE_TAB_FRAME_PARAM)) return true
     if (
         event.defaultPrevented ||
         event.button !== 0 ||
@@ -67,11 +69,13 @@ export function GlobalLoadingOverlay() {
         }
         document.addEventListener("submit", handleSubmit, true)
         window.addEventListener("pageshow", handlePageShow)
+        window.addEventListener("betelgeze:clear-loading", handlePageShow)
 
         return () => {
             document.removeEventListener("click", handleClick, true)
             document.removeEventListener("submit", handleSubmit, true)
             window.removeEventListener("pageshow", handlePageShow)
+            window.removeEventListener("betelgeze:clear-loading", handlePageShow)
         }
     }, [currentRouteKey])
 

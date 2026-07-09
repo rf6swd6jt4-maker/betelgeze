@@ -20,6 +20,7 @@ type WorkspaceTab = {
     id: string
     title: string
     url: string
+    scrollY?: number
 }
 
 type WorkspaceTabsState = {
@@ -143,6 +144,8 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
     const sidebarTransitionTimeout = useRef<number | null>(null)
     const activeTabIdRef = useRef("")
     const tabsBootstrappedRef = useRef(false)
+    const pendingTabScrollRef = useRef<{ tabId: string; url: string; scrollY: number } | null>(null)
+    const tabButtonRefs = useRef(new Map<string, HTMLButtonElement>())
     const [sidebarOpen, setSidebarOpen] = useState(false)
     const [sidebarHydrated, setSidebarHydrated] = useState(false)
     const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false)
@@ -223,7 +226,8 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
                     tab &&
                     typeof tab.id === "string" &&
                     typeof tab.url === "string" &&
-                    typeof tab.title === "string"
+                    typeof tab.title === "string" &&
+                    (tab.scrollY === undefined || (typeof tab.scrollY === "number" && Number.isFinite(tab.scrollY)))
                 ))
                 : []
             const tabsToUse = storedTabs.length ? storedTabs : [{ id: createTabId(), url: currentUrl, title: titleForUrl(currentUrl) }]
@@ -297,6 +301,36 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
             return updatedTabs
         })
     }, [normalizeWorkspaceUrl, pathname, saveTabsState, searchParams, tabsHydrated, titleForUrl])
+
+    useEffect(() => {
+        if (!tabsHydrated || tabs.length < 2) return
+        const inactiveUrls = [...new Set(tabs.filter((tab) => tab.id !== activeTabId).map((tab) => tab.url))]
+        const prefetch = () => inactiveUrls.forEach((url) => router.prefetch(url))
+        const idleWindow = window as unknown as {
+            requestIdleCallback?: Window["requestIdleCallback"]
+            cancelIdleCallback?: Window["cancelIdleCallback"]
+        }
+
+        if (idleWindow.requestIdleCallback && idleWindow.cancelIdleCallback) {
+            const idleId = idleWindow.requestIdleCallback(prefetch, { timeout: 1200 })
+            return () => idleWindow.cancelIdleCallback?.(idleId)
+        }
+
+        const timeoutId = window.setTimeout(prefetch, 250)
+        return () => window.clearTimeout(timeoutId)
+    }, [activeTabId, router, tabs, tabsHydrated])
+
+    useEffect(() => {
+        const pending = pendingTabScrollRef.current
+        if (!pending || pending.tabId !== activeTabIdRef.current) return
+        const query = searchParams.toString()
+        const current = normalizeWorkspaceUrl(`${pathname}${query ? `?${query}` : ""}`)
+        if (current !== pending.url) return
+
+        pendingTabScrollRef.current = null
+        const frame = window.requestAnimationFrame(() => window.scrollTo({ top: pending.scrollY, behavior: "instant" }))
+        return () => window.cancelAnimationFrame(frame)
+    }, [normalizeWorkspaceUrl, pathname, searchParams])
 
     useEffect(() => {
         function updateFromPopState() {
@@ -498,11 +532,43 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         if (window.matchMedia("(max-width: 767px)").matches) setSidebarOpen(false)
     }
 
+    function prefetchTab(tab: WorkspaceTab) {
+        router.prefetch(tab.url)
+    }
+
     function switchTab(tab: WorkspaceTab) {
+        if (tab.id === activeTabIdRef.current) return
+        const query = searchParams.toString()
+        const currentUrl = normalizeWorkspaceUrl(`${pathname}${query ? `?${query}` : ""}`)
+        const nextTabs = tabs.map((existingTab) => existingTab.id === activeTabIdRef.current
+            ? { ...existingTab, url: currentUrl, title: titleForUrl(currentUrl), scrollY: window.scrollY }
+            : existingTab)
         activeTabIdRef.current = tab.id
+        pendingTabScrollRef.current = { tabId: tab.id, url: tab.url, scrollY: tab.scrollY ?? 0 }
+        setTabs(nextTabs)
         setActiveTabId(tab.id)
-        saveTabsState(tabs, tab.id)
-        router.push(tab.url)
+        saveTabsState(nextTabs, tab.id)
+
+        if (tab.url === currentUrl) {
+            pendingTabScrollRef.current = null
+            window.scrollTo({ top: tab.scrollY ?? 0, behavior: "instant" })
+            return
+        }
+
+        router.push(tab.url, { scroll: false })
+    }
+
+    function switchTabFromKeyboard(event: ReactKeyboardEvent<HTMLButtonElement>, tabIndex: number) {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") return
+        event.preventDefault()
+        const nextIndex = event.key === "Home"
+            ? 0
+            : event.key === "End"
+                ? visibleTabs.length - 1
+                : (tabIndex + (event.key === "ArrowRight" ? 1 : -1) + visibleTabs.length) % visibleTabs.length
+        const nextTab = visibleTabs[nextIndex]
+        tabButtonRefs.current.get(nextTab.id)?.focus()
+        switchTab(nextTab)
     }
 
     function addTab() {
@@ -513,7 +579,11 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         setTabs(nextTabs)
         setActiveTabId(tab.id)
         saveTabsState(nextTabs, tab.id)
-        router.push(url)
+        if (normalizeWorkspaceUrl(`${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`) !== url) {
+            router.push(url)
+        } else {
+            window.scrollTo({ top: 0, behavior: "instant" })
+        }
     }
 
     function closeTab(tabId: string) {
@@ -527,7 +597,16 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         setTabs(nextTabs)
         setActiveTabId(nextActiveTab.id)
         saveTabsState(nextTabs, nextActiveTab.id)
-        if (tabId === activeTabId) router.push(nextActiveTab.url)
+        if (tabId === activeTabId) {
+            const query = searchParams.toString()
+            const currentUrl = normalizeWorkspaceUrl(`${pathname}${query ? `?${query}` : ""}`)
+            if (nextActiveTab.url === currentUrl) {
+                window.scrollTo({ top: nextActiveTab.scrollY ?? 0, behavior: "instant" })
+            } else {
+                pendingTabScrollRef.current = { tabId: nextActiveTab.id, url: nextActiveTab.url, scrollY: nextActiveTab.scrollY ?? 0 }
+                router.push(nextActiveTab.url, { scroll: false })
+            }
+        }
     }
 
     const navButtonClass = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400"
@@ -628,12 +707,23 @@ export function WorkspaceTopBarClient({ workspace, workspaceLogoSrc, username, e
         </header>
 
         <div data-workspace-tabbar className={`fixed top-14 z-40 h-11 border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/10 backdrop-blur ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
-            <div className="flex h-full min-w-0 items-end gap-1 overflow-x-auto px-2 pt-1">
+            <div role="tablist" aria-label="Workspace tabs" className="flex h-full min-w-0 items-end gap-1 overflow-x-auto px-2 pt-1">
                 {visibleTabs.map((tab) => {
                     const active = tab.id === activeTabId || (!tabsHydrated && tab.id === "initial")
                     return (
                         <div key={tab.id} className={`group flex h-9 min-w-32 max-w-56 shrink-0 items-center rounded-t-lg border px-2 text-sm ${active ? "border-neutral-700 border-b-neutral-950 bg-neutral-950 text-white" : "border-transparent bg-neutral-900/55 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"}`}>
-                            <button type="button" onClick={() => switchTab(tab)} className="min-w-0 flex-1 truncate text-left">
+                            <button
+                                ref={(node) => { if (node) tabButtonRefs.current.set(tab.id, node); else tabButtonRefs.current.delete(tab.id) }}
+                                role="tab"
+                                aria-selected={active}
+                                tabIndex={active ? 0 : -1}
+                                type="button"
+                                onPointerEnter={() => prefetchTab(tab)}
+                                onFocus={() => prefetchTab(tab)}
+                                onKeyDown={(event) => switchTabFromKeyboard(event, visibleTabs.indexOf(tab))}
+                                onClick={() => switchTab(tab)}
+                                className="min-w-0 flex-1 truncate text-left"
+                            >
                                 {tab.title}
                             </button>
                             {visibleTabs.length > 1 && (

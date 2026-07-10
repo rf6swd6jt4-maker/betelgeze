@@ -21,6 +21,28 @@ export type WorkspaceTabFrameMessage = {
     url?: string
     relationshipId?: string | null
     contextSupported?: boolean
+    context?: WorkspaceTabRelationshipContext | null
+}
+
+export type WorkspaceTabContextMetric = {
+    label: string
+    value: string | number
+}
+
+export type WorkspaceTabRelationshipContext = {
+    id: string
+    primary_person_name: string
+    primary_email: string | null
+    primary_phone: string | null
+    business_name: string | null
+    website_url: string | null
+    industry_value: string | null
+    location_value: string | null
+    source_label: string | null
+    primary_contact_role: string | null
+    notes_summary: string | null
+    lifecycle_phase: string
+    metrics: WorkspaceTabContextMetric[]
 }
 
 export function normalizeWorkspaceUrl(value: string, workspaceSlug: string, origin: string) {

@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
-import { createPortal } from "react-dom"
 import { useSearchParams } from "next/navigation"
 import {
     WORKSPACE_TAB_FRAME_PARAM,
@@ -10,8 +9,8 @@ import {
     workspaceTabContextStorageKey,
     type WorkspaceTabFrameMessage,
     type WorkspaceTabParentMessage,
+    type WorkspaceTabRelationshipContext,
 } from "@/lib/workspace-tabs"
-import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 
 type RelationshipPhase =
     | "lead"
@@ -66,11 +65,12 @@ export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }
     const searchParams = useSearchParams()
     const tabId = searchParams.get(WORKSPACE_TAB_FRAME_PARAM) ?? "standalone"
     const storageKey = useMemo(() => workspaceTabContextStorageKey(workspaceSlug, tabId), [tabId, workspaceSlug])
-    const tabActive = useWorkspaceTabActive()
     const [open, setOpen] = useState(() => typeof window === "undefined" ? true : sessionStorage.getItem(storageKey) !== "false")
-    const [parentPortalElement, setParentPortalElement] = useState<HTMLElement | null>(null)
-    const hasRelationship = Boolean(relationship)
     const relationshipId = relationship?.id ?? null
+    const contextPayload = useMemo<WorkspaceTabRelationshipContext | null>(() => relationship ? {
+        ...relationship,
+        metrics,
+    } : null, [metrics, relationship])
 
     useEffect(() => {
         sessionStorage.setItem(storageKey, open ? "true" : "false")
@@ -89,7 +89,7 @@ export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }
     }, [tabId])
 
     useEffect(() => {
-        if (!relationshipId || tabId === "standalone" || typeof window === "undefined" || window.parent === window) return
+        if (!relationshipId || !contextPayload || tabId === "standalone" || typeof window === "undefined" || window.parent === window) return
 
         const postContextStatus = (contextSupported: boolean) => {
             const message: WorkspaceTabFrameMessage = {
@@ -99,47 +99,19 @@ export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }
                 type: "context-status",
                 contextSupported,
                 relationshipId,
+                context: contextSupported ? contextPayload : null,
             }
             window.parent.postMessage(message, window.location.origin)
         }
 
         postContextStatus(true)
         return () => postContextStatus(false)
-    }, [relationshipId, tabId])
-
-    useEffect(() => {
-        let animationFrame = 0
-        const schedulePortalElement = (element: HTMLElement | null) => {
-            animationFrame = window.requestAnimationFrame(() => setParentPortalElement(element))
-        }
-
-        if (!hasRelationship || !tabActive || tabId === "standalone" || typeof window === "undefined" || window.parent === window) {
-            schedulePortalElement(null)
-            return () => window.cancelAnimationFrame(animationFrame)
-        }
-
-        try {
-            const parentDocument = window.parent.document
-            const element = parentDocument.createElement("div")
-            element.dataset.workspaceContextPanelPortal = tabId
-            parentDocument.body.appendChild(element)
-            schedulePortalElement(element)
-            return () => {
-                window.cancelAnimationFrame(animationFrame)
-                element.remove()
-            }
-        } catch {
-            schedulePortalElement(null)
-        }
-
-        return () => window.cancelAnimationFrame(animationFrame)
-    }, [hasRelationship, tabActive, tabId])
+    }, [contextPayload, relationshipId, tabId])
 
     if (!relationship) return null
 
-    const inShellPortal = tabActive && Boolean(parentPortalElement)
     const panel = (
-        <div className={`fixed right-4 z-[35] hidden w-80 flex-col overflow-hidden overscroll-none rounded-xl border border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20 transition-opacity duration-200 ease-out sm:right-6 lg:flex ${inShellPortal ? "top-[7.75rem] h-[calc(100dvh-9.25rem)]" : "top-6 h-[calc(100dvh-3rem)]"} ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+        <div className={`fixed right-4 top-6 z-30 flex h-[calc(100dvh-3rem)] w-80 flex-col overflow-hidden overscroll-none rounded-xl border border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20 transition-opacity duration-200 ease-out sm:right-6 ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}>
             <div className="shrink-0 px-4 py-3">
                 <div className="min-w-0">
                     <p className="text-xs uppercase tracking-wide text-neutral-500">Relationship Context</p>
@@ -241,7 +213,7 @@ export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }
 
     return (
         <aside className={`hidden shrink-0 transition-[width,opacity] duration-200 ease-out lg:block ${open ? "w-80 opacity-100" : "w-0 opacity-0 pointer-events-none"}`} aria-hidden={!open}>
-            {tabActive ? parentPortalElement ? createPortal(panel, parentPortalElement) : panel : null}
+            {tabId === "standalone" ? panel : null}
         </aside>
     )
 }

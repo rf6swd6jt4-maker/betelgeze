@@ -21,6 +21,7 @@ import {
     workspaceTabFrameUrl,
     type WorkspaceTabFrameMessage,
     type WorkspaceTabParentMessage,
+    type WorkspaceTabRelationshipContext,
 } from "@/lib/workspace-tabs"
 
 const sidebarStorageKey = "betelgeze:workspace-sidebar-open"
@@ -43,6 +44,7 @@ type WorkspaceTabsState = {
 type WorkspaceTabContextStatus = {
     supported: boolean
     relationshipId: string | null
+    context: WorkspaceTabRelationshipContext | null
 }
 
 type Props = {
@@ -90,6 +92,125 @@ function SidebarIcon() {
 
 function ContextPanelIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M15 5v14" /></svg>
+}
+
+function contextPanelPhaseLabel(phase: string) {
+    return phase.replace(/_/g, " ")
+}
+
+function contextPanelDisplayValue(value: string | null | undefined, fallback = "Not saved") {
+    return value?.trim() || fallback
+}
+
+function ShellRelationshipContextPanel({ context, workspaceSlug, onNavigate }: {
+    context: WorkspaceTabRelationshipContext
+    workspaceSlug: string
+    onNavigate: (href: string) => void
+}) {
+    const relationshipHref = `/${workspaceSlug}/relationships/${context.id}`
+    const onboardingHref = `/${workspaceSlug}/onboarding/${context.id}`
+    const workHref = `/${workspaceSlug}/work/${context.id}`
+
+    return (
+        <aside className="fixed right-4 top-[7.75rem] z-[35] hidden h-[calc(100dvh-9.25rem)] w-80 flex-col overflow-hidden overscroll-none rounded-xl border border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20 sm:right-6 lg:flex">
+            <div className="shrink-0 px-4 py-3">
+                <div className="min-w-0">
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Relationship Context</p>
+                    <h2 className="truncate text-sm font-semibold">{context.primary_person_name}</h2>
+                </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-none border-t border-neutral-900 px-4 py-4">
+                <section>
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Relationship</p>
+                    <dl className="mt-3 space-y-3 text-sm">
+                        <div>
+                            <dt className="text-neutral-500">Company</dt>
+                            <dd className="mt-1 text-neutral-100">{contextPanelDisplayValue(context.business_name)}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Lifecycle</dt>
+                            <dd className="mt-1 capitalize text-neutral-100">{contextPanelPhaseLabel(context.lifecycle_phase)}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Role</dt>
+                            <dd className="mt-1 text-neutral-100">{contextPanelDisplayValue(context.primary_contact_role)}</dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <section className="mt-5 border-t border-neutral-900 pt-4">
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Contact</p>
+                    <dl className="mt-3 space-y-3 text-sm">
+                        <div>
+                            <dt className="text-neutral-500">Phone</dt>
+                            <dd className="mt-1 text-neutral-100">{contextPanelDisplayValue(context.primary_phone)}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Email</dt>
+                            <dd className="mt-1 truncate text-neutral-100">{contextPanelDisplayValue(context.primary_email)}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Website</dt>
+                            <dd className="mt-1 truncate text-neutral-100">{contextPanelDisplayValue(context.website_url)}</dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <section className="mt-5 border-t border-neutral-900 pt-4">
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Context</p>
+                    <dl className="mt-3 space-y-3 text-sm">
+                        <div>
+                            <dt className="text-neutral-500">Industry</dt>
+                            <dd className="mt-1 capitalize text-neutral-100">{contextPanelDisplayValue(context.industry_value?.replace(/_/g, " "))}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Location</dt>
+                            <dd className="mt-1 capitalize text-neutral-100">{contextPanelDisplayValue(context.location_value?.replace(/_/g, " "))}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Source</dt>
+                            <dd className="mt-1 text-neutral-100">{contextPanelDisplayValue(context.source_label)}</dd>
+                        </div>
+                    </dl>
+                    {context.notes_summary && (
+                        <p className="mt-4 rounded-lg border border-neutral-800 bg-black px-3 py-2 text-sm leading-6 text-neutral-300">
+                            {context.notes_summary}
+                        </p>
+                    )}
+                </section>
+
+                {context.metrics.length > 0 && (
+                    <section className="mt-5 border-t border-neutral-900 pt-4">
+                        <p className="text-xs uppercase tracking-wide text-neutral-500">Current view</p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                            {context.metrics.map((metric) => (
+                                <div key={metric.label} className="rounded-lg border border-neutral-800 bg-black px-3 py-2">
+                                    <p className="text-xs text-neutral-500">{metric.label}</p>
+                                    <p className="mt-1 text-sm font-medium text-neutral-100">{metric.value}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                <section className="mt-5 border-t border-neutral-900 pt-4">
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Open</p>
+                    <div className="mt-3 grid gap-2 text-sm">
+                        <button type="button" onClick={() => onNavigate(relationshipHref)} className="rounded-lg border border-neutral-800 px-3 py-2 text-left text-neutral-300 hover:border-neutral-600 hover:text-white">
+                            Relationship summary
+                        </button>
+                        <button type="button" onClick={() => onNavigate(onboardingHref)} className="rounded-lg border border-neutral-800 px-3 py-2 text-left text-neutral-300 hover:border-neutral-600 hover:text-white">
+                            Onboarding
+                        </button>
+                        <button type="button" onClick={() => onNavigate(workHref)} className="rounded-lg border border-neutral-800 px-3 py-2 text-left text-neutral-300 hover:border-neutral-600 hover:text-white">
+                            Project work
+                        </button>
+                    </div>
+                </section>
+            </div>
+        </aside>
+    )
 }
 
 function SearchIcon() {
@@ -352,7 +473,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         contextStatusByTabRef.current = { ...contextStatusByTabRef.current, [tabId]: status }
         setContextStatusByTab((current) => {
             const existing = current[tabId]
-            if (existing?.supported === status.supported && existing.relationshipId === status.relationshipId) return current
+            if (existing?.supported === status.supported && existing.relationshipId === status.relationshipId && existing.context === status.context) return current
             return { ...current, [tabId]: status }
         })
     }, [])
@@ -398,12 +519,12 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                 if (!supported) {
                     const currentStatus = contextStatusByTabRef.current[message.tabId]
                     if (currentStatus?.supported && relationshipId && currentStatus.relationshipId !== relationshipId) return
-                    setTabContextStatus(message.tabId, { supported: false, relationshipId: null })
+                    setTabContextStatus(message.tabId, { supported: false, relationshipId: null, context: null })
                     setTabContextOpen(message.tabId, false)
                     return
                 }
 
-                setTabContextStatus(message.tabId, { supported: true, relationshipId })
+                setTabContextStatus(message.tabId, { supported: true, relationshipId, context: message.context ?? null })
                 if (!contextManualClosedByTabRef.current[message.tabId]) {
                     delete contextManualClosedByTabRef.current[message.tabId]
                     setTabContextOpen(message.tabId, true)
@@ -866,6 +987,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const activeContextStatus = contextStatusByTab[activeTab.id]
     const activeContextSupported = activeContextStatus?.supported === true
     const activeContextOpen = activeContextSupported && (contextOpenByTab[activeTab.id] ?? true)
+    const activeRelationshipContext = activeContextOpen ? activeContextStatus?.context ?? null : null
     const activePathname = new URL(activeTab.url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname
 
     return <div ref={shellRootRef} data-workspace-shell-root>
@@ -1102,6 +1224,14 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950 text-sm text-neutral-500">Loading tab...</div>
             )}
         </div>
+
+        {activeRelationshipContext && (
+            <ShellRelationshipContextPanel
+                context={activeRelationshipContext}
+                workspaceSlug={workspace.slug}
+                onNavigate={navigateActiveTab}
+            />
+        )}
 
         <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950 ${sidebarTransitionEnabled ? "transition-transform duration-200 ease-out" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex h-full flex-col gap-2 px-4 py-5 md:gap-1 md:px-3 md:py-4">

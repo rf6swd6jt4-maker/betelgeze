@@ -512,8 +512,11 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         const updateCanAddTab = () => {
             const strip = tabStripRef.current
             if (!strip) return
-            const minimumNewTabSpace = 132
-            setCanAddTab(strip.scrollWidth + minimumNewTabSpace <= strip.clientWidth)
+            const gap = Number.parseFloat(window.getComputedStyle(strip).columnGap || "0") || 0
+            const children = Array.from(strip.children).filter((child): child is HTMLElement => child instanceof HTMLElement)
+            const currentContentWidth = children.reduce((sum, child) => sum + child.offsetWidth, 0) + Math.max(0, children.length - 1) * gap
+            const minimumNewTabSpace = 128 + gap
+            setCanAddTab(currentContentWidth + minimumNewTabSpace <= strip.clientWidth)
         }
 
         updateCanAddTab()

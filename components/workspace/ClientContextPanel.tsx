@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
+import { createPortal } from "react-dom"
 import { useSearchParams } from "next/navigation"
 import {
     WORKSPACE_TAB_FRAME_PARAM,
@@ -9,6 +10,7 @@ import {
     workspaceTabContextStorageKey,
     type WorkspaceTabParentMessage,
 } from "@/lib/workspace-tabs"
+import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 
 type RelationshipPhase =
     | "lead"
@@ -63,7 +65,10 @@ export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }
     const searchParams = useSearchParams()
     const tabId = searchParams.get(WORKSPACE_TAB_FRAME_PARAM) ?? "standalone"
     const storageKey = useMemo(() => workspaceTabContextStorageKey(workspaceSlug, tabId), [tabId, workspaceSlug])
+    const tabActive = useWorkspaceTabActive()
     const [open, setOpen] = useState(() => typeof window === "undefined" ? true : sessionStorage.getItem(storageKey) !== "false")
+    const [parentPortalElement, setParentPortalElement] = useState<HTMLElement | null>(null)
+    const hasRelationship = Boolean(relationship)
 
     useEffect(() => {
         sessionStorage.setItem(storageKey, open ? "true" : "false")
@@ -81,108 +86,141 @@ export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }
         return () => window.removeEventListener("message", receiveHostMessage)
     }, [tabId])
 
+    useEffect(() => {
+        let animationFrame = 0
+        const schedulePortalElement = (element: HTMLElement | null) => {
+            animationFrame = window.requestAnimationFrame(() => setParentPortalElement(element))
+        }
+
+        if (!hasRelationship || !tabActive || tabId === "standalone" || typeof window === "undefined" || window.parent === window) {
+            schedulePortalElement(null)
+            return () => window.cancelAnimationFrame(animationFrame)
+        }
+
+        try {
+            const parentDocument = window.parent.document
+            const element = parentDocument.createElement("div")
+            element.dataset.workspaceContextPanelPortal = tabId
+            parentDocument.body.appendChild(element)
+            schedulePortalElement(element)
+            return () => {
+                window.cancelAnimationFrame(animationFrame)
+                element.remove()
+            }
+        } catch {
+            schedulePortalElement(null)
+        }
+
+        return () => window.cancelAnimationFrame(animationFrame)
+    }, [hasRelationship, tabActive, tabId])
+
     if (!relationship) return null
+
+    const inShellPortal = tabActive && Boolean(parentPortalElement)
+    const panel = (
+        <div className={`fixed right-4 z-[35] hidden w-80 flex-col overflow-hidden overscroll-none rounded-xl border border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20 transition-opacity duration-200 ease-out sm:right-6 lg:flex ${inShellPortal ? "top-[7.75rem] h-[calc(100dvh-9.25rem)]" : "top-6 h-[calc(100dvh-3rem)]"} ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+            <div className="shrink-0 px-4 py-3">
+                <div className="min-w-0">
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Relationship Context</p>
+                    <h2 className="truncate text-sm font-semibold">{relationship.primary_person_name}</h2>
+                </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-none border-t border-neutral-900 px-4 py-4">
+                <section>
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Relationship</p>
+                    <dl className="mt-3 space-y-3 text-sm">
+                        <div>
+                            <dt className="text-neutral-500">Company</dt>
+                            <dd className="mt-1 text-neutral-100">{displayValue(relationship.business_name)}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Lifecycle</dt>
+                            <dd className="mt-1 capitalize text-neutral-100">{phaseLabel(relationship.lifecycle_phase)}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Role</dt>
+                            <dd className="mt-1 text-neutral-100">{displayValue(relationship.primary_contact_role)}</dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <section className="mt-5 border-t border-neutral-900 pt-4">
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Contact</p>
+                    <dl className="mt-3 space-y-3 text-sm">
+                        <div>
+                            <dt className="text-neutral-500">Phone</dt>
+                            <dd className="mt-1 text-neutral-100">{displayValue(relationship.primary_phone)}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Email</dt>
+                            <dd className="mt-1 truncate text-neutral-100">{displayValue(relationship.primary_email)}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Website</dt>
+                            <dd className="mt-1 truncate text-neutral-100">{displayValue(relationship.website_url)}</dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <section className="mt-5 border-t border-neutral-900 pt-4">
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Context</p>
+                    <dl className="mt-3 space-y-3 text-sm">
+                        <div>
+                            <dt className="text-neutral-500">Industry</dt>
+                            <dd className="mt-1 capitalize text-neutral-100">{displayValue(relationship.industry_value?.replace(/_/g, " "))}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Location</dt>
+                            <dd className="mt-1 capitalize text-neutral-100">{displayValue(relationship.location_value?.replace(/_/g, " "))}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-neutral-500">Source</dt>
+                            <dd className="mt-1 text-neutral-100">{displayValue(relationship.source_label)}</dd>
+                        </div>
+                    </dl>
+                    {relationship.notes_summary && (
+                        <p className="mt-4 rounded-lg border border-neutral-800 bg-black px-3 py-2 text-sm leading-6 text-neutral-300">
+                            {relationship.notes_summary}
+                        </p>
+                    )}
+                </section>
+
+                {metrics.length > 0 && (
+                    <section className="mt-5 border-t border-neutral-900 pt-4">
+                        <p className="text-xs uppercase tracking-wide text-neutral-500">Current view</p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                            {metrics.map((metric) => (
+                                <div key={metric.label} className="rounded-lg border border-neutral-800 bg-black px-3 py-2">
+                                    <p className="text-xs text-neutral-500">{metric.label}</p>
+                                    <p className="mt-1 text-sm font-medium text-neutral-100">{metric.value}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                <section className="mt-5 border-t border-neutral-900 pt-4">
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Open</p>
+                    <div className="mt-3 grid gap-2 text-sm">
+                        <Link href={workspaceHref(workspaceSlug, `relationships/${relationship.id}`)} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:border-neutral-600 hover:text-white">
+                            Relationship summary
+                        </Link>
+                        <Link href={workspaceHref(workspaceSlug, `onboarding/${relationship.id}`)} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:border-neutral-600 hover:text-white">
+                            Onboarding
+                        </Link>
+                        <Link href={workspaceHref(workspaceSlug, `work/${relationship.id}`)} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:border-neutral-600 hover:text-white">
+                            Project work
+                        </Link>
+                    </div>
+                </section>
+            </div>
+        </div>
+    )
 
     return (
         <aside className={`hidden shrink-0 transition-[width,opacity] duration-200 ease-out lg:block ${open ? "w-80 opacity-100" : "w-0 opacity-0 pointer-events-none"}`} aria-hidden={!open}>
-            <div className={`fixed right-4 top-6 z-30 flex h-[calc(100dvh-3rem)] w-80 flex-col overflow-hidden overscroll-none rounded-xl border border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20 transition-opacity duration-200 ease-out sm:right-6 ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}>
-                <div className="shrink-0 px-4 py-3">
-                    <div className="min-w-0">
-                        <p className="text-xs uppercase tracking-wide text-neutral-500">Relationship Context</p>
-                        <h2 className="truncate text-sm font-semibold">{relationship.primary_person_name}</h2>
-                    </div>
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto overscroll-none border-t border-neutral-900 px-4 py-4">
-                    <section>
-                        <p className="text-xs uppercase tracking-wide text-neutral-500">Relationship</p>
-                        <dl className="mt-3 space-y-3 text-sm">
-                            <div>
-                                <dt className="text-neutral-500">Company</dt>
-                                <dd className="mt-1 text-neutral-100">{displayValue(relationship.business_name)}</dd>
-                            </div>
-                            <div>
-                                <dt className="text-neutral-500">Lifecycle</dt>
-                                <dd className="mt-1 capitalize text-neutral-100">{phaseLabel(relationship.lifecycle_phase)}</dd>
-                            </div>
-                            <div>
-                                <dt className="text-neutral-500">Role</dt>
-                                <dd className="mt-1 text-neutral-100">{displayValue(relationship.primary_contact_role)}</dd>
-                            </div>
-                        </dl>
-                    </section>
-
-                    <section className="mt-5 border-t border-neutral-900 pt-4">
-                        <p className="text-xs uppercase tracking-wide text-neutral-500">Contact</p>
-                        <dl className="mt-3 space-y-3 text-sm">
-                            <div>
-                                <dt className="text-neutral-500">Phone</dt>
-                                <dd className="mt-1 text-neutral-100">{displayValue(relationship.primary_phone)}</dd>
-                            </div>
-                            <div>
-                                <dt className="text-neutral-500">Email</dt>
-                                <dd className="mt-1 truncate text-neutral-100">{displayValue(relationship.primary_email)}</dd>
-                            </div>
-                            <div>
-                                <dt className="text-neutral-500">Website</dt>
-                                <dd className="mt-1 truncate text-neutral-100">{displayValue(relationship.website_url)}</dd>
-                            </div>
-                        </dl>
-                    </section>
-
-                    <section className="mt-5 border-t border-neutral-900 pt-4">
-                        <p className="text-xs uppercase tracking-wide text-neutral-500">Context</p>
-                        <dl className="mt-3 space-y-3 text-sm">
-                            <div>
-                                <dt className="text-neutral-500">Industry</dt>
-                                <dd className="mt-1 capitalize text-neutral-100">{displayValue(relationship.industry_value?.replace(/_/g, " "))}</dd>
-                            </div>
-                            <div>
-                                <dt className="text-neutral-500">Location</dt>
-                                <dd className="mt-1 capitalize text-neutral-100">{displayValue(relationship.location_value?.replace(/_/g, " "))}</dd>
-                            </div>
-                            <div>
-                                <dt className="text-neutral-500">Source</dt>
-                                <dd className="mt-1 text-neutral-100">{displayValue(relationship.source_label)}</dd>
-                            </div>
-                        </dl>
-                        {relationship.notes_summary && (
-                            <p className="mt-4 rounded-lg border border-neutral-800 bg-black px-3 py-2 text-sm leading-6 text-neutral-300">
-                                {relationship.notes_summary}
-                            </p>
-                        )}
-                    </section>
-
-                    {metrics.length > 0 && (
-                        <section className="mt-5 border-t border-neutral-900 pt-4">
-                            <p className="text-xs uppercase tracking-wide text-neutral-500">Current view</p>
-                            <div className="mt-3 grid grid-cols-2 gap-2">
-                                {metrics.map((metric) => (
-                                    <div key={metric.label} className="rounded-lg border border-neutral-800 bg-black px-3 py-2">
-                                        <p className="text-xs text-neutral-500">{metric.label}</p>
-                                        <p className="mt-1 text-sm font-medium text-neutral-100">{metric.value}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    )}
-
-                    <section className="mt-5 border-t border-neutral-900 pt-4">
-                        <p className="text-xs uppercase tracking-wide text-neutral-500">Open</p>
-                        <div className="mt-3 grid gap-2 text-sm">
-                            <Link href={workspaceHref(workspaceSlug, `relationships/${relationship.id}`)} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:border-neutral-600 hover:text-white">
-                                Relationship summary
-                            </Link>
-                            <Link href={workspaceHref(workspaceSlug, `onboarding/${relationship.id}`)} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:border-neutral-600 hover:text-white">
-                                Onboarding
-                            </Link>
-                            <Link href={workspaceHref(workspaceSlug, `work/${relationship.id}`)} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:border-neutral-600 hover:text-white">
-                                Project work
-                            </Link>
-                        </div>
-                    </section>
-                </div>
-            </div>
+            {tabActive ? parentPortalElement ? createPortal(panel, parentPortalElement) : panel : null}
         </aside>
     )
 }

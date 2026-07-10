@@ -9,6 +9,7 @@ import {
     listWorkItemAssets,
     phaseLabel,
     assetHref,
+    onboardingDetailHref,
     relationshipHubHref,
 } from "@/lib/relationships"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
@@ -24,6 +25,16 @@ function statusLabel(status: string) {
     return status.replace(/_/g, " ")
 }
 
+function metadataValue(metadata: unknown, key: string) {
+    return metadata && typeof metadata === "object" && key in metadata
+        ? String((metadata as Record<string, unknown>)[key] ?? "")
+        : ""
+}
+
+function slugAnchor(value: string) {
+    return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "step"
+}
+
 export default async function WorkItemDetailPage({ params }: PageProps) {
     const { workspaceSlug, id } = await params
     const { workspace, user } = await requireWorkspace(workspaceSlug)
@@ -35,6 +46,11 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     ])
     const contextRelationshipId = relationships[0]?.relationship_id
     const contextRelationship = contextRelationshipId ? await getRelationship(workspace.id, contextRelationshipId) : null
+    const onboardingRelationshipId = metadataValue(item.metadata, "relationship_id") || contextRelationshipId
+    const onboardingStepKey = metadataValue(item.metadata, "step_key")
+    const onboardingBackHref = item.native_kind === "onboarding_step" && onboardingRelationshipId
+        ? `${onboardingDetailHref(workspace.slug, onboardingRelationshipId)}${onboardingStepKey ? `#step-${slugAnchor(onboardingStepKey)}` : ""}`
+        : null
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
@@ -47,6 +63,20 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                             <h1 className="mt-2 text-3xl font-semibold tracking-tight">{item.title}</h1>
                             {item.description && <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">{item.description}</p>}
                         </header>
+
+                        {onboardingBackHref ? (
+                            <section className="mt-6 rounded-xl border border-sky-500/20 bg-sky-950/10 p-4">
+                                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                                    <div>
+                                        <p className="text-sm font-medium text-sky-100">Onboarding step task</p>
+                                        <p className="mt-1 text-sm leading-6 text-sky-100/70">This task is one chapter in the client onboarding dossier.</p>
+                                    </div>
+                                    <Link href={onboardingBackHref} className="inline-flex min-h-10 items-center rounded-lg border border-sky-300/30 px-3 text-sm text-sky-100 hover:border-sky-200">
+                                        Back to onboarding
+                                    </Link>
+                                </div>
+                            </section>
+                        ) : null}
 
                 <section className="mt-6 grid gap-3 sm:grid-cols-5">
                     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">

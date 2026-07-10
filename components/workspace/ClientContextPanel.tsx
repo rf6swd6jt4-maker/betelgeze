@@ -84,7 +84,7 @@ export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }
     if (!relationship) return null
 
     return (
-        <aside className={`hidden shrink-0 overflow-hidden transition-[width,opacity] duration-200 ease-out xl:block ${open ? "w-80 opacity-100" : "w-0 opacity-0"}`} aria-hidden={!open}>
+        <aside className={`hidden shrink-0 overflow-hidden transition-[width,opacity] duration-200 ease-out lg:block ${open ? "w-80 opacity-100" : "w-0 opacity-0"}`} aria-hidden={!open}>
             <div className="sticky top-16 w-80 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20">
                 <div className="flex items-center justify-between gap-3 px-4 py-3">
                     <div className="min-w-0">

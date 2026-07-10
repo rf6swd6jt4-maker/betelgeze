@@ -56,6 +56,7 @@ export type RelationshipWorkItem = {
     is_key_task: boolean
     native_kind: string | null
     native_id: string | null
+    native_key?: string | null
     native_href: string | null
     planned_start_date: string | null
     due_date: string | null
@@ -88,6 +89,7 @@ export type RelationshipAsset = {
     file_size: number | null
     native_kind: string | null
     native_id: string | null
+    native_key?: string | null
     metadata: Record<string, unknown>
     created_by: string | null
     created_at: string
@@ -380,6 +382,7 @@ function mapWorkItem(row: Record<string, unknown>, relationshipId: string | null
         is_key_task: Boolean(row.is_key_task ?? true),
         native_kind: typeof row.native_kind === "string" ? row.native_kind : null,
         native_id: typeof row.native_id === "string" ? row.native_id : null,
+        native_key: typeof row.native_key === "string" ? row.native_key : null,
         native_href: typeof row.native_href === "string" ? row.native_href : null,
         planned_start_date: typeof row.planned_start_date === "string" ? row.planned_start_date : null,
         due_date: dueDate,
@@ -410,6 +413,7 @@ function mapAsset(row: Record<string, unknown>, relationshipId: string | null = 
         file_size: typeof row.file_size === "number" ? row.file_size : Number.isFinite(Number(row.file_size)) ? Number(row.file_size) : null,
         native_kind: typeof row.native_kind === "string" ? row.native_kind : null,
         native_id: typeof row.native_id === "string" ? row.native_id : null,
+        native_key: typeof row.native_key === "string" ? row.native_key : null,
         metadata: row.metadata && typeof row.metadata === "object" ? row.metadata as Record<string, unknown> : {},
         created_by: typeof row.created_by === "string" ? row.created_by : null,
         created_at: String(row.created_at),
@@ -952,5 +956,21 @@ export async function listAssetWorkItems(workspaceId: string, assetId: string): 
                 lifecycle_phase: normalizeRelationshipPhase(workItem.lifecycle_phase),
             } : null,
         }
+    })
+}
+
+export async function listWorkItemAssets(workspaceId: string, workItemId: string): Promise<RelationshipAsset[]> {
+    const result = await supabaseAdmin
+        .from("asset_work_items")
+        .select("assets!inner(id, workspace_id, title, description, asset_kind, source_kind, storage_path, external_url, content_type, file_size, native_kind, native_id, native_key, metadata, created_by, created_at, updated_at)")
+        .eq("workspace_id", workspaceId)
+        .eq("work_item_id", workItemId)
+        .order("created_at", { ascending: false })
+
+    if (isMissingPrimitiveSchema(result.error)) return []
+
+    return ((result.data ?? []) as Array<{ assets: Record<string, unknown> | Record<string, unknown>[] }>).flatMap((row) => {
+        const asset = Array.isArray(row.assets) ? row.assets[0] : row.assets
+        return asset ? [mapAsset(asset)] : []
     })
 }

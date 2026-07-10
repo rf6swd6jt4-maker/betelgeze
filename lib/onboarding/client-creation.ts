@@ -1,12 +1,11 @@
-import { randomBytes } from "crypto"
-import { supabaseAdmin } from "@/lib/supabase/admin"
-import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
+import { createRelationshipOnboardingSession } from "@/lib/onboarding/canonical"
 import { getOnboardingUrl as getPublicOnboardingUrl } from "@/lib/onboarding/custom-domain"
+import { supabaseAdmin } from "@/lib/supabase/admin"
 
 type CreateOnboardingClientInput = {
     workspaceId: string
     workspaceSlug: string
-    customOnboardingDomain?: string | null,
+    customOnboardingDomain?: string | null
     customOnboardingDomainVerified?: boolean
     name: string
     email?: string | null
@@ -29,33 +28,10 @@ export type CreateOnboardingClientResult = {
     onboardingUrl: string | null
 }
 
-async function addActivity(
-    clientId: string,
-    workspaceId: string,
-    activityType: string,
-    activityText: string
-) {
-    await supabaseAdmin.from("client_activity").insert({
-        client_id: clientId,
-        workspace_id: workspaceId,
-        activity_type: activityType,
-        activity_text: activityText,
-    })
-}
-
 export function getCreateClientErrorCode(error: { message?: string } | null) {
     const message = error?.message?.toLowerCase() ?? ""
-
-    if (
-        message.includes("project_timeframe_days") ||
-        message.includes("is_test") ||
-        message.includes("client_services")
-    ) {
-        return "schema-missing"
-    }
-
+    if (message.includes("relationship_onboarding_sessions")) return "schema-missing"
     if (message.includes("phone")) return "phone-schema-missing"
-
     return "create-failed"
 }
 
@@ -73,6 +49,40 @@ export function getOnboardingUrl(
     })
 }
 
+async function ensureRelationship({
+    workspaceId,
+    relationshipId,
+    name,
+    email,
+    phone,
+    createdBy,
+}: Pick<CreateOnboardingClientInput, "workspaceId" | "relationshipId" | "name" | "email" | "phone" | "createdBy">) {
+    if (relationshipId) return relationshipId
+
+    const { data: relationship, error } = await supabaseAdmin
+        .from("relationships")
+        .insert({
+            workspace_id: workspaceId,
+            source_type: "manual",
+            primary_person_name: name,
+            primary_email: email || null,
+            primary_phone: phone || null,
+            business_name: name,
+            lifecycle_phase: "onboarding",
+            status: "active",
+            source_label: "Onboarding",
+            source_metadata: {
+                created_from: "onboarding_session_creation",
+                created_by: createdBy ?? null,
+            },
+        })
+        .select("id")
+        .single()
+
+    if (error || !relationship) throw new Error("relationship-create-failed")
+    return relationship.id as string
+}
+
 export async function createOnboardingClient({
     workspaceId,
     workspaceSlug,
@@ -86,162 +96,39 @@ export async function createOnboardingClient({
     projectTimeframeDays,
     isTest = false,
     createOnboardingModules = true,
-    createOnboardingWork = true,
     activitySource,
     createdBy,
 }: CreateOnboardingClientInput): Promise<CreateOnboardingClientResult> {
-    const selectedServices = serviceKeys.filter(
-        (serviceKey) => serviceKey in SERVICES
-    )
-    const moduleKeys = createOnboardingModules
-        ? getModuleKeysForServices(selectedServices)
-        : []
-    const sessionToken = randomBytes(32).toString("hex")
-    const clientPayload: Record<string, unknown> = {
-        workspace_id: workspaceId,
-        relationship_id: relationshipId ?? null,
+    const linkedRelationshipId = await ensureRelationship({
+        workspaceId,
+        relationshipId,
         name,
-        email: email || null,
+        email,
         phone,
-        session_token: sessionToken,
-        is_test: isTest,
-        project_timeframe_days: projectTimeframeDays ?? null,
-        created_by: createdBy ?? null,
-    }
+        createdBy,
+    })
 
-    const { data: client, error: clientError } = await supabaseAdmin
-        .from("clients")
-        .insert(clientPayload)
-        .select("id, session_token")
-        .single()
-
-    if (clientError || !client) {
-        throw new Error(getCreateClientErrorCode(clientError))
-    }
-
-    let linkedRelationshipId = relationshipId ?? null
-
-    if (linkedRelationshipId) {
-        await supabaseAdmin
-            .from("relationships")
-            .update({
-                client_id: client.id,
-                primary_person_name: name,
-                primary_email: email || null,
-                primary_phone: phone || null,
-                business_name: name,
-                lifecycle_phase: "onboarding",
-                started_onboarding_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-            })
-            .eq("id", linkedRelationshipId)
-            .eq("workspace_id", workspaceId)
-    } else {
-        const { data: relationship } = await supabaseAdmin
-            .from("relationships")
-            .select("id")
-            .eq("workspace_id", workspaceId)
-            .eq("client_id", client.id)
-            .maybeSingle()
-        linkedRelationshipId = relationship?.id ?? null
-    }
-
-    if (moduleKeys.length > 0) {
-        const { error: modulesError } = await supabaseAdmin
-            .from("client_modules")
-            .insert(
-                moduleKeys.map((moduleKey) => ({
-                    client_id: client.id,
-                    workspace_id: workspaceId,
-                    relationship_id: linkedRelationshipId,
-                    module_key: moduleKey,
-                }))
-            )
-
-        if (modulesError) {
-            throw new Error("modules-failed")
-        }
-    }
-
-    if (selectedServices.length > 0) {
-        const { error: servicesError } = await supabaseAdmin
-            .from("client_services")
-            .insert(
-                selectedServices.map((serviceKey) => ({
-                    client_id: client.id,
-                    workspace_id: workspaceId,
-                    relationship_id: linkedRelationshipId,
-                    service_key: serviceKey,
-                }))
-            )
-
-        if (servicesError) {
-            throw new Error(getCreateClientErrorCode(servicesError))
-        }
-    }
-
-    if (linkedRelationshipId && createOnboardingWork && selectedServices.length > 0) {
-        const workItems = selectedServices.flatMap((serviceKey, serviceIndex) => {
-            const service = SERVICES[serviceKey]
-            if (!service) return []
-            return service.sopSteps.map((step, stepIndex) => ({
-                workspace_id: workspaceId,
-                title: step.title,
-                description: step.description ?? service.description,
-                lifecycle_phase: "fulfilment",
-                status: "todo",
-                priority: 3,
-                is_key_task: stepIndex === 0,
-                native_kind: "service_sop_step",
-                native_id: null,
-                native_href: null,
-                sort_order: serviceIndex * 100 + stepIndex,
-                metadata: {
-                    service_key: serviceKey,
-                    service_title: service.title,
-                    step_key: step.key,
-                    auto_created: true,
-                },
-            }))
-        })
-
-        if (workItems.length > 0) {
-            const { data: insertedItems } = await supabaseAdmin
-                .from("work_items")
-                .insert(workItems)
-                .select("id")
-
-            if (insertedItems?.length) {
-                await supabaseAdmin.from("work_item_relationships").insert(
-                    insertedItems.map((item) => ({
-                        workspace_id: workspaceId,
-                        work_item_id: item.id,
-                        relationship_id: linkedRelationshipId,
-                    }))
-                )
-            }
-        }
-    }
+    const session = await createRelationshipOnboardingSession({
+        workspaceId,
+        workspaceSlug,
+        relationshipId: linkedRelationshipId,
+        serviceKeys,
+        moduleKeys: createOnboardingModules ? undefined : [],
+        projectTimeframeDays,
+        isTest,
+        createdBy,
+    })
 
     const onboardingUrl = createOnboardingModules
-        ? getOnboardingUrl(workspaceSlug, client.session_token, customOnboardingDomain, customOnboardingDomainVerified)
+        ? getOnboardingUrl(workspaceSlug, session.sessionToken, customOnboardingDomain, customOnboardingDomainVerified)
         : null
 
-    if (onboardingUrl) {
-        await addActivity(
-            client.id,
-            workspaceId,
-            "onboarding_link_created",
-            activitySource
-                ? `Onboarding link created from ${activitySource}: ${onboardingUrl}`
-                : `Onboarding link created: ${onboardingUrl}`
-        )
-    }
+    void activitySource
 
     return {
-        id: client.id,
+        id: session.id,
         relationshipId: linkedRelationshipId,
-        sessionToken: client.session_token,
+        sessionToken: session.sessionToken,
         onboardingUrl,
     }
 }

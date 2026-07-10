@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import {
     prepareDirectUpload,
     submitPreparedFormStep,
-} from "@/app/session/[token]/actions"
+} from "@/app/onboarding/session/[token]/actions"
 import {
     FormResponse,
     getFileAcceptValue,

@@ -161,7 +161,7 @@ export async function proxy(request: NextRequest) {
         const publicDashboardPaths = [
             "/login", "/sign-up", "/forgot-password", "/update-password",
             "/mfa", "/logout", "/privacy", "/users", "/invites", "/auth", "/workspaces", "/install",
-            "/check-email", "/email-confirmed", "/session",
+            "/check-email", "/email-confirmed", "/session", "/onboarding",
         ]
         const isPublicDashboardPath = publicDashboardPaths.some(
             (publicPath) => path === publicPath || path.startsWith(`${publicPath}/`)
@@ -222,7 +222,7 @@ export async function proxy(request: NextRequest) {
         if (token) {
             const headers = new Headers(request.headers)
             headers.set("x-betelgeze-custom-onboarding-domain", domain)
-            return withSession(withRewrite(request, `/session/${token[1]}`, headers))
+            return withSession(withRewrite(request, `/onboarding/session/${token[1]}`, headers))
         }
     }
 
@@ -238,7 +238,7 @@ export async function proxy(request: NextRequest) {
             headers.set("x-betelgeze-workspace-slug", workspace.slug)
             headers.set("x-betelgeze-custom-onboarding-domain", domain)
             const url = request.nextUrl.clone()
-            url.pathname = `/session/${customToken[1]}`
+            url.pathname = `/onboarding/session/${customToken[1]}`
             return NextResponse.rewrite(url, { request: { headers } })
         }
     }

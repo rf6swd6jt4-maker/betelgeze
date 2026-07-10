@@ -125,6 +125,52 @@ export async function createSignedOnboardingUpload(
     }
 }
 
+export async function createSignedRelationshipOnboardingUpload(
+    workspaceId: string,
+    relationshipId: string,
+    sessionId: string,
+    stepKey: string,
+    file: {
+        name: string
+        size: number
+        type: string
+    }
+) {
+    if (file.size > MAX_ONBOARDING_UPLOAD_SIZE) {
+        throw new Error(`${file.name} is larger than the 500MB upload limit.`)
+    }
+
+    const fileName = sanitizeFileName(file.name) || "upload"
+    const path = `${workspaceId}/onboarding/${relationshipId}/${sessionId}/${stepKey}/${randomUUID()}-${fileName}`
+    const contentType = file.type || "application/octet-stream"
+
+    const uploadUrl = await getSignedUrl(
+        getR2Client(),
+        new PutObjectCommand({
+            Bucket: getR2BucketName(),
+            Key: path,
+            ContentType: contentType,
+        }),
+        {
+            expiresIn: R2_UPLOAD_URL_TTL_SECONDS,
+        }
+    )
+
+    const storedUpload: StoredUpload = {
+        name: file.name,
+        path,
+        size: file.size,
+        type: contentType,
+        kind: getUploadKind(contentType),
+        provider: "r2",
+    }
+
+    return {
+        uploadUrl,
+        storedUpload,
+    }
+}
+
 export async function createSignedAssetUpload(
     workspaceId: string,
     file: {

@@ -409,14 +409,13 @@ export async function handleSaleConsentConfirmation({
                     : `Stripe sale ${sale.id}`,
             createdBy: sale.created_by,
         })
-        clientId = client.id
+        clientId = null
         relationshipId = client.relationshipId
         onboardingUrl = client.onboardingUrl
 
         await supabaseAdmin
             .from("client_sales")
             .update({
-                client_id: client.id,
                 relationship_id: relationshipId,
                 client_phone: fromAddress,
                 status:
@@ -458,11 +457,10 @@ export async function handleSaleConsentConfirmation({
             .eq("id", sale.id)
     }
 
-    if (relationshipId && clientId) {
+    if (relationshipId) {
         await supabaseAdmin
             .from("relationships")
             .update({
-                client_id: clientId,
                 lifecycle_phase: "onboarding",
                 started_onboarding_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),

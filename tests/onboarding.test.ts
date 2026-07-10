@@ -28,6 +28,12 @@ import {
     getProjectDeadlineTimestamp,
     splitProjectTimeframeDays,
 } from "../lib/onboarding/project-timeframe.ts"
+import {
+    classifyUploadAsset,
+    onboardingStepNativeKey,
+    onboardingSubmissionNativeKey,
+    onboardingUploadNativeKey,
+} from "../lib/onboarding/canonical-keys.ts"
 
 test("counts unique completed onboarding steps", () => {
     const steps = [{ key: "welcome" }, { key: "business-info" }]
@@ -65,6 +71,18 @@ test("maps fulfilment services to required onboarding modules", () => {
         ]),
         ["general-info", "google-search-ads", "website-lp"]
     )
+})
+
+test("builds stable canonical onboarding native keys", () => {
+    assert.equal(onboardingStepNativeKey("session-1", "business-info"), "session-1:business-info")
+    assert.equal(onboardingSubmissionNativeKey("session-1", "business-info"), "session-1:business-info:submission")
+    assert.equal(onboardingUploadNativeKey("session-1", "logo", "workspace/path/logo.png"), "session-1:logo:upload:workspace/path/logo.png")
+})
+
+test("classifies onboarding uploads as canonical asset kinds", () => {
+    assert.equal(classifyUploadAsset({ name: "logo.png", type: "image/png" }), "media")
+    assert.equal(classifyUploadAsset({ name: "brief.pdf", type: "application/pdf" }), "document")
+    assert.equal(classifyUploadAsset({ name: "notes.txt", type: "text/plain" }), "file")
 })
 
 test("defines SEO SOP subtasks in ClickUp execution order", () => {

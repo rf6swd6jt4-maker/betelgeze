@@ -4,7 +4,9 @@ import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import {
     getWorkItem,
     listWorkItemRelationships,
+    listWorkItemAssets,
     phaseLabel,
+    assetHref,
     relationshipHubHref,
     workspaceHref,
 } from "@/lib/relationships"
@@ -26,7 +28,10 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     const { workspace, user } = await requireWorkspace(workspaceSlug)
     const item = await getWorkItem(workspace.id, id)
     if (!item) notFound()
-    const relationships = await listWorkItemRelationships(workspace.id, item.id)
+    const [relationships, assets] = await Promise.all([
+        listWorkItemRelationships(workspace.id, item.id),
+        listWorkItemAssets(workspace.id, item.id),
+    ])
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
@@ -83,9 +88,20 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
 
                 <section className="mt-6 rounded-2xl border border-neutral-800 bg-black p-5">
                     <h2 className="text-lg font-semibold">Assets and updates</h2>
-                    <p className="mt-2 text-sm leading-6 text-neutral-400">
-                        Attached assets, comments, activity, and future subtasks will live here as the work-item workspace matures.
-                    </p>
+                    <div className="mt-4 divide-y divide-neutral-900 rounded-xl border border-neutral-900">
+                        {assets.length ? assets.map((asset) => (
+                            <Link key={asset.id} href={assetHref(workspace.slug, asset.id)} className="grid gap-2 px-3 py-3 hover:bg-neutral-900/70 sm:grid-cols-[1fr_140px_120px] sm:items-center">
+                                <div className="min-w-0">
+                                    <p className="truncate font-medium text-neutral-100">{asset.title}</p>
+                                    <p className="mt-1 truncate text-sm text-neutral-500">{asset.description ?? asset.source_kind.replace(/_/g, " ")}</p>
+                                </div>
+                                <p className="text-sm capitalize text-neutral-400">{asset.asset_kind.replace(/_/g, " ")}</p>
+                                <p className="text-sm text-neutral-500 sm:text-right">{formatRelativeTime(asset.updated_at)}</p>
+                            </Link>
+                        )) : (
+                            <p className="px-3 py-4 text-sm text-neutral-500">No assets are attached to this work item yet.</p>
+                        )}
+                    </div>
                 </section>
 
                 <section className="mt-6 rounded-2xl border border-red-500/20 bg-red-950/10 p-5">

@@ -43,6 +43,15 @@ function isPdf(contentType: string | null, title: string) {
     return contentType === "application/pdf" || title.toLowerCase().endsWith(".pdf")
 }
 
+function responseEntries(metadata: Record<string, unknown>) {
+    const response = metadata.response
+    if (!response || typeof response !== "object" || Array.isArray(response)) return []
+    return Object.entries(response as Record<string, unknown>).map(([key, value]) => ({
+        key,
+        value,
+    }))
+}
+
 export default async function AssetDetailPage({ params }: PageProps) {
     const { workspaceSlug, id } = await params
     const { workspace, user } = await requireWorkspace(workspaceSlug)
@@ -53,6 +62,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
         listAssetWorkItems(workspace.id, asset.id),
     ])
     const previewUrl = asset.storage_path ? await createUploadSignedUrl(asset.storage_path) : asset.external_url
+    const formEntries = asset.asset_kind === "form_submission" ? responseEntries(asset.metadata) : []
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
@@ -70,6 +80,20 @@ export default async function AssetDetailPage({ params }: PageProps) {
 
                 <section className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
                     <div className="min-h-[24rem] overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+                        {formEntries.length > 0 && (
+                            <div className="divide-y divide-neutral-900">
+                                {formEntries.map((entry) => (
+                                    <div key={entry.key} className="px-5 py-4">
+                                        <p className="text-sm font-medium capitalize text-neutral-400">{entry.key.replace(/_/g, " ")}</p>
+                                        {Array.isArray(entry.value) ? (
+                                            <p className="mt-2 text-sm text-neutral-200">{entry.value.length} uploaded file{entry.value.length === 1 ? "" : "s"}</p>
+                                        ) : (
+                                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-100">{String(entry.value || "No answer provided")}</p>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         {previewUrl && isImage(asset.content_type) && (
                             <img src={previewUrl} alt={asset.title} className="max-h-[70vh] w-full object-contain" />
                         )}
@@ -92,7 +116,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
                                 </a>
                             </div>
                         )}
-                        {!previewUrl && (
+                        {!previewUrl && formEntries.length === 0 && (
                             <div className="flex min-h-[24rem] flex-col items-center justify-center px-6 text-center">
                                 <p className="text-lg font-semibold">Native asset</p>
                                 <p className="mt-2 max-w-md text-sm leading-6 text-neutral-400">

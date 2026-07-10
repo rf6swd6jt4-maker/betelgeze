@@ -1,7 +1,6 @@
 import Link from "next/link"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
-import { MODULES } from "@/lib/onboarding/modules"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
 import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import {
@@ -19,76 +18,99 @@ type PageProps = {
     params: Promise<{ workspaceSlug: string }>
 }
 
-const baseSteps = [{ key: "welcome-video", title: "Welcome" }]
-
-function uploadCountFromResponse(response: Record<string, unknown>) {
-    return Object.values(response).reduce<number>((total, value) => {
-        if (!Array.isArray(value)) return total
-        return total + value.filter((item) => item && typeof item === "object" && "path" in item).length
-    }, 0)
+function metadataSessionId(metadata: unknown) {
+    return metadata && typeof metadata === "object" && "session_id" in metadata
+        ? String((metadata as Record<string, unknown>).session_id ?? "")
+        : ""
 }
 
 export default async function RelationshipOnboardingPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user } = await requireWorkspace(workspaceSlug)
-    const relationships = (await listRelationshipsForWorkspace(workspace.id))
-        .filter((relationship) => ["onboarding", "onboarding_complete"].includes(relationship.lifecycle_phase))
-    const clientIds = relationships.map((relationship) => relationship.client_id).filter((id): id is string => Boolean(id))
     const [
-        { data: clients },
-        { data: progressRows },
-        { data: moduleRows },
-        { data: responseRows },
-    ] = clientIds.length
-        ? await Promise.all([
-            supabaseAdmin.from("clients").select("id, relationship_id, session_token, created_at, archived_at").in("id", clientIds),
-            supabaseAdmin.from("client_progress").select("client_id, step_key, completed_at, created_at").in("client_id", clientIds),
-            supabaseAdmin.from("client_modules").select("client_id, module_key").in("client_id", clientIds),
-            supabaseAdmin.from("client_form_responses").select("client_id, step_key, response, updated_at").in("client_id", clientIds),
-        ])
-        : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }]
+        relationships,
+        { data: sessions },
+        { data: workItems },
+        { data: assets },
+    ] = await Promise.all([
+        listRelationshipsForWorkspace(workspace.id),
+        supabaseAdmin
+            .from("relationship_onboarding_sessions")
+            .select("id, relationship_id, status, session_token, created_at, updated_at, completed_at")
+            .eq("workspace_id", workspace.id)
+            .in("status", ["active", "completed"])
+            .order("updated_at", { ascending: false }),
+        supabaseAdmin
+            .from("work_items")
+            .select("id, status, metadata, updated_at, created_at")
+            .eq("workspace_id", workspace.id)
+            .eq("native_kind", "onboarding_step")
+            .order("created_at", { ascending: true })
+            .limit(1000),
+        supabaseAdmin
+            .from("assets")
+            .select("id, asset_kind, native_kind, metadata, updated_at, created_at")
+            .eq("workspace_id", workspace.id)
+            .in("native_kind", ["onboarding_form_submission", "onboarding_upload"])
+            .order("updated_at", { ascending: false })
+            .limit(1000),
+    ])
 
-    const clientById = new Map((clients ?? []).map((client) => [client.id, client]))
-    const progressByClient = new Map<string, string[]>()
-    const latestProgressByClient = new Map<string, string>()
-    for (const row of progressRows ?? []) {
-        progressByClient.set(row.client_id, [...(progressByClient.get(row.client_id) ?? []), row.step_key])
-        const date = row.completed_at ?? row.created_at
-        if (!latestProgressByClient.get(row.client_id) || new Date(date) > new Date(latestProgressByClient.get(row.client_id)!)) {
-            latestProgressByClient.set(row.client_id, date)
+    const relationshipById = new Map(relationships.map((relationship) => [relationship.id, relationship]))
+    const activeSessionByRelationship = new Map<string, NonNullable<typeof sessions>[number]>()
+    for (const session of sessions ?? []) {
+        if (!activeSessionByRelationship.has(session.relationship_id)) {
+            activeSessionByRelationship.set(session.relationship_id, session)
         }
     }
 
-    const modulesByClient = new Map<string, string[]>()
-    for (const row of moduleRows ?? []) {
-        modulesByClient.set(row.client_id, [...(modulesByClient.get(row.client_id) ?? []), row.module_key])
+    const workItemsBySession = new Map<string, NonNullable<typeof workItems>>()
+    for (const item of workItems ?? []) {
+        const sessionId = metadataSessionId(item.metadata)
+        if (!sessionId) continue
+        workItemsBySession.set(sessionId, [...(workItemsBySession.get(sessionId) ?? []), item])
     }
 
-    const submissionsByClient = new Map<string, { count: number; files: number; latest: string | null }>()
-    for (const row of responseRows ?? []) {
-        const existing = submissionsByClient.get(row.client_id) ?? { count: 0, files: 0, latest: null }
-        const updatedAt = row.updated_at ?? null
-        submissionsByClient.set(row.client_id, {
-            count: existing.count + 1,
-            files: existing.files + uploadCountFromResponse((row.response ?? {}) as Record<string, unknown>),
-            latest: updatedAt && (!existing.latest || new Date(updatedAt) > new Date(existing.latest)) ? updatedAt : existing.latest,
+    const assetsBySession = new Map<string, { submissions: number; uploads: number; latest: string | null }>()
+    for (const asset of assets ?? []) {
+        const sessionId = metadataSessionId(asset.metadata)
+        if (!sessionId) continue
+        const existing = assetsBySession.get(sessionId) ?? { submissions: 0, uploads: 0, latest: null }
+        const latest = asset.updated_at ?? asset.created_at ?? null
+        assetsBySession.set(sessionId, {
+            submissions: existing.submissions + (asset.native_kind === "onboarding_form_submission" ? 1 : 0),
+            uploads: existing.uploads + (asset.native_kind === "onboarding_upload" ? 1 : 0),
+            latest: latest && (!existing.latest || new Date(latest) > new Date(existing.latest)) ? latest : existing.latest,
         })
     }
 
-    const rows = relationships.map((relationship) => {
-        const client = relationship.client_id ? clientById.get(relationship.client_id) : null
-        const moduleSteps = (relationship.client_id ? modulesByClient.get(relationship.client_id) ?? [] : []).flatMap((moduleKey) => {
-            const moduleDefinition = MODULES[moduleKey]
-            return moduleDefinition ? moduleDefinition.steps : []
+    const rows = [...activeSessionByRelationship.values()]
+        .map((session) => {
+            const relationship = relationshipById.get(session.relationship_id)
+            if (!relationship) return null
+            const items = workItemsBySession.get(session.id) ?? []
+            const steps = items.map((item) => ({ key: item.id }))
+            const completedKeys = items.filter((item) => item.status === "done").map((item) => item.id)
+            const percentage = getProgressPercentage(steps, completedKeys)
+            const latestWork = items.reduce<string | null>((latest, item) => {
+                const date = item.updated_at ?? item.created_at ?? null
+                return date && (!latest || new Date(date) > new Date(latest)) ? date : latest
+            }, null)
+            const assetSummary = assetsBySession.get(session.id) ?? { submissions: 0, uploads: 0, latest: null }
+            const latestActivity = assetSummary.latest ?? latestWork ?? session.updated_at
+            const stuck = isOnboardingStuck({ percentage, createdAt: session.created_at, lastActivityAt: latestActivity })
+            return {
+                relationship,
+                session,
+                percentage,
+                completedCount: completedKeys.length,
+                missingCount: Math.max(0, items.length - completedKeys.length),
+                stuck,
+                latestActivity,
+                assetSummary,
+            }
         })
-        const steps = [...baseSteps, ...moduleSteps]
-        const completedKeys = relationship.client_id ? progressByClient.get(relationship.client_id) ?? [] : []
-        const percentage = getProgressPercentage(steps, completedKeys)
-        const latestActivity = relationship.client_id ? latestProgressByClient.get(relationship.client_id) ?? null : null
-        const stuck = client ? isOnboardingStuck({ percentage, createdAt: client.created_at, lastActivityAt: latestActivity }) : false
-        const submissions = relationship.client_id ? submissionsByClient.get(relationship.client_id) ?? { count: 0, files: 0, latest: null } : { count: 0, files: 0, latest: null }
-        return { relationship, client, percentage, stuck, submissions, latestActivity }
-    })
+        .filter((row): row is NonNullable<typeof row> => Boolean(row))
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 pb-7 text-white sm:px-6">
@@ -99,15 +121,15 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight">Onboarding</h1>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
-                            Relationship onboarding status, submitted forms, and uploaded assets. Relationship notes and communication live on the relationship page.
+                            Relationship onboarding progress, missing submissions, completed steps, and uploaded assets.
                         </p>
                     </div>
                 </header>
 
                 <section className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
                     {[
-                        ["Onboarding", rows.filter((row) => row.relationship.lifecycle_phase === "onboarding").length],
-                        ["Complete", rows.filter((row) => row.relationship.lifecycle_phase === "onboarding_complete").length],
+                        ["Active", rows.filter((row) => row.session.status === "active").length],
+                        ["Complete", rows.filter((row) => row.session.status === "completed").length],
                         ["Stuck", rows.filter((row) => row.stuck).length],
                     ].map(([label, value]) => (
                         <div key={label} className="border-r border-neutral-800 px-3 py-3 last:border-r-0">
@@ -118,21 +140,21 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
                 </section>
 
                 <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
-                    {rows.length ? rows.map(({ relationship, percentage, stuck, submissions, latestActivity }) => (
-                        <Link key={relationship.id} href={onboardingDetailHref(workspace.slug, relationship.id)} className="grid gap-3 border-b border-neutral-900 px-4 py-4 last:border-0 hover:bg-neutral-900/60 lg:grid-cols-[minmax(220px,1fr)_150px_150px_150px_120px] lg:items-center">
+                    {rows.length ? rows.map(({ relationship, session, percentage, completedCount, missingCount, stuck, latestActivity, assetSummary }) => (
+                        <Link key={relationship.id} href={onboardingDetailHref(workspace.slug, relationship.id)} className="grid gap-3 border-b border-neutral-900 px-4 py-4 last:border-0 hover:bg-neutral-900/60 lg:grid-cols-[minmax(220px,1fr)_130px_170px_160px_120px] lg:items-center">
                             <div className="min-w-0">
                                 <p className="truncate font-medium text-neutral-100">{relationship.primary_person_name}</p>
                                 <p className="mt-1 truncate text-sm text-neutral-500">{relationship.business_name ?? relationship.primary_phone ?? relationship.primary_email ?? "No context saved"}</p>
                             </div>
-                            <p className={`text-sm ${stuck ? "text-red-200" : "text-neutral-300"}`}>{stuck ? "Stuck" : phaseLabel(relationship.lifecycle_phase)}</p>
+                            <p className={`text-sm ${stuck ? "text-red-200" : "text-neutral-300"}`}>{stuck ? "Stuck" : session.status === "completed" ? "Complete" : phaseLabel(relationship.lifecycle_phase)}</p>
                             <div>
                                 <div className="h-1.5 overflow-hidden rounded-full bg-neutral-800">
                                     <div className="h-full rounded-full bg-white" style={{ width: `${percentage}%` }} />
                                 </div>
-                                <p className="mt-1 text-xs text-neutral-500">{percentage}% complete</p>
+                                <p className="mt-1 text-xs text-neutral-500">{percentage}% · {completedCount} done · {missingCount} missing</p>
                             </div>
-                            <p className="text-sm text-neutral-400">{submissions.count} submissions · {submissions.files} files</p>
-                            <p className="text-sm text-neutral-500 lg:text-right">{formatRelativeTime(submissions.latest ?? latestActivity ?? relationship.updated_at)}</p>
+                            <p className="text-sm text-neutral-400">{assetSummary.submissions} submissions · {assetSummary.uploads} files</p>
+                            <p className="text-sm text-neutral-500 lg:text-right">{formatRelativeTime(latestActivity)}</p>
                         </Link>
                     )) : (
                         <div className="p-6">

@@ -123,14 +123,12 @@ export async function startRelationshipOnboarding(slug: string, relationshipId: 
     const { workspace, user } = await requireWorkspace(slug, "admin")
     const { data: relationship } = await supabaseAdmin
         .from("relationships")
-        .select("id, client_id, primary_person_name, primary_email, primary_phone, business_name")
+        .select("id, primary_person_name, primary_email, primary_phone, business_name")
         .eq("workspace_id", workspace.id)
         .eq("id", relationshipId)
         .maybeSingle()
 
     if (!relationship) redirect(workspaceHref(slug, "relationships?error=missing-relationship"))
-    if (relationship.client_id) redirect(relationshipHubHref(slug, relationshipId))
-
     await createOnboardingClient({
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,

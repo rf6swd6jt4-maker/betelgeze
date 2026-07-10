@@ -5,10 +5,9 @@ import { MODULES } from "@/lib/onboarding/modules"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
 import { isOnboardingStuck } from "@/lib/onboarding/stuck"
 import {
+    onboardingDetailHref,
     listRelationshipsForWorkspace,
     phaseLabel,
-    relationshipHubHref,
-    workspaceHref,
 } from "@/lib/relationships"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
@@ -105,15 +104,6 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
                     </div>
                 </header>
 
-                <div className="mt-5 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-                    <Link href={workspaceHref(workspace.slug, "relationships")} className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2">
-                        Relationships
-                    </Link>
-                    <Link href={workspaceHref(workspace.slug, "onboarding")} className="shrink-0 rounded-lg bg-white px-3 py-2.5 font-medium text-black sm:py-2">
-                        Onboarding
-                    </Link>
-                </div>
-
                 <section className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
                     {[
                         ["Onboarding", rows.filter((row) => row.relationship.lifecycle_phase === "onboarding").length],
@@ -129,7 +119,7 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
 
                 <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
                     {rows.length ? rows.map(({ relationship, percentage, stuck, submissions, latestActivity }) => (
-                        <Link key={relationship.id} href={relationshipHubHref(workspace.slug, relationship.id)} className="grid gap-3 border-b border-neutral-900 px-4 py-4 last:border-0 hover:bg-neutral-900/60 lg:grid-cols-[minmax(220px,1fr)_150px_150px_150px_120px] lg:items-center">
+                        <Link key={relationship.id} href={onboardingDetailHref(workspace.slug, relationship.id)} className="grid gap-3 border-b border-neutral-900 px-4 py-4 last:border-0 hover:bg-neutral-900/60 lg:grid-cols-[minmax(220px,1fr)_150px_150px_150px_120px] lg:items-center">
                             <div className="min-w-0">
                                 <p className="truncate font-medium text-neutral-100">{relationship.primary_person_name}</p>
                                 <p className="mt-1 truncate text-sm text-neutral-500">{relationship.business_name ?? relationship.primary_phone ?? relationship.primary_email ?? "No context saved"}</p>

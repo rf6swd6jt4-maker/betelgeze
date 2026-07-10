@@ -3,9 +3,8 @@ import { notFound } from "next/navigation"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import {
     getRelationship,
-    onboardingDetailHref,
     phaseLabel,
-    workDetailHref,
+    relationshipHubHref,
     workspaceHref,
 } from "@/lib/relationships"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
@@ -17,28 +16,25 @@ type PageProps = {
     params: Promise<{ workspaceSlug: string; relationshipId: string }>
 }
 
-export default async function RelationshipDetailPlaceholder({ params }: PageProps) {
+export default async function OnboardingDetailPlaceholder({ params }: PageProps) {
     const { workspaceSlug, relationshipId } = await params
     const { workspace, user } = await requireWorkspace(workspaceSlug)
     const relationship = await getRelationship(workspace.id, relationshipId)
     if (!relationship) notFound()
 
-    const isOnboarding = ["onboarding", "onboarding_complete"].includes(relationship.lifecycle_phase)
-    const isFulfilment = relationship.lifecycle_phase === "fulfilment"
-
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-5xl">
-                <Link href={workspaceHref(workspace.slug, "relationships")} className="text-sm text-neutral-400 hover:text-white">
-                    Back to Relationships
+                <Link href={workspaceHref(workspace.slug, "onboarding")} className="text-sm text-neutral-400 hover:text-white">
+                    Back to Onboarding
                 </Link>
 
                 <header className="mt-6 border-b border-neutral-800 pb-6">
-                    <p className="text-sm text-neutral-500">Relationship detail</p>
+                    <p className="text-sm text-neutral-500">Onboarding detail</p>
                     <h1 className="mt-2 text-3xl font-semibold tracking-tight">{relationship.primary_person_name}</h1>
                     <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">
-                        This page will become the combined relationship summary with a Gantt chart at the top. Gantt items will deep-link into onboarding, project management, communications, invoices, assets, and future global work-item details.
+                        This page will replace the old ClickUp onboarding list. It will show onboarding progress, completed and missing steps, submitted answers, uploaded files, and worker-ready client information.
                     </p>
                 </header>
 
@@ -48,7 +44,7 @@ export default async function RelationshipDetailPlaceholder({ params }: PageProp
                         <p className="mt-2 font-medium">{relationship.business_name ?? "No company saved"}</p>
                     </div>
                     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                        <p className="text-sm text-neutral-500">Lifecycle</p>
+                        <p className="text-sm text-neutral-500">Status</p>
                         <p className="mt-2 font-medium">{phaseLabel(relationship.lifecycle_phase)}</p>
                     </div>
                     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
@@ -58,28 +54,19 @@ export default async function RelationshipDetailPlaceholder({ params }: PageProp
                 </section>
 
                 <section className="mt-6 rounded-2xl border border-neutral-800 bg-black p-5">
-                    <h2 className="text-lg font-semibold">Future relationship Gantt</h2>
+                    <h2 className="text-lg font-semibold">Future onboarding workspace</h2>
                     <p className="mt-2 text-sm leading-6 text-neutral-400">
-                        Placeholder for a timeline of relationship work, onboarding steps, fulfilment tasks, communications, invoices, and retained assets. This push only restores the correct page boundary.
+                        Placeholder for onboarding step timeline, form responses, missing submissions, uploaded files, and generated onboarding work items. Relationship-wide notes and communications belong in their own pages.
                     </p>
-                    <div className="mt-4 flex flex-wrap gap-2 text-sm">
-                        {isOnboarding && (
-                            <Link href={onboardingDetailHref(workspace.slug, relationship.id)} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:text-white">
-                                Open onboarding detail
-                            </Link>
-                        )}
-                        {isFulfilment && (
-                            <Link href={workDetailHref(workspace.slug, relationship.id)} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:text-white">
-                                Open project detail
-                            </Link>
-                        )}
-                    </div>
+                    <Link href={relationshipHubHref(workspace.slug, relationship.id)} className="mt-4 inline-flex rounded-lg border border-neutral-800 px-3 py-2 text-sm text-neutral-300 hover:text-white">
+                        Open relationship summary
+                    </Link>
                 </section>
 
                 <section className="mt-6 rounded-2xl border border-red-500/20 bg-red-950/10 p-5">
                     <h2 className="text-lg font-semibold text-red-100">Danger zone placeholder</h2>
                     <p className="mt-2 text-sm leading-6 text-red-100/70">
-                        Archive/delete relationship actions will live here in a later focused detail-page pass.
+                        Onboarding archive/reset actions will live here after the real onboarding detail page is rebuilt.
                     </p>
                 </section>
             </div>

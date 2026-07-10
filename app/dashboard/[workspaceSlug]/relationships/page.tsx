@@ -67,15 +67,6 @@ export default async function RelationshipsPage({ params }: PageProps) {
                     </div>
                 </header>
 
-                <div className="mt-5 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-                    <Link href={workspaceHref(workspace.slug, "relationships")} className="shrink-0 rounded-lg bg-white px-3 py-2.5 font-medium text-black sm:py-2">
-                        Relationships
-                    </Link>
-                    <Link href={workspaceHref(workspace.slug, "work")} className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2">
-                        Project Management
-                    </Link>
-                </div>
-
                 <section className="mt-5 grid grid-cols-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:grid-cols-5 lg:grid-cols-10">
                     {RELATIONSHIP_PHASES.map((phase) => (
                         <div key={phase.key} className="border-r border-b border-neutral-800 px-3 py-3 last:border-r-0 sm:last:border-r lg:border-b-0">

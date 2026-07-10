@@ -2,10 +2,13 @@ import type { NextRequest } from "next/server"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import {
+    communicationsHref,
     listRelationshipsForWorkspace,
+    onboardingDetailHref,
     relationshipHubHref,
     relationshipNativeLocation,
     relationshipSearchHaystack,
+    workDetailHref,
     workspaceHref,
     type RelationshipRecord,
 } from "@/lib/relationships"
@@ -42,6 +45,7 @@ function staticNavigationResults(workspace: { name: string; slug: string }, quer
         { id: "page-relationships", type: "Page", label: "Relationships", description: "Relationship Hub list", href: workspaceHref(workspace.slug, "relationships"), path: `${workspace.name} > Relationships`, keywords: ["crm", "people", "accounts"] },
         { id: "page-onboarding", type: "Page", label: "Onboarding", description: "Relationship onboarding status and submissions", href: workspaceHref(workspace.slug, "onboarding"), path: `${workspace.name} > Onboarding`, keywords: ["forms", "submissions", "portal"] },
         { id: "page-work", type: "Page", label: "Project Management", description: "Fulfilment relationship work items", href: workspaceHref(workspace.slug, "work"), path: `${workspace.name} > Project Management`, keywords: ["tasks", "project management", "queue", "fulfilment"] },
+        { id: "page-communications", type: "Page", label: "Communications", description: "Relationship communication summaries", href: communicationsHref(workspace.slug), path: `${workspace.name} > Communications`, keywords: ["messages", "chat", "whatsapp", "communication"] },
         { id: "page-leadgen", type: "Page", label: "Lead Gen", description: "Lead generation dashboard", href: workspaceHref(workspace.slug, "leadgen"), path: `${workspace.name} > Lead Gen`, keywords: ["leads", "lead generation"] },
         { id: "action-new-poll", type: "Action", label: "New Poll", description: "Create and preflight a new lead-generation poll", href: workspaceHref(workspace.slug, "leadgen/new"), path: `${workspace.name} > Lead Gen > New Poll`, keywords: ["create poll", "start poll", "run poll", "poll preflight", "leadgen new"] },
         { id: "page-leads", type: "Tab", label: "Leads", description: "Qualified and discovered lead list", href: workspaceHref(workspace.slug, "leadgen"), path: `${workspace.name} > Lead Gen > Leads`, keywords: ["leadgen companies", "lead list"] },
@@ -149,9 +153,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                 "Work item",
                 item.title,
                 relationship?.primary_person_name ?? item.description ?? "Relationship work",
-                relationship ? relationshipHubHref(workspace.slug, relationship.id) : item.native_href?.startsWith("/") ? item.native_href : workspaceHref(workspace.slug, "work"),
+                relationship ? workDetailHref(workspace.slug, relationship.id) : item.native_href?.startsWith("/") ? item.native_href : workspaceHref(workspace.slug, "work"),
                 {
-                    hubHref: relationship ? relationshipHubHref(workspace.slug, relationship.id) : undefined,
+                    hubHref: relationship ? workDetailHref(workspace.slug, relationship.id) : undefined,
                     path: `${workspace.name} > Project Management`,
                     recordId: item.native_id ?? item.id,
                 }
@@ -220,10 +224,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                 "Relationship",
                 client.name ?? client.email ?? "Unnamed client",
                 client.email ?? client.phone ?? "Onboarding relationship",
-                relationship ? relationshipHubHref(workspace.slug, relationship.id) : client.relationship_id ? relationshipHubHref(workspace.slug, client.relationship_id) : workspaceHref(workspace.slug, "relationships"),
+                relationship ? onboardingDetailHref(workspace.slug, relationship.id) : client.relationship_id ? onboardingDetailHref(workspace.slug, client.relationship_id) : workspaceHref(workspace.slug, "onboarding"),
                 {
-                    hubHref: relationship ? relationshipHubHref(workspace.slug, relationship.id) : client.relationship_id ? relationshipHubHref(workspace.slug, client.relationship_id) : undefined,
-                    path: `${workspace.name} > Onboarding > Relationships`,
+                    hubHref: relationship ? onboardingDetailHref(workspace.slug, relationship.id) : client.relationship_id ? onboardingDetailHref(workspace.slug, client.relationship_id) : undefined,
+                    path: `${workspace.name} > Onboarding`,
                     recordId: client.id,
                 }
             ))
@@ -306,10 +310,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                 "Contact",
                 channel.external_address,
                 channel.provider,
-                relationship ? relationshipNativeLocation(workspace.slug, relationship) : workspaceHref(workspace.slug, "relationships"),
+                relationship ? communicationsHref(workspace.slug) : communicationsHref(workspace.slug),
                 {
-                    hubHref: relationship ? relationshipHubHref(workspace.slug, relationship.id) : undefined,
-                    path: `${workspace.name} > Contacts`,
+                    hubHref: relationship ? communicationsHref(workspace.slug) : undefined,
+                    path: `${workspace.name} > Communications`,
                     recordId: channel.id,
                 }
             ))
@@ -324,10 +328,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                 "Activity",
                 activity.activity_text,
                 activity.activity_type,
-                relationship ? relationshipNativeLocation(workspace.slug, relationship) : workspaceHref(workspace.slug, "relationships"),
+                relationship ? onboardingDetailHref(workspace.slug, relationship.id) : workspaceHref(workspace.slug, "onboarding"),
                 {
-                    hubHref: relationship ? relationshipHubHref(workspace.slug, relationship.id) : undefined,
-                    path: `${workspace.name} > Recent Activity`,
+                    hubHref: relationship ? onboardingDetailHref(workspace.slug, relationship.id) : undefined,
+                    path: `${workspace.name} > Onboarding > Recent Activity`,
                     recordId: activity.id,
                 }
             ))

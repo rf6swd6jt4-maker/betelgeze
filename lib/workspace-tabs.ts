@@ -38,7 +38,7 @@ export function normalizeWorkspaceUrl(value: string, workspaceSlug: string, orig
         if (suffix === "health") return `${defaultWorkspaceUrl}/health${search}${hash}`
         if (suffix === "invoices") return `${defaultWorkspaceUrl}/invoices${search}${hash}`
         if (suffix === "sales/new") return `${defaultWorkspaceUrl}/sales/new${search}${hash}`
-        if (suffix.startsWith("client/")) return `${defaultWorkspaceUrl}/clients/${suffix.slice("client/".length)}${search}${hash}`
+        if (suffix.startsWith("client/")) return `${defaultWorkspaceUrl}/relationships/${suffix.slice("client/".length)}${search}${hash}`
         return `${defaultWorkspaceUrl}/${suffix}${search}${hash}`
     }
 

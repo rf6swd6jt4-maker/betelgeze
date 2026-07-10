@@ -3,10 +3,8 @@ import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import {
     listWorkQueueItems,
-    nativeItemHref,
     phaseLabel,
-    relationshipHubHref,
-    workspaceHref,
+    workDetailHref,
     type RelationshipWorkItemStatus,
 } from "@/lib/relationships"
 import { requireWorkspace } from "@/lib/workspaces"
@@ -50,15 +48,6 @@ export default async function WorkQueuePage({ params }: PageProps) {
                     </div>
                 </header>
 
-                <div className="mt-5 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-                    <Link href={workspaceHref(workspace.slug, "relationships")} className="shrink-0 rounded-lg border border-neutral-800 px-3 py-2.5 text-neutral-300 sm:py-2">
-                        Relationships
-                    </Link>
-                    <Link href={workspaceHref(workspace.slug, "work")} className="shrink-0 rounded-lg bg-white px-3 py-2.5 font-medium text-black sm:py-2">
-                        Project Management
-                    </Link>
-                </div>
-
                 <section className="mt-5 grid grid-cols-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:grid-cols-4">
                     {[
                         ["Open work", items.length],
@@ -79,24 +68,22 @@ export default async function WorkQueuePage({ params }: PageProps) {
                             const tone = statusTone(item.status)
                             const date = item.planned_end_date ?? item.planned_start_date ?? item.actual_start_at ?? item.created_at
                             return (
-                                <div key={item.id} className="grid gap-3 border-b border-neutral-900 px-4 py-4 last:border-0 md:grid-cols-[minmax(240px,1fr)_minmax(190px,0.8fr)_150px_120px_120px] md:items-center">
+                                <Link key={item.id} href={workDetailHref(workspace.slug, item.relationship.id)} className="grid gap-3 border-b border-neutral-900 px-4 py-4 last:border-0 hover:bg-neutral-900/60 md:grid-cols-[minmax(240px,1fr)_minmax(190px,0.8fr)_150px_120px_120px] md:items-center">
                                     <div className="min-w-0">
-                                        <Link href={nativeItemHref(workspace.slug, item)} className="truncate font-medium text-neutral-100 hover:text-white">
-                                            {item.title}
-                                        </Link>
+                                        <p className="truncate font-medium text-neutral-100">{item.title}</p>
                                         {item.description && <p className="mt-1 line-clamp-1 text-sm text-neutral-500">{item.description}</p>}
                                     </div>
-                                    <Link href={relationshipHubHref(workspace.slug, item.relationship.id)} className="min-w-0 text-sm text-neutral-300 hover:text-white">
+                                    <div className="min-w-0 text-sm text-neutral-300">
                                         <span className="block truncate">{item.relationship.primary_person_name}</span>
                                         <span className="block truncate text-xs text-neutral-500">{item.relationship.business_name ?? "No business context"}</span>
-                                    </Link>
+                                    </div>
                                     <p className="text-sm text-neutral-400">{phaseLabel(item.lifecycle_phase)}</p>
                                     <div className="flex items-center gap-2 text-sm">
                                         <span className={`h-2 w-2 rotate-45 ${tone.split(" ")[0]}`} />
                                         <span className={tone.split(" ")[1]}>{item.status}</span>
                                     </div>
                                     <p className="text-sm text-neutral-500 md:text-right">{formatRelativeTime(date)}</p>
-                                </div>
+                                </Link>
                             )
                         })
                     ) : (

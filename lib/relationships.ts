@@ -151,6 +151,18 @@ export function relationshipHubHref(workspaceSlug: string, relationshipId: strin
     return workspaceHref(workspaceSlug, `relationships/${relationshipId}`)
 }
 
+export function onboardingDetailHref(workspaceSlug: string, relationshipId: string) {
+    return workspaceHref(workspaceSlug, `onboarding/${relationshipId}`)
+}
+
+export function workDetailHref(workspaceSlug: string, relationshipId: string) {
+    return workspaceHref(workspaceSlug, `work/${relationshipId}`)
+}
+
+export function communicationsHref(workspaceSlug: string) {
+    return workspaceHref(workspaceSlug, "communications")
+}
+
 export function clientNativeHref(workspaceSlug: string, clientId: string) {
     return workspaceHref(workspaceSlug, `clients/${clientId}`)
 }

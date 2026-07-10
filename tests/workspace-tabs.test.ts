@@ -17,7 +17,7 @@ test("normalizes rewritten workspace routes without leaking the frame marker", (
         origin
     )
 
-    assert.equal(url, "/scaylup/clients/client-1?filter=active#messages")
+    assert.equal(url, "/scaylup/relationships/client-1?filter=active#messages")
 })
 
 test("normalizes dashboard and leadgen routes to the public workspace URL", () => {

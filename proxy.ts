@@ -191,7 +191,17 @@ export async function proxy(request: NextRequest) {
             if (!suffix) {
                 return withSession(withRewrite(request, `/dashboard/${workspaceSlug}/relationships`, headers))
             }
-            if (suffix === "settings" || suffix === "users" || suffix === "work" || suffix === "onboarding" || suffix === "relationships" || suffix.startsWith("relationships/")) {
+            if (
+                suffix === "settings" ||
+                suffix === "users" ||
+                suffix === "communications" ||
+                suffix === "work" ||
+                suffix.startsWith("work/") ||
+                suffix === "onboarding" ||
+                suffix.startsWith("onboarding/") ||
+                suffix === "relationships" ||
+                suffix.startsWith("relationships/")
+            ) {
                 return withSession(withRewrite(request, `/dashboard/${workspaceSlug}/${suffix}`, headers))
             }
             if (suffix === "leadgen" || suffix.startsWith("leadgen/")) {
@@ -295,7 +305,14 @@ export async function proxy(request: NextRequest) {
     const dashboardMatch = path.match(/^\/dashboard\/([^/]+)(?:\/(.*))?$/)
     if (dashboardMatch) {
         const [, workspaceSlug, suffix = ""] = dashboardMatch
-        const isNewWorkspaceSurface = suffix === "work" || suffix === "relationships" || suffix.startsWith("relationships/")
+        const isNewWorkspaceSurface =
+            suffix === "communications" ||
+            suffix === "work" ||
+            suffix.startsWith("work/") ||
+            suffix === "onboarding" ||
+            suffix.startsWith("onboarding/") ||
+            suffix === "relationships" ||
+            suffix.startsWith("relationships/")
         if (suffix !== "users" && suffix !== "settings" && !isNewWorkspaceSurface) {
             const headers = new Headers(request.headers)
             headers.set("x-betelgeze-workspace-slug", workspaceSlug)

@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
+import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
 import {
     getRelationship,
     listRelationshipTimelineItems,
@@ -29,18 +30,20 @@ export default async function WorkDetailPlaceholder({ params }: PageProps) {
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
-            <div className="mx-auto max-w-5xl">
+            <div className="mx-auto max-w-[92rem]">
                 <Link href={workspaceHref(workspace.slug, "work")} className="text-sm text-neutral-400 hover:text-white">
                     Back to Project Management
                 </Link>
 
-                <header className="mt-6 border-b border-neutral-800 pb-6">
-                    <p className="text-sm text-neutral-500">Project Management detail</p>
-                    <h1 className="mt-2 text-3xl font-semibold tracking-tight">{relationship.primary_person_name}</h1>
-                    <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">
-                        This page will replace the old ClickUp Client Work list for this relationship. Future task rows will open global work-item detail pages at `/work-items/[id]`.
-                    </p>
-                </header>
+                <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto]">
+                    <div className="min-w-0">
+                        <header className="border-b border-neutral-800 pb-6">
+                            <p className="text-sm text-neutral-500">Project Management detail</p>
+                            <h1 className="mt-2 text-3xl font-semibold tracking-tight">{relationship.primary_person_name}</h1>
+                            <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">
+                                This page will replace the old ClickUp Client Work list for this relationship. Future task rows will open global work-item detail pages at `/work-items/[id]`.
+                            </p>
+                        </header>
 
                 <section className="mt-6 grid gap-3 sm:grid-cols-3">
                     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
@@ -78,12 +81,20 @@ export default async function WorkDetailPlaceholder({ params }: PageProps) {
                     </Link>
                 </section>
 
-                <section className="mt-6 rounded-2xl border border-red-500/20 bg-red-950/10 p-5">
-                    <h2 className="text-lg font-semibold text-red-100">Danger zone placeholder</h2>
-                    <p className="mt-2 text-sm leading-6 text-red-100/70">
-                        Project archive/delete controls will live here after the real PM detail page is built.
-                    </p>
-                </section>
+                        <section className="mt-6 rounded-2xl border border-red-500/20 bg-red-950/10 p-5">
+                            <h2 className="text-lg font-semibold text-red-100">Danger zone placeholder</h2>
+                            <p className="mt-2 text-sm leading-6 text-red-100/70">
+                                Project archive/delete controls will live here after the real PM detail page is built.
+                            </p>
+                        </section>
+                    </div>
+
+                    <ClientContextPanel
+                        workspaceSlug={workspace.slug}
+                        relationship={relationship}
+                        metrics={[{ label: "Open work", value: openItems.length }]}
+                    />
+                </div>
             </div>
         </main>
     )

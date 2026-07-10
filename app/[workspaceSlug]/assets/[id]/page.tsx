@@ -3,8 +3,10 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
+import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
 import {
     getAsset,
+    getRelationship,
     listAssetRelationships,
     listAssetWorkItems,
     relationshipHubHref,
@@ -61,25 +63,29 @@ export default async function AssetDetailPage({ params }: PageProps) {
         listAssetRelationships(workspace.id, asset.id),
         listAssetWorkItems(workspace.id, asset.id),
     ])
+    const contextRelationshipId = relationships[0]?.relationship_id
+    const contextRelationship = contextRelationshipId ? await getRelationship(workspace.id, contextRelationshipId) : null
     const previewUrl = asset.storage_path ? await createUploadSignedUrl(asset.storage_path) : asset.external_url
     const formEntries = asset.asset_kind === "form_submission" ? responseEntries(asset.metadata) : []
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
-            <div className="mx-auto max-w-6xl">
+            <div className="mx-auto max-w-[92rem]">
                 <Link href={workspaceHref(workspace.slug, "relationships")} className="text-sm text-neutral-400 hover:text-white">
                     Back to workspace
                 </Link>
 
-                <header className="mt-6 border-b border-neutral-800 pb-6">
-                    <p className="text-sm capitalize text-neutral-500">{asset.asset_kind.replace(/_/g, " ")} asset</p>
-                    <h1 className="mt-2 text-3xl font-semibold tracking-tight">{asset.title}</h1>
-                    {asset.description && <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">{asset.description}</p>}
-                </header>
+                <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto]">
+                    <div className="min-w-0">
+                        <header className="border-b border-neutral-800 pb-6">
+                            <p className="text-sm capitalize text-neutral-500">{asset.asset_kind.replace(/_/g, " ")} asset</p>
+                            <h1 className="mt-2 text-3xl font-semibold tracking-tight">{asset.title}</h1>
+                            {asset.description && <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">{asset.description}</p>}
+                        </header>
 
-                <section className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-                    <div className="min-h-[24rem] overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+                <section className="mt-6">
+                    <div className="min-h-[24rem] overflow-hidden rounded-xl border border-neutral-800 bg-black">
                         {formEntries.length > 0 && (
                             <div className="divide-y divide-neutral-900">
                                 {formEntries.map((entry) => (
@@ -125,43 +131,54 @@ export default async function AssetDetailPage({ params }: PageProps) {
                             </div>
                         )}
                     </div>
-
-                    <aside className="space-y-4">
-                        <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-                            <h2 className="font-semibold">Details</h2>
-                            <dl className="mt-3 space-y-3 text-sm">
-                                <div><dt className="text-neutral-500">Source</dt><dd className="mt-1 capitalize text-neutral-200">{asset.source_kind.replace(/_/g, " ")}</dd></div>
-                                <div><dt className="text-neutral-500">Type</dt><dd className="mt-1 text-neutral-200">{asset.content_type ?? "Native record"}</dd></div>
-                                <div><dt className="text-neutral-500">Size</dt><dd className="mt-1 text-neutral-200">{formatFileSize(asset.file_size)}</dd></div>
-                                <div><dt className="text-neutral-500">Updated</dt><dd className="mt-1 text-neutral-200">{formatRelativeTime(asset.updated_at)}</dd></div>
-                            </dl>
-                        </section>
-
-                        <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-                            <h2 className="font-semibold">Relationships</h2>
-                            <div className="mt-3 space-y-2">
-                                {relationships.length ? relationships.map((link) => (
-                                    <Link key={link.relationship_id} href={relationshipHubHref(workspace.slug, link.relationship_id)} className="block rounded-lg border border-neutral-800 px-3 py-2 text-sm hover:border-neutral-600">
-                                        <span className="block text-neutral-100">{link.relationship?.primary_person_name ?? "Relationship"}</span>
-                                        <span className="mt-1 block text-neutral-500">{link.relationship?.business_name ?? "No business context"}</span>
-                                    </Link>
-                                )) : <p className="text-sm text-neutral-500">Workspace-only asset.</p>}
-                            </div>
-                        </section>
-
-                        <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-                            <h2 className="font-semibold">Work items</h2>
-                            <div className="mt-3 space-y-2">
-                                {workItems.length ? workItems.map((link) => (
-                                    <Link key={link.work_item_id} href={workItemHref(workspace.slug, link.work_item_id)} className="block rounded-lg border border-neutral-800 px-3 py-2 text-sm hover:border-neutral-600">
-                                        <span className="block text-neutral-100">{link.work_item?.title ?? "Work item"}</span>
-                                        <span className="mt-1 block capitalize text-neutral-500">{link.work_item?.status ?? "Linked"}</span>
-                                    </Link>
-                                )) : <p className="text-sm text-neutral-500">Not attached to work yet.</p>}
-                            </div>
-                        </section>
-                    </aside>
                 </section>
+
+                <section className="mt-6 grid gap-4 lg:grid-cols-3">
+                    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                        <h2 className="font-semibold">Details</h2>
+                        <dl className="mt-3 space-y-3 text-sm">
+                            <div><dt className="text-neutral-500">Source</dt><dd className="mt-1 capitalize text-neutral-200">{asset.source_kind.replace(/_/g, " ")}</dd></div>
+                            <div><dt className="text-neutral-500">Type</dt><dd className="mt-1 text-neutral-200">{asset.content_type ?? "Native record"}</dd></div>
+                            <div><dt className="text-neutral-500">Size</dt><dd className="mt-1 text-neutral-200">{formatFileSize(asset.file_size)}</dd></div>
+                            <div><dt className="text-neutral-500">Updated</dt><dd className="mt-1 text-neutral-200">{formatRelativeTime(asset.updated_at)}</dd></div>
+                        </dl>
+                    </div>
+
+                    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                        <h2 className="font-semibold">Relationships</h2>
+                        <div className="mt-3 space-y-2">
+                            {relationships.length ? relationships.map((link) => (
+                                <Link key={link.relationship_id} href={relationshipHubHref(workspace.slug, link.relationship_id)} className="block rounded-lg border border-neutral-800 px-3 py-2 text-sm hover:border-neutral-600">
+                                    <span className="block text-neutral-100">{link.relationship?.primary_person_name ?? "Relationship"}</span>
+                                    <span className="mt-1 block text-neutral-500">{link.relationship?.business_name ?? "No business context"}</span>
+                                </Link>
+                            )) : <p className="text-sm text-neutral-500">Workspace-only asset.</p>}
+                        </div>
+                    </div>
+
+                    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                        <h2 className="font-semibold">Work items</h2>
+                        <div className="mt-3 space-y-2">
+                            {workItems.length ? workItems.map((link) => (
+                                <Link key={link.work_item_id} href={workItemHref(workspace.slug, link.work_item_id)} className="block rounded-lg border border-neutral-800 px-3 py-2 text-sm hover:border-neutral-600">
+                                    <span className="block text-neutral-100">{link.work_item?.title ?? "Work item"}</span>
+                                    <span className="mt-1 block capitalize text-neutral-500">{link.work_item?.status ?? "Linked"}</span>
+                                </Link>
+                            )) : <p className="text-sm text-neutral-500">Not attached to work yet.</p>}
+                        </div>
+                    </div>
+                </section>
+                    </div>
+
+                    <ClientContextPanel
+                        workspaceSlug={workspace.slug}
+                        relationship={contextRelationship}
+                        metrics={[
+                            { label: "Asset", value: asset.asset_kind.replace(/_/g, " ") },
+                            { label: "Links", value: relationships.length + workItems.length },
+                        ]}
+                    />
+                </div>
             </div>
         </main>
     )

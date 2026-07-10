@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const confirmedRedirect = url.searchParams.get("confirmed_redirect") === "1"
     const requestedNext = url.searchParams.get("next") || "/confirmed"
     const suiteNext = /^https:\/\/(app|dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(requestedNext)
-    const next = suiteNext ? requestedNext : requestedNext.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/dashboard"
+    const next = suiteNext ? requestedNext : requestedNext.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/workspaces"
     const response = NextResponse.redirect(new URL(next, url.origin))
 
     if (code || tokenHash) {

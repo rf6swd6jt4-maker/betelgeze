@@ -200,6 +200,5 @@ export async function promoteLeadgenCompanyToRelationship(slug: string, companyI
     revalidatePath(`/${slug}/leadgen`)
     revalidatePath(`/leadgen/${slug}`)
     revalidatePath(`/${slug}/relationships`)
-    revalidatePath(`/dashboard/${slug}/relationships`)
     redirect(relationshipHubHref(workspace.slug, relationship.id))
 }

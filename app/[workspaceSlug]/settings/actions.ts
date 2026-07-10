@@ -14,8 +14,6 @@ function refresh(slug: string) {
     revalidatePath(`/${slug}`)
     revalidatePath(`/${slug}/leadgen`)
     revalidatePath(`/${slug}/settings`)
-    revalidatePath(`/dashboard/${slug}`)
-    revalidatePath(`/dashboard/${slug}/settings`)
 }
 
 async function assertWorkspaceConnectionIsEditable(workspaceId: string, provider: IntegrationProvider) {

@@ -8,6 +8,21 @@ export default async function WorkspacesRedirectPage() {
     const { data: userData } = await supabase.auth.getUser()
     const user = userData.user
     if (!user) return await redirectToLogin()
+
+    const { data: memberships } = await supabaseAdmin
+        .from("workspace_memberships")
+        .select("workspaces!inner(slug, status)")
+        .eq("user_id", user.id)
+
+    const active = (memberships ?? []).filter(
+        (membership) =>
+            (membership.workspaces as unknown as { status: string }).status ===
+            "active"
+    )
+    if (active.length === 1) {
+        redirect(`/${(active[0].workspaces as unknown as { slug: string }).slug}`)
+    }
+
     const { data: profile } = await supabaseAdmin
         .from("user_profiles")
         .select("username")

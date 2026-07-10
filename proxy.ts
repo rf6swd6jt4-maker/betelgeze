@@ -150,9 +150,8 @@ export async function proxy(request: NextRequest) {
         return withSession(NextResponse.redirect(destination))
     }
 
-    // Keep the existing route tree intact while presenting clean product URLs.
-    // The redirects also clean up legacy /dashboard links copied from old emails
-    // or rendered by pages that have not yet been converted to relative links.
+    // Clean up legacy /dashboard links copied from old emails or browser state.
+    // Workspace pages now live directly under /[workspaceSlug]/...
     if (isAppHost(domain)) {
         if (path === "/leadgen" || path.startsWith("/leadgen/")) {
             const headers = new Headers(request.headers)
@@ -160,7 +159,7 @@ export async function proxy(request: NextRequest) {
             if (workspaceSlug) headers.set("x-betelgeze-workspace-slug", workspaceSlug.toLowerCase())
             return withSession(withRewrite(request, path, headers))
         }
-        if (path === "/dashboard") return withSession(withRedirect(request, "/"))
+        if (path === "/dashboard") return withSession(withRedirect(request, "/workspaces"))
         if (path.startsWith("/dashboard/")) return withSession(withRedirect(request, path.slice("/dashboard".length)))
 
         const publicDashboardPaths = [
@@ -175,28 +174,13 @@ export async function proxy(request: NextRequest) {
             const [, workspaceSlug, suffix = ""] = workspacePath
             const headers = new Headers(request.headers)
             headers.set("x-betelgeze-workspace-slug", workspaceSlug)
-            if (!suffix) {
-                return withSession(withRewrite(request, `/dashboard/${workspaceSlug}/relationships`, headers))
-            }
-            if (
-                suffix === "settings" ||
-                suffix === "users" ||
-                suffix === "communications" ||
-                suffix === "work" ||
-                suffix.startsWith("work/") ||
-                suffix === "onboarding" ||
-                suffix.startsWith("onboarding/") ||
-                suffix === "relationships" ||
-                suffix.startsWith("relationships/")
-            ) {
-                return withSession(withRewrite(request, `/dashboard/${workspaceSlug}/${suffix}`, headers))
-            }
             if (suffix === "leadgen" || suffix.startsWith("leadgen/")) {
                 const leadgenSuffix = suffix.replace(/^leadgen\/?/, "")
                 return withSession(withRewrite(request, `/leadgen/${workspaceSlug}${leadgenSuffix ? `/${leadgenSuffix}` : ""}`, headers))
             }
+            return withSession(withRewrite(request, path, headers))
         }
-        if (path === "/") return withSession(withRewrite(request, "/dashboard"))
+        if (path === "/") return withSession(withRewrite(request, "/workspaces"))
     }
 
     if (domain === AUTH_HOST) {
@@ -225,7 +209,7 @@ export async function proxy(request: NextRequest) {
             return withSession(withRewrite(request, path, headers))
         }
         if (path === "/dashboard" || path.startsWith("/dashboard/")) {
-            const destination = new URL(`https://${DASHBOARD_HOST}${path === "/dashboard" ? "/" : path.slice("/dashboard".length)}`)
+            const destination = new URL(`https://${DASHBOARD_HOST}${path === "/dashboard" ? "/workspaces" : path.slice("/dashboard".length)}`)
             destination.search = request.nextUrl.search
             return withSession(NextResponse.redirect(destination))
         }

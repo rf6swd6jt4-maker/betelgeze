@@ -34,7 +34,7 @@ export async function inviteWorkspaceUser(slug: string, formData: FormData) {
     if (error) throw new Error(error.message)
     const inviteUrl = `https://betelgeze.com/invitation?token=${invitation.id}&email=${encodeURIComponent(email)}`
     await sendWorkspaceInvitation({ to: email, workspaceName: workspace.name, inviteUrl })
-    revalidatePath(`/dashboard/${slug}/settings`)
+    revalidatePath(`/${slug}/settings`)
 }
 
 export async function updateWorkspaceUserRole(slug: string, formData: FormData) {
@@ -47,7 +47,7 @@ export async function updateWorkspaceUserRole(slug: string, formData: FormData) 
         .update({ role })
         .eq("workspace_id", workspace.id)
         .eq("user_id", userId)
-    revalidatePath(`/dashboard/${slug}/users`)
+    revalidatePath(`/${slug}/users`)
 }
 
 export async function removeWorkspaceUser(slug: string, formData: FormData) {
@@ -68,5 +68,5 @@ export async function removeWorkspaceUser(slug: string, formData: FormData) {
         .delete()
         .eq("workspace_id", workspace.id)
         .eq("user_id", userId)
-    revalidatePath(`/dashboard/${slug}/users`)
+    revalidatePath(`/${slug}/users`)
 }

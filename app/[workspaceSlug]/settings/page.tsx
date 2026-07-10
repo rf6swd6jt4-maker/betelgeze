@@ -12,7 +12,7 @@ import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
 import type { ReactNode } from "react"
-import { saveLeadgenSettings } from "../../../leadgen/[workspaceSlug]/settings/actions"
+import { saveLeadgenSettings } from "../../leadgen/[workspaceSlug]/settings/actions"
 import { inviteWorkspaceUser, removeWorkspaceUser, updateWorkspaceUserRole } from "../users/actions"
 import {
     cancelWorkspaceOnboardingDomain,

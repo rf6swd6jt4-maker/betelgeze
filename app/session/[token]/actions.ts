@@ -44,8 +44,8 @@ export async function completeStep(token: string, stepKey: string) {
     }
 
     revalidatePath(`/onboarding/${workspaceSlug}/${token}`)
-    revalidatePath(`/dashboard/${workspaceSlug}`)
-    if (client.relationship_id) revalidatePath(`/dashboard/${workspaceSlug}/relationships/${client.relationship_id}`)
+    revalidatePath(`/${workspaceSlug}`)
+    if (client.relationship_id) revalidatePath(`/${workspaceSlug}/relationships/${client.relationship_id}`)
 }
 
 function createFillerResponse(form: OnboardingFormDefinition): FormResponse {
@@ -203,7 +203,7 @@ export async function skipTestStep(
     }
 
     revalidatePath(`/onboarding/${workspaceSlug}/${token}`)
-    revalidatePath(`/dashboard/${workspaceSlug}`)
-    if (client.relationship_id) revalidatePath(`/dashboard/${workspaceSlug}/relationships/${client.relationship_id}`)
+    revalidatePath(`/${workspaceSlug}`)
+    if (client.relationship_id) revalidatePath(`/${workspaceSlug}/relationships/${client.relationship_id}`)
     redirect(await getPublicSessionPath(workspaceSlug, token))
 }

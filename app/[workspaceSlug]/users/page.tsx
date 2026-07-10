@@ -5,5 +5,5 @@ type PageProps = { params: Promise<{ workspaceSlug: string }> }
 
 export default async function UsersPage({ params }: PageProps) {
     const { workspaceSlug } = await params
-    redirect(`/dashboard/${workspaceSlug}/settings`)
+    redirect(`/${workspaceSlug}/settings`)
 }

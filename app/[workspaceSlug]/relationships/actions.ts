@@ -37,14 +37,10 @@ function nullableFormString(formData: FormData, key: string) {
 
 function relationshipRevalidatePaths(slug: string, relationshipId?: string) {
     revalidatePath(workspaceHref(slug, "relationships"))
-    revalidatePath(`/dashboard/${slug}/relationships`)
     revalidatePath(workspaceHref(slug, "onboarding"))
-    revalidatePath(`/dashboard/${slug}/onboarding`)
     revalidatePath(workspaceHref(slug, "work"))
-    revalidatePath(`/dashboard/${slug}/work`)
     if (relationshipId) {
         revalidatePath(relationshipHubHref(slug, relationshipId))
-        revalidatePath(`/dashboard/${slug}/relationships/${relationshipId}`)
     }
 }
 

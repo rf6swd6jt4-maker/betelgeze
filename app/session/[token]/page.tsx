@@ -75,8 +75,11 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
         .eq("session_token", token)
         .single()
 
-    const { data: workspace } = client && workspaceSlug
-        ? await supabaseAdmin.from("workspaces").select("id, name").eq("id", client.workspace_id).eq("slug", workspaceSlug).eq("status", "active").maybeSingle()
+    const workspaceQuery = client
+        ? supabaseAdmin.from("workspaces").select("id, name, slug").eq("id", client.workspace_id).eq("status", "active")
+        : null
+    const { data: workspace } = workspaceQuery
+        ? await (workspaceSlug ? workspaceQuery.eq("slug", workspaceSlug) : workspaceQuery).maybeSingle()
         : { data: null }
 
     if (error || !client || !workspace) {
@@ -191,7 +194,7 @@ export default async function SessionPage({ params, searchParams }: PageProps) {
                             previousStep
                                 ? customOnboardingDomain
                                     ? `/${token}?step=${previousStep.key}`
-                                    : `/onboarding/${workspaceSlug}/${token}?step=${previousStep.key}`
+                                    : `/session/${token}?step=${previousStep.key}`
                                 : null
                         }
                         skipAction={async () => {

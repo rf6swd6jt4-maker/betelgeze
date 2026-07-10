@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "That email is already confirmed. Log in instead." }, { status: 409 })
     }
 
-    const confirmationNext = invite ? `/confirmed?invite=${encodeURIComponent(invite)}` : "/confirmed"
+    const confirmationNext = invite ? `/email-confirmed?invite=${encodeURIComponent(invite)}` : "/email-confirmed"
     const supabase = createClient(
         getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
         getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),

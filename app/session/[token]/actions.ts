@@ -13,25 +13,27 @@ import { createSignedOnboardingUpload } from "@/lib/onboarding/uploads"
 
 async function getPublicSessionClient(token: string) {
     const workspaceSlug = (await headers()).get("x-betelgeze-workspace-slug")
-    if (!workspaceSlug) throw new Error("Invalid onboarding session")
     const { data: client, error: clientError } = await supabaseAdmin
         .from("clients")
         .select("id, workspace_id, relationship_id, is_test")
         .eq("session_token", token)
         .single()
-    const { data: workspace } = client
-        ? await supabaseAdmin.from("workspaces").select("id").eq("id", client.workspace_id).eq("slug", workspaceSlug).eq("status", "active").maybeSingle()
+    const workspaceQuery = client
+        ? supabaseAdmin.from("workspaces").select("id, slug").eq("id", client.workspace_id).eq("status", "active")
+        : null
+    const { data: workspace } = workspaceQuery
+        ? await (workspaceSlug ? workspaceQuery.eq("slug", workspaceSlug) : workspaceQuery).maybeSingle()
         : { data: null }
     if (clientError || !client || !workspace) {
         throw new Error("Invalid onboarding session")
     }
-    return { client, workspaceSlug }
+    return { client, workspaceSlug: workspace.slug }
 }
 
 async function getPublicSessionPath(workspaceSlug: string, token: string) {
     return (await headers()).get("x-betelgeze-custom-onboarding-domain")
         ? `/${token}`
-        : `/onboarding/${workspaceSlug}/${token}`
+        : `/session/${token}`
 }
 
 export async function completeStep(token: string, stepKey: string) {
@@ -43,7 +45,7 @@ export async function completeStep(token: string, stepKey: string) {
         throw new Error("Could not save progress")
     }
 
-    revalidatePath(`/onboarding/${workspaceSlug}/${token}`)
+    revalidatePath(`/session/${token}`)
     revalidatePath(`/${workspaceSlug}`)
     if (client.relationship_id) revalidatePath(`/${workspaceSlug}/relationships/${client.relationship_id}`)
 }
@@ -202,7 +204,7 @@ export async function skipTestStep(
         throw new Error("Could not save progress")
     }
 
-    revalidatePath(`/onboarding/${workspaceSlug}/${token}`)
+    revalidatePath(`/session/${token}`)
     revalidatePath(`/${workspaceSlug}`)
     if (client.relationship_id) revalidatePath(`/${workspaceSlug}/relationships/${client.relationship_id}`)
     redirect(await getPublicSessionPath(workspaceSlug, token))

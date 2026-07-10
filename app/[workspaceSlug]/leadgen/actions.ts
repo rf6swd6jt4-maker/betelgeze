@@ -15,9 +15,6 @@ function refreshPolls(slug: string) {
     revalidatePath(`/${slug}/leadgen`)
     revalidatePath(`/${slug}/leadgen/polls`)
     revalidatePath(`/${slug}/leadgen/new`)
-    revalidatePath(`/leadgen/${slug}`)
-    revalidatePath(`/leadgen/${slug}/polls`)
-    revalidatePath(`/leadgen/${slug}/new`)
 }
 
 function selectedValues(value: unknown) {
@@ -137,7 +134,6 @@ export async function removeLeadgenCompany(slug: string, companyId: string) {
     const { workspace } = await requireWorkspace(slug, "admin")
     await supabaseAdmin.from("leadgen_companies").delete().eq("id", companyId).eq("workspace_id", workspace.id)
     revalidatePath(`/${slug}/leadgen`)
-    revalidatePath(`/leadgen/${slug}`)
 }
 
 export async function promoteLeadgenCompanyToRelationship(slug: string, companyId: string) {
@@ -198,7 +194,6 @@ export async function promoteLeadgenCompanyToRelationship(slug: string, companyI
     }
 
     revalidatePath(`/${slug}/leadgen`)
-    revalidatePath(`/leadgen/${slug}`)
     revalidatePath(`/${slug}/relationships`)
     redirect(relationshipHubHref(workspace.slug, relationship.id))
 }

@@ -28,10 +28,8 @@ export function normalizeWorkspaceUrl(value: string, workspaceSlug: string, orig
     const path = parsed.pathname
     const defaultWorkspaceUrl = `/${workspaceSlug}`
     const dashboardMatch = path.match(new RegExp(`^/dashboard/${workspaceSlug}(?:/(.*))?$`, "i"))
-    const leadgenMatch = path.match(new RegExp(`^/leadgen/${workspaceSlug}(?:/(.*))?$`, "i"))
 
     if (dashboardMatch) return `${defaultWorkspaceUrl}${dashboardMatch[1] ? `/${dashboardMatch[1]}` : ""}${search}${hash}`
-    if (leadgenMatch) return `${defaultWorkspaceUrl}/leadgen${leadgenMatch[1] ? `/${leadgenMatch[1]}` : ""}${search}${hash}`
     return `${path}${search}${hash}`
 }
 

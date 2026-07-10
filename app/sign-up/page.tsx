@@ -22,7 +22,7 @@ function SignUpForm() {
         event.preventDefault(); setLoading(true); setError(null)
         const form = new FormData(event.currentTarget); const username = String(form.get("username") ?? "").trim().toLowerCase(); const submittedEmail = String(form.get("email") ?? "").trim().toLowerCase()
         if (!usernamePattern.test(username)) { setError("Use 3–30 lowercase letters, numbers, or hyphens for your username."); setLoading(false); return }
-        const confirmationNext = invite ? `/confirmed?invite=${encodeURIComponent(invite)}` : "/confirmed"
+        const confirmationNext = invite ? `/email-confirmed?invite=${encodeURIComponent(invite)}` : "/email-confirmed"
         const authOrigin = currentAuthOrigin()
         const { error: signUpError } = await createSupabaseBrowserClient().auth.signUp({ email: submittedEmail, password: String(form.get("password") ?? ""), options: { data: { username }, emailRedirectTo: `${authOrigin}/auth/callback?next=${encodeURIComponent(confirmationNext)}` } })
         if (signUpError) { setError(signUpError.message); setLoading(false); return }

@@ -17,7 +17,6 @@ function refresh(slug: string) {
     revalidatePath(`/${slug}`)
     revalidatePath(`/${slug}/leadgen`)
     revalidatePath(`/${slug}/settings`)
-    revalidatePath(`/leadgen/${slug}`)
 }
 
 function boundedInteger(value: FormDataEntryValue | null, fallback: number, min: number, max: number) {

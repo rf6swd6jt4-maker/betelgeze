@@ -25,10 +25,9 @@ const DASHBOARD_HOST = "dashboard.betelgeze.com"
 const APP_HOST = "app.betelgeze.com"
 const ONBOARDING_HOST = "onboarding.betelgeze.com"
 const AUTH_HOST = "auth.betelgeze.com"
-const LEADGEN_HOST = "leadgen.betelgeze.com"
 const AUTH_PATHS = [
     "/login", "/mfa", "/forgot-password", "/update-password",
-    "/confirmed", "/check-email", "/auth", "/logout", "/privacy",
+    "/email-confirmed", "/check-email", "/auth", "/logout", "/privacy",
 ]
 const APEX_ACCOUNT_PATHS = ["/sign-up", "/invitation"]
 
@@ -45,7 +44,7 @@ function withRedirect(request: NextRequest, pathname: string) {
 }
 
 function isPlatformHost(domain: string) {
-    if (["betelgeze.com", "www.betelgeze.com", APP_HOST, DASHBOARD_HOST, ONBOARDING_HOST, AUTH_HOST, LEADGEN_HOST].includes(domain)) return true
+    if (["betelgeze.com", "www.betelgeze.com", APP_HOST, DASHBOARD_HOST, ONBOARDING_HOST, AUTH_HOST, "leadgen.betelgeze.com"].includes(domain)) return true
     if (!process.env.NEXT_PUBLIC_SITE_URL) return false
     return new URL(process.env.NEXT_PUBLIC_SITE_URL).hostname.toLowerCase() === domain
 }
@@ -134,7 +133,7 @@ export async function proxy(request: NextRequest) {
     if ((domain === "betelgeze.com" || domain === "www.betelgeze.com") && path === "/" && (request.nextUrl.searchParams.has("code") || request.nextUrl.searchParams.has("token_hash"))) {
         const destination = new URL(`https://${AUTH_HOST}/auth/callback`)
         request.nextUrl.searchParams.forEach((value, key) => destination.searchParams.set(key, value))
-        if (!destination.searchParams.has("next")) destination.searchParams.set("next", "/confirmed")
+        if (!destination.searchParams.has("next")) destination.searchParams.set("next", "/email-confirmed")
         destination.searchParams.set("confirmed_redirect", "1")
         return withSession(NextResponse.redirect(destination))
     }
@@ -153,31 +152,25 @@ export async function proxy(request: NextRequest) {
     // Clean up legacy /dashboard links copied from old emails or browser state.
     // Workspace pages now live directly under /[workspaceSlug]/...
     if (isAppHost(domain)) {
-        if (path === "/leadgen" || path.startsWith("/leadgen/")) {
-            const headers = new Headers(request.headers)
-            const workspaceSlug = path.match(/^\/leadgen\/([a-z0-9][a-z0-9-]*)/i)?.[1]
-            if (workspaceSlug) headers.set("x-betelgeze-workspace-slug", workspaceSlug.toLowerCase())
-            return withSession(withRewrite(request, path, headers))
-        }
         if (path === "/dashboard") return withSession(withRedirect(request, "/workspaces"))
         if (path.startsWith("/dashboard/")) return withSession(withRedirect(request, path.slice("/dashboard".length)))
+        if (path === "/leadgen" || path.startsWith("/leadgen/")) {
+            return new NextResponse("Not Found", { status: 404 })
+        }
 
         const publicDashboardPaths = [
             "/login", "/sign-up", "/forgot-password", "/update-password",
             "/mfa", "/logout", "/privacy", "/users", "/invites", "/auth", "/workspaces", "/install",
+            "/check-email", "/email-confirmed", "/session",
         ]
         const isPublicDashboardPath = publicDashboardPaths.some(
             (publicPath) => path === publicPath || path.startsWith(`${publicPath}/`)
         )
         const workspacePath = path.match(/^\/([a-z0-9][a-z0-9-]*)(?:\/(.*))?$/i)
         if (!isPublicDashboardPath && workspacePath) {
-            const [, workspaceSlug, suffix = ""] = workspacePath
+            const [, workspaceSlug] = workspacePath
             const headers = new Headers(request.headers)
             headers.set("x-betelgeze-workspace-slug", workspaceSlug)
-            if (suffix === "leadgen" || suffix.startsWith("leadgen/")) {
-                const leadgenSuffix = suffix.replace(/^leadgen\/?/, "")
-                return withSession(withRewrite(request, `/leadgen/${workspaceSlug}${leadgenSuffix ? `/${leadgenSuffix}` : ""}`, headers))
-            }
             return withSession(withRewrite(request, path, headers))
         }
         if (path === "/") return withSession(withRewrite(request, "/workspaces"))
@@ -193,34 +186,26 @@ export async function proxy(request: NextRequest) {
         }
     }
 
-    // Leadgen is being restarted in the canonical application. Keep the host
-    // out of custom-domain resolution and expose only its dedicated reset
-    // surface until the new evidence-led workflow is ready.
-    if (domain === LEADGEN_HOST) {
+    if (domain === "leadgen.betelgeze.com") {
         if (isCentralAuthRoute) {
             const destination = new URL(`https://${AUTH_HOST}${path}`)
             destination.search = request.nextUrl.search
             return withSession(NextResponse.redirect(destination))
-        }
-        if (path === "/leadgen" || path.startsWith("/leadgen/")) {
-            const headers = new Headers(request.headers)
-            const workspaceSlug = path.match(/^\/leadgen\/([a-z0-9][a-z0-9-]*)/i)?.[1]
-            if (workspaceSlug) headers.set("x-betelgeze-workspace-slug", workspaceSlug.toLowerCase())
-            return withSession(withRewrite(request, path, headers))
         }
         if (path === "/dashboard" || path.startsWith("/dashboard/")) {
             const destination = new URL(`https://${DASHBOARD_HOST}${path === "/dashboard" ? "/workspaces" : path.slice("/dashboard".length)}`)
             destination.search = request.nextUrl.search
             return withSession(NextResponse.redirect(destination))
         }
-        if (path === "/" || path === "/leadgen") return withSession(withRewrite(request, "/leadgen"))
         const workspacePath = path.match(/^\/([a-z0-9][a-z0-9-]*)(?:\/(.*))?$/i)
         if (workspacePath) {
-            const headers = new Headers(request.headers)
-            headers.set("x-betelgeze-workspace-slug", workspacePath[1].toLowerCase())
-            const suffix = workspacePath[2] ? `/${workspacePath[2].replace(/\/$/, "")}` : ""
-            return withSession(withRewrite(request, `/leadgen/${workspacePath[1].toLowerCase()}${suffix}`, headers))
+            const destination = new URL(`https://${DASHBOARD_HOST}/${workspacePath[1].toLowerCase()}/leadgen${workspacePath[2] ? `/${workspacePath[2].replace(/\/$/, "")}` : ""}`)
+            destination.search = request.nextUrl.search
+            return withSession(NextResponse.redirect(destination))
         }
+        const destination = new URL(`https://${DASHBOARD_HOST}/workspaces`)
+        destination.search = request.nextUrl.search
+        return withSession(NextResponse.redirect(destination))
     }
 
     if ((domain === "betelgeze.com" || domain === "www.betelgeze.com") && isCentralAuthRoute) {
@@ -261,13 +246,7 @@ export async function proxy(request: NextRequest) {
     const refreshedResponse = await refreshedSessionResponse()
     clearLegacyHostOnlyAuthCookies(request, refreshedResponse)
 
-    const onboarding = path.match(/^\/onboarding\/([a-z0-9][a-z0-9-]*)\/([a-f0-9]+)$/i)
-    if (!onboarding) return refreshedResponse
-    const headers = new Headers(request.headers)
-    headers.set("x-betelgeze-workspace-slug", onboarding[1].toLowerCase())
-    const url = request.nextUrl.clone()
-    url.pathname = `/session/${onboarding[2]}`
-    return carryCookies(NextResponse.rewrite(url, { request: { headers } }), refreshedResponse)
+    return refreshedResponse
 }
 
 export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"] }

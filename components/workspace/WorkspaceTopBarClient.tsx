@@ -6,6 +6,7 @@ import Link from "next/link"
 import { useCallback, useEffect, useId, useRef, useState, useTransition, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { AccountMenu } from "@/components/account/AccountMenu"
+import { LoadingOverlay } from "@/components/LoadingOverlay"
 import type { WorkspaceCreateActionState } from "@/app/[workspaceSlug]/relationships/actions"
 import { WorkspaceTabBridge } from "@/components/workspace/WorkspaceTabBridge"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
@@ -332,6 +333,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const [canAddTab, setCanAddTab] = useState(true)
     const [contextOpenByTab, setContextOpenByTab] = useState<Record<string, boolean>>({})
     const [contextStatusByTab, setContextStatusByTab] = useState<Record<string, WorkspaceTabContextStatus>>({})
+    const [routeLoadingTabId, setRouteLoadingTabId] = useState<string | null>(null)
     const [query, setQuery] = useState("")
     const [searchOpen, setSearchOpen] = useState(false)
     const [searchLoading, setSearchLoading] = useState(false)
@@ -492,6 +494,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
             if (message.type === "location" && message.url) {
                 const url = normalizeWorkspaceUrl(message.url)
+                if (message.tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
                 setTabs((existingTabs) => {
                     const updatedTabs = existingTabs.map((tab) => {
                         if (tab.id !== message.tabId) return tab
@@ -514,6 +517,10 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     saveTabsState(updatedTabs, activeTabIdRef.current)
                     return updatedTabs
                 })
+            }
+
+            if (message.type === "navigation-start") {
+                if (message.tabId === activeTabIdRef.current) setRouteLoadingTabId(message.tabId)
             }
 
             if (message.type === "context-status") {
@@ -710,6 +717,16 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     }, [tabs, tabsHydrated])
 
     useEffect(() => {
+        if (!routeLoadingTabId) return
+
+        const timeout = window.setTimeout(() => {
+            setRouteLoadingTabId(null)
+        }, 8000)
+
+        return () => window.clearTimeout(timeout)
+    }, [routeLoadingTabId])
+
+    useEffect(() => {
         if (!tabsHydrated) return
         deferNavigationStateUpdate(() => {
             setContextOpenByTab((current) => {
@@ -865,6 +882,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         const tabId = activeTabIdRef.current
         if (!tabId) return
         const url = normalizeWorkspaceUrl(href)
+        const currentTab = tabs.find((candidate) => candidate.id === tabId)
+        if (currentTab?.url !== url) setRouteLoadingTabId(tabId)
 
         if (loadedTabIdsRef.current.has(tabId) && postToTab(tabId, { type: "navigate", url })) return
         pendingNavigationRef.current.set(tabId, url)
@@ -873,6 +892,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     function handleFrameLoad(tabId: string) {
         loadedTabIdsRef.current.add(tabId)
         setLoadedTabIds(new Set(loadedTabIdsRef.current))
+        if (tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
         const pendingUrl = pendingNavigationRef.current.get(tabId)
         if (pendingUrl) {
             pendingNavigationRef.current.delete(tabId)
@@ -1238,6 +1258,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                 onNavigate={navigateActiveTab}
             />
         )}
+
+        {routeLoadingTabId === activeTabId && <LoadingOverlay />}
 
         <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950 ${sidebarTransitionEnabled ? "transition-transform duration-200 ease-out" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex h-full flex-col gap-2 px-4 py-5 md:gap-1 md:px-3 md:py-4">

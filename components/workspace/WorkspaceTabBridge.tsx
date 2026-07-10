@@ -42,6 +42,17 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
     }, [pathname, searchParams, tabId, workspaceSlug])
 
     useEffect(() => {
+        function reportNavigationStart(url: string) {
+            const message: WorkspaceTabFrameMessage = {
+                source: WORKSPACE_TAB_MESSAGE_SOURCE,
+                target: "host",
+                tabId,
+                type: "navigation-start",
+                url: normalizeWorkspaceUrl(url, workspaceSlug, window.location.origin),
+            }
+            window.parent.postMessage(message, window.location.origin)
+        }
+
         function preserveFrameNavigation(event: MouseEvent) {
             if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
             const target = event.target
@@ -50,8 +61,12 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return
             const destination = new URL(anchor.href, window.location.href)
             if (destination.origin !== window.location.origin || destination.searchParams.has(WORKSPACE_TAB_FRAME_PARAM)) return
+            const nextUrl = `${destination.pathname}${destination.search}${destination.hash}`
+            const currentUrl = normalizeWorkspaceUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`, workspaceSlug, window.location.origin)
+            if (normalizeWorkspaceUrl(nextUrl, workspaceSlug, window.location.origin) === currentUrl) return
             event.preventDefault()
-            router.push(workspaceTabFrameUrl(`${destination.pathname}${destination.search}${destination.hash}`, tabId, window.location.origin))
+            reportNavigationStart(nextUrl)
+            router.push(workspaceTabFrameUrl(nextUrl, tabId, window.location.origin))
         }
 
         function receiveHostMessage(event: MessageEvent<WorkspaceTabParentMessage>) {
@@ -92,7 +107,7 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             window.removeEventListener("betelgeze:workspace-mutation", reportPossibleMutation)
             delete document.body.dataset.workspaceTabActive
         }
-    }, [router, tabId])
+    }, [router, tabId, workspaceSlug])
 
     return null
 }

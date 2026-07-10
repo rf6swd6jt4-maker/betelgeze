@@ -384,6 +384,15 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         return suffix.split("/")[0]?.replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Tab"
     }, [defaultWorkspaceUrl])
 
+    const routeCanShowRelationshipContext = useCallback((url: string) => {
+        const parsed = new URL(url, window.location.origin)
+        const suffix = parsed.pathname.startsWith(`${defaultWorkspaceUrl}/`)
+            ? parsed.pathname.slice(defaultWorkspaceUrl.length + 1)
+            : ""
+        const [section, id] = suffix.split("/")
+        return Boolean(id) && (section === "relationships" || section === "onboarding" || section === "work")
+    }, [defaultWorkspaceUrl])
+
     const saveTabsState = useCallback((nextTabs: WorkspaceTab[], nextActiveId: string) => {
         sessionStorage.setItem(tabsStorageKey, JSON.stringify({ mode: "live", tabs: nextTabs, activeId: nextActiveId }))
     }, [tabsStorageKey])
@@ -910,7 +919,13 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         const alreadyPending = pendingNavigationRef.current.get(tabId) === url
         if (currentTab?.url === url && isLoaded && !alreadyPending) return
         if (currentTab?.url !== url || !isLoaded || alreadyPending) setRouteLoadingTabId(tabId)
-        if (currentTab?.url !== url) updateTabForShellNavigation(tabId, url)
+        if (currentTab?.url !== url) {
+            updateTabForShellNavigation(tabId, url)
+            if (!routeCanShowRelationshipContext(url)) {
+                setTabContextStatus(tabId, { supported: false, relationshipId: null, context: null })
+                setTabContextOpen(tabId, false)
+            }
+        }
 
         pendingNavigationRef.current.set(tabId, url)
         if (isLoaded && postToTab(tabId, { type: "navigate", url })) return
@@ -1279,7 +1294,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             )}
         </div>
 
-        {activeRelationshipContext && (
+        {activeRelationshipContext && !activeRouteLoading && (
             <ShellRelationshipContextPanel
                 context={activeRelationshipContext}
                 workspaceSlug={workspace.slug}

@@ -209,25 +209,18 @@ function computeTimeline(chapters: StepChapter[], sessionStarted: boolean, sessi
         ]
     }
 
-    const submittedIndexes = chapters
-        .filter((step) => step.status === "submitted" || step.status === "reviewed")
-        .map((step) => step.index)
     const firstOpenIndex = chapters.findIndex((step) => step.status === "not_submitted" || step.status === "blocked")
     const currentIndex = firstOpenIndex >= 0 ? firstOpenIndex : chapters.length - 1
-    const indexes = new Set<number>()
-
-    for (const index of submittedIndexes.slice(-2)) indexes.add(index)
-    indexes.add(currentIndex)
-    indexes.add(Math.min(chapters.length - 1, currentIndex + 1))
-    indexes.add(Math.min(chapters.length - 1, currentIndex + 2))
-
-    const ordered = [...indexes].filter((index) => index >= 0 && index < chapters.length).sort((a, b) => a - b)
+    const windowStart = Math.min(
+        Math.max(0, currentIndex - 1),
+        Math.max(0, chapters.length - 3)
+    )
+    const ordered = chapters
+        .slice(windowStart, windowStart + 3)
+        .map((step) => step.index)
     const timeline: TimelineItem[] = [{ kind: "start", label: "Start", done: sessionStarted, href: chapters[0] ? `#${chapters[0].anchorId}` : undefined }]
-    let previousIndex = -1
     for (const index of ordered) {
-        if (previousIndex >= 0 && index - previousIndex > 1) timeline.push({ kind: "gap", key: `${previousIndex}-${index}` })
         timeline.push({ kind: "step", step: chapters[index], visibleNumber: index + 1 })
-        previousIndex = index
     }
     timeline.push({ kind: "final", label: "Finish", done: sessionCompleted, href: sessionCompleted && chapters.length ? `#${chapters[chapters.length - 1].anchorId}` : undefined })
     return timeline
@@ -236,8 +229,7 @@ function computeTimeline(chapters: StepChapter[], sessionStarted: boolean, sessi
 function TimelineNode({ item }: { item: TimelineItem }) {
     if (item.kind === "gap") {
         return (
-            <div className="relative flex min-w-12 flex-col items-center">
-                <div className="absolute top-5 h-px w-full bg-neutral-800" />
+            <div className="relative z-10 flex min-w-0 flex-col items-center">
                 <div className="relative flex h-10 w-10 items-center justify-center rounded-full border border-neutral-800 bg-black">
                     <EllipsisIcon />
                 </div>
@@ -250,18 +242,17 @@ function TimelineNode({ item }: { item: TimelineItem }) {
         const isFinal = item.kind === "final"
         const circleClass = isFinal ? "h-12 w-12" : "h-10 w-10"
         const iconClass = isFinal ? "h-5 w-5" : "h-4 w-4"
-        const lineTop = isFinal ? "top-6" : "top-5"
+        const labelTone = isFinal ? "text-neutral-100" : item.done ? "text-neutral-100" : "text-neutral-500"
         const body = (
             <>
                 <div className={`relative flex ${circleClass} items-center justify-center rounded-full border-2 ${nodeTone(item.done, false)}`}>
                     {item.done ? <CheckIcon className={iconClass} /> : <ClockIcon className={iconClass} />}
                 </div>
-                <span className={`mt-2 line-clamp-2 max-w-32 whitespace-normal text-center text-xs font-medium leading-4 ${item.done ? "text-neutral-100" : "text-neutral-500"}`}>{item.label}</span>
+                <span className={`mt-2 line-clamp-2 w-full whitespace-normal px-1 text-center text-xs font-medium leading-4 ${labelTone}`}>{item.label}</span>
             </>
         )
         return (
-            <div className={`relative flex ${isFinal ? "min-w-36" : "min-w-32"} flex-col items-center`}>
-                <div className={`absolute ${lineTop} h-px w-full bg-neutral-800`} />
+            <div className="relative z-10 flex min-w-0 flex-col items-center">
                 {item.href ? <a href={item.href} className="relative flex flex-col items-center">{body}</a> : <div className="relative flex flex-col items-center">{body}</div>}
             </div>
         )
@@ -274,12 +265,11 @@ function TimelineNode({ item }: { item: TimelineItem }) {
             <div className={`relative flex h-10 w-10 items-center justify-center rounded-full border-2 text-base font-semibold ${nodeTone(done, active)}`}>
                 {done ? <CheckIcon /> : item.visibleNumber}
             </div>
-            <span className={`mt-2 line-clamp-2 max-w-36 whitespace-normal text-center text-xs font-medium leading-4 ${done || active ? "text-neutral-100" : "text-neutral-500"}`}>{item.step.title}</span>
+            <span className={`mt-2 line-clamp-2 w-full whitespace-normal px-1 text-center text-xs font-medium leading-4 ${done || active ? "text-neutral-100" : "text-neutral-500"}`}>{item.step.title}</span>
         </>
     )
     return (
-        <div className="relative flex min-w-36 flex-col items-center">
-            <div className="absolute top-5 h-px w-full bg-neutral-800" />
+        <div className="relative z-10 flex min-w-0 flex-col items-center">
             {done ? <a href={`#${item.step.anchorId}`} className="relative flex flex-col items-center">{body}</a> : <div className="relative flex flex-col items-center">{body}</div>}
         </div>
     )
@@ -467,13 +457,14 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                                         <h2 className="text-lg font-semibold">Onboarding timeline</h2>
                                         <p className="mt-1 text-sm text-neutral-500">Completed steps jump to their client information chapters below.</p>
                                     </div>
-                                    <span className={`w-fit rounded-full border px-2.5 py-1 text-xs capitalize ${sessionCompleted ? "border-green-500/30 bg-green-950/20 text-green-100" : "border-neutral-700 bg-neutral-900 text-neutral-300"}`}>
+                                    <span className={`w-fit rounded-full border px-2.5 py-1 text-xs capitalize ${sessionCompleted ? "border-white/30 bg-white/10 text-white" : "border-neutral-700 bg-neutral-900 text-neutral-300"}`}>
                                         {session?.status ?? "Not started"}
                                     </span>
                                 </div>
                             </div>
-                            <div className="overflow-x-auto px-4 py-5">
-                                <div className="flex min-w-max items-start justify-between gap-1">
+                            <div className="px-4 py-5">
+                                <div className="relative grid w-full items-start gap-3" style={{ gridTemplateColumns: `repeat(${timeline.length}, minmax(0, 1fr))` }}>
+                                    <div className="absolute left-0 right-0 top-5 h-px bg-neutral-800" />
                                     {timeline.map((item, index) => (
                                         <TimelineNode key={item.kind === "step" ? item.step.key : item.kind === "gap" ? item.key : `${item.kind}-${index}`} item={item} />
                                     ))}

@@ -17,8 +17,10 @@ export type WorkspaceTabFrameMessage = {
     source: typeof WORKSPACE_TAB_MESSAGE_SOURCE
     target: "host"
     tabId: string
-    type: "location" | "mutation"
+    type: "location" | "mutation" | "context-status"
     url?: string
+    relationshipId?: string | null
+    contextSupported?: boolean
 }
 
 export function normalizeWorkspaceUrl(value: string, workspaceSlug: string, origin: string) {

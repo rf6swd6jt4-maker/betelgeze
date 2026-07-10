@@ -40,6 +40,11 @@ type WorkspaceTabsState = {
     tabs: WorkspaceTab[]
 }
 
+type WorkspaceTabContextStatus = {
+    supported: boolean
+    relationshipId: string | null
+}
+
 type Props = {
     workspace: { id: string; name: string; slug: string }
     workspaceLogoSrc?: string | null
@@ -190,6 +195,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const mutationRevisionRef = useRef(0)
     const tabButtonRefs = useRef(new Map<string, HTMLButtonElement>())
     const createIntentHandledRef = useRef("")
+    const contextStatusByTabRef = useRef<Record<string, WorkspaceTabContextStatus>>({})
+    const contextManualClosedByTabRef = useRef<Record<string, boolean>>({})
     const [sidebarOpen, setSidebarOpen] = useState(false)
     const [sidebarHydrated, setSidebarHydrated] = useState(false)
     const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false)
@@ -199,6 +206,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const [activeTabId, setActiveTabId] = useState("")
     const [canAddTab, setCanAddTab] = useState(true)
     const [contextOpenByTab, setContextOpenByTab] = useState<Record<string, boolean>>({})
+    const [contextStatusByTab, setContextStatusByTab] = useState<Record<string, WorkspaceTabContextStatus>>({})
     const [query, setQuery] = useState("")
     const [searchOpen, setSearchOpen] = useState(false)
     const [searchLoading, setSearchLoading] = useState(false)
@@ -321,6 +329,34 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         if (activeTab) document.title = `${activeTab.title} | Betelgeze`
     }, [activeTabId, tabs])
 
+    const postToTab = useCallback((tabId: string, message: Omit<WorkspaceTabParentMessage, "source" | "target" | "tabId">) => {
+        const frame = iframeRefs.current.get(tabId)
+        if (!frame?.contentWindow) return false
+        const payload: WorkspaceTabParentMessage = {
+            source: WORKSPACE_TAB_MESSAGE_SOURCE,
+            target: "frame",
+            tabId,
+            ...message,
+        }
+        frame.contentWindow.postMessage(payload, window.location.origin)
+        return true
+    }, [])
+
+    const setTabContextOpen = useCallback((tabId: string, open: boolean) => {
+        sessionStorage.setItem(workspaceTabContextStorageKey(workspace.slug, tabId), open ? "true" : "false")
+        setContextOpenByTab((current) => current[tabId] === open ? current : { ...current, [tabId]: open })
+        postToTab(tabId, { type: "context-set", open })
+    }, [postToTab, workspace.slug])
+
+    const setTabContextStatus = useCallback((tabId: string, status: WorkspaceTabContextStatus) => {
+        contextStatusByTabRef.current = { ...contextStatusByTabRef.current, [tabId]: status }
+        setContextStatusByTab((current) => {
+            const existing = current[tabId]
+            if (existing?.supported === status.supported && existing.relationshipId === status.relationshipId) return current
+            return { ...current, [tabId]: status }
+        })
+    }, [])
+
     useEffect(() => {
         function receiveFrameMessage(event: MessageEvent<WorkspaceTabFrameMessage>) {
             if (event.origin !== window.location.origin) return
@@ -354,11 +390,30 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     return updatedTabs
                 })
             }
+
+            if (message.type === "context-status") {
+                const relationshipId = message.relationshipId ?? null
+                const supported = message.contextSupported === true && Boolean(relationshipId)
+
+                if (!supported) {
+                    const currentStatus = contextStatusByTabRef.current[message.tabId]
+                    if (currentStatus?.supported && relationshipId && currentStatus.relationshipId !== relationshipId) return
+                    setTabContextStatus(message.tabId, { supported: false, relationshipId: null })
+                    setTabContextOpen(message.tabId, false)
+                    return
+                }
+
+                setTabContextStatus(message.tabId, { supported: true, relationshipId })
+                if (!contextManualClosedByTabRef.current[message.tabId]) {
+                    delete contextManualClosedByTabRef.current[message.tabId]
+                    setTabContextOpen(message.tabId, true)
+                }
+            }
         }
 
         window.addEventListener("message", receiveFrameMessage)
         return () => window.removeEventListener("message", receiveFrameMessage)
-    }, [normalizeWorkspaceUrl, saveTabsState, titleForUrl])
+    }, [normalizeWorkspaceUrl, saveTabsState, setTabContextOpen, setTabContextStatus, titleForUrl])
 
     useEffect(() => {
         if (!tabsHydrated) return
@@ -544,19 +599,6 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             })
         })
     }, [tabs, tabsHydrated, workspace.slug])
-
-    function postToTab(tabId: string, message: Omit<WorkspaceTabParentMessage, "source" | "target" | "tabId">) {
-        const frame = iframeRefs.current.get(tabId)
-        if (!frame?.contentWindow) return false
-        const payload: WorkspaceTabParentMessage = {
-            source: WORKSPACE_TAB_MESSAGE_SOURCE,
-            target: "frame",
-            tabId,
-            ...message,
-        }
-        frame.contentWindow.postMessage(payload, window.location.origin)
-        return true
-    }
 
     function traverseHistory(step: -1 | 1) {
         const tabId = activeTabIdRef.current
@@ -763,7 +805,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         activeTabIdRef.current = tab.id
         setTabs(nextTabs)
         setActiveTabId(tab.id)
-        const currentContextOpen = currentTab ? contextOpenByTab[currentTab.id] ?? true : true
+        const currentContextStatus = currentTab ? contextStatusByTabRef.current[currentTab.id] : null
+        const currentContextOpen = currentContextStatus?.supported ? true : currentTab ? contextOpenByTab[currentTab.id] ?? true : true
         sessionStorage.setItem(workspaceTabContextStorageKey(workspace.slug, tab.id), currentContextOpen ? "true" : "false")
         setContextOpenByTab((current) => ({ ...current, [tab.id]: currentContextOpen }))
         saveTabsState(nextTabs, tab.id)
@@ -772,16 +815,26 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     function toggleContextPanel() {
         const tabId = activeTabIdRef.current
         if (!tabId) return
+        const activeContextStatus = contextStatusByTabRef.current[tabId]
+        if (!activeContextStatus?.supported) return
         const nextOpen = !(contextOpenByTab[tabId] ?? true)
-        sessionStorage.setItem(workspaceTabContextStorageKey(workspace.slug, tabId), nextOpen ? "true" : "false")
-        setContextOpenByTab((current) => ({ ...current, [tabId]: nextOpen }))
-        postToTab(tabId, { type: "context-set", open: nextOpen })
+        if (nextOpen) delete contextManualClosedByTabRef.current[tabId]
+        else contextManualClosedByTabRef.current[tabId] = true
+        setTabContextOpen(tabId, nextOpen)
     }
 
     function closeTab(tabId: string) {
         if (tabs.length <= 1) return
         const tabIndex = tabs.findIndex((tab) => tab.id === tabId)
         const nextTabs = tabs.filter((tab) => tab.id !== tabId)
+        delete contextStatusByTabRef.current[tabId]
+        delete contextManualClosedByTabRef.current[tabId]
+        setContextStatusByTab((current) => {
+            if (!(tabId in current)) return current
+            const next = { ...current }
+            delete next[tabId]
+            return next
+        })
         const nextActiveTab = tabId === activeTabId
             ? nextTabs[Math.max(0, tabIndex - 1)] ?? nextTabs[0]
             : nextTabs.find((tab) => tab.id === activeTabId) ?? nextTabs[0]
@@ -810,7 +863,9 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const activeTabLoaded = loadedTabIds.has(activeTab.id)
     const canGoBack = activeTabLoaded && activeTab.historyIndex > 0
     const canGoForward = activeTabLoaded && activeTab.historyIndex < activeTab.history.length - 1
-    const activeContextOpen = contextOpenByTab[activeTab.id] ?? true
+    const activeContextStatus = contextStatusByTab[activeTab.id]
+    const activeContextSupported = activeContextStatus?.supported === true
+    const activeContextOpen = activeContextSupported && (contextOpenByTab[activeTab.id] ?? true)
     const activePathname = new URL(activeTab.url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname
 
     return <div ref={shellRootRef} data-workspace-shell-root>
@@ -1027,7 +1082,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                         <span aria-hidden="true" className="text-xl leading-none">+</span>
                     </button>
                 </div>
-                <button data-icon-button type="button" onClick={toggleContextPanel} aria-label={activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextOpen} className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white">
+                <button data-icon-button type="button" onClick={toggleContextPanel} disabled={!activeContextSupported} aria-label={!activeContextSupported ? "Relationship context unavailable" : activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextSupported ? activeContextOpen : undefined} className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400">
                     <ContextPanelIcon />
                 </button>
             </div>

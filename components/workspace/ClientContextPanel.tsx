@@ -8,6 +8,7 @@ import {
     WORKSPACE_TAB_FRAME_PARAM,
     WORKSPACE_TAB_MESSAGE_SOURCE,
     workspaceTabContextStorageKey,
+    type WorkspaceTabFrameMessage,
     type WorkspaceTabParentMessage,
 } from "@/lib/workspace-tabs"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
@@ -69,6 +70,7 @@ export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }
     const [open, setOpen] = useState(() => typeof window === "undefined" ? true : sessionStorage.getItem(storageKey) !== "false")
     const [parentPortalElement, setParentPortalElement] = useState<HTMLElement | null>(null)
     const hasRelationship = Boolean(relationship)
+    const relationshipId = relationship?.id ?? null
 
     useEffect(() => {
         sessionStorage.setItem(storageKey, open ? "true" : "false")
@@ -85,6 +87,25 @@ export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }
         window.addEventListener("message", receiveHostMessage)
         return () => window.removeEventListener("message", receiveHostMessage)
     }, [tabId])
+
+    useEffect(() => {
+        if (!relationshipId || tabId === "standalone" || typeof window === "undefined" || window.parent === window) return
+
+        const postContextStatus = (contextSupported: boolean) => {
+            const message: WorkspaceTabFrameMessage = {
+                source: WORKSPACE_TAB_MESSAGE_SOURCE,
+                target: "host",
+                tabId,
+                type: "context-status",
+                contextSupported,
+                relationshipId,
+            }
+            window.parent.postMessage(message, window.location.origin)
+        }
+
+        postContextStatus(true)
+        return () => postContextStatus(false)
+    }, [relationshipId, tabId])
 
     useEffect(() => {
         let animationFrame = 0

@@ -448,8 +448,8 @@ drop policy if exists workspace_admins_can_manage_relationship_onboarding_sessio
 create policy workspace_admins_can_manage_relationship_onboarding_sessions
 on public.relationship_onboarding_sessions
 for all
-using (public.is_workspace_admin(workspace_id))
-with check (public.is_workspace_admin(workspace_id));
+using (public.is_workspace_member(workspace_id, array['owner','admin']))
+with check (public.is_workspace_member(workspace_id, array['owner','admin']));
 
 drop policy if exists workspace_members_can_read_relationship_onboarding_modules on public.relationship_onboarding_modules;
 create policy workspace_members_can_read_relationship_onboarding_modules
@@ -461,8 +461,8 @@ drop policy if exists workspace_admins_can_manage_relationship_onboarding_module
 create policy workspace_admins_can_manage_relationship_onboarding_modules
 on public.relationship_onboarding_modules
 for all
-using (public.is_workspace_admin(workspace_id))
-with check (public.is_workspace_admin(workspace_id));
+using (public.is_workspace_member(workspace_id, array['owner','admin']))
+with check (public.is_workspace_member(workspace_id, array['owner','admin']));
 
 drop policy if exists workspace_members_can_read_relationship_services on public.relationship_services;
 create policy workspace_members_can_read_relationship_services
@@ -474,5 +474,5 @@ drop policy if exists workspace_admins_can_manage_relationship_services on publi
 create policy workspace_admins_can_manage_relationship_services
 on public.relationship_services
 for all
-using (public.is_workspace_admin(workspace_id))
-with check (public.is_workspace_admin(workspace_id));
+using (public.is_workspace_member(workspace_id, array['owner','admin']))
+with check (public.is_workspace_member(workspace_id, array['owner','admin']));

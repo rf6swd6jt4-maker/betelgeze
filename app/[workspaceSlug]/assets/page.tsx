@@ -5,7 +5,7 @@ import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { assetHref, listWorkspaceAssets, workspaceHref, type RelationshipAsset } from "@/lib/relationships"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
-import { formatRelativeTime } from "@/lib/ui/relative-time"
+import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
 
 export const dynamic = "force-dynamic"
@@ -83,6 +83,7 @@ export default async function AssetsPage({ params }: PageProps) {
                                     </div>
                                     <div className="p-4">
                                         <p className="truncate font-medium text-neutral-100">{asset.title}</p>
+                                        <p className="mt-1 font-mono text-xs text-neutral-600">ID {shortId(asset.id)}</p>
                                         <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-neutral-500">{asset.description ?? asset.source_kind.replace(/_/g, " ")}</p>
                                         <div className="mt-4 flex items-center justify-between gap-3 text-xs text-neutral-500">
                                             <span className="truncate capitalize">{asset.content_type ?? asset.asset_kind.replace(/_/g, " ")}</span>

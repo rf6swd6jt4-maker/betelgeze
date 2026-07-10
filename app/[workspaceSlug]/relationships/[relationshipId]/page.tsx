@@ -8,7 +8,7 @@ import {
     phaseLabel,
     workDetailHref,
 } from "@/lib/relationships"
-import { formatRelativeTime } from "@/lib/ui/relative-time"
+import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
 
 export const dynamic = "force-dynamic"
@@ -33,14 +33,18 @@ export default async function RelationshipDetailPlaceholder({ params }: PageProp
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="min-w-0">
                         <header className="border-b border-neutral-800 pb-6">
-                            <p className="text-sm text-neutral-500">Relationship detail</p>
+                            <p className="font-mono text-sm text-neutral-500">Relationship {shortId(relationship.id)}</p>
                             <h1 className="mt-2 text-3xl font-semibold tracking-tight">{relationship.primary_person_name}</h1>
                             <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">
                                 This page will become the combined relationship summary with a Gantt chart at the top. Gantt items will deep-link into onboarding, project management, communications, invoices, assets, and future global work-item details.
                             </p>
                         </header>
 
-                        <section className="mt-6 grid gap-3 sm:grid-cols-3">
+                        <section className="mt-6 grid gap-3 sm:grid-cols-4">
+                            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                                <p className="text-sm text-neutral-500">Relationship ID</p>
+                                <p className="mt-2 font-mono font-medium">{shortId(relationship.id)}</p>
+                            </div>
                             <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
                                 <p className="text-sm text-neutral-500">Company</p>
                                 <p className="mt-2 font-medium">{relationship.business_name ?? "No company saved"}</p>

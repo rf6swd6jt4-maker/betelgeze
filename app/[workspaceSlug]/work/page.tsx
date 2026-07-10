@@ -8,7 +8,7 @@ import {
     type RelationshipWorkItemStatus,
 } from "@/lib/relationships"
 import { requireWorkspace } from "@/lib/workspaces"
-import { formatRelativeTime } from "@/lib/ui/relative-time"
+import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 
 export const dynamic = "force-dynamic"
 
@@ -72,6 +72,7 @@ export default async function WorkQueuePage({ params }: PageProps) {
                                     <div className="min-w-0">
                                         <p className="truncate font-medium text-neutral-100">{item.title}</p>
                                         {item.description && <p className="mt-1 line-clamp-1 text-sm text-neutral-500">{item.description}</p>}
+                                        <p className="mt-1 font-mono text-xs text-neutral-600">ID {shortId(item.id)}</p>
                                     </div>
                                     <div className="min-w-0 text-sm text-neutral-300">
                                         <span className="block truncate">{item.relationship?.primary_person_name ?? "Workspace item"}</span>

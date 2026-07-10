@@ -13,6 +13,7 @@ import {
     workspaceHref,
     type RelationshipRecord,
 } from "@/lib/relationships"
+import { shortId } from "@/lib/ui/relative-time"
 
 export const dynamic = "force-dynamic"
 
@@ -46,6 +47,8 @@ function staticNavigationResults(workspace: { name: string; slug: string }, quer
         { id: "page-relationships", type: "Page", label: "Relationships", description: "Relationship Hub list", href: workspaceHref(workspace.slug, "relationships"), path: `${workspace.name} > Relationships`, keywords: ["crm", "people", "accounts"] },
         { id: "page-onboarding", type: "Page", label: "Onboarding", description: "Relationship onboarding status and submissions", href: workspaceHref(workspace.slug, "onboarding"), path: `${workspace.name} > Onboarding`, keywords: ["forms", "submissions", "portal"] },
         { id: "page-work", type: "Page", label: "Project Management", description: "Fulfilment relationship work items", href: workspaceHref(workspace.slug, "work"), path: `${workspace.name} > Project Management`, keywords: ["tasks", "project management", "queue", "fulfilment"] },
+        { id: "page-work-items", type: "Page", label: "Work Items", description: "Workspace-native task IDs and work item list", href: workspaceHref(workspace.slug, "work-items"), path: `${workspace.name} > Work Items`, keywords: ["tasks", "work item ids", "work ids"] },
+        { id: "page-assets", type: "Page", label: "Assets", description: "Workspace asset IDs and file gallery", href: workspaceHref(workspace.slug, "assets"), path: `${workspace.name} > Assets`, keywords: ["files", "uploads", "asset ids", "gallery"] },
         { id: "page-communications", type: "Page", label: "Communications", description: "Relationship communication summaries", href: communicationsHref(workspace.slug), path: `${workspace.name} > Communications`, keywords: ["messages", "chat", "whatsapp", "communication"] },
         { id: "page-leadgen", type: "Page", label: "Lead Gen", description: "Lead generation dashboard", href: workspaceHref(workspace.slug, "leadgen"), path: `${workspace.name} > Lead Gen`, keywords: ["leads", "lead generation"] },
         { id: "action-new-poll", type: "Action", label: "New Poll", description: "Create and preflight a new lead-generation poll", href: workspaceHref(workspace.slug, "leadgen/new"), path: `${workspace.name} > Lead Gen > New Poll`, keywords: ["create poll", "start poll", "run poll", "poll preflight", "leadgen new"] },
@@ -129,7 +132,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
             {
                 hubHref: relationshipHubHref(workspace.slug, relationship.id),
                 path: `${workspace.name} > Relationships`,
-                recordId: relationship.client_id ?? relationship.id,
+                recordId: shortId(relationship.id),
             }
         ))
     }
@@ -153,7 +156,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                 {
                     hubHref: item.native_href?.startsWith("/") ? item.native_href : undefined,
                     path: `${workspace.name} > Project Management`,
-                    recordId: item.native_id ?? item.id,
+                    recordId: shortId(item.id),
                 }
             ))
         }
@@ -234,7 +237,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                 {
                     hubHref: undefined,
                     path: `${workspace.name} > Relationships > Assets`,
-                    recordId: asset.native_id ?? asset.id,
+                    recordId: shortId(asset.id),
                 }
             ))
         }

@@ -11,7 +11,7 @@ import {
     assetHref,
     relationshipHubHref,
 } from "@/lib/relationships"
-import { formatRelativeTime } from "@/lib/ui/relative-time"
+import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
 
 export const dynamic = "force-dynamic"
@@ -43,12 +43,16 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="min-w-0">
                         <header className="border-b border-neutral-800 pb-6">
-                            <p className="text-sm text-neutral-500">Work item</p>
+                            <p className="font-mono text-sm text-neutral-500">Work item {shortId(item.id)}</p>
                             <h1 className="mt-2 text-3xl font-semibold tracking-tight">{item.title}</h1>
                             {item.description && <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">{item.description}</p>}
                         </header>
 
-                <section className="mt-6 grid gap-3 sm:grid-cols-4">
+                <section className="mt-6 grid gap-3 sm:grid-cols-5">
+                    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                        <p className="text-sm text-neutral-500">Work item ID</p>
+                        <p className="mt-2 font-mono font-medium">{shortId(item.id)}</p>
+                    </div>
                     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
                         <p className="text-sm text-neutral-500">Status</p>
                         <p className="mt-2 font-medium capitalize">{statusLabel(item.status)}</p>
@@ -80,6 +84,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                             <Link key={link.relationship_id} href={relationshipHubHref(workspace.slug, link.relationship_id)} className="block px-3 py-3 hover:bg-neutral-900/70">
                                 <p className="font-medium text-neutral-100">{link.relationship?.primary_person_name ?? "Relationship"}</p>
                                 <p className="mt-1 text-sm text-neutral-500">{link.relationship?.business_name ?? "No business context"}</p>
+                                <p className="mt-1 font-mono text-xs text-neutral-600">ID {shortId(link.relationship_id)}</p>
                             </Link>
                         )) : (
                             <p className="px-3 py-4 text-sm text-neutral-500">This work item is workspace-only right now.</p>
@@ -95,6 +100,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                                 <div className="min-w-0">
                                     <p className="truncate font-medium text-neutral-100">{asset.title}</p>
                                     <p className="mt-1 truncate text-sm text-neutral-500">{asset.description ?? asset.source_kind.replace(/_/g, " ")}</p>
+                                    <p className="mt-1 font-mono text-xs text-neutral-600">ID {shortId(asset.id)}</p>
                                 </div>
                                 <p className="text-sm capitalize text-neutral-400">{asset.asset_kind.replace(/_/g, " ")}</p>
                                 <p className="text-sm text-neutral-500 sm:text-right">{formatRelativeTime(asset.updated_at)}</p>

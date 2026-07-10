@@ -13,7 +13,7 @@ import {
     workItemHref,
 } from "@/lib/relationships"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
-import { formatRelativeTime } from "@/lib/ui/relative-time"
+import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
 
 export const dynamic = "force-dynamic"
@@ -74,7 +74,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="min-w-0">
                         <header className="border-b border-neutral-800 pb-6">
-                            <p className="text-sm capitalize text-neutral-500">{asset.asset_kind.replace(/_/g, " ")} asset</p>
+                            <p className="font-mono text-sm text-neutral-500">{asset.asset_kind.replace(/_/g, " ")} asset {shortId(asset.id)}</p>
                             <h1 className="mt-2 text-3xl font-semibold tracking-tight">{asset.title}</h1>
                             {asset.description && <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">{asset.description}</p>}
                         </header>
@@ -132,6 +132,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
                     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
                         <h2 className="font-semibold">Details</h2>
                         <dl className="mt-3 space-y-3 text-sm">
+                            <div><dt className="text-neutral-500">Asset ID</dt><dd className="mt-1 font-mono text-neutral-200">{shortId(asset.id)}</dd></div>
                             <div><dt className="text-neutral-500">Source</dt><dd className="mt-1 capitalize text-neutral-200">{asset.source_kind.replace(/_/g, " ")}</dd></div>
                             <div><dt className="text-neutral-500">Type</dt><dd className="mt-1 text-neutral-200">{asset.content_type ?? "Native record"}</dd></div>
                             <div><dt className="text-neutral-500">Size</dt><dd className="mt-1 text-neutral-200">{formatFileSize(asset.file_size)}</dd></div>
@@ -146,6 +147,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
                                 <Link key={link.relationship_id} href={relationshipHubHref(workspace.slug, link.relationship_id)} className="block rounded-lg border border-neutral-800 px-3 py-2 text-sm hover:border-neutral-600">
                                     <span className="block text-neutral-100">{link.relationship?.primary_person_name ?? "Relationship"}</span>
                                     <span className="mt-1 block text-neutral-500">{link.relationship?.business_name ?? "No business context"}</span>
+                                    <span className="mt-1 block font-mono text-xs text-neutral-600">ID {shortId(link.relationship_id)}</span>
                                 </Link>
                             )) : <p className="text-sm text-neutral-500">Workspace-only asset.</p>}
                         </div>
@@ -158,6 +160,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
                                 <Link key={link.work_item_id} href={workItemHref(workspace.slug, link.work_item_id)} className="block rounded-lg border border-neutral-800 px-3 py-2 text-sm hover:border-neutral-600">
                                     <span className="block text-neutral-100">{link.work_item?.title ?? "Work item"}</span>
                                     <span className="mt-1 block capitalize text-neutral-500">{link.work_item?.status ?? "Linked"}</span>
+                                    <span className="mt-1 block font-mono text-xs text-neutral-600">ID {shortId(link.work_item_id)}</span>
                                 </Link>
                             )) : <p className="text-sm text-neutral-500">Not attached to work yet.</p>}
                         </div>

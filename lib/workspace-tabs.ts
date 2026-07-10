@@ -6,10 +6,11 @@ export type WorkspaceTabParentMessage = {
     source: typeof WORKSPACE_TAB_MESSAGE_SOURCE
     target: "frame"
     tabId: string
-    type: "activate" | "navigate" | "traverse"
+    type: "activate" | "navigate" | "traverse" | "context-set"
     url?: string
     refresh?: boolean
     active?: boolean
+    open?: boolean
 }
 
 export type WorkspaceTabFrameMessage = {
@@ -37,6 +38,10 @@ export function workspaceTabFrameUrl(value: string, tabId: string, origin: strin
     const parsed = new URL(value, origin)
     parsed.searchParams.set(WORKSPACE_TAB_FRAME_PARAM, tabId)
     return `${parsed.pathname}${parsed.search}${parsed.hash}`
+}
+
+export function workspaceTabContextStorageKey(workspaceSlug: string, tabId: string) {
+    return `betelgeze:client-context:${workspaceSlug}:${tabId}:open`
 }
 
 export function workspaceTabHistoryStep(history: string[], historyIndex: number, step: -1 | 1) {

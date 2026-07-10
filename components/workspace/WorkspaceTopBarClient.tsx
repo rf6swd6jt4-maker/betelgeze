@@ -16,6 +16,7 @@ import {
     WORKSPACE_TAB_FRAME_NAME_PREFIX,
     WORKSPACE_TAB_FRAME_PARAM,
     WORKSPACE_TAB_MESSAGE_SOURCE,
+    workspaceTabContextStorageKey,
     workspaceTabHistoryStep,
     workspaceTabFrameUrl,
     type WorkspaceTabFrameMessage,
@@ -80,6 +81,10 @@ function ArrowRightIcon() {
 
 function SidebarIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M9 5v14" /></svg>
+}
+
+function ContextPanelIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M15 5v14" /></svg>
 }
 
 function SearchIcon() {
@@ -178,6 +183,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const activeTabIdRef = useRef("")
     const tabsBootstrappedRef = useRef(false)
     const shellRootRef = useRef<HTMLDivElement>(null)
+    const tabStripRef = useRef<HTMLDivElement>(null)
     const iframeRefs = useRef(new Map<string, HTMLIFrameElement>())
     const loadedTabIdsRef = useRef(new Set<string>())
     const pendingNavigationRef = useRef(new Map<string, string>())
@@ -191,6 +197,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const [loadedTabIds, setLoadedTabIds] = useState<Set<string>>(() => new Set())
     const [tabs, setTabs] = useState<WorkspaceTab[]>([])
     const [activeTabId, setActiveTabId] = useState("")
+    const [canAddTab, setCanAddTab] = useState(true)
+    const [contextOpenByTab, setContextOpenByTab] = useState<Record<string, boolean>>({})
     const [query, setQuery] = useState("")
     const [searchOpen, setSearchOpen] = useState(false)
     const [searchLoading, setSearchLoading] = useState(false)
@@ -499,6 +507,41 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         setCreateOpen(true)
     }, [activeTabId, tabs, tabsHydrated])
 
+    useEffect(() => {
+        if (!tabsHydrated) return
+        const updateCanAddTab = () => {
+            const strip = tabStripRef.current
+            if (!strip) return
+            const minimumNewTabSpace = 132
+            setCanAddTab(strip.scrollWidth + minimumNewTabSpace <= strip.clientWidth)
+        }
+
+        updateCanAddTab()
+        window.addEventListener("resize", updateCanAddTab)
+        const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateCanAddTab) : null
+        if (tabStripRef.current) observer?.observe(tabStripRef.current)
+        return () => {
+            window.removeEventListener("resize", updateCanAddTab)
+            observer?.disconnect()
+        }
+    }, [tabs, tabsHydrated])
+
+    useEffect(() => {
+        if (!tabsHydrated) return
+        deferNavigationStateUpdate(() => {
+            setContextOpenByTab((current) => {
+                let changed = false
+                const next: Record<string, boolean> = {}
+                for (const tab of tabs) {
+                    const stored = sessionStorage.getItem(workspaceTabContextStorageKey(workspace.slug, tab.id))
+                    next[tab.id] = stored === null ? current[tab.id] ?? true : stored !== "false"
+                    if (next[tab.id] !== current[tab.id]) changed = true
+                }
+                return changed || Object.keys(current).length !== Object.keys(next).length ? next : current
+            })
+        })
+    }, [tabs, tabsHydrated, workspace.slug])
+
     function postToTab(tabId: string, message: Omit<WorkspaceTabParentMessage, "source" | "target" | "tabId">) {
         const frame = iframeRefs.current.get(tabId)
         if (!frame?.contentWindow) return false
@@ -700,6 +743,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     }
 
     function addTab() {
+        if (!canAddTab) return
         const url = defaultWorkspaceUrl
         const tab = {
             id: createTabId(),
@@ -709,11 +753,20 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             historyIndex: 0,
             seenRevision: mutationRevisionRef.current,
         }
-        const nextTabs = [...tabs, tab].slice(-8)
+        const nextTabs = [...tabs, tab]
         activeTabIdRef.current = tab.id
         setTabs(nextTabs)
         setActiveTabId(tab.id)
         saveTabsState(nextTabs, tab.id)
+    }
+
+    function toggleContextPanel() {
+        const tabId = activeTabIdRef.current
+        if (!tabId) return
+        const nextOpen = !(contextOpenByTab[tabId] ?? true)
+        sessionStorage.setItem(workspaceTabContextStorageKey(workspace.slug, tabId), nextOpen ? "true" : "false")
+        setContextOpenByTab((current) => ({ ...current, [tabId]: nextOpen }))
+        postToTab(tabId, { type: "context-set", open: nextOpen })
     }
 
     function closeTab(tabId: string) {
@@ -748,6 +801,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const activeTabLoaded = loadedTabIds.has(activeTab.id)
     const canGoBack = activeTabLoaded && activeTab.historyIndex > 0
     const canGoForward = activeTabLoaded && activeTab.historyIndex < activeTab.history.length - 1
+    const activeContextOpen = contextOpenByTab[activeTab.id] ?? true
     const activePathname = new URL(activeTab.url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname
 
     return <div ref={shellRootRef} data-workspace-shell-root>
@@ -934,33 +988,38 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         )}
 
         <div data-workspace-tabbar className={`fixed top-14 z-40 h-11 border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/10 backdrop-blur ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
-            <div role="tablist" aria-label="Workspace tabs" className="flex h-full min-w-0 items-end gap-1 overflow-x-auto px-2 pt-1">
-                {visibleTabs.map((tab) => {
-                    const active = tab.id === activeTabId || (!tabsHydrated && tab.id === "initial")
-                    return (
-                        <div key={tab.id} className={`group flex h-9 min-w-32 max-w-56 shrink-0 items-center rounded-t-lg border px-2 text-sm ${active ? "border-neutral-700 border-b-neutral-950 bg-neutral-950 text-white" : "border-transparent bg-neutral-900/55 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"}`}>
-                            <button
-                                ref={(node) => { if (node) tabButtonRefs.current.set(tab.id, node); else tabButtonRefs.current.delete(tab.id) }}
-                                role="tab"
-                                aria-selected={active}
-                                tabIndex={active ? 0 : -1}
-                                type="button"
-                                onKeyDown={(event) => switchTabFromKeyboard(event, visibleTabs.indexOf(tab))}
-                                onClick={() => switchTab(tab)}
-                                className="min-w-0 flex-1 truncate text-left"
-                            >
-                                {tab.title}
-                            </button>
-                            {visibleTabs.length > 1 && (
-                                <button data-icon-button type="button" onClick={() => closeTab(tab.id)} aria-label={`Close ${tab.title} tab`} className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-500 opacity-80 transition hover:bg-neutral-800 hover:text-white group-hover:opacity-100">
-                                    <span aria-hidden="true" className="text-base leading-none">×</span>
+            <div className="flex h-full min-w-0 items-end gap-2 px-2 pt-1">
+                <div ref={tabStripRef} role="tablist" aria-label="Workspace tabs" className="flex h-full min-w-0 flex-1 items-end gap-1 overflow-hidden">
+                    {visibleTabs.map((tab) => {
+                        const active = tab.id === activeTabId || (!tabsHydrated && tab.id === "initial")
+                        return (
+                            <div key={tab.id} className={`group flex h-9 min-w-32 max-w-56 shrink-0 items-center rounded-t-lg border px-2 text-sm ${active ? "border-neutral-700 border-b-neutral-950 bg-neutral-950 text-white" : "border-transparent bg-neutral-900/55 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"}`}>
+                                <button
+                                    ref={(node) => { if (node) tabButtonRefs.current.set(tab.id, node); else tabButtonRefs.current.delete(tab.id) }}
+                                    role="tab"
+                                    aria-selected={active}
+                                    tabIndex={active ? 0 : -1}
+                                    type="button"
+                                    onKeyDown={(event) => switchTabFromKeyboard(event, visibleTabs.indexOf(tab))}
+                                    onClick={() => switchTab(tab)}
+                                    className="min-w-0 flex-1 truncate text-left"
+                                >
+                                    {tab.title}
                                 </button>
-                            )}
-                        </div>
-                    )
-                })}
-                <button data-icon-button type="button" onClick={addTab} aria-label="Open new tab" className="mb-1 ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white">
-                    <span aria-hidden="true" className="text-xl leading-none">+</span>
+                                {visibleTabs.length > 1 && (
+                                    <button data-icon-button type="button" onClick={() => closeTab(tab.id)} aria-label={`Close ${tab.title} tab`} className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-500 opacity-80 transition hover:bg-neutral-800 hover:text-white group-hover:opacity-100">
+                                        <span aria-hidden="true" className="text-base leading-none">×</span>
+                                    </button>
+                                )}
+                            </div>
+                        )
+                    })}
+                    <button data-icon-button type="button" onClick={addTab} disabled={!canAddTab} aria-label="Open new tab" className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-neutral-400">
+                        <span aria-hidden="true" className="text-xl leading-none">+</span>
+                    </button>
+                </div>
+                <button data-icon-button type="button" onClick={toggleContextPanel} aria-label={activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextOpen} className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white">
+                    <ContextPanelIcon />
                 </button>
             </div>
         </div>

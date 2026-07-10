@@ -3,7 +3,12 @@
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { WORKSPACE_TAB_FRAME_PARAM } from "@/lib/workspace-tabs"
+import {
+    WORKSPACE_TAB_FRAME_PARAM,
+    WORKSPACE_TAB_MESSAGE_SOURCE,
+    workspaceTabContextStorageKey,
+    type WorkspaceTabParentMessage,
+} from "@/lib/workspace-tabs"
 
 type RelationshipPhase =
     | "lead"
@@ -54,62 +59,38 @@ function displayValue(value: string | null | undefined, fallback = "Not saved") 
     return value?.trim() || fallback
 }
 
-function RelationshipContextIcon() {
-    return (
-        <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-2">
-            <rect x="4" y="5" width="16" height="14" rx="2" />
-            <path d="M15 5v14" />
-        </svg>
-    )
-}
-
 export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }: Props) {
     const searchParams = useSearchParams()
     const tabId = searchParams.get(WORKSPACE_TAB_FRAME_PARAM) ?? "standalone"
-    const storageKey = useMemo(() => `betelgeze:client-context:${workspaceSlug}:${tabId}:open`, [tabId, workspaceSlug])
+    const storageKey = useMemo(() => workspaceTabContextStorageKey(workspaceSlug, tabId), [tabId, workspaceSlug])
     const [open, setOpen] = useState(() => typeof window === "undefined" ? true : sessionStorage.getItem(storageKey) !== "false")
 
     useEffect(() => {
         sessionStorage.setItem(storageKey, open ? "true" : "false")
     }, [open, storageKey])
 
+    useEffect(() => {
+        function receiveHostMessage(event: MessageEvent<WorkspaceTabParentMessage>) {
+            if (event.origin !== window.location.origin) return
+            const message = event.data
+            if (message?.source !== WORKSPACE_TAB_MESSAGE_SOURCE || message.target !== "frame" || message.tabId !== tabId) return
+            if (message.type === "context-set" && typeof message.open === "boolean") setOpen(message.open)
+        }
+
+        window.addEventListener("message", receiveHostMessage)
+        return () => window.removeEventListener("message", receiveHostMessage)
+    }, [tabId])
+
     if (!relationship) return null
 
-    if (!open) {
-        return (
-            <aside className="hidden w-10 shrink-0 xl:block">
-                <div className="sticky top-16 flex justify-end">
-                    <button
-                        type="button"
-                        onClick={() => setOpen(true)}
-                        aria-label="Show relationship context"
-                        aria-expanded={false}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950 text-neutral-400 shadow-lg shadow-black/20 hover:border-neutral-700 hover:bg-neutral-900 hover:text-white"
-                    >
-                        <RelationshipContextIcon />
-                    </button>
-                </div>
-            </aside>
-        )
-    }
-
     return (
-        <aside className="hidden w-80 shrink-0 xl:block">
-            <div className="sticky top-16 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20">
+        <aside className={`hidden shrink-0 overflow-hidden transition-[width,opacity] duration-200 ease-out xl:block ${open ? "w-80 opacity-100" : "w-0 opacity-0"}`} aria-hidden={!open}>
+            <div className="sticky top-16 w-80 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20">
                 <div className="flex items-center justify-between gap-3 px-4 py-3">
                     <div className="min-w-0">
                         <p className="text-xs uppercase tracking-wide text-neutral-500">Relationship Context</p>
                         <h2 className="truncate text-sm font-semibold">{relationship.primary_person_name}</h2>
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => setOpen(false)}
-                        aria-label="Hide relationship context"
-                        aria-expanded={true}
-                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white"
-                    >
-                        <RelationshipContextIcon />
-                    </button>
                 </div>
 
                 <div className="max-h-[calc(100vh-5rem)] overflow-y-auto border-t border-neutral-900 px-4 py-4">

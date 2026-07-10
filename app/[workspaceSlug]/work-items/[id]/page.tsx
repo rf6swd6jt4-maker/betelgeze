@@ -10,7 +10,6 @@ import {
     phaseLabel,
     assetHref,
     relationshipHubHref,
-    workspaceHref,
 } from "@/lib/relationships"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
@@ -41,11 +40,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-[92rem]">
-                <Link href={workspaceHref(workspace.slug, "work")} className="text-sm text-neutral-400 hover:text-white">
-                    Back to Project Management
-                </Link>
-
-                <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto]">
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="min-w-0">
                         <header className="border-b border-neutral-800 pb-6">
                             <p className="text-sm text-neutral-500">Work item</p>

@@ -11,7 +11,6 @@ import {
     listAssetWorkItems,
     relationshipHubHref,
     workItemHref,
-    workspaceHref,
 } from "@/lib/relationships"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
@@ -72,11 +71,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-[92rem]">
-                <Link href={workspaceHref(workspace.slug, "relationships")} className="text-sm text-neutral-400 hover:text-white">
-                    Back to workspace
-                </Link>
-
-                <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto]">
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="min-w-0">
                         <header className="border-b border-neutral-800 pb-6">
                             <p className="text-sm capitalize text-neutral-500">{asset.asset_kind.replace(/_/g, " ")} asset</p>

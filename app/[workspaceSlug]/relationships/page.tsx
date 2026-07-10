@@ -97,7 +97,7 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                             <p className="truncate font-medium text-neutral-100">{relationship.primary_person_name}</p>
                                         </div>
                                         <p className="mt-1 truncate text-sm text-neutral-500">{relationship.primary_phone ?? relationship.primary_email ?? "No direct contact saved"}</p>
-                                        <p className="mt-1 font-mono text-xs text-neutral-600">ID {shortId(relationship.id)}</p>
+                                        <p className="mt-1 font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
                                     </div>
                                     <div className="min-w-0">
                                         <p className="truncate text-sm text-neutral-300">{relationship.business_name ?? "No company context yet"}</p>

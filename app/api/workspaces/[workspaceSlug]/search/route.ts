@@ -232,7 +232,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                 `asset-${asset.id}`,
                 "Asset",
                 asset.title,
-                [asset.asset_kind, asset.source_kind].filter(Boolean).join(" · ") || "Workspace asset",
+                "Workspace asset",
                 assetHref(workspace.slug, asset.id),
                 {
                     hubHref: undefined,

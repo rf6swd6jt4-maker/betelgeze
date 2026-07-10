@@ -79,7 +79,7 @@ export default async function WorkItemsPage({ params }: PageProps) {
                                             <p className="truncate font-medium text-neutral-100">{item.title}</p>
                                         </div>
                                         {item.description && <p className="mt-1 line-clamp-1 text-sm text-neutral-500">{item.description}</p>}
-                                        <p className="mt-1 font-mono text-xs text-neutral-600">ID {shortId(item.id)}</p>
+                                        <p className="mt-1 font-mono text-xs text-neutral-600">{shortId(item.id)}</p>
                                     </div>
                                     <p className="text-sm text-neutral-400">{phaseLabel(item.lifecycle_phase)}</p>
                                     <div className="flex items-center gap-2 text-sm">

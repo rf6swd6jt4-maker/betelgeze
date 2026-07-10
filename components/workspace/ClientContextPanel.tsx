@@ -117,7 +117,7 @@ export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }
                 <div className="min-w-0">
                     <p className="text-xs uppercase tracking-wide text-neutral-500">Relationship Context</p>
                     <h2 className="truncate text-sm font-semibold">{relationship.primary_person_name}</h2>
-                    <p className="mt-1 font-mono text-xs text-neutral-600">ID {shortId(relationship.id)}</p>
+                    <p className="mt-1 font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
                 </div>
             </div>
 

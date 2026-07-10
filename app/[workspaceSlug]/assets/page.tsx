@@ -45,7 +45,7 @@ export default async function AssetsPage({ params }: PageProps) {
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight">Assets</h1>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
-                            Files, uploads, form submissions, evidence, and generated workspace records in one gallery.
+                            Files and workspace records in one gallery.
                         </p>
                     </div>
                     <Link href={workspaceHref(workspace.slug, "assets?create=asset")} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">
@@ -76,20 +76,16 @@ export default async function AssetsPage({ params }: PageProps) {
                                         {previewUrl ? (
                                             <img src={previewUrl} alt={asset.title} className="h-full w-full object-cover transition group-hover:scale-[1.02]" />
                                         ) : (
-                                            <div className="flex h-full items-center justify-center px-4 text-center">
-                                                <span className="text-sm font-medium capitalize text-neutral-500">{asset.asset_kind.replace(/_/g, " ")}</span>
-                                            </div>
+                                            <div className="h-full bg-neutral-900" />
                                         )}
                                     </div>
                                     <div className="p-4">
                                         <p className="truncate font-medium text-neutral-100">{asset.title}</p>
-                                        <p className="mt-1 font-mono text-xs text-neutral-600">ID {shortId(asset.id)}</p>
-                                        <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-neutral-500">{asset.description ?? asset.source_kind.replace(/_/g, " ")}</p>
+                                        <p className="mt-1 font-mono text-xs text-neutral-600">{shortId(asset.id)}</p>
                                         <div className="mt-4 flex items-center justify-between gap-3 text-xs text-neutral-500">
-                                            <span className="truncate capitalize">{asset.content_type ?? asset.asset_kind.replace(/_/g, " ")}</span>
+                                            <span className="truncate">{formatRelativeTime(asset.updated_at)}</span>
                                             <span className="shrink-0">{formatFileSize(asset.file_size)}</span>
                                         </div>
-                                        <p className="mt-2 text-xs text-neutral-600">{formatRelativeTime(asset.updated_at)}</p>
                                     </div>
                                 </Link>
                             ))}

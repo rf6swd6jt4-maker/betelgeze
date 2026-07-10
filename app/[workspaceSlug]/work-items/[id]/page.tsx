@@ -50,7 +50,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
 
                 <section className="mt-6 grid gap-3 sm:grid-cols-5">
                     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                        <p className="text-sm text-neutral-500">Work item ID</p>
+                        <p className="text-sm text-neutral-500">Reference</p>
                         <p className="mt-2 font-mono font-medium">{shortId(item.id)}</p>
                     </div>
                     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
@@ -84,7 +84,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                             <Link key={link.relationship_id} href={relationshipHubHref(workspace.slug, link.relationship_id)} className="block px-3 py-3 hover:bg-neutral-900/70">
                                 <p className="font-medium text-neutral-100">{link.relationship?.primary_person_name ?? "Relationship"}</p>
                                 <p className="mt-1 text-sm text-neutral-500">{link.relationship?.business_name ?? "No business context"}</p>
-                                <p className="mt-1 font-mono text-xs text-neutral-600">ID {shortId(link.relationship_id)}</p>
+                                <p className="mt-1 font-mono text-xs text-neutral-600">{shortId(link.relationship_id)}</p>
                             </Link>
                         )) : (
                             <p className="px-3 py-4 text-sm text-neutral-500">This work item is workspace-only right now.</p>
@@ -96,13 +96,11 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                     <h2 className="text-lg font-semibold">Assets and updates</h2>
                     <div className="mt-4 divide-y divide-neutral-900 rounded-xl border border-neutral-900">
                         {assets.length ? assets.map((asset) => (
-                            <Link key={asset.id} href={assetHref(workspace.slug, asset.id)} className="grid gap-2 px-3 py-3 hover:bg-neutral-900/70 sm:grid-cols-[1fr_140px_120px] sm:items-center">
+                            <Link key={asset.id} href={assetHref(workspace.slug, asset.id)} className="grid gap-2 px-3 py-3 hover:bg-neutral-900/70 sm:grid-cols-[1fr_120px] sm:items-center">
                                 <div className="min-w-0">
                                     <p className="truncate font-medium text-neutral-100">{asset.title}</p>
-                                    <p className="mt-1 truncate text-sm text-neutral-500">{asset.description ?? asset.source_kind.replace(/_/g, " ")}</p>
-                                    <p className="mt-1 font-mono text-xs text-neutral-600">ID {shortId(asset.id)}</p>
+                                    <p className="mt-1 font-mono text-xs text-neutral-600">{shortId(asset.id)}</p>
                                 </div>
-                                <p className="text-sm capitalize text-neutral-400">{asset.asset_kind.replace(/_/g, " ")}</p>
                                 <p className="text-sm text-neutral-500 sm:text-right">{formatRelativeTime(asset.updated_at)}</p>
                             </Link>
                         )) : (

@@ -119,7 +119,7 @@ function ShellRelationshipContextPanel({ context, workspaceSlug, onNavigate }: {
                 <div className="min-w-0">
                     <p className="text-xs uppercase tracking-wide text-neutral-500">Relationship Context</p>
                     <h2 className="truncate text-sm font-semibold">{context.primary_person_name}</h2>
-                    <p className="mt-1 font-mono text-xs text-neutral-600">ID {shortId(context.id)}</p>
+                    <p className="mt-1 font-mono text-xs text-neutral-600">{shortId(context.id)}</p>
                 </div>
             </div>
 
@@ -231,7 +231,7 @@ function SearchResultContent({ item, mobile = false }: { item: SearchResult; mob
                 <p className="truncate text-sm font-medium text-neutral-100">{item.label}</p>
                 {item.path && <p className="mt-0.5 truncate text-[11px] text-neutral-400">{item.path}</p>}
                 <p className={`mt-0.5 text-xs text-neutral-500 ${mobile ? "line-clamp-2" : "truncate"}`}>{item.description}</p>
-                {item.recordId && <p className="mt-1 truncate font-mono text-[10px] text-neutral-600">ID {shortId(item.recordId)}</p>}
+                {item.recordId && <p className="mt-1 truncate font-mono text-[10px] text-neutral-600">{shortId(item.recordId)}</p>}
             </div>
             <span className="shrink-0 rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500">{item.type}</span>
         </div>

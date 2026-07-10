@@ -42,7 +42,7 @@ export default async function RelationshipDetailPlaceholder({ params }: PageProp
 
                         <section className="mt-6 grid gap-3 sm:grid-cols-4">
                             <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                                <p className="text-sm text-neutral-500">Relationship ID</p>
+                                <p className="text-sm text-neutral-500">Reference</p>
                                 <p className="mt-2 font-mono font-medium">{shortId(relationship.id)}</p>
                             </div>
                             <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">

@@ -221,7 +221,6 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                             {(assets ?? []).slice(0, 6).length ? (assets ?? []).slice(0, 6).map((asset) => (
                                 <Link key={asset.id} href={assetHref(workspace.slug, asset.id)} className="block rounded-lg border border-neutral-800 px-3 py-2 text-sm hover:border-neutral-600">
                                     <span className="block truncate text-neutral-100">{asset.title}</span>
-                                    <span className="mt-1 block capitalize text-neutral-500">{asset.asset_kind.replace(/_/g, " ")}</span>
                                 </Link>
                             )) : <p className="text-sm text-neutral-500">No submissions or uploads yet.</p>}
                         </div>

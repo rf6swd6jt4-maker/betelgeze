@@ -247,6 +247,10 @@ function WorkIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="m3 6 .8.8L5.5 5" /><path d="m3 12 .8.8 1.7-1.8" /><path d="m3 18 .8.8 1.7-1.8" /></svg>
 }
 
+function AssetsIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8" cy="10" r="1.5" /><path d="m4 17 5-5 4 4 2-2 5 5" /></svg>
+}
+
 function CommunicationsIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M5 7h14" /><path d="M5 12h9" /><path d="M5 17h6" /><path d="M4 4h16v11a3 3 0 0 1-3 3H9l-5 3V4Z" /></svg>
 }
@@ -974,6 +978,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         { label: "Relationships", href: `/${workspace.slug}/relationships`, icon: <RelationshipsIcon /> },
         { label: "Onboarding", href: `/${workspace.slug}/onboarding`, icon: <HomeIcon /> },
         { label: "Project Management", href: `/${workspace.slug}/work`, icon: <WorkIcon /> },
+        { label: "Work Items", href: `/${workspace.slug}/work-items`, icon: <WorkIcon /> },
+        { label: "Assets", href: `/${workspace.slug}/assets`, icon: <AssetsIcon /> },
         { label: "Communications", href: `/${workspace.slug}/communications`, icon: <CommunicationsIcon /> },
         { label: "Lead Gen", meta: LEADGEN_POLLING_SYSTEM_VERSION_LABEL, href: `/${workspace.slug}/leadgen`, icon: <LeadIcon /> },
         { label: "Settings", href: `/${workspace.slug}/settings`, icon: <SettingsIcon /> },

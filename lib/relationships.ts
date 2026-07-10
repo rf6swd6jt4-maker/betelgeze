@@ -756,6 +756,30 @@ export async function listWorkQueueItems(workspaceSlug: string, workspaceId: str
         }))
 }
 
+export async function listWorkspaceWorkItems(workspaceId: string): Promise<RelationshipWorkItem[]> {
+    const result = await supabaseAdmin
+        .from("work_items")
+        .select("id, workspace_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, due_date, actual_start_at, actual_completed_at, sort_order, metadata, created_by, created_at, updated_at")
+        .eq("workspace_id", workspaceId)
+        .order("updated_at", { ascending: false })
+        .limit(160)
+
+    if (isMissingPrimitiveSchema(result.error)) return []
+    return ((result.data ?? []) as Array<Record<string, unknown>>).map((row) => mapWorkItem(row))
+}
+
+export async function listWorkspaceAssets(workspaceId: string): Promise<RelationshipAsset[]> {
+    const result = await supabaseAdmin
+        .from("assets")
+        .select("id, workspace_id, title, description, asset_kind, source_kind, storage_path, external_url, content_type, file_size, native_kind, native_id, metadata, created_by, created_at, updated_at")
+        .eq("workspace_id", workspaceId)
+        .order("updated_at", { ascending: false })
+        .limit(160)
+
+    if (isMissingPrimitiveSchema(result.error)) return []
+    return ((result.data ?? []) as Array<Record<string, unknown>>).map((row) => mapAsset(row))
+}
+
 export function nativeItemHref(workspaceSlug: string, item: RelationshipWorkItem) {
     if (!item.synthesized) return workItemHref(workspaceSlug, item.id)
     if (item.relationship_id && (item.native_kind === "client" || item.native_href?.startsWith("/admin/client/"))) return relationshipHubHref(workspaceSlug, item.relationship_id)

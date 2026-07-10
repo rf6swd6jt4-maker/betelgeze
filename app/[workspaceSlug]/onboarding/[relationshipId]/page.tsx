@@ -133,13 +133,13 @@ function statusTone(status: StepStatus) {
 }
 
 function nodeTone(done: boolean, active = false) {
-    if (done) return "border-green-400 bg-green-400 text-black"
-    if (active) return "border-white bg-white text-black"
-    return "border-neutral-700 bg-neutral-950 text-neutral-400"
+    if (done) return "border-white bg-white text-black"
+    if (active) return "border-white bg-black text-white"
+    return "border-neutral-700 bg-black text-neutral-400"
 }
 
 function CheckIcon({ className = "h-4 w-4" }: { className?: string }) {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className={`${className} fill-none stroke-current stroke-2.5`}><path d="m5 12 4 4L19 6" /></svg>
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className={`${className} fill-none stroke-current stroke-[3.25]`}><path d="m5 12 4 4L19 6" /></svg>
 }
 
 function ClockIcon({ className = "h-4 w-4" }: { className?: string }) {
@@ -247,17 +247,21 @@ function TimelineNode({ item }: { item: TimelineItem }) {
     }
 
     if (item.kind === "start" || item.kind === "final") {
+        const isFinal = item.kind === "final"
+        const circleClass = isFinal ? "h-12 w-12" : "h-10 w-10"
+        const iconClass = isFinal ? "h-5 w-5" : "h-4 w-4"
+        const lineTop = isFinal ? "top-6" : "top-5"
         const body = (
             <>
-                <div className={`relative flex h-11 w-11 items-center justify-center rounded-full border-2 ${nodeTone(item.done, item.kind === "final")}`}>
-                    {item.done ? <CheckIcon /> : <ClockIcon />}
+                <div className={`relative flex ${circleClass} items-center justify-center rounded-full border-2 ${nodeTone(item.done, false)}`}>
+                    {item.done ? <CheckIcon className={iconClass} /> : <ClockIcon className={iconClass} />}
                 </div>
-                <span className={`mt-2 max-w-24 truncate text-xs font-medium ${item.done ? "text-neutral-100" : "text-neutral-500"}`}>{item.label}</span>
+                <span className={`mt-2 line-clamp-2 max-w-32 whitespace-normal text-center text-xs font-medium leading-4 ${item.done ? "text-neutral-100" : "text-neutral-500"}`}>{item.label}</span>
             </>
         )
         return (
-            <div className="relative flex min-w-24 flex-col items-center">
-                <div className="absolute top-5 h-px w-full bg-neutral-800" />
+            <div className={`relative flex ${isFinal ? "min-w-36" : "min-w-32"} flex-col items-center`}>
+                <div className={`absolute ${lineTop} h-px w-full bg-neutral-800`} />
                 {item.href ? <a href={item.href} className="relative flex flex-col items-center">{body}</a> : <div className="relative flex flex-col items-center">{body}</div>}
             </div>
         )
@@ -267,14 +271,14 @@ function TimelineNode({ item }: { item: TimelineItem }) {
     const active = item.step.status === "not_submitted" || item.step.status === "blocked"
     const body = (
         <>
-            <div className={`relative flex h-11 w-11 items-center justify-center rounded-full border-2 text-sm font-semibold ${nodeTone(done, active)}`}>
+            <div className={`relative flex h-10 w-10 items-center justify-center rounded-full border-2 text-base font-semibold ${nodeTone(done, active)}`}>
                 {done ? <CheckIcon /> : item.visibleNumber}
             </div>
-            <span className={`mt-2 max-w-28 truncate text-xs font-medium ${done || active ? "text-neutral-100" : "text-neutral-500"}`}>{item.step.title}</span>
+            <span className={`mt-2 line-clamp-2 max-w-36 whitespace-normal text-center text-xs font-medium leading-4 ${done || active ? "text-neutral-100" : "text-neutral-500"}`}>{item.step.title}</span>
         </>
     )
     return (
-        <div className="relative flex min-w-28 flex-col items-center">
+        <div className="relative flex min-w-36 flex-col items-center">
             <div className="absolute top-5 h-px w-full bg-neutral-800" />
             {done ? <a href={`#${item.step.anchorId}`} className="relative flex flex-col items-center">{body}</a> : <div className="relative flex flex-col items-center">{body}</div>}
         </div>

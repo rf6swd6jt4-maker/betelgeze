@@ -388,6 +388,23 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         sessionStorage.setItem(tabsStorageKey, JSON.stringify({ mode: "live", tabs: nextTabs, activeId: nextActiveId }))
     }, [tabsStorageKey])
 
+    const updateTabForShellNavigation = useCallback((tabId: string, url: string) => {
+        setTabs((existingTabs) => {
+            let changed = false
+            const updatedTabs = existingTabs.map((tab) => {
+                if (tab.id !== tabId) return tab
+                if (tab.url === url && tab.history[tab.historyIndex] === url) return tab
+                const nextHistory = tab.history[tab.historyIndex] === url
+                    ? { history: tab.history, historyIndex: tab.historyIndex }
+                    : appendWorkspaceTabHistory(tab.history, tab.historyIndex, url)
+                changed = true
+                return { ...tab, url, title: titleForUrl(url), ...nextHistory }
+            })
+            if (changed) saveTabsState(updatedTabs, activeTabIdRef.current || tabId)
+            return changed ? updatedTabs : existingTabs
+        })
+    }, [saveTabsState, titleForUrl])
+
     const readTabsState = useCallback((currentUrl: string): WorkspaceTabsState => {
         try {
             const stored = sessionStorage.getItem(tabsStorageKey)
@@ -496,6 +513,9 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
             if (message.type === "location" && message.url) {
                 const url = normalizeWorkspaceUrl(message.url)
+                const pendingUrl = pendingNavigationRef.current.get(message.tabId)
+                if (pendingUrl && pendingUrl !== url) return
+                if (pendingUrl === url) pendingNavigationRef.current.delete(message.tabId)
                 if (message.tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
                 setTabs((existingTabs) => {
                     const updatedTabs = existingTabs.map((tab) => {
@@ -886,21 +906,22 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         if (!tabId) return
         const url = normalizeWorkspaceUrl(href)
         const currentTab = tabs.find((candidate) => candidate.id === tabId)
-        if (currentTab?.url !== url) setRouteLoadingTabId(tabId)
+        const isLoaded = loadedTabIdsRef.current.has(tabId)
+        const alreadyPending = pendingNavigationRef.current.get(tabId) === url
+        if (currentTab?.url === url && isLoaded && !alreadyPending) return
+        if (currentTab?.url !== url || !isLoaded || alreadyPending) setRouteLoadingTabId(tabId)
+        if (currentTab?.url !== url) updateTabForShellNavigation(tabId, url)
 
-        if (loadedTabIdsRef.current.has(tabId) && postToTab(tabId, { type: "navigate", url })) return
         pendingNavigationRef.current.set(tabId, url)
+        if (isLoaded && postToTab(tabId, { type: "navigate", url })) return
     }
 
     function handleFrameLoad(tabId: string) {
         loadedTabIdsRef.current.add(tabId)
         setLoadedTabIds(new Set(loadedTabIdsRef.current))
-        if (tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
         const pendingUrl = pendingNavigationRef.current.get(tabId)
-        if (pendingUrl) {
-            pendingNavigationRef.current.delete(tabId)
-            window.requestAnimationFrame(() => postToTab(tabId, { type: "navigate", url: pendingUrl }))
-        }
+        if (!pendingUrl && tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
+        if (pendingUrl) window.requestAnimationFrame(() => postToTab(tabId, { type: "navigate", url: pendingUrl }))
         const active = tabId === activeTabIdRef.current
         window.requestAnimationFrame(() => postToTab(tabId, { type: "activate", active, refresh: false }))
     }
@@ -1249,7 +1270,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     onLoad={() => handleFrameLoad(tab.id)}
                 />
             ))}
-            {tabsHydrated && !loadedTabIds.has(activeTabId) && (
+            {tabsHydrated && !loadedTabIds.has(activeTabId) && routeLoadingTabId !== activeTabId && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950 text-sm text-neutral-500">Loading tab...</div>
             )}
         </div>

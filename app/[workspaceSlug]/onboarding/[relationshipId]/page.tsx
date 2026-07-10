@@ -66,7 +66,7 @@ type OnboardingStepDetail = {
 
 type TimelineItem =
     | { kind: "start"; label: string; done: boolean; href?: string }
-    | { kind: "step"; step: OnboardingStepDetail; visibleNumber: number }
+    | { kind: "step"; step: OnboardingStepDetail; visibleNumber: number; current: boolean }
     | { kind: "final"; label: string; done: boolean; href?: string }
 
 function metadataValue(metadata: unknown, key: string) {
@@ -110,6 +110,7 @@ function statusForStep(item: WorkItemRow | null, submission: AssetRow | null) {
     const reviewed = Boolean(metadataRecord(item?.metadata).reviewed_at || metadataRecord(submission?.metadata).reviewed_at)
     if (reviewed) return "reviewed"
     if (item?.status === "blocked") return "blocked"
+    if (item?.status === "waiting") return "waiting"
     if (item?.status === "canceled") return "canceled"
     if (item?.status === "done" || submission) return "submitted"
     return "not_submitted"
@@ -132,9 +133,9 @@ function statusTone(status: StepStatus) {
 }
 
 function nodeTone(done: boolean, active = false) {
-    if (done) return "border-emerald-300 bg-emerald-300 text-black shadow-[0_0_0_5px_rgba(110,231,183,0.08)]"
-    if (active) return "border-white bg-neutral-950 text-white shadow-[0_0_0_5px_rgba(255,255,255,0.08)]"
-    return "border-neutral-700 bg-neutral-950 text-neutral-400"
+    if (done) return "border-white bg-white text-black"
+    if (active) return "border-white bg-black text-white"
+    return "border-neutral-700 bg-black text-neutral-400"
 }
 
 function CheckIcon({ className = "h-4 w-4" }: { className?: string }) {
@@ -204,9 +205,10 @@ function computeTimeline(steps: OnboardingStepDetail[], sessionStarted: boolean,
         ]
     }
 
+    const currentStepIndex = steps.findIndex((step) => step.status === "not_submitted" || step.status === "blocked" || step.status === "waiting")
     const timeline: TimelineItem[] = [{ kind: "start", label: "Start", done: sessionStarted, href: steps[0] ? `#${steps[0].anchorId}` : undefined }]
     for (const step of steps) {
-        timeline.push({ kind: "step", step, visibleNumber: step.index + 1 })
+        timeline.push({ kind: "step", step, visibleNumber: step.index + 1, current: step.index === currentStepIndex })
     }
     timeline.push({ kind: "final", label: "Finish", done: sessionCompleted, href: sessionCompleted && steps.length ? `#${steps[steps.length - 1].anchorId}` : undefined })
     return timeline
@@ -214,11 +216,13 @@ function computeTimeline(steps: OnboardingStepDetail[], sessionStarted: boolean,
 
 function TimelineNode({ item }: { item: TimelineItem }) {
     if (item.kind === "start" || item.kind === "final") {
-        const iconClass = item.kind === "final" ? "h-5 w-5" : "h-4 w-4"
-        const labelTone = item.done ? "text-neutral-100" : "text-neutral-500"
+        const isFinal = item.kind === "final"
+        const circleClass = "h-10 w-10"
+        const iconClass = isFinal ? "h-5 w-5" : "h-4 w-4"
+        const labelTone = isFinal ? "text-neutral-100" : item.done ? "text-neutral-100" : "text-neutral-500"
         const body = (
             <>
-                <div className={`relative flex h-11 w-11 items-center justify-center rounded-full border-2 ${nodeTone(item.done, false)}`}>
+                <div className={`relative flex ${circleClass} items-center justify-center rounded-full border-2 ${nodeTone(item.done, false)}`}>
                     {item.done ? <CheckIcon className={iconClass} /> : <ClockIcon className={iconClass} />}
                 </div>
                 <span className={`mt-2 line-clamp-2 w-full whitespace-normal px-1 text-center text-xs font-medium leading-4 ${labelTone}`}>{item.label}</span>
@@ -226,30 +230,56 @@ function TimelineNode({ item }: { item: TimelineItem }) {
         )
         return (
             <div className="relative z-10 flex min-w-0 flex-col items-center">
-                {item.href ? <a href={item.href} className="relative flex w-full flex-col items-center">{body}</a> : <div className="relative flex w-full flex-col items-center">{body}</div>}
+                {item.href ? <a href={item.href} className="relative flex flex-col items-center">{body}</a> : <div className="relative flex flex-col items-center">{body}</div>}
             </div>
         )
     }
 
     const done = item.step.status === "submitted" || item.step.status === "reviewed"
-    const active = item.step.status === "not_submitted" || item.step.status === "blocked"
-    const statusText = statusLabel(item.step.status)
-    const labelTone = done || active ? "text-neutral-100" : "text-neutral-500"
+    const active = item.current
     const body = (
         <>
-            <div className={`relative flex h-11 w-11 items-center justify-center rounded-full border-2 text-base font-semibold ${nodeTone(done, active)}`}>
+            <div className={`relative flex h-10 w-10 items-center justify-center rounded-full border-2 text-base font-semibold ${nodeTone(done, active)}`}>
                 {done ? <CheckIcon /> : item.visibleNumber}
             </div>
-            <span className={`mt-2 line-clamp-2 w-full whitespace-normal px-1 text-center text-xs font-medium leading-4 ${labelTone}`}>{item.step.title}</span>
-            <span className="mt-1 text-[11px] leading-4 text-neutral-600">{statusText}</span>
+            <span className={`mt-2 line-clamp-2 w-full whitespace-normal px-1 text-center text-xs font-medium leading-4 ${done || active ? "text-neutral-100" : "text-neutral-500"}`}>{item.step.title}</span>
         </>
     )
     return (
         <div className="relative z-10 flex min-w-0 flex-col items-center">
-            <a href={`#${item.step.anchorId}`} className="relative flex w-full flex-col items-center">
-                {body}
-            </a>
+            {done ? <a href={`#${item.step.anchorId}`} className="relative flex flex-col items-center">{body}</a> : <div className="relative flex flex-col items-center">{body}</div>}
         </div>
+    )
+}
+
+function MobileTimeline({ steps }: { steps: OnboardingStepDetail[] }) {
+    const currentStepIndex = steps.findIndex((step) => step.status === "not_submitted" || step.status === "blocked" || step.status === "waiting")
+    return (
+        <ol className="grid gap-1 sm:hidden">
+            {steps.map((step) => {
+                const done = step.status === "submitted" || step.status === "reviewed"
+                const content = (
+                    <>
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-semibold ${nodeTone(done, step.index === currentStepIndex)}`}>
+                            {done ? <CheckIcon className="h-3.5 w-3.5" /> : step.index + 1}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium text-neutral-100">{step.title}</span>
+                            <span className="mt-0.5 block text-xs text-neutral-500">{statusLabel(step.status)}</span>
+                        </span>
+                    </>
+                )
+                return (
+                    <li key={step.key} className="relative before:absolute before:bottom-[-0.25rem] before:left-[0.96875rem] before:top-8 before:w-px before:bg-neutral-800 last:before:hidden">
+                        {done ? (
+                            <a href={`#${step.anchorId}`} className="relative flex min-h-12 items-center gap-3 rounded-lg px-2 py-2 hover:bg-neutral-900">{content}</a>
+                        ) : (
+                            <div className="relative flex min-h-12 items-center gap-3 px-2 py-2">{content}</div>
+                        )}
+                    </li>
+                )
+            })}
+        </ol>
     )
 }
 
@@ -261,7 +291,7 @@ function AnswerValue({ value }: { value: unknown }) {
     return <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-100">{text || "No answer provided"}</p>
 }
 
-function OnboardingStepSection({ step, workspaceSlug }: { step: OnboardingStepDetail; workspaceSlug: string }) {
+function StepInformationSection({ step, workspaceSlug }: { step: OnboardingStepDetail; workspaceSlug: string }) {
     const answers = responseEntries(step.submission, step.formKey)
     const uploadsByField = new Map<string, AssetRow[]>()
     const ungroupedUploads: AssetRow[] = []
@@ -276,7 +306,7 @@ function OnboardingStepSection({ step, workspaceSlug }: { step: OnboardingStepDe
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                 <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">{step.index + 1}. {step.moduleTitle} information</span>
+                        <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">{step.index + 1}. {step.moduleTitle}</span>
                         <span className={`rounded-full border px-2.5 py-1 text-xs capitalize ${statusTone(step.status)}`}>{statusLabel(step.status)}</span>
                     </div>
                     <h3 className="mt-2 text-xl font-semibold tracking-tight text-neutral-100">{step.title}</h3>
@@ -309,10 +339,10 @@ function OnboardingStepSection({ step, workspaceSlug }: { step: OnboardingStepDe
             ) : (
                 <div className="mt-5 rounded-lg border border-dashed border-neutral-800 bg-neutral-950 px-4 py-4">
                     <p className="text-sm font-medium text-neutral-200">
-                        {step.kind === "video" && step.status === "submitted" ? "Instruction step completed." : step.status === "not_submitted" ? "Not submitted yet." : "No information was captured for this step."}
+                        {step.kind === "video" && step.status === "submitted" ? "Instruction step completed." : step.status === "not_submitted" ? "Not submitted yet." : "No form answers were captured for this step."}
                     </p>
                     <p className="mt-1 text-sm leading-6 text-neutral-500">
-                        {step.kind === "video" ? "This step exists as a completion marker and reference point." : "When the client submits this step, their information will appear here."}
+                        {step.kind === "video" ? "This step exists as a completion marker and reference point." : "When the client submits this step, their answers will appear here."}
                     </p>
                 </div>
             )}
@@ -399,13 +429,12 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
         ])
         : [{ data: [] }, { data: [] }]
 
-    const onboardingSteps = buildStepDetails(canonicalSteps, (workItems ?? []) as WorkItemRow[], (assets ?? []) as AssetRow[])
-    const submittedCount = onboardingSteps.filter((step) => step.status === "submitted" || step.status === "reviewed").length
-    const percentage = getProgressPercentage(onboardingSteps.map((step) => ({ key: step.key })), onboardingSteps.filter((step) => step.status === "submitted" || step.status === "reviewed").map((step) => step.key))
+    const steps = buildStepDetails(canonicalSteps, (workItems ?? []) as WorkItemRow[], (assets ?? []) as AssetRow[])
+    const submittedCount = steps.filter((step) => step.status === "submitted" || step.status === "reviewed").length
+    const percentage = getProgressPercentage(steps.map((step) => ({ key: step.key })), steps.filter((step) => step.status === "submitted" || step.status === "reviewed").map((step) => step.key))
     const onboardingUrl = session ? `/onboarding/session/${session.session_token}` : null
     const sessionCompleted = session?.status === "completed"
-    const timeline = computeTimeline(onboardingSteps, Boolean(session), sessionCompleted)
-    const missingCount = Math.max(0, onboardingSteps.length - submittedCount)
+    const timeline = computeTimeline(steps, Boolean(session), sessionCompleted)
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
@@ -414,7 +443,7 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="min-w-0">
                         <header className="border-b border-neutral-800 pb-6">
-                            <p className="text-sm text-neutral-500">Onboarding information</p>
+                            <p className="text-sm text-neutral-500">Onboarding detail</p>
                             <div className="mt-2 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                                 <div>
                                     <h1 className="text-3xl font-semibold tracking-tight">{relationship.primary_person_name}</h1>
@@ -433,34 +462,34 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                                     <div>
                                         <h2 className="text-lg font-semibold">Onboarding timeline</h2>
-                                        <p className="mt-1 text-sm text-neutral-500">Every step links to the client information below.</p>
+                                        <p className="mt-1 text-sm text-neutral-500">Completed steps jump to the submitted information below.</p>
                                     </div>
                                     <span className={`w-fit rounded-full border px-2.5 py-1 text-xs capitalize ${sessionCompleted ? "border-white/30 bg-white/10 text-white" : "border-neutral-700 bg-neutral-900 text-neutral-300"}`}>
                                         {session?.status ?? "Not started"}
                                     </span>
                                 </div>
                             </div>
-                            <div className="px-4 py-5">
-                                <div className="overflow-x-auto pb-1">
-                                    <div className="relative grid min-w-max items-start gap-3 pr-1" style={{ gridTemplateColumns: `repeat(${timeline.length}, minmax(7.5rem, 1fr))` }}>
-                                        <div className="absolute left-[3.75rem] right-[3.75rem] top-[1.35rem] h-px bg-neutral-800" />
-                                        <div className="absolute left-[3.75rem] top-[1.35rem] h-px bg-gradient-to-r from-emerald-300 to-white" style={{ width: `${timeline.length > 1 ? Math.max(0, ((submittedCount + (sessionCompleted ? 1 : 0)) / (timeline.length - 1)) * 100) : 0}%`, maxWidth: "calc(100% - 7.5rem)" }} />
-                                        {timeline.map((item, index) => (
-                                            <TimelineNode key={item.kind === "step" ? item.step.key : `${item.kind}-${index}`} item={item} />
-                                        ))}
+                            <div className="px-3 py-3 sm:px-4 sm:py-5">
+                                <MobileTimeline steps={steps} />
+                                <div className="hidden overflow-x-auto pb-1 sm:block">
+                                    <div className="relative grid min-w-max items-start gap-3 px-5" style={{ gridTemplateColumns: `repeat(${timeline.length}, minmax(6.5rem, 1fr))` }}>
+                                    <div className="absolute left-[3.25rem] right-[3.25rem] top-5 h-px bg-neutral-800" />
+                                    {timeline.map((item, index) => (
+                                        <TimelineNode key={item.kind === "step" ? item.step.key : `${item.kind}-${index}`} item={item} />
+                                    ))}
                                     </div>
                                 </div>
                             </div>
                         </section>
 
-                        <section className="mt-6 grid gap-3 sm:grid-cols-4">
+                        <section className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 md:grid-cols-4 md:gap-3">
                             <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
                                 <p className="text-sm text-neutral-500">Progress</p>
                                 <p className="mt-2 text-2xl font-semibold">{percentage}%</p>
                             </div>
                             <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
                                 <p className="text-sm text-neutral-500">Steps</p>
-                                <p className="mt-2 font-medium">{submittedCount} submitted · {missingCount} missing</p>
+                                <p className="mt-2 font-medium">{submittedCount} of {steps.length}</p>
                             </div>
                             <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
                                 <p className="text-sm text-neutral-500">Session</p>
@@ -491,10 +520,10 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                         <section className="mt-6 overflow-hidden rounded-xl border border-neutral-800 bg-black">
                             <div className="border-b border-neutral-900 px-5 py-4">
                                 <h2 className="text-lg font-semibold">Client information</h2>
-                                <p className="mt-1 text-sm text-neutral-500">Onboarding steps stay here as durable client information after fulfilment starts.</p>
+                                <p className="mt-1 text-sm text-neutral-500">Information submitted during onboarding stays available here after fulfilment starts.</p>
                             </div>
-                            {onboardingSteps.length ? onboardingSteps.map((step) => (
-                                <OnboardingStepSection key={step.key} step={step} workspaceSlug={workspace.slug} />
+                            {steps.length ? steps.map((step) => (
+                                <StepInformationSection key={step.key} step={step} workspaceSlug={workspace.slug} />
                             )) : (
                                 <div className="px-5 py-6">
                                     <p className="font-medium text-neutral-100">No onboarding steps generated yet.</p>
@@ -527,6 +556,7 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                                 </div>
                             </div>
                         </section>
+
                     </div>
 
                     <ClientContextPanel

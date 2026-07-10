@@ -69,7 +69,7 @@ export default async function AssetsPage({ params }: PageProps) {
 
                 <section className="mt-5">
                     {previewEntries.length ? (
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                             {previewEntries.map(({ asset, previewUrl }) => (
                                 <Link key={asset.id} href={assetHref(workspace.slug, asset.id)} className="group overflow-hidden rounded-xl border border-neutral-800 bg-black hover:border-neutral-600">
                                     <div className="aspect-[4/3] bg-neutral-900">

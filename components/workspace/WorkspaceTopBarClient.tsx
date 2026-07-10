@@ -116,10 +116,6 @@ function LeadIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 3 5-7" /></svg>
 }
 
-function HealthIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M4 13h4l2-7 4 12 2-5h4" /><path d="M4 19h16" /></svg>
-}
-
 function SettingsIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><circle cx="12" cy="12" r="3" /><path d="M12 3v3" /><path d="M12 18v3" /><path d="M3 12h3" /><path d="M18 12h3" /><path d="m5.6 5.6 2.1 2.1" /><path d="m16.3 16.3 2.1 2.1" /><path d="m18.4 5.6-2.1 2.1" /><path d="m7.7 16.3-2.1 2.1" /></svg>
 }
@@ -221,12 +217,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         if (suffix === "leadgen/new") return "New Poll"
         if (suffix.startsWith("leadgen/poll/")) return "Lead Poll"
         if (suffix === "leadgen/polls") return "Polls"
-        if (suffix === "clients/new") return "New Relationship"
-        if (suffix.startsWith("clients/")) return "Relationship"
-        if (suffix === "invoices") return "Invoices"
-        if (suffix === "sales/new") return "New Invoice"
         if (suffix === "settings") return "Settings"
-        if (suffix === "health") return "System Health"
         if (suffix === "users") return "Users"
         return suffix.split("/")[0]?.replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Tab"
     }, [defaultWorkspaceUrl])
@@ -528,8 +519,6 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     function directSearchHref(value: string) {
         const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ")
         if (normalized === "new poll" || normalized === "create poll" || normalized === "start poll" || normalized === "run poll") return `/${workspace.slug}/leadgen/new`
-        if (normalized === "invoices" || normalized === "invoice") return `/${workspace.slug}/invoices`
-        if (normalized === "new invoice" || normalized === "create invoice" || normalized === "send invoice") return `/${workspace.slug}/sales/new`
         if (normalized === "communications" || normalized === "communication" || normalized === "messages" || normalized === "client messages" || normalized === "chat") return `/${workspace.slug}/communications`
         if (normalized === "manual relationship" || normalized === "start relationship" || normalized === "new relationship" || normalized === "add relationship" || normalized === "manual client" || normalized === "add manual client" || normalized === "new client" || normalized === "add client") return `/${workspace.slug}/relationships/new`
         if (normalized === "seed sources" || normalized === "seed source category") return `/${workspace.slug}/settings#leadgen-sources-seed`
@@ -655,7 +644,6 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         { label: "Project Management", href: `/${workspace.slug}/work`, icon: <WorkIcon /> },
         { label: "Communications", href: `/${workspace.slug}/communications`, icon: <CommunicationsIcon /> },
         { label: "Lead Gen", meta: LEADGEN_POLLING_SYSTEM_VERSION_LABEL, href: `/${workspace.slug}/leadgen`, icon: <LeadIcon /> },
-        { label: "System Health", href: `/${workspace.slug}/health`, icon: <HealthIcon /> },
         { label: "Settings", href: `/${workspace.slug}/settings`, icon: <SettingsIcon /> },
     ]
 

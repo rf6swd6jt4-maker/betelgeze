@@ -12,7 +12,7 @@ const origin = "https://dashboard.betelgeze.com"
 
 test("normalizes rewritten workspace routes without leaking the frame marker", () => {
     const url = normalizeWorkspaceUrl(
-        `/admin/client/client-1?filter=active&${WORKSPACE_TAB_FRAME_PARAM}=tab-1#messages`,
+        `/dashboard/scaylup/relationships/client-1?filter=active&${WORKSPACE_TAB_FRAME_PARAM}=tab-1#messages`,
         "scaylup",
         origin
     )
@@ -26,8 +26,8 @@ test("normalizes dashboard and leadgen routes to the public workspace URL", () =
         "/scaylup/relationships?sort=newest"
     )
     assert.equal(
-        normalizeWorkspaceUrl("/leadgen/scaylup/polls/poll-1", "scaylup", origin),
-        "/scaylup/leadgen/polls/poll-1"
+        normalizeWorkspaceUrl("/leadgen/scaylup/poll/poll-1", "scaylup", origin),
+        "/scaylup/leadgen/poll/poll-1"
     )
 })
 
@@ -39,11 +39,11 @@ test("adds a tab identity while preserving filters and hash navigation", () => {
 })
 
 test("tab history cannot move before its creation page or past its newest page", () => {
-    const history = ["/scaylup", "/scaylup/clients/client-1"]
+    const history = ["/scaylup", "/scaylup/relationships/client-1"]
 
     assert.equal(workspaceTabHistoryStep(history, 0, -1), null)
     assert.deepEqual(workspaceTabHistoryStep(history, 1, -1), { historyIndex: 0, url: "/scaylup" })
-    assert.deepEqual(workspaceTabHistoryStep(history, 0, 1), { historyIndex: 1, url: "/scaylup/clients/client-1" })
+    assert.deepEqual(workspaceTabHistoryStep(history, 0, 1), { historyIndex: 1, url: "/scaylup/relationships/client-1" })
     assert.equal(workspaceTabHistoryStep(history, 1, 1), null)
 })
 

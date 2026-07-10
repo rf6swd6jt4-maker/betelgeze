@@ -27,20 +27,8 @@ export function normalizeWorkspaceUrl(value: string, workspaceSlug: string, orig
     const hash = parsed.hash
     const path = parsed.pathname
     const defaultWorkspaceUrl = `/${workspaceSlug}`
-    const adminMatch = path.match(/^\/admin(?:\/(.*))?$/)
     const dashboardMatch = path.match(new RegExp(`^/dashboard/${workspaceSlug}(?:/(.*))?$`, "i"))
     const leadgenMatch = path.match(new RegExp(`^/leadgen/${workspaceSlug}(?:/(.*))?$`, "i"))
-
-    if (adminMatch) {
-        const suffix = adminMatch[1] ?? ""
-        if (!suffix) return `${defaultWorkspaceUrl}${search}${hash}`
-        if (suffix === "new") return `${defaultWorkspaceUrl}/relationships/new${search}${hash}`
-        if (suffix === "health") return `${defaultWorkspaceUrl}/health${search}${hash}`
-        if (suffix === "invoices") return `${defaultWorkspaceUrl}/invoices${search}${hash}`
-        if (suffix === "sales/new") return `${defaultWorkspaceUrl}/sales/new${search}${hash}`
-        if (suffix.startsWith("client/")) return `${defaultWorkspaceUrl}/relationships/${suffix.slice("client/".length)}${search}${hash}`
-        return `${defaultWorkspaceUrl}/${suffix}${search}${hash}`
-    }
 
     if (dashboardMatch) return `${defaultWorkspaceUrl}${dashboardMatch[1] ? `/${dashboardMatch[1]}` : ""}${search}${hash}`
     if (leadgenMatch) return `${defaultWorkspaceUrl}/leadgen${leadgenMatch[1] ? `/${leadgenMatch[1]}` : ""}${search}${hash}`

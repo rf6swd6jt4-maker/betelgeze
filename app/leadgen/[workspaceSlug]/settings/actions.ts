@@ -18,8 +18,6 @@ function refresh(slug: string) {
     revalidatePath(`/${slug}/leadgen`)
     revalidatePath(`/${slug}/settings`)
     revalidatePath(`/leadgen/${slug}`)
-    revalidatePath(`/leadgen/${slug}/settings`)
-    revalidatePath(`/leadgen/${slug}/sources`)
     revalidatePath(`/dashboard/${slug}`)
     revalidatePath(`/dashboard/${slug}/settings`)
 }

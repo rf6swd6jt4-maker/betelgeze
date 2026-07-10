@@ -50,10 +50,7 @@ function staticNavigationResults(workspace: { name: string; slug: string }, quer
         { id: "action-new-poll", type: "Action", label: "New Poll", description: "Create and preflight a new lead-generation poll", href: workspaceHref(workspace.slug, "leadgen/new"), path: `${workspace.name} > Lead Gen > New Poll`, keywords: ["create poll", "start poll", "run poll", "poll preflight", "leadgen new"] },
         { id: "page-leads", type: "Tab", label: "Leads", description: "Qualified and discovered lead list", href: workspaceHref(workspace.slug, "leadgen"), path: `${workspace.name} > Lead Gen > Leads`, keywords: ["leadgen companies", "lead list"] },
         { id: "page-polls", type: "Tab", label: "Polls", description: "Lead generation poll history", href: workspaceHref(workspace.slug, "leadgen/polls"), path: `${workspace.name} > Lead Gen > Polls`, keywords: ["runs", "automation history"] },
-        { id: "page-invoices", type: "Page", label: "Invoices", description: "Client invoices and sales", href: workspaceHref(workspace.slug, "invoices"), path: `${workspace.name} > Invoices`, keywords: ["sales", "stripe"] },
-        { id: "action-create-invoice", type: "Action", label: "Create Invoice", description: "Create and send a Stripe invoice", href: workspaceHref(workspace.slug, "sales/new"), path: `${workspace.name} > Invoices > Create Invoice`, keywords: ["new invoice", "invoice", "stripe invoice", "send invoice", "sales invoice"] },
         { id: "action-new-relationship", type: "Action", label: "Start New Relationship", description: "Create a relationship manually at any lifecycle stage", href: workspaceHref(workspace.slug, "relationships/new"), path: `${workspace.name} > Relationships > New`, keywords: ["manual relationship", "new relationship", "add relationship", "manual client", "new client", "add client"] },
-        { id: "page-health", type: "Page", label: "System Health", description: "Operational checks for invoices, WhatsApp, storage, and infrastructure", href: workspaceHref(workspace.slug, "health"), path: `${workspace.name} > System Health`, keywords: ["health", "status", "checks", "diagnostics", "integrations"] },
         { id: "page-settings", type: "Page", label: "Settings", description: "Unified workspace settings", href: workspaceHref(workspace.slug, "settings"), path: settingsPath, keywords: ["workspace settings"] },
         { id: "settings-workspace", type: "Settings", label: "Workspace", description: "Edit the workspace name", href: workspaceHref(workspace.slug, "settings#workspace"), path: `${settingsPath} > Workspace`, keywords: ["name", "identity"] },
         { id: "settings-onboarding-domain", type: "Settings", label: "Onboarding Domain", description: "Client portal hostname", href: workspaceHref(workspace.slug, "settings#onboarding-domain"), path: `${settingsPath} > Onboarding Domain`, keywords: ["custom domain", "hostname", "portal"] },
@@ -167,7 +164,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
         { data: clients, error: clientError },
         { data: companies, error: companyError },
         { data: polls, error: pollError },
-        { data: sales, error: salesError },
         { data: channels, error: channelError },
         { data: activities, error: activityError },
         { data: assets, error: assetError },
@@ -191,12 +187,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
             .eq("workspace_id", workspace.id)
             .order("created_at", { ascending: false })
             .limit(80),
-        supabaseAdmin
-            .from("client_sales")
-            .select("id, client_id, client_name, client_email, client_phone, status, stripe_invoice_id")
-            .eq("workspace_id", workspace.id)
-            .order("created_at", { ascending: false })
-            .limit(60),
         supabaseAdmin
             .from("client_communication_channels")
             .select("id, client_id, external_address, provider")
@@ -279,24 +269,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                 {
                     path: `${workspace.name} > Lead Gen > Polls`,
                     recordId: poll.id,
-                }
-            ))
-        }
-    }
-
-    if (!salesError) {
-        for (const sale of (sales ?? []).filter((sale) => includesQuery([sale.id, sale.stripe_invoice_id, sale.client_id, sale.client_name, sale.client_email, sale.client_phone, sale.status], query)).slice(0, 5)) {
-            const relationship = sale.client_id ? relationshipByClientId.get(sale.client_id) : null
-            results.push(result(
-                `sale-${sale.id}`,
-                "Invoice/sale",
-                sale.client_name,
-                [sale.stripe_invoice_id ?? sale.id, sale.status].filter(Boolean).join(" · "),
-                workspaceHref(workspace.slug, "invoices"),
-                {
-                    hubHref: relationship ? relationshipHubHref(workspace.slug, relationship.id) : undefined,
-                    path: `${workspace.name} > Invoices`,
-                    recordId: sale.stripe_invoice_id ?? sale.id,
                 }
             ))
         }

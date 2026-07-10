@@ -163,10 +163,6 @@ export function communicationsHref(workspaceSlug: string) {
     return workspaceHref(workspaceSlug, "communications")
 }
 
-export function clientNativeHref(workspaceSlug: string, clientId: string) {
-    return workspaceHref(workspaceSlug, `clients/${clientId}`)
-}
-
 function fallbackRelationshipFromClient(client: ClientRow): RelationshipRecord {
     const identity = client.name?.trim() || client.email?.trim() || client.phone?.trim() || "Unknown relationship"
     return {
@@ -423,7 +419,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
             is_key_task: true,
             native_kind: "client",
             native_id: relationship.client_id,
-            native_href: clientNativeHref(workspaceSlug, relationship.client_id),
+            native_href: onboardingDetailHref(workspaceSlug, relationship.id),
             planned_start_date: relationship.created_at.slice(0, 10),
             planned_end_date: null,
             actual_start_at: relationship.created_at,
@@ -449,7 +445,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
                 is_key_task: true,
                 native_kind: "client_sale",
                 native_id: sale.id,
-                native_href: workspaceHref(workspaceSlug, "invoices"),
+                native_href: relationshipHubHref(workspaceSlug, relationship.id),
                 planned_start_date: String(sale.created_at).slice(0, 10),
                 planned_end_date: null,
                 actual_start_at: sale.created_at,
@@ -475,7 +471,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
                 is_key_task: false,
                 native_kind: "client_progress",
                 native_id: row.id,
-                native_href: clientNativeHref(workspaceSlug, relationship.client_id),
+                native_href: onboardingDetailHref(workspaceSlug, relationship.id),
                 planned_start_date: null,
                 planned_end_date: null,
                 actual_start_at: row.created_at,
@@ -501,7 +497,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
                 is_key_task: false,
                 native_kind: "client_activity",
                 native_id: row.id,
-                native_href: clientNativeHref(workspaceSlug, relationship.client_id),
+                native_href: onboardingDetailHref(workspaceSlug, relationship.id),
                 planned_start_date: null,
                 planned_end_date: null,
                 actual_start_at: row.created_at,
@@ -590,7 +586,7 @@ export async function listWorkQueueItems(workspaceSlug: string, workspaceId: str
             is_key_task: true,
             native_kind: relationship.client_id ? "client" : "relationship",
             native_id: relationship.client_id ?? relationship.id,
-            native_href: relationship.client_id ? clientNativeHref(workspaceSlug, relationship.client_id) : relationshipHubHref(workspaceSlug, relationship.id),
+            native_href: relationship.client_id ? onboardingDetailHref(workspaceSlug, relationship.id) : relationshipHubHref(workspaceSlug, relationship.id),
             planned_start_date: relationship.created_at.slice(0, 10),
             planned_end_date: null,
             actual_start_at: null,

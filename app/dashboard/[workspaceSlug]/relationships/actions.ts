@@ -107,10 +107,6 @@ export async function createRelationship(slug: string, formData: FormData) {
 
     relationshipRevalidatePaths(slug, relationship.id)
 
-    if (phase === "invoiced") {
-        redirect(workspaceHref(slug, `sales/new?relationshipId=${relationship.id}`))
-    }
-
     redirect(relationshipHubHref(slug, relationship.id))
 }
 

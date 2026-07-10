@@ -163,19 +163,6 @@ export async function proxy(request: NextRequest) {
         if (path === "/dashboard") return withSession(withRedirect(request, "/"))
         if (path.startsWith("/dashboard/")) return withSession(withRedirect(request, path.slice("/dashboard".length)))
 
-        // The mature dashboard is implemented under /admin. Translate both
-        // old internal links and the clean public workspace URLs before a
-        // request reaches the parallel, minimal /dashboard route tree.
-        const legacyAdminPath = path.match(/^\/admin(?:\/(.*))?$/)
-        if (legacyAdminPath) {
-            const referer = request.headers.get("referer")
-            const workspaceSlug = referer
-                ? new URL(referer).pathname.match(/^\/([a-z0-9][a-z0-9-]*)/i)?.[1] ?? "scaylup"
-                : "scaylup"
-            const suffix = (legacyAdminPath[1] ?? "").replace(/^new$/, "clients/new").replace(/^client\/(.+)$/, "clients/$1")
-            return withSession(withRedirect(request, `/${workspaceSlug}${suffix ? `/${suffix}` : ""}`))
-        }
-
         const publicDashboardPaths = [
             "/login", "/sign-up", "/forgot-password", "/update-password",
             "/mfa", "/logout", "/privacy", "/users", "/invites", "/auth", "/workspaces", "/install",
@@ -208,9 +195,6 @@ export async function proxy(request: NextRequest) {
                 const leadgenSuffix = suffix.replace(/^leadgen\/?/, "")
                 return withSession(withRewrite(request, `/leadgen/${workspaceSlug}${leadgenSuffix ? `/${leadgenSuffix}` : ""}`, headers))
             }
-            const adminSuffix = suffix.replace(/^clients\/new$/, "new")
-                .replace(/^clients\/(.+)$/, "client/$1")
-            return withSession(withRewrite(request, `/admin${adminSuffix ? `/${adminSuffix}` : ""}`, headers))
         }
         if (path === "/") return withSession(withRewrite(request, "/dashboard"))
     }
@@ -292,36 +276,6 @@ export async function proxy(request: NextRequest) {
 
     const refreshedResponse = await refreshedSessionResponse()
     clearLegacyHostOnlyAuthCookies(request, refreshedResponse)
-    const legacyMatch = path.match(/^\/admin(?:\/(.*))?$/)
-    if (legacyMatch) {
-        const referer = request.headers.get("referer")
-        const workspaceSlug = referer ? new URL(referer).pathname.match(/^\/dashboard\/([^/]+)/)?.[1] ?? "scaylup" : "scaylup"
-        const suffix = (legacyMatch[1] ?? "").replace(/^new$/, "clients/new").replace(/^client\/(.+)$/, "clients/$1")
-        const url = request.nextUrl.clone()
-        url.pathname = `/dashboard/${workspaceSlug}${suffix ? `/${suffix}` : ""}`
-        return carryCookies(NextResponse.redirect(url), refreshedResponse)
-    }
-
-    const dashboardMatch = path.match(/^\/dashboard\/([^/]+)(?:\/(.*))?$/)
-    if (dashboardMatch) {
-        const [, workspaceSlug, suffix = ""] = dashboardMatch
-        const isNewWorkspaceSurface =
-            suffix === "communications" ||
-            suffix === "work" ||
-            suffix.startsWith("work/") ||
-            suffix === "onboarding" ||
-            suffix.startsWith("onboarding/") ||
-            suffix === "relationships" ||
-            suffix.startsWith("relationships/")
-        if (suffix !== "users" && suffix !== "settings" && !isNewWorkspaceSurface) {
-            const headers = new Headers(request.headers)
-            headers.set("x-betelgeze-workspace-slug", workspaceSlug)
-            const url = request.nextUrl.clone()
-            const legacyDestination = suffix.replace(/^clients\/new$/, "new").replace(/^clients\/(.+)$/, "client/$1")
-            url.pathname = `/admin${legacyDestination ? `/${legacyDestination}` : ""}`
-            return carryCookies(NextResponse.rewrite(url, { request: { headers } }), refreshedResponse)
-        }
-    }
 
     const onboarding = path.match(/^\/onboarding\/([a-z0-9][a-z0-9-]*)\/([a-f0-9]+)$/i)
     if (!onboarding) return refreshedResponse

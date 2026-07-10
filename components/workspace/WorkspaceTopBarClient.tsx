@@ -749,6 +749,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         const destination = workspaceTabHistoryStep(tab.history, tab.historyIndex, step)
         if (!destination) return
 
+        setRouteLoadingTabId(tabId)
         const nextTabs = tabs.map((candidate) => candidate.id === tabId
             ? { ...candidate, url: destination.url, title: titleForUrl(destination.url), historyIndex: destination.historyIndex }
             : candidate)

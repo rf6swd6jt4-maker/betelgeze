@@ -747,19 +747,25 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
     function addTab() {
         if (!canAddTab) return
-        const url = defaultWorkspaceUrl
+        const currentTab = tabs.find((candidate) => candidate.id === activeTabIdRef.current)
+        const url = currentTab?.url ?? defaultWorkspaceUrl
+        const history = currentTab?.history.length ? [...currentTab.history] : [url]
+        const historyIndex = currentTab ? Math.min(Math.max(currentTab.historyIndex, 0), history.length - 1) : 0
         const tab = {
             id: createTabId(),
             title: titleForUrl(url),
             url,
-            history: [url],
-            historyIndex: 0,
-            seenRevision: mutationRevisionRef.current,
+            history,
+            historyIndex,
+            seenRevision: currentTab?.seenRevision ?? mutationRevisionRef.current,
         }
         const nextTabs = [...tabs, tab]
         activeTabIdRef.current = tab.id
         setTabs(nextTabs)
         setActiveTabId(tab.id)
+        const currentContextOpen = currentTab ? contextOpenByTab[currentTab.id] ?? true : true
+        sessionStorage.setItem(workspaceTabContextStorageKey(workspace.slug, tab.id), currentContextOpen ? "true" : "false")
+        setContextOpenByTab((current) => ({ ...current, [tab.id]: currentContextOpen }))
         saveTabsState(nextTabs, tab.id)
     }
 

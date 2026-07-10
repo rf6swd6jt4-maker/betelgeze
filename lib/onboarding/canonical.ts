@@ -404,6 +404,7 @@ export async function createRelationshipOnboardingSession({
                 .eq("workspace_id", workspaceId)
                 .eq("native_kind", "onboarding_step")
                 .like("native_key", `${session.id}:%`)
+                .neq("status", "done")
         ))
     }
 

@@ -2,6 +2,8 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
+import { CopyOnboardingLink, OnboardingDangerZone } from "@/components/onboarding/OnboardingDetailActions"
+import { archiveOnboarding, restartOnboarding } from "./actions"
 import { getOnboardingForm } from "@/lib/onboarding/forms"
 import { getOnboardingStepsForModules, type CanonicalSessionStep } from "@/lib/onboarding/canonical-helpers"
 import { MODULES } from "@/lib/onboarding/modules"
@@ -14,7 +16,7 @@ import {
 } from "@/lib/relationships"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { formatRelativeTime } from "@/lib/ui/relative-time"
+import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
 
 export const dynamic = "force-dynamic"
@@ -376,7 +378,7 @@ function AssetRowLink({ asset, workspaceSlug }: { asset: AssetRow; workspaceSlug
 
 export default async function OnboardingDetailPage({ params }: PageProps) {
     const { workspaceSlug, relationshipId } = await params
-    const { workspace, user } = await requireWorkspace(workspaceSlug)
+    const { workspace, user, role } = await requireWorkspace(workspaceSlug)
     const relationship = await getRelationship(workspace.id, relationshipId)
     if (!relationship) notFound()
 
@@ -433,6 +435,7 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
     const submittedCount = steps.filter((step) => step.status === "submitted" || step.status === "reviewed").length
     const percentage = getProgressPercentage(steps.map((step) => ({ key: step.key })), steps.filter((step) => step.status === "submitted" || step.status === "reviewed").map((step) => step.key))
     const onboardingUrl = session ? `/onboarding/session/${session.session_token}` : null
+    const canManage = role === "owner" || role === "admin"
     const sessionCompleted = session?.status === "completed"
     const timeline = computeTimeline(steps, Boolean(session), sessionCompleted)
 
@@ -442,14 +445,17 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
             <div className="mx-auto max-w-[92rem]">
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="min-w-0">
-                        <header className="border-b border-neutral-800 pb-6">
-                            <p className="text-sm text-neutral-500">Onboarding detail</p>
+                        <header className="border-b border-neutral-800 pb-5">
+                            <p className="font-mono text-xs text-neutral-500">Onboarding · {shortId(relationship.id)}</p>
                             <div className="mt-2 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                                <div>
+                                <div className="min-w-0">
                                     <h1 className="text-3xl font-semibold tracking-tight">{relationship.primary_person_name}</h1>
-                                    <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">
-                                        {relationship.business_name ?? relationship.primary_email ?? relationship.primary_phone ?? "No company context saved"}
-                                    </p>
+                                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-neutral-400">
+                                        <span>{relationship.business_name ?? "No company saved"}</span>
+                                        {relationship.primary_email ? <span>{relationship.primary_email}</span> : null}
+                                        {relationship.primary_phone ? <span>{relationship.primary_phone}</span> : null}
+                                        <span>{modules?.length ?? 0} modules · {services?.length ?? 0} services</span>
+                                    </div>
                                 </div>
                                 <Link href={relationshipHubHref(workspace.slug, relationship.id)} className="inline-flex min-h-10 items-center rounded-lg border border-neutral-800 px-3 text-sm text-neutral-300 hover:text-white">
                                     Relationship summary
@@ -457,7 +463,26 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                             </div>
                         </header>
 
-                        <section className="mt-6 overflow-hidden rounded-xl border border-neutral-800 bg-black">
+                        <section className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 md:grid-cols-4 md:gap-3">
+                            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                                <p className="text-sm text-neutral-500">Progress</p>
+                                <p className="mt-2 text-2xl font-semibold">{percentage}%</p>
+                            </div>
+                            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                                <p className="text-sm text-neutral-500">Steps</p>
+                                <p className="mt-2 font-medium">{submittedCount} of {steps.length}</p>
+                            </div>
+                            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                                <p className="text-sm text-neutral-500">Session</p>
+                                <p className="mt-2 font-medium capitalize">{session?.status ?? "Not started"}</p>
+                            </div>
+                            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                                <p className="text-sm text-neutral-500">Assets</p>
+                                <p className="mt-2 font-medium">{assets?.length ?? 0} linked</p>
+                            </div>
+                        </section>
+
+                        <section className="mt-4 overflow-hidden rounded-xl border border-neutral-800 bg-black sm:mt-6">
                             <div className="border-b border-neutral-900 px-5 py-4">
                                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                                     <div>
@@ -482,25 +507,6 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                             </div>
                         </section>
 
-                        <section className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 md:grid-cols-4 md:gap-3">
-                            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                                <p className="text-sm text-neutral-500">Progress</p>
-                                <p className="mt-2 text-2xl font-semibold">{percentage}%</p>
-                            </div>
-                            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                                <p className="text-sm text-neutral-500">Steps</p>
-                                <p className="mt-2 font-medium">{submittedCount} of {steps.length}</p>
-                            </div>
-                            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                                <p className="text-sm text-neutral-500">Session</p>
-                                <p className="mt-2 font-medium capitalize">{session?.status ?? "Not started"}</p>
-                            </div>
-                            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                                <p className="text-sm text-neutral-500">Assets</p>
-                                <p className="mt-2 font-medium">{assets?.length ?? 0} linked</p>
-                            </div>
-                        </section>
-
                         <section className="mt-6 rounded-xl border border-neutral-800 bg-black p-5">
                             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                                 <div>
@@ -508,9 +514,12 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                                     <p className="mt-1 text-sm text-neutral-500">The client-facing canonical session link for this relationship.</p>
                                 </div>
                                 {onboardingUrl ? (
-                                    <a href={onboardingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black">
-                                        Open session
-                                    </a>
+                                    <div className="grid grid-cols-2 gap-2 sm:flex">
+                                        <CopyOnboardingLink path={onboardingUrl} />
+                                        <a href={onboardingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium text-black">
+                                            Preview session
+                                        </a>
+                                    </div>
                                 ) : (
                                     <span className="text-sm text-neutral-500">No active session</span>
                                 )}
@@ -556,6 +565,14 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                                 </div>
                             </div>
                         </section>
+
+                        {canManage ? (
+                            <OnboardingDangerZone
+                                hasSession={Boolean(session)}
+                                archiveAction={archiveOnboarding.bind(null, workspace.slug, relationship.id)}
+                                restartAction={restartOnboarding.bind(null, workspace.slug, relationship.id)}
+                            />
+                        ) : null}
 
                     </div>
 

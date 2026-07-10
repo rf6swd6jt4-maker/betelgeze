@@ -93,7 +93,7 @@ export function ClientContextPanel({ workspaceSlug, relationship, metrics = [] }
                     </div>
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-y-auto border-t border-neutral-900 px-4 py-4">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-none border-t border-neutral-900 px-4 py-4">
                     <section>
                         <p className="text-xs uppercase tracking-wide text-neutral-500">Relationship</p>
                         <dl className="mt-3 space-y-3 text-sm">

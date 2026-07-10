@@ -1039,6 +1039,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const activeContextOpen = activeContextSupported && (contextOpenByTab[activeTab.id] ?? true)
     const activeRelationshipContext = activeContextOpen ? activeContextStatus?.context ?? null : null
     const activePathname = new URL(activeTab.url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname
+    const activeRouteLoading = routeLoadingTabId === activeTabId
 
     return <div ref={shellRootRef} data-workspace-shell-root>
         <header data-workspace-topbar className="fixed left-0 top-0 z-50 h-14 w-full border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/20 backdrop-blur">
@@ -1270,7 +1271,10 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     onLoad={() => handleFrameLoad(tab.id)}
                 />
             ))}
-            {tabsHydrated && !loadedTabIds.has(activeTabId) && routeLoadingTabId !== activeTabId && (
+            {tabsHydrated && activeRouteLoading && (
+                <div className="absolute inset-0 z-20 bg-neutral-950" aria-hidden="true" />
+            )}
+            {tabsHydrated && !loadedTabIds.has(activeTabId) && !activeRouteLoading && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950 text-sm text-neutral-500">Loading tab...</div>
             )}
         </div>
@@ -1283,7 +1287,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             />
         )}
 
-        {routeLoadingTabId === activeTabId && <LoadingOverlay />}
+        {activeRouteLoading && <LoadingOverlay />}
 
         <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950 ${sidebarTransitionEnabled ? "transition-transform duration-200 ease-out" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex h-full flex-col gap-2 px-4 py-5 md:gap-1 md:px-3 md:py-4">

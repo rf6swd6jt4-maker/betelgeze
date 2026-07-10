@@ -6,6 +6,7 @@ import {
     listRelationshipTimelineItems,
     phaseLabel,
     relationshipHubHref,
+    workItemHref,
     workspaceHref,
 } from "@/lib/relationships"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
@@ -63,10 +64,10 @@ export default async function WorkDetailPlaceholder({ params }: PageProps) {
                     </p>
                     <div className="mt-4 divide-y divide-neutral-900 rounded-xl border border-neutral-900">
                         {openItems.slice(0, 6).map((item) => (
-                            <div key={item.id} className="px-3 py-2">
+                            <Link key={item.id} href={item.synthesized ? item.native_href ?? workItemHref(workspace.slug, item.id) : workItemHref(workspace.slug, item.id)} className="block px-3 py-2 hover:bg-neutral-900/70">
                                 <p className="text-sm font-medium text-neutral-100">{item.title}</p>
                                 <p className="mt-1 text-xs text-neutral-500">{item.status} · {phaseLabel(item.lifecycle_phase)}</p>
-                            </div>
+                            </Link>
                         ))}
                         {openItems.length === 0 && (
                             <p className="px-3 py-4 text-sm text-neutral-500">No open work items are attached yet.</p>

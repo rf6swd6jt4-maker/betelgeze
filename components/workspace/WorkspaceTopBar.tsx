@@ -1,4 +1,5 @@
 import { WorkspaceTopBarClient } from "@/components/workspace/WorkspaceTopBarClient"
+import { createAssetFromModal, createRelationshipFromModal, createWorkItemFromModal } from "@/app/[workspaceSlug]/relationships/actions"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { leaveWorkspace } from "@/app/users/[username]/actions"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
@@ -22,5 +23,15 @@ export async function WorkspaceTopBar({ userId, workspace }: Props) {
         workspace.logo_path ? createUploadSignedUrl(workspace.logo_path) : null,
     ])
 
-    return <WorkspaceTopBarClient workspace={workspace} workspaceLogoSrc={workspaceLogoSrc} username={username} email={authResult.user?.email ?? ""} avatarSrc={avatarSrc} leaveAction={leaveWorkspace.bind(null, username)} />
+    return <WorkspaceTopBarClient
+        workspace={workspace}
+        workspaceLogoSrc={workspaceLogoSrc}
+        username={username}
+        email={authResult.user?.email ?? ""}
+        avatarSrc={avatarSrc}
+        leaveAction={leaveWorkspace.bind(null, username)}
+        createRelationshipAction={createRelationshipFromModal.bind(null, workspace.slug)}
+        createWorkItemAction={createWorkItemFromModal.bind(null, workspace.slug)}
+        createAssetAction={createAssetFromModal.bind(null, workspace.slug)}
+    />
 }

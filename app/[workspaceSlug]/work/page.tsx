@@ -4,7 +4,7 @@ import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import {
     listWorkQueueItems,
     phaseLabel,
-    workDetailHref,
+    workItemHref,
     type RelationshipWorkItemStatus,
 } from "@/lib/relationships"
 import { requireWorkspace } from "@/lib/workspaces"
@@ -27,10 +27,10 @@ export default async function WorkQueuePage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user } = await requireWorkspace(workspaceSlug)
     const allItems = await listWorkQueueItems(workspace.slug, workspace.id)
-    const items = allItems.filter((item) => item.lifecycle_phase === "fulfilment" || item.relationship.lifecycle_phase === "fulfilment")
-    const fulfilmentRelationshipIds = new Set(items.map((item) => item.relationship_id))
+    const items = allItems.filter((item) => item.lifecycle_phase === "fulfilment" || item.relationship?.lifecycle_phase === "fulfilment")
+    const fulfilmentRelationshipIds = new Set(items.map((item) => item.relationship_id).filter(Boolean))
     const blockedCount = items.filter((item) => item.status === "blocked").length
-    const dueCount = items.filter((item) => item.planned_end_date && new Date(item.planned_end_date) <= new Date()).length
+    const dueCount = items.filter((item) => item.due_date && new Date(item.due_date) <= new Date()).length
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 pb-7 text-white sm:px-6">
@@ -66,16 +66,16 @@ export default async function WorkQueuePage({ params }: PageProps) {
                     {items.length ? (
                         items.map((item) => {
                             const tone = statusTone(item.status)
-                            const date = item.planned_end_date ?? item.planned_start_date ?? item.actual_start_at ?? item.created_at
+                            const date = item.due_date ?? item.planned_start_date ?? item.actual_start_at ?? item.created_at
                             return (
-                                <Link key={item.id} href={workDetailHref(workspace.slug, item.relationship.id)} className="grid gap-3 border-b border-neutral-900 px-4 py-4 last:border-0 hover:bg-neutral-900/60 md:grid-cols-[minmax(240px,1fr)_minmax(190px,0.8fr)_150px_120px_120px] md:items-center">
+                                <Link key={item.id} href={workItemHref(workspace.slug, item.id)} className="grid gap-3 border-b border-neutral-900 px-4 py-4 last:border-0 hover:bg-neutral-900/60 md:grid-cols-[minmax(240px,1fr)_minmax(190px,0.8fr)_150px_120px_120px] md:items-center">
                                     <div className="min-w-0">
                                         <p className="truncate font-medium text-neutral-100">{item.title}</p>
                                         {item.description && <p className="mt-1 line-clamp-1 text-sm text-neutral-500">{item.description}</p>}
                                     </div>
                                     <div className="min-w-0 text-sm text-neutral-300">
-                                        <span className="block truncate">{item.relationship.primary_person_name}</span>
-                                        <span className="block truncate text-xs text-neutral-500">{item.relationship.business_name ?? "No business context"}</span>
+                                        <span className="block truncate">{item.relationship?.primary_person_name ?? "Workspace item"}</span>
+                                        <span className="block truncate text-xs text-neutral-500">{item.relationship?.business_name ?? "No relationship attached"}</span>
                                     </div>
                                     <p className="text-sm text-neutral-400">{phaseLabel(item.lifecycle_phase)}</p>
                                     <div className="flex items-center gap-2 text-sm">

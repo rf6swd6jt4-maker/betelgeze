@@ -3,12 +3,13 @@ import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import {
     communicationsHref,
+    assetHref,
     listRelationshipsForWorkspace,
     onboardingDetailHref,
     relationshipHubHref,
     relationshipNativeLocation,
     relationshipSearchHaystack,
-    workDetailHref,
+    workItemHref,
     workspaceHref,
     type RelationshipRecord,
 } from "@/lib/relationships"
@@ -50,7 +51,7 @@ function staticNavigationResults(workspace: { name: string; slug: string }, quer
         { id: "action-new-poll", type: "Action", label: "New Poll", description: "Create and preflight a new lead-generation poll", href: workspaceHref(workspace.slug, "leadgen/new"), path: `${workspace.name} > Lead Gen > New Poll`, keywords: ["create poll", "start poll", "run poll", "poll preflight", "leadgen new"] },
         { id: "page-leads", type: "Tab", label: "Leads", description: "Qualified and discovered lead list", href: workspaceHref(workspace.slug, "leadgen"), path: `${workspace.name} > Lead Gen > Leads`, keywords: ["leadgen companies", "lead list"] },
         { id: "page-polls", type: "Tab", label: "Polls", description: "Lead generation poll history", href: workspaceHref(workspace.slug, "leadgen/polls"), path: `${workspace.name} > Lead Gen > Polls`, keywords: ["runs", "automation history"] },
-        { id: "action-new-relationship", type: "Action", label: "Start New Relationship", description: "Create a relationship manually at any lifecycle stage", href: workspaceHref(workspace.slug, "relationships/new"), path: `${workspace.name} > Relationships > New`, keywords: ["manual relationship", "new relationship", "add relationship", "manual client", "new client", "add client"] },
+        { id: "action-new-relationship", type: "Action", label: "Start New Relationship", description: "Create a relationship manually at any lifecycle stage", href: workspaceHref(workspace.slug, "relationships?create=relationship"), path: `${workspace.name} > Relationships > New`, keywords: ["manual relationship", "new relationship", "add relationship", "manual client", "new client", "add client"] },
         { id: "page-settings", type: "Page", label: "Settings", description: "Unified workspace settings", href: workspaceHref(workspace.slug, "settings"), path: settingsPath, keywords: ["workspace settings"] },
         { id: "settings-workspace", type: "Settings", label: "Workspace", description: "Edit the workspace name", href: workspaceHref(workspace.slug, "settings#workspace"), path: `${settingsPath} > Workspace`, keywords: ["name", "identity"] },
         { id: "settings-onboarding-domain", type: "Settings", label: "Onboarding Domain", description: "Client portal hostname", href: workspaceHref(workspace.slug, "settings#onboarding-domain"), path: `${settingsPath} > Onboarding Domain`, keywords: ["custom domain", "hostname", "portal"] },
@@ -133,26 +134,24 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
         ))
     }
 
-    const relationshipById = new Map(relationships.map((relationship) => [relationship.id, relationship]))
     const relationshipByClientId = new Map(relationships.map((relationship) => [relationship.client_id, relationship]).filter((entry): entry is [string, RelationshipRecord] => Boolean(entry[0])))
 
     const workItems = await supabaseAdmin
-        .from("relationship_work_items")
-        .select("id, relationship_id, title, description, lifecycle_phase, native_href, native_kind, native_id")
+        .from("work_items")
+        .select("id, title, description, lifecycle_phase, native_href, native_kind, native_id")
         .eq("workspace_id", workspace.id)
         .limit(80)
 
     if (!workItems.error) {
         for (const item of (workItems.data ?? []).filter((item) => includesQuery([item.id, item.native_id, item.title, item.description, item.lifecycle_phase], query)).slice(0, 6)) {
-            const relationship = relationshipById.get(item.relationship_id)
             results.push(result(
                 `work-${item.id}`,
                 "Work item",
                 item.title,
-                relationship?.primary_person_name ?? item.description ?? "Relationship work",
-                relationship ? workDetailHref(workspace.slug, relationship.id) : item.native_href?.startsWith("/") ? item.native_href : workspaceHref(workspace.slug, "work"),
+                item.description ?? "Workspace work item",
+                workItemHref(workspace.slug, item.id),
                 {
-                    hubHref: relationship ? workDetailHref(workspace.slug, relationship.id) : undefined,
+                    hubHref: item.native_href?.startsWith("/") ? item.native_href : undefined,
                     path: `${workspace.name} > Project Management`,
                     recordId: item.native_id ?? item.id,
                 }
@@ -199,8 +198,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
             .order("created_at", { ascending: false })
             .limit(60),
         supabaseAdmin
-            .from("relationship_assets")
-            .select("id, relationship_id, asset_type, title, description, external_url, native_kind, native_id")
+            .from("assets")
+            .select("id, asset_kind, source_kind, title, description, external_url, native_kind, native_id")
             .eq("workspace_id", workspace.id)
             .order("created_at", { ascending: false })
             .limit(80),
@@ -225,16 +224,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
     }
 
     if (!assetError) {
-        for (const asset of (assets ?? []).filter((asset) => includesQuery([asset.id, asset.native_id, asset.asset_type, asset.title, asset.description, asset.external_url, asset.native_kind], query)).slice(0, 6)) {
-            const relationship = relationshipById.get(asset.relationship_id)
+        for (const asset of (assets ?? []).filter((asset) => includesQuery([asset.id, asset.native_id, asset.asset_kind, asset.source_kind, asset.title, asset.description, asset.external_url, asset.native_kind], query)).slice(0, 6)) {
             results.push(result(
                 `asset-${asset.id}`,
                 "Asset",
                 asset.title,
-                [asset.asset_type, relationship?.primary_person_name].filter(Boolean).join(" · ") || "Relationship asset",
-                relationship ? relationshipHubHref(workspace.slug, relationship.id) : workspaceHref(workspace.slug, "relationships"),
+                [asset.asset_kind, asset.source_kind].filter(Boolean).join(" · ") || "Workspace asset",
+                assetHref(workspace.slug, asset.id),
                 {
-                    hubHref: relationship ? relationshipHubHref(workspace.slug, relationship.id) : undefined,
+                    hubHref: undefined,
                     path: `${workspace.name} > Relationships > Assets`,
                     recordId: asset.native_id ?? asset.id,
                 }

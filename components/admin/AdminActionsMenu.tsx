@@ -69,7 +69,7 @@ export function AdminActionsMenu({ workspaceSlug }: { workspaceSlug?: string }) 
                     role="menu"
                 >
                     <Link
-                        href={workspaceSlug ? `/${workspaceSlug}/relationships/new` : "/relationships/new"}
+                        href={workspaceSlug ? `/${workspaceSlug}/relationships?create=relationship` : "/relationships"}
                         className="block min-h-10 px-3 py-2.5 text-sm text-neutral-200 hover:bg-neutral-800"
                         role="menuitem"
                     >

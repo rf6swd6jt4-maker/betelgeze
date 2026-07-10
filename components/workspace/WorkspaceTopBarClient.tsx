@@ -3,9 +3,10 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link"
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import { useCallback, useEffect, useId, useRef, useState, useTransition, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { AccountMenu } from "@/components/account/AccountMenu"
+import type { WorkspaceCreateActionState } from "@/app/[workspaceSlug]/relationships/actions"
 import { WorkspaceTabBridge } from "@/components/workspace/WorkspaceTabBridge"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
 import { LEADGEN_POLLING_SYSTEM_VERSION_LABEL } from "@/lib/leadgen/version"
@@ -45,6 +46,9 @@ type Props = {
     email: string
     avatarSrc?: string | null
     leaveAction: (formData: FormData) => void
+    createRelationshipAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
+    createWorkItemAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
+    createAssetAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
 }
 
 type SearchResult = {
@@ -80,6 +84,10 @@ function SidebarIcon() {
 
 function SearchIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg>
+}
+
+function PlusIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
 }
 
 function SearchResultContent({ item, mobile = false }: { item: SearchResult; mobile?: boolean }) {
@@ -158,7 +166,7 @@ export function WorkspaceTopBarClient(props: Props) {
     return <WorkspaceTabsShell {...props} />
 }
 
-function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avatarSrc, leaveAction }: Props) {
+function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avatarSrc, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction }: Props) {
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const searchMenuId = useId()
@@ -175,6 +183,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const pendingNavigationRef = useRef(new Map<string, string>())
     const mutationRevisionRef = useRef(0)
     const tabButtonRefs = useRef(new Map<string, HTMLButtonElement>())
+    const createIntentHandledRef = useRef("")
     const [sidebarOpen, setSidebarOpen] = useState(false)
     const [sidebarHydrated, setSidebarHydrated] = useState(false)
     const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false)
@@ -187,6 +196,11 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const [searchLoading, setSearchLoading] = useState(false)
     const [searchResults, setSearchResults] = useState<SearchResult[]>([])
     const [searchShortcutLabel, setSearchShortcutLabel] = useState("Ctrl+J")
+    const [createOpen, setCreateOpen] = useState(false)
+    const [createMode, setCreateMode] = useState<"relationship" | "work-item" | "asset">("relationship")
+    const [createError, setCreateError] = useState<string | null>(null)
+    const [uploadLabel, setUploadLabel] = useState<string | null>(null)
+    const [isCreating, startCreateTransition] = useTransition()
     const defaultWorkspaceUrl = `/${workspace.slug}`
     const tabsStorageKey = `betelgeze:workspace-tabs:${workspace.slug}`
 
@@ -205,12 +219,15 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
         if (!suffix) return "Relationships"
         if (suffix === "relationships") return "Relationships"
-        if (suffix === "relationships/new") return "New Relationship"
         if (suffix.startsWith("relationships/")) return "Relationship"
         if (suffix === "onboarding") return "Onboarding"
         if (suffix.startsWith("onboarding/")) return "Onboarding Detail"
         if (suffix === "work") return "Project Management"
         if (suffix.startsWith("work/")) return "Project Detail"
+        if (suffix === "work-items") return "Work Items"
+        if (suffix.startsWith("work-items/")) return "Work Item"
+        if (suffix === "assets") return "Assets"
+        if (suffix.startsWith("assets/")) return "Asset"
         if (suffix === "communications") return "Communications"
         if (suffix.startsWith("communications/")) return "Communication"
         if (suffix === "leadgen") return "Lead Gen"
@@ -467,6 +484,21 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         }
     }, [query, workspace.slug])
 
+    useEffect(() => {
+        if (!tabsHydrated || !activeTabId) return
+        const tab = tabs.find((candidate) => candidate.id === activeTabId)
+        if (!tab) return
+        const url = new URL(tab.url, window.location.origin)
+        const intent = url.searchParams.get("create")
+        if (intent !== "relationship" && intent !== "work-item" && intent !== "asset") return
+        const key = `${tab.id}:${url.pathname}:${intent}`
+        if (createIntentHandledRef.current === key) return
+        createIntentHandledRef.current = key
+        setCreateMode(intent)
+        setCreateError(null)
+        setCreateOpen(true)
+    }, [activeTabId, tabs, tabsHydrated])
+
     function postToTab(tabId: string, message: Omit<WorkspaceTabParentMessage, "source" | "target" | "tabId">) {
         const frame = iframeRefs.current.get(tabId)
         if (!frame?.contentWindow) return false
@@ -516,11 +548,18 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         setSearchOpen(true)
     }
 
+    function openCreate(mode: "relationship" | "work-item" | "asset" = "relationship") {
+        window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: "workspace-create" }))
+        setCreateMode(mode)
+        setCreateError(null)
+        setCreateOpen(true)
+    }
+
     function directSearchHref(value: string) {
         const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ")
         if (normalized === "new poll" || normalized === "create poll" || normalized === "start poll" || normalized === "run poll") return `/${workspace.slug}/leadgen/new`
         if (normalized === "communications" || normalized === "communication" || normalized === "messages" || normalized === "client messages" || normalized === "chat") return `/${workspace.slug}/communications`
-        if (normalized === "manual relationship" || normalized === "start relationship" || normalized === "new relationship" || normalized === "add relationship" || normalized === "manual client" || normalized === "add manual client" || normalized === "new client" || normalized === "add client") return `/${workspace.slug}/relationships/new`
+        if (normalized === "manual relationship" || normalized === "start relationship" || normalized === "new relationship" || normalized === "add relationship" || normalized === "manual client" || normalized === "add manual client" || normalized === "new client" || normalized === "add client") return `/${workspace.slug}/relationships?create=relationship`
         if (normalized === "seed sources" || normalized === "seed source category") return `/${workspace.slug}/settings#leadgen-sources-seed`
         if (normalized === "business validation" || normalized === "business validation sources") return `/${workspace.slug}/settings#leadgen-sources-business-validation`
         if (normalized === "owner identity" || normalized === "owner identity discovery" || normalized === "owner discovery") return `/${workspace.slug}/settings#leadgen-sources-owner-identity`
@@ -536,6 +575,63 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         event.preventDefault()
         setSearchOpen(false)
         navigateActiveTab(href)
+    }
+
+    async function submitCreate(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault()
+        setCreateError(null)
+        const form = event.currentTarget
+        const formData = new FormData(form)
+
+        if (createMode === "asset") {
+            const file = formData.get("asset_file")
+            if (!(file instanceof File) || file.size === 0) {
+                setCreateError("Choose a file to upload.")
+                return
+            }
+            setUploadLabel(`Uploading ${file.name}`)
+            try {
+                const prepare = await fetch(`/api/workspaces/${workspace.slug}/assets/upload`, {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ name: file.name, size: file.size, type: file.type || "application/octet-stream" }),
+                })
+                const prepared = await prepare.json() as { uploadUrl?: string; storedAsset?: { name: string; path: string; size: number; type: string; kind: string }; error?: string }
+                if (!prepare.ok || !prepared.uploadUrl || !prepared.storedAsset) throw new Error(prepared.error ?? "Could not prepare upload.")
+                const upload = await fetch(prepared.uploadUrl, {
+                    method: "PUT",
+                    headers: { "content-type": prepared.storedAsset.type },
+                    body: file,
+                })
+                if (!upload.ok) throw new Error("The file could not be uploaded.")
+                formData.set("storage_path", prepared.storedAsset.path)
+                formData.set("content_type", prepared.storedAsset.type)
+                formData.set("file_size", String(prepared.storedAsset.size))
+                formData.set("asset_kind", prepared.storedAsset.kind)
+                formData.set("original_name", prepared.storedAsset.name)
+                if (!String(formData.get("title") ?? "").trim()) formData.set("title", prepared.storedAsset.name)
+            } catch (error) {
+                setCreateError(error instanceof Error ? error.message : "Upload failed.")
+                setUploadLabel(null)
+                return
+            }
+            setUploadLabel(null)
+        }
+
+        startCreateTransition(async () => {
+            const result = createMode === "relationship"
+                ? await createRelationshipAction(formData)
+                : createMode === "work-item"
+                    ? await createWorkItemAction(formData)
+                    : await createAssetAction(formData)
+            if (!result.ok) {
+                setCreateError(result.error ?? "Could not create this item.")
+                return
+            }
+            setCreateOpen(false)
+            form.reset()
+            if (result.href) navigateActiveTab(result.href)
+        })
     }
 
     function toggleSidebar() {
@@ -733,10 +829,109 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                             </div>
                         )}
                     </div>
+                    <button data-icon-button type="button" onClick={() => openCreate("relationship")} aria-label="Create relationship, work item, or asset" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
+                        <PlusIcon />
+                    </button>
                     <AccountMenu username={username} email={email} avatarSrc={avatarSrc} workspaceId={workspace.id} workspaceName={workspace.name} leaveAction={leaveAction} buttonClassName="h-9 w-9" />
                 </div>
             </div>
         </header>
+
+        {createOpen && (
+            <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="workspace-create-title">
+                <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-white shadow-2xl shadow-black/50">
+                    <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-5 py-4">
+                        <div>
+                            <p className="text-xs uppercase tracking-wide text-neutral-500">Create</p>
+                            <h2 id="workspace-create-title" className="text-lg font-semibold">Add to Betelgeze</h2>
+                        </div>
+                        <button data-icon-button type="button" onClick={() => setCreateOpen(false)} aria-label="Close create panel" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white">
+                            <span aria-hidden="true" className="text-xl leading-none">×</span>
+                        </button>
+                    </div>
+                    <div className="border-b border-neutral-800 px-5 py-3">
+                        <div className="grid grid-cols-3 gap-2 rounded-lg bg-neutral-900 p-1">
+                            {[
+                                ["relationship", "Relationship"],
+                                ["work-item", "Work item"],
+                                ["asset", "Asset"],
+                            ].map(([mode, label]) => (
+                                <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => { setCreateMode(mode as typeof createMode); setCreateError(null) }}
+                                    className={`min-h-9 rounded-md px-2 text-sm transition ${createMode === mode ? "bg-white text-black" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <form onSubmit={submitCreate} className="max-h-[70vh] overflow-y-auto px-5 py-5">
+                        {createMode === "relationship" && (
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <label className="block text-sm text-neutral-300">Relationship name<input name="primary_person_name" required className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">Company<input name="business_name" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">Phone<input name="primary_phone" type="tel" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">Email<input name="primary_email" type="email" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">Lifecycle stage<select name="lifecycle_phase" defaultValue="lead" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white">
+                                    <option value="lead">Lead</option>
+                                    <option value="nurturing">Nurturing</option>
+                                    <option value="potential_client">Potential Client</option>
+                                    <option value="invoiced">Invoiced</option>
+                                    <option value="onboarding">Onboarding</option>
+                                    <option value="fulfilment">Fulfilment</option>
+                                    <option value="retention">Retention</option>
+                                    <option value="completed_lost">Completed/Lost</option>
+                                </select></label>
+                                <label className="block text-sm text-neutral-300">Contact role<input name="primary_contact_role" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">Industry<input name="industry_value" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">Location<input name="location_value" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">Website<input name="website_url" type="url" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">Source<input name="source_label" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300 sm:col-span-2">Context<textarea name="notes_summary" rows={3} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-3 text-white" /></label>
+                            </div>
+                        )}
+                        {createMode === "work-item" && (
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <label className="block text-sm text-neutral-300 sm:col-span-2">Title<input name="title" required className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">Lifecycle stage<select name="lifecycle_phase" defaultValue="fulfilment" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white">
+                                    <option value="lead">Lead</option>
+                                    <option value="onboarding">Onboarding</option>
+                                    <option value="fulfilment">Fulfilment</option>
+                                    <option value="retention">Retention</option>
+                                </select></label>
+                                <label className="block text-sm text-neutral-300">Status<select name="status" defaultValue="todo" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white">
+                                    <option value="todo">Todo</option>
+                                    <option value="doing">Doing</option>
+                                    <option value="waiting">Waiting</option>
+                                    <option value="blocked">Blocked</option>
+                                    <option value="done">Done</option>
+                                </select></label>
+                                <label className="block text-sm text-neutral-300">Start date<input name="planned_start_date" type="date" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">Due date<input name="due_date" type="date" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">Priority<input name="priority" type="number" min="1" max="5" defaultValue="3" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="flex items-center gap-2 pt-8 text-sm text-neutral-300"><input name="is_key_task" type="checkbox" defaultChecked className="h-4 w-4 rounded border-neutral-700 bg-neutral-950" /> Key task</label>
+                                <label className="block text-sm text-neutral-300 sm:col-span-2">Description<textarea name="description" rows={4} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-3 text-white" /></label>
+                            </div>
+                        )}
+                        {createMode === "asset" && (
+                            <div className="grid gap-4">
+                                <label className="block text-sm text-neutral-300">Title<input name="title" placeholder="Defaults to file name" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
+                                <label className="block text-sm text-neutral-300">File<input name="asset_file" type="file" required className="mt-2 block w-full rounded-lg border border-dashed border-neutral-700 bg-neutral-950 px-3 py-4 text-sm text-neutral-300 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-black" /></label>
+                                <label className="block text-sm text-neutral-300">Description<textarea name="description" rows={3} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-3 text-white" /></label>
+                            </div>
+                        )}
+                        {createError && <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{createError}</p>}
+                        {uploadLabel && <p className="mt-4 text-sm text-neutral-400">{uploadLabel}</p>}
+                        <div className="mt-5 flex justify-end gap-2">
+                            <button type="button" onClick={() => setCreateOpen(false)} className="inline-flex min-h-10 items-center rounded-lg border border-neutral-800 px-3 text-sm text-neutral-300 hover:text-white">Cancel</button>
+                            <button disabled={isCreating || Boolean(uploadLabel)} className="inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating..." : "Create"}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        )}
 
         <div data-workspace-tabbar className={`fixed top-14 z-40 h-11 border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/10 backdrop-blur ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
             <div role="tablist" aria-label="Workspace tabs" className="flex h-full min-w-0 items-end gap-1 overflow-x-auto px-2 pt-1">

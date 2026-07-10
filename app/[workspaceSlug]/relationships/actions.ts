@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { createOnboardingClient } from "@/lib/onboarding/client-creation"
 import {
+    assetHref,
     normalizeRelationshipPhase,
     relationshipHubHref,
+    workItemHref,
     workspaceHref,
-    type RelationshipAssetType,
     type RelationshipPhase,
 } from "@/lib/relationships"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -24,7 +25,13 @@ const creatablePhases = new Set<RelationshipPhase>([
     "retention",
     "completed_lost",
 ])
-const assetTypes = new Set<RelationshipAssetType>(["file", "link", "note", "message", "invoice", "form_submission", "lead_evidence", "document", "other"])
+const creatableAssetKinds = new Set(["file", "media", "document"])
+
+export type WorkspaceCreateActionState = {
+    ok: boolean
+    href?: string
+    error?: string
+}
 
 function formString(formData: FormData, key: string) {
     return String(formData.get(key) ?? "").trim()
@@ -45,13 +52,19 @@ function relationshipRevalidatePaths(slug: string, relationshipId?: string) {
 }
 
 export async function createRelationship(slug: string, formData: FormData) {
+    const result = await createRelationshipFromModal(slug, formData)
+    if (!result.ok) redirect(workspaceHref(slug, `relationships?error=${result.error ?? "create-failed"}`))
+    redirect(result.href ?? workspaceHref(slug, "relationships"))
+}
+
+export async function createRelationshipFromModal(slug: string, formData: FormData): Promise<WorkspaceCreateActionState> {
     const { workspace, user } = await requireWorkspace(slug, "admin")
     const primaryPersonName = formString(formData, "primary_person_name")
     const businessName = nullableFormString(formData, "business_name")
     const phase = normalizeRelationshipPhase(formString(formData, "lifecycle_phase"))
 
     if (!primaryPersonName || !creatablePhases.has(phase)) {
-        redirect(workspaceHref(slug, "relationships/new?error=missing-fields"))
+        return { ok: false, error: "missing-fields" }
     }
 
     const { data: relationship, error } = await supabaseAdmin
@@ -80,7 +93,7 @@ export async function createRelationship(slug: string, formData: FormData) {
         .single()
 
     if (error || !relationship) {
-        redirect(workspaceHref(slug, "relationships/new?error=create-failed"))
+        return { ok: false, error: "create-failed" }
     }
 
     if (phase === "onboarding") {
@@ -103,7 +116,7 @@ export async function createRelationship(slug: string, formData: FormData) {
 
     relationshipRevalidatePaths(slug, relationship.id)
 
-    redirect(relationshipHubHref(slug, relationship.id))
+    return { ok: true, href: relationshipHubHref(slug, relationship.id) }
 }
 
 export async function startRelationshipOnboarding(slug: string, relationshipId: string) {
@@ -139,47 +152,105 @@ export async function startRelationshipOnboarding(slug: string, relationshipId: 
 }
 
 export async function createRelationshipWorkItem(slug: string, relationshipId: string, formData: FormData) {
-    const { workspace } = await requireWorkspace(slug, "admin")
-    const title = formString(formData, "title")
-    if (!title) redirect(relationshipHubHref(slug, relationshipId))
-    const lifecyclePhase = normalizeRelationshipPhase(formString(formData, "lifecycle_phase"))
-
-    await supabaseAdmin.from("relationship_work_items").insert({
-        workspace_id: workspace.id,
-        relationship_id: relationshipId,
-        title,
-        description: nullableFormString(formData, "description"),
-        lifecycle_phase: lifecyclePhase,
-        status: "todo",
-        priority: Number(formData.get("priority") ?? 3),
-        is_key_task: formData.get("is_key_task") === "on",
-        native_kind: "manual_task",
-        metadata: { created_from: "relationship_page" },
-    })
-
-    relationshipRevalidatePaths(slug, relationshipId)
+    const result = await createWorkItemFromModal(slug, formData, relationshipId)
+    if (result.href) redirect(result.href)
     redirect(relationshipHubHref(slug, relationshipId))
 }
 
-export async function createRelationshipAsset(slug: string, relationshipId: string, formData: FormData) {
-    const { workspace, user } = await requireWorkspace(slug, "admin")
+export async function createWorkItemFromModal(slug: string, formData: FormData, relationshipId?: string | null): Promise<WorkspaceCreateActionState> {
+    const { workspace } = await requireWorkspace(slug, "admin")
     const title = formString(formData, "title")
-    const submittedAssetType = formString(formData, "asset_type") as RelationshipAssetType
-    const assetType = assetTypes.has(submittedAssetType) ? submittedAssetType : "other"
-    if (!title) redirect(relationshipHubHref(slug, relationshipId))
+    if (!title) return { ok: false, error: "missing-title" }
+    const lifecyclePhase = normalizeRelationshipPhase(formString(formData, "lifecycle_phase"))
 
-    await supabaseAdmin.from("relationship_assets").insert({
+    const { data: item, error } = await supabaseAdmin.from("work_items").insert({
         workspace_id: workspace.id,
-        relationship_id: relationshipId,
-        asset_type: assetType,
         title,
         description: nullableFormString(formData, "description"),
-        external_url: nullableFormString(formData, "external_url"),
-        native_kind: "manual_asset",
-        metadata: { created_from: "relationship_page" },
+        lifecycle_phase: lifecyclePhase,
+        status: nullableFormString(formData, "status") ?? "todo",
+        priority: Number(formData.get("priority") ?? 3),
+        is_key_task: formData.get("is_key_task") === "on",
+        native_kind: "manual_task",
+        planned_start_date: nullableFormString(formData, "planned_start_date"),
+        due_date: nullableFormString(formData, "due_date"),
+        metadata: { created_from: relationshipId ? "relationship_page" : "global_create" },
+    })
+        .select("id")
+        .single()
+
+    if (error || !item) return { ok: false, error: "create-failed" }
+
+    const submittedRelationshipId = nullableFormString(formData, "relationship_id")
+    const relationshipToLink = relationshipId ?? submittedRelationshipId
+    if (relationshipToLink) {
+        await supabaseAdmin.from("work_item_relationships").insert({
+            workspace_id: workspace.id,
+            work_item_id: item.id,
+            relationship_id: relationshipToLink,
+        })
+    }
+
+    relationshipRevalidatePaths(slug, relationshipToLink ?? undefined)
+    return { ok: true, href: workItemHref(slug, item.id) }
+}
+
+export async function createRelationshipAsset(slug: string, relationshipId: string, formData: FormData) {
+    const result = await createAssetFromModal(slug, formData, relationshipId)
+    if (result.href) redirect(result.href)
+    redirect(relationshipHubHref(slug, relationshipId))
+}
+
+export async function createAssetFromModal(slug: string, formData: FormData, relationshipId?: string | null, workItemId?: string | null): Promise<WorkspaceCreateActionState> {
+    const { workspace, user } = await requireWorkspace(slug, "admin")
+    const title = formString(formData, "title")
+    const assetKind = formString(formData, "asset_kind") || "file"
+    if (!title) return { ok: false, error: "missing-title" }
+    if (!creatableAssetKinds.has(assetKind)) return { ok: false, error: "invalid-kind" }
+    const storagePath = nullableFormString(formData, "storage_path")
+    if (!storagePath) return { ok: false, error: "missing-upload" }
+
+    const { data: asset, error } = await supabaseAdmin.from("assets").insert({
+        workspace_id: workspace.id,
+        title,
+        asset_kind: assetKind,
+        source_kind: "upload",
+        description: nullableFormString(formData, "description"),
+        storage_path: storagePath,
+        content_type: nullableFormString(formData, "content_type"),
+        file_size: Number(formData.get("file_size") ?? 0) || null,
+        native_kind: "manual_upload",
+        metadata: {
+            created_from: relationshipId || workItemId ? "context_create" : "global_create",
+            original_name: nullableFormString(formData, "original_name"),
+        },
         created_by: user.id,
     })
+        .select("id")
+        .single()
 
-    relationshipRevalidatePaths(slug, relationshipId)
-    redirect(relationshipHubHref(slug, relationshipId))
+    if (error || !asset) return { ok: false, error: "create-failed" }
+
+    const submittedRelationshipId = nullableFormString(formData, "relationship_id")
+    const relationshipToLink = relationshipId ?? submittedRelationshipId
+    if (relationshipToLink) {
+        await supabaseAdmin.from("asset_relationships").insert({
+            workspace_id: workspace.id,
+            asset_id: asset.id,
+            relationship_id: relationshipToLink,
+        })
+    }
+
+    const submittedWorkItemId = nullableFormString(formData, "work_item_id")
+    const workItemToLink = workItemId ?? submittedWorkItemId
+    if (workItemToLink) {
+        await supabaseAdmin.from("asset_work_items").insert({
+            workspace_id: workspace.id,
+            asset_id: asset.id,
+            work_item_id: workItemToLink,
+        })
+    }
+
+    relationshipRevalidatePaths(slug, relationshipToLink ?? undefined)
+    return { ok: true, href: assetHref(slug, asset.id) }
 }

@@ -186,7 +186,6 @@ export async function createOnboardingClient({
             if (!service) return []
             return service.sopSteps.map((step, stepIndex) => ({
                 workspace_id: workspaceId,
-                relationship_id: linkedRelationshipId,
                 title: step.title,
                 description: step.description ?? service.description,
                 lifecycle_phase: "fulfilment",
@@ -207,7 +206,20 @@ export async function createOnboardingClient({
         })
 
         if (workItems.length > 0) {
-            await supabaseAdmin.from("relationship_work_items").insert(workItems)
+            const { data: insertedItems } = await supabaseAdmin
+                .from("work_items")
+                .insert(workItems)
+                .select("id")
+
+            if (insertedItems?.length) {
+                await supabaseAdmin.from("work_item_relationships").insert(
+                    insertedItems.map((item) => ({
+                        workspace_id: workspaceId,
+                        work_item_id: item.id,
+                        relationship_id: linkedRelationshipId,
+                    }))
+                )
+            }
         }
     }
 

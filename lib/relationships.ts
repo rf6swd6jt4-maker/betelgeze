@@ -15,7 +15,8 @@ export const RELATIONSHIP_PHASES = [
 export type RelationshipPhase = (typeof RELATIONSHIP_PHASES)[number]["key"]
 export type RelationshipStatus = "active" | "waiting" | "blocked" | "completed" | "lost" | "archived"
 export type RelationshipWorkItemStatus = "todo" | "doing" | "waiting" | "blocked" | "done" | "canceled"
-export type RelationshipAssetType = "file" | "link" | "note" | "message" | "invoice" | "form_submission" | "lead_evidence" | "document" | "other"
+export type AssetKind = "file" | "media" | "document" | "invoice" | "form_submission" | "message" | "lead_evidence" | "other"
+export type AssetSourceKind = "upload" | "stripe_invoice" | "onboarding_submission" | "message" | "lead_evidence" | "legacy_note" | "system" | "other"
 
 export type RelationshipRecord = {
     id: string
@@ -46,7 +47,7 @@ export type RelationshipRecord = {
 export type RelationshipWorkItem = {
     id: string
     workspace_id: string
-    relationship_id: string
+    relationship_id: string | null
     title: string
     description: string | null
     lifecycle_phase: RelationshipPhase
@@ -57,6 +58,7 @@ export type RelationshipWorkItem = {
     native_id: string | null
     native_href: string | null
     planned_start_date: string | null
+    due_date: string | null
     planned_end_date: string | null
     actual_start_at: string | null
     actual_completed_at: string | null
@@ -68,24 +70,38 @@ export type RelationshipWorkItem = {
 }
 
 export type WorkQueueItem = RelationshipWorkItem & {
-    relationship: Pick<RelationshipRecord, "id" | "primary_person_name" | "business_name" | "client_id" | "lifecycle_phase">
+    relationship: Pick<RelationshipRecord, "id" | "primary_person_name" | "business_name" | "client_id" | "lifecycle_phase"> | null
 }
 
 export type RelationshipAsset = {
     id: string
     workspace_id: string
-    relationship_id: string
-    asset_type: RelationshipAssetType
+    relationship_id: string | null
+    asset_kind: AssetKind
+    asset_type: AssetKind
+    source_kind: AssetSourceKind
     title: string
     description: string | null
     storage_path: string | null
     external_url: string | null
+    content_type: string | null
+    file_size: number | null
     native_kind: string | null
     native_id: string | null
     metadata: Record<string, unknown>
     created_by: string | null
     created_at: string
     updated_at: string
+}
+
+export type AssetRelationshipLink = {
+    relationship_id: string
+    relationship: Pick<RelationshipRecord, "id" | "primary_person_name" | "business_name" | "client_id" | "lifecycle_phase"> | null
+}
+
+export type AssetWorkItemLink = {
+    work_item_id: string
+    work_item: Pick<RelationshipWorkItem, "id" | "title" | "status" | "lifecycle_phase"> | null
 }
 
 type QueryError = { message?: string; code?: string } | null | undefined
@@ -157,6 +173,14 @@ export function onboardingDetailHref(workspaceSlug: string, relationshipId: stri
 
 export function workDetailHref(workspaceSlug: string, relationshipId: string) {
     return workspaceHref(workspaceSlug, `work/${relationshipId}`)
+}
+
+export function workItemHref(workspaceSlug: string, workItemId: string) {
+    return workspaceHref(workspaceSlug, `work-items/${workItemId}`)
+}
+
+export function assetHref(workspaceSlug: string, assetId: string) {
+    return workspaceHref(workspaceSlug, `assets/${assetId}`)
 }
 
 export function communicationsHref(workspaceSlug: string) {
@@ -326,6 +350,73 @@ function relationshipNativeHref(workspaceSlug: string, relationship: Relationshi
     return relationshipHubHref(workspaceSlug, relationship.id)
 }
 
+function isMissingPrimitiveSchema(error: QueryError) {
+    const message = error?.message?.toLowerCase() ?? ""
+    return (
+        error?.code === "42P01" ||
+        error?.code === "42703" ||
+        ["work_items", "work_item_relationships", "assets", "asset_relationships", "asset_work_items"].some((table) =>
+            message.includes(table) && (
+                message.includes("does not exist") ||
+                message.includes("schema cache") ||
+                message.includes("could not find the table") ||
+                message.includes("could not find")
+            )
+        )
+    )
+}
+
+function mapWorkItem(row: Record<string, unknown>, relationshipId: string | null = null): RelationshipWorkItem {
+    const dueDate = typeof row.due_date === "string" ? row.due_date : typeof row.planned_end_date === "string" ? row.planned_end_date : null
+    return {
+        id: String(row.id),
+        workspace_id: String(row.workspace_id),
+        relationship_id: relationshipId,
+        title: String(row.title ?? "Untitled work item"),
+        description: typeof row.description === "string" ? row.description : null,
+        lifecycle_phase: normalizeRelationshipPhase(row.lifecycle_phase),
+        status: String(row.status ?? "todo") as RelationshipWorkItemStatus,
+        priority: typeof row.priority === "number" ? row.priority : Number(row.priority ?? 3),
+        is_key_task: Boolean(row.is_key_task ?? true),
+        native_kind: typeof row.native_kind === "string" ? row.native_kind : null,
+        native_id: typeof row.native_id === "string" ? row.native_id : null,
+        native_href: typeof row.native_href === "string" ? row.native_href : null,
+        planned_start_date: typeof row.planned_start_date === "string" ? row.planned_start_date : null,
+        due_date: dueDate,
+        planned_end_date: dueDate,
+        actual_start_at: typeof row.actual_start_at === "string" ? row.actual_start_at : null,
+        actual_completed_at: typeof row.actual_completed_at === "string" ? row.actual_completed_at : null,
+        sort_order: typeof row.sort_order === "number" ? row.sort_order : Number(row.sort_order ?? 0),
+        metadata: row.metadata && typeof row.metadata === "object" ? row.metadata as Record<string, unknown> : {},
+        created_at: String(row.created_at),
+        updated_at: String(row.updated_at ?? row.created_at),
+    }
+}
+
+function mapAsset(row: Record<string, unknown>, relationshipId: string | null = null): RelationshipAsset {
+    const kind = String(row.asset_kind ?? row.asset_type ?? "other") as AssetKind
+    return {
+        id: String(row.id),
+        workspace_id: String(row.workspace_id),
+        relationship_id: relationshipId,
+        asset_kind: kind,
+        asset_type: kind,
+        source_kind: String(row.source_kind ?? "other") as AssetSourceKind,
+        title: String(row.title ?? "Untitled asset"),
+        description: typeof row.description === "string" ? row.description : null,
+        storage_path: typeof row.storage_path === "string" ? row.storage_path : null,
+        external_url: typeof row.external_url === "string" ? row.external_url : null,
+        content_type: typeof row.content_type === "string" ? row.content_type : null,
+        file_size: typeof row.file_size === "number" ? row.file_size : Number.isFinite(Number(row.file_size)) ? Number(row.file_size) : null,
+        native_kind: typeof row.native_kind === "string" ? row.native_kind : null,
+        native_id: typeof row.native_id === "string" ? row.native_id : null,
+        metadata: row.metadata && typeof row.metadata === "object" ? row.metadata as Record<string, unknown> : {},
+        created_by: typeof row.created_by === "string" ? row.created_by : null,
+        created_at: String(row.created_at),
+        updated_at: String(row.updated_at ?? row.created_at),
+    }
+}
+
 function sortWorkItems(left: RelationshipWorkItem, right: RelationshipWorkItem) {
     const phaseDelta = phaseIndex(left.lifecycle_phase) - phaseIndex(right.lifecycle_phase)
     if (phaseDelta !== 0) return phaseDelta
@@ -336,9 +427,24 @@ function sortWorkItems(left: RelationshipWorkItem, right: RelationshipWorkItem) 
 }
 
 export async function listRelationshipTimelineItems(workspaceSlug: string, relationship: RelationshipRecord): Promise<RelationshipWorkItem[]> {
-    const storedResult = relationship.fallback
+    const canonicalResult = relationship.fallback
         ? { data: null, error: { message: "fallback relationship" } }
         : await supabaseAdmin
+            .from("work_item_relationships")
+            .select("work_items!inner(id, workspace_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, due_date, actual_start_at, actual_completed_at, sort_order, metadata, created_by, created_at, updated_at)")
+            .eq("workspace_id", relationship.workspace_id)
+            .eq("relationship_id", relationship.id)
+            .order("created_at", { ascending: true })
+
+    let storedItems = isMissingPrimitiveSchema(canonicalResult.error)
+        ? []
+        : ((canonicalResult.data ?? []) as Array<{ work_items: Record<string, unknown> | Record<string, unknown>[] }>).flatMap((row) => {
+            const item = Array.isArray(row.work_items) ? row.work_items[0] : row.work_items
+            return item ? [mapWorkItem(item, relationship.id)] : []
+        })
+
+    if (storedItems.length === 0 && !relationship.fallback) {
+        const legacyResult = await supabaseAdmin
             .from("relationship_work_items")
             .select("id, workspace_id, relationship_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, planned_end_date, actual_start_at, actual_completed_at, sort_order, metadata, created_at, updated_at")
             .eq("workspace_id", relationship.workspace_id)
@@ -346,13 +452,10 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
             .order("sort_order", { ascending: true })
             .order("created_at", { ascending: true })
 
-    const storedItems = isMissingRelationshipSchema(storedResult.error)
-        ? []
-        : ((storedResult.data ?? []) as RelationshipWorkItem[]).map((item) => ({
-            ...item,
-            lifecycle_phase: normalizeRelationshipPhase(item.lifecycle_phase),
-            metadata: item.metadata ?? {},
-        }))
+        storedItems = isMissingRelationshipSchema(legacyResult.error)
+            ? []
+            : ((legacyResult.data ?? []) as Array<Record<string, unknown>>).map((item) => mapWorkItem(item, relationship.id))
+    }
 
     const synthesized: RelationshipWorkItem[] = []
     const now = new Date().toISOString()
@@ -372,6 +475,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
             native_id: relationship.leadgen_company_id,
                 native_href: workspaceHref(workspaceSlug, "leadgen"),
             planned_start_date: null,
+            due_date: null,
             planned_end_date: null,
             actual_start_at: relationship.created_at,
             actual_completed_at: relationship.created_at,
@@ -421,6 +525,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
             native_id: relationship.client_id,
             native_href: onboardingDetailHref(workspaceSlug, relationship.id),
             planned_start_date: relationship.created_at.slice(0, 10),
+            due_date: null,
             planned_end_date: null,
             actual_start_at: relationship.created_at,
             actual_completed_at: null,
@@ -447,6 +552,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
                 native_id: sale.id,
                 native_href: relationshipHubHref(workspaceSlug, relationship.id),
                 planned_start_date: String(sale.created_at).slice(0, 10),
+                due_date: null,
                 planned_end_date: null,
                 actual_start_at: sale.created_at,
                 actual_completed_at: paid ? sale.updated_at ?? sale.created_at : null,
@@ -473,6 +579,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
                 native_id: row.id,
                 native_href: onboardingDetailHref(workspaceSlug, relationship.id),
                 planned_start_date: null,
+                due_date: null,
                 planned_end_date: null,
                 actual_start_at: row.created_at,
                 actual_completed_at: row.completed_at ?? row.created_at,
@@ -499,6 +606,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
                 native_id: row.id,
                 native_href: onboardingDetailHref(workspaceSlug, relationship.id),
                 planned_start_date: null,
+                due_date: null,
                 planned_end_date: null,
                 actual_start_at: row.created_at,
                 actual_completed_at: row.created_at,
@@ -526,6 +634,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
             native_id: relationship.id,
             native_href: relationshipHubHref(workspaceSlug, relationship.id),
             planned_start_date: now.slice(0, 10),
+            due_date: null,
             planned_end_date: null,
             actual_start_at: null,
             actual_completed_at: null,
@@ -547,6 +656,44 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
 
 export async function listWorkQueueItems(workspaceSlug: string, workspaceId: string): Promise<WorkQueueItem[]> {
     const result = await supabaseAdmin
+        .from("work_items")
+        .select("id, workspace_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, due_date, actual_start_at, actual_completed_at, sort_order, metadata, created_by, created_at, updated_at")
+        .eq("workspace_id", workspaceId)
+        .not("status", "in", "(done,canceled)")
+        .order("priority", { ascending: true })
+        .order("due_date", { ascending: true, nullsFirst: false })
+        .limit(80)
+
+    if (!isMissingPrimitiveSchema(result.error) && result.data?.length) {
+        const items = (result.data ?? []).map((row) => mapWorkItem(row as Record<string, unknown>))
+        const itemIds = items.map((item) => item.id)
+        const { data: links } = itemIds.length
+            ? await supabaseAdmin
+                .from("work_item_relationships")
+                .select("work_item_id, relationship_id, relationships(id, primary_person_name, business_name, client_id, lifecycle_phase)")
+                .eq("workspace_id", workspaceId)
+                .in("work_item_id", itemIds)
+            : { data: [] }
+        const relationshipByWorkItem = new Map<string, WorkQueueItem["relationship"]>()
+        for (const link of links ?? []) {
+            if (relationshipByWorkItem.has(link.work_item_id)) continue
+            const relationship = Array.isArray(link.relationships) ? link.relationships[0] : link.relationships
+            relationshipByWorkItem.set(link.work_item_id, relationship ? {
+                ...relationship,
+                lifecycle_phase: normalizeRelationshipPhase(relationship.lifecycle_phase),
+            } : null)
+        }
+        return items.map((item) => {
+            const relationship = relationshipByWorkItem.get(item.id) ?? null
+            return {
+                ...item,
+                relationship_id: relationship?.id ?? null,
+                relationship,
+            }
+        })
+    }
+
+    const legacyResult = await supabaseAdmin
         .from("relationship_work_items")
         .select("id, workspace_id, relationship_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, planned_end_date, actual_start_at, actual_completed_at, sort_order, metadata, created_at, updated_at, relationships!inner(id, primary_person_name, business_name, client_id, lifecycle_phase)")
         .eq("workspace_id", workspaceId)
@@ -555,13 +702,11 @@ export async function listWorkQueueItems(workspaceSlug: string, workspaceId: str
         .order("planned_end_date", { ascending: true, nullsFirst: false })
         .limit(80)
 
-    if (!isMissingRelationshipSchema(result.error) && result.data?.length) {
-        return result.data.map((row) => {
+    if (!isMissingRelationshipSchema(legacyResult.error) && legacyResult.data?.length) {
+        return legacyResult.data.map((row) => {
             const relationship = Array.isArray(row.relationships) ? row.relationships[0] : row.relationships
             return {
-            ...row,
-                lifecycle_phase: normalizeRelationshipPhase(row.lifecycle_phase),
-                metadata: row.metadata ?? {},
+                ...mapWorkItem(row as Record<string, unknown>, row.relationship_id),
                 relationship: {
                     ...relationship,
                     lifecycle_phase: normalizeRelationshipPhase(relationship.lifecycle_phase),
@@ -588,6 +733,7 @@ export async function listWorkQueueItems(workspaceSlug: string, workspaceId: str
             native_id: relationship.client_id ?? relationship.id,
             native_href: relationship.client_id ? onboardingDetailHref(workspaceSlug, relationship.id) : relationshipHubHref(workspaceSlug, relationship.id),
             planned_start_date: relationship.created_at.slice(0, 10),
+            due_date: null,
             planned_end_date: null,
             actual_start_at: null,
             actual_completed_at: null,
@@ -607,9 +753,10 @@ export async function listWorkQueueItems(workspaceSlug: string, workspaceId: str
 }
 
 export function nativeItemHref(workspaceSlug: string, item: RelationshipWorkItem) {
-    if (item.native_kind === "client" || item.native_href?.startsWith("/admin/client/")) return relationshipHubHref(workspaceSlug, item.relationship_id)
+    if (!item.synthesized) return workItemHref(workspaceSlug, item.id)
+    if (item.relationship_id && (item.native_kind === "client" || item.native_href?.startsWith("/admin/client/"))) return relationshipHubHref(workspaceSlug, item.relationship_id)
     if (item.native_href?.startsWith("/")) return item.native_href
-    return relationshipHubHref(workspaceSlug, item.relationship_id)
+    return item.relationship_id ? relationshipHubHref(workspaceSlug, item.relationship_id) : workItemHref(workspaceSlug, item.id)
 }
 
 export function relationshipSearchHaystack(relationship: RelationshipRecord) {
@@ -651,7 +798,22 @@ export function relationshipIndustryLabel(value: string | null | undefined) {
 }
 
 export async function listRelationshipAssets(workspaceId: string, relationshipId: string): Promise<RelationshipAsset[]> {
-    const result = await supabaseAdmin
+    const canonicalResult = await supabaseAdmin
+        .from("asset_relationships")
+        .select("assets!inner(id, workspace_id, title, description, asset_kind, source_kind, storage_path, external_url, content_type, file_size, native_kind, native_id, metadata, created_by, created_at, updated_at)")
+        .eq("workspace_id", workspaceId)
+        .eq("relationship_id", relationshipId)
+        .order("created_at", { ascending: false })
+        .limit(120)
+
+    if (!isMissingPrimitiveSchema(canonicalResult.error)) {
+        return ((canonicalResult.data ?? []) as Array<{ assets: Record<string, unknown> | Record<string, unknown>[] }>).flatMap((row) => {
+            const asset = Array.isArray(row.assets) ? row.assets[0] : row.assets
+            return asset ? [mapAsset(asset, relationshipId)] : []
+        })
+    }
+
+    const legacyResult = await supabaseAdmin
         .from("relationship_assets")
         .select("id, workspace_id, relationship_id, asset_type, title, description, storage_path, external_url, native_kind, native_id, metadata, created_by, created_at, updated_at")
         .eq("workspace_id", workspaceId)
@@ -659,26 +821,136 @@ export async function listRelationshipAssets(workspaceId: string, relationshipId
         .order("created_at", { ascending: false })
         .limit(120)
 
-    if (isMissingRelationshipSchema(result.error) || isRelationshipColumnDrift(result.error)) return []
+    if (isMissingRelationshipSchema(legacyResult.error) || isRelationshipColumnDrift(legacyResult.error)) return []
 
-    return ((result.data ?? []) as RelationshipAsset[]).map((asset) => ({
-        ...asset,
-        metadata: asset.metadata ?? {},
-    }))
+    return ((legacyResult.data ?? []) as Array<Record<string, unknown>>).map((asset) => mapAsset(asset, relationshipId))
 }
 
 export async function countOpenWorkItemsByRelationship(workspaceId: string) {
-    const result = await supabaseAdmin
+    const workResult = await supabaseAdmin
+        .from("work_items")
+        .select("id, status")
+        .eq("workspace_id", workspaceId)
+        .not("status", "in", "(done,canceled)")
+        .limit(500)
+
+    const counts = new Map<string, number>()
+    if (!isMissingPrimitiveSchema(workResult.error)) {
+        const ids = (workResult.data ?? []).map((row) => row.id)
+        const { data: links } = ids.length
+            ? await supabaseAdmin
+                .from("work_item_relationships")
+                .select("relationship_id")
+                .eq("workspace_id", workspaceId)
+                .in("work_item_id", ids)
+                .limit(1000)
+            : { data: [] }
+        for (const row of links ?? []) {
+            counts.set(row.relationship_id, (counts.get(row.relationship_id) ?? 0) + 1)
+        }
+        return counts
+    }
+
+    const legacyResult = await supabaseAdmin
         .from("relationship_work_items")
         .select("relationship_id, status")
         .eq("workspace_id", workspaceId)
         .not("status", "in", "(done,canceled)")
         .limit(500)
 
-    const counts = new Map<string, number>()
-    if (isMissingRelationshipSchema(result.error)) return counts
-    for (const row of result.data ?? []) {
+    if (isMissingRelationshipSchema(legacyResult.error)) return counts
+    for (const row of legacyResult.data ?? []) {
         counts.set(row.relationship_id, (counts.get(row.relationship_id) ?? 0) + 1)
     }
     return counts
+}
+
+export async function getWorkItem(workspaceId: string, workItemId: string): Promise<RelationshipWorkItem | null> {
+    const result = await supabaseAdmin
+        .from("work_items")
+        .select("id, workspace_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, due_date, actual_start_at, actual_completed_at, sort_order, metadata, created_by, created_at, updated_at")
+        .eq("workspace_id", workspaceId)
+        .eq("id", workItemId)
+        .maybeSingle()
+
+    if (isMissingPrimitiveSchema(result.error) || !result.data) return null
+    return mapWorkItem(result.data as Record<string, unknown>)
+}
+
+export async function listWorkItemRelationships(workspaceId: string, workItemId: string): Promise<AssetRelationshipLink[]> {
+    const result = await supabaseAdmin
+        .from("work_item_relationships")
+        .select("relationship_id, relationships(id, primary_person_name, business_name, client_id, lifecycle_phase)")
+        .eq("workspace_id", workspaceId)
+        .eq("work_item_id", workItemId)
+        .order("created_at", { ascending: false })
+
+    if (isMissingPrimitiveSchema(result.error)) return []
+
+    return (result.data ?? []).map((row) => {
+        const relationship = Array.isArray(row.relationships) ? row.relationships[0] : row.relationships
+        return {
+            relationship_id: row.relationship_id,
+            relationship: relationship ? {
+                ...relationship,
+                lifecycle_phase: normalizeRelationshipPhase(relationship.lifecycle_phase),
+            } : null,
+        }
+    })
+}
+
+export async function getAsset(workspaceId: string, assetId: string): Promise<RelationshipAsset | null> {
+    const result = await supabaseAdmin
+        .from("assets")
+        .select("id, workspace_id, title, description, asset_kind, source_kind, storage_path, external_url, content_type, file_size, native_kind, native_id, metadata, created_by, created_at, updated_at")
+        .eq("workspace_id", workspaceId)
+        .eq("id", assetId)
+        .maybeSingle()
+
+    if (isMissingPrimitiveSchema(result.error) || !result.data) return null
+    return mapAsset(result.data as Record<string, unknown>)
+}
+
+export async function listAssetRelationships(workspaceId: string, assetId: string): Promise<AssetRelationshipLink[]> {
+    const result = await supabaseAdmin
+        .from("asset_relationships")
+        .select("relationship_id, relationships(id, primary_person_name, business_name, client_id, lifecycle_phase)")
+        .eq("workspace_id", workspaceId)
+        .eq("asset_id", assetId)
+        .order("created_at", { ascending: false })
+
+    if (isMissingPrimitiveSchema(result.error)) return []
+
+    return (result.data ?? []).map((row) => {
+        const relationship = Array.isArray(row.relationships) ? row.relationships[0] : row.relationships
+        return {
+            relationship_id: row.relationship_id,
+            relationship: relationship ? {
+                ...relationship,
+                lifecycle_phase: normalizeRelationshipPhase(relationship.lifecycle_phase),
+            } : null,
+        }
+    })
+}
+
+export async function listAssetWorkItems(workspaceId: string, assetId: string): Promise<AssetWorkItemLink[]> {
+    const result = await supabaseAdmin
+        .from("asset_work_items")
+        .select("work_item_id, work_items(id, title, status, lifecycle_phase)")
+        .eq("workspace_id", workspaceId)
+        .eq("asset_id", assetId)
+        .order("created_at", { ascending: false })
+
+    if (isMissingPrimitiveSchema(result.error)) return []
+
+    return (result.data ?? []).map((row) => {
+        const workItem = Array.isArray(row.work_items) ? row.work_items[0] : row.work_items
+        return {
+            work_item_id: row.work_item_id,
+            work_item: workItem ? {
+                ...workItem,
+                lifecycle_phase: normalizeRelationshipPhase(workItem.lifecycle_phase),
+            } : null,
+        }
+    })
 }

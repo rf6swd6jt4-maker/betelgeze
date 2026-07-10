@@ -61,7 +61,7 @@ export default async function RelationshipsPage({ params }: PageProps) {
                         </p>
                     </div>
                     <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-                        <Link href={workspaceHref(workspace.slug, "relationships/new")} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">
+                        <Link href={workspaceHref(workspace.slug, "relationships?create=relationship")} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">
                             Start new relationship
                         </Link>
                     </div>

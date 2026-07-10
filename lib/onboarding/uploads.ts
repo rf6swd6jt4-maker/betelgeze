@@ -125,6 +125,62 @@ export async function createSignedOnboardingUpload(
     }
 }
 
+export async function createSignedAssetUpload(
+    workspaceId: string,
+    file: {
+        name: string
+        size: number
+        type: string
+    }
+) {
+    if (file.size > MAX_ONBOARDING_UPLOAD_SIZE) {
+        throw new Error(`${file.name} is larger than the 500MB upload limit.`)
+    }
+
+    const fileName = sanitizeFileName(file.name) || "asset"
+    const contentType = file.type || "application/octet-stream"
+    const path = `${workspaceId}/assets/${randomUUID()}-${fileName}`
+    const uploadUrl = await getSignedUrl(
+        getR2Client(),
+        new PutObjectCommand({
+            Bucket: getR2BucketName(),
+            Key: path,
+            ContentType: contentType,
+        }),
+        {
+            expiresIn: R2_UPLOAD_URL_TTL_SECONDS,
+        }
+    )
+
+    const kind = contentType.startsWith("image/") || contentType.startsWith("video/") || contentType.startsWith("audio/")
+        ? "media"
+        : contentType.includes("pdf") ||
+            contentType.includes("document") ||
+            contentType.includes("spreadsheet") ||
+            contentType.includes("presentation") ||
+            fileName.endsWith(".pdf") ||
+            fileName.endsWith(".doc") ||
+            fileName.endsWith(".docx") ||
+            fileName.endsWith(".xls") ||
+            fileName.endsWith(".xlsx") ||
+            fileName.endsWith(".ppt") ||
+            fileName.endsWith(".pptx")
+            ? "document"
+            : "file"
+
+    return {
+        uploadUrl,
+        storedAsset: {
+            name: file.name,
+            path,
+            size: file.size,
+            type: contentType,
+            kind,
+            provider: "r2" as const,
+        },
+    }
+}
+
 export async function storeWorkspaceImage(
     workspaceId: string,
     file: { name: string; size: number; type: string; bytes: Uint8Array }

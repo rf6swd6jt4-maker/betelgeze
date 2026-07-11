@@ -5,9 +5,27 @@ import { persistentSessionOptions, sessionCookieDomain, sessionCookieOptions } f
 
 async function refreshSession(request: NextRequest) {
     const headers = requestHeadersWithCurrentPath(request)
-    const response = NextResponse.next({ request: { headers } })
+    let response = NextResponse.next({ request: { headers } })
     const sessionDomain = sessionCookieDomain()
-    const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { cookieOptions: sessionCookieOptions(sessionDomain), cookies: { getAll: () => request.cookies.getAll(), setAll: (items) => items.forEach(({ name, value, options }) => response.cookies.set(name, value, persistentSessionOptions(options, sessionDomain))) } })
+    const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+        cookieOptions: sessionCookieOptions(sessionDomain),
+        cookies: {
+            getAll: () => request.cookies.getAll(),
+            setAll: (items) => {
+                // The page rendered behind Proxy must see the refreshed session
+                // immediately. Updating only the browser response leaves Server
+                // Components with the expired token for this request and causes a
+                // spurious redirect back through login.
+                items.forEach(({ name, value }) => request.cookies.set(name, value))
+                response = NextResponse.next({
+                    request: { headers: requestHeadersWithCurrentPath(request) },
+                })
+                items.forEach(({ name, value, options }) =>
+                    response.cookies.set(name, value, persistentSessionOptions(options, sessionDomain))
+                )
+            },
+        },
+    })
     await supabase.auth.getUser()
     return response
 }
@@ -105,18 +123,15 @@ async function getCustomDomainWorkspace(domain: string) {
 export async function proxy(request: NextRequest) {
     const path = request.nextUrl.pathname
     const domain = requestHostname(request)
-    let sessionResponsePromise: Promise<NextResponse> | null = null
-
-    async function refreshedSessionResponse() {
-        if (!shouldRefreshSessionForDomain(domain)) {
-            return NextResponse.next({ request: { headers: requestHeadersWithCurrentPath(request) } })
-        }
-        sessionResponsePromise ??= refreshSession(request)
-        return sessionResponsePromise
-    }
+    // Refresh before constructing rewrites. Supabase may replace an expired
+    // token, and those updated request cookies must be present in the headers
+    // forwarded to the route that renders this same request.
+    const sessionResponse = shouldRefreshSessionForDomain(domain)
+        ? await refreshSession(request)
+        : NextResponse.next({ request: { headers: requestHeadersWithCurrentPath(request) } })
 
     async function withSession(response: NextResponse) {
-        const responseWithSession = carryCookies(response, await refreshedSessionResponse())
+        const responseWithSession = carryCookies(response, sessionResponse)
         clearLegacyHostOnlyAuthCookies(request, responseWithSession)
         return responseWithSession
     }
@@ -243,10 +258,9 @@ export async function proxy(request: NextRequest) {
         }
     }
 
-    const refreshedResponse = await refreshedSessionResponse()
-    clearLegacyHostOnlyAuthCookies(request, refreshedResponse)
+    clearLegacyHostOnlyAuthCookies(request, sessionResponse)
 
-    return refreshedResponse
+    return sessionResponse
 }
 
 export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"] }

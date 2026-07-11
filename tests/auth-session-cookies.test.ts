@@ -3,6 +3,7 @@ import test from "node:test"
 import {
     browserSessionCookieDomain,
     persistentSessionOptions,
+    SESSION_MAX_AGE_SECONDS,
     sessionCookieDomain,
     sessionCookieOptions,
 } from "../lib/supabase/session-cookies.ts"
@@ -25,6 +26,11 @@ function withEnv(env: Record<string, string | undefined>, fn: () => void) {
         }
     }
 }
+
+test("keeps remembered devices signed in for 90 days", () => {
+    assert.equal(SESSION_MAX_AGE_SECONDS, 60 * 60 * 24 * 90)
+    assert.equal(sessionCookieOptions().maxAge, SESSION_MAX_AGE_SECONDS)
+})
 
 test("uses the shared Betelgeze cookie domain on platform hosts", () => {
     withEnv({

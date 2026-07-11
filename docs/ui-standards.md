@@ -34,7 +34,7 @@ Pill colours are fixed RGB values rather than translucent utilities, so they rem
 | --- | --- | --- | --- |
 | `emerald` | `#014E38` | `#051C16` | `#A4F5CF` |
 | `sky` | `#01426B` | `#051B29` | `#B6E4FC` |
-| `yellow` | `#EAB308` | `#FACC15` | `#422006` |
+| `yellow` | `#8A7D00` | `#2B2A08` | `#FFF3A3` |
 | `amber` | `#6D2D00` | `#281206` | `#FEE685` |
 | `red` | `#720810` | `#28090A` | `#FFC9C9` |
 | `violet` | `#440D89` | `#1D0C39` | `#DDD6FF` |
@@ -42,7 +42,7 @@ Pill colours are fixed RGB values rather than translucent utilities, so they rem
 
 These values are the palette definition. Do not substitute nearby framework colour tokens or recreate them with opacity.
 
-`yellow` is the canonical high-visibility tone for `Test` labels across the platform. Unlike the dark-face palette, its entire face is saturated yellow with dark brown text for strong contrast, so the whole label reads distinctly as yellow. `amber` is darker and warmer; retain it for labels that need an amber/orange distinction rather than using it as a substitute for `Test`.
+`yellow` is the canonical tone for `Test` labels across the platform. It retains the same glassy, near-black chromatic face as the rest of the palette, but keeps its red and green channels close so it reads as yellow rather than amber or brown. `amber` is warmer and more orange; retain it for labels that need that distinction rather than using it as a substitute for `Test`.
 
 Use `Assignee` when the attached thing is a person assigned to something. It is the canonical avatar-and-name form of `RoundPill`; do not assemble a separate profile-picture treatment for assignees.
 

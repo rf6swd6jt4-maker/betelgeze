@@ -6,7 +6,7 @@ export const pillTones: Record<PillTone, PillToneValues> = {
     neutral: { border: "#404040", background: "#171717", text: "#D4D4D4" },
     sky: { border: "#01426B", background: "#051B29", text: "#B6E4FC" },
     emerald: { border: "#014E38", background: "#051C16", text: "#A4F5CF" },
-    yellow: { border: "#EAB308", background: "#FACC15", text: "#422006" },
+    yellow: { border: "#8A7D00", background: "#2B2A08", text: "#FFF3A3" },
     amber: { border: "#6D2D00", background: "#281206", text: "#FEE685" },
     red: { border: "#720810", background: "#28090A", text: "#FFC9C9" },
     violet: { border: "#440D89", background: "#1D0C39", text: "#DDD6FF" },

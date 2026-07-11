@@ -58,7 +58,7 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
         }
 
         function updateContextObstruction() {
-            reportContextObstruction(Boolean(document.querySelector("[data-work-item-popup], [data-loading-overlay], [role='menu'], [role='dialog'], [aria-modal='true']")))
+            reportContextObstruction(Boolean(document.querySelector("[data-loading-overlay]")))
         }
 
         function reportNavigationStart(url: string) {

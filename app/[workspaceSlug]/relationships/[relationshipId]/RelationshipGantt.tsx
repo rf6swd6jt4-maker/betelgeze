@@ -4,7 +4,8 @@ import Link from "next/link"
 import { useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Assignee, relationshipPhaseColours } from "@/components/ui"
-import { dateDay, effectiveGanttRanges, type RelationshipGanttDependency, type RelationshipGanttItem, type RelationshipGanttPlan, type ScheduleChange } from "@/lib/relationship-gantt"
+import { dateDay, effectiveGanttRanges, type ScheduleChange } from "@/lib/relationship-gantt-schedule"
+import type { RelationshipGanttDependency, RelationshipGanttItem, RelationshipGanttPlan } from "@/lib/relationship-gantt"
 import {
     applyGanttScheduleChanges,
     createGanttDependency,

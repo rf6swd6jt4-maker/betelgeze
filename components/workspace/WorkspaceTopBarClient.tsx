@@ -355,6 +355,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const createIntentHandledRef = useRef("")
     const contextStatusByTabRef = useRef<Record<string, WorkspaceTabContextStatus>>({})
     const contextManualClosedByTabRef = useRef<Record<string, boolean>>({})
+    const contextObstructedByTabRef = useRef<Record<string, boolean>>({})
     const [sidebarOpen, setSidebarOpen] = useState(false)
     const [sidebarHydrated, setSidebarHydrated] = useState(false)
     const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false)
@@ -369,6 +370,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const [editingTabTitle, setEditingTabTitle] = useState("")
     const [contextOpenByTab, setContextOpenByTab] = useState<Record<string, boolean>>({})
     const [contextStatusByTab, setContextStatusByTab] = useState<Record<string, WorkspaceTabContextStatus>>({})
+    const [contextObstructedByTab, setContextObstructedByTab] = useState<Record<string, boolean>>({})
     const [routeLoadingTabId, setRouteLoadingTabId] = useState<string | null>(null)
     const [query, setQuery] = useState("")
     const [searchOpen, setSearchOpen] = useState(false)
@@ -643,6 +645,12 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     delete contextManualClosedByTabRef.current[message.tabId]
                     setTabContextOpen(message.tabId, true)
                 }
+            }
+
+            if (message.type === "context-obstruction") {
+                const obstructed = message.contextObstructed === true
+                contextObstructedByTabRef.current = { ...contextObstructedByTabRef.current, [message.tabId]: obstructed }
+                setContextObstructedByTab((current) => current[message.tabId] === obstructed ? current : { ...current, [message.tabId]: obstructed })
             }
         }
 
@@ -1244,7 +1252,14 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         if (routeLoadingTabId === tabId) setRouteLoadingTabId(null)
         delete contextStatusByTabRef.current[tabId]
         delete contextManualClosedByTabRef.current[tabId]
+        delete contextObstructedByTabRef.current[tabId]
         setContextStatusByTab((current) => {
+            if (!(tabId in current)) return current
+            const next = { ...current }
+            delete next[tabId]
+            return next
+        })
+        setContextObstructedByTab((current) => {
             if (!(tabId in current)) return current
             const next = { ...current }
             delete next[tabId]
@@ -1284,7 +1299,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const activeContextStatus = contextStatusByTab[activeTab.id]
     const activeContextSupported = activeContextStatus?.supported === true
     const activeContextOpen = activeContextSupported && (contextOpenByTab[activeTab.id] ?? true)
-    const activeRelationshipContext = activeContextOpen ? activeContextStatus?.context ?? null : null
+    const activeContextObstructed = contextObstructedByTab[activeTab.id] === true
+    const activeRelationshipContext = activeContextOpen && !activeContextObstructed ? activeContextStatus?.context ?? null : null
     const activePathname = new URL(activeTab.url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname
     const activeRouteLoading = routeLoadingTabId === activeTabId
 

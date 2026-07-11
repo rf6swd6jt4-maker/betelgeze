@@ -17,11 +17,12 @@ export type WorkspaceTabFrameMessage = {
     source: typeof WORKSPACE_TAB_MESSAGE_SOURCE
     target: "host"
     tabId: string
-    type: "location" | "mutation" | "context-status" | "navigation-start" | "reopen-closed-tab"
+    type: "location" | "mutation" | "context-status" | "context-obstruction" | "navigation-start" | "reopen-closed-tab"
     url?: string
     relationshipId?: string | null
     contextSupported?: boolean
     context?: WorkspaceTabRelationshipContext | null
+    contextObstructed?: boolean
 }
 
 export type WorkspaceTabContextMetric = {

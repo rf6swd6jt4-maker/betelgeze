@@ -42,6 +42,25 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
     }, [pathname, searchParams, tabId, workspaceSlug])
 
     useEffect(() => {
+        let contextObstructed = false
+
+        function reportContextObstruction(nextObstructed: boolean) {
+            if (contextObstructed === nextObstructed) return
+            contextObstructed = nextObstructed
+            const message: WorkspaceTabFrameMessage = {
+                source: WORKSPACE_TAB_MESSAGE_SOURCE,
+                target: "host",
+                tabId,
+                type: "context-obstruction",
+                contextObstructed: nextObstructed,
+            }
+            window.parent.postMessage(message, window.location.origin)
+        }
+
+        function updateContextObstruction() {
+            reportContextObstruction(Boolean(document.querySelector("[data-work-item-popup], [data-loading-overlay], [role='menu'], [role='dialog'], [aria-modal='true']")))
+        }
+
         function reportNavigationStart(url: string) {
             const message: WorkspaceTabFrameMessage = {
                 source: WORKSPACE_TAB_MESSAGE_SOURCE,
@@ -117,12 +136,17 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
         document.addEventListener("submit", reportPossibleMutation, true)
         document.addEventListener("keydown", forwardTabShortcut)
         window.addEventListener("betelgeze:workspace-mutation", reportPossibleMutation)
+        const observer = new MutationObserver(updateContextObstruction)
+        observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-work-item-popup", "data-loading-overlay"] })
+        updateContextObstruction()
         return () => {
             window.removeEventListener("message", receiveHostMessage)
             document.removeEventListener("click", preserveFrameNavigation, true)
             document.removeEventListener("submit", reportPossibleMutation, true)
             document.removeEventListener("keydown", forwardTabShortcut)
             window.removeEventListener("betelgeze:workspace-mutation", reportPossibleMutation)
+            observer.disconnect()
+            reportContextObstruction(false)
             delete document.body.dataset.workspaceTabActive
         }
     }, [tabId, workspaceSlug])

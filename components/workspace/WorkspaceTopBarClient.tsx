@@ -77,6 +77,8 @@ type Props = {
     createRelationshipAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
     createWorkItemAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
     createAssetAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
+    workItemOptions: Array<{ id: string; title: string; status: string }>
+    relationshipOptions: Array<{ id: string; label: string }>
 }
 
 type SearchResult = {
@@ -326,7 +328,7 @@ export function WorkspaceTopBarClient(props: Props) {
     return <WorkspaceTabsShell {...props} />
 }
 
-function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avatarSrc, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction }: Props) {
+function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avatarSrc, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, workItemOptions, relationshipOptions }: Props) {
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const searchMenuId = useId()
@@ -1408,69 +1410,38 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
         {createTarget && (
             <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="workspace-create-title">
-                <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-white shadow-2xl shadow-black/50">
-                    <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-5 py-4">
+                <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-white shadow-2xl shadow-black/50">
+                    <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3 sm:px-5">
                         <div>
-                            <p className="text-xs uppercase tracking-wide text-neutral-500">Create</p>
+                            <p className="text-xs text-neutral-500">Create in {workspace.name}</p>
                             <h2 id="workspace-create-title" className="text-lg font-semibold">{createTarget === "relationship" ? "Add relationship" : createTarget === "work-item" ? "Add work item" : "Add asset"}</h2>
                         </div>
                         <button data-icon-button type="button" onClick={() => setCreateTarget(null)} aria-label="Close create panel" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white">
                             <span aria-hidden="true" className="text-xl leading-none">×</span>
                         </button>
                     </div>
-                    <form onSubmit={submitCreate} className="max-h-[70vh] overflow-y-auto px-5 py-5">
+                    <form onSubmit={submitCreate} className="max-h-[min(70vh,42rem)] overflow-y-auto px-4 py-4 sm:px-5">
                         {createTarget === "relationship" && (
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <label className="block text-sm text-neutral-300">Relationship name<input name="primary_person_name" required className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">Company<input name="business_name" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">Phone<input name="primary_phone" type="tel" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">Email<input name="primary_email" type="email" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">Lifecycle stage<select name="lifecycle_phase" defaultValue="lead" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white">
-                                    <option value="lead">Lead</option>
-                                    <option value="nurturing">Nurturing</option>
-                                    <option value="potential_client">Potential Client</option>
-                                    <option value="invoiced">Invoiced</option>
-                                    <option value="onboarding">Onboarding</option>
-                                    <option value="fulfilment">Fulfilment</option>
-                                    <option value="retention">Retention</option>
-                                    <option value="completed_lost">Completed/Lost</option>
-                                </select></label>
-                                <label className="block text-sm text-neutral-300">Contact role<input name="primary_contact_role" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">Industry<input name="industry_value" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">Location<input name="location_value" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">Website<input name="website_url" type="url" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">Source<input name="source_label" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300 sm:col-span-2">Context<textarea name="notes_summary" rows={3} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-3 text-white" /></label>
+                            <div className="space-y-5">
+                                <section className="grid gap-3 sm:grid-cols-2">
+                                    <label className="block text-sm text-neutral-300 sm:col-span-2">Name<input name="primary_person_name" required autoFocus placeholder="Person or primary contact" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label>
+                                    <label className="block text-sm text-neutral-300">Company<input name="business_name" placeholder="Optional" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label>
+                                    <label className="block text-sm text-neutral-300">Stage<select name="lifecycle_phase" defaultValue="lead" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="lead">Lead</option><option value="nurturing">Nurturing</option><option value="potential_client">Potential client</option><option value="invoiced">Invoiced</option><option value="onboarding">Onboarding</option><option value="fulfilment">Fulfilment</option><option value="retention">Retention</option><option value="completed_lost">Completed/lost</option></select></label>
+                                </section>
+                                <section className="border-t border-neutral-900 pt-4"><p className="mb-3 text-xs font-medium text-neutral-500">Contact details</p><div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Email<input name="primary_email" type="email" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Phone<input name="primary_phone" type="tel" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Role<input name="primary_contact_role" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Website<input name="website_url" type="url" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label></div></section>
+                                <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Industry<input name="industry_value" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Location<input name="location_value" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Source<input name="source_label" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300 sm:col-span-2">Notes<textarea name="notes_summary" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label></section>
                             </div>
                         )}
                         {createTarget === "work-item" && (
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <label className="block text-sm text-neutral-300 sm:col-span-2">Title<input name="title" required className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">Lifecycle stage<select name="lifecycle_phase" defaultValue="fulfilment" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white">
-                                    <option value="lead">Lead</option>
-                                    <option value="onboarding">Onboarding</option>
-                                    <option value="fulfilment">Fulfilment</option>
-                                    <option value="retention">Retention</option>
-                                </select></label>
-                                <label className="block text-sm text-neutral-300">Status<select name="status" defaultValue="todo" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white">
-                                    <option value="todo">Todo</option>
-                                    <option value="doing">Doing</option>
-                                    <option value="waiting">Waiting</option>
-                                    <option value="blocked">Blocked</option>
-                                    <option value="done">Done</option>
-                                </select></label>
-                                <label className="block text-sm text-neutral-300">Start date<input name="planned_start_date" type="date" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">Due date<input name="due_date" type="date" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">Priority<input name="priority" type="number" min="1" max="5" defaultValue="3" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="flex items-center gap-2 pt-8 text-sm text-neutral-300"><input name="is_key_task" type="checkbox" defaultChecked className="h-4 w-4 rounded border-neutral-700 bg-neutral-950" /> Key task</label>
-                                <label className="block text-sm text-neutral-300 sm:col-span-2">Description<textarea name="description" rows={4} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-3 text-white" /></label>
+                            <div className="space-y-5">
+                                <section className="grid gap-3 sm:grid-cols-2"><label className="block text-sm text-neutral-300 sm:col-span-2">Title<input name="title" required autoFocus placeholder="What needs to happen?" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label><label className="block text-sm text-neutral-300">Stage<select name="lifecycle_phase" defaultValue="fulfilment" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="lead">Lead</option><option value="onboarding">Onboarding</option><option value="fulfilment">Fulfilment</option><option value="retention">Retention</option></select></label><label className="block text-sm text-neutral-300">Status<select name="status" defaultValue="todo" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="todo">To do</option><option value="doing">In progress</option><option value="waiting">Waiting</option><option value="blocked">Blocked</option><option value="done">Done</option></select></label></section>
+                                <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><div><p className="text-sm text-neutral-300">Start</p><div className="mt-1.5 grid grid-cols-[1fr_5.5rem] gap-2"><input name="planned_start_date" type="date" aria-label="Start date" className="h-10 min-w-0 rounded-lg border border-neutral-700 bg-black px-3 text-white" /><input name="planned_start_time" type="time" aria-label="Start time" className="h-10 min-w-0 rounded-lg border border-neutral-700 bg-black px-2 text-white" /></div></div><div><p className="text-sm text-neutral-300">Due</p><div className="mt-1.5 grid grid-cols-[1fr_5.5rem] gap-2"><input name="due_date" type="date" aria-label="Due date" className="h-10 min-w-0 rounded-lg border border-neutral-700 bg-black px-3 text-white" /><input name="due_time" type="time" aria-label="Due time" className="h-10 min-w-0 rounded-lg border border-neutral-700 bg-black px-2 text-white" /></div></div></section>
+                                <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Linked relationship<select name="relationship_id" defaultValue="" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="">None</option>{relationshipOptions.map((relationship) => <option key={relationship.id} value={relationship.id}>{relationship.label}</option>)}</select></label><label className="block text-sm text-neutral-300">Parent work item<select name="parent_work_item_id" defaultValue="" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="">None</option>{workItemOptions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><label className="flex items-center gap-2 text-sm text-neutral-400 sm:col-span-2"><input name="wait_for_parent" type="checkbox" value="off" className="h-4 w-4 rounded border-neutral-700 bg-black" /> Can start before its parent is complete</label></section>
+                                <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-[1fr_auto]"><label className="block text-sm text-neutral-300">Description<textarea name="description" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label><div className="flex items-end"><label className="flex h-10 items-center gap-2 whitespace-nowrap text-sm text-neutral-300"><input name="is_key_task" type="checkbox" defaultChecked className="h-4 w-4 rounded border-neutral-700 bg-black" /> Key task</label><input name="priority" type="hidden" value="3" /></div></section>
                             </div>
                         )}
                         {createTarget === "asset" && (
-                            <div className="grid gap-4">
-                                <label className="block text-sm text-neutral-300">Title<input name="title" placeholder="Defaults to file name" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
-                                <label className="block text-sm text-neutral-300">File<input name="asset_file" type="file" required className="mt-2 block w-full rounded-lg border border-dashed border-neutral-700 bg-neutral-950 px-3 py-4 text-sm text-neutral-300 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-black" /></label>
-                                <label className="block text-sm text-neutral-300">Description<textarea name="description" rows={3} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-3 text-white" /></label>
+                            <div className="space-y-5"><section className="space-y-3"><label className="block text-sm text-neutral-300">File<input name="asset_file" type="file" required autoFocus className="mt-1.5 block w-full rounded-lg border border-dashed border-neutral-700 bg-black px-3 py-3 text-sm text-neutral-300 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-black" /></label><label className="block text-sm text-neutral-300">Title<input name="title" placeholder="Defaults to the file name" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label></section><section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Link to relationship<select name="relationship_id" defaultValue="" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="">None</option>{relationshipOptions.map((relationship) => <option key={relationship.id} value={relationship.id}>{relationship.label}</option>)}</select></label><label className="block text-sm text-neutral-300">Link to work item<select name="work_item_id" defaultValue="" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="">None</option>{workItemOptions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label></section><label className="block border-t border-neutral-900 pt-4 text-sm text-neutral-300">Description<textarea name="description" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label>
                             </div>
                         )}
                         {createError && <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{createError}</p>}

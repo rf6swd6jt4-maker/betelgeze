@@ -4,7 +4,7 @@ import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { ListCreatorAvatar } from "@/components/list/ListCreatorAvatar"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
-import { RelationshipStage, RoundPill, SquarePill, Status, StatusStat } from "@/components/ui"
+import { RelationshipStage, RoundPill, SquarePill, Status } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { SERVICES } from "@/lib/onboarding/services"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
@@ -97,8 +97,6 @@ export default async function RelationshipsPage({ params, searchParams }: PagePr
     const visibleRelationships = selectedPhase
         ? activeRelationships.filter((relationship) => relationship.lifecycle_phase === selectedPhase)
         : activeRelationships
-    const relationshipsWithOpenWork = activeRelationships.filter((relationship) => (openWorkCounts.get(relationship.id) ?? 0) > 0).length
-    const upToDateRelationships = activeRelationships.length - relationshipsWithOpenWork
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 pb-7 text-white sm:px-6">
@@ -121,13 +119,8 @@ export default async function RelationshipsPage({ params, searchParams }: PagePr
                     </div>
                 </header>
 
-                <section className="mt-5 border-y border-neutral-800/80 py-3">
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1">
-                        <StatusStat value={activeRelationships.length} label="Relationships" tone="grey" />
-                        <StatusStat value={relationshipsWithOpenWork} label="Open work" tone="yellow" />
-                        <StatusStat value={upToDateRelationships} label="Up to date" tone="green" />
-                    </div>
-                    <nav aria-label="Filter relationships by lifecycle stage" className="mt-3 flex gap-1 overflow-x-auto overscroll-x-contain px-1 pb-1">
+                <section className="mt-5 border-y border-neutral-800/80 py-1">
+                    <nav aria-label="Filter relationships by lifecycle stage" className="flex gap-1 overflow-x-auto overscroll-x-contain px-1 pb-1">
                         <Link
                             href={workspaceHref(workspace.slug, "relationships")}
                             aria-current={!selectedPhase ? "page" : undefined}

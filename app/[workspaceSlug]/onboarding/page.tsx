@@ -33,6 +33,13 @@ function metadataSessionId(metadata: unknown) {
 }
 
 function OnboardingProgressRail({ completed, total, percentage }: { completed: number; total: number; percentage: number }) {
+    if (total === 0) {
+        return <div className="min-w-0">
+            <p className="text-xs text-neutral-500">No steps configured</p>
+            <div className="mt-1.5 h-1.5 rounded-full bg-neutral-800" aria-label="No onboarding steps configured" />
+        </div>
+    }
+
     const segmentCount = Math.max(total, 1)
     return <div className="min-w-0">
         <div className="flex items-center justify-between gap-3 text-xs">
@@ -141,7 +148,9 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
                 return date && (!latest || new Date(date) > new Date(latest)) ? date : latest
             }, null)
             const assetSummary = assetsBySession.get(session.id) ?? { submissions: 0, uploads: 0, latest: null }
-            const latestActivity = assetSummary.latest ?? latestWork ?? session.updated_at
+            const latestActivity = [assetSummary.latest, latestWork, session.updated_at]
+                .filter((date): date is string => Boolean(date))
+                .reduce((latest, date) => new Date(date) > new Date(latest) ? date : latest)
             const stuck = isOnboardingStuck({ percentage, createdAt: session.created_at, lastActivityAt: latestActivity })
             return {
                 relationship,
@@ -171,20 +180,20 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight">Onboarding</h1>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
-                            Relationship onboarding progress, missing submissions, completed steps, and uploaded assets.
+                            Relationships in onboarding, their step progress, submissions, and uploaded assets.
                         </p>
                     </div>
                 </header>
 
-                <section className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+                <section className="mt-5 grid grid-cols-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent">
                     {[
                         ["Active", rows.filter((row) => row.session.status === "active").length],
                         ["Complete", rows.filter((row) => row.session.status === "completed").length],
                         ["Stuck", rows.filter((row) => row.stuck).length],
                     ].map(([label, value]) => (
-                        <div key={label} className="border-r border-neutral-800 px-3 py-3 last:border-r-0">
-                            <p className="text-xs text-neutral-500">{label}</p>
-                            <p className="mt-1 text-xl font-semibold">{value}</p>
+                        <div key={label} className="border-r border-neutral-800 px-3 py-3 last:border-r-0 sm:rounded-lg sm:border sm:border-neutral-800 sm:bg-neutral-900">
+                            <p className="text-[10px] leading-tight text-neutral-500 sm:text-xs">{label}</p>
+                            <p className="mt-1 text-lg font-semibold">{value}</p>
                         </div>
                     ))}
                 </section>
@@ -219,39 +228,39 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
                                         {title}
                                     </Link>
                                     {session.is_test ? <SquarePill tone="yellow" className="shrink-0">Test</SquarePill> : null}
-                                    <Status label="In progress" tone="yellow" className="shrink-0" />
+                                    <Status label="In Progress" tone="yellow" className="shrink-0" />
                                 </div>
-                                <div className="border-b border-neutral-900 px-3.5 py-2.5">
+                                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-5 border-b border-neutral-900 px-3.5 py-2.5">
                                     {progress}
+                                    {stats}
                                 </div>
-                                <div className="flex flex-wrap items-center gap-2 px-3.5 py-2.5">
+                                <div className="flex flex-wrap items-center gap-2 border-b border-neutral-900 px-3.5 py-2.5">
                                     {relationship.primary_contact_role ? <span className="mr-1 text-sm text-neutral-400">{relationship.primary_contact_role}</span> : null}
                                     {serviceKeys.map((serviceKey) => <RoundPill key={serviceKey} tone="emerald">{SERVICES[serviceKey]?.title ?? serviceKey}</RoundPill>)}
                                     {moduleKeys.map((moduleKey) => <RoundPill key={moduleKey} tone="sky">{MODULES[moduleKey]?.title ?? moduleKey}</RoundPill>)}
-                                    {stats}
-                                    <div className="ml-auto flex shrink-0 items-center gap-3">
-                                        <p className="font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
-                                        <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(latestActivity)}</p>
-                                        <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
-                                    </div>
+                                </div>
+                                <div className="flex items-center justify-end gap-3 px-3.5 py-2.5">
+                                    <p className="font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
+                                    <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(latestActivity)}</p>
+                                    <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
                                 </div>
                             </MobileCardActionSurface>
 
-                            <div className="hidden min-h-16 gap-4 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(280px,1.15fr)_minmax(180px,0.8fr)_minmax(250px,1fr)_170px_190px_32px] 2xl:items-center">
+                            <div className="hidden min-h-16 gap-4 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(280px,1.15fr)_120px_minmax(180px,0.8fr)_170px_minmax(220px,1fr)_190px_32px] 2xl:items-center">
                                 <div className="min-w-0">
                                     <div className="flex min-w-0 items-center gap-3">
                                         <Link href={onboardingHref} className="truncate text-base font-medium text-neutral-100 hover:text-white hover:underline hover:decoration-neutral-600 hover:underline-offset-4">{title}</Link>
                                         {session.is_test ? <SquarePill tone="yellow" className="shrink-0">Test</SquarePill> : null}
-                                        <Status label="In progress" tone="yellow" className="shrink-0" />
                                     </div>
                                     {relationship.primary_contact_role ? <p className="mt-1 truncate text-sm text-neutral-400">{relationship.primary_contact_role}</p> : null}
                                 </div>
+                                <Status label="In Progress" tone="yellow" className="shrink-0" />
                                 {progress}
+                                {stats}
                                 <div className="flex min-w-0 flex-wrap gap-1.5">
                                     {serviceKeys.map((serviceKey) => <RoundPill key={serviceKey} tone="emerald">{SERVICES[serviceKey]?.title ?? serviceKey}</RoundPill>)}
                                     {moduleKeys.map((moduleKey) => <RoundPill key={moduleKey} tone="sky">{MODULES[moduleKey]?.title ?? moduleKey}</RoundPill>)}
                                 </div>
-                                {stats}
                                 <div className="flex items-center justify-end gap-3">
                                     <p className="font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
                                     <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(latestActivity)}</p>

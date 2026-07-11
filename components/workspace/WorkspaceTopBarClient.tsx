@@ -264,10 +264,6 @@ function WorkIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="m3 6 .8.8L5.5 5" /><path d="m3 12 .8.8 1.7-1.8" /><path d="m3 18 .8.8 1.7-1.8" /></svg>
 }
 
-function AssetIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h5" /><path d="M9 13h6" /><path d="M9 17h4" /></svg>
-}
-
 function AssetsIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8" cy="10" r="1.5" /><path d="m4 17 5-5 4 4 2-2 5 5" /></svg>
 }
@@ -888,14 +884,6 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         traverseHistory(1)
     }
 
-    function openSearch() {
-        setSearchOpen((value) => {
-            const next = !value
-            if (next) window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: searchMenuId }))
-            return next
-        })
-    }
-
     function openDesktopSearch() {
         if (!searchOpen) window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: searchMenuId }))
         setSearchOpen(true)
@@ -921,12 +909,13 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     }
 
     function submitSearch(event: ReactKeyboardEvent<HTMLInputElement>) {
-        if (event.key !== "Enter") return
+        if (event.key !== "Enter") return false
         const href = searchResults[0]?.href ?? directSearchHref(query)
-        if (!href) return
+        if (!href) return false
         event.preventDefault()
         setSearchOpen(false)
         navigateActiveTab(href)
+        return true
     }
 
     async function submitCreate(event: FormEvent<HTMLFormElement>) {
@@ -1348,39 +1337,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                 </div>
 
                 <div className="flex items-center justify-end gap-2.5">
-                    <div ref={mobileSearchRef} className="relative md:hidden">
-                        <button data-icon-button type="button" onClick={openSearch} aria-label="Search Betelgeze" aria-expanded={searchOpen} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
-                            <SearchIcon />
-                        </button>
-                        {searchOpen && (
-                            <div className="fixed left-3 right-3 top-16 z-[70] max-h-[72vh] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/40 sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:max-h-[32rem] sm:w-[26rem] sm:max-w-[calc(100vw-2rem)]">
-                                <div className="border-b border-neutral-800 p-3">
-                                    <label className="relative block">
-                                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
-                                        <input ref={mobileSearchInputRef} value={query} onKeyDown={submitSearch} onChange={(event) => setQuery(event.target.value)} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-10 text-base text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10 md:h-9 md:text-sm" />
-                                    </label>
-                                </div>
-                                <div className="max-h-[calc(72vh-4.25rem)] overflow-y-auto sm:max-h-[27.75rem]">
-                                    {query.trim().length < 2 && <p className="px-3 py-3 text-sm text-neutral-500">Type at least two characters.</p>}
-                                    {query.trim().length >= 2 && searchLoading && <p className="px-3 py-3 text-sm text-neutral-500">Searching...</p>}
-                                    {query.trim().length >= 2 && !searchLoading && searchResults.length === 0 && <p className="px-3 py-3 text-sm text-neutral-500">No core results found.</p>}
-                                    {query.trim().length >= 2 && !searchLoading && searchResults.map((item) => (
-                                        <div key={item.id} className="border-b border-neutral-900 last:border-0">
-                                            <Link href={item.href} data-global-loading="false" className="block px-3 py-3 hover:bg-neutral-900 md:py-2" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateActiveTab(item.href) }}>
-                                                <SearchResultContent item={item} mobile />
-                                            </Link>
-                                            {item.hubHref && item.hubHref !== item.href && (
-                                                <Link href={item.hubHref} data-global-loading="false" className="block px-3 pb-3 text-xs text-neutral-500 hover:text-neutral-200 md:pb-2" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateActiveTab(item.hubHref!) }}>
-                                                    View in Relationship Hub
-                                                </Link>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-0.5" aria-label="Create">
+                    <div className="hidden items-center gap-0.5 md:flex" aria-label="Create">
                         <button data-icon-button type="button" onClick={() => openCreate("relationship")} aria-label="Add relationship" title="Add relationship" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white md:h-9 md:w-9">
                             <RelationshipsIcon />
                         </button>
@@ -1388,7 +1345,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                             <WorkIcon />
                         </button>
                         <button data-icon-button type="button" onClick={() => openCreate("asset")} aria-label="Add asset" title="Add asset" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white md:h-9 md:w-9">
-                            <AssetIcon />
+                            <AssetsIcon />
                         </button>
                     </div>
                     <AccountMenu username={username} email={email} avatarSrc={avatarSrc} workspaceId={workspace.id} workspaceName={workspace.name} leaveAction={leaveAction} buttonClassName="h-9 w-9" />
@@ -1579,6 +1536,37 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
         <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950 ${sidebarTransitionEnabled ? "transition-transform duration-200 ease-out" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex h-full flex-col gap-2 px-4 py-5 md:gap-1 md:px-3 md:py-4">
+                <div ref={mobileSearchRef} className="relative flex items-center gap-1 border-b border-neutral-800 pb-4 md:hidden">
+                    <button data-icon-button type="button" onClick={() => { goBack(); closeSidebarAfterNavigation() }} disabled={!canGoBack} aria-label="Go back" className={navButtonClass}>
+                        <ArrowLeftIcon />
+                    </button>
+                    <button data-icon-button type="button" onClick={() => { goForward(); closeSidebarAfterNavigation() }} disabled={!canGoForward} aria-label="Go forward" className={navButtonClass}>
+                        <ArrowRightIcon />
+                    </button>
+                    <label className="relative ml-2 block min-w-0 flex-1">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
+                        <input ref={mobileSearchInputRef} value={query} onKeyDown={(event) => { if (submitSearch(event)) closeSidebarAfterNavigation() }} onChange={(event) => { setQuery(event.target.value); openDesktopSearch() }} onFocus={openDesktopSearch} aria-label="Search Betelgeze" placeholder="Search..." className="h-10 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 text-sm text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
+                    </label>
+                    {searchOpen && (
+                        <div className="absolute left-0 right-0 top-[3.25rem] z-[70] max-h-[calc(100vh-10rem)] overflow-y-auto rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/40">
+                            {query.trim().length < 2 && <p className="px-3 py-3 text-sm text-neutral-500">Type at least two characters.</p>}
+                            {query.trim().length >= 2 && searchLoading && <p className="px-3 py-3 text-sm text-neutral-500">Searching...</p>}
+                            {query.trim().length >= 2 && !searchLoading && searchResults.length === 0 && <p className="px-3 py-3 text-sm text-neutral-500">No core results found.</p>}
+                            {query.trim().length >= 2 && !searchLoading && searchResults.map((item) => (
+                                <div key={item.id} className="border-b border-neutral-900 last:border-0">
+                                    <Link href={item.href} data-global-loading="false" className="block px-3 py-3 hover:bg-neutral-900" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateActiveTab(item.href); closeSidebarAfterNavigation() }}>
+                                        <SearchResultContent item={item} mobile />
+                                    </Link>
+                                    {item.hubHref && item.hubHref !== item.href && (
+                                        <Link href={item.hubHref} data-global-loading="false" className="block px-3 pb-3 text-xs text-neutral-500 hover:text-neutral-200" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateActiveTab(item.hubHref!); closeSidebarAfterNavigation() }}>
+                                            View in Relationship Hub
+                                        </Link>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
                 {sidebarItems.map((item) => {
                     const active = item.href === defaultWorkspaceUrl
                         ? activePathname === defaultWorkspaceUrl
@@ -1591,6 +1579,20 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                         </Link>
                     )
                 })}
+                <div className="mt-auto border-t border-neutral-800 pt-3 md:hidden">
+                    <button type="button" onClick={() => { openCreate("relationship"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                        <RelationshipsIcon />
+                        <span>Add relationship</span>
+                    </button>
+                    <button type="button" onClick={() => { openCreate("work-item"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                        <WorkIcon />
+                        <span>Add work item</span>
+                    </button>
+                    <button type="button" onClick={() => { openCreate("asset"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                        <AssetsIcon />
+                        <span>Add asset</span>
+                    </button>
+                </div>
             </nav>
         </aside>
     </div>

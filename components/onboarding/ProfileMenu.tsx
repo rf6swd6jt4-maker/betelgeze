@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { SquarePill } from "@/components/ui"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 
 type ProfileMenuProps = {
@@ -69,9 +70,7 @@ export function ProfileMenu({ name, email, phone, isTest = false }: ProfileMenuP
                         {displayName}
                     </p>
                     {isTest && (
-                        <span className="mt-2 inline-flex rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-amber-800">
-                            Test client
-                        </span>
+                        <SquarePill tone="yellow" className="mt-2">Test</SquarePill>
                     )}
                     <p className="mt-1 break-all text-sm text-slate-600">
                         {phone ? displayMessageAddress(phone) : "No phone saved"}

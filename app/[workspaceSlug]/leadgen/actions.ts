@@ -137,7 +137,7 @@ export async function removeLeadgenCompany(slug: string, companyId: string) {
 }
 
 export async function promoteLeadgenCompanyToRelationship(slug: string, companyId: string) {
-    const { workspace } = await requireWorkspace(slug, "admin")
+    const { workspace, user } = await requireWorkspace(slug, "admin")
     const { data: existingRelationship } = await supabaseAdmin
         .from("relationships")
         .select("id")
@@ -184,6 +184,7 @@ export async function promoteLeadgenCompanyToRelationship(slug: string, companyI
                 owner_phone_points: company.owner_phone_points,
                 business_support_points: company.business_support_points,
                 promoted_from: "leadgen_companies",
+                promoted_by: user.id,
             },
         })
         .select("id")

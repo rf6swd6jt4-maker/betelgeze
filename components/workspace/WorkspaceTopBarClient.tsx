@@ -238,10 +238,6 @@ function SearchIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg>
 }
 
-function WorkspaceAddIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M3 8a2 2 0 0 1 2-2h4l2 2h4a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Z" /><path d="M19 15v6" /><path d="M16 18h6" /></svg>
-}
-
 function SearchResultContent({ item, mobile = false }: { item: SearchResult; mobile?: boolean }) {
     return (
         <div className="flex items-start justify-between gap-3">
@@ -266,6 +262,10 @@ function RelationshipsIcon() {
 
 function WorkIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="m3 6 .8.8L5.5 5" /><path d="m3 12 .8.8 1.7-1.8" /><path d="m3 18 .8.8 1.7-1.8" /></svg>
+}
+
+function AssetIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h5" /><path d="M9 13h6" /><path d="M9 17h4" /></svg>
 }
 
 function AssetsIcon() {
@@ -377,8 +377,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const [searchLoading, setSearchLoading] = useState(false)
     const [searchResults, setSearchResults] = useState<SearchResult[]>([])
     const [searchShortcutLabel, setSearchShortcutLabel] = useState("Ctrl+J")
-    const [createOpen, setCreateOpen] = useState(false)
-    const [createMode, setCreateMode] = useState<"relationship" | "work-item" | "asset">("relationship")
+    const [createTarget, setCreateTarget] = useState<"relationship" | "work-item" | "asset" | null>(null)
     const [createError, setCreateError] = useState<string | null>(null)
     const [uploadLabel, setUploadLabel] = useState<string | null>(null)
     const [isCreating, startCreateTransition] = useTransition()
@@ -811,9 +810,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         const key = `${tab.id}:${url.pathname}:${intent}`
         if (createIntentHandledRef.current === key) return
         createIntentHandledRef.current = key
-        setCreateMode(intent)
+        setCreateTarget(intent)
         setCreateError(null)
-        setCreateOpen(true)
     }, [activeTabId, tabs, tabsHydrated])
 
     useEffect(() => {
@@ -903,11 +901,10 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         setSearchOpen(true)
     }
 
-    function openCreate(mode: "relationship" | "work-item" | "asset" = "relationship") {
+    function openCreate(target: "relationship" | "work-item" | "asset") {
         window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: "workspace-create" }))
-        setCreateMode(mode)
         setCreateError(null)
-        setCreateOpen(true)
+        setCreateTarget(target)
     }
 
     function directSearchHref(value: string) {
@@ -938,7 +935,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         const form = event.currentTarget
         const formData = new FormData(form)
 
-        if (createMode === "asset") {
+        if (createTarget === "asset") {
             const file = formData.get("asset_file")
             if (!(file instanceof File) || file.size === 0) {
                 setCreateError("Choose a file to upload.")
@@ -974,16 +971,16 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         }
 
         startCreateTransition(async () => {
-            const result = createMode === "relationship"
+            const result = createTarget === "relationship"
                 ? await createRelationshipAction(formData)
-                : createMode === "work-item"
+                : createTarget === "work-item"
                     ? await createWorkItemAction(formData)
                     : await createAssetAction(formData)
             if (!result.ok) {
                 setCreateError(result.error ?? "Could not create this item.")
                 return
             }
-            setCreateOpen(false)
+            setCreateTarget(null)
             form.reset()
             if (result.href) navigateActiveTab(result.href)
         })
@@ -1383,46 +1380,36 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                             </div>
                         )}
                     </div>
-                    <button data-icon-button type="button" onClick={() => openCreate("relationship")} aria-label="Create relationship, work item, or asset" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
-                        <WorkspaceAddIcon />
-                    </button>
+                    <div className="flex items-center gap-0.5" aria-label="Create">
+                        <button data-icon-button type="button" onClick={() => openCreate("relationship")} aria-label="Add relationship" title="Add relationship" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white md:h-9 md:w-9">
+                            <RelationshipsIcon />
+                        </button>
+                        <button data-icon-button type="button" onClick={() => openCreate("work-item")} aria-label="Add work item" title="Add work item" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white md:h-9 md:w-9">
+                            <WorkIcon />
+                        </button>
+                        <button data-icon-button type="button" onClick={() => openCreate("asset")} aria-label="Add asset" title="Add asset" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white md:h-9 md:w-9">
+                            <AssetIcon />
+                        </button>
+                    </div>
                     <AccountMenu username={username} email={email} avatarSrc={avatarSrc} workspaceId={workspace.id} workspaceName={workspace.name} leaveAction={leaveAction} buttonClassName="h-9 w-9" />
                 </div>
             </div>
         </header>
 
-        {createOpen && (
+        {createTarget && (
             <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="workspace-create-title">
                 <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-white shadow-2xl shadow-black/50">
                     <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-5 py-4">
                         <div>
                             <p className="text-xs uppercase tracking-wide text-neutral-500">Create</p>
-                            <h2 id="workspace-create-title" className="text-lg font-semibold">Add to Betelgeze</h2>
+                            <h2 id="workspace-create-title" className="text-lg font-semibold">{createTarget === "relationship" ? "Add relationship" : createTarget === "work-item" ? "Add work item" : "Add asset"}</h2>
                         </div>
-                        <button data-icon-button type="button" onClick={() => setCreateOpen(false)} aria-label="Close create panel" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white">
+                        <button data-icon-button type="button" onClick={() => setCreateTarget(null)} aria-label="Close create panel" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white">
                             <span aria-hidden="true" className="text-xl leading-none">×</span>
                         </button>
                     </div>
-                    <div className="border-b border-neutral-800 px-5 py-3">
-                        <div className="grid grid-cols-3 gap-2 rounded-lg bg-neutral-900 p-1">
-                            {[
-                                ["relationship", "Relationship"],
-                                ["work-item", "Work item"],
-                                ["asset", "Asset"],
-                            ].map(([mode, label]) => (
-                                <button
-                                    key={mode}
-                                    type="button"
-                                    onClick={() => { setCreateMode(mode as typeof createMode); setCreateError(null) }}
-                                    className={`min-h-9 rounded-md px-2 text-sm transition ${createMode === mode ? "bg-white text-black" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}
-                                >
-                                    {label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
                     <form onSubmit={submitCreate} className="max-h-[70vh] overflow-y-auto px-5 py-5">
-                        {createMode === "relationship" && (
+                        {createTarget === "relationship" && (
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <label className="block text-sm text-neutral-300">Relationship name<input name="primary_person_name" required className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
                                 <label className="block text-sm text-neutral-300">Company<input name="business_name" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
@@ -1446,7 +1433,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                                 <label className="block text-sm text-neutral-300 sm:col-span-2">Context<textarea name="notes_summary" rows={3} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-3 text-white" /></label>
                             </div>
                         )}
-                        {createMode === "work-item" && (
+                        {createTarget === "work-item" && (
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <label className="block text-sm text-neutral-300 sm:col-span-2">Title<input name="title" required className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
                                 <label className="block text-sm text-neutral-300">Lifecycle stage<select name="lifecycle_phase" defaultValue="fulfilment" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white">
@@ -1469,7 +1456,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                                 <label className="block text-sm text-neutral-300 sm:col-span-2">Description<textarea name="description" rows={4} className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-3 text-white" /></label>
                             </div>
                         )}
-                        {createMode === "asset" && (
+                        {createTarget === "asset" && (
                             <div className="grid gap-4">
                                 <label className="block text-sm text-neutral-300">Title<input name="title" placeholder="Defaults to file name" className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-white" /></label>
                                 <label className="block text-sm text-neutral-300">File<input name="asset_file" type="file" required className="mt-2 block w-full rounded-lg border border-dashed border-neutral-700 bg-neutral-950 px-3 py-4 text-sm text-neutral-300 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-black" /></label>
@@ -1479,8 +1466,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                         {createError && <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{createError}</p>}
                         {uploadLabel && <p className="mt-4 text-sm text-neutral-400">{uploadLabel}</p>}
                         <div className="mt-5 flex justify-end gap-2">
-                            <button type="button" onClick={() => setCreateOpen(false)} className="inline-flex min-h-10 items-center rounded-lg border border-neutral-800 px-3 text-sm text-neutral-300 hover:text-white">Cancel</button>
-                            <button disabled={isCreating || Boolean(uploadLabel)} className="inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating..." : "Create"}</button>
+                            <button type="button" onClick={() => setCreateTarget(null)} className="inline-flex min-h-10 items-center rounded-lg border border-neutral-800 px-3 text-sm text-neutral-300 hover:text-white">Cancel</button>
+                            <button disabled={isCreating || Boolean(uploadLabel)} className="inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating..." : createTarget === "relationship" ? "Create relationship" : createTarget === "work-item" ? "Create work item" : "Create asset"}</button>
                         </div>
                     </form>
                 </div>

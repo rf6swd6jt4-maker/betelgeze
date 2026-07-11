@@ -28,12 +28,12 @@ Do not add blue, violet, or other status colours. A configured, managed, or pend
 
 `RoundPill` represents assigned or attached things: services, modules, people, categories, filters, or other compact metadata. Its aesthetic comes from the assigned service and module pills in onboarding detail.
 
-Use `AssignmentPill` when the attached thing is a person; it is the avatar-bearing form of `RoundPill`.
+Use `Assignee` when the attached thing is a person assigned to something. It is the canonical avatar-and-name form of `RoundPill`; do not assemble a separate profile-picture treatment for assignees.
 
 ```tsx
 <RoundPill tone="emerald">Paid Social</RoundPill>
 <RoundPill tone="sky">Reporting</RoundPill>
-<AssignmentPill name="Alex Morgan" avatarSrc={avatarUrl} />
+<Assignee name="Alex Morgan" avatarSrc={avatarUrl} />
 ```
 
 ## SquarePill

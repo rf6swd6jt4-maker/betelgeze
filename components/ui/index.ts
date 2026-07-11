@@ -1,4 +1,4 @@
-export { AssignmentPill } from "./AssignmentPill"
+export { Assignee } from "./Assignee"
 export { RoundPill } from "./RoundPill"
 export { SquarePill } from "./SquarePill"
 export type { PillTone } from "./pill-styles"

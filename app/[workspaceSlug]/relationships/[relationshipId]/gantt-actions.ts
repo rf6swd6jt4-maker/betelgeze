@@ -63,7 +63,7 @@ export async function previewGanttScheduleChange(
         }))
         const changes = previewScheduleCascade(items, dependencies, requested)
         if (!changes.length) return { status: "invalid", message: "Work item not found" }
-        return changes.length > 1 ? { status: "cascade_required", changes } : { status: "cascade_required", changes }
+        return { status: "cascade_required", changes }
     } catch (error) {
         return errorResult(error)
     }
@@ -157,6 +157,25 @@ export async function createGanttDependency(
     try {
         const { workspace, user } = await requireGantt(slug, relationshipId)
         if (workItemId === dependsOnWorkItemId) return { status: "invalid", message: "A work item cannot depend on itself" }
+
+        // Reject cycles: the new edge means workItemId waits for dependsOnWorkItemId,
+        // so it closes a loop if dependsOnWorkItemId already (transitively) depends on
+        // workItemId. Walk the prerequisite chain from dependsOnWorkItemId and look
+        // for workItemId. Consider every edge (manual and parent_auto) to be safe.
+        const { data: edges } = await supabaseAdmin.from("work_item_dependencies")
+            .select("work_item_id, depends_on_work_item_id").eq("workspace_id", workspace.id)
+        const prerequisites = new Map<string, string[]>()
+        for (const edge of edges ?? []) prerequisites.set(edge.work_item_id, [...(prerequisites.get(edge.work_item_id) ?? []), edge.depends_on_work_item_id])
+        const stack = [dependsOnWorkItemId]
+        const seen = new Set<string>()
+        while (stack.length) {
+            const current = stack.pop()!
+            if (current === workItemId) return { status: "invalid", message: "That dependency would create a cycle" }
+            if (seen.has(current)) continue
+            seen.add(current)
+            for (const next of prerequisites.get(current) ?? []) stack.push(next)
+        }
+
         const { error } = await supabaseAdmin.from("work_item_dependencies").insert({
             workspace_id: workspace.id, work_item_id: workItemId,
             depends_on_work_item_id: dependsOnWorkItemId, source: "manual", created_by: user.id,

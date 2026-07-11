@@ -43,7 +43,9 @@ function flattenRows(items: RelationshipGanttItem[], collapsed: Set<string>, sch
     const output: DisplayRow[] = []
     const visit = (item: RelationshipGanttItem, depth: number) => {
         if (Boolean(ranges.get(item.id)) === scheduled) output.push({ item, depth })
-        if (!collapsed.has(item.id)) for (const child of children.get(item.id) ?? []) visit(child, depth + 1)
+        // Collapse only hides children in the timeline; the unscheduled list must
+        // always show every descendant so it stays reachable for scheduling.
+        if (!scheduled || !collapsed.has(item.id)) for (const child of children.get(item.id) ?? []) visit(child, depth + 1)
     }
     for (const root of roots) visit(root, 0)
     return output

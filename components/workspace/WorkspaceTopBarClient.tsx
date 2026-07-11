@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link"
-import { useCallback, useEffect, useId, useRef, useState, useTransition, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import { useCallback, useEffect, useId, useRef, useState, useTransition, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { AccountMenu } from "@/components/account/AccountMenu"
 import { LoadingOverlay } from "@/components/LoadingOverlay"
@@ -16,6 +16,7 @@ import {
     appendWorkspaceTabHistory,
     isReopenClosedTabShortcut,
     normalizeWorkspaceUrl as normalizeWorkspaceRoute,
+    reorderWorkspaceTabs,
     WORKSPACE_TAB_FRAME_NAME_PREFIX,
     WORKSPACE_TAB_FRAME_PARAM,
     WORKSPACE_TAB_MESSAGE_SOURCE,
@@ -330,6 +331,9 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const canAddTabRef = useRef(true)
     const mutationRevisionRef = useRef(0)
     const tabButtonRefs = useRef(new Map<string, HTMLButtonElement>())
+    const dragCleanupRef = useRef<(() => void) | null>(null)
+    const dragTargetIndexRef = useRef(0)
+    const suppressTabClickRef = useRef("")
     const createIntentHandledRef = useRef("")
     const contextStatusByTabRef = useRef<Record<string, WorkspaceTabContextStatus>>({})
     const contextManualClosedByTabRef = useRef<Record<string, boolean>>({})
@@ -341,6 +345,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const [tabs, setTabs] = useState<WorkspaceTab[]>([])
     const [activeTabId, setActiveTabId] = useState("")
     const [canAddTab, setCanAddTab] = useState(true)
+    const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
+    const [dragIndicatorX, setDragIndicatorX] = useState<number | null>(null)
     const [contextOpenByTab, setContextOpenByTab] = useState<Record<string, boolean>>({})
     const [contextStatusByTab, setContextStatusByTab] = useState<Record<string, WorkspaceTabContextStatus>>({})
     const [routeLoadingTabId, setRouteLoadingTabId] = useState<string | null>(null)
@@ -705,6 +711,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     useEffect(() => {
         return () => {
             if (sidebarTransitionTimeout.current) window.clearTimeout(sidebarTransitionTimeout.current)
+            dragCleanupRef.current?.()
         }
     }, [])
 
@@ -1021,6 +1028,87 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         switchTab(nextTab)
     }
 
+    function beginTabDrag(event: ReactPointerEvent<HTMLButtonElement>, tabId: string) {
+        if (tabs.length <= 1 || event.button !== 0) return
+        dragCleanupRef.current?.()
+        const pointerId = event.pointerId
+        const startX = event.clientX
+        const startY = event.clientY
+        const tabsAtDragStart = tabs
+        const previousUserSelect = document.body.style.userSelect
+        let started = false
+
+        event.currentTarget.setPointerCapture(pointerId)
+
+        function updateDropTarget(clientX: number) {
+            const strip = tabStripRef.current
+            if (!strip) return
+            const remainingTabs = tabsAtDragStart.filter((tab) => tab.id !== tabId)
+            const rects = remainingTabs
+                .map((tab) => tabButtonRefs.current.get(tab.id)?.parentElement?.getBoundingClientRect() ?? null)
+                .filter((rect): rect is DOMRect => Boolean(rect))
+            if (rects.length !== remainingTabs.length) return
+
+            const foundIndex = rects.findIndex((rect) => clientX < rect.left + rect.width / 2)
+            const targetIndex = foundIndex === -1 ? rects.length : foundIndex
+            const stripRect = strip.getBoundingClientRect()
+            const indicatorViewportX = targetIndex < rects.length
+                ? rects[targetIndex].left
+                : rects[rects.length - 1].right
+            dragTargetIndexRef.current = targetIndex
+            setDragIndicatorX(Math.min(Math.max(indicatorViewportX - stripRect.left, 0), strip.clientWidth))
+        }
+
+        function move(pointerEvent: PointerEvent) {
+            if (pointerEvent.pointerId !== pointerId) return
+            const deltaX = pointerEvent.clientX - startX
+            const deltaY = pointerEvent.clientY - startY
+            if (!started) {
+                if (Math.abs(deltaX) < 6 || Math.abs(deltaX) <= Math.abs(deltaY)) return
+                started = true
+                document.body.style.userSelect = "none"
+                setDraggingTabId(tabId)
+            }
+            pointerEvent.preventDefault()
+            updateDropTarget(pointerEvent.clientX)
+        }
+
+        function finish(cancelled: boolean) {
+            window.removeEventListener("pointermove", move)
+            window.removeEventListener("pointerup", up)
+            window.removeEventListener("pointercancel", cancel)
+            dragCleanupRef.current = null
+            document.body.style.userSelect = previousUserSelect
+            setDraggingTabId(null)
+            setDragIndicatorX(null)
+
+            if (!started || cancelled) return
+            setTabs((currentTabs) => {
+                const nextTabs = reorderWorkspaceTabs(currentTabs, tabId, dragTargetIndexRef.current)
+                if (nextTabs === currentTabs) return currentTabs
+                saveTabsState(nextTabs, activeTabIdRef.current)
+                return nextTabs
+            })
+            suppressTabClickRef.current = tabId
+            window.setTimeout(() => {
+                if (suppressTabClickRef.current === tabId) suppressTabClickRef.current = ""
+            }, 0)
+        }
+
+        function up(pointerEvent: PointerEvent) {
+            if (pointerEvent.pointerId === pointerId) finish(false)
+        }
+
+        function cancel(pointerEvent: PointerEvent) {
+            if (pointerEvent.pointerId === pointerId) finish(true)
+        }
+
+        dragCleanupRef.current = () => finish(true)
+        window.addEventListener("pointermove", move, { passive: false })
+        window.addEventListener("pointerup", up)
+        window.addEventListener("pointercancel", cancel)
+    }
+
     function addTab() {
         if (!canAddTab) return
         const currentTab = tabs.find((candidate) => candidate.id === activeTabIdRef.current)
@@ -1299,20 +1387,28 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
         <div data-workspace-tabbar className={`fixed top-14 z-40 h-11 border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/10 backdrop-blur ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
             <div className="flex h-full min-w-0 items-end gap-2 px-2 pt-1">
-                <div ref={tabStripRef} role="tablist" aria-label="Workspace tabs" className="flex h-full min-w-0 flex-1 items-end gap-1 overflow-hidden">
+                <div ref={tabStripRef} role="tablist" aria-label="Workspace tabs" className="relative flex h-full min-w-0 flex-1 items-end gap-1 overflow-hidden">
+                    {dragIndicatorX !== null && (
+                        <span aria-hidden="true" className="pointer-events-none absolute bottom-1 top-1 z-20 w-0.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.55)]" style={{ left: dragIndicatorX }} />
+                    )}
                     {visibleTabs.map((tab) => {
                         const active = tab.id === activeTabId || (!tabsHydrated && tab.id === "initial")
+                        const dragging = tab.id === draggingTabId
                         return (
-                            <div key={tab.id} className={`group flex h-9 min-w-32 max-w-56 shrink-0 items-center rounded-t-lg border px-2 text-sm ${active ? "border-neutral-700 border-b-neutral-950 bg-neutral-950 text-white" : "border-transparent bg-neutral-900/55 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"}`}>
+                            <div key={tab.id} className={`group flex h-9 min-w-32 max-w-56 shrink-0 items-center rounded-t-lg border px-2 text-sm transition-[opacity,transform,background-color,border-color] duration-150 ${dragging ? "scale-[0.98] opacity-45" : ""} ${active ? "border-neutral-700 border-b-neutral-950 bg-neutral-950 text-white" : "border-transparent bg-neutral-900/55 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"}`}>
                                 <button
                                     ref={(node) => { if (node) tabButtonRefs.current.set(tab.id, node); else tabButtonRefs.current.delete(tab.id) }}
                                     role="tab"
                                     aria-selected={active}
                                     tabIndex={active ? 0 : -1}
                                     type="button"
+                                    onPointerDown={(event) => beginTabDrag(event, tab.id)}
                                     onKeyDown={(event) => switchTabFromKeyboard(event, visibleTabs.indexOf(tab))}
-                                    onClick={() => switchTab(tab)}
-                                    className="min-w-0 flex-1 truncate text-left"
+                                    onClick={() => {
+                                        if (suppressTabClickRef.current === tab.id) return
+                                        switchTab(tab)
+                                    }}
+                                    className={`min-w-0 flex-1 touch-pan-y truncate text-left ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
                                 >
                                     {tab.title}
                                 </button>

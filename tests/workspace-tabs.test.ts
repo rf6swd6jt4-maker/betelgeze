@@ -4,6 +4,7 @@ import {
     appendWorkspaceTabHistory,
     isReopenClosedTabShortcut,
     normalizeWorkspaceUrl,
+    reorderWorkspaceTabs,
     WORKSPACE_TAB_FRAME_PARAM,
     workspaceTabFrameUrl,
     workspaceTabHistoryStep,
@@ -59,4 +60,12 @@ test("recognizes the reopen-closed-tab shortcut on macOS and Windows", () => {
     assert.equal(isReopenClosedTabShortcut({ key: "t", metaKey: false, ctrlKey: true, shiftKey: true, altKey: false }), true)
     assert.equal(isReopenClosedTabShortcut({ key: "t", metaKey: true, ctrlKey: false, shiftKey: false, altKey: false }), false)
     assert.equal(isReopenClosedTabShortcut({ key: "t", metaKey: false, ctrlKey: true, shiftKey: true, altKey: true }), false)
+})
+
+test("reorders tabs by insertion point without changing their identity", () => {
+    const tabs = [{ id: "one" }, { id: "two" }, { id: "three" }]
+
+    assert.deepEqual(reorderWorkspaceTabs(tabs, "one", 2).map((tab) => tab.id), ["two", "three", "one"])
+    assert.deepEqual(reorderWorkspaceTabs(tabs, "three", 0).map((tab) => tab.id), ["three", "one", "two"])
+    assert.equal(reorderWorkspaceTabs(tabs, "two", 1), tabs)
 })

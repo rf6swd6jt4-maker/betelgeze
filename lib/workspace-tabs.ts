@@ -89,3 +89,16 @@ export function appendWorkspaceTabHistory(history: string[], historyIndex: numbe
         : nextHistory
     return { history: boundedHistory, historyIndex: boundedHistory.length - 1 }
 }
+
+export function reorderWorkspaceTabs<T extends { id: string }>(tabs: T[], tabId: string, insertionIndex: number) {
+    const tab = tabs.find((candidate) => candidate.id === tabId)
+    if (!tab) return tabs
+    const remaining = tabs.filter((candidate) => candidate.id !== tabId)
+    const boundedIndex = Math.min(Math.max(insertionIndex, 0), remaining.length)
+    const reordered = [
+        ...remaining.slice(0, boundedIndex),
+        tab,
+        ...remaining.slice(boundedIndex),
+    ]
+    return reordered.every((candidate, index) => candidate.id === tabs[index]?.id) ? tabs : reordered
+}

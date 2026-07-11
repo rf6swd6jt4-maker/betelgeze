@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { SquarePill } from "@/components/ui"
+import { SquarePill } from "@/components/ui/SquarePill"
 import { displayMessageAddress } from "@/lib/client-messages/addresses"
 
 type ProfileMenuProps = {

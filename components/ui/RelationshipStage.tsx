@@ -1,4 +1,4 @@
-import { phaseLabel, type RelationshipPhase } from "@/lib/relationships"
+import { phaseLabel, type RelationshipPhase } from "@/lib/relationship-phases"
 import { pillTones, type PillTone } from "./pill-styles"
 import styles from "./RelationshipStage.module.css"
 

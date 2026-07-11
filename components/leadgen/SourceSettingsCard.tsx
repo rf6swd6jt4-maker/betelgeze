@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
-import { StatusStat } from "@/components/ui"
 import { SettingsSectionActions } from "@/components/leadgen/ManualSettingsForm"
+import { StatusStat } from "@/components/ui/StatusStat"
 import type { LeadgenSourceCategoryIntentKey, LeadgenSourceCategoryKey, LeadgenSourceKey, LeadgenSourceStageKey } from "@/lib/leadgen/sources"
 
 type SourceStatus = "not_configured" | "not_mapped" | "disabled" | "enabled"

@@ -157,7 +157,7 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                         </div>
                                         <div className="flex flex-wrap items-center gap-2 px-3.5 py-2.5">
                                             <RelationshipStage phase={relationship.lifecycle_phase} className="shrink-0" />
-                                            {isTest ? <SquarePill tone="amber">Test</SquarePill> : null}
+                                            {isTest ? <SquarePill tone="violet">Test</SquarePill> : null}
                                             {smsPhone ? <p className="truncate text-sm text-neutral-200">SMS: {smsPhone}</p> : null}
                                             {effectiveWhatsappPhone ? <p className="truncate text-sm text-neutral-400">WA: {effectiveWhatsappPhone}</p> : null}
                                             {!smsPhone && !effectiveWhatsappPhone ? <p className="text-sm text-neutral-500">No phone</p> : null}
@@ -188,7 +188,7 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <RelationshipStage phase={relationship.lifecycle_phase} />
-                                            {isTest ? <SquarePill tone="amber">Test</SquarePill> : null}
+                                            {isTest ? <SquarePill tone="violet">Test</SquarePill> : null}
                                         </div>
                                         {workStatus}
                                         <div className="flex items-center justify-end gap-3">

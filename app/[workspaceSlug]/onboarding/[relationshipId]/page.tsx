@@ -11,7 +11,6 @@ import { SERVICES } from "@/lib/onboarding/services"
 import {
     assetHref,
     getRelationship,
-    relationshipHubHref,
     workItemHref,
 } from "@/lib/relationships"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
@@ -446,20 +445,24 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="min-w-0">
                         <header className="border-b border-neutral-800 pb-5">
-                            <p className="font-mono text-xs text-neutral-500">Onboarding · {shortId(relationship.id)}</p>
-                            <div className="mt-2 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                            <p className="font-mono text-sm text-neutral-500">Onboarding {shortId(relationship.id)}</p>
+                            <div className="mt-2">
                                 <div className="min-w-0">
                                     <h1 className="text-3xl font-semibold tracking-tight">{relationship.primary_person_name}</h1>
-                                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-neutral-400">
-                                        <span>{relationship.business_name ?? "No company saved"}</span>
-                                        {relationship.primary_email ? <span>{relationship.primary_email}</span> : null}
-                                        {relationship.primary_phone ? <span>{relationship.primary_phone}</span> : null}
-                                        <span>{modules?.length ?? 0} modules · {services?.length ?? 0} services</span>
+                                    <p className="mt-3 text-sm text-neutral-400">{relationship.business_name ?? "No company saved"}</p>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {(services ?? []).map((service) => (
+                                            <span key={service.service_key} className="rounded-full border border-emerald-800/70 bg-emerald-950/50 px-2.5 py-1 text-xs text-emerald-200">
+                                                {SERVICES[service.service_key]?.title ?? service.service_key}
+                                            </span>
+                                        ))}
+                                        {(modules ?? []).map((module) => (
+                                            <span key={module.module_key} className="rounded-full border border-sky-800/70 bg-sky-950/50 px-2.5 py-1 text-xs text-sky-200">
+                                                {MODULES[module.module_key]?.title ?? module.module_key}
+                                            </span>
+                                        ))}
                                     </div>
                                 </div>
-                                <Link href={relationshipHubHref(workspace.slug, relationship.id)} className="inline-flex min-h-10 items-center rounded-lg border border-neutral-800 px-3 text-sm text-neutral-300 hover:text-white">
-                                    Relationship summary
-                                </Link>
                             </div>
                         </header>
 
@@ -539,31 +542,6 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                                     <p className="mt-2 text-sm leading-6 text-neutral-500">Start onboarding from the relationship page to generate the client-facing session and step work items.</p>
                                 </div>
                             )}
-                        </section>
-
-                        <section className="mt-6 grid gap-4 lg:grid-cols-2">
-                            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                                <h2 className="font-semibold">Modules</h2>
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    {(modules ?? []).length ? (modules ?? []).map((module) => (
-                                        <span key={module.module_key} className="rounded-full border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300">
-                                            {MODULES[module.module_key]?.title ?? module.module_key}
-                                        </span>
-                                    )) : <p className="text-sm text-neutral-500">No modules assigned.</p>}
-                                </div>
-                            </div>
-
-                            <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-                                <h2 className="font-semibold">Services</h2>
-                                <div className="mt-3 grid gap-2">
-                                    {(services ?? []).length ? (services ?? []).map((service) => (
-                                        <div key={service.service_key} className="rounded-lg border border-neutral-800 px-3 py-2 text-sm">
-                                            <p className="text-neutral-100">{SERVICES[service.service_key]?.title ?? service.service_key}</p>
-                                            <p className="mt-1 text-neutral-500">{service.due_date ? `Due ${service.due_date}` : "No due date"}</p>
-                                        </div>
-                                    )) : <p className="text-sm text-neutral-500">No services assigned.</p>}
-                                </div>
-                            </div>
                         </section>
 
                         {canManage ? (

@@ -1,39 +1,58 @@
 # Betelgeze UI standards
 
-This is the shared vocabulary for repeated interface elements. New UI should import these primitives rather than recreating their appearance with page-local Tailwind classes.
+Repeated interface elements use the primitives exported from `components/ui`. New UI must not recreate them with page-local Tailwind classes.
 
-## Rules
+## Status
 
-- Use `Pill` for compact metadata, categories, filters, and non-live labels.
-- Use `AssignmentPill` whenever a pill represents a person or assignee.
-- Use `Status` for state or health. A status uses the Betelgeze diamond mark and plain text; it is not automatically a pill.
-- Choose tone from meaning, not decoration: `neutral`, `info`, `success`, `warning`, or `danger`.
-- Reserve `success` for a genuinely completed, available, connected, or verified state. Configured, managed, and pending are not synonyms for verified.
-- Use sentence case. Do not add uppercase tracking to ordinary pills or statuses.
-- Keep compact elements short. Put explanations in adjacent copy, a tooltip, or expanded detail rather than inside the pill.
-- Extend the shared primitive when the product needs a new stable variant. Do not create a one-off look in a page.
+`Status` communicates operational state, health, or progress. Its appearance follows the lead-generation poll UI: a Betelgeze diamond followed by plain text.
 
-## Imports
+Statuses have exactly four tones:
+
+| Tone | Meaning | Typical examples |
+| --- | --- | --- |
+| `grey` | Not started, inactive, unknown, or neutral | Initialising, queued, disabled |
+| `yellow` | Active, waiting, or needs attention | In progress, pending, warning |
+| `green` | Genuinely successful or ready | Successful, completed, verified |
+| `red` | Failed, blocked, cancelled, or unavailable | Failed, error, blocked |
+
+Do not add blue, violet, or other status colours. A configured, managed, or pending integration is not green unless the real path has been verified.
 
 ```tsx
-import { AssignmentPill, Pill, Status } from "@/components/ui"
-
-<AssignmentPill name="Alex Morgan" avatarSrc={avatarUrl} />
-<Pill>California</Pill>
-<Pill tone="info">Automated</Pill>
-<Status label="Running" tone="info" />
-<Status label="Verified" tone="success" />
-<Status label="Needs attention" tone="warning" />
+<Status label="Initialising" tone="grey" />
+<Status label="In progress" tone="yellow" />
+<Status label="Successful" tone="green" />
+<Status label="Failed" tone="red" />
 ```
 
-## Semantic distinction
+## RoundPill
 
-| Element | Meaning | Shape |
-| --- | --- | --- |
-| Pill | Attribute or compact metadata | Bordered capsule |
-| Assignment pill | A person assigned or attached | Capsule with avatar |
-| Status | Current state, health, or progress | Diamond mark with text |
+`RoundPill` represents assigned or attached things: services, modules, people, categories, filters, or other compact metadata. Its aesthetic comes from the assigned service and module pills in onboarding detail.
 
-## Changing the system
+Use `AssignmentPill` when the attached thing is a person; it is the avatar-bearing form of `RoundPill`.
 
-Design changes belong in `components/ui`, followed by migration of existing uses. Update this document in the same change. A local exception should be rare and must include a code comment explaining why the shared primitive cannot represent it.
+```tsx
+<RoundPill tone="emerald">Paid Social</RoundPill>
+<RoundPill tone="sky">Reporting</RoundPill>
+<AssignmentPill name="Alex Morgan" avatarSrc={avatarUrl} />
+```
+
+## SquarePill
+
+`SquarePill` is the boxier, rounded-corner label treatment. Use it for categorical labels such as `Stuck`, `Test`, or a relationship stage. It shares RoundPill's border, background, text, spacing, and colour palette; only its shape differs.
+
+Relationship stages are labels, not statuses. Represent them with `SquarePill`, allowing categorical colours where useful, instead of expanding the four-colour status system.
+
+```tsx
+<SquarePill tone="amber">Stuck</SquarePill>
+<SquarePill tone="violet">Test</SquarePill>
+<SquarePill tone="sky">Onboarding</SquarePill>
+```
+
+## Shared rules
+
+- Use sentence case; do not add uppercase tracking to ordinary pills or statuses.
+- Pick pill colours by stable category. Status colours always retain the meanings above.
+- Keep compact elements short. Put explanations in adjacent copy, a tooltip, or expanded detail.
+- Extend a shared primitive when a new stable variant is required. Do not invent a one-off treatment in a page.
+- When the design changes, update `components/ui`, this document, and existing uses together.
+- A local exception must include a code comment explaining why the shared primitive cannot represent it.

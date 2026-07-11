@@ -1,3 +1,5 @@
 export { AssignmentPill } from "./AssignmentPill"
-export { Pill, type PillTone } from "./Pill"
-export { Status } from "./Status"
+export { RoundPill } from "./RoundPill"
+export { SquarePill } from "./SquarePill"
+export type { PillTone } from "./pill-styles"
+export { Status, type StatusTone } from "./Status"

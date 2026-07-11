@@ -8,6 +8,7 @@ import { getOnboardingForm } from "@/lib/onboarding/forms"
 import { getOnboardingStepsForModules, type CanonicalSessionStep } from "@/lib/onboarding/canonical-helpers"
 import { MODULES } from "@/lib/onboarding/modules"
 import { SERVICES } from "@/lib/onboarding/services"
+import { RoundPill } from "@/components/ui"
 import {
     assetHref,
     getRelationship,
@@ -452,14 +453,14 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                                     <p className="mt-3 text-sm text-neutral-400">{relationship.business_name ?? "No company saved"}</p>
                                     <div className="mt-3 flex flex-wrap gap-2">
                                         {(services ?? []).map((service) => (
-                                            <span key={service.service_key} className="rounded-full border border-emerald-800/70 bg-emerald-950/50 px-2.5 py-1 text-xs text-emerald-200">
+                                            <RoundPill key={service.service_key} tone="emerald">
                                                 {SERVICES[service.service_key]?.title ?? service.service_key}
-                                            </span>
+                                            </RoundPill>
                                         ))}
                                         {(modules ?? []).map((module) => (
-                                            <span key={module.module_key} className="rounded-full border border-sky-800/70 bg-sky-950/50 px-2.5 py-1 text-xs text-sky-200">
+                                            <RoundPill key={module.module_key} tone="sky">
                                                 {MODULES[module.module_key]?.title ?? module.module_key}
-                                            </span>
+                                            </RoundPill>
                                         ))}
                                     </div>
                                 </div>

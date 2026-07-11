@@ -4,6 +4,7 @@ import {
     appendWorkspaceTabHistory,
     isReopenClosedTabShortcut,
     normalizeWorkspaceUrl,
+    orderWorkspaceTabsByStableIds,
     reorderWorkspaceTabs,
     WORKSPACE_TAB_FRAME_PARAM,
     workspaceTabFrameUrl,
@@ -77,4 +78,13 @@ test("reorders tabs by insertion point without changing their identity", () => {
     assert.deepEqual(reorderWorkspaceTabs(tabs, "one", 2).map((tab) => tab.id), ["two", "three", "one"])
     assert.deepEqual(reorderWorkspaceTabs(tabs, "three", 0).map((tab) => tab.id), ["three", "one", "two"])
     assert.equal(reorderWorkspaceTabs(tabs, "two", 1), tabs)
+})
+
+test("keeps iframe panels in stable mount order when tab chrome is reordered", () => {
+    const reorderedTabs = [{ id: "three" }, { id: "one" }, { id: "two" }]
+
+    assert.deepEqual(
+        orderWorkspaceTabsByStableIds(reorderedTabs, ["one", "two", "three"]).map((tab) => tab.id),
+        ["one", "two", "three"]
+    )
 })

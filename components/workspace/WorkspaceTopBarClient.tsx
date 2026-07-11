@@ -16,6 +16,7 @@ import {
     appendWorkspaceTabHistory,
     isReopenClosedTabShortcut,
     normalizeWorkspaceUrl as normalizeWorkspaceRoute,
+    orderWorkspaceTabsByStableIds,
     reorderWorkspaceTabs,
     WORKSPACE_TAB_FRAME_NAME_PREFIX,
     WORKSPACE_TAB_FRAME_PARAM,
@@ -332,6 +333,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const tabsBootstrappedRef = useRef(false)
     const shellRootRef = useRef<HTMLDivElement>(null)
     const tabStripRef = useRef<HTMLDivElement>(null)
+    const tabFrameOrderRef = useRef<string[]>([])
     const iframeRefs = useRef(new Map<string, HTMLIFrameElement>())
     const loadedTabIdsRef = useRef(new Set<string>())
     const pendingNavigationRef = useRef(new Map<string, string>())
@@ -482,6 +484,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         const current = normalizeWorkspaceUrl(`${pathname}${query ? `?${query}` : ""}`)
         const stored = readTabsState(current)
         activeTabIdRef.current = stored.activeId
+        tabFrameOrderRef.current = stored.tabs.map((tab) => tab.id)
         mutationRevisionRef.current = Math.max(0, ...stored.tabs.map((tab) => tab.seenRevision))
         saveTabsState(stored.tabs, stored.activeId)
         deferNavigationStateUpdate(() => {
@@ -535,6 +538,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
         const previousTabId = activeTabIdRef.current
         const restoredTab = { ...closed.tab, seenRevision: mutationRevisionRef.current }
+        if (!tabFrameOrderRef.current.includes(restoredTab.id)) tabFrameOrderRef.current.push(restoredTab.id)
         loadedTabIdsRef.current.delete(closed.tab.id)
         pendingNavigationRef.current.delete(closed.tab.id)
         setLoadedTabIds(new Set(loadedTabIdsRef.current))
@@ -1146,6 +1150,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             historyIndex,
             seenRevision: currentTab?.seenRevision ?? mutationRevisionRef.current,
         }
+        tabFrameOrderRef.current.push(tab.id)
         const nextTabs = [...tabs, tab]
         activeTabIdRef.current = tab.id
         setTabs(nextTabs)
@@ -1214,6 +1219,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     ]
 
     const visibleTabs = tabsHydrated && tabs.length ? tabs : [{ id: "initial", title: titleForUrl(defaultWorkspaceUrl), url: defaultWorkspaceUrl, history: [defaultWorkspaceUrl], historyIndex: 0, seenRevision: 0 }]
+    const frameTabs = orderWorkspaceTabsByStableIds(tabs, tabFrameOrderRef.current)
     const activeTab = visibleTabs.find((tab) => tab.id === activeTabId) ?? visibleTabs[0]
     const activeTabLoaded = loadedTabIds.has(activeTab.id)
     const canGoBack = activeTabLoaded && activeTab.historyIndex > 0
@@ -1461,7 +1467,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         </div>
 
         <div data-workspace-tab-panels className={`fixed bottom-0 top-[6.25rem] z-30 overflow-hidden bg-neutral-950 ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
-            {tabsHydrated && tabs.map((tab) => (
+            {tabsHydrated && frameTabs.map((tab) => (
                 <WorkspaceTabFrame
                     key={tab.id}
                     tab={tab}

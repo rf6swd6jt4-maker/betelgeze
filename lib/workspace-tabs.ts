@@ -112,3 +112,11 @@ export function reorderWorkspaceTabs<T extends { id: string }>(tabs: T[], tabId:
     ]
     return reordered.every((candidate, index) => candidate.id === tabs[index]?.id) ? tabs : reordered
 }
+
+export function orderWorkspaceTabsByStableIds<T extends { id: string }>(tabs: T[], stableIds: string[]) {
+    const positions = new Map(stableIds.map((id, index) => [id, index]))
+    return tabs
+        .map((tab, index) => ({ tab, index }))
+        .sort((a, b) => (positions.get(a.tab.id) ?? stableIds.length + a.index) - (positions.get(b.tab.id) ?? stableIds.length + b.index))
+        .map(({ tab }) => tab)
+}

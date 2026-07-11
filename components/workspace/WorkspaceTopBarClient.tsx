@@ -239,7 +239,7 @@ function SearchIcon() {
 }
 
 function WorkspaceAddIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M3 8a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Z" /><path d="M14 11v6" /><path d="M11 14h6" /></svg>
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M3 8a2 2 0 0 1 2-2h4l2 2h4a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Z" /><path d="M19 15v6" /><path d="M16 18h6" /></svg>
 }
 
 function SearchResultContent({ item, mobile = false }: { item: SearchResult; mobile?: boolean }) {

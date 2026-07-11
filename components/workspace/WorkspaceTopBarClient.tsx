@@ -99,15 +99,15 @@ function WorkspaceLogo({ src, name }: { src?: string | null; name: string }) {
 }
 
 function ArrowLeftIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-2"><path d="m15 6-6 6 6 6" /></svg>
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="m15 6-6 6 6 6" /></svg>
 }
 
 function ArrowRightIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-2"><path d="m9 6 6 6-6 6" /></svg>
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="m9 6 6 6-6 6" /></svg>
 }
 
 function ReloadIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-2"><path d="M20 11a8 8 0 1 0 1.4 4.5" /><path d="M20 4v7h-7" /></svg>
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M20 11a8 8 0 0 0-14.8-3" /><path d="M4 13a8 8 0 0 0 14.8 3" /><path d="M5 4v5h5" /><path d="M19 20v-5h-5" /></svg>
 }
 
 function SidebarIcon() {

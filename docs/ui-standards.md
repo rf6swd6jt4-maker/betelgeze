@@ -24,6 +24,17 @@ Do not add blue, violet, or other status colours. A configured, managed, or pend
 <Status label="Failed" tone="red" />
 ```
 
+### StatusStat
+
+`StatusStat` is the compact numerical sibling of `Status`. It uses the same four tone meanings and typography, but a bold tabular number takes the place of the Betelgeze diamond. Use it for small grouped state counts such as source-settings summaries; do not use a pill or a hand-built coloured count for this pattern.
+
+```tsx
+<StatusStat value={12} label="Enabled" tone="green" />
+<StatusStat value={0} label="Disabled" tone="grey" />
+<StatusStat value={8} label="Not mapped" tone="yellow" />
+<StatusStat value={2} label="No config" tone="red" />
+```
+
 ## RoundPill
 
 `RoundPill` represents assigned or attached things: services, modules, people, categories, filters, or other compact metadata. Its aesthetic comes from the assigned service and module pills in onboarding detail.

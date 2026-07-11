@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
+import { StatusStat } from "@/components/ui"
 import { SettingsSectionActions } from "@/components/leadgen/ManualSettingsForm"
 import type { LeadgenSourceCategoryIntentKey, LeadgenSourceCategoryKey, LeadgenSourceKey, LeadgenSourceStageKey } from "@/lib/leadgen/sources"
 
@@ -204,11 +205,11 @@ function CategoryToggle({ sources, enabledValues, checked, onToggle }: { sources
 }
 
 function StatusSummary({ counts }: { counts: Record<SourceStatus, number> }) {
-    return <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[11px] sm:text-xs">
-        <p className="leading-4 text-emerald-200"><span className="font-semibold text-emerald-100">{counts.enabled}</span> Enabled</p>
-        <p className="leading-4 text-neutral-300"><span className="font-semibold text-neutral-100">{counts.disabled}</span> Disabled</p>
-        <p className="leading-4 text-amber-200"><span className="font-semibold text-amber-100">{counts.not_mapped}</span> Not mapped</p>
-        <p className="leading-4 text-red-200"><span className="font-semibold text-red-100">{counts.not_configured}</span> No config</p>
+    return <div className="flex flex-wrap gap-x-2.5 gap-y-1">
+        <StatusStat value={counts.enabled} label="Enabled" tone="green" />
+        <StatusStat value={counts.disabled} label="Disabled" tone="grey" />
+        <StatusStat value={counts.not_mapped} label="Not mapped" tone="yellow" />
+        <StatusStat value={counts.not_configured} label="No config" tone="red" />
     </div>
 }
 

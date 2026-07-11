@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import { Assignee, RoundPill, Status } from "@/components/ui"
 import { Avatar } from "@/components/account/Avatar"
@@ -17,6 +18,7 @@ import {
 type Person = { user_id: string; username: string; avatar_url: string | null }
 type WorkOption = { id: string; title: string; status: string }
 type RelationshipOption = { id: string; label: string }
+let activePopupTrigger: HTMLElement | null = null
 
 type Props = {
     workspaceSlug: string
@@ -114,7 +116,30 @@ function Search({ value, onChange, placeholder }: { value: string; onChange: (va
 }
 
 function Popup({ children, className = "w-72" }: { children: ReactNode; className?: string }) {
-    return <div data-work-item-popup className={`absolute left-0 top-full z-[100] mt-1 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/60 ${className}`}>{children}</div>
+    const popupRef = useRef<HTMLDivElement>(null)
+    const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+    const parentDocument = typeof window !== "undefined" && window.parent !== window ? window.parent.document : typeof document !== "undefined" ? document : null
+
+    useLayoutEffect(() => {
+        const trigger = activePopupTrigger
+        if (!trigger) return
+        const triggerRect = trigger.getBoundingClientRect()
+        const frameRect = window.frameElement instanceof HTMLElement ? window.frameElement.getBoundingClientRect() : { left: 0, top: 0 }
+        const popupWidth = popupRef.current?.offsetWidth ?? 320
+        const popupHeight = popupRef.current?.offsetHeight ?? 240
+        const viewportWidth = window.parent === window ? window.innerWidth : window.parent.innerWidth
+        const viewportHeight = window.parent === window ? window.innerHeight : window.parent.innerHeight
+        const desiredLeft = frameRect.left + triggerRect.left
+        const below = frameRect.top + triggerRect.bottom + 4
+        const above = frameRect.top + triggerRect.top - popupHeight - 4
+        setPosition({
+            left: Math.max(8, Math.min(desiredLeft, viewportWidth - popupWidth - 8)),
+            top: below + popupHeight <= viewportHeight - 8 ? below : Math.max(8, above),
+        })
+    }, [])
+
+    if (!parentDocument) return null
+    return createPortal(<div ref={popupRef} data-work-item-popup style={position ?? { visibility: "hidden" }} className={`fixed z-[100] overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/60 ${className}`}>{children}</div>, parentDocument.body)
 }
 
 function PopupFooter({ onSave, onClear, pending }: { onSave: () => void; onClear?: () => void; pending: boolean }) {
@@ -151,7 +176,12 @@ export function InlineWorkItemFields(props: Props) {
             if (!target.closest("[data-work-item-popup]") && !target.closest("[data-work-item-popup-trigger]")) setOpen(null)
         }
         document.addEventListener("mousedown", close)
-        return () => document.removeEventListener("mousedown", close)
+        const parentDocument = window.parent !== window ? window.parent.document : null
+        parentDocument?.addEventListener("mousedown", close)
+        return () => {
+            document.removeEventListener("mousedown", close)
+            parentDocument?.removeEventListener("mousedown", close)
+        }
     }, [])
 
     useEffect(() => {
@@ -162,6 +192,7 @@ export function InlineWorkItemFields(props: Props) {
     }, [description])
 
     function toggle(name: string) {
+        activePopupTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
         setError(null); setQuery("")
         if (open !== name) {
             setStartDate(dateInputValue(completed ? props.actualStartAt : props.plannedStartDate))

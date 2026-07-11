@@ -5,6 +5,7 @@ import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import { Assignee, RoundPill, Status } from "@/components/ui"
 import { Avatar } from "@/components/account/Avatar"
+import { postGanttSync } from "@/lib/ui/gantt-sync"
 import {
     updateWorkItemAssignees,
     updateWorkItemDependencies,
@@ -212,7 +213,7 @@ export function InlineWorkItemFields(props: Props) {
         setError(null)
         setOpen(null)
         startTransition(async () => {
-            try { await action(); router.refresh() }
+            try { await action(); router.refresh(); postGanttSync(props.workspaceSlug) }
             catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save this field") }
         })
     }

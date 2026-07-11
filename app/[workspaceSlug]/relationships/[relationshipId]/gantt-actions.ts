@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
-import { previewScheduleCascade, type RelationshipGanttDependency, type RelationshipGanttItem, type ScheduleChange } from "@/lib/relationship-gantt"
+import { getRelationshipGanttPlan, previewScheduleCascade, type RelationshipGanttDependency, type RelationshipGanttItem, type RelationshipGanttPlan, type ScheduleChange } from "@/lib/relationship-gantt"
+import { getRelationship } from "@/lib/relationships"
 import type { RelationshipPhase } from "@/lib/relationship-phases"
 
 export type GanttMutationResult =
@@ -37,6 +38,13 @@ function errorResult(error: unknown): GanttMutationResult {
     return message.toLowerCase().includes("stale")
         ? { status: "stale", message: "The plan changed in another tab. Refresh and try again." }
         : { status: "invalid", message }
+}
+
+export async function loadGanttPlan(slug: string, relationshipId: string): Promise<RelationshipGanttPlan | null> {
+    const { workspace } = await requireGantt(slug, relationshipId, false)
+    const relationship = await getRelationship(workspace.id, relationshipId)
+    if (!relationship) return null
+    return getRelationshipGanttPlan(workspace.slug, relationship)
 }
 
 export async function previewGanttScheduleChange(

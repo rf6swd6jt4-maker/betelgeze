@@ -106,6 +106,10 @@ function ArrowRightIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-2"><path d="m9 6 6 6-6 6" /></svg>
 }
 
+function ReloadIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-2"><path d="M20 11a8 8 0 1 0 1.4 4.5" /><path d="M20 4v7h-7" /></svg>
+}
+
 function SidebarIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M9 5v14" /></svg>
 }
@@ -815,6 +819,12 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         const updateCanAddTab = () => {
             const strip = tabStripRef.current
             if (!strip) return
+            if (window.matchMedia("(max-width: 767px)").matches) {
+                const nextCanAddTab = tabs.length < 8
+                canAddTabRef.current = nextCanAddTab
+                setCanAddTab(nextCanAddTab)
+                return
+            }
             const gap = Number.parseFloat(window.getComputedStyle(strip).columnGap || "0") || 0
             const children = Array.from(strip.children).filter((child): child is HTMLElement => child instanceof HTMLElement)
             const currentContentWidth = children.reduce((sum, child) => sum + child.offsetWidth, 0) + Math.max(0, children.length - 1) * gap
@@ -882,6 +892,14 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
     function goForward() {
         traverseHistory(1)
+    }
+
+    function reloadActiveTab() {
+        const tabId = activeTabIdRef.current
+        const frame = iframeRefs.current.get(tabId)
+        if (!frame?.contentWindow) return
+        setRouteLoadingTabId(tabId)
+        frame.contentWindow.location.reload()
     }
 
     function openDesktopSearch() {
@@ -1195,7 +1213,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     }
 
     function addTab() {
-        if (!canAddTab) return
+        if (!canAddTab || tabs.length >= 8) return
         const currentTab = tabs.find((candidate) => candidate.id === activeTabIdRef.current)
         const url = currentTab?.url ?? defaultWorkspaceUrl
         const history = currentTab?.history.length ? [...currentTab.history] : [url]
@@ -1315,13 +1333,16 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     <button data-icon-button type="button" onClick={goForward} disabled={!canGoForward} aria-label="Go forward" className={navButtonClass}>
                         <ArrowRightIcon />
                     </button>
+                    <button data-icon-button type="button" onClick={reloadActiveTab} aria-label="Reload current tab" className={navButtonClass}>
+                        <ReloadIcon />
+                    </button>
                     <label className="relative block min-w-0 flex-1">
                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
                         <input ref={desktopSearchInputRef} value={query} onKeyDown={submitSearch} onChange={(event) => { setQuery(event.target.value); openDesktopSearch() }} onFocus={openDesktopSearch} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 pr-16 text-sm text-neutral-300 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
                         <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-neutral-800 px-1.5 py-0.5 text-[10px] leading-none text-neutral-500">{searchShortcutLabel}</span>
                     </label>
                     {searchOpen && (
-                        <div className="absolute left-16 right-0 top-11 z-[70] max-h-[32rem] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/40">
+                        <div className="absolute left-[6.5rem] right-0 top-11 z-[70] max-h-[32rem] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/40">
                             <div className="max-h-[32rem] overflow-y-auto">
                                 {query.trim().length < 2 && <p className="px-3 py-3 text-sm text-neutral-500">Type at least two characters.</p>}
                                 {query.trim().length >= 2 && searchLoading && <p className="px-3 py-3 text-sm text-neutral-500">Searching...</p>}
@@ -1374,13 +1395,13 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                         )}
                     </div>
                     <div className="hidden items-center gap-0.5 md:flex" aria-label="Create">
-                        <button data-icon-button type="button" onClick={() => openCreate("relationship")} aria-label="Add relationship" title="Add relationship" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white md:h-9 md:w-9">
+                        <button data-icon-button type="button" onClick={() => openCreate("relationship")} aria-label="Add relationship" title="Add relationship" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <RelationshipsIcon />
                         </button>
-                        <button data-icon-button type="button" onClick={() => openCreate("work-item")} aria-label="Add work item" title="Add work item" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white md:h-9 md:w-9">
+                        <button data-icon-button type="button" onClick={() => openCreate("work-item")} aria-label="Add work item" title="Add work item" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <WorkIcon />
                         </button>
-                        <button data-icon-button type="button" onClick={() => openCreate("asset")} aria-label="Add asset" title="Add asset" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white md:h-9 md:w-9">
+                        <button data-icon-button type="button" onClick={() => openCreate("asset")} aria-label="Add asset" title="Add asset" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <AssetsIcon />
                         </button>
                     </div>
@@ -1469,7 +1490,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
         <div data-workspace-tabbar className={`fixed top-14 z-40 h-11 border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/10 backdrop-blur ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
             <div className="flex h-full min-w-0 items-end gap-2 px-2 pt-1">
-                <div ref={tabStripRef} role="tablist" aria-label="Workspace tabs" className="relative flex h-full min-w-0 flex-1 items-end gap-1 overflow-hidden">
+                <div ref={tabStripRef} role="tablist" aria-label="Workspace tabs" className="relative flex h-full min-w-0 flex-1 items-end gap-1 overflow-x-auto overflow-y-hidden md:overflow-hidden">
                     {visibleTabs.map((tab) => {
                         const active = tab.id === activeTabId || (!tabsHydrated && tab.id === "initial")
                         const dragging = tab.id === draggingTabId
@@ -1578,6 +1599,9 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     </button>
                     <button data-icon-button type="button" onClick={() => { goForward(); closeSidebarAfterNavigation() }} disabled={!canGoForward} aria-label="Go forward" className={navButtonClass}>
                         <ArrowRightIcon />
+                    </button>
+                    <button data-icon-button type="button" onClick={() => { reloadActiveTab(); closeSidebarAfterNavigation() }} aria-label="Reload current tab" className={navButtonClass}>
+                        <ReloadIcon />
                     </button>
                     <button data-icon-button type="button" onClick={openMobileSearch} aria-label="Search Betelgeze" className={`${navButtonClass} ml-auto`}>
                         <SearchIcon />

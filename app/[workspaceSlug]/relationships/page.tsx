@@ -152,7 +152,7 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                             <Link href={relationshipHref} className="min-w-0 max-w-[45%] truncate text-base font-medium text-neutral-100 underline decoration-neutral-600 underline-offset-4 hover:text-white">
                                                 {relationshipTitle}
                                             </Link>
-                                            {isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}
+                                            {isTest ? <SquarePill tone="yellow" className="ml-2">Test</SquarePill> : null}
                                             <span className="ml-2 shrink-0">{workStatus}</span>
                                             <RelationshipStage phase={relationship.lifecycle_phase} className="ml-auto shrink-0" />
                                         </div>
@@ -163,19 +163,20 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                             {!smsPhone && !effectiveWhatsappPhone ? <p className="text-sm text-neutral-500">No phone</p> : null}
                                             {serviceKeys.map((serviceKey) => <RoundPill key={serviceKey} tone="emerald">{SERVICES[serviceKey]?.title ?? serviceKey}</RoundPill>)}
                                             <div className="ml-auto flex shrink-0 items-center gap-3">
+                                                <p className="font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
                                                 <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(relationship.updated_at)}</p>
                                                 <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
                                             </div>
                                         </div>
                                     </MobileCardActionSurface>
 
-                                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(360px,1.4fr)_minmax(230px,1fr)_minmax(180px,0.8fr)_150px_150px_32px] 2xl:items-center">
+                                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(360px,1.4fr)_minmax(230px,1fr)_minmax(180px,0.8fr)_150px_190px_32px] 2xl:items-center">
                                         <div className="min-w-0">
                                             <div className="flex min-w-0 items-center gap-3">
                                                 <Link href={relationshipHref} className="truncate text-base font-medium text-neutral-100 hover:text-white hover:underline hover:decoration-neutral-600 hover:underline-offset-4">
                                                     {relationshipTitle}
                                                 </Link>
-                                                {isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}
+                                                {isTest ? <SquarePill tone="yellow" className="ml-2">Test</SquarePill> : null}
                                                 <span className="ml-2 shrink-0">{workStatus}</span>
                                             </div>
                                             {relationship.primary_contact_role ? <p className="mt-1 truncate text-sm text-neutral-400">{relationship.primary_contact_role}</p> : null}
@@ -192,10 +193,8 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                         </div>
                                         <RelationshipStage phase={relationship.lifecycle_phase} />
                                         <div className="flex items-center justify-end gap-3">
-                                            <div className="min-w-0 text-right">
-                                                <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(relationship.updated_at)}</p>
-                                                <p className="font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
-                                            </div>
+                                            <p className="font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
+                                            <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(relationship.updated_at)}</p>
                                             <ListCreatorBadge src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} label="Added by" date={new Date(relationship.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
                                         </div>
                                         <ListActionMenu actions={relationshipActions} />

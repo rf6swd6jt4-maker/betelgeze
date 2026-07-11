@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 export type SettingsSectionNavItem = {
     id: string
@@ -10,6 +10,7 @@ export type SettingsSectionNavItem = {
 
 export function SettingsSectionNav({ sections }: { sections: SettingsSectionNavItem[] }) {
     const [active, setActive] = useState(sections[0]?.id ?? "")
+    const activeRef = useRef(active)
 
     useEffect(() => {
         const nodes = sections
@@ -17,21 +18,56 @@ export function SettingsSectionNav({ sections }: { sections: SettingsSectionNavI
             .filter((node): node is HTMLElement => Boolean(node))
         if (!nodes.length) return
 
-        const observer = new IntersectionObserver((entries) => {
-            const visible = entries
-                .filter((entry) => entry.isIntersecting)
-                .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
-            if (visible?.target.id) setActive(visible.target.id)
-        }, {
-            rootMargin: "-14% 0px -64% 0px",
-            threshold: [0.05, 0.15, 0.3, 0.6],
-        })
+        let frame = 0
+        let previousScrollY = window.scrollY
 
-        nodes.forEach((node) => observer.observe(node))
-        return () => observer.disconnect()
+        function updateActiveSection() {
+            frame = 0
+            const scrollY = window.scrollY
+            const direction = scrollY >= previousScrollY ? 1 : -1
+            previousScrollY = scrollY
+            const activationLine = window.innerHeight * 0.22
+            const hysteresis = 28
+            const currentIndex = Math.max(0, nodes.findIndex((node) => node.id === activeRef.current))
+            let nextIndex = currentIndex
+
+            if (window.innerHeight + scrollY >= document.documentElement.scrollHeight - 2) {
+                nextIndex = nodes.length - 1
+            } else if (direction > 0) {
+                while (nextIndex < nodes.length - 1 && nodes[nextIndex + 1].getBoundingClientRect().top <= activationLine - hysteresis) {
+                    nextIndex += 1
+                }
+            } else {
+                while (nextIndex > 0 && nodes[nextIndex].getBoundingClientRect().top > activationLine + hysteresis) {
+                    nextIndex -= 1
+                }
+            }
+
+            const nextActive = nodes[nextIndex]?.id
+            if (nextActive && nextActive !== activeRef.current) {
+                activeRef.current = nextActive
+                setActive(nextActive)
+            }
+        }
+
+        function scheduleUpdate() {
+            if (frame) return
+            frame = window.requestAnimationFrame(updateActiveSection)
+        }
+
+        scheduleUpdate()
+        window.addEventListener("scroll", scheduleUpdate, { passive: true })
+        window.addEventListener("resize", scheduleUpdate)
+        return () => {
+            if (frame) window.cancelAnimationFrame(frame)
+            window.removeEventListener("scroll", scheduleUpdate)
+            window.removeEventListener("resize", scheduleUpdate)
+        }
     }, [sections])
 
     function scrollToSection(id: string) {
+        activeRef.current = id
+        setActive(id)
         document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
     }
 
@@ -42,7 +78,7 @@ export function SettingsSectionNav({ sections }: { sections: SettingsSectionNavI
             <div className="relative space-y-2 pl-5">
                 <span
                     aria-hidden="true"
-                    className="absolute left-0 top-2 h-8 w-1 rounded-full bg-white transition-transform duration-300 ease-out"
+                    className="absolute left-0 top-2 h-8 w-1 rounded-full bg-white transition-transform duration-200 ease-out will-change-transform"
                     style={{ transform: `translateY(${activeIndex * 4.5}rem)` }}
                 />
                 {sections.map((section) => {

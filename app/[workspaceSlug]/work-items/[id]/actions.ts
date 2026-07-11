@@ -5,123 +5,120 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
 import { workItemHref } from "@/lib/relationships"
 
-const allowedStatuses = new Set(["todo", "doing", "waiting", "blocked", "done", "canceled"])
-
-function optionalValue(formData: FormData, key: string) {
-    const value = String(formData.get(key) ?? "").trim()
-    return value || null
+async function requireWorkItem(slug: string, workItemId: string) {
+    const context = await requireWorkspace(slug, "admin")
+    const { data: item } = await supabaseAdmin.from("work_items")
+        .select("id, status, native_kind, parent_work_item_id")
+        .eq("workspace_id", context.workspace.id).eq("id", workItemId).maybeSingle()
+    if (!item) throw new Error("Work item not found")
+    return { ...context, item }
 }
 
-export async function updateWorkItemPlanning(slug: string, workItemId: string, formData: FormData) {
-    const { workspace, user } = await requireWorkspace(slug, "admin")
-    const status = String(formData.get("status") ?? "todo")
-    if (!allowedStatuses.has(status)) throw new Error("Invalid work item status")
-
-    const { data: existing } = await supabaseAdmin.from("work_items")
-        .select("id")
-        .eq("workspace_id", workspace.id)
-        .eq("id", workItemId)
-        .maybeSingle()
-    if (!existing) throw new Error("Work item not found")
-
-    const parentWorkItemId = optionalValue(formData, "parent_work_item_id")
-    const waitForParent = parentWorkItemId ? formData.get("wait_for_parent") === "on" : false
-    const dependencyIds = [...new Set(formData.getAll("dependency_ids").map(String).filter((id) => id && id !== workItemId && id !== parentWorkItemId))]
-    const assigneeIds = [...new Set(formData.getAll("assignee_ids").map(String).filter(Boolean))]
-
-    const [{ data: workspaceItems }, { data: workspaceEdges }, { data: workspaceMembers }] = await Promise.all([
-        supabaseAdmin.from("work_items").select("id, parent_work_item_id, status").eq("workspace_id", workspace.id),
-        supabaseAdmin.from("work_item_dependencies").select("work_item_id, depends_on_work_item_id").eq("workspace_id", workspace.id),
-        supabaseAdmin.from("workspace_memberships").select("user_id").eq("workspace_id", workspace.id),
-    ])
-    const workspaceItemIds = new Set((workspaceItems ?? []).map((row) => row.id))
-    const workspaceMemberIds = new Set((workspaceMembers ?? []).map((row) => row.user_id))
-    if (parentWorkItemId && !workspaceItemIds.has(parentWorkItemId)) throw new Error("Parent must belong to this workspace")
-    if (dependencyIds.some((id) => !workspaceItemIds.has(id))) throw new Error("Dependencies must belong to this workspace")
-    if (assigneeIds.some((id) => !workspaceMemberIds.has(id))) throw new Error("Assignees must belong to this workspace")
-    const statusByItemId = new Map((workspaceItems ?? []).map((row) => [row.id, row.status]))
-    const selectedPrerequisites = [...dependencyIds, ...(parentWorkItemId && waitForParent ? [parentWorkItemId] : [])]
-    if (status === "doing" && selectedPrerequisites.some((id) => statusByItemId.get(id) !== "done")) {
-        throw new Error("This work item is waiting for unfinished dependencies")
-    }
-    const childrenByParent = new Map<string, string[]>()
-    for (const row of workspaceItems ?? []) {
-        if (!row.parent_work_item_id) continue
-        childrenByParent.set(row.parent_work_item_id, [...(childrenByParent.get(row.parent_work_item_id) ?? []), row.id])
-    }
-    const descendants = new Set<string>()
-    const childQueue = [...(childrenByParent.get(workItemId) ?? [])]
-    while (childQueue.length) {
-        const id = childQueue.pop()!
-        if (descendants.has(id)) continue
-        descendants.add(id)
-        childQueue.push(...(childrenByParent.get(id) ?? []))
-    }
-    if (parentWorkItemId && descendants.has(parentWorkItemId)) throw new Error("A child cannot become its ancestor's parent")
-
-    const prerequisitesByItem = new Map<string, string[]>()
-    for (const edge of workspaceEdges ?? []) {
-        if (edge.work_item_id === workItemId) continue
-        prerequisitesByItem.set(edge.work_item_id, [...(prerequisitesByItem.get(edge.work_item_id) ?? []), edge.depends_on_work_item_id])
-    }
-    for (const candidateId of selectedPrerequisites) {
-        const visited = new Set<string>()
-        const queue = [candidateId]
-        while (queue.length) {
-            const id = queue.pop()!
-            if (id === workItemId) throw new Error("Work item dependencies cannot contain a cycle")
-            if (visited.has(id)) continue
-            visited.add(id)
-            queue.push(...(prerequisitesByItem.get(id) ?? []))
-        }
-    }
-
-    const { error: updateError } = await supabaseAdmin.from("work_items").update({
-        status,
-        parent_work_item_id: parentWorkItemId,
-        planned_start_date: optionalValue(formData, "planned_start_date"),
-        due_date: optionalValue(formData, "due_date"),
-    }).eq("workspace_id", workspace.id).eq("id", workItemId)
-    if (updateError) throw new Error(updateError.message)
-
-    const { error: clearDependenciesError } = await supabaseAdmin.from("work_item_dependencies")
-        .delete().eq("workspace_id", workspace.id).eq("work_item_id", workItemId)
-    if (clearDependenciesError) throw new Error(clearDependenciesError.message)
-
-    const dependencies = [
-        ...dependencyIds.map((dependsOnId) => ({
-            workspace_id: workspace.id,
-            work_item_id: workItemId,
-            depends_on_work_item_id: dependsOnId,
-            source: "manual",
-            created_by: user.id,
-        })),
-        ...(parentWorkItemId && waitForParent ? [{
-            workspace_id: workspace.id,
-            work_item_id: workItemId,
-            depends_on_work_item_id: parentWorkItemId,
-            source: "parent_auto",
-            created_by: user.id,
-        }] : []),
-    ]
-    if (dependencies.length) {
-        const { error } = await supabaseAdmin.from("work_item_dependencies").insert(dependencies)
-        if (error) throw new Error(error.message)
-    }
-
-    const { error: clearAssigneesError } = await supabaseAdmin.from("work_item_assignees")
-        .delete().eq("workspace_id", workspace.id).eq("work_item_id", workItemId)
-    if (clearAssigneesError) throw new Error(clearAssigneesError.message)
-    if (assigneeIds.length) {
-        const { error } = await supabaseAdmin.from("work_item_assignees").insert(assigneeIds.map((assigneeId) => ({
-            workspace_id: workspace.id,
-            work_item_id: workItemId,
-            user_id: assigneeId,
-            assigned_by: user.id,
-        })))
-        if (error) throw new Error(error.message)
-    }
-
+function refreshWorkItem(slug: string, workItemId: string) {
     revalidatePath(workItemHref(slug, workItemId))
     revalidatePath(`/${slug}/work`)
+}
+
+export async function updateWorkItemSchedule(slug: string, workItemId: string, startDate: string | null, endDate: string | null, completed: boolean) {
+    const { workspace } = await requireWorkItem(slug, workItemId)
+    const values = completed ? {
+        actual_start_at: startDate ? `${startDate}T00:00:00.000Z` : null,
+        actual_completed_at: endDate ? `${endDate}T00:00:00.000Z` : null,
+    } : { planned_start_date: startDate || null, due_date: endDate || null }
+    const { error } = await supabaseAdmin.from("work_items").update(values).eq("workspace_id", workspace.id).eq("id", workItemId)
+    if (error) throw new Error(error.message)
+    refreshWorkItem(slug, workItemId)
+}
+
+export async function updateWorkItemAssignees(slug: string, workItemId: string, assigneeIds: string[]) {
+    const { workspace, user } = await requireWorkItem(slug, workItemId)
+    const uniqueIds = [...new Set(assigneeIds)]
+    const { data: members } = await supabaseAdmin.from("workspace_memberships").select("user_id").eq("workspace_id", workspace.id)
+    const memberIds = new Set((members ?? []).map((row) => row.user_id))
+    if (uniqueIds.some((id) => !memberIds.has(id))) throw new Error("Assignees must belong to this workspace")
+    await supabaseAdmin.from("work_item_assignees").delete().eq("workspace_id", workspace.id).eq("work_item_id", workItemId)
+    if (uniqueIds.length) {
+        const { error } = await supabaseAdmin.from("work_item_assignees").insert(uniqueIds.map((userId) => ({ workspace_id: workspace.id, work_item_id: workItemId, user_id: userId, assigned_by: user.id })))
+        if (error) throw new Error(error.message)
+    }
+    refreshWorkItem(slug, workItemId)
+}
+
+export async function updateWorkItemParent(slug: string, workItemId: string, parentWorkItemId: string | null, waitForParent: boolean) {
+    const { workspace, user, item } = await requireWorkItem(slug, workItemId)
+    const [{ data: items }, { data: dependencyEdges }] = await Promise.all([
+        supabaseAdmin.from("work_items").select("id, parent_work_item_id, status").eq("workspace_id", workspace.id),
+        supabaseAdmin.from("work_item_dependencies").select("work_item_id, depends_on_work_item_id").eq("workspace_id", workspace.id).neq("work_item_id", workItemId),
+    ])
+    const itemIds = new Set((items ?? []).map((row) => row.id))
+    if (parentWorkItemId && (!itemIds.has(parentWorkItemId) || parentWorkItemId === workItemId)) throw new Error("Invalid parent")
+    const children = new Map<string, string[]>()
+    for (const row of items ?? []) if (row.parent_work_item_id) children.set(row.parent_work_item_id, [...(children.get(row.parent_work_item_id) ?? []), row.id])
+    const queue = [...(children.get(workItemId) ?? [])]
+    const descendants = new Set<string>()
+    while (queue.length) { const id = queue.pop()!; if (descendants.has(id)) continue; descendants.add(id); queue.push(...(children.get(id) ?? [])) }
+    if (parentWorkItemId && descendants.has(parentWorkItemId)) throw new Error("A child cannot become its ancestor's parent")
+    if (item.status === "doing" && parentWorkItemId && waitForParent && items?.find((row) => row.id === parentWorkItemId)?.status !== "done") throw new Error("An in-progress task cannot wait for an unfinished parent")
+    if (parentWorkItemId && waitForParent) {
+        const prerequisites = new Map<string, string[]>()
+        for (const edge of dependencyEdges ?? []) prerequisites.set(edge.work_item_id, [...(prerequisites.get(edge.work_item_id) ?? []), edge.depends_on_work_item_id])
+        const seen = new Set<string>(); const dependencyQueue = [parentWorkItemId]
+        while (dependencyQueue.length) { const id = dependencyQueue.pop()!; if (id === workItemId) throw new Error("Waiting for this parent would create a dependency cycle"); if (seen.has(id)) continue; seen.add(id); dependencyQueue.push(...(prerequisites.get(id) ?? [])) }
+    }
+
+    const { error } = await supabaseAdmin.from("work_items").update({ parent_work_item_id: parentWorkItemId }).eq("workspace_id", workspace.id).eq("id", workItemId)
+    if (error) throw new Error(error.message)
+    await supabaseAdmin.from("work_item_dependencies").delete().eq("workspace_id", workspace.id).eq("work_item_id", workItemId).eq("source", "parent_auto")
+    if (parentWorkItemId && waitForParent) {
+        const { error: dependencyError } = await supabaseAdmin.from("work_item_dependencies").upsert({ workspace_id: workspace.id, work_item_id: workItemId, depends_on_work_item_id: parentWorkItemId, source: "parent_auto", created_by: user.id })
+        if (dependencyError) throw new Error(dependencyError.message)
+    }
+    refreshWorkItem(slug, workItemId)
+}
+
+export async function updateWorkItemDependencies(slug: string, workItemId: string, dependencyIds: string[]) {
+    const { workspace, user, item } = await requireWorkItem(slug, workItemId)
+    const uniqueIds = [...new Set(dependencyIds)].filter((id) => id !== workItemId && id !== item.parent_work_item_id)
+    const [{ data: items }, { data: edges }] = await Promise.all([
+        supabaseAdmin.from("work_items").select("id, status").eq("workspace_id", workspace.id),
+        supabaseAdmin.from("work_item_dependencies").select("work_item_id, depends_on_work_item_id").eq("workspace_id", workspace.id).neq("work_item_id", workItemId),
+    ])
+    const statuses = new Map((items ?? []).map((row) => [row.id, row.status]))
+    if (uniqueIds.some((id) => !statuses.has(id))) throw new Error("Dependencies must belong to this workspace")
+    if (item.status === "doing" && uniqueIds.some((id) => statuses.get(id) !== "done")) throw new Error("An in-progress task cannot gain an unfinished dependency")
+    const prerequisites = new Map<string, string[]>()
+    for (const edge of edges ?? []) prerequisites.set(edge.work_item_id, [...(prerequisites.get(edge.work_item_id) ?? []), edge.depends_on_work_item_id])
+    for (const candidate of uniqueIds) {
+        const seen = new Set<string>(); const queue = [candidate]
+        while (queue.length) { const id = queue.pop()!; if (id === workItemId) throw new Error("Dependencies cannot contain a cycle"); if (seen.has(id)) continue; seen.add(id); queue.push(...(prerequisites.get(id) ?? [])) }
+    }
+    await supabaseAdmin.from("work_item_dependencies").delete().eq("workspace_id", workspace.id).eq("work_item_id", workItemId).eq("source", "manual")
+    if (uniqueIds.length) {
+        const { error } = await supabaseAdmin.from("work_item_dependencies").insert(uniqueIds.map((dependsOnId) => ({ workspace_id: workspace.id, work_item_id: workItemId, depends_on_work_item_id: dependsOnId, source: "manual", created_by: user.id })))
+        if (error) throw new Error(error.message)
+    }
+    refreshWorkItem(slug, workItemId)
+}
+
+export async function updateWorkItemRelationships(slug: string, workItemId: string, relationshipIds: string[]) {
+    const { workspace, item } = await requireWorkItem(slug, workItemId)
+    if (item.native_kind === "onboarding_step") throw new Error("Onboarding work-item relationships are managed by onboarding")
+    const uniqueIds = [...new Set(relationshipIds)]
+    const { data: relationships } = await supabaseAdmin.from("relationships").select("id").eq("workspace_id", workspace.id)
+    const allowedIds = new Set((relationships ?? []).map((row) => row.id))
+    if (uniqueIds.some((id) => !allowedIds.has(id))) throw new Error("Relationships must belong to this workspace")
+    await supabaseAdmin.from("work_item_relationships").delete().eq("workspace_id", workspace.id).eq("work_item_id", workItemId)
+    if (uniqueIds.length) {
+        const { error } = await supabaseAdmin.from("work_item_relationships").insert(uniqueIds.map((relationshipId) => ({ workspace_id: workspace.id, work_item_id: workItemId, relationship_id: relationshipId })))
+        if (error) throw new Error(error.message)
+    }
+    refreshWorkItem(slug, workItemId)
+}
+
+export async function updateWorkItemPriority(slug: string, workItemId: string, priority: number) {
+    const { workspace } = await requireWorkItem(slug, workItemId)
+    if (!Number.isInteger(priority) || priority < 1 || priority > 5) throw new Error("Invalid priority")
+    const { error } = await supabaseAdmin.from("work_items").update({ priority }).eq("workspace_id", workspace.id).eq("id", workItemId)
+    if (error) throw new Error(error.message)
+    refreshWorkItem(slug, workItemId)
 }

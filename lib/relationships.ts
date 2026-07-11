@@ -948,7 +948,10 @@ export async function getWorkItemPlanningContext(workspaceId: string, item: Rela
             return person ? [person] : []
         }),
         creator: item.created_by ? peopleById.get(item.created_by) ?? null : null,
-        members: people,
+        members: (membersResult.data ?? []).flatMap((row) => {
+            const person = peopleById.get(row.user_id)
+            return person ? [person] : []
+        }),
         availableWorkItems: (workItemsResult.data ?? []).map((row) => ({
             id: row.id,
             title: row.title,

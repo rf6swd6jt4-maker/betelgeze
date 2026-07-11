@@ -239,7 +239,7 @@ function SearchIcon() {
 }
 
 function WorkspaceAddIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="m10.5 13.5 3-3" /><path d="m8.1 16.9-1.3 1.3a3.3 3.3 0 0 1-4.7-4.7l3-3a3.3 3.3 0 0 1 4.7 0" /><path d="m15.9 7.1 1.3-1.3a3.3 3.3 0 0 1 4.7 4.7l-3 3a3.3 3.3 0 0 1-4.7 0" /><circle cx="18" cy="18" r="3.5" className="fill-neutral-950" /><circle cx="18" cy="18" r="3.5" /><path d="M18 16v4" /><path d="M16 18h4" /></svg>
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M3 8a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Z" /><path d="M14 11v6" /><path d="M11 14h6" /></svg>
 }
 
 function SearchResultContent({ item, mobile = false }: { item: SearchResult; mobile?: boolean }) {

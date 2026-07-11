@@ -894,12 +894,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         traverseHistory(1)
     }
 
-    function reloadActiveTab() {
-        const tabId = activeTabIdRef.current
-        const frame = iframeRefs.current.get(tabId)
-        if (!frame?.contentWindow) return
-        setRouteLoadingTabId(tabId)
-        frame.contentWindow.location.reload()
+    function reloadWorkspace() {
+        window.location.reload()
     }
 
     function openDesktopSearch() {
@@ -1333,7 +1329,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     <button data-icon-button type="button" onClick={goForward} disabled={!canGoForward} aria-label="Go forward" className={navButtonClass}>
                         <ArrowRightIcon />
                     </button>
-                    <button data-icon-button type="button" onClick={reloadActiveTab} aria-label="Reload current tab" className={navButtonClass}>
+                    <button data-icon-button type="button" onClick={reloadWorkspace} aria-label="Reload workspace" className={navButtonClass}>
                         <ReloadIcon />
                     </button>
                     <label className="relative block min-w-0 flex-1">
@@ -1600,7 +1596,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     <button data-icon-button type="button" onClick={() => { goForward(); closeSidebarAfterNavigation() }} disabled={!canGoForward} aria-label="Go forward" className={navButtonClass}>
                         <ArrowRightIcon />
                     </button>
-                    <button data-icon-button type="button" onClick={() => { reloadActiveTab(); closeSidebarAfterNavigation() }} aria-label="Reload current tab" className={navButtonClass}>
+                    <button data-icon-button type="button" onClick={reloadWorkspace} aria-label="Reload workspace" className={navButtonClass}>
                         <ReloadIcon />
                     </button>
                     <button data-icon-button type="button" onClick={openMobileSearch} aria-label="Search Betelgeze" className={`${navButtonClass} ml-auto`}>

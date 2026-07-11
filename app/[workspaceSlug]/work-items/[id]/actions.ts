@@ -19,12 +19,16 @@ function refreshWorkItem(slug: string, workItemId: string) {
     revalidatePath(`/${slug}/work`)
 }
 
-export async function updateWorkItemSchedule(slug: string, workItemId: string, startDate: string | null, endDate: string | null, completed: boolean) {
+export async function updateWorkItemSchedule(slug: string, workItemId: string, startDate: string | null, startTime: string | null, endDate: string | null, endTime: string | null, completed: boolean) {
     const { workspace } = await requireWorkItem(slug, workItemId)
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/
+    const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/
+    if (startDate && !datePattern.test(startDate) || endDate && !datePattern.test(endDate)) throw new Error("Invalid schedule date")
+    if (startTime && !timePattern.test(startTime) || endTime && !timePattern.test(endTime)) throw new Error("Invalid schedule time")
     const values = completed ? {
-        actual_start_at: startDate ? `${startDate}T00:00:00.000Z` : null,
-        actual_completed_at: endDate ? `${endDate}T00:00:00.000Z` : null,
-    } : { planned_start_date: startDate || null, due_date: endDate || null }
+        actual_start_at: startDate ? `${startDate}T${startTime || "00:00"}:00.000Z` : null,
+        actual_completed_at: endDate ? `${endDate}T${endTime || "00:00"}:00.000Z` : null,
+    } : { planned_start_date: startDate || null, planned_start_time: startDate ? startTime || null : null, due_date: endDate || null, due_time: endDate ? endTime || null : null }
     const { error } = await supabaseAdmin.from("work_items").update(values).eq("workspace_id", workspace.id).eq("id", workItemId)
     if (error) throw new Error(error.message)
     refreshWorkItem(slug, workItemId)

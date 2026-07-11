@@ -239,7 +239,7 @@ function SearchIcon() {
 }
 
 function WorkspaceAddIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><rect x="4" y="4" width="11" height="11" rx="2" /><path d="M8 19h8a2 2 0 0 0 2-2V9" /><path d="M18 14v6" /><path d="M15 17h6" /></svg>
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="m10.5 13.5 3-3" /><path d="m8.1 16.9-1.3 1.3a3.3 3.3 0 0 1-4.7-4.7l3-3a3.3 3.3 0 0 1 4.7 0" /><path d="m15.9 7.1 1.3-1.3a3.3 3.3 0 0 1 4.7 4.7l-3 3a3.3 3.3 0 0 1-4.7 0" /><circle cx="18" cy="18" r="3.5" className="fill-neutral-950" /><circle cx="18" cy="18" r="3.5" /><path d="M18 16v4" /><path d="M16 18h4" /></svg>
 }
 
 function SearchResultContent({ item, mobile = false }: { item: SearchResult; mobile?: boolean }) {
@@ -1350,7 +1350,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     )}
                 </div>
 
-                <div className="flex justify-end gap-2.5">
+                <div className="flex items-center justify-end gap-2.5">
                     <div ref={mobileSearchRef} className="relative md:hidden">
                         <button data-icon-button type="button" onClick={openSearch} aria-label="Search Betelgeze" aria-expanded={searchOpen} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <SearchIcon />

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import {
     normalizeWorkspaceUrl,
     WORKSPACE_TAB_FRAME_PARAM,
@@ -19,7 +19,6 @@ type Props = {
 
 export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
     const pathname = usePathname()
-    const router = useRouter()
     const searchParams = useSearchParams()
 
     useEffect(() => {
@@ -66,7 +65,7 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             if (normalizeWorkspaceUrl(nextUrl, workspaceSlug, window.location.origin) === currentUrl) return
             event.preventDefault()
             reportNavigationStart(nextUrl)
-            router.push(workspaceTabFrameUrl(nextUrl, tabId, window.location.origin))
+            window.location.assign(workspaceTabFrameUrl(nextUrl, tabId, window.location.origin))
         }
 
         function receiveHostMessage(event: MessageEvent<WorkspaceTabParentMessage>) {
@@ -75,14 +74,18 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             if (message?.source !== WORKSPACE_TAB_MESSAGE_SOURCE || message.target !== "frame" || message.tabId !== tabId) return
 
             if (message.type === "navigate" && message.url) {
-                router.push(workspaceTabFrameUrl(message.url, tabId, window.location.origin))
+                const target = workspaceTabFrameUrl(message.url, tabId, window.location.origin)
+                const current = `${window.location.pathname}${window.location.search}${window.location.hash}`
+                if (target !== current) window.location.assign(target)
             } else if (message.type === "traverse" && message.url) {
                 window.dispatchEvent(new Event("betelgeze:clear-loading"))
-                router.replace(workspaceTabFrameUrl(message.url, tabId, window.location.origin), { scroll: false })
+                const target = workspaceTabFrameUrl(message.url, tabId, window.location.origin)
+                const current = `${window.location.pathname}${window.location.search}${window.location.hash}`
+                if (target !== current) window.location.replace(target)
             } else if (message.type === "activate") {
                 document.body.dataset.workspaceTabActive = message.active ? "true" : "false"
                 window.dispatchEvent(new Event(WORKSPACE_TAB_VISIBILITY_EVENT))
-                if (message.active && message.refresh) router.refresh()
+                if (message.active && message.refresh) window.location.reload()
             }
         }
 
@@ -107,7 +110,7 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             window.removeEventListener("betelgeze:workspace-mutation", reportPossibleMutation)
             delete document.body.dataset.workspaceTabActive
         }
-    }, [router, tabId, workspaceSlug])
+    }, [tabId, workspaceSlug])
 
     return null
 }

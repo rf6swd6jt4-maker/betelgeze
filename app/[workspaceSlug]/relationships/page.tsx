@@ -4,7 +4,7 @@ import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { ListCreatorAvatar } from "@/components/list/ListCreatorAvatar"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
-import { RelationshipStage, RoundPill, SquarePill, Status, type StatusTone } from "@/components/ui"
+import { RelationshipStage } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import {
@@ -19,7 +19,6 @@ import {
 } from "@/lib/relationships"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { SERVICES } from "@/lib/onboarding/services"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 
 export const dynamic = "force-dynamic"
@@ -37,12 +36,6 @@ function displayPhone(value: string | null | undefined) {
     return value?.replace(/^(?:sms|whatsapp):/i, "") ?? null
 }
 
-function relationshipWorkStatus(openWorkCount: number, urgent = false): { label: string; tone: StatusTone } {
-    if (urgent) return { label: "Urgent", tone: "red" }
-    if (openWorkCount > 0) return { label: "Open work", tone: "yellow" }
-    return { label: "Up to date", tone: "green" }
-}
-
 export default async function RelationshipsPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user } = await requireWorkspace(workspaceSlug)
@@ -51,18 +44,6 @@ export default async function RelationshipsPage({ params }: PageProps) {
         countOpenWorkItemsByRelationship(workspace.id),
     ])
     const activeRelationships = relationships.filter((relationship) => relationship.status !== "archived")
-    const relationshipIds = activeRelationships.map((relationship) => relationship.id)
-    const servicesResult = relationshipIds.length
-        ? await supabaseAdmin
-            .from("relationship_services")
-            .select("relationship_id, service_key")
-            .eq("workspace_id", workspace.id)
-            .in("relationship_id", relationshipIds)
-        : { data: [] as Array<{ relationship_id: string; service_key: string }> }
-    const servicesByRelationshipId = new Map<string, string[]>()
-    for (const service of servicesResult.data ?? []) {
-        servicesByRelationshipId.set(service.relationship_id, [...(servicesByRelationshipId.get(service.relationship_id) ?? []), service.service_key])
-    }
     const clientIds = activeRelationships.map((relationship) => relationship.client_id).filter((id): id is string => Boolean(id))
     const clientsResult = clientIds.length
         ? await supabaseAdmin.from("clients").select("id, created_by").in("id", clientIds)
@@ -134,12 +115,9 @@ export default async function RelationshipsPage({ params }: PageProps) {
                             const effectiveWhatsappPhone = whatsappPhone ?? fallbackWhatsappPhone
                             const creatorId = metadataUserId(relationship.source_metadata) ?? (relationship.client_id ? clientCreatorById.get(relationship.client_id) : null)
                             const creator = creatorId ? creatorById.get(creatorId) : null
-                            const displayName = relationship.business_name
-                                ? `${relationship.primary_person_name} – ${relationship.business_name}`
-                                : relationship.primary_person_name
-                            const isTest = relationship.source_metadata.is_test === true
-                            const assignedServices = servicesByRelationshipId.get(relationship.id) ?? []
-                            const workStatus = relationshipWorkStatus(openWorkCount)
+                            const roleAndCompany = relationship.business_name
+                                ? [relationship.primary_contact_role, relationship.business_name].filter(Boolean).join(" – ")
+                                : null
                             const relationshipActions = [
                                 { label: "Open relationship", href: relationshipHref },
                                 smsPhone ? { label: "Copy phone", copyText: smsPhone } : {},
@@ -150,25 +128,15 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                 <div key={relationship.id} className="2xl:border-b 2xl:border-neutral-900 2xl:last:border-0">
                                     <MobileCardActionSurface actions={relationshipActions} label={`Open actions for ${relationship.primary_person_name}`} className="rounded-2xl border border-neutral-800 bg-black 2xl:hidden">
                                         <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex min-w-0 items-baseline gap-2">
-                                                    <Link href={relationshipHref} className="min-w-0 truncate text-base font-medium text-white underline decoration-neutral-600 underline-offset-4 hover:decoration-neutral-300">{displayName}</Link>
-                                                    {relationship.primary_contact_role ? <span className="shrink-0 text-sm text-neutral-400">{relationship.primary_contact_role}</span> : null}
-                                                </div>
-                                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                                    <RelationshipStage phase={relationship.lifecycle_phase} />
-                                                    {isTest ? <SquarePill tone="amber">Test</SquarePill> : null}
-                                                </div>
-                                            </div>
-                                            <Status label={workStatus.label} tone={workStatus.tone} className="shrink-0" />
+                                            <Link href={relationshipHref} className="min-w-0 flex-1 truncate text-base font-medium text-neutral-100 underline decoration-neutral-600 underline-offset-4 hover:text-white">
+                                                {relationship.primary_person_name}{roleAndCompany ? <span className="font-normal text-neutral-500"> · {roleAndCompany}</span> : null}
+                                            </Link>
+                                            <RelationshipStage phase={relationship.lifecycle_phase} className="shrink-0" />
                                         </div>
-                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5">
-                                            {smsPhone ? <p className="truncate text-sm text-neutral-200">SMS: {smsPhone}</p> : null}
-                                            {effectiveWhatsappPhone ? <p className="truncate text-sm text-neutral-300">WA: {effectiveWhatsappPhone}</p> : null}
-                                            {!smsPhone && !effectiveWhatsappPhone ? <p className="text-sm text-neutral-500">No phone</p> : null}
-                                            <div className="flex min-w-0 flex-1 flex-wrap justify-end gap-2">
-                                                {assignedServices.map((serviceKey) => <RoundPill key={serviceKey} tone="emerald">{SERVICES[serviceKey]?.title ?? serviceKey}</RoundPill>)}
-                                            </div>
+                                        <div className="flex items-center gap-3 px-3.5 py-2.5">
+                                            <p className="min-w-0 flex-1 truncate text-sm text-neutral-200">{smsPhone ?? effectiveWhatsappPhone ?? "No phone"}</p>
+                                            {smsPhone && effectiveWhatsappPhone && smsPhone !== effectiveWhatsappPhone ? <p className="truncate text-sm text-neutral-400">WA {effectiveWhatsappPhone}</p> : null}
+                                            <p className="truncate text-sm text-neutral-500">{openWorkCount ? `${openWorkCount} open` : "No open work"}</p>
                                             <p className="font-mono text-sm text-neutral-500">{shortId(relationship.id)}</p>
                                             <div className="ml-auto flex shrink-0 items-center gap-3">
                                                 <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(relationship.updated_at)}</p>
@@ -177,26 +145,23 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                         </div>
                                     </MobileCardActionSurface>
 
-                                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(230px,1.2fr)_120px_minmax(190px,0.9fr)_150px_minmax(150px,0.75fr)_120px_minmax(140px,0.7fr)_150px_32px] 2xl:items-center">
-                                        <div className="flex min-w-0 items-baseline gap-2">
-                                            <Link href={relationshipHref} className="truncate text-base font-medium text-neutral-100 hover:text-white hover:underline hover:decoration-neutral-600 hover:underline-offset-4">
-                                                {displayName}
-                                            </Link>
-                                            {relationship.primary_contact_role ? <span className="shrink-0 text-sm text-neutral-400">{relationship.primary_contact_role}</span> : null}
-                                        </div>
-                                        <Status label={workStatus.label} tone={workStatus.tone} />
+                                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(200px,1fr)_minmax(180px,0.9fr)_150px_minmax(150px,0.75fr)_120px_100px_150px_32px] 2xl:items-center">
                                         <div className="min-w-0">
-                                            {smsPhone ? <p className="truncate text-sm text-neutral-200">SMS: {smsPhone}</p> : null}
-                                            {effectiveWhatsappPhone ? <p className="truncate text-xs text-neutral-500">WA: {effectiveWhatsappPhone}</p> : null}
-                                            {!smsPhone && !effectiveWhatsappPhone ? <p className="text-sm text-neutral-500">No phone</p> : null}
+                                            <Link href={relationshipHref} className="truncate text-base font-medium text-neutral-100 hover:text-white hover:underline hover:decoration-neutral-600 hover:underline-offset-4">
+                                                {relationship.primary_person_name}{roleAndCompany ? <span className="font-normal text-neutral-500"> · {roleAndCompany}</span> : null}
+                                            </Link>
                                         </div>
-                                        <div className="flex flex-wrap items-center gap-2"><RelationshipStage phase={relationship.lifecycle_phase} />{isTest ? <SquarePill tone="amber">Test</SquarePill> : null}</div>
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm text-neutral-200">{smsPhone ?? effectiveWhatsappPhone ?? "No phone"}</p>
+                                            {smsPhone && effectiveWhatsappPhone && smsPhone !== effectiveWhatsappPhone ? <p className="truncate text-xs text-neutral-500">WA {effectiveWhatsappPhone}</p> : null}
+                                        </div>
+                                        <RelationshipStage phase={relationship.lifecycle_phase} />
                                         <div className="min-w-0">
                                             <p className="truncate text-sm text-neutral-300">{relationship.primary_email ?? "No email saved"}</p>
                                             <p className="truncate text-xs capitalize text-neutral-600">{location ?? "Location unset"}</p>
                                         </div>
                                         <p className="truncate text-sm capitalize text-neutral-400">{industry ?? "Industry unset"}</p>
-                                        <div className="flex flex-wrap gap-1.5">{assignedServices.map((serviceKey) => <RoundPill key={serviceKey} tone="emerald">{SERVICES[serviceKey]?.title ?? serviceKey}</RoundPill>)}</div>
+                                        <p className="text-sm text-neutral-500">{openWorkCount ? `${openWorkCount} open` : "No open work"}</p>
                                         <div className="flex items-center justify-end gap-3">
                                             <div className="min-w-0 text-right">
                                                 <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(relationship.updated_at)}</p>

@@ -50,6 +50,13 @@ type ClosedWorkspaceTab = {
     index: number
 }
 
+type WorkspaceTabDragPreview = {
+    left: number
+    width: number
+    title: string
+    active: boolean
+}
+
 type WorkspaceTabContextStatus = {
     supported: boolean
     relationshipId: string | null
@@ -332,7 +339,6 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const mutationRevisionRef = useRef(0)
     const tabButtonRefs = useRef(new Map<string, HTMLButtonElement>())
     const dragCleanupRef = useRef<(() => void) | null>(null)
-    const dragTargetIndexRef = useRef(0)
     const suppressTabClickRef = useRef("")
     const createIntentHandledRef = useRef("")
     const contextStatusByTabRef = useRef<Record<string, WorkspaceTabContextStatus>>({})
@@ -346,7 +352,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const [activeTabId, setActiveTabId] = useState("")
     const [canAddTab, setCanAddTab] = useState(true)
     const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
-    const [dragIndicatorX, setDragIndicatorX] = useState<number | null>(null)
+    const [tabDragPreview, setTabDragPreview] = useState<WorkspaceTabDragPreview | null>(null)
     const [contextOpenByTab, setContextOpenByTab] = useState<Record<string, boolean>>({})
     const [contextStatusByTab, setContextStatusByTab] = useState<Record<string, WorkspaceTabContextStatus>>({})
     const [routeLoadingTabId, setRouteLoadingTabId] = useState<string | null>(null)
@@ -1034,16 +1040,30 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         const pointerId = event.pointerId
         const startX = event.clientX
         const startY = event.clientY
-        const tabsAtDragStart = tabs
         const previousUserSelect = document.body.style.userSelect
+        const previousCursor = document.body.style.cursor
+        const draggedTab = tabs.find((tab) => tab.id === tabId)
+        const draggedTabRect = event.currentTarget.parentElement?.getBoundingClientRect()
+        const stripNode = tabStripRef.current
+        if (!draggedTab || !draggedTabRect || !stripNode) return
+        const dragStrip = stripNode
+        const dragRect = draggedTabRect
+        const dragTab = draggedTab
+        const grabOffsetX = startX - draggedTabRect.left
+        let orderedTabs = tabs
         let started = false
 
         event.currentTarget.setPointerCapture(pointerId)
 
-        function updateDropTarget(clientX: number) {
-            const strip = tabStripRef.current
-            if (!strip) return
-            const remainingTabs = tabsAtDragStart.filter((tab) => tab.id !== tabId)
+        function updateDrag(clientX: number) {
+            const stripRect = dragStrip.getBoundingClientRect()
+            const previewLeft = Math.min(
+                Math.max(clientX - stripRect.left - grabOffsetX, 0),
+                Math.max(0, dragStrip.clientWidth - dragRect.width)
+            )
+            setTabDragPreview((current) => current ? { ...current, left: previewLeft } : current)
+
+            const remainingTabs = orderedTabs.filter((tab) => tab.id !== tabId)
             const rects = remainingTabs
                 .map((tab) => tabButtonRefs.current.get(tab.id)?.parentElement?.getBoundingClientRect() ?? null)
                 .filter((rect): rect is DOMRect => Boolean(rect))
@@ -1051,12 +1071,11 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
             const foundIndex = rects.findIndex((rect) => clientX < rect.left + rect.width / 2)
             const targetIndex = foundIndex === -1 ? rects.length : foundIndex
-            const stripRect = strip.getBoundingClientRect()
-            const indicatorViewportX = targetIndex < rects.length
-                ? rects[targetIndex].left
-                : rects[rects.length - 1].right
-            dragTargetIndexRef.current = targetIndex
-            setDragIndicatorX(Math.min(Math.max(indicatorViewportX - stripRect.left, 0), strip.clientWidth))
+            setTabs((currentTabs) => {
+                const nextTabs = reorderWorkspaceTabs(currentTabs, tabId, targetIndex)
+                orderedTabs = nextTabs
+                return nextTabs
+            })
         }
 
         function move(pointerEvent: PointerEvent) {
@@ -1067,28 +1086,32 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                 if (Math.abs(deltaX) < 6 || Math.abs(deltaX) <= Math.abs(deltaY)) return
                 started = true
                 document.body.style.userSelect = "none"
+                document.body.style.cursor = "grabbing"
                 setDraggingTabId(tabId)
+                const stripRect = dragStrip.getBoundingClientRect()
+                setTabDragPreview({
+                    left: Math.min(Math.max(pointerEvent.clientX - stripRect.left - grabOffsetX, 0), Math.max(0, dragStrip.clientWidth - dragRect.width)),
+                    width: dragRect.width,
+                    title: dragTab.title,
+                    active: tabId === activeTabIdRef.current,
+                })
             }
             pointerEvent.preventDefault()
-            updateDropTarget(pointerEvent.clientX)
+            updateDrag(pointerEvent.clientX)
         }
 
-        function finish(cancelled: boolean) {
+        function finish() {
             window.removeEventListener("pointermove", move)
             window.removeEventListener("pointerup", up)
             window.removeEventListener("pointercancel", cancel)
             dragCleanupRef.current = null
             document.body.style.userSelect = previousUserSelect
+            document.body.style.cursor = previousCursor
             setDraggingTabId(null)
-            setDragIndicatorX(null)
+            setTabDragPreview(null)
 
-            if (!started || cancelled) return
-            setTabs((currentTabs) => {
-                const nextTabs = reorderWorkspaceTabs(currentTabs, tabId, dragTargetIndexRef.current)
-                if (nextTabs === currentTabs) return currentTabs
-                saveTabsState(nextTabs, activeTabIdRef.current)
-                return nextTabs
-            })
+            if (!started) return
+            saveTabsState(orderedTabs, activeTabIdRef.current)
             suppressTabClickRef.current = tabId
             window.setTimeout(() => {
                 if (suppressTabClickRef.current === tabId) suppressTabClickRef.current = ""
@@ -1096,14 +1119,14 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         }
 
         function up(pointerEvent: PointerEvent) {
-            if (pointerEvent.pointerId === pointerId) finish(false)
+            if (pointerEvent.pointerId === pointerId) finish()
         }
 
         function cancel(pointerEvent: PointerEvent) {
-            if (pointerEvent.pointerId === pointerId) finish(true)
+            if (pointerEvent.pointerId === pointerId) finish()
         }
 
-        dragCleanupRef.current = () => finish(true)
+        dragCleanupRef.current = finish
         window.addEventListener("pointermove", move, { passive: false })
         window.addEventListener("pointerup", up)
         window.addEventListener("pointercancel", cancel)
@@ -1388,14 +1411,11 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         <div data-workspace-tabbar className={`fixed top-14 z-40 h-11 border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/10 backdrop-blur ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
             <div className="flex h-full min-w-0 items-end gap-2 px-2 pt-1">
                 <div ref={tabStripRef} role="tablist" aria-label="Workspace tabs" className="relative flex h-full min-w-0 flex-1 items-end gap-1 overflow-hidden">
-                    {dragIndicatorX !== null && (
-                        <span aria-hidden="true" className="pointer-events-none absolute bottom-1 top-1 z-20 w-0.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.55)]" style={{ left: dragIndicatorX }} />
-                    )}
                     {visibleTabs.map((tab) => {
                         const active = tab.id === activeTabId || (!tabsHydrated && tab.id === "initial")
                         const dragging = tab.id === draggingTabId
                         return (
-                            <div key={tab.id} className={`group flex h-9 min-w-32 max-w-56 shrink-0 items-center rounded-t-lg border px-2 text-sm transition-[opacity,transform,background-color,border-color] duration-150 ${dragging ? "scale-[0.98] opacity-45" : ""} ${active ? "border-neutral-700 border-b-neutral-950 bg-neutral-950 text-white" : "border-transparent bg-neutral-900/55 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"}`}>
+                            <div key={tab.id} className={`group flex h-9 min-w-32 max-w-56 shrink-0 items-center rounded-t-lg border px-2 text-sm transition-[opacity,background-color,border-color] duration-150 ${dragging ? "opacity-0" : ""} ${active ? "border-neutral-700 border-b-neutral-950 bg-neutral-950 text-white" : "border-transparent bg-neutral-900/55 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"}`}>
                                 <button
                                     ref={(node) => { if (node) tabButtonRefs.current.set(tab.id, node); else tabButtonRefs.current.delete(tab.id) }}
                                     role="tab"
@@ -1420,6 +1440,16 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                             </div>
                         )
                     })}
+                    {tabDragPreview && (
+                        <div
+                            aria-hidden="true"
+                            className={`pointer-events-none absolute bottom-0 z-30 flex h-9 items-center rounded-t-lg border px-2 text-sm shadow-xl shadow-black/40 ${tabDragPreview.active ? "border-neutral-600 border-b-neutral-950 bg-neutral-950 text-white" : "border-neutral-700 bg-neutral-900 text-neutral-200"}`}
+                            style={{ left: tabDragPreview.left, width: tabDragPreview.width }}
+                        >
+                            <span className="min-w-0 flex-1 truncate text-left">{tabDragPreview.title}</span>
+                            <span className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center text-base leading-none text-neutral-400">×</span>
+                        </div>
+                    )}
                     <button data-icon-button type="button" onClick={addTab} disabled={!canAddTab} aria-label="Open new tab" className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-neutral-400">
                         <span aria-hidden="true" className="text-xl leading-none">+</span>
                     </button>

@@ -1,5 +1,6 @@
 export const SESSION_COOKIE_NAME = "betelgeze-auth"
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 90
+export const SESSION_MIGRATION_COOKIE_NAME = "betelgeze-session-v2"
 export const SESSION_RESPONSE_HEADER_NAMES = ["cache-control", "expires", "pragma"] as const
 
 function configuredCookieDomain(value: string | undefined) {
@@ -43,6 +44,13 @@ export function sessionCookieOptions(domain?: string) {
     return domain ? { ...options, domain } : options
 }
 
+export function sessionCookieMigrationTarget(name: string) {
+    if (name === SESSION_COOKIE_NAME || name.startsWith(`${SESSION_COOKIE_NAME}.`)) return name
+    const legacy = name.match(/^sb-[a-z0-9-]+-auth-token(?:\.(\d+))?$/i)
+    if (!legacy) return null
+    return legacy[1] ? `${SESSION_COOKIE_NAME}.${legacy[1]}` : SESSION_COOKIE_NAME
+}
+
 type SameSite = boolean | "lax" | "strict" | "none"
 
 export function persistentSessionOptions<T extends { maxAge?: number; domain?: string; path?: string; sameSite?: SameSite; secure?: boolean }>(options: T, domain?: string) {
@@ -64,7 +72,9 @@ export function applySessionResponseHeaders(response: Response, headers: Record<
     }
 }
 
-export function carrySessionResponse(source: Response, target: Response & { cookies: { set: (cookie: { name: string; value: string }) => unknown } }) {
+type CookieResponse = Response & { cookies: { set: (cookie: { name: string; value: string }) => unknown } }
+
+export function carrySessionResponse<T extends CookieResponse>(source: Response, target: T): T {
     const sourceWithCookies = source as Response & { cookies?: { getAll: () => Array<{ name: string; value: string }> } }
     sourceWithCookies.cookies?.getAll().forEach((cookie) => target.cookies.set(cookie))
     for (const name of SESSION_RESPONSE_HEADER_NAMES) {

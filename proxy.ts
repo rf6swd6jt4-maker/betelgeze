@@ -1,10 +1,15 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { migrateLegacyAuthCookies } from "@/lib/supabase/legacy-cookies"
 import { applySessionResponseHeaders, carrySessionResponse, persistentSessionOptions, sessionCookieDomain, sessionCookieOptions } from "@/lib/supabase/session-cookies"
 
 async function refreshSession(request: NextRequest) {
     const headers = requestHeadersWithCurrentPath(request)
     let response = NextResponse.next({ request: { headers } })
+    migrateLegacyAuthCookies(request, response)
+    response = carrySessionResponse(response, NextResponse.next({
+        request: { headers: requestHeadersWithCurrentPath(request) },
+    }))
     const sessionDomain = sessionCookieDomain()
     const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         cookieOptions: sessionCookieOptions(sessionDomain),
@@ -16,9 +21,9 @@ async function refreshSession(request: NextRequest) {
                 // Components with the expired token for this request and causes a
                 // spurious redirect back through login.
                 items.forEach(({ name, value }) => request.cookies.set(name, value))
-                response = NextResponse.next({
+                response = carrySessionResponse(response, NextResponse.next({
                     request: { headers: requestHeadersWithCurrentPath(request) },
-                })
+                }))
                 items.forEach(({ name, value, options }) =>
                     response.cookies.set(name, value, persistentSessionOptions(options, sessionDomain))
                 )

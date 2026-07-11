@@ -7,8 +7,9 @@ const DEFINITIVE_SESSION_ERROR_CODES = new Set([
     "session_not_found",
 ])
 
-export function isDefinitiveSessionError(error: Pick<AuthError, "code" | "status"> | null) {
+export function isDefinitiveSessionError(error: Pick<AuthError, "code" | "name" | "status"> | null) {
     if (!error) return false
+    if (error.name === "AuthSessionMissingError") return true
     if (error.code && DEFINITIVE_SESSION_ERROR_CODES.has(error.code)) return true
     return error.status === 401 || error.status === 403
 }

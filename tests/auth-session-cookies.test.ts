@@ -6,6 +6,7 @@ import {
     persistentSessionOptions,
     SESSION_MAX_AGE_SECONDS,
     sessionCookieDomain,
+    sessionCookieMigrationTarget,
     sessionCookieOptions,
 } from "../lib/supabase/session-cookies.ts"
 import { isInstalledAppHostname } from "../lib/auth/redirects.ts"
@@ -42,9 +43,17 @@ test("keeps both current and legacy installed app hosts inside their auth scope"
 })
 
 test("only treats definitive credential failures as a signed-out session", () => {
-    assert.equal(isDefinitiveSessionError({ code: "refresh_token_not_found", status: 400 }), true)
-    assert.equal(isDefinitiveSessionError({ code: "unexpected_failure", status: 503 }), false)
-    assert.equal(isDefinitiveSessionError({ code: "over_request_rate_limit", status: 429 }), false)
+    assert.equal(isDefinitiveSessionError({ code: undefined, name: "AuthSessionMissingError", status: 400 }), true)
+    assert.equal(isDefinitiveSessionError({ code: "refresh_token_not_found", name: "AuthApiError", status: 400 }), true)
+    assert.equal(isDefinitiveSessionError({ code: "unexpected_failure", name: "AuthUnknownError", status: 503 }), false)
+    assert.equal(isDefinitiveSessionError({ code: "over_request_rate_limit", name: "AuthApiError", status: 429 }), false)
+})
+
+test("maps legacy Supabase cookie chunks onto the shared session name", () => {
+    assert.equal(sessionCookieMigrationTarget("sb-project-ref-auth-token"), "betelgeze-auth")
+    assert.equal(sessionCookieMigrationTarget("sb-project-ref-auth-token.0"), "betelgeze-auth.0")
+    assert.equal(sessionCookieMigrationTarget("betelgeze-auth.1"), "betelgeze-auth.1")
+    assert.equal(sessionCookieMigrationTarget("unrelated"), null)
 })
 
 test("applies Supabase no-store headers to auth responses", () => {

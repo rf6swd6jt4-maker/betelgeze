@@ -148,13 +148,13 @@ export default async function RelationshipsPage({ params }: PageProps) {
                             return (
                                 <div key={relationship.id} className="2xl:border-b 2xl:border-neutral-900 2xl:last:border-0">
                                     <MobileCardActionSurface actions={relationshipActions} label={`Open actions for ${relationship.primary_person_name}`} className="rounded-2xl border border-neutral-800 bg-black 2xl:hidden">
-                                        <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
-                                            <Link href={relationshipHref} className="min-w-0 flex-1 truncate text-base font-medium text-neutral-100 underline decoration-neutral-600 underline-offset-4 hover:text-white">
+                                        <div className="flex items-center gap-2 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
+                                            <Link href={relationshipHref} className="min-w-0 max-w-[45%] truncate text-base font-medium text-neutral-100 underline decoration-neutral-600 underline-offset-4 hover:text-white">
                                                 {relationshipTitle}
                                             </Link>
                                             {isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}
-                                            {workStatus}
-                                            <RelationshipStage phase={relationship.lifecycle_phase} className="shrink-0" />
+                                            <span className="ml-2 shrink-0">{workStatus}</span>
+                                            <RelationshipStage phase={relationship.lifecycle_phase} className="ml-auto shrink-0" />
                                         </div>
                                         <div className="flex flex-wrap items-center gap-2 px-3.5 py-2.5">
                                             {relationship.primary_contact_role ? <span className="mr-1 shrink-0 text-sm text-neutral-400">{relationship.primary_contact_role}</span> : null}
@@ -176,7 +176,7 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                                     {relationshipTitle}
                                                 </Link>
                                                 {isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}
-                                                {workStatus}
+                                                <span className="ml-2 shrink-0">{workStatus}</span>
                                             </div>
                                             {relationship.primary_contact_role ? <p className="mt-1 truncate text-sm text-neutral-400">{relationship.primary_contact_role}</p> : null}
                                         </div>

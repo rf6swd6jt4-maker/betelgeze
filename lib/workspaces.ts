@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import type { User } from "@supabase/supabase-js"
 import { redirectToLogin } from "@/lib/auth/server-redirects"
+import { getVerifiedUser } from "@/lib/auth/verified-user"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
@@ -37,8 +38,7 @@ export function isValidWorkspaceSlug(value: string) {
 
 export async function getCurrentUser() {
     const supabase = await createSupabaseServerClient()
-    const { data } = await supabase.auth.getUser()
-    return data.user
+    return getVerifiedUser(supabase)
 }
 
 export async function requireWorkspace(
@@ -46,8 +46,7 @@ export async function requireWorkspace(
     minimumRole: WorkspaceRole = "member"
 ): Promise<{ user: User; workspace: Workspace; role: WorkspaceRole }> {
     const supabase = await createSupabaseServerClient()
-    const { data: userData } = await supabase.auth.getUser()
-    const user = userData.user
+    const user = await getVerifiedUser(supabase)
     if (!user) return await redirectToLogin()
 
     const workspaceResult = await supabaseAdmin

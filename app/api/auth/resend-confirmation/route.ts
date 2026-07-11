@@ -7,7 +7,8 @@ const authOrigin = "https://auth.betelgeze.com"
 
 function authOriginForRequest(request: NextRequest) {
     const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host"))?.split(":")[0]?.toLowerCase()
-    return host === "app.betelgeze.com" ? "https://app.betelgeze.com" : authOrigin
+    if (host === "app.betelgeze.com" || host === "dashboard.betelgeze.com") return `https://${host}`
+    return authOrigin
 }
 
 export async function POST(request: NextRequest) {

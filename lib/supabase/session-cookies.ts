@@ -1,5 +1,6 @@
 export const SESSION_COOKIE_NAME = "betelgeze-auth"
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 90
+export const SESSION_RESPONSE_HEADER_NAMES = ["cache-control", "expires", "pragma"] as const
 
 function configuredCookieDomain(value: string | undefined) {
     const domain = value?.trim()
@@ -55,4 +56,20 @@ export function persistentSessionOptions<T extends { maxAge?: number; domain?: s
         sameSite: options.sameSite ?? "lax" as const,
         maxAge: options.maxAge && options.maxAge > 0 ? Math.min(options.maxAge, SESSION_MAX_AGE_SECONDS) : options.maxAge,
     }
+}
+
+export function applySessionResponseHeaders(response: Response, headers: Record<string, string>) {
+    for (const [name, value] of Object.entries(headers)) {
+        response.headers.set(name, value)
+    }
+}
+
+export function carrySessionResponse(source: Response, target: Response & { cookies: { set: (cookie: { name: string; value: string }) => unknown } }) {
+    const sourceWithCookies = source as Response & { cookies?: { getAll: () => Array<{ name: string; value: string }> } }
+    sourceWithCookies.cookies?.getAll().forEach((cookie) => target.cookies.set(cookie))
+    for (const name of SESSION_RESPONSE_HEADER_NAMES) {
+        const value = source.headers.get(name)
+        if (value) target.headers.set(name, value)
+    }
+    return target
 }

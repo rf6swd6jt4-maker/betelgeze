@@ -6,6 +6,9 @@ export function createClient() {
     return createBrowserClient(
         getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
         getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
-        { cookieOptions: sessionCookieOptions(browserSessionCookieDomain()) }
+        {
+            cookieOptions: sessionCookieOptions(browserSessionCookieDomain()),
+            auth: { autoRefreshToken: false },
+        }
     )
 }

@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextRequest, NextResponse } from "next/server"
-import { persistentSessionOptions, sessionCookieDomain, sessionCookieOptions } from "@/lib/supabase/session-cookies"
+import { applySessionResponseHeaders, persistentSessionOptions, sessionCookieDomain, sessionCookieOptions } from "@/lib/supabase/session-cookies"
 
 const SESSION_DOMAIN = sessionCookieDomain()
 
@@ -9,7 +9,10 @@ export function createSupabaseRouteClient(request: NextRequest, response: NextRe
         cookieOptions: sessionCookieOptions(SESSION_DOMAIN),
         cookies: {
             getAll: () => request.cookies.getAll(),
-            setAll: (items) => items.forEach(({ name, value, options }) => response.cookies.set(name, value, persistentSessionOptions(options, SESSION_DOMAIN))),
+            setAll: (items, headers) => {
+                items.forEach(({ name, value, options }) => response.cookies.set(name, value, persistentSessionOptions(options, SESSION_DOMAIN)))
+                applySessionResponseHeaders(response, headers)
+            },
         },
     })
 }

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createSupabaseRouteClient } from "@/lib/supabase/route"
+import { carrySessionResponse } from "@/lib/supabase/session-cookies"
 
 function jsonWithSessionCookies<T>(sessionResponse: NextResponse, body: T, init?: ResponseInit) {
     const response = NextResponse.json(body, init)
-    sessionResponse.cookies.getAll().forEach((cookie) => response.cookies.set(cookie))
-    return response
+    return carrySessionResponse(sessionResponse, response)
 }
 
 export async function GET(request: NextRequest) {

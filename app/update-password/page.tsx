@@ -34,7 +34,8 @@ export default function UpdatePasswordPage() {
             setLoading(false)
             return
         }
-        await supabase.auth.signOut()
+        await supabase.auth.signOut({ scope: "local" })
+        await fetch("/api/auth/session-recovery", { method: "POST" })
         router.replace("/login?passwordReset=1")
         router.refresh()
     }

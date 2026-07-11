@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation"
 import { redirectToLogin } from "@/lib/auth/server-redirects"
+import { getVerifiedUser } from "@/lib/auth/verified-user"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
 export default async function WorkspacesRedirectPage() {
     const supabase = await createSupabaseServerClient()
-    const { data: userData } = await supabase.auth.getUser()
-    const user = userData.user
+    const user = await getVerifiedUser(supabase)
     if (!user) return await redirectToLogin()
 
     const { data: memberships } = await supabaseAdmin

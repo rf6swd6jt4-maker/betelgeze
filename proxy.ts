@@ -1,7 +1,6 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
-import { clearLegacyHostOnlyAuthCookies } from "@/lib/supabase/legacy-cookies"
-import { persistentSessionOptions, sessionCookieDomain, sessionCookieOptions } from "@/lib/supabase/session-cookies"
+import { applySessionResponseHeaders, carrySessionResponse, persistentSessionOptions, sessionCookieDomain, sessionCookieOptions } from "@/lib/supabase/session-cookies"
 
 async function refreshSession(request: NextRequest) {
     const headers = requestHeadersWithCurrentPath(request)
@@ -11,7 +10,7 @@ async function refreshSession(request: NextRequest) {
         cookieOptions: sessionCookieOptions(sessionDomain),
         cookies: {
             getAll: () => request.cookies.getAll(),
-            setAll: (items) => {
+            setAll: (items, responseHeaders) => {
                 // The page rendered behind Proxy must see the refreshed session
                 // immediately. Updating only the browser response leaves Server
                 // Components with the expired token for this request and causes a
@@ -23,16 +22,14 @@ async function refreshSession(request: NextRequest) {
                 items.forEach(({ name, value, options }) =>
                     response.cookies.set(name, value, persistentSessionOptions(options, sessionDomain))
                 )
+                applySessionResponseHeaders(response, responseHeaders)
             },
         },
     })
-    await supabase.auth.getUser()
+    // getClaims verifies locally when the project uses asymmetric signing
+    // keys, while still refreshing an expired session when needed.
+    await supabase.auth.getClaims()
     return response
-}
-
-function carryCookies(target: NextResponse, source: NextResponse) {
-    source.cookies.getAll().forEach((cookie) => target.cookies.set(cookie))
-    return target
 }
 
 function requestHostname(request: NextRequest) {
@@ -87,15 +84,6 @@ function isAppHost(domain: string | null) {
     return domain === APP_HOST || domain === DASHBOARD_HOST
 }
 
-function appReturnUrl(domain: string | null, nextParam: string | null) {
-    if (nextParam && /^https:\/\/(app|dashboard|onboarding|leadgen)\.betelgeze\.com(?:\/|$)/.test(nextParam)) {
-        return nextParam
-    }
-    const host = domain ?? APP_HOST
-    if (nextParam?.startsWith("/") && !nextParam.startsWith("//")) return `https://${host}${nextParam}`
-    return `https://${host}/`
-}
-
 async function getCustomDomainWorkspace(domain: string) {
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -130,10 +118,8 @@ export async function proxy(request: NextRequest) {
         ? await refreshSession(request)
         : NextResponse.next({ request: { headers: requestHeadersWithCurrentPath(request) } })
 
-    async function withSession(response: NextResponse) {
-        const responseWithSession = carryCookies(response, sessionResponse)
-        clearLegacyHostOnlyAuthCookies(request, responseWithSession)
-        return responseWithSession
+    function withSession(response: NextResponse) {
+        return carrySessionResponse(sessionResponse, response)
     }
 
     const isCentralAuthRoute = AUTH_PATHS.some((authPath) => path === authPath || path.startsWith(`${authPath}/`))
@@ -150,17 +136,6 @@ export async function proxy(request: NextRequest) {
         request.nextUrl.searchParams.forEach((value, key) => destination.searchParams.set(key, value))
         if (!destination.searchParams.has("next")) destination.searchParams.set("next", "/email-confirmed")
         destination.searchParams.set("confirmed_redirect", "1")
-        return withSession(NextResponse.redirect(destination))
-    }
-
-    if (domain === DASHBOARD_HOST && (path === "/login" || path === "/mfa")) {
-        const next = appReturnUrl(domain, request.nextUrl.searchParams.get("next"))
-        return withSession(NextResponse.redirect(new URL(`${path}?next=${encodeURIComponent(next)}`, `https://${AUTH_HOST}`)))
-    }
-
-    if (domain === DASHBOARD_HOST && isCentralAuthRoute) {
-        const destination = new URL(`https://${AUTH_HOST}${path}`)
-        destination.search = request.nextUrl.search
         return withSession(NextResponse.redirect(destination))
     }
 
@@ -195,7 +170,7 @@ export async function proxy(request: NextRequest) {
         if (path === "/") return withSession(withRewrite(request, "/login"))
         const isAuthPath = AUTH_PATHS.some((authPath) => path === authPath || path.startsWith(`${authPath}/`))
         if (!isAuthPath) {
-            const destination = new URL(`https://${DASHBOARD_HOST}${path}`)
+            const destination = new URL(`https://${APP_HOST}${path}`)
             destination.search = request.nextUrl.search
             return withSession(NextResponse.redirect(destination))
         }
@@ -208,17 +183,17 @@ export async function proxy(request: NextRequest) {
             return withSession(NextResponse.redirect(destination))
         }
         if (path === "/dashboard" || path.startsWith("/dashboard/")) {
-            const destination = new URL(`https://${DASHBOARD_HOST}${path === "/dashboard" ? "/workspaces" : path.slice("/dashboard".length)}`)
+            const destination = new URL(`https://${APP_HOST}${path === "/dashboard" ? "/workspaces" : path.slice("/dashboard".length)}`)
             destination.search = request.nextUrl.search
             return withSession(NextResponse.redirect(destination))
         }
         const workspacePath = path.match(/^\/([a-z0-9][a-z0-9-]*)(?:\/(.*))?$/i)
         if (workspacePath) {
-            const destination = new URL(`https://${DASHBOARD_HOST}/${workspacePath[1].toLowerCase()}/leadgen${workspacePath[2] ? `/${workspacePath[2].replace(/\/$/, "")}` : ""}`)
+            const destination = new URL(`https://${APP_HOST}/${workspacePath[1].toLowerCase()}/leadgen${workspacePath[2] ? `/${workspacePath[2].replace(/\/$/, "")}` : ""}`)
             destination.search = request.nextUrl.search
             return withSession(NextResponse.redirect(destination))
         }
-        const destination = new URL(`https://${DASHBOARD_HOST}/workspaces`)
+        const destination = new URL(`https://${APP_HOST}/workspaces`)
         destination.search = request.nextUrl.search
         return withSession(NextResponse.redirect(destination))
     }
@@ -257,8 +232,6 @@ export async function proxy(request: NextRequest) {
             return NextResponse.rewrite(url, { request: { headers } })
         }
     }
-
-    clearLegacyHostOnlyAuthCookies(request, sessionResponse)
 
     return sessionResponse
 }

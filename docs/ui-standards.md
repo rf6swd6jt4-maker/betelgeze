@@ -38,15 +38,25 @@ Use `Assignee` when the attached thing is a person assigned to something. It is 
 
 ## SquarePill
 
-`SquarePill` is the boxier, rounded-corner label treatment. Use it for categorical labels such as `Stuck`, `Test`, or a relationship stage. It shares RoundPill's border, background, text, spacing, and colour palette; only its shape differs.
-
-Relationship stages are labels, not statuses. Represent them with `SquarePill`, allowing categorical colours where useful, instead of expanding the four-colour status system.
+`SquarePill` is the boxier, rounded-corner label treatment. Use it for categorical labels such as `Stuck` or `Test`. It shares RoundPill's border, background, text, spacing, and colour palette; only its shape differs.
 
 ```tsx
 <SquarePill tone="amber">Stuck</SquarePill>
 <SquarePill tone="violet">Test</SquarePill>
-<SquarePill tone="sky">Onboarding</SquarePill>
 ```
+
+## RelationshipStage
+
+`RelationshipStage` is reserved for relationship lifecycle stages. It is a horizontal hexagonal or prism label: flat along the top and bottom with equilateral-style triangular points at each end.
+
+Relationship stages are categorical labels, not operational statuses. Their stage-specific colours therefore do not expand or alter the four-colour `Status` meanings. Pass the lifecycle phase itself so the component owns both its canonical wording and colour.
+
+```tsx
+<RelationshipStage phase="onboarding" />
+<RelationshipStage phase="fulfilment" />
+```
+
+Do not use this shape for statuses, tests, warnings, services, modules, or arbitrary metadata.
 
 ## Shared rules
 

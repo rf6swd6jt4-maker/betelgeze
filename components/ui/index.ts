@@ -1,5 +1,6 @@
 export { Assignee } from "./Assignee"
 export { RoundPill } from "./RoundPill"
+export { RelationshipStage } from "./RelationshipStage"
 export { SquarePill } from "./SquarePill"
 export type { PillTone } from "./pill-styles"
 export { Status, type StatusTone } from "./Status"

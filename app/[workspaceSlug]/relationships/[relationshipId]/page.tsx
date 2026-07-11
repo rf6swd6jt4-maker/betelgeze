@@ -1,11 +1,11 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
+import { RelationshipStage } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
 import {
     getRelationship,
     onboardingDetailHref,
-    phaseLabel,
     workDetailHref,
 } from "@/lib/relationships"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
@@ -51,7 +51,7 @@ export default async function RelationshipDetailPlaceholder({ params }: PageProp
                             </div>
                             <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
                                 <p className="text-sm text-neutral-500">Lifecycle</p>
-                                <p className="mt-2 font-medium">{phaseLabel(relationship.lifecycle_phase)}</p>
+                                <RelationshipStage phase={relationship.lifecycle_phase} className="mt-2" />
                             </div>
                             <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
                                 <p className="text-sm text-neutral-500">Updated</p>

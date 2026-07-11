@@ -4,7 +4,7 @@ import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { ListCreatorAvatar } from "@/components/list/ListCreatorAvatar"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
-import { SquarePill, type PillTone } from "@/components/ui"
+import { RelationshipStage } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import {
@@ -13,7 +13,6 @@ import {
     relationshipIndustryLabel,
     relationshipLocationLabel,
     listRelationshipsForWorkspace,
-    phaseLabel,
     relationshipHubHref,
     workspaceHref,
     type RelationshipPhase,
@@ -26,18 +25,6 @@ export const dynamic = "force-dynamic"
 
 type PageProps = {
     params: Promise<{ workspaceSlug: string }>
-}
-
-const phaseTone: Record<RelationshipPhase, PillTone> = {
-    lead: "sky",
-    nurturing: "violet",
-    potential_client: "amber",
-    invoiced: "sky",
-    onboarding: "amber",
-    onboarding_complete: "emerald",
-    fulfilment: "sky",
-    retention: "violet",
-    completed_lost: "neutral",
 }
 
 function metadataUserId(metadata: Record<string, unknown>) {
@@ -144,9 +131,7 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                             <Link href={relationshipHref} className="min-w-0 flex-1 truncate text-base font-medium text-neutral-100 underline decoration-neutral-600 underline-offset-4 hover:text-white">
                                                 {relationship.primary_person_name}{roleAndCompany ? <span className="font-normal text-neutral-500"> · {roleAndCompany}</span> : null}
                                             </Link>
-                                            <SquarePill tone={phaseTone[relationship.lifecycle_phase]} className="shrink-0">
-                                                {phaseLabel(relationship.lifecycle_phase)}
-                                            </SquarePill>
+                                            <RelationshipStage phase={relationship.lifecycle_phase} className="shrink-0" />
                                         </div>
                                         <div className="flex items-center gap-3 px-3.5 py-2.5">
                                             <p className="min-w-0 flex-1 truncate text-sm text-neutral-200">{smsPhone ?? effectiveWhatsappPhone ?? "No phone"}</p>
@@ -170,9 +155,7 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                             <p className="truncate text-sm text-neutral-200">{smsPhone ?? effectiveWhatsappPhone ?? "No phone"}</p>
                                             {smsPhone && effectiveWhatsappPhone && smsPhone !== effectiveWhatsappPhone ? <p className="truncate text-xs text-neutral-500">WA {effectiveWhatsappPhone}</p> : null}
                                         </div>
-                                        <SquarePill tone={phaseTone[relationship.lifecycle_phase]} className="w-fit">
-                                            {phaseLabel(relationship.lifecycle_phase)}
-                                        </SquarePill>
+                                        <RelationshipStage phase={relationship.lifecycle_phase} />
                                         <div className="min-w-0">
                                             <p className="truncate text-sm text-neutral-300">{relationship.primary_email ?? "No email saved"}</p>
                                             <p className="truncate text-xs capitalize text-neutral-600">{location ?? "Location unset"}</p>

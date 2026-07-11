@@ -23,6 +23,7 @@ import {
     workspaceTabContextStorageKey,
     workspaceTabHistoryStep,
     workspaceTabFrameUrl,
+    workspaceRouteCanShowRelationshipContext,
     type WorkspaceTabFrameMessage,
     type WorkspaceTabParentMessage,
     type WorkspaceTabRelationshipContext,
@@ -405,13 +406,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     }, [defaultWorkspaceUrl])
 
     const routeCanShowRelationshipContext = useCallback((url: string) => {
-        const parsed = new URL(url, window.location.origin)
-        const suffix = parsed.pathname.startsWith(`${defaultWorkspaceUrl}/`)
-            ? parsed.pathname.slice(defaultWorkspaceUrl.length + 1)
-            : ""
-        const [section, id] = suffix.split("/")
-        return Boolean(id) && (section === "relationships" || section === "onboarding" || section === "work")
-    }, [defaultWorkspaceUrl])
+        return workspaceRouteCanShowRelationshipContext(url, workspace.slug, window.location.origin)
+    }, [workspace.slug])
 
     const saveTabsState = useCallback((nextTabs: WorkspaceTab[], nextActiveId: string) => {
         sessionStorage.setItem(tabsStorageKey, JSON.stringify({ mode: "live", tabs: nextTabs, activeId: nextActiveId }))
@@ -584,6 +580,10 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     saveTabsState(updatedTabs, activeTabIdRef.current)
                     return updatedTabs
                 })
+                if (!routeCanShowRelationshipContext(url)) {
+                    setTabContextStatus(message.tabId, { supported: false, relationshipId: null, context: null })
+                    setTabContextOpen(message.tabId, false)
+                }
             }
 
             if (message.type === "mutation") {
@@ -626,7 +626,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
         window.addEventListener("message", receiveFrameMessage)
         return () => window.removeEventListener("message", receiveFrameMessage)
-    }, [normalizeWorkspaceUrl, reopenClosedTab, saveTabsState, setTabContextOpen, setTabContextStatus, titleForUrl])
+    }, [normalizeWorkspaceUrl, reopenClosedTab, routeCanShowRelationshipContext, saveTabsState, setTabContextOpen, setTabContextStatus, titleForUrl])
 
     useEffect(() => {
         if (!tabsHydrated) return

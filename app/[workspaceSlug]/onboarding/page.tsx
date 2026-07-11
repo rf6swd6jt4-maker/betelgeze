@@ -32,28 +32,6 @@ function metadataSessionId(metadata: unknown) {
         : ""
 }
 
-function OnboardingProgressRail({ completed, total, percentage }: { completed: number; total: number; percentage: number }) {
-    if (total === 0) {
-        return <div className="min-w-0">
-            <p className="text-xs text-neutral-500">No steps configured</p>
-            <div className="mt-1.5 h-1.5 rounded-full bg-neutral-800" aria-label="No onboarding steps configured" />
-        </div>
-    }
-
-    const segmentCount = Math.max(total, 1)
-    return <div className="min-w-0">
-        <div className="flex items-center justify-between gap-3 text-xs">
-            <p className="text-neutral-500"><span className="text-neutral-200">{completed}</span>/{total} steps</p>
-            <p className="font-mono tabular-nums text-neutral-500">{percentage}%</p>
-        </div>
-        <div className="mt-1.5 flex h-1.5 gap-1" aria-label={`${completed} of ${total} onboarding steps complete`}>
-            {Array.from({ length: segmentCount }, (_, index) => (
-                <span key={index} className={`min-w-1 flex-1 rounded-full ${index < completed ? "bg-emerald-300" : "bg-neutral-800"}`} />
-            ))}
-        </div>
-    </div>
-}
-
 export default async function RelationshipOnboardingPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user } = await requireWorkspace(workspaceSlug)
@@ -155,7 +133,6 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
             return {
                 relationship,
                 session,
-                percentage,
                 completedCount: completedKeys.length,
                 missingCount: Math.max(0, items.length - completedKeys.length),
                 stuck,
@@ -199,7 +176,7 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
                 </section>
 
                 <section className="mt-5 space-y-3 2xl:space-y-0 2xl:overflow-hidden 2xl:rounded-2xl 2xl:border 2xl:border-neutral-800 2xl:bg-black">
-                    {rows.length ? rows.map(({ relationship, session, percentage, completedCount, missingCount, latestActivity, assetSummary }) => {
+                    {rows.length ? rows.map(({ relationship, session, completedCount, missingCount, latestActivity, assetSummary }) => {
                         const onboardingHref = onboardingDetailHref(workspace.slug, relationship.id)
                         const title = relationship.business_name
                             ? `${relationship.primary_person_name} – ${relationship.business_name}`
@@ -207,7 +184,6 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
                         const creator = session.created_by ? creatorById.get(session.created_by) : null
                         const serviceKeys = serviceKeysByRelationship.get(relationship.id) ?? []
                         const moduleKeys = moduleKeysByRelationship.get(relationship.id) ?? []
-                        const totalSteps = completedCount + missingCount
                         const actions = [
                             { label: "Open onboarding", href: onboardingHref },
                             { label: "Copy onboarding link", copyText: getOnboardingUrl({
@@ -217,9 +193,8 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
                                 customDomainVerified: workspace.custom_onboarding_domain_status === "verified",
                             }) },
                         ]
-                        const progress = <OnboardingProgressRail completed={completedCount} total={totalSteps} percentage={percentage} />
                         const stats = <p className="whitespace-nowrap text-sm text-neutral-500">
-                            <span className="text-neutral-200">{assetSummary.submissions}</span> submissions · <span className="text-neutral-200">{assetSummary.uploads}</span> files
+                            <span className="text-neutral-200">{completedCount}</span>/{completedCount + missingCount} steps · <span className="text-neutral-200">{assetSummary.submissions}</span> submissions · <span className="text-neutral-200">{assetSummary.uploads}</span> files
                         </p>
                         return <div key={relationship.id} className="2xl:border-b 2xl:border-neutral-900 2xl:last:border-0">
                             <MobileCardActionSurface actions={actions} label={`Open actions for ${relationship.primary_person_name}`} className="rounded-2xl border border-neutral-800 bg-black 2xl:hidden">
@@ -230,23 +205,22 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
                                     {session.is_test ? <SquarePill tone="yellow" className="shrink-0">Test</SquarePill> : null}
                                     <Status label="In Progress" tone="yellow" className="shrink-0" />
                                 </div>
-                                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-5 border-b border-neutral-900 px-3.5 py-2.5">
-                                    {progress}
+                                <div className="flex min-w-0 items-center gap-3 overflow-hidden px-3.5 py-2.5">
+                                    <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+                                        {relationship.primary_contact_role ? <span className="mr-1 shrink-0 truncate text-sm text-neutral-400">{relationship.primary_contact_role}</span> : null}
+                                        {serviceKeys.map((serviceKey) => <RoundPill key={serviceKey} tone="emerald">{SERVICES[serviceKey]?.title ?? serviceKey}</RoundPill>)}
+                                        {moduleKeys.map((moduleKey) => <RoundPill key={moduleKey} tone="sky">{MODULES[moduleKey]?.title ?? moduleKey}</RoundPill>)}
+                                    </div>
                                     {stats}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2 border-b border-neutral-900 px-3.5 py-2.5">
-                                    {relationship.primary_contact_role ? <span className="mr-1 text-sm text-neutral-400">{relationship.primary_contact_role}</span> : null}
-                                    {serviceKeys.map((serviceKey) => <RoundPill key={serviceKey} tone="emerald">{SERVICES[serviceKey]?.title ?? serviceKey}</RoundPill>)}
-                                    {moduleKeys.map((moduleKey) => <RoundPill key={moduleKey} tone="sky">{MODULES[moduleKey]?.title ?? moduleKey}</RoundPill>)}
-                                </div>
-                                <div className="flex items-center justify-end gap-3 px-3.5 py-2.5">
-                                    <p className="font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
-                                    <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(latestActivity)}</p>
-                                    <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
+                                    <div className="flex shrink-0 items-center gap-3">
+                                        <p className="font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
+                                        <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(latestActivity)}</p>
+                                        <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
+                                    </div>
                                 </div>
                             </MobileCardActionSurface>
 
-                            <div className="hidden min-h-16 gap-4 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(280px,1.15fr)_120px_minmax(180px,0.8fr)_170px_minmax(220px,1fr)_190px_32px] 2xl:items-center">
+                            <div className="hidden min-h-16 gap-4 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(280px,1.15fr)_120px_230px_minmax(220px,1fr)_190px_32px] 2xl:items-center">
                                 <div className="min-w-0">
                                     <div className="flex min-w-0 items-center gap-3">
                                         <Link href={onboardingHref} className="truncate text-base font-medium text-neutral-100 hover:text-white hover:underline hover:decoration-neutral-600 hover:underline-offset-4">{title}</Link>
@@ -255,7 +229,6 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
                                     {relationship.primary_contact_role ? <p className="mt-1 truncate text-sm text-neutral-400">{relationship.primary_contact_role}</p> : null}
                                 </div>
                                 <Status label="In Progress" tone="yellow" className="shrink-0" />
-                                {progress}
                                 {stats}
                                 <div className="flex min-w-0 flex-wrap gap-1.5">
                                     {serviceKeys.map((serviceKey) => <RoundPill key={serviceKey} tone="emerald">{SERVICES[serviceKey]?.title ?? serviceKey}</RoundPill>)}

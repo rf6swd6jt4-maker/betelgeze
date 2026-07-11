@@ -8,6 +8,7 @@ import {
     WORKSPACE_TAB_FRAME_PARAM,
     workspaceTabFrameUrl,
     workspaceTabHistoryStep,
+    workspaceRouteCanShowRelationshipContext,
 } from "../lib/workspace-tabs.ts"
 
 const origin = "https://dashboard.betelgeze.com"
@@ -34,6 +35,14 @@ test("adds a tab identity while preserving filters and hash navigation", () => {
         workspaceTabFrameUrl("/scaylup/settings?section=sources#owner-phone", "tab-2", origin),
         `/scaylup/settings?section=sources&${WORKSPACE_TAB_FRAME_PARAM}=tab-2#owner-phone`
     )
+})
+
+test("workspace shell only supports relationship context on detail routes", () => {
+    assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/relationships/client-1", "scaylup", origin), true)
+    assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/onboarding/client-1", "scaylup", origin), true)
+    assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/work/client-1", "scaylup", origin), true)
+    assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/onboarding", "scaylup", origin), false)
+    assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/relationships", "scaylup", origin), false)
 })
 
 test("tab history cannot move before its creation page or past its newest page", () => {

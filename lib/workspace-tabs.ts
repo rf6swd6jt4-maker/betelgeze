@@ -68,6 +68,16 @@ export function workspaceTabContextStorageKey(workspaceSlug: string, tabId: stri
     return `betelgeze:client-context:${workspaceSlug}:${tabId}:open`
 }
 
+export function workspaceRouteCanShowRelationshipContext(value: string, workspaceSlug: string, origin: string) {
+    const parsed = new URL(value, origin)
+    const defaultWorkspaceUrl = `/${workspaceSlug}`
+    const suffix = parsed.pathname.startsWith(`${defaultWorkspaceUrl}/`)
+        ? parsed.pathname.slice(defaultWorkspaceUrl.length + 1)
+        : ""
+    const [section, id] = suffix.split("/")
+    return Boolean(id) && (section === "relationships" || section === "onboarding" || section === "work")
+}
+
 export function isReopenClosedTabShortcut(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">) {
     return event.key.toLowerCase() === "t"
         && event.shiftKey

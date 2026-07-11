@@ -124,22 +124,23 @@ function Popup({ children, className = "w-72" }: { children: ReactNode; classNam
         const trigger = activePopupTrigger
         if (!trigger) return
         const triggerRect = trigger.getBoundingClientRect()
-        const frameRect = window.frameElement instanceof HTMLElement ? window.frameElement.getBoundingClientRect() : { left: 0, top: 0 }
+        const frameRect = window.frameElement?.getBoundingClientRect() ?? { left: 0, top: 0 }
         const popupWidth = popupRef.current?.offsetWidth ?? 320
         const popupHeight = popupRef.current?.offsetHeight ?? 240
         const viewportWidth = window.parent === window ? window.innerWidth : window.parent.innerWidth
         const viewportHeight = window.parent === window ? window.innerHeight : window.parent.innerHeight
         const desiredLeft = frameRect.left + triggerRect.left
         const below = frameRect.top + triggerRect.bottom + 4
-        const above = frameRect.top + triggerRect.top - popupHeight - 4
+        const boundedHeight = Math.min(popupHeight, viewportHeight - 16)
+        const above = frameRect.top + triggerRect.top - boundedHeight - 4
         setPosition({
             left: Math.max(8, Math.min(desiredLeft, viewportWidth - popupWidth - 8)),
-            top: below + popupHeight <= viewportHeight - 8 ? below : Math.max(8, above),
+            top: Math.max(8, Math.min(below + boundedHeight <= viewportHeight - 8 ? below : above, viewportHeight - boundedHeight - 8)),
         })
     }, [])
 
     if (!parentDocument) return null
-    return createPortal(<div ref={popupRef} data-work-item-popup style={position ?? { visibility: "hidden" }} className={`fixed z-[100] overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/60 ${className}`}>{children}</div>, parentDocument.body)
+    return createPortal(<div ref={popupRef} data-work-item-popup style={position ?? { visibility: "hidden" }} className={`fixed z-[100] max-h-[calc(100vh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/60 ${className}`}>{children}</div>, parentDocument.body)
 }
 
 function PopupFooter({ onSave, onClear, pending }: { onSave: () => void; onClear?: () => void; pending: boolean }) {
@@ -223,7 +224,7 @@ export function InlineWorkItemFields(props: Props) {
     return (
         <div className="relative">
             <section className="mt-3 py-1">
-                <div className="grid lg:grid-cols-2">
+                <div className="grid grid-cols-1 lg:grid-cols-2">
                     <div className="contents">
                         <Field label="Status" icon="status" className="lg:col-start-1 lg:row-start-1"><Status label={props.statusLabel} tone={props.statusTone} /></Field>
                         <Field label="Schedule" icon="schedule" className="lg:col-start-1 lg:row-start-2">

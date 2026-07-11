@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { Assignee, RoundPill, Status } from "@/components/ui"
 import { Avatar } from "@/components/account/Avatar"
@@ -63,12 +63,25 @@ function dateInputValue(value: string | null) {
 
 function dateStorageValue(value: string) {
     if (!value.trim()) return null
-    const match = value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
-    if (!match) throw new Error("Use DD/MM/YYYY for dates")
-    const [, day, month, year] = match
+    const match = value.trim().match(/^(\d{1,2})[\/\-,\s]+(\d{1,2})[\/\-,\s]+(\d{2}|\d{4})$/)
+    if (!match) throw new Error("Enter a date as DD/MM/YYYY")
+    const [, rawDay, rawMonth, rawYear] = match
+    const day = rawDay.padStart(2, "0")
+    const month = rawMonth.padStart(2, "0")
+    const year = rawYear.length === 2 ? `20${rawYear}` : rawYear
     const date = new Date(`${year}-${month}-${day}T12:00:00Z`)
     if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) throw new Error("Enter a valid date")
     return `${year}-${month}-${day}`
+}
+
+function timeStorageValue(value: string) {
+    if (!value.trim()) return null
+    const match = value.trim().match(/^(\d{1,2})[:.,\s]+(\d{1,2})$/)
+    if (!match) throw new Error("Enter a time as HH:MM")
+    const hour = Number(match[1])
+    const minute = Number(match[2])
+    if (hour > 23 || minute > 59) throw new Error("Enter a valid time")
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
 }
 
 function timeInputValue(value: string | null) {
@@ -110,7 +123,7 @@ function PopupFooter({ onSave, onClear, pending }: { onSave: () => void; onClear
 
 function MinimalDateTimeInputs({ date, time, onDateChange, onTimeChange, timeLabel }: { date: string; time: string; onDateChange: (value: string) => void; onTimeChange: (value: string) => void; timeLabel: string }) {
     const inputClass = "h-9 min-w-0 w-full rounded-md border border-neutral-700 bg-black px-2 text-sm text-white caret-neutral-300 outline-none placeholder:text-neutral-600 selection:bg-neutral-600 selection:text-white"
-    return <div className="grid grid-cols-[1fr_6rem] gap-1.5"><input autoFocus type="text" inputMode="numeric" maxLength={10} value={date} onChange={(event) => onDateChange(event.target.value)} aria-label="Date" placeholder="––/––/––––" className={inputClass} /><input type="text" inputMode="numeric" maxLength={5} value={time} onChange={(event) => onTimeChange(event.target.value)} aria-label={timeLabel} placeholder="––:––" className={inputClass} /></div>
+    return <div className="grid grid-cols-[1fr_6rem] gap-1.5"><input autoFocus type="text" maxLength={12} value={date} onChange={(event) => onDateChange(event.target.value)} aria-label="Date" placeholder="DD/MM/YYYY" className={inputClass} /><input type="text" maxLength={5} value={time} onChange={(event) => onTimeChange(event.target.value)} aria-label={timeLabel} placeholder="––:––" className={inputClass} /></div>
 }
 
 export function InlineWorkItemFields(props: Props) {
@@ -130,6 +143,7 @@ export function InlineWorkItemFields(props: Props) {
     const [dependencyIds, setDependencyIds] = useState(props.manualDependencyIds)
     const [relationshipIds, setRelationshipIds] = useState(props.relationships.map((relationship) => relationship.id))
     const [description, setDescription] = useState(props.description ?? "")
+    const descriptionRef = useRef<HTMLTextAreaElement>(null)
 
     useEffect(() => {
         function close(event: MouseEvent) {
@@ -139,6 +153,13 @@ export function InlineWorkItemFields(props: Props) {
         document.addEventListener("mousedown", close)
         return () => document.removeEventListener("mousedown", close)
     }, [])
+
+    useEffect(() => {
+        const textarea = descriptionRef.current
+        if (!textarea) return
+        textarea.style.height = "auto"
+        textarea.style.height = `${Math.max(80, textarea.scrollHeight)}px`
+    }, [description])
 
     function toggle(name: string) {
         setError(null); setQuery("")
@@ -175,16 +196,20 @@ export function InlineWorkItemFields(props: Props) {
                     <div className="contents">
                         <Field label="Status" icon="status" className="lg:col-start-1 lg:row-start-1"><Status label={props.statusLabel} tone={props.statusTone} /></Field>
                         <Field label="Schedule" icon="schedule" className="lg:col-start-1 lg:row-start-2">
-                            <div className="flex flex-wrap items-center gap-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <div className="flex items-center gap-2 whitespace-nowrap">
                                 <div className="relative">
                                     <button data-work-item-popup-trigger type="button" onClick={() => toggle("start")} className="rounded py-0.5 hover:text-white">{completed ? displayDate(props.actualStartAt, props.actualStartHasTime ? timeInputValue(props.actualStartAt) : null) : displayDate(props.plannedStartDate, props.plannedStartTime)}</button>
-                                    {open === "start" ? <Popup className="w-64"><div className="p-2.5"><p className="mb-1.5 text-xs text-neutral-500">{completed ? "Actual start" : "Planned start"}</p><MinimalDateTimeInputs date={startDate} time={startTime} onDateChange={setStartDate} onTimeChange={setStartTime} timeLabel="Optional start time" /></div><PopupFooter pending={pending} onClear={startDate || startTime ? () => { setStartDate(""); setStartTime("") } : undefined} onSave={() => save(() => updateWorkItemSchedule(props.workspaceSlug, props.workItemId, dateStorageValue(startDate), startTime || null, dateStorageValue(dueDate), dueTime || null, completed))} /></Popup> : null}
+                                    {open === "start" ? <Popup className="w-64"><div className="p-2.5"><p className="mb-1.5 text-xs text-neutral-500">{completed ? "Actual start" : "Planned start"}</p><MinimalDateTimeInputs date={startDate} time={startTime} onDateChange={setStartDate} onTimeChange={setStartTime} timeLabel="Optional start time" /></div><PopupFooter pending={pending} onClear={startDate || startTime ? () => { setStartDate(""); setStartTime("") } : undefined} onSave={() => save(() => updateWorkItemSchedule(props.workspaceSlug, props.workItemId, dateStorageValue(startDate), timeStorageValue(startTime), dateStorageValue(dueDate), timeStorageValue(dueTime), completed))} /></Popup> : null}
                                 </div>
-                                <span className="px-1 text-neutral-600">→</span>
+                                <span className="text-neutral-600">→</span>
+                                </div>
+                                <div className="flex items-center gap-2 whitespace-nowrap">
                                 <span className="text-neutral-500">{props.status === "done" ? "Finished" : "Due"}</span>
-                                <div className={`relative ${completed && !props.actualCompletedAt ? "ml-1" : ""}`}>
+                                <div className="relative">
                                     <button data-work-item-popup-trigger type="button" onClick={() => toggle("due")} className="rounded py-0.5 hover:text-white">{completed ? displayDate(props.actualCompletedAt, props.actualCompletedHasTime ? timeInputValue(props.actualCompletedAt) : null) : displayDate(props.dueDate, props.dueTime)}</button>
-                                    {open === "due" ? <Popup className="w-64"><div className="p-2.5"><p className="mb-1.5 text-xs text-neutral-500">{completed ? "Finished" : "Due date"}</p><MinimalDateTimeInputs date={dueDate} time={dueTime} onDateChange={setDueDate} onTimeChange={setDueTime} timeLabel="Optional finish time" /></div><PopupFooter pending={pending} onClear={dueDate || dueTime ? () => { setDueDate(""); setDueTime("") } : undefined} onSave={() => save(() => updateWorkItemSchedule(props.workspaceSlug, props.workItemId, dateStorageValue(startDate), startTime || null, dateStorageValue(dueDate), dueTime || null, completed))} /></Popup> : null}
+                                    {open === "due" ? <Popup className="w-64"><div className="p-2.5"><p className="mb-1.5 text-xs text-neutral-500">{completed ? "Finished" : "Due date"}</p><MinimalDateTimeInputs date={dueDate} time={dueTime} onDateChange={setDueDate} onTimeChange={setDueTime} timeLabel="Optional finish time" /></div><PopupFooter pending={pending} onClear={dueDate || dueTime ? () => { setDueDate(""); setDueTime("") } : undefined} onSave={() => save(() => updateWorkItemSchedule(props.workspaceSlug, props.workItemId, dateStorageValue(startDate), timeStorageValue(startTime), dateStorageValue(dueDate), timeStorageValue(dueTime), completed))} /></Popup> : null}
+                                </div>
                                 </div>
                             </div>
                         </Field>
@@ -206,8 +231,8 @@ export function InlineWorkItemFields(props: Props) {
                     </div>
                     <Field label="Description" icon="description" className="lg:col-span-2 lg:col-start-1 lg:row-start-5">
                         <div>
-                            <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="Add a description…" className="min-h-20 w-full resize-y bg-transparent py-0.5 text-sm leading-6 text-neutral-200 outline-none placeholder:text-neutral-600 selection:bg-neutral-600 selection:text-white [field-sizing:content]" />
-                            <div className="mt-1 flex justify-end gap-1.5">{description ? <button type="button" disabled={pending} onClick={() => setDescription("")} className="h-8 px-2 text-xs text-neutral-400 hover:text-white disabled:opacity-50">Clear</button> : null}<button type="button" disabled={pending} onClick={() => save(() => updateWorkItemDescription(props.workspaceSlug, props.workItemId, description))} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-50">{pending ? "Saving…" : "Save"}</button></div>
+                            <textarea ref={descriptionRef} value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="Add a description…" className="min-h-20 w-full resize-none overflow-hidden bg-transparent py-0 text-sm leading-6 text-neutral-200 caret-neutral-300 outline-none placeholder:text-neutral-600 selection:bg-neutral-600 selection:text-white" />
+                            {description !== (props.description ?? "") ? <div className="mt-1 flex justify-end gap-1.5"><button type="button" disabled={pending} onClick={() => setDescription(props.description ?? "")} className="h-8 px-2 text-xs text-neutral-400 hover:text-white disabled:opacity-50">Cancel</button><button type="button" disabled={pending} onClick={() => save(() => updateWorkItemDescription(props.workspaceSlug, props.workItemId, description))} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-50">{pending ? "Saving…" : "Save"}</button></div> : null}
                         </div>
                     </Field>
                 </div>

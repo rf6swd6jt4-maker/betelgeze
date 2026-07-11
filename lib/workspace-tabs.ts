@@ -17,7 +17,7 @@ export type WorkspaceTabFrameMessage = {
     source: typeof WORKSPACE_TAB_MESSAGE_SOURCE
     target: "host"
     tabId: string
-    type: "location" | "mutation" | "context-status" | "navigation-start"
+    type: "location" | "mutation" | "context-status" | "navigation-start" | "reopen-closed-tab"
     url?: string
     relationshipId?: string | null
     contextSupported?: boolean
@@ -66,6 +66,13 @@ export function workspaceTabFrameUrl(value: string, tabId: string, origin: strin
 
 export function workspaceTabContextStorageKey(workspaceSlug: string, tabId: string) {
     return `betelgeze:client-context:${workspaceSlug}:${tabId}:open`
+}
+
+export function isReopenClosedTabShortcut(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">) {
+    return event.key.toLowerCase() === "t"
+        && event.shiftKey
+        && !event.altKey
+        && (event.metaKey || event.ctrlKey)
 }
 
 export function workspaceTabHistoryStep(history: string[], historyIndex: number, step: -1 | 1) {

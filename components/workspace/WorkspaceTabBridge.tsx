@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import {
+    isReopenClosedTabShortcut,
     normalizeWorkspaceUrl,
     WORKSPACE_TAB_FRAME_PARAM,
     WORKSPACE_TAB_MESSAGE_SOURCE,
@@ -99,14 +100,28 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             window.parent.postMessage(message, window.location.origin)
         }
 
+        function forwardTabShortcut(event: KeyboardEvent) {
+            if (!isReopenClosedTabShortcut(event)) return
+            event.preventDefault()
+            const message: WorkspaceTabFrameMessage = {
+                source: WORKSPACE_TAB_MESSAGE_SOURCE,
+                target: "host",
+                tabId,
+                type: "reopen-closed-tab",
+            }
+            window.parent.postMessage(message, window.location.origin)
+        }
+
         window.addEventListener("message", receiveHostMessage)
         document.addEventListener("click", preserveFrameNavigation, true)
         document.addEventListener("submit", reportPossibleMutation, true)
+        document.addEventListener("keydown", forwardTabShortcut)
         window.addEventListener("betelgeze:workspace-mutation", reportPossibleMutation)
         return () => {
             window.removeEventListener("message", receiveHostMessage)
             document.removeEventListener("click", preserveFrameNavigation, true)
             document.removeEventListener("submit", reportPossibleMutation, true)
+            document.removeEventListener("keydown", forwardTabShortcut)
             window.removeEventListener("betelgeze:workspace-mutation", reportPossibleMutation)
             delete document.body.dataset.workspaceTabActive
         }

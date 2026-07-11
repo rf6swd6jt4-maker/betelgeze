@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
     appendWorkspaceTabHistory,
+    isReopenClosedTabShortcut,
     normalizeWorkspaceUrl,
     WORKSPACE_TAB_FRAME_PARAM,
     workspaceTabFrameUrl,
@@ -51,4 +52,11 @@ test("bounded tab history permanently keeps the page where the tab was created",
     assert.equal(next.history[0], "/created-here")
     assert.equal(next.history[49], "/page-50")
     assert.equal(next.historyIndex, 49)
+})
+
+test("recognizes the reopen-closed-tab shortcut on macOS and Windows", () => {
+    assert.equal(isReopenClosedTabShortcut({ key: "T", metaKey: true, ctrlKey: false, shiftKey: true, altKey: false }), true)
+    assert.equal(isReopenClosedTabShortcut({ key: "t", metaKey: false, ctrlKey: true, shiftKey: true, altKey: false }), true)
+    assert.equal(isReopenClosedTabShortcut({ key: "t", metaKey: true, ctrlKey: false, shiftKey: false, altKey: false }), false)
+    assert.equal(isReopenClosedTabShortcut({ key: "t", metaKey: false, ctrlKey: true, shiftKey: true, altKey: true }), false)
 })

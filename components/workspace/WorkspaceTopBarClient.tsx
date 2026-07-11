@@ -14,6 +14,7 @@ import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorksp
 import { LEADGEN_POLLING_SYSTEM_VERSION_LABEL } from "@/lib/leadgen/version"
 import {
     appendWorkspaceTabHistory,
+    isReopenClosedTabShortcut,
     normalizeWorkspaceUrl as normalizeWorkspaceRoute,
     WORKSPACE_TAB_FRAME_NAME_PREFIX,
     WORKSPACE_TAB_FRAME_PARAM,
@@ -41,6 +42,11 @@ type WorkspaceTabsState = {
     activeId: string
     mode?: "live"
     tabs: WorkspaceTab[]
+}
+
+type ClosedWorkspaceTab = {
+    tab: WorkspaceTab
+    index: number
 }
 
 type WorkspaceTabContextStatus = {
@@ -320,6 +326,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const iframeRefs = useRef(new Map<string, HTMLIFrameElement>())
     const loadedTabIdsRef = useRef(new Set<string>())
     const pendingNavigationRef = useRef(new Map<string, string>())
+    const closedTabsRef = useRef<ClosedWorkspaceTab[]>([])
+    const canAddTabRef = useRef(true)
     const mutationRevisionRef = useRef(0)
     const tabButtonRefs = useRef(new Map<string, HTMLButtonElement>())
     const createIntentHandledRef = useRef("")
@@ -512,6 +520,32 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         })
     }, [])
 
+    const reopenClosedTab = useCallback(() => {
+        if (!canAddTabRef.current) return false
+        const closed = closedTabsRef.current.pop()
+        if (!closed) return false
+
+        const previousTabId = activeTabIdRef.current
+        const restoredTab = { ...closed.tab, seenRevision: mutationRevisionRef.current }
+        loadedTabIdsRef.current.delete(closed.tab.id)
+        pendingNavigationRef.current.delete(closed.tab.id)
+        setLoadedTabIds(new Set(loadedTabIdsRef.current))
+        setTabs((existingTabs) => {
+            const insertionIndex = Math.min(Math.max(closed.index, 0), existingTabs.length)
+            const nextTabs = [
+                ...existingTabs.slice(0, insertionIndex),
+                restoredTab,
+                ...existingTabs.slice(insertionIndex),
+            ]
+            activeTabIdRef.current = restoredTab.id
+            setActiveTabId(restoredTab.id)
+            saveTabsState(nextTabs, restoredTab.id)
+            return nextTabs
+        })
+        window.requestAnimationFrame(() => postToTab(previousTabId, { type: "activate", active: false, refresh: false }))
+        return true
+    }, [postToTab, saveTabsState])
+
     useEffect(() => {
         function receiveFrameMessage(event: MessageEvent<WorkspaceTabFrameMessage>) {
             if (event.origin !== window.location.origin) return
@@ -554,6 +588,10 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                 if (message.tabId === activeTabIdRef.current) setRouteLoadingTabId(message.tabId)
             }
 
+            if (message.type === "reopen-closed-tab") {
+                reopenClosedTab()
+            }
+
             if (message.type === "context-status") {
                 const relationshipId = message.relationshipId ?? null
                 const supported = message.contextSupported === true && Boolean(relationshipId)
@@ -576,7 +614,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
         window.addEventListener("message", receiveFrameMessage)
         return () => window.removeEventListener("message", receiveFrameMessage)
-    }, [normalizeWorkspaceUrl, saveTabsState, setTabContextOpen, setTabContextStatus, titleForUrl])
+    }, [normalizeWorkspaceUrl, reopenClosedTab, saveTabsState, setTabContextOpen, setTabContextStatus, titleForUrl])
 
     useEffect(() => {
         if (!tabsHydrated) return
@@ -646,6 +684,16 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         document.addEventListener("keydown", openFromShortcut)
         return () => document.removeEventListener("keydown", openFromShortcut)
     }, [searchMenuId])
+
+    useEffect(() => {
+        function handleReopenClosedTab(event: KeyboardEvent) {
+            if (!isReopenClosedTabShortcut(event)) return
+            if (reopenClosedTab()) event.preventDefault()
+        }
+
+        document.addEventListener("keydown", handleReopenClosedTab)
+        return () => document.removeEventListener("keydown", handleReopenClosedTab)
+    }, [reopenClosedTab])
 
     useEffect(() => {
         deferNavigationStateUpdate(() => {
@@ -734,7 +782,9 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             const children = Array.from(strip.children).filter((child): child is HTMLElement => child instanceof HTMLElement)
             const currentContentWidth = children.reduce((sum, child) => sum + child.offsetWidth, 0) + Math.max(0, children.length - 1) * gap
             const minimumNewTabSpace = 128 + gap
-            setCanAddTab(currentContentWidth + minimumNewTabSpace <= strip.clientWidth)
+            const nextCanAddTab = currentContentWidth + minimumNewTabSpace <= strip.clientWidth
+            canAddTabRef.current = nextCanAddTab
+            setCanAddTab(nextCanAddTab)
         }
 
         updateCanAddTab()
@@ -1010,7 +1060,15 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     function closeTab(tabId: string) {
         if (tabs.length <= 1) return
         const tabIndex = tabs.findIndex((tab) => tab.id === tabId)
+        const closedTab = tabs[tabIndex]
+        if (!closedTab) return
+        closedTabsRef.current.push({ tab: closedTab, index: tabIndex })
+        if (closedTabsRef.current.length > 20) closedTabsRef.current.shift()
         const nextTabs = tabs.filter((tab) => tab.id !== tabId)
+        loadedTabIdsRef.current.delete(tabId)
+        pendingNavigationRef.current.delete(tabId)
+        setLoadedTabIds(new Set(loadedTabIdsRef.current))
+        if (routeLoadingTabId === tabId) setRouteLoadingTabId(null)
         delete contextStatusByTabRef.current[tabId]
         delete contextManualClosedByTabRef.current[tabId]
         setContextStatusByTab((current) => {

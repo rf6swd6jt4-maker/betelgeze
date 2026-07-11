@@ -1,5 +1,8 @@
 import Link from "next/link"
 import { WorkspaceBanner } from "@/components/admin/WorkspaceBanner"
+import { ListActionMenu } from "@/components/list/ListActionMenu"
+import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
+import { SquarePill, type PillTone } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import {
     RELATIONSHIP_PHASES,
@@ -21,16 +24,16 @@ type PageProps = {
     params: Promise<{ workspaceSlug: string }>
 }
 
-const phaseTone: Record<RelationshipPhase, string> = {
-    lead: "bg-sky-400",
-    nurturing: "bg-fuchsia-300",
-    potential_client: "bg-yellow-300",
-    invoiced: "bg-cyan-300",
-    onboarding: "bg-orange-300",
-    onboarding_complete: "bg-lime-300",
-    fulfilment: "bg-blue-300",
-    retention: "bg-fuchsia-300",
-    completed_lost: "bg-neutral-500",
+const phaseTone: Record<RelationshipPhase, PillTone> = {
+    lead: "sky",
+    nurturing: "violet",
+    potential_client: "amber",
+    invoiced: "sky",
+    onboarding: "amber",
+    onboarding_complete: "emerald",
+    fulfilment: "sky",
+    retention: "violet",
+    completed_lost: "neutral",
 }
 
 export default async function RelationshipsPage({ params }: PageProps) {
@@ -70,47 +73,70 @@ export default async function RelationshipsPage({ params }: PageProps) {
                 <section className="mt-5 grid grid-cols-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:grid-cols-5 lg:grid-cols-10">
                     {RELATIONSHIP_PHASES.map((phase) => (
                         <div key={phase.key} className="border-r border-b border-neutral-800 px-3 py-3 last:border-r-0 sm:last:border-r lg:border-b-0">
-                            <div className="flex items-center gap-2">
-                                <span className={`h-2 w-2 rotate-45 ${phaseTone[phase.key]}`} />
-                                <p className="truncate text-xs text-neutral-400">{phase.label}</p>
-                            </div>
+                            <p className="truncate text-xs text-neutral-500">{phase.label}</p>
                             <p className="mt-2 text-xl font-semibold">{phaseCounts.get(phase.key) ?? 0}</p>
                         </div>
                     ))}
                 </section>
 
-                <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black">
+                <section className="mt-5 space-y-3 2xl:space-y-0 2xl:overflow-hidden 2xl:rounded-2xl 2xl:border 2xl:border-neutral-800 2xl:bg-black">
                     {activeRelationships.length ? (
                         activeRelationships.map((relationship) => {
                             const industry = relationshipIndustryLabel(relationship.industry_value)
                             const location = relationshipLocationLabel(relationship)
                             const openWorkCount = openWorkCounts.get(relationship.id) ?? 0
+                            const relationshipHref = relationshipHubHref(workspace.slug, relationship.id)
+                            const contactPath = relationship.primary_phone ?? relationship.primary_email ?? "No direct contact saved"
+                            const relationshipActions = [
+                                { label: "Open relationship", href: relationshipHref },
+                                relationship.primary_phone ? { label: "Copy phone", copyText: relationship.primary_phone } : {},
+                                relationship.primary_email ? { label: "Copy email", copyText: relationship.primary_email } : {},
+                            ]
                             return (
-                                <Link
-                                    key={relationship.id}
-                                    href={relationshipHubHref(workspace.slug, relationship.id)}
-                                    className="grid gap-3 border-b border-neutral-900 px-4 py-4 last:border-0 hover:bg-neutral-900/60 lg:grid-cols-[minmax(220px,1.1fr)_minmax(190px,0.85fr)_minmax(160px,0.7fr)_145px_115px_130px]"
-                                >
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`h-2 w-2 shrink-0 rotate-45 ${phaseTone[relationship.lifecycle_phase]}`} />
-                                            <p className="truncate font-medium text-neutral-100">{relationship.primary_person_name}</p>
+                                <div key={relationship.id} className="2xl:border-b 2xl:border-neutral-900 2xl:last:border-0">
+                                    <MobileCardActionSurface actions={relationshipActions} label={`Open actions for ${relationship.primary_person_name}`} className="rounded-2xl border border-neutral-800 bg-black 2xl:hidden">
+                                        <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2.5">
+                                            <Link href={relationshipHref} className="min-w-0 flex-1 truncate text-base font-medium text-neutral-100 underline decoration-neutral-600 underline-offset-4 hover:text-white">
+                                                {relationship.primary_person_name}
+                                            </Link>
+                                            <SquarePill tone={phaseTone[relationship.lifecycle_phase]} className="shrink-0">
+                                                {phaseLabel(relationship.lifecycle_phase)}
+                                            </SquarePill>
                                         </div>
-                                        <p className="mt-1 truncate text-sm text-neutral-500">{relationship.primary_phone ?? relationship.primary_email ?? "No direct contact saved"}</p>
-                                        <p className="mt-1 font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
+                                        <div className="flex items-center gap-3 px-3.5 py-2.5">
+                                            <p className="min-w-0 flex-1 truncate text-sm text-neutral-200">{relationship.business_name ?? contactPath}</p>
+                                            <p className="truncate text-sm text-neutral-500">{openWorkCount ? `${openWorkCount} open` : "No open work"}</p>
+                                            <p className="font-mono text-sm text-neutral-500">{shortId(relationship.id)}</p>
+                                            <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(relationship.updated_at)}</p>
+                                        </div>
+                                    </MobileCardActionSurface>
+
+                                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(200px,1fr)_minmax(180px,0.9fr)_150px_minmax(150px,0.75fr)_120px_100px_120px_32px] 2xl:items-center">
+                                        <div className="min-w-0">
+                                            <Link href={relationshipHref} className="truncate text-base font-medium text-neutral-100 hover:text-white hover:underline hover:decoration-neutral-600 hover:underline-offset-4">
+                                                {relationship.primary_person_name}
+                                            </Link>
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm text-neutral-200">{relationship.business_name ?? "No company context yet"}</p>
+                                            <p className="truncate text-xs text-neutral-600">{relationship.primary_contact_role ?? relationship.source_label ?? relationship.source_type}</p>
+                                        </div>
+                                        <SquarePill tone={phaseTone[relationship.lifecycle_phase]} className="w-fit">
+                                            {phaseLabel(relationship.lifecycle_phase)}
+                                        </SquarePill>
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm text-neutral-300">{contactPath}</p>
+                                            <p className="truncate text-xs capitalize text-neutral-600">{location ?? "Location unset"}</p>
+                                        </div>
+                                        <p className="truncate text-sm capitalize text-neutral-400">{industry ?? "Industry unset"}</p>
+                                        <p className="text-sm text-neutral-500">{openWorkCount ? `${openWorkCount} open` : "No open work"}</p>
+                                        <div className="text-right">
+                                            <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(relationship.updated_at)}</p>
+                                            <p className="font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
+                                        </div>
+                                        <ListActionMenu actions={relationshipActions} />
                                     </div>
-                                    <div className="min-w-0">
-                                        <p className="truncate text-sm text-neutral-300">{relationship.business_name ?? "No company context yet"}</p>
-                                        <p className="mt-1 truncate text-xs text-neutral-600">{relationship.primary_contact_role ?? relationship.source_label ?? relationship.source_type}</p>
-                                    </div>
-                                    <div className="min-w-0 text-sm text-neutral-400">
-                                        <p className="truncate capitalize">{industry ?? "Industry unset"}</p>
-                                        <p className="mt-1 truncate text-xs text-neutral-600 capitalize">{location ?? "Location unset"}</p>
-                                    </div>
-                                    <p className="text-sm text-neutral-400">{phaseLabel(relationship.lifecycle_phase)}</p>
-                                    <p className="text-sm text-neutral-500">{openWorkCount ? `${openWorkCount} open` : "No open work"}</p>
-                                    <p className="text-sm text-neutral-500 lg:text-right">{formatRelativeTime(relationship.updated_at)}</p>
-                                </Link>
+                                </div>
                             )
                         })
                     ) : (

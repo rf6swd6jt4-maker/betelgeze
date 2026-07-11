@@ -37,3 +37,11 @@ After deployment, set the main Next app's `LEADGEN_NER_ENDPOINT` to:
 ```txt
 https://<ner-project-domain>/person-ner
 ```
+
+Production deployments are intentionally path-filtered. Automatic Vercel Git
+deployments are disabled by `vercel.json`; `.github/workflows/deploy-ner.yml`
+deploys this service only when its runtime, dependencies, deployment config, or
+workflow changes by calling the project's production Deploy Hook stored in the
+`VERCEL_NER_DEPLOY_HOOK` GitHub Actions secret. The existing production
+deployment remains available between NER releases, so the main Polls app
+continues using the same endpoint.

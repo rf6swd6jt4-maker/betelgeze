@@ -1,0 +1,36 @@
+name: Deploy Betelgeze NER
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "services/ner/**"
+      - ".github/workflows/deploy-ner.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: betelgeze-ner-production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy NER to Vercel
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/ner
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Deploy NER service
+        env:
+          VERCEL_NER_DEPLOY_HOOK: ${{ secrets.VERCEL_NER_DEPLOY_HOOK }}
+        run: |
+          test -n "$VERCEL_NER_DEPLOY_HOOK"
+          curl --fail --show-error --silent --request POST "$VERCEL_NER_DEPLOY_HOOK"

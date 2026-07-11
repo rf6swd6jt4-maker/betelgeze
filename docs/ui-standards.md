@@ -28,6 +28,19 @@ Do not add blue, violet, or other status colours. A configured, managed, or pend
 
 `RoundPill` represents assigned or attached things: services, modules, people, categories, filters, or other compact metadata. Its aesthetic comes from the assigned service and module pills in onboarding detail.
 
+Pill colours are fixed RGB values rather than translucent utilities, so they remain identical on every surface. The first two recipes are sampled directly from the approved RoundPills; the remaining recipes preserve the same dark face, chromatic edge, and pale text relationship:
+
+| Tone | Border | Background | Text |
+| --- | --- | --- | --- |
+| `emerald` | `#014E38` | `#051C16` | `#A4F5CF` |
+| `sky` | `#01426B` | `#051B29` | `#B6E4FC` |
+| `amber` | `#6D2D00` | `#281206` | `#FEE685` |
+| `red` | `#720810` | `#28090A` | `#FFC9C9` |
+| `violet` | `#440D89` | `#1D0C39` | `#DDD6FF` |
+| `neutral` | `#404040` | `#171717` | `#D4D4D4` |
+
+These values are the palette definition. Do not substitute nearby framework colour tokens or recreate them with opacity.
+
 Use `Assignee` when the attached thing is a person assigned to something. It is the canonical avatar-and-name form of `RoundPill`; do not assemble a separate profile-picture treatment for assignees.
 
 ```tsx
@@ -47,7 +60,7 @@ Use `Assignee` when the attached thing is a person assigned to something. It is 
 
 ## RelationshipStage
 
-`RelationshipStage` is reserved for relationship lifecycle stages. It must be visually identical to `RoundPill` in height, typography, border weight, spacing, and colour recipes. The only difference is its silhouette.
+`RelationshipStage` is reserved for relationship lifecycle stages. It reads its border, background, and text colours from the exact same `pillTones` definitions as `RoundPill`; it must never maintain a separate stage palette. It is otherwise identical in height, typography, border weight, and spacing. The only difference is its silhouette.
 
 The silhouette is a rectangle with half of a Betelgeze diamond attached to each end. It is exactly 24px high. Each pointed end is 12px deep, so its upper and lower edges travel at 45 degrees and meet at the vertical midpoint. In polygon terms, the six outer points are: top-left after 12px, top-right before 12px, right midpoint, bottom-right before 12px, bottom-left after 12px, and left midpoint. Do not soften, round, shorten, or reinterpret these four diagonal edges.
 

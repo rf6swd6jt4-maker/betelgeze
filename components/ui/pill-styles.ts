@@ -1,10 +1,12 @@
 export type PillTone = "neutral" | "sky" | "emerald" | "amber" | "red" | "violet"
 
-export const pillToneClasses: Record<PillTone, string> = {
-    neutral: "border-neutral-700 bg-neutral-900 text-neutral-300",
-    sky: "border-sky-800/70 bg-sky-950/50 text-sky-200",
-    emerald: "border-emerald-800/70 bg-emerald-950/50 text-emerald-200",
-    amber: "border-amber-800/70 bg-amber-950/50 text-amber-200",
-    red: "border-red-800/70 bg-red-950/50 text-red-200",
-    violet: "border-violet-800/70 bg-violet-950/50 text-violet-200",
+export type PillToneValues = { border: string; background: string; text: string }
+
+export const pillTones: Record<PillTone, PillToneValues> = {
+    neutral: { border: "#404040", background: "#171717", text: "#D4D4D4" },
+    sky: { border: "#01426B", background: "#051B29", text: "#B6E4FC" },
+    emerald: { border: "#014E38", background: "#051C16", text: "#A4F5CF" },
+    amber: { border: "#6D2D00", background: "#281206", text: "#FEE685" },
+    red: { border: "#720810", background: "#28090A", text: "#FFC9C9" },
+    violet: { border: "#440D89", background: "#1D0C39", text: "#DDD6FF" },
 }

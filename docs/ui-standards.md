@@ -58,7 +58,7 @@ Use `Assignee` when the attached thing is a person assigned to something. It is 
 
 ```tsx
 <SquarePill tone="amber">Stuck</SquarePill>
-<SquarePill tone="violet">Test</SquarePill>
+<SquarePill tone="yellow">Test</SquarePill>
 ```
 
 ## RelationshipStage

@@ -238,8 +238,8 @@ function SearchIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg>
 }
 
-function PlusIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+function WorkspaceAddIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><rect x="4" y="4" width="11" height="11" rx="2" /><path d="M8 19h8a2 2 0 0 0 2-2V9" /><path d="M18 14v6" /><path d="M15 17h6" /></svg>
 }
 
 function SearchResultContent({ item, mobile = false }: { item: SearchResult; mobile?: boolean }) {
@@ -1384,7 +1384,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                         )}
                     </div>
                     <button data-icon-button type="button" onClick={() => openCreate("relationship")} aria-label="Create relationship, work item, or asset" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
-                        <PlusIcon />
+                        <WorkspaceAddIcon />
                     </button>
                     <AccountMenu username={username} email={email} avatarSrc={avatarSrc} workspaceId={workspace.id} workspaceName={workspace.name} leaveAction={leaveAction} buttonClassName="h-9 w-9" />
                 </div>

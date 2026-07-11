@@ -889,6 +889,13 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         setSearchOpen(true)
     }
 
+    function openMobileSearch() {
+        closeSidebarAfterNavigation()
+        if (!searchOpen) window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: searchMenuId }))
+        setSearchOpen(true)
+        window.requestAnimationFrame(() => mobileSearchInputRef.current?.focus())
+    }
+
     function openCreate(target: "relationship" | "work-item" | "asset") {
         window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: "workspace-create" }))
         setCreateError(null)
@@ -1337,6 +1344,35 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                 </div>
 
                 <div className="flex items-center justify-end gap-2.5">
+                    <div ref={mobileSearchRef} className="md:hidden">
+                        {searchOpen && (
+                            <div className="fixed left-3 right-3 top-16 z-[70] max-h-[72vh] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/40">
+                                <div className="border-b border-neutral-800 p-3">
+                                    <label className="relative block">
+                                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
+                                        <input ref={mobileSearchInputRef} value={query} onKeyDown={submitSearch} onChange={(event) => setQuery(event.target.value)} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-10 text-base text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
+                                    </label>
+                                </div>
+                                <div className="max-h-[calc(72vh-4.25rem)] overflow-y-auto">
+                                    {query.trim().length < 2 && <p className="px-3 py-3 text-sm text-neutral-500">Type at least two characters.</p>}
+                                    {query.trim().length >= 2 && searchLoading && <p className="px-3 py-3 text-sm text-neutral-500">Searching...</p>}
+                                    {query.trim().length >= 2 && !searchLoading && searchResults.length === 0 && <p className="px-3 py-3 text-sm text-neutral-500">No core results found.</p>}
+                                    {query.trim().length >= 2 && !searchLoading && searchResults.map((item) => (
+                                        <div key={item.id} className="border-b border-neutral-900 last:border-0">
+                                            <Link href={item.href} data-global-loading="false" className="block px-3 py-3 hover:bg-neutral-900" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateActiveTab(item.href) }}>
+                                                <SearchResultContent item={item} mobile />
+                                            </Link>
+                                            {item.hubHref && item.hubHref !== item.href && (
+                                                <Link href={item.hubHref} data-global-loading="false" className="block px-3 pb-3 text-xs text-neutral-500 hover:text-neutral-200" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateActiveTab(item.hubHref!) }}>
+                                                    View in Relationship Hub
+                                                </Link>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                     <div className="hidden items-center gap-0.5 md:flex" aria-label="Create">
                         <button data-icon-button type="button" onClick={() => openCreate("relationship")} aria-label="Add relationship" title="Add relationship" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:bg-neutral-900 hover:text-white md:h-9 md:w-9">
                             <RelationshipsIcon />
@@ -1500,7 +1536,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                         <span aria-hidden="true" className="text-xl leading-none">+</span>
                     </button>
                 </div>
-                <button data-icon-button type="button" onClick={toggleContextPanel} disabled={!activeContextSupported} aria-label={!activeContextSupported ? "Relationship context unavailable" : activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextSupported ? activeContextOpen : undefined} className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400">
+                <button data-icon-button type="button" onClick={toggleContextPanel} disabled={!activeContextSupported} aria-label={!activeContextSupported ? "Relationship context unavailable" : activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextSupported ? activeContextOpen : undefined} className="mb-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400 md:inline-flex">
                     <ContextPanelIcon />
                 </button>
             </div>
@@ -1536,36 +1572,16 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
         <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950 ${sidebarTransitionEnabled ? "transition-transform duration-200 ease-out" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex h-full flex-col gap-2 px-4 py-5 md:gap-1 md:px-3 md:py-4">
-                <div ref={mobileSearchRef} className="relative flex items-center gap-1 border-b border-neutral-800 pb-4 md:hidden">
+                <div className="flex h-10 items-center border-b border-neutral-800 pb-2 md:hidden">
                     <button data-icon-button type="button" onClick={() => { goBack(); closeSidebarAfterNavigation() }} disabled={!canGoBack} aria-label="Go back" className={navButtonClass}>
                         <ArrowLeftIcon />
                     </button>
                     <button data-icon-button type="button" onClick={() => { goForward(); closeSidebarAfterNavigation() }} disabled={!canGoForward} aria-label="Go forward" className={navButtonClass}>
                         <ArrowRightIcon />
                     </button>
-                    <label className="relative ml-2 block min-w-0 flex-1">
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
-                        <input ref={mobileSearchInputRef} value={query} onKeyDown={(event) => { if (submitSearch(event)) closeSidebarAfterNavigation() }} onChange={(event) => { setQuery(event.target.value); openDesktopSearch() }} onFocus={openDesktopSearch} aria-label="Search Betelgeze" placeholder="Search..." className="h-10 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 text-sm text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
-                    </label>
-                    {searchOpen && (
-                        <div className="absolute left-0 right-0 top-[3.25rem] z-[70] max-h-[calc(100vh-10rem)] overflow-y-auto rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/40">
-                            {query.trim().length < 2 && <p className="px-3 py-3 text-sm text-neutral-500">Type at least two characters.</p>}
-                            {query.trim().length >= 2 && searchLoading && <p className="px-3 py-3 text-sm text-neutral-500">Searching...</p>}
-                            {query.trim().length >= 2 && !searchLoading && searchResults.length === 0 && <p className="px-3 py-3 text-sm text-neutral-500">No core results found.</p>}
-                            {query.trim().length >= 2 && !searchLoading && searchResults.map((item) => (
-                                <div key={item.id} className="border-b border-neutral-900 last:border-0">
-                                    <Link href={item.href} data-global-loading="false" className="block px-3 py-3 hover:bg-neutral-900" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateActiveTab(item.href); closeSidebarAfterNavigation() }}>
-                                        <SearchResultContent item={item} mobile />
-                                    </Link>
-                                    {item.hubHref && item.hubHref !== item.href && (
-                                        <Link href={item.hubHref} data-global-loading="false" className="block px-3 pb-3 text-xs text-neutral-500 hover:text-neutral-200" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateActiveTab(item.hubHref!); closeSidebarAfterNavigation() }}>
-                                            View in Relationship Hub
-                                        </Link>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
+                    <button data-icon-button type="button" onClick={openMobileSearch} aria-label="Search Betelgeze" className={`${navButtonClass} ml-auto`}>
+                        <SearchIcon />
+                    </button>
                 </div>
                 {sidebarItems.map((item) => {
                     const active = item.href === defaultWorkspaceUrl
@@ -1580,15 +1596,15 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     )
                 })}
                 <div className="mt-auto border-t border-neutral-800 pt-3 md:hidden">
-                    <button type="button" onClick={() => { openCreate("relationship"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                    <button type="button" onClick={() => { openCreate("relationship"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
                         <RelationshipsIcon />
                         <span>Add relationship</span>
                     </button>
-                    <button type="button" onClick={() => { openCreate("work-item"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                    <button type="button" onClick={() => { openCreate("work-item"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
                         <WorkIcon />
                         <span>Add work item</span>
                     </button>
-                    <button type="button" onClick={() => { openCreate("asset"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                    <button type="button" onClick={() => { openCreate("asset"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
                         <AssetsIcon />
                         <span>Add asset</span>
                     </button>

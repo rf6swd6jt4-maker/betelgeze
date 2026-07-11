@@ -120,3 +120,8 @@ export function orderWorkspaceTabsByStableIds<T extends { id: string }>(tabs: T[
         .sort((a, b) => (positions.get(a.tab.id) ?? stableIds.length + a.index) - (positions.get(b.tab.id) ?? stableIds.length + b.index))
         .map(({ tab }) => tab)
 }
+
+export function normalizeWorkspaceTabCustomTitle(value: string, maxLength = 60) {
+    const normalized = value.trim().replace(/\s+/g, " ").slice(0, maxLength)
+    return normalized || null
+}

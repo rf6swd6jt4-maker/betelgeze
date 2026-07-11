@@ -15,6 +15,7 @@ import { LEADGEN_POLLING_SYSTEM_VERSION_LABEL } from "@/lib/leadgen/version"
 import {
     appendWorkspaceTabHistory,
     isReopenClosedTabShortcut,
+    normalizeWorkspaceTabCustomTitle,
     normalizeWorkspaceUrl as normalizeWorkspaceRoute,
     orderWorkspaceTabsByStableIds,
     reorderWorkspaceTabs,
@@ -35,6 +36,7 @@ const sidebarStorageKey = "betelgeze:workspace-sidebar-open"
 type WorkspaceTab = {
     id: string
     title: string
+    customTitle?: string
     url: string
     history: string[]
     historyIndex: number
@@ -288,6 +290,10 @@ function createTabId() {
         : `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+function workspaceTabDisplayTitle(tab: Pick<WorkspaceTab, "title" | "customTitle">) {
+    return tab.customTitle || tab.title
+}
+
 function deferNavigationStateUpdate(update: () => void) {
     queueMicrotask(update)
 }
@@ -304,7 +310,7 @@ function WorkspaceTabFrame({ tab, active, assignRef, onLoad }: {
         ref={assignRef}
         name={`${WORKSPACE_TAB_FRAME_NAME_PREFIX}${tab.id}`}
         src={src}
-        title={tab.title}
+        title={workspaceTabDisplayTitle(tab)}
         hidden={!active}
         aria-hidden={!active}
         onLoad={onLoad}
@@ -342,7 +348,10 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const mutationRevisionRef = useRef(0)
     const tabButtonRefs = useRef(new Map<string, HTMLButtonElement>())
     const dragCleanupRef = useRef<(() => void) | null>(null)
+    const dragStartedTabIdRef = useRef("")
     const suppressTabClickRef = useRef("")
+    const tabTitleInputRef = useRef<HTMLInputElement>(null)
+    const lastTouchTabTapRef = useRef({ tabId: "", time: 0 })
     const createIntentHandledRef = useRef("")
     const contextStatusByTabRef = useRef<Record<string, WorkspaceTabContextStatus>>({})
     const contextManualClosedByTabRef = useRef<Record<string, boolean>>({})
@@ -356,6 +365,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const [canAddTab, setCanAddTab] = useState(true)
     const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
     const [tabDragPreview, setTabDragPreview] = useState<WorkspaceTabDragPreview | null>(null)
+    const [editingTabId, setEditingTabId] = useState<string | null>(null)
+    const [editingTabTitle, setEditingTabTitle] = useState("")
     const [contextOpenByTab, setContextOpenByTab] = useState<Record<string, boolean>>({})
     const [contextStatusByTab, setContextStatusByTab] = useState<Record<string, WorkspaceTabContextStatus>>({})
     const [routeLoadingTabId, setRouteLoadingTabId] = useState<string | null>(null)
@@ -451,6 +462,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     return {
                         id: candidate.id,
                         title: titleForUrl(url),
+                        customTitle: typeof candidate.customTitle === "string" ? normalizeWorkspaceTabCustomTitle(candidate.customTitle) ?? undefined : undefined,
                         url,
                         history,
                         historyIndex,
@@ -500,8 +512,14 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
     useEffect(() => {
         const activeTab = tabs.find((tab) => tab.id === activeTabId)
-        if (activeTab) document.title = `${activeTab.title} | Betelgeze`
+        if (activeTab) document.title = `${workspaceTabDisplayTitle(activeTab)} | Betelgeze`
     }, [activeTabId, tabs])
+
+    useEffect(() => {
+        if (!editingTabId) return
+        tabTitleInputRef.current?.focus()
+        tabTitleInputRef.current?.select()
+    }, [editingTabId])
 
     const postToTab = useCallback((tabId: string, message: Omit<WorkspaceTabParentMessage, "source" | "target" | "tabId">) => {
         const frame = iframeRefs.current.get(tabId)
@@ -1039,7 +1057,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     }
 
     function beginTabDrag(event: ReactPointerEvent<HTMLButtonElement>, tabId: string) {
-        if (tabs.length <= 1 || event.button !== 0) return
+        if (tabs.length <= 1 || event.button !== 0 || editingTabId) return
         dragCleanupRef.current?.()
         const pointerId = event.pointerId
         const startX = event.clientX
@@ -1089,6 +1107,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             if (!started) {
                 if (Math.abs(deltaX) < 6 || Math.abs(deltaX) <= Math.abs(deltaY)) return
                 started = true
+                dragStartedTabIdRef.current = tabId
+                lastTouchTabTapRef.current = { tabId: "", time: 0 }
                 document.body.style.userSelect = "none"
                 document.body.style.cursor = "grabbing"
                 setDraggingTabId(tabId)
@@ -1096,7 +1116,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                 setTabDragPreview({
                     left: Math.min(Math.max(pointerEvent.clientX - stripRect.left - grabOffsetX, 0), Math.max(0, dragStrip.clientWidth - dragRect.width)),
                     width: dragRect.width,
-                    title: dragTab.title,
+                    title: workspaceTabDisplayTitle(dragTab),
                     active: tabId === activeTabIdRef.current,
                 })
             }
@@ -1111,6 +1131,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             dragCleanupRef.current = null
             document.body.style.userSelect = previousUserSelect
             document.body.style.cursor = previousCursor
+            dragStartedTabIdRef.current = ""
             setDraggingTabId(null)
             setTabDragPreview(null)
 
@@ -1134,6 +1155,42 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         window.addEventListener("pointermove", move, { passive: false })
         window.addEventListener("pointerup", up)
         window.addEventListener("pointercancel", cancel)
+    }
+
+    function startTabRename(tab: WorkspaceTab) {
+        if (dragStartedTabIdRef.current) return
+        setEditingTabId(tab.id)
+        setEditingTabTitle(workspaceTabDisplayTitle(tab))
+    }
+
+    function saveTabRename(tabId: string) {
+        const customTitle = normalizeWorkspaceTabCustomTitle(editingTabTitle)
+        setTabs((currentTabs) => {
+            const updatedTabs = currentTabs.map((tab) => tab.id === tabId
+                ? { ...tab, customTitle: customTitle ?? undefined }
+                : tab)
+            saveTabsState(updatedTabs, activeTabIdRef.current)
+            return updatedTabs
+        })
+        setEditingTabId(null)
+        setEditingTabTitle("")
+    }
+
+    function cancelTabRename() {
+        setEditingTabId(null)
+        setEditingTabTitle("")
+    }
+
+    function handleTabTouchTap(event: ReactPointerEvent<HTMLButtonElement>, tab: WorkspaceTab) {
+        if (event.pointerType !== "touch" || dragStartedTabIdRef.current === tab.id) return
+        const now = Date.now()
+        const previous = lastTouchTabTapRef.current
+        if (previous.tabId === tab.id && now - previous.time <= 350) {
+            lastTouchTabTapRef.current = { tabId: "", time: 0 }
+            startTabRename(tab)
+            return
+        }
+        lastTouchTabTapRef.current = { tabId: tab.id, time: now }
     }
 
     function addTab() {
@@ -1420,15 +1477,38 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     {visibleTabs.map((tab) => {
                         const active = tab.id === activeTabId || (!tabsHydrated && tab.id === "initial")
                         const dragging = tab.id === draggingTabId
+                        const displayTitle = workspaceTabDisplayTitle(tab)
                         return (
                             <div key={tab.id} className={`group flex h-9 min-w-32 max-w-56 shrink-0 items-center rounded-t-lg border px-2 text-sm transition-[opacity,background-color,border-color] duration-150 ${dragging ? "opacity-0" : ""} ${active ? "border-neutral-700 border-b-neutral-950 bg-neutral-950 text-white" : "border-transparent bg-neutral-900/55 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"}`}>
-                                <button
+                                {editingTabId === tab.id ? (
+                                    <input
+                                        ref={tabTitleInputRef}
+                                        value={editingTabTitle}
+                                        maxLength={60}
+                                        aria-label={`Rename ${displayTitle} tab`}
+                                        onChange={(event) => setEditingTabTitle(event.target.value)}
+                                        onBlur={() => saveTabRename(tab.id)}
+                                        onKeyDown={(event) => {
+                                            if (event.key === "Enter") event.currentTarget.blur()
+                                            if (event.key === "Escape") {
+                                                event.preventDefault()
+                                                cancelTabRename()
+                                            }
+                                        }}
+                                        className="h-7 min-w-0 flex-1 rounded border border-neutral-600 bg-black px-2 text-sm text-white outline-none focus:border-neutral-400"
+                                    />
+                                ) : <button
                                     ref={(node) => { if (node) tabButtonRefs.current.set(tab.id, node); else tabButtonRefs.current.delete(tab.id) }}
                                     role="tab"
                                     aria-selected={active}
                                     tabIndex={active ? 0 : -1}
                                     type="button"
                                     onPointerDown={(event) => beginTabDrag(event, tab.id)}
+                                    onPointerUp={(event) => handleTabTouchTap(event, tab)}
+                                    onDoubleClick={(event) => {
+                                        event.preventDefault()
+                                        startTabRename(tab)
+                                    }}
                                     onKeyDown={(event) => switchTabFromKeyboard(event, visibleTabs.indexOf(tab))}
                                     onClick={() => {
                                         if (suppressTabClickRef.current === tab.id) return
@@ -1436,10 +1516,10 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                                     }}
                                     className={`min-w-0 flex-1 touch-pan-y truncate text-left ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
                                 >
-                                    {tab.title}
-                                </button>
+                                    {displayTitle}
+                                </button>}
                                 {visibleTabs.length > 1 && (
-                                    <button data-icon-button type="button" onClick={() => closeTab(tab.id)} aria-label={`Close ${tab.title} tab`} className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-500 opacity-80 transition hover:bg-neutral-800 hover:text-white group-hover:opacity-100">
+                                    <button data-icon-button type="button" onClick={() => closeTab(tab.id)} aria-label={`Close ${displayTitle} tab`} className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-500 opacity-80 transition hover:bg-neutral-800 hover:text-white group-hover:opacity-100">
                                         <span aria-hidden="true" className="text-base leading-none">×</span>
                                     </button>
                                 )}

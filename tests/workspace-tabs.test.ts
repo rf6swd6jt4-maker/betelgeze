@@ -3,6 +3,7 @@ import test from "node:test"
 import {
     appendWorkspaceTabHistory,
     isReopenClosedTabShortcut,
+    normalizeWorkspaceTabCustomTitle,
     normalizeWorkspaceUrl,
     orderWorkspaceTabsByStableIds,
     reorderWorkspaceTabs,
@@ -87,4 +88,10 @@ test("keeps iframe panels in stable mount order when tab chrome is reordered", (
         orderWorkspaceTabsByStableIds(reorderedTabs, ["one", "two", "three"]).map((tab) => tab.id),
         ["one", "two", "three"]
     )
+})
+
+test("normalizes custom tab titles and treats an empty title as automatic", () => {
+    assert.equal(normalizeWorkspaceTabCustomTitle("  Priority   Polls  "), "Priority Polls")
+    assert.equal(normalizeWorkspaceTabCustomTitle("   "), null)
+    assert.equal(normalizeWorkspaceTabCustomTitle("A very long name", 6), "A very")
 })

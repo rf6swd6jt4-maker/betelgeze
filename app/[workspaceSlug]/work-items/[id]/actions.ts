@@ -121,11 +121,8 @@ export async function updateWorkItemRelationships(slug: string, workItemId: stri
     const { data: relationships } = await supabaseAdmin.from("relationships").select("id").eq("workspace_id", workspace.id)
     const allowedIds = new Set((relationships ?? []).map((row) => row.id))
     if (uniqueIds.some((id) => !allowedIds.has(id))) throw new Error("Relationships must belong to this workspace")
-    await supabaseAdmin.from("work_item_relationships").delete().eq("workspace_id", workspace.id).eq("work_item_id", workItemId)
-    if (uniqueIds.length) {
-        const { error } = await supabaseAdmin.from("work_item_relationships").insert(uniqueIds.map((relationshipId) => ({ workspace_id: workspace.id, work_item_id: workItemId, relationship_id: relationshipId })))
-        if (error) throw new Error(error.message)
-    }
+    const { error } = await supabaseAdmin.rpc("set_work_item_explicit_relationships", { p_workspace_id: workspace.id, p_work_item_id: workItemId, p_relationship_ids: uniqueIds })
+    if (error) throw new Error(error.message)
     refreshWorkItem(slug, workItemId)
 }
 

@@ -156,10 +156,13 @@ export async function createRelationshipWorkItem(slug: string, relationshipId: s
 }
 
 export async function createWorkItemFromModal(slug: string, formData: FormData, relationshipId?: string | null): Promise<WorkspaceCreateActionState> {
-    const { workspace } = await requireWorkspace(slug, "admin")
+    const { workspace, user } = await requireWorkspace(slug, "admin")
     const title = formString(formData, "title")
     if (!title) return { ok: false, error: "missing-title" }
     const lifecyclePhase = normalizeRelationshipPhase(formString(formData, "lifecycle_phase"))
+    const parentWorkItemId = nullableFormString(formData, "parent_work_item_id")
+    const waitForParent = parentWorkItemId ? formData.get("wait_for_parent") !== "off" : false
+    const assigneeIds = [...new Set(formData.getAll("assigned_to").map(String).filter(Boolean))]
 
     const { data: item, error } = await supabaseAdmin.from("work_items").insert({
         workspace_id: workspace.id,
@@ -170,9 +173,11 @@ export async function createWorkItemFromModal(slug: string, formData: FormData, 
         priority: Number(formData.get("priority") ?? 3),
         is_key_task: formData.get("is_key_task") === "on",
         native_kind: "manual_task",
+        parent_work_item_id: parentWorkItemId,
         planned_start_date: nullableFormString(formData, "planned_start_date"),
         due_date: nullableFormString(formData, "due_date"),
         metadata: { created_from: relationshipId ? "relationship_page" : "global_create" },
+        created_by: user.id,
     })
         .select("id")
         .single()
@@ -187,6 +192,33 @@ export async function createWorkItemFromModal(slug: string, formData: FormData, 
             work_item_id: item.id,
             relationship_id: relationshipToLink,
         })
+    }
+
+    if (parentWorkItemId && waitForParent) {
+        const { error: dependencyError } = await supabaseAdmin.from("work_item_dependencies").insert({
+            workspace_id: workspace.id,
+            work_item_id: item.id,
+            depends_on_work_item_id: parentWorkItemId,
+            source: "parent_auto",
+            created_by: user.id,
+        })
+        if (dependencyError) {
+            await supabaseAdmin.from("work_items").delete().eq("workspace_id", workspace.id).eq("id", item.id)
+            return { ok: false, error: "invalid-parent" }
+        }
+    }
+
+    if (assigneeIds.length) {
+        const { error: assigneeError } = await supabaseAdmin.from("work_item_assignees").insert(assigneeIds.map((userId) => ({
+            workspace_id: workspace.id,
+            work_item_id: item.id,
+            user_id: userId,
+            assigned_by: user.id,
+        })))
+        if (assigneeError) {
+            await supabaseAdmin.from("work_items").delete().eq("workspace_id", workspace.id).eq("id", item.id)
+            return { ok: false, error: "invalid-assignee" }
+        }
     }
 
     relationshipRevalidatePaths(slug, relationshipToLink ?? undefined)

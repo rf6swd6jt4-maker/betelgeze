@@ -52,11 +52,25 @@ export type RelationshipWorkItem = {
     planned_end_date: string | null
     actual_start_at: string | null
     actual_completed_at: string | null
+    parent_work_item_id?: string | null
     sort_order: number
     metadata: Record<string, unknown>
+    created_by?: string | null
     created_at: string
     updated_at: string
     synthesized?: boolean
+}
+
+export type WorkItemPerson = {
+    user_id: string
+    username: string
+    avatar_path: string | null
+}
+
+export type WorkItemDependencyLink = {
+    work_item_id: string
+    source: "manual" | "parent_auto"
+    work_item: Pick<RelationshipWorkItem, "id" | "title" | "status"> | null
 }
 
 export type WorkQueueItem = RelationshipWorkItem & {
@@ -374,8 +388,10 @@ function mapWorkItem(row: Record<string, unknown>, relationshipId: string | null
         planned_end_date: dueDate,
         actual_start_at: typeof row.actual_start_at === "string" ? row.actual_start_at : null,
         actual_completed_at: typeof row.actual_completed_at === "string" ? row.actual_completed_at : null,
+        parent_work_item_id: typeof row.parent_work_item_id === "string" ? row.parent_work_item_id : null,
         sort_order: typeof row.sort_order === "number" ? row.sort_order : Number(row.sort_order ?? 0),
         metadata: row.metadata && typeof row.metadata === "object" ? row.metadata as Record<string, unknown> : {},
+        created_by: typeof row.created_by === "string" ? row.created_by : null,
         created_at: String(row.created_at),
         updated_at: String(row.updated_at ?? row.created_at),
     }
@@ -881,13 +897,65 @@ export async function countOpenWorkItemsByRelationship(workspaceId: string) {
 export async function getWorkItem(workspaceId: string, workItemId: string): Promise<RelationshipWorkItem | null> {
     const result = await supabaseAdmin
         .from("work_items")
-        .select("id, workspace_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, due_date, actual_start_at, actual_completed_at, sort_order, metadata, created_by, created_at, updated_at")
+        .select("id, workspace_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, due_date, actual_start_at, actual_completed_at, parent_work_item_id, sort_order, metadata, created_by, created_at, updated_at")
         .eq("workspace_id", workspaceId)
         .eq("id", workItemId)
         .maybeSingle()
 
     if (isMissingPrimitiveSchema(result.error) || !result.data) return null
     return mapWorkItem(result.data as Record<string, unknown>)
+}
+
+export async function getWorkItemPlanningContext(workspaceId: string, item: RelationshipWorkItem) {
+    const [parentResult, dependenciesResult, assigneesResult, membersResult, workItemsResult] = await Promise.all([
+        item.parent_work_item_id
+            ? supabaseAdmin.from("work_items").select("id, title, status").eq("workspace_id", workspaceId).eq("id", item.parent_work_item_id).maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+        supabaseAdmin.from("work_item_dependencies")
+            .select("depends_on_work_item_id, source, work_items!work_item_dependencies_depends_on_work_item_id_fkey(id, title, status)")
+            .eq("workspace_id", workspaceId).eq("work_item_id", item.id).order("created_at"),
+        supabaseAdmin.from("work_item_assignees").select("user_id").eq("workspace_id", workspaceId).eq("work_item_id", item.id),
+        supabaseAdmin.from("workspace_memberships").select("user_id").eq("workspace_id", workspaceId),
+        supabaseAdmin.from("work_items").select("id, title, status, parent_work_item_id").eq("workspace_id", workspaceId).neq("id", item.id).order("title"),
+    ])
+
+    const memberIds = [...new Set([
+        ...(membersResult.data ?? []).map((row) => row.user_id),
+        item.created_by,
+    ].filter((value): value is string => Boolean(value)))]
+    const profilesResult = memberIds.length
+        ? await supabaseAdmin.from("user_profiles").select("user_id, username, avatar_path").in("user_id", memberIds)
+        : { data: [] }
+    const people = (profilesResult.data ?? []) as WorkItemPerson[]
+    const peopleById = new Map(people.map((person) => [person.user_id, person]))
+
+    return {
+        parent: parentResult.data ? mapWorkItem({ ...parentResult.data, workspace_id: workspaceId }) : null,
+        dependencies: (dependenciesResult.data ?? []).map((row) => {
+            const linked = Array.isArray(row.work_items) ? row.work_items[0] : row.work_items
+            return {
+                work_item_id: row.depends_on_work_item_id,
+                source: row.source as "manual" | "parent_auto",
+                work_item: linked ? {
+                    id: linked.id,
+                    title: linked.title,
+                    status: linked.status as RelationshipWorkItemStatus,
+                } : null,
+            } satisfies WorkItemDependencyLink
+        }),
+        assignees: (assigneesResult.data ?? []).flatMap((row) => {
+            const person = peopleById.get(row.user_id)
+            return person ? [person] : []
+        }),
+        creator: item.created_by ? peopleById.get(item.created_by) ?? null : null,
+        members: people,
+        availableWorkItems: (workItemsResult.data ?? []).map((row) => ({
+            id: row.id,
+            title: row.title,
+            status: row.status as RelationshipWorkItemStatus,
+            parent_work_item_id: row.parent_work_item_id,
+        })),
+    }
 }
 
 export async function listWorkItemRelationships(workspaceId: string, workItemId: string): Promise<AssetRelationshipLink[]> {

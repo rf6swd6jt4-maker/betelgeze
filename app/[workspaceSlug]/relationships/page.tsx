@@ -152,12 +152,12 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                             <Link href={relationshipHref} className="min-w-0 flex-1 truncate text-base font-medium text-neutral-100 underline decoration-neutral-600 underline-offset-4 hover:text-white">
                                                 {relationshipTitle}
                                             </Link>
-                                            {relationship.primary_contact_role ? <span className="shrink-0 text-sm text-neutral-400">{relationship.primary_contact_role}</span> : null}
+                                            {isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}
                                             {workStatus}
+                                            <RelationshipStage phase={relationship.lifecycle_phase} className="shrink-0" />
                                         </div>
                                         <div className="flex flex-wrap items-center gap-2 px-3.5 py-2.5">
-                                            <RelationshipStage phase={relationship.lifecycle_phase} className="shrink-0" />
-                                            {isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}
+                                            {relationship.primary_contact_role ? <span className="mr-1 shrink-0 text-sm text-neutral-400">{relationship.primary_contact_role}</span> : null}
                                             {smsPhone ? <p className="truncate text-sm text-neutral-200">SMS: {smsPhone}</p> : null}
                                             {effectiveWhatsappPhone ? <p className="truncate text-sm text-neutral-400">WA: {effectiveWhatsappPhone}</p> : null}
                                             {!smsPhone && !effectiveWhatsappPhone ? <p className="text-sm text-neutral-500">No phone</p> : null}
@@ -169,12 +169,16 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                         </div>
                                     </MobileCardActionSurface>
 
-                                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(230px,1.2fr)_minmax(210px,1fr)_minmax(180px,0.9fr)_150px_120px_150px_32px] 2xl:items-center">
-                                        <div className="flex min-w-0 items-center gap-3">
-                                            <Link href={relationshipHref} className="truncate text-base font-medium text-neutral-100 hover:text-white hover:underline hover:decoration-neutral-600 hover:underline-offset-4">
-                                                {relationshipTitle}
-                                            </Link>
-                                            {relationship.primary_contact_role ? <p className="shrink-0 truncate text-sm text-neutral-400">{relationship.primary_contact_role}</p> : null}
+                                    <div className="hidden min-h-14 gap-3 px-4 py-2.5 2xl:grid 2xl:grid-cols-[minmax(360px,1.4fr)_minmax(230px,1fr)_minmax(180px,0.8fr)_150px_150px_32px] 2xl:items-center">
+                                        <div className="min-w-0">
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <Link href={relationshipHref} className="truncate text-base font-medium text-neutral-100 hover:text-white hover:underline hover:decoration-neutral-600 hover:underline-offset-4">
+                                                    {relationshipTitle}
+                                                </Link>
+                                                {isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}
+                                                {workStatus}
+                                            </div>
+                                            {relationship.primary_contact_role ? <p className="mt-1 truncate text-sm text-neutral-400">{relationship.primary_contact_role}</p> : null}
                                         </div>
                                         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                                             {smsPhone ? <p className="truncate text-sm text-neutral-200">SMS: {smsPhone}</p> : null}
@@ -186,11 +190,7 @@ export default async function RelationshipsPage({ params }: PageProps) {
                                             <p className="truncate text-sm text-neutral-300">{relationship.primary_email ?? "No email saved"}</p>
                                             <p className="truncate text-xs capitalize text-neutral-600">{location ?? "Location unset"}</p>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <RelationshipStage phase={relationship.lifecycle_phase} />
-                                            {isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}
-                                        </div>
-                                        {workStatus}
+                                        <RelationshipStage phase={relationship.lifecycle_phase} />
                                         <div className="flex items-center justify-end gap-3">
                                             <div className="min-w-0 text-right">
                                                 <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(relationship.updated_at)}</p>

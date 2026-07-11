@@ -76,15 +76,14 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
             <div className="mx-auto max-w-[92rem]">
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="min-w-0">
-                        <header className="pb-6">
+                        <header className="pb-4">
                             <p className="font-mono text-sm text-neutral-500">Work item {shortId(item.id)}</p>
                             <h1 className="mt-2 text-3xl font-semibold tracking-tight">{item.title}</h1>
-                            {item.description && <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">{item.description}</p>}
                         </header>
 
                 <InlineWorkItemFields
                     workspaceSlug={workspace.slug} workItemId={item.id} status={item.status} statusLabel={statusLabel(item.status)} statusTone={statusTone(item.status)}
-                    plannedStartDate={item.planned_start_date} plannedStartTime={item.planned_start_time ?? null} dueDate={item.due_date} dueTime={item.due_time ?? null} actualStartAt={item.actual_start_at} actualCompletedAt={item.actual_completed_at}
+                    plannedStartDate={item.planned_start_date} plannedStartTime={item.planned_start_time ?? null} dueDate={item.due_date} dueTime={item.due_time ?? null} actualStartAt={item.actual_start_at} actualStartHasTime={Boolean(item.actual_start_has_time)} actualCompletedAt={item.actual_completed_at} actualCompletedHasTime={Boolean(item.actual_completed_has_time)} description={item.description}
                     assignees={planning.assignees.map(personProps)} creator={planning.creator ? personProps(planning.creator) : null} members={planning.members.map(personProps)}
                     parent={planning.parent ? { id: planning.parent.id, title: planning.parent.title, status: planning.parent.status } : null} parentId={item.parent_work_item_id ?? null} waitsForParent={waitsForParent}
                     dependencies={planning.dependencies.flatMap((dependency) => dependency.work_item ? [dependency.work_item] : [])}

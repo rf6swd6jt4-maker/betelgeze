@@ -27,9 +27,19 @@ export async function updateWorkItemSchedule(slug: string, workItemId: string, s
     if (startTime && !timePattern.test(startTime) || endTime && !timePattern.test(endTime)) throw new Error("Invalid schedule time")
     const values = completed ? {
         actual_start_at: startDate ? `${startDate}T${startTime || "00:00"}:00.000Z` : null,
+        actual_start_has_time: Boolean(startDate && startTime),
         actual_completed_at: endDate ? `${endDate}T${endTime || "00:00"}:00.000Z` : null,
+        actual_completed_has_time: Boolean(endDate && endTime),
     } : { planned_start_date: startDate || null, planned_start_time: startDate ? startTime || null : null, due_date: endDate || null, due_time: endDate ? endTime || null : null }
     const { error } = await supabaseAdmin.from("work_items").update(values).eq("workspace_id", workspace.id).eq("id", workItemId)
+    if (error) throw new Error(error.message)
+    refreshWorkItem(slug, workItemId)
+}
+
+export async function updateWorkItemDescription(slug: string, workItemId: string, description: string) {
+    const { workspace } = await requireWorkItem(slug, workItemId)
+    const value = description.trim()
+    const { error } = await supabaseAdmin.from("work_items").update({ description: value || null }).eq("workspace_id", workspace.id).eq("id", workItemId)
     if (error) throw new Error(error.message)
     refreshWorkItem(slug, workItemId)
 }

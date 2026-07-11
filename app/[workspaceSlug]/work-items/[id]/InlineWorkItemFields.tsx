@@ -7,6 +7,7 @@ import { Avatar } from "@/components/account/Avatar"
 import {
     updateWorkItemAssignees,
     updateWorkItemDependencies,
+    updateWorkItemDescription,
     updateWorkItemParent,
     updateWorkItemPriority,
     updateWorkItemRelationships,
@@ -28,7 +29,10 @@ type Props = {
     dueDate: string | null
     dueTime: string | null
     actualStartAt: string | null
+    actualStartHasTime: boolean
     actualCompletedAt: string | null
+    actualCompletedHasTime: boolean
+    description: string | null
     assignees: Person[]
     creator: Person | null
     members: Person[]
@@ -72,7 +76,7 @@ function timeInputValue(value: string | null) {
     return value.includes("T") ? value.slice(11, 16) : value.slice(0, 5)
 }
 
-type FieldIcon = "status" | "schedule" | "user" | "parent" | "dependency" | "relationship" | "priority"
+type FieldIcon = "status" | "schedule" | "user" | "parent" | "dependency" | "relationship" | "priority" | "description"
 
 function Icon({ kind }: { kind: FieldIcon }) {
     const paths: Record<FieldIcon, ReactNode> = {
@@ -83,6 +87,7 @@ function Icon({ kind }: { kind: FieldIcon }) {
         dependency: <><circle cx="7" cy="7" r="3" /><circle cx="17" cy="17" r="3" /><path d="M9.5 9.5l5 5" /></>,
         relationship: <><circle cx="8" cy="9" r="3" /><circle cx="16" cy="9" r="3" /><path d="M2.5 20c.5-3.3 2.3-5 5.5-5M21.5 20c-.5-3.3-2.3-5-5.5-5M10 17h4" /></>,
         priority: <><path d="M6 21V4M6 5h11l-2 4 2 4H6" /></>,
+        description: <><path d="M5 5h14M5 9h14M5 13h10M5 17h12" /></>,
     }
     return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">{paths[kind]}</svg>
 }
@@ -116,14 +121,15 @@ export function InlineWorkItemFields(props: Props) {
     const [pending, startTransition] = useTransition()
     const completed = props.status === "done"
     const [startDate, setStartDate] = useState(dateInputValue(completed ? props.actualStartAt : props.plannedStartDate))
-    const [startTime, setStartTime] = useState(timeInputValue(completed ? props.actualStartAt : props.plannedStartTime))
+    const [startTime, setStartTime] = useState(timeInputValue(completed && props.actualStartHasTime ? props.actualStartAt : completed ? null : props.plannedStartTime))
     const [dueDate, setDueDate] = useState(dateInputValue(completed ? props.actualCompletedAt : props.dueDate))
-    const [dueTime, setDueTime] = useState(timeInputValue(completed ? props.actualCompletedAt : props.dueTime))
+    const [dueTime, setDueTime] = useState(timeInputValue(completed && props.actualCompletedHasTime ? props.actualCompletedAt : completed ? null : props.dueTime))
     const [assigneeIds, setAssigneeIds] = useState(props.assignees.map((person) => person.user_id))
     const [parentId, setParentId] = useState(props.parentId ?? "")
     const [waitForParent, setWaitForParent] = useState(props.waitsForParent || !props.parentId)
     const [dependencyIds, setDependencyIds] = useState(props.manualDependencyIds)
     const [relationshipIds, setRelationshipIds] = useState(props.relationships.map((relationship) => relationship.id))
+    const [description, setDescription] = useState(props.description ?? "")
 
     useEffect(() => {
         function close(event: MouseEvent) {
@@ -138,9 +144,9 @@ export function InlineWorkItemFields(props: Props) {
         setError(null); setQuery("")
         if (open !== name) {
             setStartDate(dateInputValue(completed ? props.actualStartAt : props.plannedStartDate))
-            setStartTime(timeInputValue(completed ? props.actualStartAt : props.plannedStartTime))
+            setStartTime(timeInputValue(completed && props.actualStartHasTime ? props.actualStartAt : completed ? null : props.plannedStartTime))
             setDueDate(dateInputValue(completed ? props.actualCompletedAt : props.dueDate))
-            setDueTime(timeInputValue(completed ? props.actualCompletedAt : props.dueTime))
+            setDueTime(timeInputValue(completed && props.actualCompletedHasTime ? props.actualCompletedAt : completed ? null : props.dueTime))
             setAssigneeIds(props.assignees.map((person) => person.user_id))
             setParentId(props.parentId ?? "")
             setWaitForParent(props.waitsForParent || !props.parentId)
@@ -164,20 +170,20 @@ export function InlineWorkItemFields(props: Props) {
 
     return (
         <div className="relative">
-            <section className="mt-5 py-1">
-                <div className="grid lg:grid-cols-2 lg:grid-rows-4">
+            <section className="mt-3 py-1">
+                <div className="grid lg:grid-cols-2">
                     <div className="contents">
                         <Field label="Status" icon="status" className="lg:col-start-1 lg:row-start-1"><Status label={props.statusLabel} tone={props.statusTone} /></Field>
                         <Field label="Schedule" icon="schedule" className="lg:col-start-1 lg:row-start-2">
                             <div className="flex flex-wrap items-center gap-1">
                                 <div className="relative">
-                                    <button data-work-item-popup-trigger type="button" onClick={() => toggle("start")} className="rounded py-0.5 hover:text-white">{completed ? displayDate(props.actualStartAt, timeInputValue(props.actualStartAt)) : displayDate(props.plannedStartDate, props.plannedStartTime)}</button>
+                                    <button data-work-item-popup-trigger type="button" onClick={() => toggle("start")} className="rounded py-0.5 hover:text-white">{completed ? displayDate(props.actualStartAt, props.actualStartHasTime ? timeInputValue(props.actualStartAt) : null) : displayDate(props.plannedStartDate, props.plannedStartTime)}</button>
                                     {open === "start" ? <Popup className="w-64"><div className="p-2.5"><p className="mb-1.5 text-xs text-neutral-500">{completed ? "Actual start" : "Planned start"}</p><MinimalDateTimeInputs date={startDate} time={startTime} onDateChange={setStartDate} onTimeChange={setStartTime} timeLabel="Optional start time" /></div><PopupFooter pending={pending} onClear={startDate || startTime ? () => { setStartDate(""); setStartTime("") } : undefined} onSave={() => save(() => updateWorkItemSchedule(props.workspaceSlug, props.workItemId, dateStorageValue(startDate), startTime || null, dateStorageValue(dueDate), dueTime || null, completed))} /></Popup> : null}
                                 </div>
                                 <span className="px-1 text-neutral-600">→</span>
                                 <span className="text-neutral-500">{props.status === "done" ? "Finished" : "Due"}</span>
                                 <div className={`relative ${completed && !props.actualCompletedAt ? "ml-1" : ""}`}>
-                                    <button data-work-item-popup-trigger type="button" onClick={() => toggle("due")} className="rounded py-0.5 hover:text-white">{completed ? displayDate(props.actualCompletedAt, timeInputValue(props.actualCompletedAt)) : displayDate(props.dueDate, props.dueTime)}</button>
+                                    <button data-work-item-popup-trigger type="button" onClick={() => toggle("due")} className="rounded py-0.5 hover:text-white">{completed ? displayDate(props.actualCompletedAt, props.actualCompletedHasTime ? timeInputValue(props.actualCompletedAt) : null) : displayDate(props.dueDate, props.dueTime)}</button>
                                     {open === "due" ? <Popup className="w-64"><div className="p-2.5"><p className="mb-1.5 text-xs text-neutral-500">{completed ? "Finished" : "Due date"}</p><MinimalDateTimeInputs date={dueDate} time={dueTime} onDateChange={setDueDate} onTimeChange={setDueTime} timeLabel="Optional finish time" /></div><PopupFooter pending={pending} onClear={dueDate || dueTime ? () => { setDueDate(""); setDueTime("") } : undefined} onSave={() => save(() => updateWorkItemSchedule(props.workspaceSlug, props.workItemId, dateStorageValue(startDate), startTime || null, dateStorageValue(dueDate), dueTime || null, completed))} /></Popup> : null}
                                 </div>
                             </div>
@@ -198,6 +204,12 @@ export function InlineWorkItemFields(props: Props) {
                         <Field label="Relationships" icon="relationship" className="lg:col-start-2 lg:row-start-3 lg:border-l lg:border-neutral-900 lg:pl-8"><div className="relative inline-flex max-w-full flex-wrap gap-1.5"><button data-work-item-popup-trigger type="button" aria-disabled={props.relationshipsLocked} onClick={() => { if (!props.relationshipsLocked) toggle("relationships") }} className={`flex max-w-full flex-wrap gap-1.5 rounded p-0 ${props.relationshipsLocked ? "cursor-not-allowed" : "hover:opacity-90"}`}>{props.relationships.length ? props.relationships.map((relationship) => <RoundPill key={relationship.id} tone="sky">{relationship.label}</RoundPill>) : <span className="text-neutral-600">Workspace only</span>}</button>{open === "relationships" ? <Popup className="w-80"><Search value={query} onChange={setQuery} placeholder="Search relationships…" /><div className="max-h-64 overflow-y-auto p-1">{filteredRelationships.map((relationship) => <button type="button" key={relationship.id} onClick={() => toggleId(relationshipIds, relationship.id, setRelationshipIds)} className="flex w-full gap-2 rounded-lg px-1.5 py-2 text-left text-sm hover:bg-neutral-900"><span className="min-w-0 flex-1 truncate">{relationship.label}</span><span>{relationshipIds.includes(relationship.id) ? "✓" : ""}</span></button>)}</div><PopupFooter pending={pending} onClear={relationshipIds.length ? () => setRelationshipIds([]) : undefined} onSave={() => save(() => updateWorkItemRelationships(props.workspaceSlug, props.workItemId, relationshipIds))} /></Popup> : null}</div></Field>
                         <Field label="Priority" icon="priority" className="lg:col-start-2 lg:row-start-4 lg:border-l lg:border-neutral-900 lg:pl-8"><div className="relative inline-block"><button data-work-item-popup-trigger type="button" onClick={() => toggle("priority")} className="rounded py-0.5 hover:text-white">{["", "Urgent", "High", "Normal", "Low", "Lowest"][props.priority]}</button>{open === "priority" ? <Popup className="w-48"><div className="p-1">{["Urgent", "High", "Normal", "Low", "Lowest"].map((label, index) => <button type="button" key={label} onClick={() => save(() => updateWorkItemPriority(props.workspaceSlug, props.workItemId, index + 1))} className="flex w-full items-center justify-between rounded-lg px-1.5 py-2 text-left text-sm hover:bg-neutral-900"><span>{label}</span><span>{props.priority === index + 1 ? "✓" : ""}</span></button>)}</div></Popup> : null}</div></Field>
                     </div>
+                    <Field label="Description" icon="description" className="lg:col-span-2 lg:col-start-1 lg:row-start-5">
+                        <div>
+                            <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="Add a description…" className="min-h-20 w-full resize-y bg-transparent py-0.5 text-sm leading-6 text-neutral-200 outline-none placeholder:text-neutral-600 selection:bg-neutral-600 selection:text-white [field-sizing:content]" />
+                            <div className="mt-1 flex justify-end gap-1.5">{description ? <button type="button" disabled={pending} onClick={() => setDescription("")} className="h-8 px-2 text-xs text-neutral-400 hover:text-white disabled:opacity-50">Clear</button> : null}<button type="button" disabled={pending} onClick={() => save(() => updateWorkItemDescription(props.workspaceSlug, props.workItemId, description))} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-50">{pending ? "Saving…" : "Save"}</button></div>
+                        </div>
+                    </Field>
                 </div>
                 {error ? <p className="border-t border-red-500/20 py-2 text-sm text-red-300">{error}</p> : null}
             </section>

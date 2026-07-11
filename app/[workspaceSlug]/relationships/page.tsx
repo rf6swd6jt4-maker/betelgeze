@@ -185,7 +185,7 @@ export default async function RelationshipsPage({ params, searchParams }: PagePr
                                             {!smsPhone && !effectiveWhatsappPhone ? <p className="text-sm text-neutral-500">No phone</p> : null}
                                             {serviceKeys.map((serviceKey) => <RoundPill key={serviceKey} tone="emerald">{SERVICES[serviceKey]?.title ?? serviceKey}</RoundPill>)}
                                             <div className="ml-auto flex shrink-0 items-center gap-3">
-                                                <p className="font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
+                                                <p className="font-mono text-sm text-neutral-500">{shortId(relationship.id)}</p>
                                                 <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(relationship.updated_at)}</p>
                                                 <ListCreatorAvatar src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} className="h-7 w-7 shrink-0" />
                                             </div>
@@ -215,7 +215,7 @@ export default async function RelationshipsPage({ params, searchParams }: PagePr
                                         </div>
                                         <RelationshipStage phase={relationship.lifecycle_phase} />
                                         <div className="flex items-center justify-end gap-3">
-                                            <p className="font-mono text-xs text-neutral-600">{shortId(relationship.id)}</p>
+                                            <p className="font-mono text-sm text-neutral-500">{shortId(relationship.id)}</p>
                                             <p className="whitespace-nowrap text-sm text-neutral-500">{formatRelativeTime(relationship.updated_at)}</p>
                                             <ListCreatorBadge src={creator?.avatar_path ? creatorAvatarUrls.get(creator.avatar_path) : null} username={creator?.username ?? null} label="Added by" date={new Date(relationship.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
                                         </div>

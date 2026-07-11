@@ -4,7 +4,7 @@ import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { ListCreatorAvatar } from "@/components/list/ListCreatorAvatar"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { MobileCardActionSurface } from "@/components/list/MobileCardActionSurface"
-import { RelationshipStage, RoundPill, SquarePill, Status } from "@/components/ui"
+import { RelationshipStage, RoundPill, SquarePill, Status, StatusStat } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { SERVICES } from "@/lib/onboarding/services"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
@@ -25,6 +25,7 @@ export const dynamic = "force-dynamic"
 
 type PageProps = {
     params: Promise<{ workspaceSlug: string }>
+    searchParams: Promise<{ phase?: string }>
 }
 
 function metadataUserId(metadata: Record<string, unknown>) {
@@ -42,8 +43,9 @@ function relationshipWorkStatus(openWorkCount: number, urgent = false) {
     return <Status label="Up to date" tone="green" />
 }
 
-export default async function RelationshipsPage({ params }: PageProps) {
+export default async function RelationshipsPage({ params, searchParams }: PageProps) {
     const { workspaceSlug } = await params
+    const { phase: requestedPhase } = await searchParams
     const { workspace, user } = await requireWorkspace(workspaceSlug)
     const [relationships, openWorkCounts] = await Promise.all([
         listRelationshipsForWorkspace(workspace.id),
@@ -89,6 +91,14 @@ export default async function RelationshipsPage({ params }: PageProps) {
     for (const relationship of activeRelationships) {
         phaseCounts.set(relationship.lifecycle_phase, (phaseCounts.get(relationship.lifecycle_phase) ?? 0) + 1)
     }
+    const selectedPhase = RELATIONSHIP_PHASES.some((phase) => phase.key === requestedPhase)
+        ? requestedPhase as RelationshipPhase
+        : null
+    const visibleRelationships = selectedPhase
+        ? activeRelationships.filter((relationship) => relationship.lifecycle_phase === selectedPhase)
+        : activeRelationships
+    const relationshipsWithOpenWork = activeRelationships.filter((relationship) => (openWorkCounts.get(relationship.id) ?? 0) > 0).length
+    const upToDateRelationships = activeRelationships.length - relationshipsWithOpenWork
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 pb-7 text-white sm:px-6">
@@ -111,18 +121,37 @@ export default async function RelationshipsPage({ params }: PageProps) {
                     </div>
                 </header>
 
-                <section className="mt-5 grid grid-cols-2 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 sm:grid-cols-5 lg:grid-cols-10">
-                    {RELATIONSHIP_PHASES.map((phase) => (
-                        <div key={phase.key} className="border-r border-b border-neutral-800 px-3 py-3 last:border-r-0 sm:last:border-r lg:border-b-0">
-                            <p className="truncate text-xs text-neutral-500">{phase.label}</p>
-                            <p className="mt-2 text-xl font-semibold">{phaseCounts.get(phase.key) ?? 0}</p>
-                        </div>
-                    ))}
+                <section className="mt-5 border-y border-neutral-800/80 py-3">
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1">
+                        <StatusStat value={activeRelationships.length} label="Relationships" tone="grey" />
+                        <StatusStat value={relationshipsWithOpenWork} label="Open work" tone="yellow" />
+                        <StatusStat value={upToDateRelationships} label="Up to date" tone="green" />
+                    </div>
+                    <nav aria-label="Filter relationships by lifecycle stage" className="mt-3 flex gap-1 overflow-x-auto overscroll-x-contain px-1 pb-1">
+                        <Link
+                            href={workspaceHref(workspace.slug, "relationships")}
+                            aria-current={!selectedPhase ? "page" : undefined}
+                            className={`shrink-0 border-b px-2 py-2 text-sm transition-colors ${!selectedPhase ? "border-white text-white" : "border-transparent text-neutral-500 hover:border-neutral-700 hover:text-neutral-200"}`}
+                        >
+                            All <span className="ml-1 tabular-nums text-neutral-500">{activeRelationships.length}</span>
+                        </Link>
+                        {RELATIONSHIP_PHASES.map((phase) => {
+                            const selected = selectedPhase === phase.key
+                            return <Link
+                                key={phase.key}
+                                href={workspaceHref(workspace.slug, `relationships?phase=${phase.key}`)}
+                                aria-current={selected ? "page" : undefined}
+                                className={`shrink-0 border-b px-2 py-2 text-sm transition-colors ${selected ? "border-white text-white" : "border-transparent text-neutral-500 hover:border-neutral-700 hover:text-neutral-200"}`}
+                            >
+                                {phase.label} <span className="ml-1 tabular-nums text-neutral-500">{phaseCounts.get(phase.key) ?? 0}</span>
+                            </Link>
+                        })}
+                    </nav>
                 </section>
 
                 <section className="mt-5 space-y-3 2xl:space-y-0 2xl:overflow-hidden 2xl:rounded-2xl 2xl:border 2xl:border-neutral-800 2xl:bg-black">
-                    {activeRelationships.length ? (
-                        activeRelationships.map((relationship) => {
+                    {visibleRelationships.length ? (
+                        visibleRelationships.map((relationship) => {
                             const location = relationshipLocationLabel(relationship)
                             const openWorkCount = openWorkCounts.get(relationship.id) ?? 0
                             const relationshipHref = relationshipHubHref(workspace.slug, relationship.id)
@@ -204,9 +233,9 @@ export default async function RelationshipsPage({ params }: PageProps) {
                         })
                     ) : (
                         <div className="p-6">
-                            <p className="text-lg font-semibold">No relationships yet.</p>
+                            <p className="text-lg font-semibold">{selectedPhase ? `No ${RELATIONSHIP_PHASES.find((phase) => phase.key === selectedPhase)?.label.toLowerCase()} relationships.` : "No relationships yet."}</p>
                             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">
-                                Promote a qualified lead or start a relationship manually. From here it can move into nurturing, sales, onboarding, fulfilment, and retention without changing record type.
+                                {selectedPhase ? <>Choose another lifecycle stage or <Link href={workspaceHref(workspace.slug, "relationships")} className="text-neutral-200 underline decoration-neutral-600 underline-offset-4 hover:text-white">show all relationships</Link>.</> : "Promote a qualified lead or start a relationship manually. From here it can move into nurturing, sales, onboarding, fulfilment, and retention without changing record type."}
                             </p>
                         </div>
                     )}

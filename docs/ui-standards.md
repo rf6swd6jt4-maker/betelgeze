@@ -47,7 +47,9 @@ Use `Assignee` when the attached thing is a person assigned to something. It is 
 
 ## RelationshipStage
 
-`RelationshipStage` is reserved for relationship lifecycle stages. It is a horizontal hexagonal or prism label: flat along the top and bottom with equilateral-style triangular points at each end.
+`RelationshipStage` is reserved for relationship lifecycle stages. It must be visually identical to `RoundPill` in height, typography, border weight, spacing, and colour recipes. The only difference is its silhouette.
+
+The silhouette is a rectangle with half of a Betelgeze diamond attached to each end. It is exactly 24px high. Each pointed end is 12px deep, so its upper and lower edges travel at 45 degrees and meet at the vertical midpoint. In polygon terms, the six outer points are: top-left after 12px, top-right before 12px, right midpoint, bottom-right before 12px, bottom-left after 12px, and left midpoint. Do not soften, round, shorten, or reinterpret these four diagonal edges.
 
 Relationship stages are categorical labels, not operational statuses. Their stage-specific colours therefore do not expand or alter the four-colour `Status` meanings. Pass the lifecycle phase itself so the component owns both its canonical wording and colour.
 

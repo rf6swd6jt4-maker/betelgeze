@@ -50,9 +50,9 @@ export default async function UserAccountPage({ params }: PageProps) {
         <main className="min-h-screen bg-neutral-950 px-5 py-8 text-white sm:px-8">
             <div className="mx-auto max-w-3xl">
                 <div className="flex justify-end">
-                    <Link href="/logout" className="rounded-lg border border-neutral-700 px-3 py-2 text-sm hover:border-neutral-500">
-                        Log out
-                    </Link>
+                    <form action="/logout" method="post">
+                        <button className="rounded-lg border border-neutral-700 px-3 py-2 text-sm hover:border-neutral-500">Log out</button>
+                    </form>
                 </div>
 
                 <section className="mt-2 flex flex-col items-center text-center">

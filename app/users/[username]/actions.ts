@@ -68,7 +68,7 @@ export async function deleteAccount() {
     if (profile?.avatar_path) await deleteOnboardingUploads([profile.avatar_path])
     const { error } = await supabaseAdmin.auth.admin.deleteUser(user.id)
     if (error) throw new Error("Could not delete this account.")
-    redirect("/logout")
+    redirect("/login?accountDeleted=1")
 }
 
 export async function leaveWorkspace(username: string, formData: FormData) {

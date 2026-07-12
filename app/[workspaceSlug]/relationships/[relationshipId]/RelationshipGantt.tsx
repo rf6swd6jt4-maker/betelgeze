@@ -22,6 +22,7 @@ const HEADER_HEIGHT = 44
 const EMPTY_LANE_HEIGHT = 96
 const LEFT_WIDTH = 360
 const RANGE_DAYS = 730
+const MAX_ZOOM = 6
 const SCALE_WIDTH: Record<Scale, number> = { day: 64, week: 28, month: 12 }
 
 function dateLabel(day: number, scale: Scale) {
@@ -59,10 +60,13 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     canEdit: boolean
 }) {
     const scrollRef = useRef<HTMLDivElement>(null)
+    const touchPointsRef = useRef(new Map<number, { x: number; y: number }>())
+    const pinchRef = useRef<{ distance: number; zoom: number } | null>(null)
     // The plan is held locally so edits can be painted optimistically and so
     // cross-tab changes can refresh it without a full route reload.
     const [plan, setPlan] = useState(initialPlan)
-    const [scale] = useState<Scale>("week")
+    const [scale, setScale] = useState<Scale>("week")
+    const [zoom, setZoom] = useState(1)
     const [unscheduledOpen, setUnscheduledOpen] = useState(true)
     const [cascade, setCascade] = useState<ScheduleChange[] | null>(null)
     const [result, setResult] = useState<GanttMutationResult | null>(null)
@@ -77,7 +81,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { setPlan(initialPlan) }, [initialPlan])
 
-    const dayWidth = SCALE_WIDTH[scale]
+    const dayWidth = SCALE_WIDTH[scale] * zoom
     const today = new Date().toISOString().slice(0, 10)
     const rangeStart = dateDay(today) - 180
     const timelineWidth = RANGE_DAYS * dayWidth
@@ -114,8 +118,33 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     useEffect(() => {
         const node = scrollRef.current
         if (!node) return
-        node.scrollLeft = Math.max(0, (dateDay(today) - rangeStart) * dayWidth - (node.clientWidth - LEFT_WIDTH) / 2)
-    }, [dayWidth, rangeStart, today])
+        node.scrollLeft = Math.max(0, (dateDay(today) - rangeStart) * SCALE_WIDTH[scale] - (node.clientWidth - LEFT_WIDTH) / 2)
+    }, [rangeStart, scale, today])
+
+    const zoomAt = useCallback((clientX: number, requestedZoom: number) => {
+        const node = scrollRef.current
+        if (!node) return
+        const nextZoom = Math.min(MAX_ZOOM, Math.max(1, requestedZoom))
+        if (Math.abs(nextZoom - zoom) < .001) return
+        const localX = clientX - node.getBoundingClientRect().left
+        const timelineDay = (node.scrollLeft + localX - LEFT_WIDTH) / dayWidth
+        setZoom(nextZoom)
+        requestAnimationFrame(() => {
+            node.scrollLeft = Math.max(0, LEFT_WIDTH + timelineDay * SCALE_WIDTH[scale] * nextZoom - localX)
+        })
+    }, [dayWidth, scale, zoom])
+
+    useEffect(() => {
+        const node = scrollRef.current
+        if (!node) return
+        const handleWheel = (event: WheelEvent) => {
+            if (!event.ctrlKey && !event.metaKey) return
+            event.preventDefault()
+            zoomAt(event.clientX, zoom * Math.exp(-event.deltaY * .01))
+        }
+        node.addEventListener("wheel", handleWheel, { passive: false })
+        return () => node.removeEventListener("wheel", handleWheel)
+    }, [zoom, zoomAt])
 
     useEffect(() => {
         if (!dependencySource) return
@@ -212,6 +241,37 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         setEditDue(range?.end ?? today)
     }
 
+    function goToToday() {
+        const node = scrollRef.current
+        if (!node) return
+        node.scrollTo({ left: Math.max(0, todayLeft - (node.clientWidth - LEFT_WIDTH) / 2), behavior: "smooth" })
+    }
+
+    function selectScale(nextScale: Scale) {
+        setZoom(1)
+        setScale(nextScale)
+    }
+
+    function updateTouchPoint(event: ReactPointerEvent<HTMLDivElement>) {
+        if (event.pointerType !== "touch") return
+        touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+        const points = [...touchPointsRef.current.values()]
+        if (points.length !== 2) return
+        const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+        if (!pinchRef.current) {
+            pinchRef.current = { distance, zoom }
+            return
+        }
+        event.preventDefault()
+        zoomAt((points[0].x + points[1].x) / 2, pinchRef.current.zoom * distance / pinchRef.current.distance)
+    }
+
+    function endTouch(event: ReactPointerEvent<HTMLDivElement>) {
+        if (event.pointerType !== "touch") return
+        touchPointsRef.current.delete(event.pointerId)
+        if (touchPointsRef.current.size < 2) pinchRef.current = null
+    }
+
     function renderLeft() {
         return <div
             aria-hidden="true"
@@ -264,8 +324,28 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return [{ edge, path: `M ${x1} ${y1} C ${x1 + 20} ${y1}, ${x2 - 20} ${y2}, ${x2} ${y2}` }]
     })
 
-    return <section id="plan" className="mt-4 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900">
-        <div ref={scrollRef} className="relative max-h-[calc(100vh-18rem)] min-h-[28rem] overflow-auto overscroll-contain">
+    return <section id="plan" className="relative mt-4 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900">
+        <div className="absolute right-3 top-1.5 z-[70] flex items-center gap-1.5">
+            <button type="button" onClick={goToToday} className="h-8 rounded-full bg-white px-3 text-xs font-semibold text-neutral-950 shadow-sm">Today</button>
+            {([['day', 'd'], ['week', 'w'], ['month', 'mo']] as const).map(([value, label]) => <button
+                type="button"
+                key={value}
+                onClick={() => selectScale(value)}
+                aria-label={`${value} view`}
+                aria-pressed={scale === value}
+                className={`flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium text-white ${scale === value ? "border-neutral-400 bg-neutral-700" : "border-neutral-600 bg-neutral-800/95 hover:border-neutral-400"}`}
+            >{label}</button>)}
+        </div>
+        <div
+            ref={scrollRef}
+            className="relative max-h-[calc(100vh-18rem)] min-h-[28rem] overflow-auto overscroll-contain"
+            style={{ touchAction: "pan-x pan-y" }}
+            onPointerDown={updateTouchPoint}
+            onPointerMove={updateTouchPoint}
+            onPointerUp={endTouch}
+            onPointerCancel={endTouch}
+            title="Pinch or use Ctrl/Cmd + wheel to zoom"
+        >
             <div className="grid" style={{ gridTemplateColumns: `${LEFT_WIDTH}px ${timelineWidth}px`, minWidth: `${LEFT_WIDTH + timelineWidth}px` }}>
                 <div className="sticky left-0 top-0 z-50 flex h-11 items-center border-b border-r border-neutral-700 bg-neutral-900 px-3 text-sm font-semibold text-white">Relationship Timeline</div>
                 <div className="sticky top-0 z-40 h-11 border-b border-neutral-700 bg-neutral-900" onDragOver={(event) => { if (canEdit) event.preventDefault() }} onDrop={dropUnscheduled}>

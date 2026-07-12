@@ -6,7 +6,7 @@ import { LoadingOverlay } from "@/components/LoadingOverlay"
 import { WORKSPACE_TAB_FRAME_PARAM } from "@/lib/workspace-tabs"
 
 function shouldIgnoreClick(event: MouseEvent) {
-    if (new URLSearchParams(window.location.search).has(WORKSPACE_TAB_FRAME_PARAM)) return true
+    if (window.self !== window.top || new URLSearchParams(window.location.search).has(WORKSPACE_TAB_FRAME_PARAM)) return true
     if (
         event.defaultPrevented ||
         event.button !== 0 ||
@@ -87,13 +87,20 @@ export function GlobalLoadingOverlay() {
                 init?.headers ?? (input instanceof Request ? input.headers : undefined)
             )
             const isServerAction = headers.has("Next-Action")
+            const embedded = window.self !== window.top
 
-            if (isServerAction) setLoadingRouteKey(currentRouteKey)
+            if (isServerAction) {
+                if (embedded) window.dispatchEvent(new Event("betelgeze:workspace-action-start"))
+                else setLoadingRouteKey(currentRouteKey)
+            }
 
             try {
                 return await originalFetch(...args)
             } finally {
-                if (isServerAction) setLoadingRouteKey(null)
+                if (isServerAction) {
+                    if (embedded) window.dispatchEvent(new Event("betelgeze:workspace-action-end"))
+                    else setLoadingRouteKey(null)
+                }
             }
         }
 

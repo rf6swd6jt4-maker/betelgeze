@@ -17,7 +17,7 @@ export type WorkspaceTabFrameMessage = {
     source: typeof WORKSPACE_TAB_MESSAGE_SOURCE
     target: "host"
     tabId: string
-    type: "location" | "mutation" | "context-status" | "context-obstruction" | "navigation-start" | "poll-started" | "reopen-closed-tab"
+    type: "location" | "mutation" | "action-start" | "action-end" | "context-status" | "context-obstruction" | "navigation-start" | "poll-started" | "reopen-closed-tab"
     url?: string
     relationshipId?: string | null
     contextSupported?: boolean

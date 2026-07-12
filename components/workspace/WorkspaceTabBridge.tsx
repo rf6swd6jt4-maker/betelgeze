@@ -153,6 +153,19 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             window.parent.postMessage(message, window.location.origin)
         }
 
+        function reportActionState(type: "action-start" | "action-end") {
+            const message: WorkspaceTabFrameMessage = {
+                source: WORKSPACE_TAB_MESSAGE_SOURCE,
+                target: "host",
+                tabId,
+                type,
+            }
+            window.parent.postMessage(message, window.location.origin)
+        }
+
+        const reportActionStart = () => reportActionState("action-start")
+        const reportActionEnd = () => reportActionState("action-end")
+
         function forwardTabShortcut(event: KeyboardEvent) {
             if (!isReopenClosedTabShortcut(event)) return
             event.preventDefault()
@@ -170,6 +183,8 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
         document.addEventListener("submit", reportPossibleMutation, true)
         document.addEventListener("keydown", forwardTabShortcut)
         window.addEventListener("betelgeze:workspace-mutation", reportPossibleMutation)
+        window.addEventListener("betelgeze:workspace-action-start", reportActionStart)
+        window.addEventListener("betelgeze:workspace-action-end", reportActionEnd)
         const observer = new MutationObserver(updateContextObstruction)
         observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-work-item-popup", "data-loading-overlay"] })
         updateContextObstruction()
@@ -179,6 +194,8 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             document.removeEventListener("submit", reportPossibleMutation, true)
             document.removeEventListener("keydown", forwardTabShortcut)
             window.removeEventListener("betelgeze:workspace-mutation", reportPossibleMutation)
+            window.removeEventListener("betelgeze:workspace-action-start", reportActionStart)
+            window.removeEventListener("betelgeze:workspace-action-end", reportActionEnd)
             observer.disconnect()
             reportContextObstruction(false)
             delete document.body.dataset.workspaceTabActive

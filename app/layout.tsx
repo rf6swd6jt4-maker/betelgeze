@@ -1,10 +1,23 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import { GlobalLoadingOverlay } from "@/components/GlobalLoadingOverlay";
 import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import { WorkspaceTabFrameGuard } from "@/components/workspace/WorkspaceTabFrameGuard";
+import { WORKSPACE_TAB_FRAME_NAME_PREFIX, WORKSPACE_TAB_FRAME_PARAM } from "@/lib/workspace-tabs";
 import "./globals.css";
+
+const workspaceFrameBootstrap = `(() => {
+  try {
+    if (window.self === window.top || !window.name.startsWith(${JSON.stringify(WORKSPACE_TAB_FRAME_NAME_PREFIX)})) return;
+    const tabId = window.name.slice(${JSON.stringify(WORKSPACE_TAB_FRAME_NAME_PREFIX)}.length);
+    const url = new URL(window.location.href);
+    if (!tabId || url.searchParams.has(${JSON.stringify(WORKSPACE_TAB_FRAME_PARAM)})) return;
+    url.searchParams.set(${JSON.stringify(WORKSPACE_TAB_FRAME_PARAM)}, tabId);
+    window.location.replace(url);
+  } catch {}
+})();`;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -51,6 +64,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <Script id="workspace-frame-bootstrap" strategy="beforeInteractive">{workspaceFrameBootstrap}</Script>
         <Suspense fallback={null}>
           <WorkspaceTabFrameGuard />
         </Suspense>

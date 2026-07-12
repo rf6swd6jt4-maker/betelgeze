@@ -662,6 +662,14 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                 })
             }
 
+            if (message.type === "action-start") {
+                if (message.tabId === activeTabIdRef.current) setRouteLoadingTabId(message.tabId)
+            }
+
+            if (message.type === "action-end") {
+                if (message.tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
+            }
+
             if (message.type === "poll-started" && message.pollId) {
                 showCreationNotice({ label: "Poll started", href: `/${workspace.slug}/leadgen/poll/${message.pollId}` })
             }

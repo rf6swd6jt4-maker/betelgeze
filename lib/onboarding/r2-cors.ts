@@ -42,7 +42,13 @@ async function saveCorsPolicy(endpoint: string, headers: Record<string, string>,
 }
 
 function platformUploadRule(): CorsRule {
-    const origins = new Set(["https://www.betelgeze.com"])
+    const origins = new Set([
+        "https://betelgeze.com",
+        "https://www.betelgeze.com",
+        "https://app.betelgeze.com",
+        "https://dashboard.betelgeze.com",
+        "https://onboarding.betelgeze.com",
+    ])
     if (process.env.NEXT_PUBLIC_SITE_URL) {
         origins.add(new URL(process.env.NEXT_PUBLIC_SITE_URL).origin)
     }
@@ -52,6 +58,19 @@ function platformUploadRule(): CorsRule {
         exposeHeaders: ["ETag"],
         maxAgeSeconds: 3600,
     }
+}
+
+let platformUploadRuleUpdatedAt = 0
+
+export async function ensurePlatformDirectUploads() {
+    // Direct browser uploads need the app host in the bucket CORS policy. Keep
+    // this opportunistic so local environments without Cloudflare credentials
+    // can still issue and use their own signed URLs.
+    if (!process.env.CLOUDFLARE_API_TOKEN) return
+    if (Date.now() - platformUploadRuleUpdatedAt < 60 * 60 * 1000) return
+    const { endpoint, headers, rules } = await getCorsPolicy()
+    await saveCorsPolicy(endpoint, headers, withPlatformUploadRule(rules))
+    platformUploadRuleUpdatedAt = Date.now()
 }
 
 function withPlatformUploadRule(rules: CorsRule[]) {

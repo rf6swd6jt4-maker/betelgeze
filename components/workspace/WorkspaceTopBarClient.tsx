@@ -1005,7 +1005,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                 formData.set("original_name", prepared.storedAsset.name)
                 if (!String(formData.get("title") ?? "").trim()) formData.set("title", prepared.storedAsset.name)
             } catch (error) {
-                setCreateError(error instanceof Error ? error.message : "Upload failed.")
+                setCreateError(error instanceof TypeError ? "The browser could not reach file storage. Please try again in a moment." : error instanceof Error ? error.message : "Upload failed.")
                 setUploadLabel(null)
                 return
             }

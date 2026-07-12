@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { createSignedAssetUpload } from "@/lib/onboarding/uploads"
+import { ensurePlatformDirectUploads } from "@/lib/onboarding/r2-cors"
 import { requireWorkspace } from "@/lib/workspaces"
 
 export const dynamic = "force-dynamic"
@@ -17,6 +18,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     }
 
     try {
+        await ensurePlatformDirectUploads()
         return Response.json(await createSignedAssetUpload(workspace.id, { name, size, type }))
     } catch (error) {
         return Response.json({ error: error instanceof Error ? error.message : "Could not prepare upload." }, { status: 400 })

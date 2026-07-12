@@ -113,6 +113,23 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const timelineX = useCallback((day: number) => (day - rangeStart) * dayWidth, [dayWidth, rangeStart])
     const timelineWidth = RANGE_DAYS * dayWidth
     const todayLeft = timelineX(dateDay(today))
+    const columnStartDay = useCallback((day: number) => {
+        if (scale === "day") return day
+        const date = new Date(day * 86_400_000)
+        if (scale === "week") return day - ((date.getUTCDay() + 6) % 7)
+        return dateDay(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`)
+    }, [scale])
+    const columnEndDay = useCallback((day: number) => {
+        const start = columnStartDay(day)
+        if (scale === "day") return start + 1
+        if (scale === "week") return start + 7
+        return dateDay(addCalendarMonths(new Date(start * 86_400_000).toISOString().slice(0, 10), 1))
+    }, [columnStartDay, scale])
+    const barGeometry = useCallback((range: { start: string; end: string }) => {
+        const columnLeft = timelineX(columnStartDay(dateDay(range.start)))
+        const columnRight = timelineX(columnEndDay(dateDay(range.end)))
+        return { left: columnLeft + BAR_INSET, right: columnRight - BAR_INSET, width: Math.max(4, columnRight - columnLeft - BAR_INSET * 2), sourceDivider: columnRight, targetDivider: columnLeft }
+    }, [columnEndDay, columnStartDay, timelineX])
     const allVisibleItems = useMemo(() => [...plan.items, ...plan.externalItems], [plan])
     const ranges = useMemo(() => effectiveGanttRanges(allVisibleItems), [allVisibleItems])
     const relationshipItems = plan.items.filter((item) => item.section === "relationship")
@@ -220,30 +237,54 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         flashTimerRef.current = setTimeout(() => setFlashingItemId(null), 650)
     }
 
-    function scheduleFitsHierarchy(item: RelationshipGanttItem, start: string, due: string) {
+    function scheduleFitsHierarchy(item: RelationshipGanttItem, start: string, due: string, movingDescendants = false) {
         const proposed = { start, end: due }
         if (dateDay(due) < dateDay(start)) { flashInvalid(item.parentWorkItemId ?? item.id); return false }
         if (item.parentWorkItemId) {
             const parentRange = ranges.get(item.parentWorkItemId)
             if (parentRange && !rangeContainsRange(parentRange, proposed)) { flashInvalid(item.parentWorkItemId); return false }
         }
-        for (const child of plan.items.filter((candidate) => candidate.parentWorkItemId === item.id)) {
-            const childRange = ranges.get(child.id)
-            if (childRange && !rangeContainsRange(proposed, childRange)) { flashInvalid(item.id); return false }
+        if (!movingDescendants) {
+            for (const child of plan.items.filter((candidate) => candidate.parentWorkItemId === item.id)) {
+                const childRange = ranges.get(child.id)
+                if (childRange && !rangeContainsRange(proposed, childRange)) { flashInvalid(item.id); return false }
+            }
         }
         return true
     }
 
-    function applyOptimisticDates(id: string, plannedStartDate: string, dueDate: string, frozenParent?: { id: string; start: string; end: string }) {
+    function descendantScheduleChanges(itemId: string, units: number) {
+        const output: ScheduleChange[] = []
+        const visit = (parentId: string) => {
+            for (const child of plan.items.filter((candidate) => candidate.parentWorkItemId === parentId)) {
+                if (child.plannedStartDate) output.push({
+                    id: child.id,
+                    title: child.title,
+                    plannedStartDate: shiftDate(child.plannedStartDate, units, scale),
+                    plannedStartTime: child.plannedStartTime,
+                    dueDate: shiftDate(child.dueDate ?? child.plannedStartDate, units, scale),
+                    dueTime: child.dueTime,
+                    expectedUpdatedAt: child.updatedAt,
+                })
+                visit(child.id)
+            }
+        }
+        visit(itemId)
+        return output
+    }
+
+    function applyOptimisticDates(changes: Array<{ id: string; plannedStartDate: string; dueDate: string }>, frozenParent?: { id: string; start: string; end: string }) {
+        const changesById = new Map(changes.map((change) => [change.id, change]))
         setPlan((current) => ({ ...current, items: current.items.map((item) => {
-            if (item.id === id) return { ...item, plannedStartDate, dueDate }
+            const change = changesById.get(item.id)
+            if (change) return { ...item, plannedStartDate: change.plannedStartDate, dueDate: change.dueDate }
             if (frozenParent && item.id === frozenParent.id) return { ...item, plannedStartDate: frozenParent.start, dueDate: frozenParent.end }
             return item
         }) }))
     }
 
-    function requestSchedule(item: RelationshipGanttItem, start: string, due: string) {
-        if (!scheduleFitsHierarchy(item, start, due)) return
+    function requestSchedule(item: RelationshipGanttItem, start: string, due: string, descendantChanges: ScheduleChange[] = []) {
+        if (!scheduleFitsHierarchy(item, start, due, descendantChanges.length > 0)) return
         const parent = item.parentWorkItemId ? plan.items.find((candidate) => candidate.id === item.parentWorkItemId) : null
         const parentRange = parent ? ranges.get(parent.id) : null
         const frozenParent = parent && parentRange?.derived ? { id: parent.id, start: parentRange.start, end: parentRange.end } : undefined
@@ -258,11 +299,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         } : null
         // Paint the new position immediately so the bar never snaps back while
         // the server confirms; reload reconciles (or reverts) against the truth.
-        applyOptimisticDates(item.id, start, due, frozenParent)
+        applyOptimisticDates([{ id: item.id, plannedStartDate: start, dueDate: due }, ...descendantChanges.map((change) => ({ id: change.id, plannedStartDate: change.plannedStartDate!, dueDate: change.dueDate! }))], frozenParent)
         startTransition(async () => {
             const preview = await previewGanttScheduleChange(workspaceSlug, relationshipId, { id: item.id, plannedStartDate: start, dueDate: due })
             if (preview.status !== "cascade_required") { setResult(preview); void reload(); return }
-            const changes = frozenParentChange && !preview.changes.some((change) => change.id === frozenParentChange.id) ? [frozenParentChange, ...preview.changes] : preview.changes
+            const merged = new Map(preview.changes.map((change) => [change.id, change]))
+            for (const change of descendantChanges) merged.set(change.id, change)
+            if (frozenParentChange && !merged.has(frozenParentChange.id)) merged.set(frozenParentChange.id, frozenParentChange)
+            const changes = [...merged.values()]
             if (preview.changes.length > 1) { setCascade(changes); return }
             refreshAfter(await applyGanttScheduleChanges(workspaceSlug, relationshipId, changes))
         })
@@ -275,9 +319,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const barNode = event.currentTarget.closest("[data-gantt-bar]") as HTMLElement | null
         if (!barNode) return
         const originX = event.clientX
-        const originalLeft = timelineX(dateDay(range.start)) + BAR_INSET
-        const monthWidth = Math.max(dayWidth, (dateDay(addCalendarMonths(range.start, 1)) - dateDay(range.start)) * dayWidth)
-        const columnWidth = scale === "month" ? monthWidth : dayWidth * (scale === "week" ? 7 : 1)
+        const originalGeometry = barGeometry(range)
+        const startDay = dateDay(range.start)
+        const columnWidth = (columnEndDay(startDay) - columnStartDay(startDay)) * dayWidth
         let latestUnits = 0
 
         const nextDates = (units: number) => {
@@ -292,10 +336,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const paint = (units: number) => {
             latestUnits = units
             const next = nextDates(units)
-            const nextLeft = timelineX(dateDay(next.start)) + BAR_INSET
-            const nextWidth = Math.max(4, (dateDay(next.due) - dateDay(next.start) + 1) * dayWidth - BAR_INSET * 2)
-            barNode.style.transform = `translateX(${nextLeft - originalLeft}px)`
-            barNode.style.width = `${nextWidth}px`
+            const nextGeometry = barGeometry({ start: next.start, end: next.due })
+            barNode.style.transform = `translateX(${nextGeometry.left - originalGeometry.left}px)`
+            barNode.style.width = `${nextGeometry.width}px`
         }
         const move = (pointer: PointerEvent) => paint(Math.round((pointer.clientX - originX) / columnWidth))
         const finish = () => {
@@ -305,7 +348,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             barNode.style.width = ""
             if (!latestUnits) return
             const next = nextDates(latestUnits)
-            requestSchedule(item, next.start, next.due)
+            requestSchedule(item, next.start, next.due, mode === "move" ? descendantScheduleChanges(item.id, latestUnits) : [])
         }
         window.addEventListener("pointermove", move)
         window.addEventListener("pointerup", finish)
@@ -397,6 +440,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const height = rowHeight(row)
         const barHeight = row.depth === 0 ? ROOT_BAR_HEIGHT : CHILD_BAR_HEIGHT
         const range = ranges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
+        const geometry = range ? barGeometry(range) : null
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         const flashing = flashingItemId === item.id
         const barBorder = flashing ? "#ef4444" : colours.border
@@ -406,10 +450,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             className="relative border-b border-neutral-800"
             style={{ height: `${height}px` }}
         >
-            {range ? <div
+            {range && geometry ? <div
                 data-gantt-bar
                 className={`absolute z-20 flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border pl-1.5 transition-[border-color,box-shadow] ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 ? "border-dashed" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 6}px`, paddingRight: `${barHeight + handleSpace + 4}px`, left: `${timelineX(dateDay(range.start)) + BAR_INSET}px`, width: `${Math.max(4, (dateDay(range.end) - dateDay(range.start) + 1) * dayWidth - BAR_INSET * 2)}px`, borderColor: barBorder, backgroundColor: colours.background, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined }}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 6}px`, paddingRight: `${barHeight + handleSpace + 4}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: barBorder, backgroundColor: colours.background, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined }}
                 onPointerDown={(event) => startBarDrag(event, item, range, "move")}
                 title={`${item.title}: ${range.start} → ${range.end}`}
             >
@@ -431,12 +475,12 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const fromHeight = rowHeights.get(edge.dependsOnWorkItemId)
         const toHeight = rowHeights.get(edge.workItemId)
         if (fromTop === undefined || toTop === undefined || fromHeight === undefined || toHeight === undefined || !fromRange || !toRange) return []
-        const sourceBarLeft = timelineX(dateDay(fromRange.start)) + BAR_INSET
-        const sourceBarWidth = Math.max(4, (dateDay(fromRange.end) - dateDay(fromRange.start) + 1) * dayWidth - BAR_INSET * 2)
-        const sourceDivider = timelineX(dateDay(fromRange.end) + 1)
-        const sourceBarRight = sourceBarLeft + sourceBarWidth
-        const targetDivider = timelineX(dateDay(toRange.start))
-        const targetBarLeft = targetDivider + BAR_INSET
+        const sourceGeometry = barGeometry(fromRange)
+        const targetGeometry = barGeometry(toRange)
+        const sourceDivider = sourceGeometry.sourceDivider
+        const sourceBarRight = sourceGeometry.right
+        const targetDivider = targetGeometry.targetDivider
+        const targetBarLeft = targetGeometry.left
         const y1 = fromTop + fromHeight / 2
         const y2 = toTop + toHeight / 2
         const yTrack = y2 >= y1 ? fromTop + fromHeight : fromTop

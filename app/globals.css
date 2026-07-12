@@ -81,6 +81,21 @@ body {
   100% { transform: rotate(405deg); }
 }
 
+@keyframes betelgeze-creation-notice {
+  0% {
+    opacity: 0;
+    transform: translateY(calc(100% + 1rem));
+  }
+  9%, 86% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(calc(100% + 1rem));
+  }
+}
+
 .whitespace-pre-wrap,
 .break-words {
   overflow-wrap: anywhere;

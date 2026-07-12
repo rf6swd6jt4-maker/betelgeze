@@ -92,6 +92,11 @@ type SearchResult = {
     recordId?: string
 }
 
+type CreationNotice = {
+    label: string
+    href: string
+}
+
 function WorkspaceLogo({ src, name }: { src?: string | null; name: string }) {
     if (src) {
         return <img src={src} alt={`${name} logo`} className="h-9 w-9 shrink-0 rounded-full border border-neutral-700 bg-neutral-900 object-cover" />
@@ -106,6 +111,10 @@ function ArrowLeftIcon() {
 
 function ArrowRightIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="m9 6 6 6-6 6" /></svg>
+}
+
+function CheckIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[2.5]"><path d="m5 12 4.5 4.5L19 7" /></svg>
 }
 
 function ReloadIcon() {
@@ -358,6 +367,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const contextStatusByTabRef = useRef<Record<string, WorkspaceTabContextStatus>>({})
     const contextManualClosedByTabRef = useRef<Record<string, boolean>>({})
     const contextObstructedByTabRef = useRef<Record<string, boolean>>({})
+    const creationNoticeTimeoutRef = useRef<number | null>(null)
     const [sidebarOpen, setSidebarOpen] = useState(false)
     const [sidebarHydrated, setSidebarHydrated] = useState(false)
     const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false)
@@ -382,6 +392,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const [createTarget, setCreateTarget] = useState<"relationship" | "work-item" | "asset" | null>(null)
     const [createError, setCreateError] = useState<string | null>(null)
     const [uploadLabel, setUploadLabel] = useState<string | null>(null)
+    const [creationNotice, setCreationNotice] = useState<CreationNotice | null>(null)
     const [isCreating, startCreateTransition] = useTransition()
     const defaultWorkspaceUrl = `/${workspace.slug}`
     const tabsStorageKey = `betelgeze:workspace-tabs:${workspace.slug}`
@@ -428,6 +439,10 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const saveTabsState = useCallback((nextTabs: WorkspaceTab[], nextActiveId: string) => {
         sessionStorage.setItem(tabsStorageKey, JSON.stringify({ mode: "live", tabs: nextTabs, activeId: nextActiveId }))
     }, [tabsStorageKey])
+
+    useEffect(() => () => {
+        if (creationNoticeTimeoutRef.current) window.clearTimeout(creationNoticeTimeoutRef.current)
+    }, [])
 
     const updateTabForShellNavigation = useCallback((tabId: string, url: string) => {
         setTabs((existingTabs) => {
@@ -946,8 +961,10 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         setCreateError(null)
         const form = event.currentTarget
         const formData = new FormData(form)
+        const target = createTarget
+        if (!target) return
 
-        if (createTarget === "asset") {
+        if (target === "asset") {
             const file = formData.get("asset_file")
             if (!(file instanceof File) || file.size === 0) {
                 setCreateError("Choose a file to upload.")
@@ -983,9 +1000,9 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         }
 
         startCreateTransition(async () => {
-            const result = createTarget === "relationship"
+            const result = target === "relationship"
                 ? await createRelationshipAction(formData)
-                : createTarget === "work-item"
+                : target === "work-item"
                     ? await createWorkItemAction(formData)
                     : await createAssetAction(formData)
             if (!result.ok) {
@@ -994,7 +1011,27 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             }
             setCreateTarget(null)
             form.reset()
-            if (result.href) navigateActiveTab(result.href)
+            if (!result.href) return
+
+            const revision = mutationRevisionRef.current + 1
+            mutationRevisionRef.current = revision
+            const tabId = activeTabIdRef.current
+            setTabs((existingTabs) => {
+                const updatedTabs = existingTabs.map((tab) => tab.id === tabId ? { ...tab, seenRevision: revision } : tab)
+                saveTabsState(updatedTabs, tabId)
+                return updatedTabs
+            })
+            postToTab(tabId, { type: "activate", active: true, refresh: true })
+
+            if (creationNoticeTimeoutRef.current) window.clearTimeout(creationNoticeTimeoutRef.current)
+            setCreationNotice({
+                label: target === "relationship" ? "Relationship added" : target === "work-item" ? "Work item added" : "Asset added",
+                href: result.href,
+            })
+            creationNoticeTimeoutRef.current = window.setTimeout(() => {
+                setCreationNotice(null)
+                creationNoticeTimeoutRef.current = null
+            }, 6200)
         })
     }
 
@@ -1313,6 +1350,15 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
     const activePathname = new URL(activeTab.url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname
     const activeRouteLoading = routeLoadingTabId === activeTabId
 
+    function viewCreatedRecord() {
+        if (!creationNotice) return
+        if (creationNoticeTimeoutRef.current) window.clearTimeout(creationNoticeTimeoutRef.current)
+        creationNoticeTimeoutRef.current = null
+        const { href } = creationNotice
+        setCreationNotice(null)
+        navigateActiveTab(href)
+    }
+
     return <div ref={shellRootRef} data-workspace-shell-root>
         <header data-workspace-topbar className="fixed left-0 top-0 z-50 h-14 w-full border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/20 backdrop-blur">
             <div className="grid h-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 sm:px-6 md:grid-cols-[minmax(0,1fr)_minmax(20rem,40rem)_minmax(0,1fr)] md:gap-4">
@@ -1556,6 +1602,16 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         )}
 
         {activeRouteLoading && <LoadingOverlay />}
+
+        {creationNotice && (
+            <div className="pointer-events-none fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-[60] sm:left-1/2 sm:right-auto sm:w-[min(34rem,calc(100vw-2rem))] sm:-translate-x-1/2">
+                <div role="status" aria-live="polite" className="pointer-events-auto flex min-h-14 items-center gap-3 rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm text-white shadow-2xl shadow-black/50 motion-reduce:animate-none" style={{ animation: "betelgeze-creation-notice 6.2s cubic-bezier(0.22, 1, 0.36, 1) both" }}>
+                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white text-white"><CheckIcon /></span>
+                    <span className="min-w-0 flex-1 font-medium">{creationNotice.label}</span>
+                    <button type="button" onClick={viewCreatedRecord} className="shrink-0 text-sm font-medium text-white underline underline-offset-4 hover:text-neutral-300">View</button>
+                </div>
+            </div>
+        )}
 
         {sidebarOpen && <button type="button" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} className="fixed inset-x-0 bottom-0 top-14 z-[45] cursor-default md:hidden" />}
 

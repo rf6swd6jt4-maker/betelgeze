@@ -62,6 +62,7 @@ Use `Assignee` when the attached thing is a person assigned to something. Its de
 <RoundPill tone="sky">Reporting</RoundPill>
 <Assignee name="Alex Morgan" avatarSrc={avatarUrl} />
 <Assignee name="Alex Morgan" avatarSrc={avatarUrl} compact />
+<Assignee name="Alex Morgan" avatarSrc={avatarUrl} compact compactSize="md" />
 ```
 
 ## SquarePill

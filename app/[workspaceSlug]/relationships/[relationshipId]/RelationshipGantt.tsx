@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react"
 import { Assignee, relationshipPhaseColours } from "@/components/ui"
 import { ganttSyncChannelName, postGanttSync } from "@/lib/ui/gantt-sync"
@@ -15,9 +16,10 @@ import {
 type Scale = "day" | "week" | "month"
 type DisplayRow = { item: RelationshipGanttItem; depth: number; external?: boolean }
 
-const ROOT_ROW_HEIGHT = 46
-const CHILD_ROW_HEIGHT = 36
-const BAR_HEIGHT = 28
+const ROOT_ROW_HEIGHT = 50
+const CHILD_ROW_HEIGHT = 32
+const ROOT_BAR_HEIGHT = 34
+const CHILD_BAR_HEIGHT = 24
 const HEADER_HEIGHT = 44
 const EMPTY_LANE_HEIGHT = 96
 const MIN_CHART_HEIGHT = 448
@@ -69,7 +71,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
 }) {
     const scrollRef = useRef<HTMLDivElement>(null)
     const touchPointsRef = useRef(new Map<number, { x: number; y: number }>())
-    const pinchRef = useRef<{ distance: number; zoom: number } | null>(null)
+    const pinchRef = useRef<{ distance: number; zoom: number; centerX: number; centerY: number; active: boolean } | null>(null)
     // The plan is held locally so edits can be painted optimistically and so
     // cross-tab changes can refresh it without a full route reload.
     const [plan, setPlan] = useState(initialPlan)
@@ -155,7 +157,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const node = scrollRef.current
         if (!node) return
         const handleWheel = (event: WheelEvent) => {
-            if (!event.ctrlKey && !event.metaKey) return
+            if ((!event.ctrlKey && !event.metaKey) || Math.abs(event.deltaY) <= Math.abs(event.deltaX) || Math.abs(event.deltaY) < .01) return
             event.preventDefault()
             zoomAt(event.clientX, zoom * Math.exp(-event.deltaY * .01))
         }
@@ -229,12 +231,20 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const points = [...touchPointsRef.current.values()]
         if (points.length !== 2) return
         const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+        const centerX = (points[0].x + points[1].x) / 2
+        const centerY = (points[0].y + points[1].y) / 2
         if (!pinchRef.current) {
-            pinchRef.current = { distance, zoom }
+            pinchRef.current = { distance, zoom, centerX, centerY, active: false }
             return
         }
+        const distanceChange = Math.abs(distance - pinchRef.current.distance)
+        const centerTravel = Math.hypot(centerX - pinchRef.current.centerX, centerY - pinchRef.current.centerY)
+        if (!pinchRef.current.active) {
+            if (distanceChange < 8 || distanceChange <= centerTravel * 1.25) return
+            pinchRef.current.active = true
+        }
         event.preventDefault()
-        zoomAt((points[0].x + points[1].x) / 2, pinchRef.current.zoom * distance / pinchRef.current.distance)
+        zoomAt(centerX, pinchRef.current.zoom * distance / pinchRef.current.distance)
     }
 
     function endTouch(event: ReactPointerEvent<HTMLDivElement>) {
@@ -284,6 +294,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     function renderTimeline(row: DisplayRow) {
         const item = row.item
         const height = rowHeight(row)
+        const barHeight = row.depth === 0 ? ROOT_BAR_HEIGHT : CHILD_BAR_HEIGHT
         const range = ranges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         return <div
@@ -292,14 +303,15 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         >
             {range ? <div
                 data-gantt-bar
-                className={`absolute flex select-none items-center gap-1.5 overflow-hidden rounded-md border px-1.5 ${row.depth > 0 ? "border-dashed" : ""}`}
-                style={{ top: `${(height - BAR_HEIGHT) / 2}px`, height: `${BAR_HEIGHT}px`, left: `${(dateDay(range.start) - rangeStart) * dayWidth + BAR_INSET}px`, width: `${Math.max(4, (dateDay(range.end) - dateDay(range.start) + 1) * dayWidth - BAR_INSET * 2)}px`, borderColor: colours.border, backgroundColor: colours.background, color: colours.text }}
+                className={`absolute flex select-none items-center gap-1.5 overflow-hidden rounded-md border pl-1.5 ${row.depth > 0 ? "border-dashed" : ""}`}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingRight: `${barHeight + 4}px`, left: `${(dateDay(range.start) - rangeStart) * dayWidth + BAR_INSET}px`, width: `${Math.max(4, (dateDay(range.end) - dateDay(range.start) + 1) * dayWidth - BAR_INSET * 2)}px`, borderColor: colours.border, backgroundColor: colours.background, color: colours.text }}
                 onClick={() => { if (window.matchMedia("(max-width: 1023px)").matches) openDateEditor(item) }}
                 title={`${item.title}: ${range.start} → ${range.end}`}
             >
                 {item.actualStartAt ? <span className="absolute inset-y-0 left-0 rounded-l-md opacity-45" style={{ width: `${Math.min(100, Math.max(8, ((dateDay((item.actualCompletedAt ?? today).slice(0, 10)) - dateDay(range.start) + 1) / Math.max(1, dateDay(range.end) - dateDay(range.start) + 1)) * 100))}%`, backgroundColor: colours.text }} /> : null}
-                {item.assignees[0] ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact />{item.assignees.length > 1 ? <span className="shrink-0 text-[10px] font-medium">+{item.assignees.length - 1}</span> : null}</div> : null}
-                <span className={`relative min-w-0 flex-1 truncate text-xs leading-none ${row.depth === 0 ? "font-semibold" : "font-normal"}`}>{item.title}</span>
+                {item.assignees[0] ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact compactSize={row.depth === 0 ? "md" : "sm"} />{item.assignees.length > 1 ? <span className={`shrink-0 font-medium ${row.depth === 0 ? "text-xs" : "text-[9px]"}`}>+{item.assignees.length - 1}</span> : null}</div> : null}
+                <span className={`relative min-w-0 flex-1 truncate leading-none ${row.depth === 0 ? "text-sm font-semibold" : "text-[11px] font-normal"}`}>{item.title}</span>
+                <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onClick={(event) => event.stopPropagation()} className="absolute inset-y-0 right-0 z-10 flex items-center justify-center border-l" style={{ width: `${barHeight}px`, borderColor: colours.border, color: colours.border }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-4 w-4" : "h-3.5 w-3.5"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link>
             </div> : null}
         </div>
     }
@@ -307,10 +319,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const dependencyPaths = plan.dependencies.flatMap((edge) => {
         const fromTop = rowTop.get(edge.dependsOnWorkItemId)
         const toTop = rowTop.get(edge.workItemId)
-        const predecessorItem = allVisibleItems.find((item) => item.id === edge.dependsOnWorkItemId)
-        const fromRange = edge.source === "parent_auto" && predecessorItem?.plannedStartDate
-            ? { start: predecessorItem.plannedStartDate, end: predecessorItem.dueDate ?? predecessorItem.plannedStartDate, derived: false }
-            : ranges.get(edge.dependsOnWorkItemId)
+        const fromRange = ranges.get(edge.dependsOnWorkItemId)
         const toRange = ranges.get(edge.workItemId)
         const fromHeight = rowHeights.get(edge.dependsOnWorkItemId)
         const toHeight = rowHeights.get(edge.workItemId)
@@ -358,7 +367,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                     {headerLabels.map((label) => <span key={label.day} className="absolute top-0 flex h-full items-center border-l border-neutral-800 px-1 text-[10px] text-neutral-500" style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
                     <span className="absolute inset-y-0 z-10 w-px bg-red-400/60" style={{ left: `${todayLeft}px` }} />
                 </div>
-                {plan.milestones.length ? <><div aria-hidden="true" className="sticky left-0 z-40 h-[46px] border-b border-r border-b-neutral-800 border-r-neutral-700 bg-neutral-950" /><div className="relative h-[46px] border-b border-neutral-800">{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</span> })}</div></> : null}
+                {plan.milestones.length ? <><div aria-hidden="true" className="sticky left-0 z-40 border-b border-r border-b-neutral-800 border-r-neutral-700 bg-neutral-950" style={{ height: `${ROOT_ROW_HEIGHT}px` }} /><div className="relative border-b border-neutral-800" style={{ height: `${ROOT_ROW_HEIGHT}px` }}>{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute" style={{ left, top: `${(ROOT_ROW_HEIGHT - 12) / 2}px` }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute" style={{ left, top: `${(ROOT_ROW_HEIGHT - 12) / 2}px` }}>{marker}</span> })}</div></> : null}
                 {relationshipRows.map((row) => <div className="contents" key={`relationship-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
                 {[...sharedRows, ...externalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
                 {emptyTimeline ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 h-24 border-b border-r border-b-neutral-800 border-r-neutral-700 bg-neutral-950" /><div className="relative h-24 border-b border-neutral-800"><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-600">Nothing scheduled</span></div></div> : null}

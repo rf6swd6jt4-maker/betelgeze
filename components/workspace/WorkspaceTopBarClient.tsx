@@ -1031,7 +1031,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             creationNoticeTimeoutRef.current = window.setTimeout(() => {
                 setCreationNotice(null)
                 creationNoticeTimeoutRef.current = null
-            }, 6200)
+            }, 8400)
         })
     }
 
@@ -1605,7 +1605,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
         {creationNotice && (
             <div className="pointer-events-none fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-[60] sm:left-1/2 sm:right-auto sm:w-[min(34rem,calc(100vw-2rem))] sm:-translate-x-1/2">
-                <div role="status" aria-live="polite" className="pointer-events-auto flex min-h-14 items-center gap-3 rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm text-white shadow-2xl shadow-black/50 motion-reduce:animate-none" style={{ animation: "betelgeze-creation-notice 6.2s cubic-bezier(0.22, 1, 0.36, 1) both" }}>
+                <div role="status" aria-live="polite" className="pointer-events-auto flex min-h-14 items-center gap-3 rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white shadow-2xl shadow-black/50 motion-reduce:animate-none" style={{ animation: "betelgeze-creation-notice 8.4s cubic-bezier(0.22, 1, 0.36, 1) both" }}>
                     <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white text-white"><CheckIcon /></span>
                     <span className="min-w-0 flex-1 font-medium">{creationNotice.label}</span>
                     <button type="button" onClick={viewCreatedRecord} className="shrink-0 text-sm font-medium text-white underline underline-offset-4 hover:text-neutral-300">View</button>

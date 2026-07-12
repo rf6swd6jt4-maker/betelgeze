@@ -55,12 +55,13 @@ These values are the palette definition. Do not substitute nearby framework colo
 
 `yellow` is the canonical tone for `Test` labels across the platform. It retains the same glassy, near-black chromatic face as the rest of the palette, but keeps its red and green channels close so it reads as yellow rather than amber or brown. `amber` is warmer and more orange; retain it for labels that need that distinction rather than using it as a substitute for `Test`.
 
-Use `Assignee` when the attached thing is a person assigned to something. It is the canonical avatar-and-name form of `RoundPill`; do not assemble a separate profile-picture treatment for assignees.
+Use `Assignee` when the attached thing is a person assigned to something. Its default is the canonical avatar-and-name form of `RoundPill`; do not assemble a separate profile-picture treatment for assignees. In space-constrained visualisations such as Gantt bars, use its `compact` avatar-only mode.
 
 ```tsx
 <RoundPill tone="emerald">Paid Social</RoundPill>
 <RoundPill tone="sky">Reporting</RoundPill>
 <Assignee name="Alex Morgan" avatarSrc={avatarUrl} />
+<Assignee name="Alex Morgan" avatarSrc={avatarUrl} compact />
 ```
 
 ## SquarePill

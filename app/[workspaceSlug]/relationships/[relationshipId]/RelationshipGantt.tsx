@@ -15,21 +15,28 @@ import {
 type Scale = "day" | "week" | "month"
 type DisplayRow = { item: RelationshipGanttItem; depth: number; external?: boolean }
 
-const ROW_HEIGHT = 46
+const ROOT_ROW_HEIGHT = 46
+const CHILD_ROW_HEIGHT = 36
+const BAR_HEIGHT = 28
 const HEADER_HEIGHT = 44
 const EMPTY_LANE_HEIGHT = 96
 const MIN_CHART_HEIGHT = 448
 const MIN_LEFT_WIDTH = 220
+const DEFAULT_LEFT_WIDTH = 260
 const MAX_LEFT_WIDTH = 360
 const RANGE_DAYS = 730
 const MAX_ZOOM = 6
-const BAR_INSET = 4
+const BAR_INSET = 8
 const STRUCTURAL_LINE = "#404040"
 const SCALE_WIDTH: Record<Scale, number> = { day: 64, week: 28, month: 12 }
 
 function dateLabel(day: number, scale: Scale) {
     const date = new Date(day * 86_400_000)
     return new Intl.DateTimeFormat("en-IE", scale === "month" ? { month: "short", year: "2-digit" } : { day: "numeric", month: "short" }).format(date)
+}
+
+function rowHeight(row: DisplayRow) {
+    return row.depth === 0 ? ROOT_ROW_HEIGHT : CHILD_ROW_HEIGHT
 }
 
 function flattenRows(items: RelationshipGanttItem[], collapsed: Set<string>) {
@@ -68,7 +75,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const [plan, setPlan] = useState(initialPlan)
     const [scale, setScale] = useState<Scale>("week")
     const [zoom, setZoom] = useState(1)
-    const [leftWidth, setLeftWidth] = useState(MAX_LEFT_WIDTH)
+    const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH)
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
     const [cascade, setCascade] = useState<ScheduleChange[] | null>(null)
     const [result, setResult] = useState<GanttMutationResult | null>(null)
@@ -93,16 +100,27 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const relationshipRows = flattenRows(relationshipItems, collapsed)
     const sharedRows = flattenRows(sharedItems, collapsed)
     const externalRows: DisplayRow[] = plan.externalItems.map((item) => ({ item, depth: 0, external: true }))
-    const milestoneHeight = plan.milestones.length ? ROW_HEIGHT : 0
+    const milestoneHeight = plan.milestones.length ? ROOT_ROW_HEIGHT : 0
     const relationshipRowsTop = HEADER_HEIGHT + milestoneHeight
-    const sharedRowsTop = relationshipRowsTop + relationshipRows.length * ROW_HEIGHT
+    const rowTop = new Map<string, number>()
+    const rowHeights = new Map<string, number>()
+    let rowCursor = relationshipRowsTop
+    for (const row of relationshipRows) {
+        const height = rowHeight(row)
+        rowTop.set(row.item.id, rowCursor)
+        rowHeights.set(row.item.id, height)
+        rowCursor += height
+    }
+    for (const row of [...sharedRows, ...externalRows]) {
+        const height = rowHeight(row)
+        rowTop.set(row.item.id, rowCursor)
+        rowHeights.set(row.item.id, height)
+        rowCursor += height
+    }
     const emptyTimeline = !relationshipRows.length && !sharedRows.length && !externalRows.length
-    const contentHeight = sharedRowsTop + (sharedRows.length + externalRows.length) * ROW_HEIGHT + (emptyTimeline ? EMPTY_LANE_HEIGHT : 0)
+    const contentHeight = rowCursor + (emptyTimeline ? EMPTY_LANE_HEIGHT : 0)
     const chartHeight = Math.max(MIN_CHART_HEIGHT, contentHeight)
     const fillerHeight = chartHeight - contentHeight
-    const rowTop = new Map<string, number>()
-    relationshipRows.forEach((row, index) => rowTop.set(row.item.id, relationshipRowsTop + index * ROW_HEIGHT))
-    ;[...sharedRows, ...externalRows].forEach((row, index) => rowTop.set(row.item.id, sharedRowsTop + index * ROW_HEIGHT))
 
     const headerLabels = useMemo(() => {
         return Array.from({ length: RANGE_DAYS }, (_, index) => ({ day: rangeStart + index, left: index * dayWidth }))
@@ -117,7 +135,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     useEffect(() => {
         const node = scrollRef.current
         if (!node) return
-        node.scrollLeft = Math.max(0, (dateDay(today) - rangeStart) * SCALE_WIDTH[scale] - (node.clientWidth - MAX_LEFT_WIDTH) / 2)
+        node.scrollLeft = Math.max(0, (dateDay(today) - rangeStart) * SCALE_WIDTH[scale] - (node.clientWidth - DEFAULT_LEFT_WIDTH) / 2)
     }, [rangeStart, scale, today])
 
     const zoomAt = useCallback((clientX: number, requestedZoom: number) => {
@@ -244,7 +262,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const isRoot = row.depth === 0
         const hasChildren = isRoot && plan.items.some((item) => item.parentWorkItemId === row.item.id)
         return <div
-            className="sticky left-0 z-40 flex h-[46px] min-w-0 items-center justify-end gap-1.5 border-b border-r border-b-neutral-800 border-r-neutral-700 bg-neutral-950 px-2"
+            className="sticky left-0 z-40 flex min-w-0 items-center justify-end gap-1.5 border-b border-r border-b-neutral-800 border-r-neutral-700 bg-neutral-950 px-2"
+            style={{ height: `${rowHeight(row)}px` }}
         >
             {hasChildren ? <button
                 type="button"
@@ -264,20 +283,22 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
 
     function renderTimeline(row: DisplayRow) {
         const item = row.item
+        const height = rowHeight(row)
         const range = ranges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         return <div
-            className="relative h-[46px] border-b border-neutral-800"
+            className="relative border-b border-neutral-800"
+            style={{ height: `${height}px` }}
         >
             {range ? <div
                 data-gantt-bar
-                className={`absolute top-2 flex h-7 select-none items-center gap-1.5 overflow-hidden rounded-md border px-1.5 ${row.depth > 0 ? "border-dashed" : ""}`}
-                style={{ left: `${(dateDay(range.start) - rangeStart) * dayWidth + BAR_INSET}px`, width: `${Math.max(4, (dateDay(range.end) - dateDay(range.start) + 1) * dayWidth - BAR_INSET * 2)}px`, borderColor: colours.border, backgroundColor: colours.background, color: colours.text }}
+                className={`absolute flex select-none items-center gap-1.5 overflow-hidden rounded-md border px-1.5 ${row.depth > 0 ? "border-dashed" : ""}`}
+                style={{ top: `${(height - BAR_HEIGHT) / 2}px`, height: `${BAR_HEIGHT}px`, left: `${(dateDay(range.start) - rangeStart) * dayWidth + BAR_INSET}px`, width: `${Math.max(4, (dateDay(range.end) - dateDay(range.start) + 1) * dayWidth - BAR_INSET * 2)}px`, borderColor: colours.border, backgroundColor: colours.background, color: colours.text }}
                 onClick={() => { if (window.matchMedia("(max-width: 1023px)").matches) openDateEditor(item) }}
                 title={`${item.title}: ${range.start} → ${range.end}`}
             >
                 {item.actualStartAt ? <span className="absolute inset-y-0 left-0 rounded-l-md opacity-45" style={{ width: `${Math.min(100, Math.max(8, ((dateDay((item.actualCompletedAt ?? today).slice(0, 10)) - dateDay(range.start) + 1) / Math.max(1, dateDay(range.end) - dateDay(range.start) + 1)) * 100))}%`, backgroundColor: colours.text }} /> : null}
-                {item.assignees[0] ? <div className="relative flex min-w-0 shrink items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} className="min-w-0 max-w-24 shrink" />{item.assignees.length > 1 ? <span className="shrink-0 text-[10px] font-medium">+{item.assignees.length - 1}</span> : null}</div> : null}
+                {item.assignees[0] ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact />{item.assignees.length > 1 ? <span className="shrink-0 text-[10px] font-medium">+{item.assignees.length - 1}</span> : null}</div> : null}
                 <span className={`relative min-w-0 flex-1 truncate text-xs leading-none ${row.depth === 0 ? "font-semibold" : "font-normal"}`}>{item.title}</span>
             </div> : null}
         </div>
@@ -291,13 +312,19 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             ? { start: predecessorItem.plannedStartDate, end: predecessorItem.dueDate ?? predecessorItem.plannedStartDate, derived: false }
             : ranges.get(edge.dependsOnWorkItemId)
         const toRange = ranges.get(edge.workItemId)
-        if (fromTop === undefined || toTop === undefined || !fromRange || !toRange) return []
-        const x1 = (dateDay(fromRange.end) - rangeStart + 1) * dayWidth
-        const x2 = (dateDay(toRange.start) - rangeStart) * dayWidth
-        const y1 = fromTop + ROW_HEIGHT / 2
-        const y2 = toTop + ROW_HEIGHT / 2
-        const yTrack = y2 >= y1 ? fromTop + ROW_HEIGHT : fromTop
-        return [{ edge, path: `M ${x1} ${y1} V ${yTrack} H ${x2} V ${y2}` }]
+        const fromHeight = rowHeights.get(edge.dependsOnWorkItemId)
+        const toHeight = rowHeights.get(edge.workItemId)
+        if (fromTop === undefined || toTop === undefined || fromHeight === undefined || toHeight === undefined || !fromRange || !toRange) return []
+        const sourceBarLeft = (dateDay(fromRange.start) - rangeStart) * dayWidth + BAR_INSET
+        const sourceBarWidth = Math.max(4, (dateDay(fromRange.end) - dateDay(fromRange.start) + 1) * dayWidth - BAR_INSET * 2)
+        const sourceDivider = (dateDay(fromRange.end) - rangeStart + 1) * dayWidth
+        const sourceBarRight = sourceBarLeft + sourceBarWidth
+        const targetDivider = (dateDay(toRange.start) - rangeStart) * dayWidth
+        const targetBarLeft = targetDivider + BAR_INSET
+        const y1 = fromTop + fromHeight / 2
+        const y2 = toTop + toHeight / 2
+        const yTrack = y2 >= y1 ? fromTop + fromHeight : fromTop
+        return [{ edge, path: `M ${sourceBarRight} ${y1} H ${sourceDivider} V ${yTrack} H ${targetDivider} V ${y2} H ${targetBarLeft}`, arrow: `M ${targetBarLeft - 4} ${y2 - 4} L ${targetBarLeft} ${y2} L ${targetBarLeft - 4} ${y2 + 4}` }]
     })
 
     return <section id="plan" className="relative isolate mt-4 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900">
@@ -339,7 +366,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             </div>
             {headerLabels.map((label) => <div aria-hidden="true" key={`column-${label.day}`} className="pointer-events-none absolute z-10 w-px bg-neutral-800" style={{ left: `${leftWidth + label.left}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${leftWidth + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />
-            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${leftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path }) => <path key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} d={path} fill="none" stroke={STRUCTURAL_LINE} strokeWidth="1.5" strokeLinejoin="miter" />)}</svg>
+            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${leftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path, arrow }) => <g key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} fill="none" stroke={STRUCTURAL_LINE} strokeWidth="1.5" strokeLinejoin="miter" strokeLinecap="square"><path d={path} /><path d={arrow} /></g>)}</svg>
         </div>
         <MutationError result={result} />
         {cascade ? <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-lg rounded-xl border border-neutral-700 bg-neutral-950 p-4 shadow-2xl"><h3 className="font-semibold text-white">Move dependent work?</h3><p className="mt-1 text-sm text-neutral-400">This schedule change affects {cascade.length} work items.</p><div className="mt-3 max-h-72 divide-y divide-neutral-900 overflow-y-auto rounded-lg border border-neutral-800">{cascade.map((change) => <div key={change.id} className="flex justify-between gap-3 px-3 py-2 text-sm"><span className="truncate text-neutral-200">{change.title}</span><span className="shrink-0 text-neutral-500">{change.plannedStartDate} → {change.dueDate}</span></div>)}</div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => { setCascade(null); void reload() }} className="h-9 px-3 text-sm text-neutral-400 hover:text-white">Cancel</button><button type="button" disabled={pending} onClick={() => { const changes = cascade; setCascade(null); mutate(() => applyGanttScheduleChanges(workspaceSlug, relationshipId, changes)) }} className="h-9 rounded-md bg-white px-3 text-sm font-medium text-black">Confirm changes</button></div></div></div> : null}

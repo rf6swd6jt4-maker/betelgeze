@@ -1,16 +1,14 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react"
-import { relationshipPhaseColours } from "@/components/ui"
+import { Assignee, relationshipPhaseColours } from "@/components/ui"
 import { ganttSyncChannelName, postGanttSync } from "@/lib/ui/gantt-sync"
 import { dateDay, effectiveGanttRanges, type ScheduleChange } from "@/lib/relationship-gantt-schedule"
-import type { RelationshipGanttDependency, RelationshipGanttItem, RelationshipGanttPlan } from "@/lib/relationship-gantt"
+import type { RelationshipGanttItem, RelationshipGanttPlan } from "@/lib/relationship-gantt"
 import {
     applyGanttScheduleChanges,
-    createGanttDependency,
     loadGanttPlan,
     previewGanttScheduleChange,
-    removeGanttDependency,
     type GanttMutationResult,
 } from "./gantt-actions"
 
@@ -25,6 +23,8 @@ const MIN_LEFT_WIDTH = 220
 const MAX_LEFT_WIDTH = 360
 const RANGE_DAYS = 730
 const MAX_ZOOM = 6
+const BAR_INSET = 4
+const STRUCTURAL_LINE = "#404040"
 const SCALE_WIDTH: Record<Scale, number> = { day: 64, week: 28, month: 12 }
 
 function dateLabel(day: number, scale: Scale) {
@@ -72,8 +72,6 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
     const [cascade, setCascade] = useState<ScheduleChange[] | null>(null)
     const [result, setResult] = useState<GanttMutationResult | null>(null)
-    const [selectedDependency, setSelectedDependency] = useState<RelationshipGanttDependency | null>(null)
-    const [dependencySource, setDependencySource] = useState<string | null>(null)
     const [pending, startTransition] = useTransition()
     const [dateEditor, setDateEditor] = useState<RelationshipGanttItem | null>(null)
     const [editStart, setEditStart] = useState("")
@@ -147,13 +145,6 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return () => node.removeEventListener("wheel", handleWheel)
     }, [zoom, zoomAt])
 
-    useEffect(() => {
-        if (!dependencySource) return
-        const clear = () => setDependencySource(null)
-        window.addEventListener("pointerup", clear, { once: true })
-        return () => window.removeEventListener("pointerup", clear)
-    }, [dependencySource])
-
     const reload = useCallback(async () => {
         const next = await loadGanttPlan(workspaceSlug, relationshipId)
         if (next) setPlan(next)
@@ -193,34 +184,6 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             if (preview.changes.length > 1) { setCascade(preview.changes); return }
             refreshAfter(await applyGanttScheduleChanges(workspaceSlug, relationshipId, preview.changes))
         })
-    }
-
-    function startBarDrag(event: ReactPointerEvent<HTMLElement>, item: RelationshipGanttItem, mode: "move" | "start" | "end") {
-        if (!canEdit || window.matchMedia("(max-width: 1023px)").matches || ["done", "canceled"].includes(item.status)) return
-        event.preventDefault()
-        const range = ranges.get(item.id)
-        if (!range || range.derived) return
-        const originX = event.clientX
-        const barNode = event.currentTarget.closest("[data-gantt-bar]") as HTMLElement | null
-        if (!barNode) return
-        const originalStart = dateDay(range.start)
-        const originalEnd = dateDay(range.end)
-        const move = (pointer: PointerEvent) => {
-            const delta = Math.round((pointer.clientX - originX) / dayWidth)
-            barNode.style.transform = `translateX(${delta * dayWidth}px)`
-        }
-        const finish = (pointer: PointerEvent) => {
-            window.removeEventListener("pointermove", move)
-            window.removeEventListener("pointerup", finish)
-            barNode.style.transform = ""
-            const delta = Math.round((pointer.clientX - originX) / dayWidth)
-            if (!delta) return
-            const startDay = mode === "end" ? originalStart : Math.min(originalEnd, originalStart + delta)
-            const endDay = mode === "start" ? originalEnd : Math.max(originalStart, originalEnd + delta)
-            requestSchedule(item, new Date(startDay * 86_400_000).toISOString().slice(0, 10), new Date(endDay * 86_400_000).toISOString().slice(0, 10))
-        }
-        window.addEventListener("pointermove", move)
-        window.addEventListener("pointerup", finish)
     }
 
     function openDateEditor(item: RelationshipGanttItem) {
@@ -281,7 +244,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const isRoot = row.depth === 0
         const hasChildren = isRoot && plan.items.some((item) => item.parentWorkItemId === row.item.id)
         return <div
-            className="sticky left-0 z-40 flex h-[46px] min-w-0 items-center justify-end gap-1.5 border-b border-r border-b-neutral-700 border-r-neutral-800 bg-neutral-950 px-2"
+            className="sticky left-0 z-40 flex h-[46px] min-w-0 items-center justify-end gap-1.5 border-b border-r border-b-neutral-800 border-r-neutral-700 bg-neutral-950 px-2"
         >
             {hasChildren ? <button
                 type="button"
@@ -304,24 +267,18 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const range = ranges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         return <div
-            className="relative h-[46px] border-b border-neutral-700"
+            className="relative h-[46px] border-b border-neutral-800"
         >
             {range ? <div
                 data-gantt-bar
-                className={`group absolute top-2 h-7 select-none rounded-md border ${range.derived ? "border-dashed" : "cursor-grab"}`}
-                style={{ left: `${(dateDay(range.start) - rangeStart) * dayWidth}px`, width: `${Math.max(dayWidth * .7, (dateDay(range.end) - dateDay(range.start) + 1) * dayWidth)}px`, borderColor: colours.border, backgroundColor: colours.background, color: colours.text }}
-                onPointerDown={(event) => startBarDrag(event, item, "move")}
+                className={`absolute top-2 flex h-7 select-none items-center gap-1.5 overflow-hidden rounded-md border px-1.5 ${row.depth > 0 ? "border-dashed" : ""}`}
+                style={{ left: `${(dateDay(range.start) - rangeStart) * dayWidth + BAR_INSET}px`, width: `${Math.max(4, (dateDay(range.end) - dateDay(range.start) + 1) * dayWidth - BAR_INSET * 2)}px`, borderColor: colours.border, backgroundColor: colours.background, color: colours.text }}
                 onClick={() => { if (window.matchMedia("(max-width: 1023px)").matches) openDateEditor(item) }}
                 title={`${item.title}: ${range.start} → ${range.end}`}
             >
                 {item.actualStartAt ? <span className="absolute inset-y-0 left-0 rounded-l-md opacity-45" style={{ width: `${Math.min(100, Math.max(8, ((dateDay((item.actualCompletedAt ?? today).slice(0, 10)) - dateDay(range.start) + 1) / Math.max(1, dateDay(range.end) - dateDay(range.start) + 1)) * 100))}%`, backgroundColor: colours.text }} /> : null}
-                {!range.derived && canEdit ? <button type="button" aria-label="Resize start" onPointerDown={(event) => { event.stopPropagation(); startBarDrag(event, item, "start") }} className="absolute inset-y-0 left-0 hidden w-2 cursor-ew-resize group-hover:block lg:block" /> : null}
-                <span className="relative block truncate px-2 py-1 text-xs">{item.title}</span>
-                {!range.derived && canEdit ? <button type="button" aria-label="Resize due date" onPointerDown={(event) => { event.stopPropagation(); startBarDrag(event, item, "end") }} className="absolute inset-y-0 right-0 hidden w-2 cursor-ew-resize group-hover:block lg:block" /> : null}
-                {canEdit && !range.derived && !row.external ? <>
-                    <button type="button" aria-label={`Start dependency from ${item.title}`} onPointerDown={(event) => { event.stopPropagation(); setDependencySource(item.id) }} className="absolute -right-1.5 top-2 hidden h-3 w-3 rounded-full border border-neutral-300 bg-neutral-950 lg:block" />
-                    <button type="button" aria-label={`Complete dependency at ${item.title}`} onPointerUp={(event) => { event.stopPropagation(); if (dependencySource && dependencySource !== item.id) { mutate(() => createGanttDependency(workspaceSlug, relationshipId, item.id, dependencySource)); setDependencySource(null) } }} className="absolute -left-1.5 top-2 hidden h-3 w-3 rounded-full border border-neutral-500 bg-neutral-950 lg:block" />
-                </> : null}
+                {item.assignees[0] ? <div className="relative flex min-w-0 shrink items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} className="min-w-0 max-w-24 shrink" />{item.assignees.length > 1 ? <span className="shrink-0 text-[10px] font-medium">+{item.assignees.length - 1}</span> : null}</div> : null}
+                <span className={`relative min-w-0 flex-1 truncate text-xs leading-none ${row.depth === 0 ? "font-semibold" : "font-normal"}`}>{item.title}</span>
             </div> : null}
         </div>
     }
@@ -339,10 +296,11 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const x2 = (dateDay(toRange.start) - rangeStart) * dayWidth
         const y1 = fromTop + ROW_HEIGHT / 2
         const y2 = toTop + ROW_HEIGHT / 2
-        return [{ edge, path: `M ${x1} ${y1} C ${x1 + 20} ${y1}, ${x2 - 20} ${y2}, ${x2} ${y2}` }]
+        const yTrack = y2 >= y1 ? fromTop + ROW_HEIGHT : fromTop
+        return [{ edge, path: `M ${x1} ${y1} V ${yTrack} H ${x2} V ${y2}` }]
     })
 
-    return <section id="plan" className="relative isolate mt-4 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
+    return <section id="plan" className="relative isolate mt-4 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900">
         <div className="absolute right-3 top-1.5 z-[70] flex items-center gap-1.5">
             <button type="button" onClick={goToToday} className="h-8 rounded-full bg-white px-3 text-xs font-semibold text-neutral-950 shadow-sm">Today</button>
             {([['day', 'd'], ['week', 'w'], ['month', 'mo']] as const).map(([value, label]) => <button
@@ -365,25 +323,24 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             title="Pinch or use Ctrl/Cmd + wheel to zoom"
         >
             <div className="grid" style={{ gridTemplateColumns: `${leftWidth}px ${timelineWidth}px`, minWidth: `${leftWidth + timelineWidth}px` }}>
-                <div className="sticky left-0 top-0 z-50 flex h-11 items-center border-b border-r border-neutral-800 bg-neutral-950 px-3 text-sm font-semibold text-white">
+                <div className="sticky left-0 top-0 z-50 flex h-11 items-center border-b border-r border-neutral-700 bg-neutral-950 px-3 text-sm font-semibold text-white">
                     Relationship Timeline
                     <button type="button" aria-label="Resize timeline label column" title="Drag to resize" onPointerDown={startDividerDrag} className="group absolute -right-1.5 inset-y-0 hidden w-3 cursor-col-resize touch-none lg:block"><span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-neutral-400" /></button>
                 </div>
-                <div className="sticky top-0 z-40 h-11 border-b border-neutral-800 bg-neutral-950">
-                    {headerLabels.map((label) => <span key={label.day} className="absolute top-0 flex h-full items-center border-l border-neutral-700 px-1 text-[10px] text-neutral-500" style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
+                <div className="sticky top-0 z-40 h-11 border-b border-neutral-700 bg-neutral-950">
+                    {headerLabels.map((label) => <span key={label.day} className="absolute top-0 flex h-full items-center border-l border-neutral-800 px-1 text-[10px] text-neutral-500" style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
                     <span className="absolute inset-y-0 z-10 w-px bg-red-400/60" style={{ left: `${todayLeft}px` }} />
                 </div>
-                {plan.milestones.length ? <><div aria-hidden="true" className="sticky left-0 z-40 h-[46px] border-b border-r border-b-neutral-700 border-r-neutral-800 bg-neutral-950" /><div className="relative h-[46px] border-b border-neutral-700">{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</span> })}</div></> : null}
+                {plan.milestones.length ? <><div aria-hidden="true" className="sticky left-0 z-40 h-[46px] border-b border-r border-b-neutral-800 border-r-neutral-700 bg-neutral-950" /><div className="relative h-[46px] border-b border-neutral-800">{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</span> })}</div></> : null}
                 {relationshipRows.map((row) => <div className="contents" key={`relationship-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
                 {[...sharedRows, ...externalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
-                {emptyTimeline ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 h-24 border-b border-r border-b-neutral-700 border-r-neutral-800 bg-neutral-950" /><div className="relative h-24 border-b border-neutral-700"><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-600">Nothing scheduled</span></div></div> : null}
-                {fillerHeight ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 border-r border-neutral-800 bg-neutral-950" style={{ height: `${fillerHeight}px` }} /><div aria-hidden="true" style={{ height: `${fillerHeight}px` }} /></div> : null}
+                {emptyTimeline ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 h-24 border-b border-r border-b-neutral-800 border-r-neutral-700 bg-neutral-950" /><div className="relative h-24 border-b border-neutral-800"><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-600">Nothing scheduled</span></div></div> : null}
+                {fillerHeight ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 border-r border-neutral-700 bg-neutral-950" style={{ height: `${fillerHeight}px` }} /><div aria-hidden="true" style={{ height: `${fillerHeight}px` }} /></div> : null}
             </div>
-            {headerLabels.map((label) => <div aria-hidden="true" key={`column-${label.day}`} className="pointer-events-none absolute z-10 w-px bg-neutral-700" style={{ left: `${leftWidth + label.left}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
+            {headerLabels.map((label) => <div aria-hidden="true" key={`column-${label.day}`} className="pointer-events-none absolute z-10 w-px bg-neutral-800" style={{ left: `${leftWidth + label.left}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${leftWidth + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />
-            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${leftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path }) => <path key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} d={path} fill="none" stroke={selectedDependency === edge ? "#fff" : "#737373"} strokeWidth="1.5" className="pointer-events-auto cursor-pointer" onClick={() => setSelectedDependency(edge)} />)}</svg>
+            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${leftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path }) => <path key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} d={path} fill="none" stroke={STRUCTURAL_LINE} strokeWidth="1.5" strokeLinejoin="miter" />)}</svg>
         </div>
-        {selectedDependency && canEdit ? <div className="flex items-center justify-between border-t border-neutral-800 px-3 py-2 text-xs text-neutral-400"><span>Dependency selected</span><button type="button" onClick={() => mutate(() => removeGanttDependency(workspaceSlug, relationshipId, selectedDependency.workItemId, selectedDependency.dependsOnWorkItemId).then((next) => { if (next.status === "saved") setSelectedDependency(null); return next }))} className="text-red-300 hover:text-red-200">Remove dependency</button></div> : null}
         <MutationError result={result} />
         {cascade ? <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-lg rounded-xl border border-neutral-700 bg-neutral-950 p-4 shadow-2xl"><h3 className="font-semibold text-white">Move dependent work?</h3><p className="mt-1 text-sm text-neutral-400">This schedule change affects {cascade.length} work items.</p><div className="mt-3 max-h-72 divide-y divide-neutral-900 overflow-y-auto rounded-lg border border-neutral-800">{cascade.map((change) => <div key={change.id} className="flex justify-between gap-3 px-3 py-2 text-sm"><span className="truncate text-neutral-200">{change.title}</span><span className="shrink-0 text-neutral-500">{change.plannedStartDate} → {change.dueDate}</span></div>)}</div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => { setCascade(null); void reload() }} className="h-9 px-3 text-sm text-neutral-400 hover:text-white">Cancel</button><button type="button" disabled={pending} onClick={() => { const changes = cascade; setCascade(null); mutate(() => applyGanttScheduleChanges(workspaceSlug, relationshipId, changes)) }} className="h-9 rounded-md bg-white px-3 text-sm font-medium text-black">Confirm changes</button></div></div></div> : null}
         {dateEditor ? <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-sm rounded-xl border border-neutral-700 bg-neutral-950 p-4"><h3 className="font-medium text-white">Schedule {dateEditor.title}</h3><div className="mt-3 grid grid-cols-2 gap-2"><label className="text-xs text-neutral-500">Start<input type="date" value={editStart} onChange={(event) => setEditStart(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-neutral-700 bg-black px-2 text-white" /></label><label className="text-xs text-neutral-500">Due<input type="date" value={editDue} onChange={(event) => setEditDue(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-neutral-700 bg-black px-2 text-white" /></label></div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setDateEditor(null)} className="h-9 px-3 text-sm text-neutral-400">Cancel</button><button type="button" onClick={() => { const item = dateEditor; setDateEditor(null); requestSchedule(item, editStart, editDue || editStart) }} className="h-9 rounded-md bg-white px-3 text-sm font-medium text-black">Save</button></div></div></div> : null}

@@ -44,16 +44,21 @@ export function effectiveGanttRanges<T extends GanttScheduleItem>(items: T[]) {
     const visit = (item: T): { start: string; end: string; derived: boolean } | null => {
         const childRanges = (children.get(item.id) ?? []).map(visit).filter((range): range is { start: string; end: string; derived: boolean } => Boolean(range))
         const own = item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null
-        const range = childRanges.length ? {
+        const derived = childRanges.length ? {
             start: childRanges.map((value) => value.start).sort()[0],
             end: childRanges.map((value) => value.end).sort().at(-1)!,
             derived: true,
-        } : own
+        } : null
+        const range = own ?? derived
         if (range) ranges.set(item.id, range)
         return range
     }
     for (const item of items) if (!item.parentWorkItemId || !byId.has(item.parentWorkItemId)) visit(item)
     return ranges
+}
+
+export function rangeContainsRange(parent: { start: string; end: string }, child: { start: string; end: string }) {
+    return dateDay(child.start) >= dateDay(parent.start) && dateDay(child.end) <= dateDay(parent.end)
 }
 
 export function previewScheduleCascade<T extends GanttScheduleItem>(
@@ -105,7 +110,7 @@ export function previewScheduleCascade<T extends GanttScheduleItem>(
         let shifted = false
         const ranges = effectiveGanttRanges([...drafts.values()])
         for (const edge of dependencies) {
-            let predecessor = ranges.get(edge.dependsOnWorkItemId)
+            const predecessor = ranges.get(edge.dependsOnWorkItemId)
             const dependent = ranges.get(edge.workItemId)
             let ancestorId = drafts.get(edge.workItemId)?.parentWorkItemId ?? null
             let predecessorIsAncestor = false
@@ -113,14 +118,9 @@ export function previewScheduleCascade<T extends GanttScheduleItem>(
                 if (ancestorId === edge.dependsOnWorkItemId) { predecessorIsAncestor = true; break }
                 ancestorId = drafts.get(ancestorId)?.parentWorkItemId ?? null
             }
-            if (predecessorIsAncestor) {
-                const predecessorItem = drafts.get(edge.dependsOnWorkItemId)
-                predecessor = predecessorItem?.plannedStartDate ? {
-                    start: predecessorItem.plannedStartDate,
-                    end: predecessorItem.dueDate ?? predecessorItem.plannedStartDate,
-                    derived: false,
-                } : undefined
-            }
+            // Hierarchy constrains a child inside its parent timeframe; it is
+            // not a finish-to-start dependency between the two ranges.
+            if (predecessorIsAncestor) continue
             if (!predecessor || !dependent) continue
             const predecessorItem = drafts.get(edge.dependsOnWorkItemId)
             const dependentItem = drafts.get(edge.workItemId)

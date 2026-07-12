@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { effectiveGanttRanges, previewScheduleCascade, type GanttScheduleDependency, type GanttScheduleItem } from "../lib/relationship-gantt-schedule.ts"
+import { effectiveGanttRanges, previewScheduleCascade, rangeContainsRange, type GanttScheduleDependency, type GanttScheduleItem } from "../lib/relationship-gantt-schedule.ts"
 
 function item(id: string, start: string | null, due: string | null, parentWorkItemId: string | null = null, status = "todo"): GanttScheduleItem {
     return {
@@ -14,13 +14,29 @@ function dependency(workItemId: string, dependsOnWorkItemId: string): GanttSched
     return { workItemId, dependsOnWorkItemId }
 }
 
-test("parent ranges are derived from dated descendants", () => {
+test("an explicit parent timeframe stays fixed around its children", () => {
     const ranges = effectiveGanttRanges([
         item("parent", "2026-07-01", "2026-07-02"),
         item("first", "2026-07-04", "2026-07-06", "parent"),
         item("second", "2026-07-02", "2026-07-09", "parent"),
     ])
+    assert.deepEqual(ranges.get("parent"), { start: "2026-07-01", end: "2026-07-02", derived: false })
+})
+
+test("an undated parent still derives its timeframe from descendants", () => {
+    const ranges = effectiveGanttRanges([
+        item("parent", null, null),
+        item("first", "2026-07-04", "2026-07-06", "parent"),
+        item("second", "2026-07-02", "2026-07-09", "parent"),
+    ])
     assert.deepEqual(ranges.get("parent"), { start: "2026-07-02", end: "2026-07-09", derived: true })
+})
+
+test("child ranges must stay inside their parent timeframe", () => {
+    const parent = { start: "2026-07-01", end: "2026-07-31" }
+    assert.equal(rangeContainsRange(parent, { start: "2026-07-08", end: "2026-07-20" }), true)
+    assert.equal(rangeContainsRange(parent, { start: "2026-06-30", end: "2026-07-20" }), false)
+    assert.equal(rangeContainsRange(parent, { start: "2026-07-08", end: "2026-08-01" }), false)
 })
 
 test("same-date finish-to-start is valid", () => {
@@ -66,13 +82,11 @@ test("explicit times on the same date obey the finish-to-start boundary", () => 
     assert.equal(shifted?.dueTime, "18:00")
 })
 
-test("a child waiting for its parent uses the parent's own dates rather than its derived summary", () => {
+test("a parent-child hierarchy edge does not push the child outside the parent timeframe", () => {
     const changes = previewScheduleCascade(
         [item("parent", "2026-07-01", "2026-07-03"), item("child", "2026-07-02", "2026-07-04", "parent")],
         [dependency("child", "parent")],
         { id: "parent", plannedStartDate: "2026-07-01", dueDate: "2026-07-03" },
     )
-    const shifted = changes.find((change) => change.id === "child")
-    assert.equal(shifted?.plannedStartDate, "2026-07-03")
-    assert.equal(shifted?.dueDate, "2026-07-05")
+    assert.deepEqual(changes.map((change) => change.id), ["parent"])
 })

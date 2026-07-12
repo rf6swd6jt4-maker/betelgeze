@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react"
 import { Assignee, relationshipPhaseColours } from "@/components/ui"
 import { ganttSyncChannelName, postGanttSync } from "@/lib/ui/gantt-sync"
-import { dateDay, effectiveGanttRanges, type ScheduleChange } from "@/lib/relationship-gantt-schedule"
+import { addCalendarDays, dateDay, effectiveGanttRanges, rangeContainsRange, type ScheduleChange } from "@/lib/relationship-gantt-schedule"
 import type { RelationshipGanttItem, RelationshipGanttPlan } from "@/lib/relationship-gantt"
 import {
     applyGanttScheduleChanges,
@@ -30,6 +30,7 @@ const RANGE_DAYS = 730
 const DEFAULT_ZOOM = 2
 const MAX_ZOOM = 6
 const BAR_INSET = 8
+const RESIZE_HANDLE_WIDTH = 6
 const STRUCTURAL_LINE = "#404040"
 const SCALE_WIDTH: Record<Scale, number> = { day: 64, week: 28, month: 12 }
 
@@ -40,6 +41,21 @@ function dateLabel(day: number, scale: Scale) {
 
 function rowHeight(row: DisplayRow) {
     return row.depth === 0 ? ROOT_ROW_HEIGHT : CHILD_ROW_HEIGHT
+}
+
+function addCalendarMonths(value: string, months: number) {
+    const source = new Date(`${value.slice(0, 10)}T00:00:00Z`)
+    const day = source.getUTCDate()
+    source.setUTCDate(1)
+    source.setUTCMonth(source.getUTCMonth() + months)
+    const lastDay = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + 1, 0)).getUTCDate()
+    source.setUTCDate(Math.min(day, lastDay))
+    return source.toISOString().slice(0, 10)
+}
+
+function shiftDate(value: string, units: number, scale: Scale) {
+    if (scale === "month") return addCalendarMonths(value, units)
+    return addCalendarDays(value, units * (scale === "week" ? 7 : 1))
 }
 
 function flattenRows(items: RelationshipGanttItem[], collapsed: Set<string>) {
@@ -81,12 +97,11 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const [zoom, setZoom] = useState(DEFAULT_ZOOM)
     const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH)
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+    const [flashingItemId, setFlashingItemId] = useState<string | null>(null)
+    const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [cascade, setCascade] = useState<ScheduleChange[] | null>(null)
     const [result, setResult] = useState<GanttMutationResult | null>(null)
     const [pending, startTransition] = useTransition()
-    const [dateEditor, setDateEditor] = useState<RelationshipGanttItem | null>(null)
-    const [editStart, setEditStart] = useState("")
-    const [editDue, setEditDue] = useState("")
 
     // The server can stream a refreshed plan into this long-lived client view.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -170,6 +185,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return () => node.removeEventListener("wheel", handleWheel)
     }, [zoom, zoomAt])
 
+    useEffect(() => () => {
+        if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
+    }, [])
+
     const reload = useCallback(async () => {
         const next = await loadGanttPlan(workspaceSlug, relationshipId)
         if (next) setPlan(next)
@@ -195,28 +214,101 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         startTransition(async () => refreshAfter(await action()))
     }
 
-    function applyOptimisticDates(id: string, plannedStartDate: string, dueDate: string) {
-        setPlan((current) => ({ ...current, items: current.items.map((item) => item.id === id ? { ...item, plannedStartDate, dueDate } : item) }))
+    function flashInvalid(itemId: string) {
+        if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
+        setFlashingItemId(itemId)
+        flashTimerRef.current = setTimeout(() => setFlashingItemId(null), 650)
+    }
+
+    function scheduleFitsHierarchy(item: RelationshipGanttItem, start: string, due: string) {
+        const proposed = { start, end: due }
+        if (dateDay(due) < dateDay(start)) { flashInvalid(item.parentWorkItemId ?? item.id); return false }
+        if (item.parentWorkItemId) {
+            const parentRange = ranges.get(item.parentWorkItemId)
+            if (parentRange && !rangeContainsRange(parentRange, proposed)) { flashInvalid(item.parentWorkItemId); return false }
+        }
+        for (const child of plan.items.filter((candidate) => candidate.parentWorkItemId === item.id)) {
+            const childRange = ranges.get(child.id)
+            if (childRange && !rangeContainsRange(proposed, childRange)) { flashInvalid(item.id); return false }
+        }
+        return true
+    }
+
+    function applyOptimisticDates(id: string, plannedStartDate: string, dueDate: string, frozenParent?: { id: string; start: string; end: string }) {
+        setPlan((current) => ({ ...current, items: current.items.map((item) => {
+            if (item.id === id) return { ...item, plannedStartDate, dueDate }
+            if (frozenParent && item.id === frozenParent.id) return { ...item, plannedStartDate: frozenParent.start, dueDate: frozenParent.end }
+            return item
+        }) }))
     }
 
     function requestSchedule(item: RelationshipGanttItem, start: string, due: string) {
+        if (!scheduleFitsHierarchy(item, start, due)) return
+        const parent = item.parentWorkItemId ? plan.items.find((candidate) => candidate.id === item.parentWorkItemId) : null
+        const parentRange = parent ? ranges.get(parent.id) : null
+        const frozenParent = parent && parentRange?.derived ? { id: parent.id, start: parentRange.start, end: parentRange.end } : undefined
+        const frozenParentChange: ScheduleChange | null = parent && frozenParent ? {
+            id: parent.id,
+            title: parent.title,
+            plannedStartDate: frozenParent.start,
+            plannedStartTime: parent.plannedStartTime,
+            dueDate: frozenParent.end,
+            dueTime: parent.dueTime,
+            expectedUpdatedAt: parent.updatedAt,
+        } : null
         // Paint the new position immediately so the bar never snaps back while
         // the server confirms; reload reconciles (or reverts) against the truth.
-        applyOptimisticDates(item.id, start, due)
+        applyOptimisticDates(item.id, start, due, frozenParent)
         startTransition(async () => {
             const preview = await previewGanttScheduleChange(workspaceSlug, relationshipId, { id: item.id, plannedStartDate: start, dueDate: due })
             if (preview.status !== "cascade_required") { setResult(preview); void reload(); return }
-            if (preview.changes.length > 1) { setCascade(preview.changes); return }
-            refreshAfter(await applyGanttScheduleChanges(workspaceSlug, relationshipId, preview.changes))
+            const changes = frozenParentChange && !preview.changes.some((change) => change.id === frozenParentChange.id) ? [frozenParentChange, ...preview.changes] : preview.changes
+            if (preview.changes.length > 1) { setCascade(changes); return }
+            refreshAfter(await applyGanttScheduleChanges(workspaceSlug, relationshipId, changes))
         })
     }
 
-    function openDateEditor(item: RelationshipGanttItem) {
-        const range = ranges.get(item.id)
-        if (!canEdit || range?.derived) return
-        setDateEditor(item)
-        setEditStart(range?.start ?? today)
-        setEditDue(range?.end ?? today)
+    function startBarDrag(event: ReactPointerEvent<HTMLElement>, item: RelationshipGanttItem, range: { start: string; end: string }, mode: "move" | "start" | "end") {
+        if (!canEdit || ["done", "canceled"].includes(item.status)) return
+        event.preventDefault()
+        event.stopPropagation()
+        const barNode = event.currentTarget.closest("[data-gantt-bar]") as HTMLElement | null
+        if (!barNode) return
+        const originX = event.clientX
+        const originalLeft = timelineX(dateDay(range.start)) + BAR_INSET
+        const monthWidth = Math.max(dayWidth, (dateDay(addCalendarMonths(range.start, 1)) - dateDay(range.start)) * dayWidth)
+        const columnWidth = scale === "month" ? monthWidth : dayWidth * (scale === "week" ? 7 : 1)
+        let latestUnits = 0
+
+        const nextDates = (units: number) => {
+            if (mode === "move") return { start: shiftDate(range.start, units, scale), due: shiftDate(range.end, units, scale) }
+            if (mode === "start") {
+                const start = shiftDate(range.start, units, scale)
+                return { start: dateDay(start) > dateDay(range.end) ? range.end : start, due: range.end }
+            }
+            const due = shiftDate(range.end, units, scale)
+            return { start: range.start, due: dateDay(due) < dateDay(range.start) ? range.start : due }
+        }
+        const paint = (units: number) => {
+            latestUnits = units
+            const next = nextDates(units)
+            const nextLeft = timelineX(dateDay(next.start)) + BAR_INSET
+            const nextWidth = Math.max(4, (dateDay(next.due) - dateDay(next.start) + 1) * dayWidth - BAR_INSET * 2)
+            barNode.style.transform = `translateX(${nextLeft - originalLeft}px)`
+            barNode.style.width = `${nextWidth}px`
+        }
+        const move = (pointer: PointerEvent) => paint(Math.round((pointer.clientX - originX) / columnWidth))
+        const finish = () => {
+            window.removeEventListener("pointermove", move)
+            window.removeEventListener("pointerup", finish)
+            barNode.style.transform = ""
+            barNode.style.width = ""
+            if (!latestUnits) return
+            const next = nextDates(latestUnits)
+            requestSchedule(item, next.start, next.due)
+        }
+        window.addEventListener("pointermove", move)
+        window.addEventListener("pointerup", finish)
     }
 
     function goToToday() {
@@ -306,21 +398,27 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const barHeight = row.depth === 0 ? ROOT_BAR_HEIGHT : CHILD_BAR_HEIGHT
         const range = ranges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
         const colours = relationshipPhaseColours(item.lifecyclePhase)
+        const flashing = flashingItemId === item.id
+        const barBorder = flashing ? "#ef4444" : colours.border
+        const canDrag = canEdit && !row.external && !["done", "canceled"].includes(item.status)
+        const handleSpace = canDrag ? RESIZE_HANDLE_WIDTH : 0
         return <div
             className="relative border-b border-neutral-800"
             style={{ height: `${height}px` }}
         >
             {range ? <div
                 data-gantt-bar
-                className={`absolute z-20 flex select-none items-center gap-1.5 overflow-hidden rounded-md border pl-1.5 ${row.depth > 0 ? "border-dashed" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingRight: `${barHeight + 4}px`, left: `${timelineX(dateDay(range.start)) + BAR_INSET}px`, width: `${Math.max(4, (dateDay(range.end) - dateDay(range.start) + 1) * dayWidth - BAR_INSET * 2)}px`, borderColor: colours.border, backgroundColor: colours.background, color: colours.text }}
-                onClick={() => { if (window.matchMedia("(max-width: 1023px)").matches) openDateEditor(item) }}
+                className={`absolute z-20 flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border pl-1.5 transition-[border-color,box-shadow] ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 ? "border-dashed" : ""}`}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 6}px`, paddingRight: `${barHeight + handleSpace + 4}px`, left: `${timelineX(dateDay(range.start)) + BAR_INSET}px`, width: `${Math.max(4, (dateDay(range.end) - dateDay(range.start) + 1) * dayWidth - BAR_INSET * 2)}px`, borderColor: barBorder, backgroundColor: colours.background, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined }}
+                onPointerDown={(event) => startBarDrag(event, item, range, "move")}
                 title={`${item.title}: ${range.start} → ${range.end}`}
             >
                 {item.actualStartAt ? <span className="absolute inset-y-0 left-0 rounded-l-md opacity-45" style={{ width: `${Math.min(100, Math.max(8, ((dateDay((item.actualCompletedAt ?? today).slice(0, 10)) - dateDay(range.start) + 1) / Math.max(1, dateDay(range.end) - dateDay(range.start) + 1)) * 100))}%`, backgroundColor: colours.text }} /> : null}
+                {canDrag ? <button type="button" aria-label={`Resize start of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "start")} className="absolute inset-y-0 left-0 z-20 cursor-ew-resize rounded-l-md" style={{ width: `${RESIZE_HANDLE_WIDTH}px`, backgroundColor: barBorder }} /> : null}
                 {item.assignees[0] ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact compactSize={row.depth === 0 ? "md" : "sm"} />{item.assignees.length > 1 ? <span className={`shrink-0 font-medium ${row.depth === 0 ? "text-xs" : "text-[9px]"}`}>+{item.assignees.length - 1}</span> : null}</div> : null}
                 <span className={`relative min-w-0 flex-1 truncate leading-none ${row.depth === 0 ? "text-sm font-semibold" : "text-[11px] font-normal"}`}>{item.title}</span>
-                <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onClick={(event) => event.stopPropagation()} className="absolute inset-y-0 right-0 z-10 flex items-center justify-center border-l" style={{ width: `${barHeight}px`, borderColor: colours.border, color: colours.border }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[22px] w-[22px]" : "h-[18px] w-[18px]"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link>
+                <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="absolute inset-y-0 z-10 flex items-center justify-center border-l" style={{ right: `${handleSpace}px`, width: `${barHeight}px`, borderColor: barBorder, color: barBorder }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[22px] w-[22px]" : "h-[18px] w-[18px]"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link>
+                {canDrag ? <button type="button" aria-label={`Resize end of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "end")} className="absolute inset-y-0 right-0 z-20 cursor-ew-resize rounded-r-md" style={{ width: `${RESIZE_HANDLE_WIDTH}px`, backgroundColor: barBorder }} /> : null}
             </div> : null}
         </div>
     }
@@ -388,6 +486,5 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         </div>
         <MutationError result={result} />
         {cascade ? <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-lg rounded-xl border border-neutral-700 bg-neutral-950 p-4 shadow-2xl"><h3 className="font-semibold text-white">Move dependent work?</h3><p className="mt-1 text-sm text-neutral-400">This schedule change affects {cascade.length} work items.</p><div className="mt-3 max-h-72 divide-y divide-neutral-900 overflow-y-auto rounded-lg border border-neutral-800">{cascade.map((change) => <div key={change.id} className="flex justify-between gap-3 px-3 py-2 text-sm"><span className="truncate text-neutral-200">{change.title}</span><span className="shrink-0 text-neutral-500">{change.plannedStartDate} → {change.dueDate}</span></div>)}</div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => { setCascade(null); void reload() }} className="h-9 px-3 text-sm text-neutral-400 hover:text-white">Cancel</button><button type="button" disabled={pending} onClick={() => { const changes = cascade; setCascade(null); mutate(() => applyGanttScheduleChanges(workspaceSlug, relationshipId, changes)) }} className="h-9 rounded-md bg-white px-3 text-sm font-medium text-black">Confirm changes</button></div></div></div> : null}
-        {dateEditor ? <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-sm rounded-xl border border-neutral-700 bg-neutral-950 p-4"><h3 className="font-medium text-white">Schedule {dateEditor.title}</h3><div className="mt-3 grid grid-cols-2 gap-2"><label className="text-xs text-neutral-500">Start<input type="date" value={editStart} onChange={(event) => setEditStart(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-neutral-700 bg-black px-2 text-white" /></label><label className="text-xs text-neutral-500">Due<input type="date" value={editDue} onChange={(event) => setEditDue(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-neutral-700 bg-black px-2 text-white" /></label></div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setDateEditor(null)} className="h-9 px-3 text-sm text-neutral-400">Cancel</button><button type="button" onClick={() => { const item = dateEditor; setDateEditor(null); requestSchedule(item, editStart, editDue || editStart) }} className="h-9 rounded-md bg-white px-3 text-sm font-medium text-black">Save</button></div></div></div> : null}
     </section>
 }

@@ -20,6 +20,7 @@ type DisplayRow = { item: RelationshipGanttItem; depth: number; external?: boole
 const ROW_HEIGHT = 46
 const HEADER_HEIGHT = 44
 const EMPTY_LANE_HEIGHT = 96
+const MIN_CHART_HEIGHT = 448
 const MIN_LEFT_WIDTH = 220
 const MAX_LEFT_WIDTH = 360
 const RANGE_DAYS = 730
@@ -97,6 +98,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const sharedRowsTop = relationshipRowsTop + relationshipRows.length * ROW_HEIGHT
     const emptyTimeline = !relationshipRows.length && !sharedRows.length && !externalRows.length
     const contentHeight = sharedRowsTop + (sharedRows.length + externalRows.length) * ROW_HEIGHT + (emptyTimeline ? EMPTY_LANE_HEIGHT : 0)
+    const chartHeight = Math.max(MIN_CHART_HEIGHT, contentHeight)
+    const fillerHeight = chartHeight - contentHeight
     const rowTop = new Map<string, number>()
     relationshipRows.forEach((row, index) => rowTop.set(row.item.id, relationshipRowsTop + index * ROW_HEIGHT))
     ;[...sharedRows, ...externalRows].forEach((row, index) => rowTop.set(row.item.id, sharedRowsTop + index * ROW_HEIGHT))
@@ -275,7 +278,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     function renderLeft() {
         return <div
             aria-hidden="true"
-            className="sticky left-0 z-20 h-[46px] border-r border-neutral-700 bg-neutral-950"
+            className="sticky left-0 z-40 h-[46px] border-r border-neutral-700 bg-neutral-950"
         />
     }
 
@@ -322,7 +325,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return [{ edge, path: `M ${x1} ${y1} C ${x1 + 20} ${y1}, ${x2 - 20} ${y2}, ${x2} ${y2}` }]
     })
 
-    return <section id="plan" className="relative mt-4 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900">
+    return <section id="plan" className="relative isolate mt-4 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900">
         <div className="absolute right-3 top-1.5 z-[70] flex items-center gap-1.5">
             <button type="button" onClick={goToToday} className="h-8 rounded-full bg-white px-3 text-xs font-semibold text-neutral-950 shadow-sm">Today</button>
             {([['day', 'd'], ['week', 'w'], ['month', 'mo']] as const).map(([value, label]) => <button
@@ -331,12 +334,12 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 onClick={() => selectScale(value)}
                 aria-label={`${value} view`}
                 aria-pressed={scale === value}
-                className={`flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium text-white backdrop-blur-sm ${scale === value ? "border-neutral-400 bg-neutral-600/45" : "border-neutral-600 bg-neutral-800/30 hover:border-neutral-400 hover:bg-neutral-700/40"}`}
+                className={`flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium text-white backdrop-blur-sm ${scale === value ? "border-neutral-400 bg-neutral-600/35" : "border-neutral-600 bg-neutral-800/20 hover:border-neutral-400 hover:bg-neutral-700/30"}`}
             >{label}</button>)}
         </div>
         <div
             ref={scrollRef}
-            className="relative max-h-[calc(100vh-18rem)] overflow-auto overscroll-contain"
+            className="relative min-h-[28rem] max-h-[calc(100vh-18rem)] overflow-auto overscroll-contain"
             style={{ touchAction: "pan-x pan-y" }}
             onPointerDown={updateTouchPoint}
             onPointerMove={updateTouchPoint}
@@ -353,13 +356,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                     {headerLabels.map((label) => <span key={label.day} className="absolute top-0 flex h-full items-center px-1 text-[10px] text-neutral-500" style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
                     <span className="absolute inset-y-0 z-10 w-px bg-red-400/60" style={{ left: `${todayLeft}px` }} />
                 </div>
-                {plan.milestones.length ? <><div aria-hidden="true" className="sticky left-0 z-30 h-[46px] border-r border-neutral-700 bg-neutral-950" /><div className="relative h-[46px]">{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</span> })}</div></> : null}
+                {plan.milestones.length ? <><div aria-hidden="true" className="sticky left-0 z-40 h-[46px] border-r border-neutral-700 bg-neutral-950" /><div className="relative h-[46px]">{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</span> })}</div></> : null}
                 {relationshipRows.map((row) => <div className="contents" key={`relationship-${row.item.id}`}>{renderLeft()}{renderTimeline(row)}</div>)}
                 {[...sharedRows, ...externalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft()}{renderTimeline(row)}</div>)}
-                {emptyTimeline ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-20 h-24 border-r border-neutral-700 bg-neutral-950" /><div className="relative h-24"><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-600">Nothing scheduled</span></div></div> : null}
+                {emptyTimeline ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 h-24 border-r border-neutral-700 bg-neutral-950" /><div className="relative h-24"><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-600">Nothing scheduled</span></div></div> : null}
+                {fillerHeight ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 border-r border-neutral-700 bg-neutral-950" style={{ height: `${fillerHeight}px` }} /><div aria-hidden="true" style={{ height: `${fillerHeight}px` }} /></div> : null}
             </div>
-            <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${leftWidth + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${Math.max(0, contentHeight - HEADER_HEIGHT)}px` }} />
-            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${leftWidth}px` }} width={timelineWidth} height={Math.max(1, contentHeight)}>{dependencyPaths.map(({ edge, path }) => <path key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} d={path} fill="none" stroke={selectedDependency === edge ? "#fff" : "#737373"} strokeWidth="1.5" className="pointer-events-auto cursor-pointer" onClick={() => setSelectedDependency(edge)} />)}</svg>
+            <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${leftWidth + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />
+            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${leftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path }) => <path key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} d={path} fill="none" stroke={selectedDependency === edge ? "#fff" : "#737373"} strokeWidth="1.5" className="pointer-events-auto cursor-pointer" onClick={() => setSelectedDependency(edge)} />)}</svg>
         </div>
         {selectedDependency && canEdit ? <div className="flex items-center justify-between border-t border-neutral-800 px-3 py-2 text-xs text-neutral-400"><span>Dependency selected</span><button type="button" onClick={() => mutate(() => removeGanttDependency(workspaceSlug, relationshipId, selectedDependency.workItemId, selectedDependency.dependsOnWorkItemId).then((next) => { if (next.status === "saved") setSelectedDependency(null); return next }))} className="text-red-300 hover:text-red-200">Remove dependency</button></div> : null}
         <MutationError result={result} />

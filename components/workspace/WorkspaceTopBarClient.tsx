@@ -1409,7 +1409,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         </header>
 
         {createTarget && (
-            <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="workspace-create-title">
+            <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="workspace-create-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateTarget(null) }}>
                 <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-white shadow-2xl shadow-black/50">
                     <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3 sm:px-5">
                         <div>
@@ -1446,8 +1446,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                         )}
                         {createError && <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{createError}</p>}
                         {uploadLabel && <p className="mt-4 text-sm text-neutral-400">{uploadLabel}</p>}
-                        <div className="mt-5 flex justify-end gap-2">
-                            <button type="button" onClick={() => setCreateTarget(null)} className="inline-flex min-h-10 items-center rounded-lg border border-neutral-800 px-3 text-sm text-neutral-300 hover:text-white">Cancel</button>
+                        <div className="mt-5 flex justify-end">
                             <button disabled={isCreating || Boolean(uploadLabel)} className="inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating..." : createTarget === "relationship" ? "Create relationship" : createTarget === "work-item" ? "Create work item" : "Create asset"}</button>
                         </div>
                     </form>

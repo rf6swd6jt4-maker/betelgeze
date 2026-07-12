@@ -108,6 +108,10 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             const currentUrl = normalizeWorkspaceUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`, workspaceSlug, window.location.origin)
             if (normalizeWorkspaceUrl(nextUrl, workspaceSlug, window.location.origin) === currentUrl) return
             event.preventDefault()
+            // Stop page-local refreshers before replacing the frame URL. A
+            // queued router.refresh() can otherwise win the App Router race
+            // and restore the source page (especially Polls) after a click.
+            window.dispatchEvent(new Event("betelgeze:workspace-navigation-start"))
             reportNavigationStart(nextUrl)
             window.location.assign(workspaceTabFrameUrl(nextUrl, tabId, window.location.origin))
         }
@@ -120,12 +124,18 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             if (message.type === "navigate" && message.url) {
                 const target = workspaceTabFrameUrl(message.url, tabId, window.location.origin)
                 const current = `${window.location.pathname}${window.location.search}${window.location.hash}`
-                if (target !== current) window.location.assign(target)
+                if (target !== current) {
+                    window.dispatchEvent(new Event("betelgeze:workspace-navigation-start"))
+                    window.location.assign(target)
+                }
             } else if (message.type === "traverse" && message.url) {
                 window.dispatchEvent(new Event("betelgeze:clear-loading"))
                 const target = workspaceTabFrameUrl(message.url, tabId, window.location.origin)
                 const current = `${window.location.pathname}${window.location.search}${window.location.hash}`
-                if (target !== current) window.location.replace(target)
+                if (target !== current) {
+                    window.dispatchEvent(new Event("betelgeze:workspace-navigation-start"))
+                    window.location.replace(target)
+                }
             } else if (message.type === "activate") {
                 document.body.dataset.workspaceTabActive = message.active ? "true" : "false"
                 window.dispatchEvent(new Event(WORKSPACE_TAB_VISIBILITY_EVENT))

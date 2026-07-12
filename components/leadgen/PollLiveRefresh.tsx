@@ -10,8 +10,17 @@ export function PollLiveRefresh({ enabled, intervalMs = 5000 }: { enabled: boole
 
     useEffect(() => {
         if (!enabled || !tabActive) return
-        const timer = window.setInterval(() => router.refresh(), intervalMs)
-        return () => window.clearInterval(timer)
+        let navigating = false
+        const refresh = () => {
+            if (!navigating) router.refresh()
+        }
+        const pauseForNavigation = () => { navigating = true }
+        const timer = window.setInterval(refresh, intervalMs)
+        window.addEventListener("betelgeze:workspace-navigation-start", pauseForNavigation)
+        return () => {
+            window.clearInterval(timer)
+            window.removeEventListener("betelgeze:workspace-navigation-start", pauseForNavigation)
+        }
     }, [enabled, intervalMs, router, tabActive])
 
     return null

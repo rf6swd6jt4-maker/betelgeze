@@ -90,7 +90,8 @@ export async function createLeadgenPoll(slug: string) {
         }
     }
     refreshPolls(slug)
-    redirect(`/${slug}/leadgen/polls`)
+    if (!poll?.id) throw new Error("Could not queue a new leadgen poll.")
+    redirect(`/${slug}/leadgen/polls?pollStarted=${encodeURIComponent(poll.id)}`)
 }
 
 export async function cancelLeadgenPoll(slug: string, pollId: string) {

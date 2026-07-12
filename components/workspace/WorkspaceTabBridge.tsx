@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import {
     isReopenClosedTabShortcut,
@@ -21,10 +21,13 @@ type Props = {
 export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
     const pathname = usePathname()
     const searchParams = useSearchParams()
+    const startedPollNoticeRef = useRef("")
 
     useEffect(() => {
         function reportLocation() {
-            const query = searchParams.toString()
+            const params = new URLSearchParams(searchParams.toString())
+            params.delete("pollStarted")
+            const query = params.toString()
             const url = normalizeWorkspaceUrl(`${pathname}${query ? `?${query}` : ""}${window.location.hash}`, workspaceSlug, window.location.origin)
             const message: WorkspaceTabFrameMessage = {
                 source: WORKSPACE_TAB_MESSAGE_SOURCE,
@@ -40,6 +43,27 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
         window.addEventListener("hashchange", reportLocation)
         return () => window.removeEventListener("hashchange", reportLocation)
     }, [pathname, searchParams, tabId, workspaceSlug])
+
+    useEffect(() => {
+        const pollId = searchParams.get("pollStarted")
+        if (!pollId) return
+        const key = `${pathname}:${pollId}`
+        if (startedPollNoticeRef.current === key) return
+        startedPollNoticeRef.current = key
+
+        const message: WorkspaceTabFrameMessage = {
+            source: WORKSPACE_TAB_MESSAGE_SOURCE,
+            target: "host",
+            tabId,
+            type: "poll-started",
+            pollId,
+        }
+        window.parent.postMessage(message, window.location.origin)
+
+        const current = new URL(window.location.href)
+        current.searchParams.delete("pollStarted")
+        window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`)
+    }, [pathname, searchParams, tabId])
 
     useEffect(() => {
         let contextObstructed = false

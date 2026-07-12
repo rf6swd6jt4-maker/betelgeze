@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { dateDay, effectiveGanttRanges, ganttTimelineRange, previewScheduleCascade, rangeContainsRange, type GanttScheduleDependency, type GanttScheduleItem } from "../lib/relationship-gantt-schedule.ts"
+import { dateDay, effectiveGanttRanges, ganttTimelineRange, persistedScheduleMatchesChange, previewScheduleCascade, rangeContainsRange, type GanttScheduleDependency, type GanttScheduleItem, type ScheduleChange } from "../lib/relationship-gantt-schedule.ts"
 
 function item(id: string, start: string | null, due: string | null, parentWorkItemId: string | null = null, status = "todo"): GanttScheduleItem {
     return {
@@ -108,4 +108,19 @@ test("the timeline range keeps an empty plan useful and compact", () => {
     assert.equal(range.days, 60)
     assert.ok(range.start < dateDay("2026-07-12"))
     assert.ok(range.end > dateDay("2026-07-12"))
+})
+
+test("a persisted schedule must exactly match the requested dates and minute times", () => {
+    const change: ScheduleChange = {
+        id: "item-a", title: "Item A", plannedStartDate: "2026-07-13", plannedStartTime: "09:30",
+        dueDate: "2026-07-17", dueTime: "16:45", expectedUpdatedAt: "2026-07-13T09:00:00Z",
+    }
+    assert.equal(persistedScheduleMatchesChange({
+        id: "item-a", planned_start_date: "2026-07-13", planned_start_time: "09:30:00",
+        due_date: "2026-07-17", due_time: "16:45:00",
+    }, change), true)
+    assert.equal(persistedScheduleMatchesChange({
+        id: "item-a", planned_start_date: "2026-07-12", planned_start_time: "09:30:00",
+        due_date: "2026-07-17", due_time: "16:45:00",
+    }, change), false)
 })

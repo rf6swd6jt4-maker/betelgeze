@@ -3,12 +3,12 @@
 import { revalidatePath } from "next/cache"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
-import { getRelationshipGanttPlan, previewScheduleCascade, type RelationshipGanttDependency, type RelationshipGanttItem, type RelationshipGanttPlan, type ScheduleChange } from "@/lib/relationship-gantt"
+import { getRelationshipGanttPlan, persistedScheduleMatchesChange, previewScheduleCascade, type RelationshipGanttDependency, type RelationshipGanttItem, type RelationshipGanttPlan, type ScheduleChange } from "@/lib/relationship-gantt"
 import { getRelationship } from "@/lib/relationships"
 import type { RelationshipPhase } from "@/lib/relationship-phases"
 
 export type GanttMutationResult =
-    | { status: "saved"; workItemId?: string }
+    | { status: "saved"; workItemId?: string; plan?: RelationshipGanttPlan }
     | { status: "cascade_required"; changes: ScheduleChange[] }
     | { status: "stale"; message: string }
     | { status: "invalid"; message: string }
@@ -23,8 +23,9 @@ async function requireGantt(slug: string, relationshipId: string, edit = true) {
 }
 
 async function revalidateAffected(slug: string, workspaceId: string, workItemIds: string[]) {
-    const { data: links } = await supabaseAdmin.from("work_item_relationships")
+    const { data: links, error } = await supabaseAdmin.from("work_item_relationships")
         .select("relationship_id").eq("workspace_id", workspaceId).in("work_item_id", workItemIds)
+    if (error) throw new Error(error.message)
     const relationshipIds = [...new Set((links ?? []).map((link) => link.relationship_id))]
     revalidatePath(`/${slug}/relationships`)
     revalidatePath(`/${slug}/work`)
@@ -92,10 +93,27 @@ export async function applyGanttScheduleChanges(
             due_time: change.dueTime,
             expected_updated_at: change.expectedUpdatedAt,
         }))
-        const { error } = await supabaseAdmin.rpc("apply_gantt_schedule_plan", { p_workspace_id: workspace.id, p_changes: payload })
+        const { data: appliedRows, error } = await supabaseAdmin.rpc("apply_gantt_schedule_plan", { p_workspace_id: workspace.id, p_changes: payload })
         if (error) throw new Error(error.message)
+        const requestedIds = [...new Set(changes.map((change) => change.id))]
+        const appliedIds = new Set(((appliedRows ?? []) as Array<{ work_item_id: string }>).map((row) => String(row.work_item_id)))
+        if (appliedIds.size !== requestedIds.length || requestedIds.some((id) => !appliedIds.has(id))) {
+            throw new Error("The database did not confirm every schedule update. Reload before making further changes.")
+        }
+        const { data: persistedRows, error: verificationError } = await supabaseAdmin.from("work_items")
+            .select("id, planned_start_date, planned_start_time, due_date, due_time")
+            .eq("workspace_id", workspace.id).in("id", requestedIds)
+        if (verificationError) throw new Error(verificationError.message)
+        const persistedById = new Map((persistedRows ?? []).map((row) => [row.id, row]))
+        const unverified = changes.find((change) => {
+            const persisted = persistedById.get(change.id)
+            return !persisted || !persistedScheduleMatchesChange(persisted, change)
+        })
+        if (unverified) throw new Error(`The saved schedule for ${unverified.title} could not be verified. Refresh and try again.`)
         await revalidateAffected(slug, workspace.id, changes.map((change) => change.id))
-        return { status: "saved" }
+        const relationship = await getRelationship(workspace.id, relationshipId)
+        const plan = relationship ? await getRelationshipGanttPlan(workspace.slug, relationship) : undefined
+        return { status: "saved", plan }
     } catch (error) {
         return errorResult(error)
     }

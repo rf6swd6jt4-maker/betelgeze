@@ -290,6 +290,18 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         if (next) setPlan(next)
     }, [workspaceSlug, relationshipId])
 
+    // Back/forward navigation can restore an older App Router payload. Always
+    // reconcile a newly mounted chart with the database before trusting it.
+    useEffect(() => {
+        const frame = requestAnimationFrame(() => { void reload() })
+        const reconcileRestoredPage = (event: PageTransitionEvent) => { if (event.persisted) void reload() }
+        window.addEventListener("pageshow", reconcileRestoredPage)
+        return () => {
+            cancelAnimationFrame(frame)
+            window.removeEventListener("pageshow", reconcileRestoredPage)
+        }
+    }, [reload])
+
     useEffect(() => {
         if (!cascade) return
         const parentDocument = window.parent !== window ? window.parent.document : document
@@ -314,7 +326,11 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
 
     function refreshAfter(next: GanttMutationResult) {
         setResult(next)
-        if (next.status === "saved") { postGanttSync(workspaceSlug); void reload() }
+        if (next.status === "saved") {
+            if (next.plan) setPlan(next.plan)
+            else void reload()
+            postGanttSync(workspaceSlug)
+        }
     }
 
     function mutate(action: () => Promise<GanttMutationResult>) {

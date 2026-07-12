@@ -22,6 +22,14 @@ export type ScheduleChange = {
     expectedUpdatedAt: string
 }
 
+export type PersistedSchedule = {
+    id: string
+    planned_start_date: string | null
+    planned_start_time: string | null
+    due_date: string | null
+    due_time: string | null
+}
+
 const DAY_MS = 86_400_000
 
 export function dateDay(value: string) {
@@ -34,6 +42,18 @@ export function dayDate(day: number) {
 
 export function addCalendarDays(value: string, days: number) {
     return dayDate(dateDay(value) + days)
+}
+
+function minuteTime(value: string | null) {
+    return value ? value.slice(0, 5) : null
+}
+
+export function persistedScheduleMatchesChange(record: PersistedSchedule, change: ScheduleChange) {
+    return record.id === change.id
+        && record.planned_start_date === change.plannedStartDate
+        && minuteTime(record.planned_start_time) === minuteTime(change.plannedStartTime)
+        && record.due_date === change.dueDate
+        && minuteTime(record.due_time) === minuteTime(change.dueTime)
 }
 
 export function ganttTimelineRange(

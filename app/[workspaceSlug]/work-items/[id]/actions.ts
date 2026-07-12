@@ -19,6 +19,18 @@ function refreshWorkItem(slug: string, workItemId: string) {
     revalidatePath(`/${slug}/work`)
 }
 
+async function refreshScheduleSurfaces(slug: string, workspaceId: string, workItemId: string) {
+    refreshWorkItem(slug, workItemId)
+    revalidatePath(`/${slug}/work-items`)
+    revalidatePath(`/${slug}/relationships`)
+    const { data: links, error } = await supabaseAdmin.from("work_item_relationships")
+        .select("relationship_id").eq("workspace_id", workspaceId).eq("work_item_id", workItemId)
+    if (error) throw new Error(error.message)
+    for (const relationshipId of new Set((links ?? []).map((link) => link.relationship_id))) {
+        revalidatePath(`/${slug}/relationships/${relationshipId}`)
+    }
+}
+
 export async function updateWorkItemSchedule(slug: string, workItemId: string, startDate: string | null, startTime: string | null, endDate: string | null, endTime: string | null, completed: boolean) {
     const { workspace } = await requireWorkItem(slug, workItemId)
     const datePattern = /^\d{4}-\d{2}-\d{2}$/
@@ -33,7 +45,7 @@ export async function updateWorkItemSchedule(slug: string, workItemId: string, s
     } : { planned_start_date: startDate || null, planned_start_time: startDate ? startTime || null : null, due_date: endDate || null, due_time: endDate ? endTime || null : null }
     const { error } = await supabaseAdmin.from("work_items").update(values).eq("workspace_id", workspace.id).eq("id", workItemId)
     if (error) throw new Error(error.message)
-    refreshWorkItem(slug, workItemId)
+    await refreshScheduleSurfaces(slug, workspace.id, workItemId)
 }
 
 export async function updateWorkItemDescription(slug: string, workItemId: string, description: string) {

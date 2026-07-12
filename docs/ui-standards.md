@@ -24,6 +24,12 @@ Do not add blue, violet, or other status colours. A configured, managed, or pend
 <Status label="Failed" tone="red" />
 ```
 
+In space-constrained visualisations such as Gantt bars, use `compact` to show only the canonical status mark. The component retains the status label for assistive technology and hover disclosure; do not recreate a local dot, circle, or icon treatment.
+
+```tsx
+<Status label="Overdue" tone="red" compact />
+```
+
 ### StatusStat
 
 `StatusStat` is the compact numerical sibling of `Status`. It uses the same four tone meanings and typography, but a bold tabular number takes the place of the Betelgeze diamond. Use it for small grouped state counts such as source-settings summaries; do not use a pill or a hand-built coloured count for this pattern.

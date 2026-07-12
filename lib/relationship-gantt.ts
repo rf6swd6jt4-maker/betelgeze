@@ -2,7 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { phaseLabel, type RelationshipPhase } from "@/lib/relationship-phases"
 import type { RelationshipRecord, RelationshipWorkItemStatus } from "@/lib/relationships"
-export { addCalendarDays, dateDay, dayDate, effectiveGanttRanges, previewScheduleCascade, rangeContainsRange } from "@/lib/relationship-gantt-schedule"
+export { addCalendarDays, dateDay, dayDate, effectiveGanttRanges, ganttTimelineRange, previewScheduleCascade, rangeContainsRange } from "@/lib/relationship-gantt-schedule"
 export type { ScheduleChange } from "@/lib/relationship-gantt-schedule"
 
 export type GanttPerson = { userId: string; username: string; avatarUrl: string | null }

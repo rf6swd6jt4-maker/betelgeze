@@ -36,6 +36,30 @@ export function addCalendarDays(value: string, days: number) {
     return dayDate(dateDay(value) + days)
 }
 
+export function ganttTimelineRange(
+    items: GanttScheduleItem[],
+    milestoneDates: string[],
+    today: string,
+    options: { paddingDays?: number; minimumDays?: number } = {},
+) {
+    const paddingDays = options.paddingDays ?? 28
+    const minimumDays = options.minimumDays ?? 120
+    const ranges = effectiveGanttRanges(items)
+    const days = [dateDay(today)]
+    for (const range of ranges.values()) days.push(dateDay(range.start), dateDay(range.end))
+    for (const date of milestoneDates) days.push(dateDay(date))
+
+    let start = Math.min(...days) - paddingDays
+    let end = Math.max(...days) + paddingDays
+    const currentDays = end - start + 1
+    if (currentDays < minimumDays) {
+        const missing = minimumDays - currentDays
+        start -= Math.floor(missing / 2)
+        end += Math.ceil(missing / 2)
+    }
+    return { start, end, days: end - start + 1 }
+}
+
 export function effectiveGanttRanges<T extends GanttScheduleItem>(items: T[]) {
     const children = new Map<string, T[]>()
     const byId = new Map(items.map((item) => [item.id, item]))

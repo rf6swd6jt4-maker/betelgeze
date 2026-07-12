@@ -32,7 +32,7 @@ function dateLabel(day: number, scale: Scale) {
     return new Intl.DateTimeFormat("en-IE", scale === "month" ? { month: "short", year: "2-digit" } : { day: "numeric", month: "short" }).format(date)
 }
 
-function flattenRows(items: RelationshipGanttItem[]) {
+function flattenRows(items: RelationshipGanttItem[], collapsed: Set<string>) {
     const ranges = effectiveGanttRanges(items)
     const byId = new Map(items.map((item) => [item.id, item]))
     const children = new Map<string, RelationshipGanttItem[]>()
@@ -42,6 +42,7 @@ function flattenRows(items: RelationshipGanttItem[]) {
     const output: DisplayRow[] = []
     const visit = (item: RelationshipGanttItem, depth: number) => {
         if (ranges.has(item.id)) output.push({ item, depth })
+        if (collapsed.has(item.id)) return
         for (const child of children.get(item.id) ?? []) visit(child, depth + 1)
     }
     for (const root of roots) visit(root, 0)
@@ -68,6 +69,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const [scale, setScale] = useState<Scale>("week")
     const [zoom, setZoom] = useState(1)
     const [leftWidth, setLeftWidth] = useState(MAX_LEFT_WIDTH)
+    const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
     const [cascade, setCascade] = useState<ScheduleChange[] | null>(null)
     const [result, setResult] = useState<GanttMutationResult | null>(null)
     const [selectedDependency, setSelectedDependency] = useState<RelationshipGanttDependency | null>(null)
@@ -90,8 +92,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const ranges = useMemo(() => effectiveGanttRanges(allVisibleItems), [allVisibleItems])
     const relationshipItems = plan.items.filter((item) => item.section === "relationship")
     const sharedItems = plan.items.filter((item) => item.section === "shared")
-    const relationshipRows = flattenRows(relationshipItems)
-    const sharedRows = flattenRows(sharedItems)
+    const relationshipRows = flattenRows(relationshipItems, collapsed)
+    const sharedRows = flattenRows(sharedItems, collapsed)
     const externalRows: DisplayRow[] = plan.externalItems.map((item) => ({ item, depth: 0, external: true }))
     const milestoneHeight = plan.milestones.length ? ROW_HEIGHT : 0
     const relationshipRowsTop = HEADER_HEIGHT + milestoneHeight
@@ -275,11 +277,26 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         window.addEventListener("pointerup", finish)
     }
 
-    function renderLeft() {
+    function renderLeft(row: DisplayRow) {
+        const isRoot = row.depth === 0
+        const hasChildren = isRoot && plan.items.some((item) => item.parentWorkItemId === row.item.id)
         return <div
-            aria-hidden="true"
-            className="sticky left-0 z-40 h-[46px] border-r border-neutral-700 bg-neutral-950"
-        />
+            className="sticky left-0 z-40 flex h-[46px] min-w-0 items-center justify-end gap-1.5 border-b border-r border-neutral-800 bg-neutral-950 px-2"
+        >
+            <span className={`min-w-0 flex-1 truncate whitespace-nowrap text-right text-neutral-200 ${isRoot ? "text-sm font-semibold" : "text-xs font-normal"}`} title={row.item.title}>{row.item.title}</span>
+            {hasChildren ? <button
+                type="button"
+                aria-label={`${collapsed.has(row.item.id) ? "Expand" : "Collapse"} ${row.item.title}`}
+                aria-expanded={!collapsed.has(row.item.id)}
+                onClick={() => setCollapsed((current) => {
+                    const next = new Set(current)
+                    if (next.has(row.item.id)) next.delete(row.item.id)
+                    else next.add(row.item.id)
+                    return next
+                })}
+                className="flex h-6 w-5 shrink-0 items-center justify-center text-sm text-neutral-500 hover:text-white"
+            >{collapsed.has(row.item.id) ? "›" : "⌄"}</button> : isRoot ? <span className="w-5 shrink-0" /> : null}
+        </div>
     }
 
     function renderTimeline(row: DisplayRow) {
@@ -287,7 +304,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const range = ranges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         return <div
-            className="relative h-[46px]"
+            className="relative h-[46px] border-b border-neutral-800"
         >
             {range ? <div
                 data-gantt-bar
@@ -325,7 +342,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return [{ edge, path: `M ${x1} ${y1} C ${x1 + 20} ${y1}, ${x2 - 20} ${y2}, ${x2} ${y2}` }]
     })
 
-    return <section id="plan" className="relative isolate mt-4 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900">
+    return <section id="plan" className="relative isolate mt-4 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
         <div className="absolute right-3 top-1.5 z-[70] flex items-center gap-1.5">
             <button type="button" onClick={goToToday} className="h-8 rounded-full bg-white px-3 text-xs font-semibold text-neutral-950 shadow-sm">Today</button>
             {([['day', 'd'], ['week', 'w'], ['month', 'mo']] as const).map(([value, label]) => <button
@@ -348,19 +365,19 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             title="Pinch or use Ctrl/Cmd + wheel to zoom"
         >
             <div className="grid" style={{ gridTemplateColumns: `${leftWidth}px ${timelineWidth}px`, minWidth: `${leftWidth + timelineWidth}px` }}>
-                <div className="sticky left-0 top-0 z-50 flex h-11 items-center border-b border-r border-neutral-700 bg-neutral-950 px-3 text-sm font-semibold text-white">
+                <div className="sticky left-0 top-0 z-50 flex h-11 items-center border-b border-r border-neutral-800 bg-neutral-950 px-3 text-sm font-semibold text-white">
                     Relationship Timeline
                     <button type="button" aria-label="Resize timeline label column" title="Drag to resize" onPointerDown={startDividerDrag} className="group absolute -right-1.5 inset-y-0 hidden w-3 cursor-col-resize touch-none lg:block"><span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-neutral-400" /></button>
                 </div>
-                <div className="sticky top-0 z-40 h-11 border-b border-neutral-700 bg-neutral-950">
+                <div className="sticky top-0 z-40 h-11 border-b border-neutral-800 bg-neutral-950">
                     {headerLabels.map((label) => <span key={label.day} className="absolute top-0 flex h-full items-center px-1 text-[10px] text-neutral-500" style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
                     <span className="absolute inset-y-0 z-10 w-px bg-red-400/60" style={{ left: `${todayLeft}px` }} />
                 </div>
-                {plan.milestones.length ? <><div aria-hidden="true" className="sticky left-0 z-40 h-[46px] border-r border-neutral-700 bg-neutral-950" /><div className="relative h-[46px]">{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</span> })}</div></> : null}
-                {relationshipRows.map((row) => <div className="contents" key={`relationship-${row.item.id}`}>{renderLeft()}{renderTimeline(row)}</div>)}
-                {[...sharedRows, ...externalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft()}{renderTimeline(row)}</div>)}
-                {emptyTimeline ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 h-24 border-r border-neutral-700 bg-neutral-950" /><div className="relative h-24"><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-600">Nothing scheduled</span></div></div> : null}
-                {fillerHeight ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 border-r border-neutral-700 bg-neutral-950" style={{ height: `${fillerHeight}px` }} /><div aria-hidden="true" style={{ height: `${fillerHeight}px` }} /></div> : null}
+                {plan.milestones.length ? <><div aria-hidden="true" className="sticky left-0 z-40 h-[46px] border-b border-r border-neutral-800 bg-neutral-950" /><div className="relative h-[46px] border-b border-neutral-800">{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</span> })}</div></> : null}
+                {relationshipRows.map((row) => <div className="contents" key={`relationship-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
+                {[...sharedRows, ...externalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
+                {emptyTimeline ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 h-24 border-b border-r border-neutral-800 bg-neutral-950" /><div className="relative h-24 border-b border-neutral-800"><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-600">Nothing scheduled</span></div></div> : null}
+                {fillerHeight ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 border-r border-neutral-800 bg-neutral-950" style={{ height: `${fillerHeight}px` }} /><div aria-hidden="true" style={{ height: `${fillerHeight}px` }} /></div> : null}
             </div>
             <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${leftWidth + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />
             <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${leftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path }) => <path key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} d={path} fill="none" stroke={selectedDependency === edge ? "#fff" : "#737373"} strokeWidth="1.5" className="pointer-events-auto cursor-pointer" onClick={() => setSelectedDependency(edge)} />)}</svg>

@@ -8,6 +8,7 @@ import {
     orderWorkspaceTabsByStableIds,
     reorderWorkspaceTabs,
     WORKSPACE_TAB_FRAME_PARAM,
+    workspaceTabFrameMatchesUrl,
     workspaceTabFrameUrl,
     workspaceTabHistoryStep,
     workspaceRouteCanShowRelationshipContext,
@@ -36,6 +37,38 @@ test("adds a tab identity while preserving filters and hash navigation", () => {
     assert.equal(
         workspaceTabFrameUrl("/scaylup/settings?section=sources#owner-phone", "tab-2", origin),
         `/scaylup/settings?section=sources&${WORKSPACE_TAB_FRAME_PARAM}=tab-2#owner-phone`
+    )
+})
+
+test("only treats a frame as synchronized when route, query, hash, and tab identity match", () => {
+    const desired = "/scaylup/onboarding?stage=setup#client"
+
+    assert.equal(
+        workspaceTabFrameMatchesUrl(
+            `https://dashboard.betelgeze.com/scaylup/onboarding?${WORKSPACE_TAB_FRAME_PARAM}=tab-2&stage=setup#client`,
+            desired,
+            "tab-2",
+            origin
+        ),
+        true
+    )
+    assert.equal(
+        workspaceTabFrameMatchesUrl(
+            `https://dashboard.betelgeze.com/scaylup/leadgen/polls?${WORKSPACE_TAB_FRAME_PARAM}=tab-2`,
+            desired,
+            "tab-2",
+            origin
+        ),
+        false
+    )
+    assert.equal(
+        workspaceTabFrameMatchesUrl(
+            `https://dashboard.betelgeze.com/scaylup/onboarding?stage=setup&${WORKSPACE_TAB_FRAME_PARAM}=other-tab#client`,
+            desired,
+            "tab-2",
+            origin
+        ),
+        false
     )
 })
 

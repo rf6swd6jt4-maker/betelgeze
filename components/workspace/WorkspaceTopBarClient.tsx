@@ -23,6 +23,7 @@ import {
     WORKSPACE_TAB_FRAME_PARAM,
     WORKSPACE_TAB_MESSAGE_SOURCE,
     workspaceTabContextStorageKey,
+    workspaceTabFrameMatchesUrl,
     workspaceTabHistoryStep,
     workspaceTabFrameUrl,
     workspaceRouteCanShowRelationshipContext,
@@ -566,6 +567,40 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         return true
     }, [])
 
+    const ensureTabFrameLocation = useCallback((tabId: string, url: string, mode: "assign" | "replace" = "assign") => {
+        const frame = iframeRefs.current.get(tabId)
+        if (!frame?.contentWindow) return false
+        const target = workspaceTabFrameUrl(url, tabId, window.location.origin)
+
+        try {
+            if (workspaceTabFrameMatchesUrl(frame.contentWindow.location.href, url, tabId, window.location.origin)) return false
+            if (mode === "replace") frame.contentWindow.location.replace(target)
+            else frame.contentWindow.location.assign(target)
+        } catch {
+            // The workspace frame is same-origin in normal operation. Keep a
+            // src fallback so an unexpected intermediate document cannot
+            // leave shell state and visible tab content permanently split.
+            frame.src = target
+        }
+        return true
+    }, [])
+
+    const requestTabFrameNavigation = useCallback((tabId: string, url: string, mode: "assign" | "replace" = "assign") => {
+        const messageType = mode === "replace" ? "traverse" : "navigate"
+        if (readyTabIdsRef.current.has(tabId) && postToTab(tabId, { type: messageType, url })) {
+            readyTabIdsRef.current.delete(tabId)
+            // The bridge normally starts the hard navigation immediately.
+            // Reconcile on the next frame as a backstop if it unmounted while
+            // a streamed route/loading boundary was being replaced.
+            window.requestAnimationFrame(() => ensureTabFrameLocation(tabId, url, mode))
+            return
+        }
+
+        // A loading frame may not have a live message listener. The host owns
+        // the desired route, so cancel the stale document load directly.
+        ensureTabFrameLocation(tabId, url, mode)
+    }, [ensureTabFrameLocation, postToTab])
+
     const setTabContextOpen = useCallback((tabId: string, open: boolean) => {
         sessionStorage.setItem(workspaceTabContextStorageKey(workspace.slug, tabId), open ? "true" : "false")
         setContextOpenByTab((current) => current[tabId] === open ? current : { ...current, [tabId]: open })
@@ -627,7 +662,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     // bridge is listening now, so safely replay the request.
                     window.requestAnimationFrame(() => {
                         if (pendingNavigationRef.current.get(message.tabId) === pendingUrl) {
-                            postToTab(message.tabId, { type: "navigate", url: pendingUrl })
+                            requestTabFrameNavigation(message.tabId, pendingUrl)
                         }
                     })
                     return
@@ -675,6 +710,11 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             }
 
             if (message.type === "navigation-start") {
+                if (message.url) {
+                    const url = normalizeWorkspaceUrl(message.url)
+                    pendingNavigationRef.current.set(message.tabId, url)
+                    updateTabForShellNavigation(message.tabId, url)
+                }
                 readyTabIdsRef.current.delete(message.tabId)
                 if (message.tabId === activeTabIdRef.current) setRouteLoadingTabId(message.tabId)
             }
@@ -711,7 +751,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
 
         window.addEventListener("message", receiveFrameMessage)
         return () => window.removeEventListener("message", receiveFrameMessage)
-    }, [normalizeWorkspaceUrl, postToTab, reopenClosedTab, routeCanShowRelationshipContext, saveTabsState, setTabContextOpen, setTabContextStatus, showCreationNotice, titleForUrl, workspace.slug])
+    }, [normalizeWorkspaceUrl, reopenClosedTab, requestTabFrameNavigation, routeCanShowRelationshipContext, saveTabsState, setTabContextOpen, setTabContextStatus, showCreationNotice, titleForUrl, updateTabForShellNavigation, workspace.slug])
 
     useEffect(() => {
         if (!tabsHydrated) return
@@ -939,7 +979,8 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
             : candidate)
         setTabs(nextTabs)
         saveTabsState(nextTabs, tabId)
-        postToTab(tabId, { type: "traverse", url: destination.url })
+        pendingNavigationRef.current.set(tabId, destination.url)
+        requestTabFrameNavigation(tabId, destination.url, "replace")
     }
 
     function goBack() {
@@ -1101,17 +1142,18 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         }
 
         pendingNavigationRef.current.set(tabId, url)
-        if (isLoaded && readyTabIdsRef.current.has(tabId) && postToTab(tabId, { type: "navigate", url })) {
-            readyTabIdsRef.current.delete(tabId)
-        }
+        requestTabFrameNavigation(tabId, url)
     }
 
-    function handleFrameLoad(tabId: string) {
+    function handleFrameLoad(tabId: string, expectedUrl: string) {
         loadedTabIdsRef.current.add(tabId)
         readyTabIdsRef.current.delete(tabId)
         setLoadedTabIds(new Set(loadedTabIdsRef.current))
         const pendingUrl = pendingNavigationRef.current.get(tabId)
-        if (!pendingUrl && tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
+        const desiredUrl = pendingUrl ?? expectedUrl
+        const repaired = ensureTabFrameLocation(tabId, desiredUrl)
+        if (!pendingUrl && !repaired && tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
+        if (repaired && tabId === activeTabIdRef.current) setRouteLoadingTabId(tabId)
         const active = tabId === activeTabIdRef.current
         window.requestAnimationFrame(() => postToTab(tabId, { type: "activate", active, refresh: false }))
     }
@@ -1130,6 +1172,10 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
         window.requestAnimationFrame(() => {
             postToTab(previousTabId, { type: "activate", active: false, refresh: false })
             postToTab(tab.id, { type: "activate", active: true, refresh })
+            const desiredUrl = pendingNavigationRef.current.get(tab.id) ?? tab.url
+            if (ensureTabFrameLocation(tab.id, desiredUrl) && tab.id === activeTabIdRef.current) {
+                setRouteLoadingTabId(tab.id)
+            }
         })
     }
 
@@ -1619,7 +1665,7 @@ function WorkspaceTabsShell({ workspace, workspaceLogoSrc, username, email, avat
                     tab={tab}
                     active={tab.id === activeTabId}
                     assignRef={(node) => { if (node) iframeRefs.current.set(tab.id, node); else iframeRefs.current.delete(tab.id) }}
-                    onLoad={() => handleFrameLoad(tab.id)}
+                    onLoad={() => handleFrameLoad(tab.id, tab.url)}
                 />
             ))}
             {tabsHydrated && activeRouteLoading && (

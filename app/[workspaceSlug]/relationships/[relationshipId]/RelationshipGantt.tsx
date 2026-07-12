@@ -26,7 +26,7 @@ const MIN_CHART_HEIGHT = 448
 const MIN_LEFT_WIDTH = 220
 const DEFAULT_LEFT_WIDTH = 260
 const MAX_LEFT_WIDTH = 360
-const RANGE_DAYS = 730
+const RANGE_PADDING_DAYS = 14
 const DEFAULT_ZOOM = 2
 const MAX_ZOOM = 6
 const BAR_INSET = 8
@@ -109,9 +109,20 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
 
     const dayWidth = SCALE_WIDTH[scale] * zoom
     const today = new Date().toISOString().slice(0, 10)
-    const rangeStart = dateDay(today) - 180
+    const allVisibleItems = useMemo(() => [...plan.items, ...plan.externalItems], [plan])
+    const ranges = useMemo(() => effectiveGanttRanges(allVisibleItems), [allVisibleItems])
+    // The timeline window grows to enclose every scheduled bar and milestone so
+    // items far in the past or future are never clipped out of view.
+    const { rangeStart, rangeDays } = useMemo(() => {
+        const lows = [dateDay(today) - 180]
+        const highs = [dateDay(today) + 550]
+        for (const range of ranges.values()) { lows.push(dateDay(range.start)); highs.push(dateDay(range.end)) }
+        for (const milestone of plan.milestones) { const day = dateDay(milestone.occurredAt.slice(0, 10)); lows.push(day); highs.push(day) }
+        const start = Math.min(...lows) - RANGE_PADDING_DAYS
+        return { rangeStart: start, rangeDays: Math.max(...highs) + RANGE_PADDING_DAYS - start }
+    }, [ranges, plan.milestones, today])
     const timelineX = useCallback((day: number) => (day - rangeStart) * dayWidth, [dayWidth, rangeStart])
-    const timelineWidth = RANGE_DAYS * dayWidth
+    const timelineWidth = rangeDays * dayWidth
     const todayLeft = timelineX(dateDay(today))
     const columnStartDay = useCallback((day: number) => {
         if (scale === "day") return day
@@ -125,13 +136,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         if (scale === "week") return start + 7
         return dateDay(addCalendarMonths(new Date(start * 86_400_000).toISOString().slice(0, 10), 1))
     }, [columnStartDay, scale])
+    // Bars span their actual start→due dates (the due day is inclusive, so the
+    // bar reaches the end of that day) rather than snapping to whole columns,
+    // which previously made every bar fill its week or month at coarse scales.
     const barGeometry = useCallback((range: { start: string; end: string }) => {
-        const columnLeft = timelineX(columnStartDay(dateDay(range.start)))
-        const columnRight = timelineX(columnEndDay(dateDay(range.end)))
-        return { left: columnLeft + BAR_INSET, right: columnRight - BAR_INSET, width: Math.max(4, columnRight - columnLeft - BAR_INSET * 2), sourceDivider: columnRight, targetDivider: columnLeft }
-    }, [columnEndDay, columnStartDay, timelineX])
-    const allVisibleItems = useMemo(() => [...plan.items, ...plan.externalItems], [plan])
-    const ranges = useMemo(() => effectiveGanttRanges(allVisibleItems), [allVisibleItems])
+        const left = timelineX(dateDay(range.start))
+        const right = timelineX(dateDay(range.end) + 1)
+        return { left: left + BAR_INSET, right: right - BAR_INSET, width: Math.max(4, right - left - BAR_INSET * 2), sourceDivider: right, targetDivider: left }
+    }, [timelineX])
     const relationshipItems = plan.items.filter((item) => item.section === "relationship")
     const sharedItems = plan.items.filter((item) => item.section === "shared")
     const relationshipRows = flattenRows(relationshipItems, collapsed)
@@ -160,14 +172,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const fillerHeight = chartHeight - contentHeight
 
     const headerLabels = useMemo(() => {
-        return Array.from({ length: RANGE_DAYS }, (_, index) => ({ day: rangeStart + index, left: index * dayWidth }))
+        return Array.from({ length: rangeDays }, (_, index) => ({ day: rangeStart + index, left: index * dayWidth }))
             .filter(({ day }) => {
                 const date = new Date(day * 86_400_000)
                 if (scale === "month") return date.getUTCDate() === 1
                 if (scale === "week") return date.getUTCDay() === 1
                 return true
             })
-    }, [dayWidth, rangeStart, scale])
+    }, [dayWidth, rangeDays, rangeStart, scale])
 
     useEffect(() => {
         if (initiallyCenteredRef.current) return
@@ -285,6 +297,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
 
     function requestSchedule(item: RelationshipGanttItem, start: string, due: string, descendantChanges: ScheduleChange[] = []) {
         if (!scheduleFitsHierarchy(item, start, due, descendantChanges.length > 0)) return
+        // A summary bar has no dates of its own — its range is derived from its
+        // children. Moving it must shift the children, never pin explicit dates
+        // onto the parent, so it keeps re-deriving as those children change.
+        const summaryDrag = ranges.get(item.id)?.derived === true
         const parent = item.parentWorkItemId ? plan.items.find((candidate) => candidate.id === item.parentWorkItemId) : null
         const parentRange = parent ? ranges.get(parent.id) : null
         const frozenParent = parent && parentRange?.derived ? { id: parent.id, start: parentRange.start, end: parentRange.end } : undefined
@@ -305,8 +321,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             if (preview.status !== "cascade_required") { setResult(preview); void reload(); return }
             const merged = new Map(preview.changes.map((change) => [change.id, change]))
             for (const change of descendantChanges) merged.set(change.id, change)
+            if (summaryDrag) merged.delete(item.id)
             if (frozenParentChange && !merged.has(frozenParentChange.id)) merged.set(frozenParentChange.id, frozenParentChange)
             const changes = [...merged.values()]
+            if (!changes.length) { void reload(); return }
             if (preview.changes.length > 1) { setCascade(changes); return }
             refreshAfter(await applyGanttScheduleChanges(workspaceSlug, relationshipId, changes))
         })
@@ -445,7 +463,18 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const flashing = flashingItemId === item.id
         const barBorder = flashing ? "#ef4444" : colours.border
         const canDrag = canEdit && !row.external && !["done", "canceled"].includes(item.status)
-        const handleSpace = canDrag ? RESIZE_HANDLE_WIDTH : 0
+        // A summary bar is derived from its children, so it can be moved as a
+        // group but never resized independently — hence no resize handles.
+        const isSummary = range?.derived === true
+        const canResize = canDrag && !isSummary
+        const handleSpace = canResize ? RESIZE_HANDLE_WIDTH : 0
+        // Only show elements the bar is actually wide enough to hold, so short
+        // bars render as clean stubs instead of clipping their own content.
+        const width = geometry?.width ?? 0
+        const showLink = width >= barHeight + handleSpace * 2 + 2
+        const contentWidth = width - (handleSpace + 6) - (handleSpace + 4) - (showLink ? barHeight : 0)
+        const showAssignee = Boolean(item.assignees[0]) && contentWidth >= 16
+        const showLabel = contentWidth >= (showAssignee ? 40 : 20)
         return <div
             className="relative border-b border-neutral-800"
             style={{ height: `${height}px` }}
@@ -453,16 +482,16 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             {range && geometry ? <div
                 data-gantt-bar
                 className={`absolute z-20 flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border pl-1.5 transition-[border-color,box-shadow] ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 ? "border-dashed" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 6}px`, paddingRight: `${barHeight + handleSpace + 4}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: barBorder, backgroundColor: colours.background, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined }}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 6}px`, paddingRight: `${(showLink ? barHeight : 0) + handleSpace + 4}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: barBorder, backgroundColor: colours.background, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined }}
                 onPointerDown={(event) => startBarDrag(event, item, range, "move")}
                 title={`${item.title}: ${range.start} → ${range.end}`}
             >
-                {item.actualStartAt ? <span className="absolute inset-y-0 left-0 rounded-l-md opacity-45" style={{ width: `${Math.min(100, Math.max(8, ((dateDay((item.actualCompletedAt ?? today).slice(0, 10)) - dateDay(range.start) + 1) / Math.max(1, dateDay(range.end) - dateDay(range.start) + 1)) * 100))}%`, backgroundColor: colours.text }} /> : null}
-                {canDrag ? <button type="button" aria-label={`Resize start of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "start")} className="absolute inset-y-0 left-0 z-20 cursor-ew-resize rounded-l-md" style={{ width: `${RESIZE_HANDLE_WIDTH}px`, backgroundColor: barBorder }} /> : null}
-                {item.assignees[0] ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact compactSize={row.depth === 0 ? "md" : "sm"} />{item.assignees.length > 1 ? <span className={`shrink-0 font-medium ${row.depth === 0 ? "text-xs" : "text-[9px]"}`}>+{item.assignees.length - 1}</span> : null}</div> : null}
-                <span className={`relative min-w-0 flex-1 truncate leading-none ${row.depth === 0 ? "text-sm font-semibold" : "text-[11px] font-normal"}`}>{item.title}</span>
-                <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="absolute inset-y-0 z-10 flex items-center justify-center border-l" style={{ right: `${handleSpace}px`, width: `${barHeight}px`, borderColor: barBorder, color: barBorder }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[22px] w-[22px]" : "h-[18px] w-[18px]"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link>
-                {canDrag ? <button type="button" aria-label={`Resize end of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "end")} className="absolute inset-y-0 right-0 z-20 cursor-ew-resize rounded-r-md" style={{ width: `${RESIZE_HANDLE_WIDTH}px`, backgroundColor: barBorder }} /> : null}
+                {item.actualStartAt ? <span className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md opacity-45" style={{ width: `${Math.min(100, Math.max(8, ((dateDay((item.actualCompletedAt ?? today).slice(0, 10)) - dateDay(range.start) + 1) / Math.max(1, dateDay(range.end) - dateDay(range.start) + 1)) * 100))}%`, backgroundColor: colours.text }} /> : null}
+                {canResize ? <button type="button" aria-label={`Resize start of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "start")} className="absolute inset-y-0 left-0 z-20 cursor-ew-resize rounded-l-md" style={{ width: `${RESIZE_HANDLE_WIDTH}px`, backgroundColor: barBorder }} /> : null}
+                {showAssignee ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact compactSize={row.depth === 0 ? "md" : "sm"} />{item.assignees.length > 1 ? <span className={`shrink-0 font-medium ${row.depth === 0 ? "text-xs" : "text-[9px]"}`}>+{item.assignees.length - 1}</span> : null}</div> : null}
+                {showLabel ? <span className={`relative min-w-0 flex-1 truncate leading-none ${row.depth === 0 ? "text-sm font-semibold" : "text-[11px] font-normal"}`}>{item.title}</span> : null}
+                {showLink ? <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="absolute inset-y-0 z-10 flex items-center justify-center border-l" style={{ right: `${handleSpace}px`, width: `${barHeight}px`, borderColor: barBorder, color: barBorder }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[22px] w-[22px]" : "h-[18px] w-[18px]"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link> : null}
+                {canResize ? <button type="button" aria-label={`Resize end of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "end")} className="absolute inset-y-0 right-0 z-20 cursor-ew-resize rounded-r-md" style={{ width: `${RESIZE_HANDLE_WIDTH}px`, backgroundColor: barBorder }} /> : null}
             </div> : null}
         </div>
     }

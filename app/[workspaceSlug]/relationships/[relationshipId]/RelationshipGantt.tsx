@@ -281,9 +281,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const isRoot = row.depth === 0
         const hasChildren = isRoot && plan.items.some((item) => item.parentWorkItemId === row.item.id)
         return <div
-            className="sticky left-0 z-40 flex h-[46px] min-w-0 items-center justify-end gap-1.5 border-b border-r border-neutral-800 bg-neutral-950 px-2"
+            className="sticky left-0 z-40 flex h-[46px] min-w-0 items-center justify-end gap-1.5 border-b border-r border-b-neutral-700 border-r-neutral-800 bg-neutral-950 px-2"
         >
-            <span className={`min-w-0 flex-1 truncate whitespace-nowrap text-right text-neutral-200 ${isRoot ? "text-sm font-semibold" : "text-xs font-normal"}`} title={row.item.title}>{row.item.title}</span>
             {hasChildren ? <button
                 type="button"
                 aria-label={`${collapsed.has(row.item.id) ? "Expand" : "Collapse"} ${row.item.title}`}
@@ -294,8 +293,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                     else next.add(row.item.id)
                     return next
                 })}
-                className="flex h-6 w-5 shrink-0 items-center justify-center text-sm text-neutral-500 hover:text-white"
-            >{collapsed.has(row.item.id) ? "›" : "⌄"}</button> : isRoot ? <span className="w-5 shrink-0" /> : null}
+                className="flex h-6 w-5 shrink-0 items-center justify-center text-neutral-500 hover:text-white"
+            ><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={`h-3.5 w-3.5 transition-transform ${collapsed.has(row.item.id) ? "" : "rotate-90"}`}><path d="m6 3 5 5-5 5" /></svg></button> : isRoot ? <span className="w-5 shrink-0" /> : null}
+            <span className={`min-w-0 flex-1 truncate whitespace-nowrap text-right text-neutral-200 ${isRoot ? "text-sm font-semibold" : "text-xs font-normal"}`} title={row.item.title}>{row.item.title}</span>
         </div>
     }
 
@@ -304,7 +304,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const range = ranges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         return <div
-            className="relative h-[46px] border-b border-neutral-800"
+            className="relative h-[46px] border-b border-neutral-700"
         >
             {range ? <div
                 data-gantt-bar
@@ -370,15 +370,16 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                     <button type="button" aria-label="Resize timeline label column" title="Drag to resize" onPointerDown={startDividerDrag} className="group absolute -right-1.5 inset-y-0 hidden w-3 cursor-col-resize touch-none lg:block"><span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-neutral-400" /></button>
                 </div>
                 <div className="sticky top-0 z-40 h-11 border-b border-neutral-800 bg-neutral-950">
-                    {headerLabels.map((label) => <span key={label.day} className="absolute top-0 flex h-full items-center px-1 text-[10px] text-neutral-500" style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
+                    {headerLabels.map((label) => <span key={label.day} className="absolute top-0 flex h-full items-center border-l border-neutral-700 px-1 text-[10px] text-neutral-500" style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
                     <span className="absolute inset-y-0 z-10 w-px bg-red-400/60" style={{ left: `${todayLeft}px` }} />
                 </div>
-                {plan.milestones.length ? <><div aria-hidden="true" className="sticky left-0 z-40 h-[46px] border-b border-r border-neutral-800 bg-neutral-950" /><div className="relative h-[46px] border-b border-neutral-800">{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</span> })}</div></> : null}
+                {plan.milestones.length ? <><div aria-hidden="true" className="sticky left-0 z-40 h-[46px] border-b border-r border-b-neutral-700 border-r-neutral-800 bg-neutral-950" /><div className="relative h-[46px] border-b border-neutral-700">{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</span> })}</div></> : null}
                 {relationshipRows.map((row) => <div className="contents" key={`relationship-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
                 {[...sharedRows, ...externalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
-                {emptyTimeline ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 h-24 border-b border-r border-neutral-800 bg-neutral-950" /><div className="relative h-24 border-b border-neutral-800"><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-600">Nothing scheduled</span></div></div> : null}
+                {emptyTimeline ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 h-24 border-b border-r border-b-neutral-700 border-r-neutral-800 bg-neutral-950" /><div className="relative h-24 border-b border-neutral-700"><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-600">Nothing scheduled</span></div></div> : null}
                 {fillerHeight ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 border-r border-neutral-800 bg-neutral-950" style={{ height: `${fillerHeight}px` }} /><div aria-hidden="true" style={{ height: `${fillerHeight}px` }} /></div> : null}
             </div>
+            {headerLabels.map((label) => <div aria-hidden="true" key={`column-${label.day}`} className="pointer-events-none absolute z-10 w-px bg-neutral-700" style={{ left: `${leftWidth + label.left}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${leftWidth + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />
             <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${leftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path }) => <path key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} d={path} fill="none" stroke={selectedDependency === edge ? "#fff" : "#737373"} strokeWidth="1.5" className="pointer-events-auto cursor-pointer" onClick={() => setSelectedDependency(edge)} />)}</svg>
         </div>

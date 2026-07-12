@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react"
 import { Assignee, relationshipPhaseColours } from "@/components/ui"
 import { ganttSyncChannelName, postGanttSync } from "@/lib/ui/gantt-sync"
@@ -9,9 +8,7 @@ import type { RelationshipGanttDependency, RelationshipGanttItem, RelationshipGa
 import {
     applyGanttScheduleChanges,
     createGanttDependency,
-    createGanttWorkItem,
     loadGanttPlan,
-    moveGanttWorkItem,
     previewGanttScheduleChange,
     removeGanttDependency,
     type GanttMutationResult,
@@ -26,10 +23,6 @@ const EMPTY_LANE_HEIGHT = 96
 const LEFT_WIDTH = 360
 const RANGE_DAYS = 730
 const SCALE_WIDTH: Record<Scale, number> = { day: 64, week: 28, month: 12 }
-
-function ArrowIcon() {
-    return <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-3.5 w-3.5"><path d="M5 11 11 5M6 5h5v5" /></svg>
-}
 
 function dateLabel(day: number, scale: Scale) {
     const date = new Date(day * 86_400_000)
@@ -69,11 +62,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     // The plan is held locally so edits can be painted optimistically and so
     // cross-tab changes can refresh it without a full route reload.
     const [plan, setPlan] = useState(initialPlan)
-    const [scale, setScale] = useState<Scale>("week")
-    const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+    const [scale] = useState<Scale>("week")
     const [unscheduledOpen, setUnscheduledOpen] = useState(true)
-    const [quickTitle, setQuickTitle] = useState("")
-    const [quickParent, setQuickParent] = useState<string | null>(null)
     const [cascade, setCascade] = useState<ScheduleChange[] | null>(null)
     const [result, setResult] = useState<GanttMutationResult | null>(null)
     const [selectedDependency, setSelectedDependency] = useState<RelationshipGanttDependency | null>(null)
@@ -83,6 +73,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const [editStart, setEditStart] = useState("")
     const [editDue, setEditDue] = useState("")
 
+    // The server can stream a refreshed plan into this long-lived client view.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { setPlan(initialPlan) }, [initialPlan])
 
     const dayWidth = SCALE_WIDTH[scale]
@@ -94,15 +86,15 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const ranges = useMemo(() => effectiveGanttRanges(allVisibleItems), [allVisibleItems])
     const relationshipItems = plan.items.filter((item) => item.section === "relationship")
     const sharedItems = plan.items.filter((item) => item.section === "shared")
-    const relationshipRows = flattenRows(relationshipItems, collapsed, true)
-    const sharedRows = flattenRows(sharedItems, collapsed, true)
-    const unscheduledRelationship = flattenRows(relationshipItems, collapsed, false)
-    const unscheduledShared = flattenRows(sharedItems, collapsed, false)
+    const relationshipRows = flattenRows(relationshipItems, new Set(), true)
+    const sharedRows = flattenRows(sharedItems, new Set(), true)
+    const unscheduledRelationship = flattenRows(relationshipItems, new Set(), false)
+    const unscheduledShared = flattenRows(sharedItems, new Set(), false)
     const unscheduledRows = [...unscheduledRelationship, ...unscheduledShared]
     const externalRows: DisplayRow[] = plan.externalItems.map((item) => ({ item, depth: 0, external: true }))
     const milestoneHeight = plan.milestones.length ? ROW_HEIGHT : 0
-    const relationshipRowsTop = HEADER_HEIGHT + milestoneHeight + 36
-    const sharedRowsTop = relationshipRowsTop + relationshipRows.length * ROW_HEIGHT + ((sharedRows.length || externalRows.length) ? 36 : 0)
+    const relationshipRowsTop = HEADER_HEIGHT + milestoneHeight
+    const sharedRowsTop = relationshipRowsTop + relationshipRows.length * ROW_HEIGHT
     const emptyTimeline = !relationshipRows.length && !sharedRows.length && !externalRows.length
     const contentHeight = sharedRowsTop + (sharedRows.length + externalRows.length) * ROW_HEIGHT + (emptyTimeline ? EMPTY_LANE_HEIGHT : 0)
     const rowTop = new Map<string, number>()
@@ -201,19 +193,6 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         window.addEventListener("pointerup", finish)
     }
 
-    function dropRow(event: React.DragEvent<HTMLDivElement>, target: RelationshipGanttItem) {
-        if (!canEdit) return
-        event.preventDefault()
-        const draggedId = event.dataTransfer.getData("application/x-betelgeze-work-item")
-        const dragged = plan.items.find((item) => item.id === draggedId)
-        if (!dragged || dragged.id === target.id) return
-        const rect = event.currentTarget.getBoundingClientRect()
-        const relativeY = event.clientY - rect.top
-        const parentWorkItemId = relativeY > rect.height * 0.25 && relativeY < rect.height * 0.75 ? target.id : target.parentWorkItemId
-        const sortOrder = target.sortOrder + (relativeY >= rect.height * 0.75 ? 1 : -1)
-        mutate(() => moveGanttWorkItem(workspaceSlug, relationshipId, { workItemId: dragged.id, parentWorkItemId, sortOrder, expectedUpdatedAt: dragged.updatedAt }))
-    }
-
     function dropUnscheduled(event: React.DragEvent<HTMLElement>) {
         if (!canEdit) return
         event.preventDefault()
@@ -233,26 +212,11 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         setEditDue(range?.end ?? today)
     }
 
-    function renderLeft(row: DisplayRow) {
-        const item = row.item
-        const hasChildren = plan.items.some((candidate) => candidate.parentWorkItemId === item.id)
+    function renderLeft() {
         return <div
-            draggable={canEdit && !row.external}
-            onDragStart={(event) => event.dataTransfer.setData("application/x-betelgeze-work-item", item.id)}
-            onDragOver={(event) => { if (canEdit && !row.external) event.preventDefault() }}
-            onDrop={(event) => dropRow(event, item)}
-            className={`sticky left-0 z-20 flex h-[46px] items-center gap-1.5 border-b border-r border-neutral-900 bg-neutral-950 px-2 ${row.external ? "text-neutral-500" : ""}`}
-            style={{ paddingLeft: `${8 + row.depth * 18}px` }}
-        >
-            {hasChildren ? <button type="button" onClick={() => setCollapsed((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next })} className="h-6 w-5 text-neutral-500 hover:text-white">{collapsed.has(item.id) ? "›" : "⌄"}</button> : <span className="w-5" />}
-            {canEdit && !row.external ? <span className="hidden cursor-grab text-neutral-700 lg:inline" aria-hidden="true">⋮⋮</span> : null}
-            {item.assignees[0] ? <Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} className="max-w-28 shrink-0" /> : null}
-            {item.assignees.length > 1 ? <span className="shrink-0 text-xs text-neutral-500">+{item.assignees.length - 1}</span> : null}
-            <span className="min-w-0 flex-1 truncate text-sm">{row.external ? "External · " : ""}{item.title}</span>
-            {canEdit && !row.external ? <button type="button" aria-label={`Edit schedule for ${item.title}`} onClick={() => openDateEditor(item)} className="shrink-0 text-neutral-600 hover:text-white lg:hidden">▦</button> : null}
-            {!row.external ? <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} className="shrink-0 text-neutral-600 hover:text-white"><ArrowIcon /></Link> : <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} className="shrink-0 text-neutral-700 hover:text-white"><ArrowIcon /></Link>}
-            {canEdit && !row.external ? <button type="button" aria-label={`Add child to ${item.title}`} onClick={() => setQuickParent(item.id)} className="hidden h-6 w-5 text-neutral-600 hover:text-white lg:inline">+</button> : null}
-        </div>
+            aria-hidden="true"
+            className="sticky left-0 z-20 h-[46px] border-r border-neutral-700 bg-neutral-900"
+        />
     }
 
     function renderTimeline(row: DisplayRow) {
@@ -260,8 +224,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const range = ranges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         return <div
-            className="relative h-[46px] border-b border-neutral-900"
-            style={{ backgroundImage: `repeating-linear-gradient(to right, rgba(64,64,64,.22) 0, rgba(64,64,64,.22) 1px, transparent 1px, transparent ${dayWidth}px)` }}
+            className="relative h-[46px]"
             onDragOver={(event) => { if (canEdit) event.preventDefault() }}
             onDrop={dropUnscheduled}
         >
@@ -285,10 +248,6 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         </div>
     }
 
-    function sectionHeader(label: string, count: number) {
-        return <div className="contents"><div className="sticky left-0 z-30 flex h-9 items-center border-b border-r border-neutral-800 bg-black px-3 text-xs font-medium text-neutral-400">{label}<span className="ml-2 tabular-nums text-neutral-600">{count}</span></div><div className="h-9 border-b border-neutral-800 bg-black" /></div>
-    }
-
     const dependencyPaths = plan.dependencies.flatMap((edge) => {
         const fromTop = rowTop.get(edge.dependsOnWorkItemId)
         const toTop = rowTop.get(edge.workItemId)
@@ -305,31 +264,18 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return [{ edge, path: `M ${x1} ${y1} C ${x1 + 20} ${y1}, ${x2 - 20} ${y2}, ${x2} ${y2}` }]
     })
 
-    return <section id="plan" className="mt-4 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950">
-        <div className="flex flex-wrap items-center gap-2 border-b border-neutral-800 bg-black px-3 py-2">
-            <div><h2 className="text-sm font-semibold text-white">Relationship plan</h2><p className="text-xs text-neutral-500">{plan.items.length} work items · {plan.milestones.length} milestones</p></div>
-            <button type="button" onClick={() => { const node = scrollRef.current; if (node) node.scrollLeft = Math.max(0, (dateDay(today) - rangeStart) * dayWidth - (node.clientWidth - LEFT_WIDTH) / 2) }} className="ml-auto h-8 rounded-md px-2 text-xs text-neutral-400 hover:bg-neutral-900 hover:text-white">Today</button>
-            <div className="flex rounded-md border border-neutral-800 p-0.5">{(["day", "week", "month"] as Scale[]).map((value) => <button type="button" key={value} onClick={() => setScale(value)} className={`h-7 rounded px-2 text-xs capitalize ${scale === value ? "bg-white text-black" : "text-neutral-500 hover:text-white"}`}>{value}</button>)}</div>
-        </div>
-        {canEdit ? <div className="flex items-center gap-2 border-b border-neutral-900 px-3 py-2">
-            <span className="text-xs text-neutral-500">{quickParent ? `Add child to ${plan.items.find((item) => item.id === quickParent)?.title ?? "work item"}` : "Quick add"}</span>
-            <input value={quickTitle} onChange={(event) => setQuickTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && quickTitle.trim()) mutate(() => createGanttWorkItem(workspaceSlug, relationshipId, { title: quickTitle, parentWorkItemId: quickParent, startDate: null }).then((next) => { if (next.status === "saved") { setQuickTitle(""); setQuickParent(null) } return next })) }} placeholder="Work-item title" className="h-8 min-w-44 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-neutral-600" />
-            {quickParent ? <button type="button" onClick={() => setQuickParent(null)} className="text-xs text-neutral-500 hover:text-white">Cancel child</button> : null}
-            <button type="button" disabled={pending || !quickTitle.trim()} onClick={() => mutate(() => createGanttWorkItem(workspaceSlug, relationshipId, { title: quickTitle, parentWorkItemId: quickParent, startDate: null }).then((next) => { if (next.status === "saved") { setQuickTitle(""); setQuickParent(null) } return next }))} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-40">Add</button>
-        </div> : null}
+    return <section id="plan" className="mt-4 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900">
         <div ref={scrollRef} className="relative max-h-[calc(100vh-18rem)] min-h-[28rem] overflow-auto overscroll-contain">
             <div className="grid" style={{ gridTemplateColumns: `${LEFT_WIDTH}px ${timelineWidth}px`, minWidth: `${LEFT_WIDTH + timelineWidth}px` }}>
-                <div className="sticky left-0 top-0 z-50 flex h-11 items-center border-b border-r border-neutral-800 bg-neutral-950 px-3 text-xs text-neutral-500">Work-item hierarchy</div>
-                <div className="sticky top-0 z-40 h-11 border-b border-neutral-800 bg-neutral-950" onDragOver={(event) => { if (canEdit) event.preventDefault() }} onDrop={dropUnscheduled}>
-                    {headerLabels.map((label) => <span key={label.day} className="absolute top-0 flex h-full items-center border-l border-neutral-800 px-1 text-[10px] text-neutral-500" style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
+                <div className="sticky left-0 top-0 z-50 flex h-11 items-center border-b border-r border-neutral-700 bg-neutral-900 px-3 text-sm font-semibold text-white">Relationship Timeline</div>
+                <div className="sticky top-0 z-40 h-11 border-b border-neutral-700 bg-neutral-900" onDragOver={(event) => { if (canEdit) event.preventDefault() }} onDrop={dropUnscheduled}>
+                    {headerLabels.map((label) => <span key={label.day} className="absolute top-0 flex h-full items-center px-1 text-[10px] text-neutral-500" style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
                     <span className="absolute inset-y-0 z-10 w-px bg-red-400/60" style={{ left: `${todayLeft}px` }} />
                 </div>
-                {plan.milestones.length ? <><div className="sticky left-0 z-30 flex h-[46px] items-center border-b border-r border-neutral-900 bg-neutral-950 px-3 text-xs text-neutral-500">Milestones</div><div className="relative h-[46px] border-b border-neutral-900">{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</span> })}</div></> : null}
-                {sectionHeader("This Relationship", relationshipRows.length)}
-                {relationshipRows.map((row) => <div className="contents" key={`relationship-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
-                {(sharedRows.length || externalRows.length) ? sectionHeader("Shared", sharedRows.length + externalRows.length) : null}
-                {[...sharedRows, ...externalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
-                {emptyTimeline ? <div className="contents"><div className="sticky left-0 z-20 flex h-24 items-center border-b border-r border-neutral-900 bg-neutral-950 px-3 text-xs text-neutral-600">No scheduled work yet</div><div className="relative h-24 border-b border-neutral-900" style={{ backgroundImage: `repeating-linear-gradient(to right, rgba(64,64,64,.22) 0, rgba(64,64,64,.22) 1px, transparent 1px, transparent ${dayWidth}px)` }} onDragOver={(event) => { if (canEdit) event.preventDefault() }} onDrop={dropUnscheduled}><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-600">{canEdit ? "Drag a card from the tray below, or tap it, to schedule" : "Nothing scheduled"}</span></div></div> : null}
+                {plan.milestones.length ? <><div aria-hidden="true" className="sticky left-0 z-30 h-[46px] border-r border-neutral-700 bg-neutral-900" /><div className="relative h-[46px]">{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-3 w-3 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</a> : <span key={milestone.id} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute top-4" style={{ left }}>{marker}</span> })}</div></> : null}
+                {relationshipRows.map((row) => <div className="contents" key={`relationship-${row.item.id}`}>{renderLeft()}{renderTimeline(row)}</div>)}
+                {[...sharedRows, ...externalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft()}{renderTimeline(row)}</div>)}
+                {emptyTimeline ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-20 h-24 border-r border-neutral-700 bg-neutral-900" /><div className="relative h-24" onDragOver={(event) => { if (canEdit) event.preventDefault() }} onDrop={dropUnscheduled}><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-600">{canEdit ? "Drag a card from the tray below, or tap it, to schedule" : "Nothing scheduled"}</span></div></div> : null}
             </div>
             <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${LEFT_WIDTH + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${Math.max(0, contentHeight - HEADER_HEIGHT)}px` }} />
             <svg aria-hidden="true" className="pointer-events-none absolute left-[360px] top-0 z-30 overflow-visible" width={timelineWidth} height={Math.max(1, contentHeight)}>{dependencyPaths.map(({ edge, path }) => <path key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} d={path} fill="none" stroke={selectedDependency === edge ? "#fff" : "#737373"} strokeWidth="1.5" className="pointer-events-auto cursor-pointer" onClick={() => setSelectedDependency(edge)} />)}</svg>

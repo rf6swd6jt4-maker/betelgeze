@@ -16,9 +16,9 @@ import {
 type Scale = "day" | "week" | "month"
 type DisplayRow = { item: RelationshipGanttItem; depth: number; external?: boolean }
 
-const ROOT_ROW_HEIGHT = 50
+const ROOT_ROW_HEIGHT = 48
 const CHILD_ROW_HEIGHT = 32
-const ROOT_BAR_HEIGHT = 34
+const ROOT_BAR_HEIGHT = 32
 const CHILD_BAR_HEIGHT = 24
 const HEADER_HEIGHT = 44
 const EMPTY_LANE_HEIGHT = 96
@@ -27,6 +27,7 @@ const MIN_LEFT_WIDTH = 220
 const DEFAULT_LEFT_WIDTH = 260
 const MAX_LEFT_WIDTH = 360
 const RANGE_DAYS = 730
+const DEFAULT_ZOOM = 2
 const MAX_ZOOM = 6
 const BAR_INSET = 8
 const STRUCTURAL_LINE = "#404040"
@@ -70,13 +71,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     canEdit: boolean
 }) {
     const scrollRef = useRef<HTMLDivElement>(null)
+    const initiallyCenteredRef = useRef(false)
     const touchPointsRef = useRef(new Map<number, { x: number; y: number }>())
     const pinchRef = useRef<{ distance: number; zoom: number; centerX: number; centerY: number; active: boolean } | null>(null)
     // The plan is held locally so edits can be painted optimistically and so
     // cross-tab changes can refresh it without a full route reload.
     const [plan, setPlan] = useState(initialPlan)
     const [scale, setScale] = useState<Scale>("week")
-    const [zoom, setZoom] = useState(1)
+    const [zoom, setZoom] = useState(DEFAULT_ZOOM)
     const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH)
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
     const [cascade, setCascade] = useState<ScheduleChange[] | null>(null)
@@ -93,8 +95,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const dayWidth = SCALE_WIDTH[scale] * zoom
     const today = new Date().toISOString().slice(0, 10)
     const rangeStart = dateDay(today) - 180
+    const timelineX = useCallback((day: number) => (day - rangeStart) * dayWidth, [dayWidth, rangeStart])
     const timelineWidth = RANGE_DAYS * dayWidth
-    const todayLeft = (dateDay(today) - rangeStart) * dayWidth
+    const todayLeft = timelineX(dateDay(today))
     const allVisibleItems = useMemo(() => [...plan.items, ...plan.externalItems], [plan])
     const ranges = useMemo(() => effectiveGanttRanges(allVisibleItems), [allVisibleItems])
     const relationshipItems = plan.items.filter((item) => item.section === "relationship")
@@ -135,10 +138,12 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     }, [dayWidth, rangeStart, scale])
 
     useEffect(() => {
+        if (initiallyCenteredRef.current) return
         const node = scrollRef.current
         if (!node) return
-        node.scrollLeft = Math.max(0, (dateDay(today) - rangeStart) * SCALE_WIDTH[scale] - (node.clientWidth - DEFAULT_LEFT_WIDTH) / 2)
-    }, [rangeStart, scale, today])
+        initiallyCenteredRef.current = true
+        node.scrollLeft = Math.max(0, timelineX(dateDay(today)) - (node.clientWidth - DEFAULT_LEFT_WIDTH) / 2)
+    }, [timelineX, today])
 
     const zoomAt = useCallback((clientX: number, requestedZoom: number) => {
         const node = scrollRef.current
@@ -223,6 +228,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     function selectScale(nextScale: Scale) {
         setZoom(1)
         setScale(nextScale)
+        requestAnimationFrame(() => {
+            const node = scrollRef.current
+            if (node) node.scrollLeft = Math.max(0, (dateDay(today) - rangeStart) * SCALE_WIDTH[nextScale] - (node.clientWidth - leftWidth) / 2)
+        })
     }
 
     function updateTouchPoint(event: ReactPointerEvent<HTMLDivElement>) {
@@ -303,15 +312,15 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         >
             {range ? <div
                 data-gantt-bar
-                className={`absolute flex select-none items-center gap-1.5 overflow-hidden rounded-md border pl-1.5 ${row.depth > 0 ? "border-dashed" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingRight: `${barHeight + 4}px`, left: `${(dateDay(range.start) - rangeStart) * dayWidth + BAR_INSET}px`, width: `${Math.max(4, (dateDay(range.end) - dateDay(range.start) + 1) * dayWidth - BAR_INSET * 2)}px`, borderColor: colours.border, backgroundColor: colours.background, color: colours.text }}
+                className={`absolute z-20 flex select-none items-center gap-1.5 overflow-hidden rounded-md border pl-1.5 ${row.depth > 0 ? "border-dashed" : ""}`}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingRight: `${barHeight + 4}px`, left: `${timelineX(dateDay(range.start)) + BAR_INSET}px`, width: `${Math.max(4, (dateDay(range.end) - dateDay(range.start) + 1) * dayWidth - BAR_INSET * 2)}px`, borderColor: colours.border, backgroundColor: colours.background, color: colours.text }}
                 onClick={() => { if (window.matchMedia("(max-width: 1023px)").matches) openDateEditor(item) }}
                 title={`${item.title}: ${range.start} → ${range.end}`}
             >
                 {item.actualStartAt ? <span className="absolute inset-y-0 left-0 rounded-l-md opacity-45" style={{ width: `${Math.min(100, Math.max(8, ((dateDay((item.actualCompletedAt ?? today).slice(0, 10)) - dateDay(range.start) + 1) / Math.max(1, dateDay(range.end) - dateDay(range.start) + 1)) * 100))}%`, backgroundColor: colours.text }} /> : null}
                 {item.assignees[0] ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact compactSize={row.depth === 0 ? "md" : "sm"} />{item.assignees.length > 1 ? <span className={`shrink-0 font-medium ${row.depth === 0 ? "text-xs" : "text-[9px]"}`}>+{item.assignees.length - 1}</span> : null}</div> : null}
                 <span className={`relative min-w-0 flex-1 truncate leading-none ${row.depth === 0 ? "text-sm font-semibold" : "text-[11px] font-normal"}`}>{item.title}</span>
-                <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onClick={(event) => event.stopPropagation()} className="absolute inset-y-0 right-0 z-10 flex items-center justify-center border-l" style={{ width: `${barHeight}px`, borderColor: colours.border, color: colours.border }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-4 w-4" : "h-3.5 w-3.5"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link>
+                <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onClick={(event) => event.stopPropagation()} className="absolute inset-y-0 right-0 z-10 flex items-center justify-center border-l" style={{ width: `${barHeight}px`, borderColor: colours.border, color: colours.border }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[22px] w-[22px]" : "h-[18px] w-[18px]"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link>
             </div> : null}
         </div>
     }
@@ -324,11 +333,11 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const fromHeight = rowHeights.get(edge.dependsOnWorkItemId)
         const toHeight = rowHeights.get(edge.workItemId)
         if (fromTop === undefined || toTop === undefined || fromHeight === undefined || toHeight === undefined || !fromRange || !toRange) return []
-        const sourceBarLeft = (dateDay(fromRange.start) - rangeStart) * dayWidth + BAR_INSET
+        const sourceBarLeft = timelineX(dateDay(fromRange.start)) + BAR_INSET
         const sourceBarWidth = Math.max(4, (dateDay(fromRange.end) - dateDay(fromRange.start) + 1) * dayWidth - BAR_INSET * 2)
-        const sourceDivider = (dateDay(fromRange.end) - rangeStart + 1) * dayWidth
+        const sourceDivider = timelineX(dateDay(fromRange.end) + 1)
         const sourceBarRight = sourceBarLeft + sourceBarWidth
-        const targetDivider = (dateDay(toRange.start) - rangeStart) * dayWidth
+        const targetDivider = timelineX(dateDay(toRange.start))
         const targetBarLeft = targetDivider + BAR_INSET
         const y1 = fromTop + fromHeight / 2
         const y2 = toTop + toHeight / 2
@@ -336,7 +345,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return [{ edge, path: `M ${sourceBarRight} ${y1} H ${sourceDivider} V ${yTrack} H ${targetDivider} V ${y2} H ${targetBarLeft}`, arrow: `M ${targetBarLeft - 4} ${y2 - 4} L ${targetBarLeft} ${y2} L ${targetBarLeft - 4} ${y2 + 4}` }]
     })
 
-    return <section id="plan" className="relative isolate mt-4 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900">
+    return <section id="plan" className="relative isolate mt-4 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900/70">
         <div className="absolute right-3 top-1.5 z-[70] flex items-center gap-1.5">
             <button type="button" onClick={goToToday} className="h-8 rounded-full bg-white px-3 text-xs font-semibold text-neutral-950 shadow-sm">Today</button>
             {([['day', 'd'], ['week', 'w'], ['month', 'mo']] as const).map(([value, label]) => <button

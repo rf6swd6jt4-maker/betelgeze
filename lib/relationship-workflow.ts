@@ -335,13 +335,12 @@ export async function completeWorkflowParents(input: { workspaceId: string; rela
 
 export async function sendRelationshipInvoice(input: {
     workspaceId: string
-    workspaceSlug: string
     relationshipId: string
     workItemId: string
     actorId: string
 }) {
     const [{ data: relationship }, { data: services }] = await Promise.all([
-        supabaseAdmin.from("relationships").select("primary_person_name, primary_email, primary_phone, whatsapp_phone, business_name, project_timeframe_days, source_metadata").eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).single(),
+        supabaseAdmin.from("relationships").select("primary_person_name, primary_email, primary_phone, whatsapp_phone, business_name, project_timeframe_days").eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).single(),
         supabaseAdmin.from("relationship_services").select("service_key, price_cents, currency").eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId),
     ])
     const lineItems = (services ?? []).filter((service) => typeof service.price_cents === "number" && service.price_cents > 0).map((service) => ({
@@ -350,7 +349,6 @@ export async function sendRelationshipInvoice(input: {
         amount: service.price_cents,
     }))
     if (!relationship || !relationship.primary_email || !relationship.whatsapp_phone || !lineItems.length) throw new Error("Add a billing email, WhatsApp phone, and a positive price for every selected service before sending the invoice")
-    const isTest = relationship.source_metadata && typeof relationship.source_metadata === "object" && relationship.source_metadata.is_test === true
     const currency = services?.[0]?.currency ?? "usd"
     const { data: sale, error: saleError } = await supabaseAdmin.from("client_sales").insert({
         workspace_id: input.workspaceId,
@@ -367,30 +365,6 @@ export async function sendRelationshipInvoice(input: {
         created_by: input.actorId,
     }).select("id").single()
     if (saleError || !sale) throw new Error(saleError?.message ?? "Could not create invoice record")
-    if (isTest) {
-        const { createOnboardingClient } = await import("@/lib/onboarding/client-creation")
-        const collectPaymentId = await moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "invoiced" })
-        const { error: testSaleError } = await supabaseAdmin.from("client_sales").update({ status: "test_paid", raw_payload: { flow: "test", test: true } }).eq("id", sale.id)
-        if (testSaleError) throw new Error(testSaleError.message)
-        await Promise.all([
-            supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() }).eq("workspace_id", input.workspaceId).in("id", [input.workItemId, collectPaymentId]),
-            createOnboardingClient({
-                workspaceId: input.workspaceId,
-                workspaceSlug: input.workspaceSlug,
-                name: relationship.business_name ?? relationship.primary_person_name,
-                email: relationship.primary_email,
-                phone: relationship.whatsapp_phone,
-                relationshipId: input.relationshipId,
-                serviceKeys: lineItems.map((item) => item.serviceKey),
-                projectTimeframeDays: relationship.project_timeframe_days,
-                isTest: true,
-                createClickUpResources: false,
-                activitySource: `Test sale ${sale.id}`,
-                createdBy: input.actorId,
-            }),
-        ])
-        return
-    }
     const config = await getWorkspaceProviderConfig(input.workspaceId, "stripe")
     const invoice = await createAndSendStripeInvoice({
         saleId: sale.id,

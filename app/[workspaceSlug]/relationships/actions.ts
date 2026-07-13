@@ -179,7 +179,7 @@ export async function proceedRelationshipCurrentWork(slug: string, relationshipI
         if (!assignment) throw new Error("This work item is not assigned to you")
     }
     if (item.workflow_action === "send_invoice") {
-        await sendRelationshipInvoice({ workspaceId: workspace.id, workspaceSlug: workspace.slug, relationshipId, workItemId, actorId: user.id })
+        await sendRelationshipInvoice({ workspaceId: workspace.id, relationshipId, workItemId, actorId: user.id })
     } else {
         if (item.workflow_action === "await_payment" || item.workflow_action === "await_onboarding") throw new Error("This stage advances automatically when the external step completes")
         await advanceRelationshipWorkflow({ workspaceId: workspace.id, relationshipId, workItemId, action: item.workflow_action, actorId: user.id })

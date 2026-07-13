@@ -381,6 +381,19 @@ export async function handleSaleConsentConfirmation({
     let clientId = sale.client_id
     let relationshipId = sale.relationship_id
     let onboardingUrl: string | null = null
+    const { data: relationship } = relationshipId
+        ? await supabaseAdmin
+            .from("relationships")
+            .select("source_metadata")
+            .eq("workspace_id", sale.workspace_id)
+            .eq("id", relationshipId)
+            .maybeSingle()
+        : { data: null }
+    const isTestRelationship = Boolean(
+        relationship?.source_metadata &&
+        typeof relationship.source_metadata === "object" &&
+        relationship.source_metadata.is_test === true
+    )
 
     if (!clientId) {
         const { data: workspace } = await supabaseAdmin
@@ -405,6 +418,7 @@ export async function handleSaleConsentConfirmation({
                           (serviceKey) => serviceKey in SERVICES
                       ),
             projectTimeframeDays: sale.project_timeframe_days,
+            isTest: isTestRelationship,
             createClickUpResources: false,
             createOnboardingModules: flow !== "manual_migration",
             createOnboardingWork: flow !== "manual_migration",

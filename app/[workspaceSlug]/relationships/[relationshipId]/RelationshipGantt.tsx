@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal, flushSync } from "react-dom"
 import { Assignee, Status, relationshipPhaseColours } from "@/components/ui"
@@ -14,6 +15,7 @@ import {
     previewGanttScheduleChange,
     type GanttMutationResult,
 } from "./gantt-actions"
+import { proceedRelationshipCurrentWork } from "../actions"
 
 type Scale = "day" | "week" | "month"
 type Category = "scheduled" | "shared" | "unscheduled"
@@ -96,12 +98,14 @@ function Icon({ kind }: { kind: "fit" | "minus" | "plus" | "labels" }) {
     return <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">{path}</svg>
 }
 
-export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initialPlan, canEdit }: {
+export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initialPlan, canEdit, currentWork }: {
     workspaceSlug: string
     relationshipId: string
     plan: RelationshipGanttPlan
     canEdit: boolean
+    currentWork?: { id: string; title: string; action: string | null; role: string; status: string; unassignedCount: number; blocked: boolean } | null
 }) {
+    const router = useRouter()
     const scrollRef = useRef<HTMLDivElement>(null)
     const initiallyCenteredRef = useRef(false)
     const mobileZoomInitialisedRef = useRef(false)
@@ -130,6 +134,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const [cascade, setCascade] = useState<ScheduleChange[] | null>(null)
     const [result, setResult] = useState<GanttMutationResult | null>(null)
     const [pending, startTransition] = useTransition()
+    const [confirmBeforeProceeding, setConfirmBeforeProceeding] = useState(true)
 
     // The server can stream a refreshed plan into this long-lived client view.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -774,8 +779,33 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const y1 = fromTop + fromHeight / 2
         const y2 = toTop + toHeight / 2
         const yTrack = y2 >= y1 ? fromTop + fromHeight : fromTop
-        return [{ edge, path: `M ${sourceBarRight} ${y1} H ${sourceDivider} V ${yTrack} H ${targetDivider} V ${y2} H ${targetBarLeft}`, arrow: ganttArrowHeadPath(targetBarLeft, targetDivider, y2) }]
+        return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path: `M ${sourceBarRight} ${y1} H ${sourceDivider} V ${yTrack} H ${targetDivider} V ${y2} H ${targetBarLeft}`, arrow: ganttArrowHeadPath(targetBarLeft, targetDivider, y2) }]
     })
+
+    // A parent with siblings that do not depend on one another represents
+    // concurrent work.  Its single trunk branches into every visible child;
+    // sequential child dependencies continue to use the existing overlay above.
+    const siblingDependencyPairs = new Set(plan.dependencies.map((edge) => `${edge.workItemId}:${edge.dependsOnWorkItemId}`))
+    const parallelChildPaths = [...new Set(plan.items.map((item) => item.parentWorkItemId).filter((id): id is string => Boolean(id)))].flatMap((parentId) => {
+        const children = plan.items.filter((item) => item.parentWorkItemId === parentId && rowTop.has(item.id) && ranges.has(item.id))
+        if (children.length < 2 || children.some((child) => children.some((other) => child.id !== other.id && (siblingDependencyPairs.has(`${child.id}:${other.id}`) || siblingDependencyPairs.has(`${other.id}:${child.id}`))))) return []
+        const parentTop = rowTop.get(parentId)
+        const parentHeight = rowHeights.get(parentId)
+        const parentRange = ranges.get(parentId)
+        if (parentTop === undefined || !parentHeight || !parentRange) return []
+        const parentGeometry = barGeometry(parentRange)
+        const branchRows = children.map((child) => ({ child, top: rowTop.get(child.id)!, height: rowHeights.get(child.id)!, geometry: barGeometry(ranges.get(child.id)!) })).sort((a, b) => a.top - b.top)
+        const trunkX = parentGeometry.sourceDivider
+        const parentY = parentTop + parentHeight / 2
+        const lastY = branchRows[branchRows.length - 1].top + branchRows[branchRows.length - 1].height / 2
+        const paths: Array<{ key: string; itemIds: string[]; external: boolean; path: string; arrow: string | null }> = [{ key: `parallel-trunk-${parentId}`, itemIds: [parentId, ...children.map((child) => child.id)], external: false, path: `M ${parentGeometry.right} ${parentY} H ${trunkX} V ${lastY}`, arrow: null }]
+        for (const row of branchRows) {
+            const y = row.top + row.height / 2
+            paths.push({ key: `parallel-branch-${parentId}-${row.child.id}`, itemIds: [parentId, row.child.id], external: false, path: `M ${trunkX} ${y} H ${row.geometry.targetDivider} H ${row.geometry.left}`, arrow: ganttArrowHeadPath(row.geometry.left, row.geometry.targetDivider, y) })
+        }
+        return paths
+    })
+    const connectorPaths = [...dependencyPaths, ...parallelChildPaths]
 
     const parentDocument = typeof window !== "undefined" ? (window.parent !== window ? window.parent.document : document) : null
     const dragging = Boolean(dragPreview)
@@ -836,9 +866,19 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             {weekendDays.map((day) => <div aria-hidden="true" key={`weekend-${day}`} className="pointer-events-none absolute z-0 bg-white/[0.012]" style={{ left: `${effectiveLeftWidth + timelineX(day)}px`, top: `${HEADER_HEIGHT}px`, width: `${dayWidth}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             {headerLabels.map((label) => <div aria-hidden="true" key={`column-${label.day}`} className="pointer-events-none absolute z-10 w-px bg-neutral-800" style={{ left: `${effectiveLeftWidth + label.left}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${effectiveLeftWidth + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />
-            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${effectiveLeftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path, arrow }) => { const active = activeItemId === edge.workItemId || activeItemId === edge.dependsOnWorkItemId; return <g key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} fill="none" stroke={active ? ACTIVE_STRUCTURAL_LINE : STRUCTURAL_LINE} strokeWidth={active ? "2" : "1.5"} strokeDasharray={edge.external ? "4 3" : undefined} strokeLinejoin="miter" strokeLinecap="square"><path d={path} />{arrow ? <path d={arrow} /> : null}</g> })}</svg>
+            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${effectiveLeftWidth}px` }} width={timelineWidth} height={chartHeight}>{connectorPaths.map(({ key, itemIds, external, path, arrow }) => { const active = itemIds.includes(activeItemId ?? ""); return <g key={key} fill="none" stroke={active ? ACTIVE_STRUCTURAL_LINE : STRUCTURAL_LINE} strokeWidth={active ? "2" : "1.5"} strokeDasharray={external ? "4 3" : undefined} strokeLinejoin="miter" strokeLinecap="square"><path d={path} />{arrow ? <path d={arrow} /> : null}</g> })}</svg>
             {dragPreview ? <div aria-live="polite" className="pointer-events-none fixed z-[80] -translate-y-full rounded-md border border-neutral-600 bg-neutral-950 px-2 py-1 font-mono text-[10px] text-neutral-200 shadow-xl" style={{ left: `${Math.min(dragPreview.pointerX + 10, (typeof window !== "undefined" ? window.innerWidth : dragPreview.pointerX + 200) - 160)}px`, top: `${dragPreview.pointerY - 8}px` }}>{dragPreview.label}</div> : null}
         </div>
+        {currentWork ? <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-neutral-700 bg-neutral-950 px-3 py-2 text-xs">
+            <span className="font-medium text-neutral-500">Current</span>
+            <Link href={`/${workspaceSlug}/work-items/${currentWork.id}`} className="min-w-0 flex-1 truncate font-medium text-white hover:underline">{currentWork.title}</Link>
+            {currentWork.unassignedCount ? <span className="text-amber-300">{currentWork.unassignedCount} service{currentWork.unassignedCount === 1 ? "" : "s"} unassigned</span> : null}
+            <label className="flex items-center gap-1.5 text-neutral-400"><input type="checkbox" checked={confirmBeforeProceeding} onChange={(event) => { setConfirmBeforeProceeding(event.target.checked); window.localStorage.setItem("betelgeze-current-work-confirm", String(event.target.checked)) }} />Confirm before continuing</label>
+            <button type="button" disabled={pending || currentWork.blocked} onClick={() => {
+                if (confirmBeforeProceeding && !window.confirm(`Complete “${currentWork.title}” and continue?`)) return
+                startTransition(() => { void proceedRelationshipCurrentWork(workspaceSlug, relationshipId, currentWork.id).then(() => { router.refresh(); postGanttSync(workspaceSlug) }).catch((error: unknown) => setResult({ status: "invalid", message: error instanceof Error ? error.message : "Could not proceed" })) })
+            }} className="h-8 rounded bg-white px-3 text-xs font-semibold text-neutral-950 disabled:opacity-45">{currentWork.action === "send_invoice" ? "Send invoice" : "Mark complete"}</button>
+        </div> : null}
         <MutationError result={result} />
         {cascade && parentDocument ? createPortal(<div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-3"><div role="dialog" aria-modal="true" aria-labelledby="gantt-cascade-title" className="w-full max-w-lg rounded-xl border border-neutral-700 bg-neutral-950 p-3 shadow-2xl"><h3 id="gantt-cascade-title" className="text-sm font-semibold text-white">Move dependent work?</h3><p className="mt-1 text-xs text-neutral-400">This will update {cascade.length} work item{cascade.length === 1 ? "" : "s"}.</p><div className="mt-2 max-h-64 divide-y divide-neutral-900 overflow-y-auto rounded-lg border border-neutral-800">{cascade.map((change) => { const original = committedRanges.get(change.id); return <div key={change.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 px-2.5 py-2 text-xs"><span className="truncate text-neutral-200">{change.title}</span><span className="shrink-0 font-mono text-[10px] text-neutral-500">{original ? `${original.start}–${original.end} → ` : ""}{change.plannedStartDate}–{change.dueDate}</span></div> })}</div><div className="mt-3 flex justify-end gap-1.5"><button type="button" onClick={() => { setCascade(null); void reload() }} className="h-8 px-2.5 text-xs text-neutral-400 hover:text-white">Cancel</button><button type="button" autoFocus disabled={pending} onClick={() => { const changes = cascade; setCascade(null); mutate(() => applyGanttScheduleChanges(workspaceSlug, relationshipId, changes)) }} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-50">Confirm</button></div></div></div>, parentDocument.body) : null}
     </section>

@@ -1,0 +1,346 @@
+import { createAndSendStripeInvoice } from "@/lib/stripe/api"
+import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
+import { SERVICES } from "@/lib/onboarding/services"
+import { supabaseAdmin } from "@/lib/supabase/admin"
+
+type WorkflowRole = "task" | "lifecycle_stage" | "service_group" | "review" | "automation"
+function today() {
+    return new Date().toISOString().slice(0, 10)
+}
+
+function addDays(date: string, days: number) {
+    const value = new Date(`${date}T12:00:00Z`)
+    value.setUTCDate(value.getUTCDate() + Math.max(0, days))
+    return value.toISOString().slice(0, 10)
+}
+
+async function linkItems(workspaceId: string, relationshipId: string, itemIds: string[]) {
+    if (!itemIds.length) return
+    const { error } = await supabaseAdmin.from("work_item_relationships").upsert(itemIds.map((workItemId) => ({
+        workspace_id: workspaceId,
+        relationship_id: relationshipId,
+        work_item_id: workItemId,
+    })), { onConflict: "work_item_id,relationship_id" })
+    if (error) throw new Error(error.message)
+}
+
+export async function createWorkflowItem(input: {
+    workspaceId: string
+    relationshipId: string
+    title: string
+    phase: string
+    role: WorkflowRole
+    completionMode?: "manual" | "all_required_children"
+    action?: string | null
+    parentId?: string | null
+    assigneeId?: string | null
+    startDate?: string | null
+    dueDate?: string | null
+    sortOrder?: number
+    nativeKey: string
+    description?: string | null
+}) {
+    const { data: item, error } = await supabaseAdmin.from("work_items").upsert({
+        workspace_id: input.workspaceId,
+        title: input.title,
+        description: input.description ?? null,
+        lifecycle_phase: input.phase,
+        workflow_role: input.role,
+        completion_mode: input.completionMode ?? "manual",
+        workflow_action: input.action ?? null,
+        parent_work_item_id: input.parentId ?? null,
+        planned_start_date: input.startDate ?? null,
+        due_date: input.dueDate ?? null,
+        native_kind: "relationship_workflow",
+        native_key: input.nativeKey,
+        sort_order: input.sortOrder ?? 0,
+        metadata: { relationship_id: input.relationshipId, created_from: "relationship_workflow" },
+    }, { onConflict: "workspace_id,native_kind,native_key" }).select("id").single()
+    if (error || !item) throw new Error(error?.message ?? "Could not create workflow work")
+    await linkItems(input.workspaceId, input.relationshipId, [item.id])
+    await supabaseAdmin.from("work_item_assignees").delete().eq("workspace_id", input.workspaceId).eq("work_item_id", item.id)
+    if (input.assigneeId) {
+        await supabaseAdmin.from("work_item_assignees").upsert({
+            workspace_id: input.workspaceId,
+            work_item_id: item.id,
+            user_id: input.assigneeId,
+        }, { onConflict: "work_item_id,user_id" })
+    }
+    return item.id as string
+}
+
+export async function ensureSalesStage(input: {
+    workspaceId: string
+    relationshipId: string
+    sellerId: string | null
+}) {
+    return createWorkflowItem({
+        workspaceId: input.workspaceId,
+        relationshipId: input.relationshipId,
+        title: "Sell Client",
+        phase: "potential_client",
+        role: "lifecycle_stage",
+        action: "send_invoice",
+        assigneeId: input.sellerId,
+        nativeKey: `${input.relationshipId}:potential-client`,
+    })
+}
+
+export async function createOnboardingReviewWork(input: {
+    workspaceId: string
+    workspaceSlug: string
+    relationshipId: string
+    sessionId: string
+}) {
+    const { data: relationship } = await supabaseAdmin.from("relationships")
+        .select("fulfilment_manager_user_id")
+        .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).maybeSingle()
+    const reviewerId = relationship?.fulfilment_manager_user_id ?? null
+    const reviewId = await createWorkflowItem({
+        workspaceId: input.workspaceId,
+        relationshipId: input.relationshipId,
+        title: "Review Onboarding Information",
+        phase: "onboarding_review",
+        role: "lifecycle_stage",
+        completionMode: "all_required_children",
+        action: "begin_fulfilment",
+        assigneeId: reviewerId,
+        nativeKey: `${input.relationshipId}:onboarding-review:${input.sessionId}`,
+    })
+    const { data: submitted } = await supabaseAdmin.from("work_items")
+        .select("id, title, sort_order")
+        .eq("workspace_id", input.workspaceId)
+        .eq("native_kind", "onboarding_step")
+        .like("native_key", `${input.sessionId}:%`)
+        .eq("status", "done")
+        .order("sort_order")
+
+    let previousId: string | null = null
+    for (const [index, step] of (submitted ?? []).entries()) {
+        const reviewStepId = await createWorkflowItem({
+            workspaceId: input.workspaceId,
+            relationshipId: input.relationshipId,
+            title: `Review ${step.title}`,
+            phase: "onboarding_review",
+            role: "review",
+            parentId: reviewId,
+            assigneeId: reviewerId,
+            nativeKey: `${input.relationshipId}:onboarding-review:${input.sessionId}:${step.id}`,
+            sortOrder: index * 10,
+            description: "Review the submitted onboarding information before fulfilment begins.",
+        })
+        if (previousId) {
+            await supabaseAdmin.from("work_item_dependencies").upsert({
+                workspace_id: input.workspaceId,
+                work_item_id: reviewStepId,
+                depends_on_work_item_id: previousId,
+                source: "manual",
+            }, { onConflict: "work_item_id,depends_on_work_item_id" })
+        }
+        previousId = reviewStepId
+    }
+    await supabaseAdmin.from("relationships").update({ lifecycle_phase: "onboarding_review", updated_at: new Date().toISOString() })
+        .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId)
+    return reviewId
+}
+
+async function serviceRows(workspaceId: string, relationshipId: string) {
+    const { data, error } = await supabaseAdmin.from("relationship_services")
+        .select("service_key, assignee_user_id")
+        .eq("workspace_id", workspaceId).eq("relationship_id", relationshipId)
+        .order("created_at")
+    if (error) throw new Error(error.message)
+    return data ?? []
+}
+
+export async function createFulfilmentWork(input: {
+    workspaceId: string
+    relationshipId: string
+    managerId: string
+    timeframeDays: number | null
+}) {
+    const startDate = today()
+    const timeframe = Math.max(1, input.timeframeDays ?? 30)
+    const dueDate = addDays(startDate, timeframe - 1)
+    const stageId = await createWorkflowItem({
+        workspaceId: input.workspaceId,
+        relationshipId: input.relationshipId,
+        title: "Fulfil Client",
+        phase: "fulfilment",
+        role: "lifecycle_stage",
+        completionMode: "all_required_children",
+        assigneeId: input.managerId,
+        startDate,
+        dueDate,
+        nativeKey: `${input.relationshipId}:fulfilment`,
+    })
+    const services = await serviceRows(input.workspaceId, input.relationshipId)
+    const byAssignee = new Map<string, typeof services>()
+    for (const service of services) {
+        const key = service.assignee_user_id ?? `unassigned:${service.service_key}`
+        byAssignee.set(key, [...(byAssignee.get(key) ?? []), service])
+    }
+    let serviceIndex = 0
+    for (const group of byAssignee.values()) {
+        const slotDays = Math.max(1, Math.floor(timeframe / group.length))
+        let previousServiceId: string | null = null
+        for (const [index, service] of group.entries()) {
+            const serviceStart = service.assignee_user_id ? addDays(startDate, index * slotDays) : startDate
+            const serviceEnd = service.assignee_user_id
+                ? (index === group.length - 1 ? dueDate : addDays(startDate, (index + 1) * slotDays - 1))
+                : dueDate
+            const definition = SERVICES[service.service_key]
+            const serviceId = await createWorkflowItem({
+                workspaceId: input.workspaceId,
+                relationshipId: input.relationshipId,
+                title: definition?.title ?? service.service_key,
+                phase: "fulfilment",
+                role: "service_group",
+                completionMode: "all_required_children",
+                parentId: stageId,
+                assigneeId: service.assignee_user_id,
+                startDate: serviceStart,
+                dueDate: serviceEnd,
+                nativeKey: `${input.relationshipId}:fulfilment:${service.service_key}`,
+                sortOrder: serviceIndex++ * 10,
+            })
+            if (previousServiceId && service.assignee_user_id) {
+                await supabaseAdmin.from("work_item_dependencies").upsert({
+                    workspace_id: input.workspaceId,
+                    work_item_id: serviceId,
+                    depends_on_work_item_id: previousServiceId,
+                    source: "manual",
+                }, { onConflict: "work_item_id,depends_on_work_item_id" })
+            }
+            let previousStepId: string | null = null
+            const steps = definition?.sopSteps?.length ? definition.sopSteps : [{ key: "complete", title: `Complete ${definition?.title ?? service.service_key}`, description: "Complete this service's delivery work." }]
+            for (const [stepIndex, step] of steps.entries()) {
+                const stepDays = Math.max(1, Math.floor(Math.max(1, timeframe) / Math.max(1, steps.length)))
+                const stepId = await createWorkflowItem({
+                    workspaceId: input.workspaceId,
+                    relationshipId: input.relationshipId,
+                    title: step.title,
+                    description: step.description,
+                    phase: "fulfilment",
+                    role: "task",
+                    parentId: serviceId,
+                    assigneeId: service.assignee_user_id,
+                    startDate: addDays(serviceStart, stepIndex * stepDays),
+                    dueDate: stepIndex === steps.length - 1 ? serviceEnd : addDays(serviceStart, (stepIndex + 1) * stepDays - 1),
+                    nativeKey: `${input.relationshipId}:fulfilment:${service.service_key}:${step.key}`,
+                    sortOrder: stepIndex * 10,
+                })
+                if (previousStepId) await supabaseAdmin.from("work_item_dependencies").upsert({
+                    workspace_id: input.workspaceId, work_item_id: stepId, depends_on_work_item_id: previousStepId, source: "manual",
+                }, { onConflict: "work_item_id,depends_on_work_item_id" })
+                previousStepId = stepId
+            }
+            previousServiceId = serviceId
+        }
+    }
+    await supabaseAdmin.from("relationships").update({ lifecycle_phase: "fulfilment", updated_at: new Date().toISOString() })
+        .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId)
+    return stageId
+}
+
+export async function completeWorkflowParents(input: { workspaceId: string; relationshipId: string; workItemId: string }) {
+    let childId: string | null = input.workItemId
+    while (childId) {
+        const childResult = await supabaseAdmin.from("work_items").select("parent_work_item_id").eq("id", childId).maybeSingle()
+        const child = childResult.data as { parent_work_item_id: string | null } | null
+        const parentId = child?.parent_work_item_id ?? null
+        if (!parentId) return
+        const { data: parent } = await supabaseAdmin.from("work_items")
+            .select("id, completion_mode, workflow_action, status")
+            .eq("workspace_id", input.workspaceId).eq("id", parentId).maybeSingle()
+        if (!parent || parent.completion_mode !== "all_required_children" || parent.status === "done") return
+        const { data: children } = await supabaseAdmin.from("work_items")
+            .select("status, workflow_required").eq("workspace_id", input.workspaceId).eq("parent_work_item_id", parentId)
+        if (!(children ?? []).filter((item) => item.workflow_required).every((item) => item.status === "done")) return
+        await supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() })
+            .eq("workspace_id", input.workspaceId).eq("id", parentId)
+        if (parent.workflow_action === "begin_fulfilment") {
+            const { data: relationship } = await supabaseAdmin.from("relationships")
+                .select("fulfilment_manager_user_id, project_timeframe_days").eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).maybeSingle()
+            if (!relationship?.fulfilment_manager_user_id) throw new Error("Choose a fulfilment manager before completing onboarding review")
+            await createFulfilmentWork({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, managerId: relationship.fulfilment_manager_user_id, timeframeDays: relationship.project_timeframe_days })
+        }
+        childId = parentId
+    }
+}
+
+export async function sendRelationshipInvoice(input: {
+    workspaceId: string
+    relationshipId: string
+    workItemId: string
+    actorId: string
+}) {
+    const [{ data: relationship }, { data: services }] = await Promise.all([
+        supabaseAdmin.from("relationships").select("primary_person_name, primary_email, primary_phone, business_name, project_timeframe_days").eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).single(),
+        supabaseAdmin.from("relationship_services").select("service_key, price_cents, currency").eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId),
+    ])
+    const lineItems = (services ?? []).filter((service) => typeof service.price_cents === "number" && service.price_cents > 0).map((service) => ({
+        serviceKey: service.service_key,
+        description: SERVICES[service.service_key]?.title ?? service.service_key,
+        amount: service.price_cents,
+    }))
+    if (!relationship || !relationship.primary_email || !lineItems.length) throw new Error("Add a billing email and a positive price for every selected service before sending the invoice")
+    const currency = services?.[0]?.currency ?? "usd"
+    const { data: sale, error: saleError } = await supabaseAdmin.from("client_sales").insert({
+        workspace_id: input.workspaceId,
+        relationship_id: input.relationshipId,
+        client_name: relationship.business_name ?? relationship.primary_person_name,
+        client_email: relationship.primary_email,
+        client_phone: relationship.primary_phone ?? "",
+        service_keys: lineItems.map((item) => item.serviceKey),
+        line_items: lineItems,
+        project_timeframe_days: relationship.project_timeframe_days,
+        currency,
+        total_amount: lineItems.reduce((total, item) => total + item.amount, 0),
+        status: "draft",
+        created_by: input.actorId,
+    }).select("id").single()
+    if (saleError || !sale) throw new Error(saleError?.message ?? "Could not create invoice record")
+    const config = await getWorkspaceProviderConfig(input.workspaceId, "stripe")
+    const invoice = await createAndSendStripeInvoice({
+        saleId: sale.id,
+        name: relationship.business_name ?? relationship.primary_person_name,
+        email: relationship.primary_email,
+        phone: relationship.primary_phone,
+        currency,
+        lineItems,
+        serviceKeys: lineItems.map((item) => item.serviceKey),
+        projectTimeframeDays: relationship.project_timeframe_days,
+        daysUntilDue: 7,
+        secretKey: config.secret_key,
+    })
+    await Promise.all([
+        supabaseAdmin.from("client_sales").update({ status: "invoice_sent", stripe_customer_id: invoice.customerId, stripe_invoice_id: invoice.invoiceId, stripe_invoice_status: invoice.invoiceStatus, stripe_hosted_invoice_url: invoice.hostedInvoiceUrl, stripe_invoice_pdf: invoice.invoicePdf, raw_payload: invoice.rawInvoice }).eq("id", sale.id),
+        supabaseAdmin.from("relationships").update({ lifecycle_phase: "invoiced", updated_at: new Date().toISOString() }).eq("workspace_id", input.workspaceId).eq("id", input.relationshipId),
+        supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() }).eq("workspace_id", input.workspaceId).eq("id", input.workItemId),
+    ])
+}
+
+export async function currentRelationshipWork(input: { workspaceId: string; relationshipId: string; userId: string; isManager: boolean }) {
+    const [{ data: links }, { data: assignments }, { data: dependencies }] = await Promise.all([
+        supabaseAdmin.from("work_item_relationships").select("work_item_id, work_items!inner(id, title, status, workflow_role, workflow_action, parent_work_item_id, sort_order)").eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId),
+        supabaseAdmin.from("work_item_assignees").select("work_item_id, user_id").eq("workspace_id", input.workspaceId),
+        supabaseAdmin.from("work_item_dependencies").select("work_item_id, depends_on_work_item_id").eq("workspace_id", input.workspaceId),
+    ])
+    const items = (links ?? []).flatMap((link) => {
+        const item = Array.isArray(link.work_items) ? link.work_items[0] : link.work_items
+        return item ? [item as { id: string; title: string; status: string; workflow_role: WorkflowRole; workflow_action: string | null; parent_work_item_id: string | null; sort_order: number }] : []
+    })
+    const ids = new Set(items.map((item) => item.id))
+    const assignees = new Map<string, string[]>()
+    for (const row of assignments ?? []) if (ids.has(row.work_item_id)) assignees.set(row.work_item_id, [...(assignees.get(row.work_item_id) ?? []), row.user_id])
+    const completed = new Set(items.filter((item) => item.status === "done" || item.status === "canceled").map((item) => item.id))
+    const blockedByDependency = new Set((dependencies ?? []).filter((edge) => ids.has(edge.work_item_id) && !completed.has(edge.depends_on_work_item_id)).map((edge) => edge.work_item_id))
+    const mine = items.filter((item) => assignees.get(item.id)?.includes(input.userId) && !completed.has(item.id)).sort((a, b) => a.sort_order - b.sort_order)
+    const stage = mine.find((item) => item.workflow_role === "lifecycle_stage")
+    const ready = mine.find((item) => item.workflow_role !== "lifecycle_stage" && !blockedByDependency.has(item.id))
+    const selected = ready ?? stage ?? (input.isManager ? items.find((item) => item.workflow_role === "lifecycle_stage" && !completed.has(item.id)) ?? items.find((item) => item.workflow_role === "service_group" && !assignees.get(item.id)?.length && !completed.has(item.id)) : null)
+    if (!selected) return null
+    const unassignedCount = input.isManager ? items.filter((item) => item.workflow_role === "service_group" && !assignees.get(item.id)?.length && !completed.has(item.id)).length : 0
+    return { id: selected.id, title: selected.title, action: selected.workflow_action, role: selected.workflow_role, status: selected.status, unassignedCount, blocked: blockedByDependency.has(selected.id) }
+}

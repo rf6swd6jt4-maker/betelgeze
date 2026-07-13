@@ -25,6 +25,9 @@ export type RelationshipRecord = {
     primary_contact_role: string | null
     notes_summary: string | null
     started_onboarding_at: string | null
+    seller_user_id: string | null
+    fulfilment_manager_user_id: string | null
+    project_timeframe_days: number | null
     lifecycle_phase: RelationshipPhase
     status: RelationshipStatus
     source_metadata: Record<string, unknown>
@@ -125,7 +128,7 @@ type ClientRow = {
     is_test?: boolean | null
 }
 
-const RELATIONSHIP_SELECT = "id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, business_name, website_url, industry_value, location_value, address, source_label, primary_contact_role, notes_summary, started_onboarding_at, lifecycle_phase, status, source_metadata, created_at, updated_at"
+const RELATIONSHIP_SELECT = "id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, business_name, website_url, industry_value, location_value, address, source_label, primary_contact_role, notes_summary, started_onboarding_at, seller_user_id, fulfilment_manager_user_id, project_timeframe_days, lifecycle_phase, status, source_metadata, created_at, updated_at"
 const RELATIONSHIP_LEGACY_SELECT = "id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, business_name, website_url, lifecycle_phase, status, source_metadata, created_at, updated_at"
 
 function isMissingRelationshipSchema(error: QueryError) {
@@ -212,6 +215,9 @@ function fallbackRelationshipFromClient(client: ClientRow): RelationshipRecord {
         primary_contact_role: null,
         notes_summary: null,
         started_onboarding_at: client.archived_at ? null : client.created_at,
+        seller_user_id: null,
+        fulfilment_manager_user_id: null,
+        project_timeframe_days: null,
         lifecycle_phase: client.archived_at ? "completed_lost" : "onboarding",
         status: client.archived_at ? "archived" : "active",
         source_metadata: { fallback_from: "clients", is_test: Boolean(client.is_test) },
@@ -265,6 +271,9 @@ export async function listRelationshipsForWorkspace(workspaceId: string): Promis
         primary_contact_role: relationship.primary_contact_role ?? null,
         notes_summary: relationship.notes_summary ?? null,
         started_onboarding_at: relationship.started_onboarding_at ?? null,
+        seller_user_id: relationship.seller_user_id ?? null,
+        fulfilment_manager_user_id: relationship.fulfilment_manager_user_id ?? null,
+        project_timeframe_days: relationship.project_timeframe_days ?? null,
     }))
     const wrappedClientIds = new Set(relationships.map((relationship) => relationship.client_id).filter(Boolean))
     const missingClientFallbacks = clients.filter((client) => client.client_id && !wrappedClientIds.has(client.client_id))
@@ -301,6 +310,9 @@ export async function getRelationship(workspaceId: string, relationshipId: strin
             primary_contact_role: relationship.primary_contact_role ?? null,
             notes_summary: relationship.notes_summary ?? null,
             started_onboarding_at: relationship.started_onboarding_at ?? null,
+            seller_user_id: relationship.seller_user_id ?? null,
+            fulfilment_manager_user_id: relationship.fulfilment_manager_user_id ?? null,
+            project_timeframe_days: relationship.project_timeframe_days ?? null,
         }
     }
 
@@ -325,6 +337,9 @@ export async function getRelationship(workspaceId: string, relationshipId: strin
                 primary_contact_role: relationship.primary_contact_role ?? null,
                 notes_summary: relationship.notes_summary ?? null,
                 started_onboarding_at: relationship.started_onboarding_at ?? null,
+                seller_user_id: relationship.seller_user_id ?? null,
+                fulfilment_manager_user_id: relationship.fulfilment_manager_user_id ?? null,
+                project_timeframe_days: relationship.project_timeframe_days ?? null,
             }
         }
     }

@@ -5,6 +5,7 @@ import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
 import { FormResponse, OnboardingFormDefinition, StoredUpload } from "@/lib/onboarding/forms"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { assetHref, onboardingDetailHref, relationshipHubHref, workItemHref } from "@/lib/relationships"
+import { createOnboardingReviewWork, createWorkflowItem } from "@/lib/relationship-workflow"
 import {
     classifyUploadAsset,
     FINAL_ONBOARDING_STEP,
@@ -306,17 +307,16 @@ async function maybeCompleteOnboarding(session: CanonicalOnboardingSession, work
     if (!allDone) return
 
     const now = new Date().toISOString()
-    await Promise.all([
-        supabaseAdmin
-            .from("relationship_onboarding_sessions")
-            .update({ status: "completed", completed_at: now })
-            .eq("id", session.id),
-        supabaseAdmin
-            .from("relationships")
-            .update({ lifecycle_phase: "fulfilment", updated_at: now })
-            .eq("workspace_id", session.workspace_id)
-            .eq("id", session.relationship_id),
-    ])
+    await supabaseAdmin
+        .from("relationship_onboarding_sessions")
+        .update({ status: "completed", completed_at: now })
+        .eq("id", session.id)
+    await createOnboardingReviewWork({
+        workspaceId: session.workspace_id,
+        workspaceSlug,
+        relationshipId: session.relationship_id,
+        sessionId: session.id,
+    })
     revalidatePath(`/${workspaceSlug}/work`)
 }
 
@@ -448,6 +448,15 @@ export async function createRelationshipOnboardingSession({
     ])
 
     const steps = getOnboardingStepsForModules(selectedModules)
+    const onboardingStageId = await createWorkflowItem({
+        workspaceId,
+        relationshipId,
+        title: "Onboard Client",
+        phase: "onboarding",
+        role: "lifecycle_stage",
+        completionMode: "all_required_children",
+        nativeKey: `${relationshipId}:onboarding:${session.id}`,
+    })
     const { data: items, error: itemsError } = await supabaseAdmin
         .from("work_items")
         .insert(steps.map((step, index) => ({
@@ -461,6 +470,8 @@ export async function createRelationshipOnboardingSession({
             native_kind: "onboarding_step",
             native_key: onboardingStepNativeKey(session.id, step.key),
             native_href: onboardingDetailHref(workspaceSlug, relationshipId),
+            parent_work_item_id: onboardingStageId,
+            workflow_role: "task",
             sort_order: index * 10,
             metadata: {
                 session_id: session.id,
@@ -481,6 +492,14 @@ export async function createRelationshipOnboardingSession({
             work_item_id: item.id,
             relationship_id: relationshipId,
         })))
+        for (let index = 1; index < items.length; index += 1) {
+            await supabaseAdmin.from("work_item_dependencies").upsert({
+                workspace_id: workspaceId,
+                work_item_id: items[index].id,
+                depends_on_work_item_id: items[index - 1].id,
+                source: "manual",
+            }, { onConflict: "work_item_id,depends_on_work_item_id" })
+        }
     }
 
     await supabaseAdmin

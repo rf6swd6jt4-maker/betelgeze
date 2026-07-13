@@ -13,6 +13,7 @@ import {
 } from "@/lib/relationships"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
+import { completeWorkflowParents, ensureSalesStage, sendRelationshipInvoice } from "@/lib/relationship-workflow"
 
 const creatablePhases = new Set<RelationshipPhase>([
     "lead",
@@ -20,7 +21,7 @@ const creatablePhases = new Set<RelationshipPhase>([
     "potential_client",
     "invoiced",
     "onboarding",
-    "onboarding_complete",
+    "onboarding_review",
     "fulfilment",
     "retention",
     "completed_lost",
@@ -114,9 +115,75 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
         })
     }
 
+    if (phase === "potential_client") {
+        await ensureSalesStage({ workspaceId: workspace.id, relationshipId: relationship.id, sellerId: user.id })
+    }
+
     relationshipRevalidatePaths(slug, relationship.id)
 
     return { ok: true, href: relationshipHubHref(slug, relationship.id) }
+}
+
+function priceCents(value: string) {
+    const amount = Number(value)
+    return Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) : 0
+}
+
+export async function saveRelationshipCommercialDetails(slug: string, relationshipId: string, formData: FormData) {
+    const { workspace } = await requireWorkspace(slug, "admin")
+    const serviceKeys = [...new Set(formData.getAll("service_key").map(String).filter(Boolean))]
+    const sellerId = nullableFormString(formData, "seller_user_id")
+    const managerId = nullableFormString(formData, "fulfilment_manager_user_id")
+    const timeframe = Number(formData.get("project_timeframe_days") ?? 0)
+    const { data: relationship, error: relationshipError } = await supabaseAdmin.from("relationships").select("lifecycle_phase").eq("workspace_id", workspace.id).eq("id", relationshipId).maybeSingle()
+    if (relationshipError || !relationship) throw new Error(relationshipError?.message ?? "Relationship not found")
+    const { error } = await supabaseAdmin.from("relationships").update({
+        seller_user_id: sellerId,
+        fulfilment_manager_user_id: managerId,
+        project_timeframe_days: Number.isFinite(timeframe) && timeframe > 0 ? Math.round(timeframe) : null,
+        updated_at: new Date().toISOString(),
+    }).eq("workspace_id", workspace.id).eq("id", relationshipId)
+    if (error) throw new Error(error.message)
+
+    await supabaseAdmin.from("relationship_services").delete().eq("workspace_id", workspace.id).eq("relationship_id", relationshipId)
+    if (serviceKeys.length) {
+        const { error: serviceError } = await supabaseAdmin.from("relationship_services").insert(serviceKeys.map((serviceKey) => ({
+            workspace_id: workspace.id,
+            relationship_id: relationshipId,
+            service_key: serviceKey,
+            price_cents: priceCents(formString(formData, `service_price_${serviceKey}`)),
+            currency: "usd",
+            assignee_user_id: nullableFormString(formData, `service_assignee_${serviceKey}`),
+        })))
+        if (serviceError) throw new Error(serviceError.message)
+    }
+    if (relationship.lifecycle_phase === "potential_client") await ensureSalesStage({ workspaceId: workspace.id, relationshipId, sellerId })
+    relationshipRevalidatePaths(slug, relationshipId)
+}
+
+export async function proceedRelationshipCurrentWork(slug: string, relationshipId: string, workItemId: string) {
+    const { workspace, user, role } = await requireWorkspace(slug)
+    const { data: item } = await supabaseAdmin.from("work_items")
+        .select("id, workflow_action")
+        .eq("workspace_id", workspace.id).eq("id", workItemId).maybeSingle()
+    if (!item) throw new Error("Work item not found")
+    const { data: link } = await supabaseAdmin.from("work_item_relationships")
+        .select("work_item_id").eq("workspace_id", workspace.id).eq("relationship_id", relationshipId).eq("work_item_id", workItemId).maybeSingle()
+    if (!link) throw new Error("Work item does not belong to this relationship")
+    if (role !== "owner" && role !== "admin") {
+        const { data: assignment } = await supabaseAdmin.from("work_item_assignees")
+            .select("user_id").eq("workspace_id", workspace.id).eq("work_item_id", workItemId).eq("user_id", user.id).maybeSingle()
+        if (!assignment) throw new Error("This work item is not assigned to you")
+    }
+    if (item.workflow_action === "send_invoice") {
+        await sendRelationshipInvoice({ workspaceId: workspace.id, relationshipId, workItemId, actorId: user.id })
+    } else {
+        const { error } = await supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() })
+            .eq("workspace_id", workspace.id).eq("id", workItemId)
+        if (error) throw new Error(error.message)
+        await completeWorkflowParents({ workspaceId: workspace.id, relationshipId, workItemId })
+    }
+    relationshipRevalidatePaths(slug, relationshipId)
 }
 
 export async function startRelationshipOnboarding(slug: string, relationshipId: string) {

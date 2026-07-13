@@ -19,7 +19,7 @@ type RelationshipPhase =
     | "potential_client"
     | "invoiced"
     | "onboarding"
-    | "onboarding_complete"
+    | "onboarding_review"
     | "fulfilment"
     | "retention"
     | "completed_lost"

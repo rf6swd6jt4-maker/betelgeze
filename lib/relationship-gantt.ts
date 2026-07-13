@@ -76,9 +76,7 @@ export async function getRelationshipGanttPlan(workspaceSlug: string, relationsh
         supabaseAdmin.from("work_item_dependencies").select("work_item_id, depends_on_work_item_id, source").eq("workspace_id", relationship.workspace_id),
         supabaseAdmin.from("work_item_assignees").select("work_item_id, user_id").eq("workspace_id", relationship.workspace_id),
         supabaseAdmin.from("relationship_onboarding_sessions").select("id, status, created_at, completed_at").eq("workspace_id", relationship.workspace_id).eq("relationship_id", relationship.id).order("created_at"),
-        relationship.client_id
-            ? supabaseAdmin.from("client_sales").select("id, status, updated_at, stripe_hosted_invoice_url").eq("workspace_id", relationship.workspace_id).eq("client_id", relationship.client_id).is("deleted_at", null).order("updated_at")
-            : Promise.resolve({ data: [], error: null }),
+        supabaseAdmin.from("client_sales").select("id, status, updated_at, stripe_hosted_invoice_url").eq("workspace_id", relationship.workspace_id).eq("relationship_id", relationship.id).is("deleted_at", null).order("updated_at"),
     ])
 
     const rawItems = (itemsResult.data ?? []) as RawItem[]

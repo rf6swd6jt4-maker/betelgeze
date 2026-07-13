@@ -99,25 +99,30 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
         return { ok: false, error: "create-failed" }
     }
 
-    if (phase === "onboarding") {
-        await createOnboardingClient({
-            workspaceId: workspace.id,
-            workspaceSlug: workspace.slug,
-            customOnboardingDomain: workspace.custom_onboarding_domain,
-            customOnboardingDomainVerified: workspace.custom_onboarding_domain_status === "verified",
-            relationshipId: relationship.id,
-            name: businessName ?? primaryPersonName,
-            email: nullableFormString(formData, "primary_email"),
-            phone: nullableFormString(formData, "primary_phone") ?? "",
-            serviceKeys: [],
-            createClickUpResources: false,
-            createOnboardingWork: false,
-            activitySource: "Relationship manual creation",
-            createdBy: user.id,
-            isTest: formData.get("is_test") === "on",
-        })
-    } else if (!["nurturing", "completed_lost"].includes(phase)) {
-        await ensureRelationshipStage({ workspaceId: workspace.id, relationshipId: relationship.id, phase: phase as Exclude<RelationshipPhase, "nurturing" | "completed_lost">, assigneeId: user.id })
+    try {
+        if (phase === "onboarding") {
+            await createOnboardingClient({
+                workspaceId: workspace.id,
+                workspaceSlug: workspace.slug,
+                customOnboardingDomain: workspace.custom_onboarding_domain,
+                customOnboardingDomainVerified: workspace.custom_onboarding_domain_status === "verified",
+                relationshipId: relationship.id,
+                name: businessName ?? primaryPersonName,
+                email: nullableFormString(formData, "primary_email"),
+                phone: nullableFormString(formData, "primary_phone") ?? "",
+                serviceKeys: [],
+                createClickUpResources: false,
+                createOnboardingWork: false,
+                activitySource: "Relationship manual creation",
+                createdBy: user.id,
+                isTest: formData.get("is_test") === "on",
+            })
+        } else if (!["nurturing", "completed_lost"].includes(phase)) {
+            await ensureRelationshipStage({ workspaceId: workspace.id, relationshipId: relationship.id, phase: phase as Exclude<RelationshipPhase, "nurturing" | "completed_lost">, assigneeId: user.id })
+        }
+    } catch {
+        await supabaseAdmin.from("relationships").delete().eq("workspace_id", workspace.id).eq("id", relationship.id)
+        return { ok: false, error: "workflow-create-failed" }
     }
 
     relationshipRevalidatePaths(slug, relationship.id)

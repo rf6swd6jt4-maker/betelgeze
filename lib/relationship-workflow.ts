@@ -109,6 +109,30 @@ export async function ensureRelationshipStage(input: {
     })
 }
 
+export async function ensureCurrentRelationshipStage(input: {
+    workspaceId: string
+    relationshipId: string
+    phase: RelationshipPhase
+    assigneeId?: string | null
+}) {
+    if (input.phase === "nurturing" || input.phase === "completed_lost") return null
+    const [{ data: links }, { data: items }] = await Promise.all([
+        supabaseAdmin.from("work_item_relationships").select("work_item_id")
+            .eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId),
+        supabaseAdmin.from("work_items").select("id, lifecycle_phase, workflow_role")
+            .eq("workspace_id", input.workspaceId).eq("workflow_role", "lifecycle_stage"),
+    ])
+    const linkedIds = new Set((links ?? []).map((link) => link.work_item_id))
+    const existing = (items ?? []).find((item) => linkedIds.has(item.id) && item.lifecycle_phase === input.phase)
+    if (existing) return existing.id
+    return ensureRelationshipStage({
+        workspaceId: input.workspaceId,
+        relationshipId: input.relationshipId,
+        phase: input.phase,
+        assigneeId: input.assigneeId,
+    })
+}
+
 export async function ensureSalesStage(input: { workspaceId: string; relationshipId: string; sellerId: string | null }) {
     return ensureRelationshipStage({ ...input, phase: "potential_client", assigneeId: input.sellerId })
 }

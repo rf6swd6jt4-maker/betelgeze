@@ -13,7 +13,7 @@ import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { SERVICES } from "@/lib/onboarding/services"
-import { currentRelationshipWork } from "@/lib/relationship-workflow"
+import { currentRelationshipWork, ensureCurrentRelationshipStage } from "@/lib/relationship-workflow"
 import { saveRelationshipCommercialDetails } from "../actions"
 import { RelationshipGantt } from "./RelationshipGantt"
 
@@ -28,6 +28,7 @@ export default async function RelationshipDetailPage({ params }: PageProps) {
     const { workspace, user, role } = await requireWorkspace(workspaceSlug)
     const relationship = await getRelationship(workspace.id, relationshipId)
     if (!relationship) notFound()
+    await ensureCurrentRelationshipStage({ workspaceId: workspace.id, relationshipId: relationship.id, phase: relationship.lifecycle_phase, assigneeId: user.id })
     const plan = await getRelationshipGanttPlan(workspace.slug, relationship)
     const planRanges = effectiveGanttRanges(plan.items)
     const [servicesResult, membershipsResult] = await Promise.all([

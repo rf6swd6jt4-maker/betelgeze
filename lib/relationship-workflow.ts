@@ -53,12 +53,12 @@ export async function createWorkflowItem(input: {
     description?: string | null
 }) {
     const { data: existing } = await supabaseAdmin.from("work_items")
-        .select("planned_start_date, due_date")
+        .select("id, planned_start_date, due_date")
         .eq("workspace_id", input.workspaceId)
         .eq("native_kind", "relationship_workflow")
         .eq("native_key", input.nativeKey)
         .maybeSingle()
-    const { data: item, error } = await supabaseAdmin.from("work_items").upsert({
+    const payload = {
         workspace_id: input.workspaceId,
         title: input.title,
         description: input.description ?? null,
@@ -73,7 +73,10 @@ export async function createWorkflowItem(input: {
         native_key: input.nativeKey,
         sort_order: input.sortOrder ?? 0,
         metadata: { relationship_id: input.relationshipId, created_from: "relationship_workflow" },
-    }, { onConflict: "workspace_id,native_kind,native_key" }).select("id").single()
+    }
+    const { data: item, error } = existing
+        ? await supabaseAdmin.from("work_items").update(payload).eq("workspace_id", input.workspaceId).eq("id", existing.id).select("id").single()
+        : await supabaseAdmin.from("work_items").insert(payload).select("id").single()
     if (error || !item) throw new Error(error?.message ?? "Could not create workflow work")
     await linkItems(input.workspaceId, input.relationshipId, [item.id])
     await supabaseAdmin.from("work_item_assignees").delete().eq("workspace_id", input.workspaceId).eq("work_item_id", item.id)

@@ -370,13 +370,17 @@ export async function sendRelationshipInvoice(input: {
         supabaseAdmin.from("relationships").select("primary_person_name, primary_email, primary_phone, whatsapp_phone, business_name, project_timeframe_days").eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).single(),
         supabaseAdmin.from("relationship_services").select("service_key, price_cents, currency").eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId),
     ])
-    const lineItems = (services ?? []).filter((service) => typeof service.price_cents === "number" && service.price_cents > 0).map((service) => ({
+    const selectedServices = services ?? []
+    const lineItems = selectedServices.filter((service) => typeof service.price_cents === "number" && service.price_cents > 0).map((service) => ({
         serviceKey: service.service_key,
         description: SERVICES[service.service_key]?.title ?? service.service_key,
         amount: service.price_cents,
     }))
-    if (!relationship || !relationship.primary_email || !relationship.whatsapp_phone || !lineItems.length) throw new Error("Add a billing email, WhatsApp phone, and a positive price for every selected service before sending the invoice")
-    const currency = services?.[0]?.currency ?? "usd"
+    if (!relationship || !relationship.primary_email || !relationship.whatsapp_phone || !selectedServices.length || lineItems.length !== selectedServices.length) throw new Error("Add a billing email, WhatsApp phone, and a positive price for every selected service before sending the invoice")
+    const currency = selectedServices[0]?.currency ?? "usd"
+    // Validate the integration before creating a sale record. This keeps a missing
+    // or disconnected Stripe setup from leaving a retryable-looking draft behind.
+    const config = await getWorkspaceProviderConfig(input.workspaceId, "stripe")
     const { data: sale, error: saleError } = await supabaseAdmin.from("client_sales").insert({
         workspace_id: input.workspaceId,
         relationship_id: input.relationshipId,
@@ -392,7 +396,6 @@ export async function sendRelationshipInvoice(input: {
         created_by: input.actorId,
     }).select("id").single()
     if (saleError || !sale) throw new Error(saleError?.message ?? "Could not create invoice record")
-    const config = await getWorkspaceProviderConfig(input.workspaceId, "stripe")
     const invoice = await createAndSendStripeInvoice({
         saleId: sale.id,
         name: relationship.business_name ?? relationship.primary_person_name,

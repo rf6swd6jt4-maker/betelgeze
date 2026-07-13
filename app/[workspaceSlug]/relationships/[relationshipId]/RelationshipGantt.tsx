@@ -876,7 +876,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             <label className="flex items-center gap-1.5 text-neutral-400"><input type="checkbox" checked={confirmBeforeProceeding} onChange={(event) => { setConfirmBeforeProceeding(event.target.checked); window.localStorage.setItem("betelgeze-current-work-confirm", String(event.target.checked)) }} />Confirm before continuing</label>
             <button type="button" disabled={pending || currentWork.blocked || currentWork.action === "await_payment" || currentWork.action === "await_onboarding"} onClick={() => {
                 if (confirmBeforeProceeding && !window.confirm(`Complete “${currentWork.title}” and continue?`)) return
-                startTransition(() => { void proceedRelationshipCurrentWork(workspaceSlug, relationshipId, currentWork.id).then(() => { router.refresh(); postGanttSync(workspaceSlug) }).catch((error: unknown) => setResult({ status: "invalid", message: error instanceof Error ? error.message : "Could not proceed" })) })
+                startTransition(() => { void proceedRelationshipCurrentWork(workspaceSlug, relationshipId, currentWork.id).then((outcome) => {
+                    if (!outcome.ok) {
+                        setResult({ status: "invalid", message: outcome.error })
+                        return
+                    }
+                    router.refresh()
+                    postGanttSync(workspaceSlug)
+                }).catch(() => setResult({ status: "invalid", message: "Could not proceed with this work item" })) })
             }} className="h-8 rounded bg-white px-3 text-xs font-semibold text-neutral-950 disabled:opacity-45">{currentWork.action === "send_invoice" ? "Send invoice" : currentWork.action === "await_payment" ? "Awaiting payment" : currentWork.action === "await_onboarding" ? "Onboarding in progress" : "Mark complete"}</button>
         </div> : null}
         <MutationError result={result} />

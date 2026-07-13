@@ -32,6 +32,11 @@ test("an undated parent still derives its timeframe from descendants", () => {
     assert.deepEqual(ranges.get("parent"), { start: "2026-07-02", end: "2026-07-09", derived: true })
 })
 
+test("a start-only work item stays scheduled without inventing an end date", () => {
+    const ranges = effectiveGanttRanges([item("open", "2026-07-13", null)])
+    assert.deepEqual(ranges.get("open"), { start: "2026-07-13", end: "2026-07-13", derived: false })
+})
+
 test("child ranges must stay inside their parent timeframe", () => {
     const parent = { start: "2026-07-01", end: "2026-07-31" }
     assert.equal(rangeContainsRange(parent, { start: "2026-07-08", end: "2026-07-20" }), true)

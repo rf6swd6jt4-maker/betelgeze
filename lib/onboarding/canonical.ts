@@ -5,7 +5,7 @@ import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
 import { FormResponse, OnboardingFormDefinition, StoredUpload } from "@/lib/onboarding/forms"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { assetHref, onboardingDetailHref, relationshipHubHref, workItemHref } from "@/lib/relationships"
-import { completeWorkflowParents, createOnboardingReviewWork, createWorkflowItem } from "@/lib/relationship-workflow"
+import { completeWorkflowParents, createOnboardingReviewWork, ensureRelationshipStage } from "@/lib/relationship-workflow"
 import {
     classifyUploadAsset,
     FINAL_ONBOARDING_STEP,
@@ -450,17 +450,10 @@ export async function createRelationshipOnboardingSession({
     ])
 
     const steps = getOnboardingStepsForModules(selectedModules)
-    const onboardingStageId = await createWorkflowItem({
+    const onboardingStageId = await ensureRelationshipStage({
         workspaceId,
         relationshipId,
-        title: "Onboard Client",
         phase: "onboarding",
-        role: "lifecycle_stage",
-        completionMode: "all_required_children",
-        action: "await_onboarding",
-        startDate: now.slice(0, 10),
-        dueDate: now.slice(0, 10),
-        nativeKey: `${relationshipId}:onboarding:${session.id}`,
     })
     const { data: items, error: itemsError } = await supabaseAdmin
         .from("work_items")
@@ -477,6 +470,7 @@ export async function createRelationshipOnboardingSession({
             native_href: onboardingDetailHref(workspaceSlug, relationshipId),
             parent_work_item_id: onboardingStageId,
             workflow_role: "task",
+            planned_start_date: now.slice(0, 10),
             sort_order: index * 10,
             metadata: {
                 session_id: session.id,

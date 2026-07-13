@@ -66,12 +66,30 @@ function fixedRowStyle(height: number): CSSProperties {
     return { boxSizing: "border-box", height: `${height}px`, minHeight: `${height}px`, maxHeight: `${height}px` }
 }
 
+function compareWorkItems(left: RelationshipGanttItem, right: RelationshipGanttItem) {
+    const leftStart = left.plannedStartDate ?? "9999-12-31"
+    const rightStart = right.plannedStartDate ?? "9999-12-31"
+    if (leftStart !== rightStart) return leftStart.localeCompare(rightStart)
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder
+    if (left.createdAt !== right.createdAt) return left.createdAt.localeCompare(right.createdAt)
+    return left.title.localeCompare(right.title)
+}
+
+function withMinimumBarWidth(geometry: { left: number; right: number; width: number; sourceDivider: number; targetDivider: number }, minimumWidth: number) {
+    const width = Math.max(minimumWidth, geometry.width)
+    return { ...geometry, width, right: geometry.left + width, sourceDivider: geometry.left + width }
+}
+
+function hasOpenEnd(item: RelationshipGanttItem, range: { derived: boolean } | null) {
+    return Boolean(range && !range.derived && item.plannedStartDate && !item.dueDate && !["done", "canceled"].includes(item.status))
+}
+
 function flattenRows(items: RelationshipGanttItem[], collapsed: Set<string>, category: Category) {
     const byId = new Map(items.map((item) => [item.id, item]))
     const children = new Map<string, RelationshipGanttItem[]>()
     for (const item of items) if (item.parentWorkItemId && byId.has(item.parentWorkItemId)) children.set(item.parentWorkItemId, [...(children.get(item.parentWorkItemId) ?? []), item])
-    for (const rows of children.values()) rows.sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title))
-    const roots = items.filter((item) => !item.parentWorkItemId || !byId.has(item.parentWorkItemId)).sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title))
+    for (const rows of children.values()) rows.sort(compareWorkItems)
+    const roots = items.filter((item) => !item.parentWorkItemId || !byId.has(item.parentWorkItemId)).sort(compareWorkItems)
     const output: DisplayRow[] = []
     const visit = (item: RelationshipGanttItem, depth: number) => {
         output.push({ item, depth, category })
@@ -178,9 +196,24 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return preview ? { ...item, plannedStartDate: preview.start, dueDate: preview.end } : item
     }), [committedItems, dragPreview])
     const ranges = useMemo(() => effectiveGanttRanges(allVisibleItems), [allVisibleItems])
-    const scheduledItems = plan.items.filter((item) => item.section === "relationship" && committedRanges.has(item.id))
-    const sharedItems = plan.items.filter((item) => item.section === "shared" && committedRanges.has(item.id))
-    const unscheduledItems = plan.items.filter((item) => !committedRanges.has(item.id))
+    // A lifecycle stage waiting on the current stage has no truthful calendar
+    // date yet. Anchor its outlined preview to the predecessor's start solely
+    // for display; it remains unscheduled in storage until it actually begins.
+    const gatedRanges = useMemo(() => {
+        const output = new Map<string, { start: string; end: string; derived: boolean }>()
+        for (const edge of plan.dependencies) {
+            const item = plan.items.find((candidate) => candidate.id === edge.workItemId)
+            const predecessor = ranges.get(edge.dependsOnWorkItemId)
+            if (item?.workflowRole === "lifecycle_stage" && !item.plannedStartDate && !item.dueDate && predecessor) {
+                output.set(item.id, { start: predecessor.start, end: predecessor.start, derived: false })
+            }
+        }
+        return output
+    }, [plan.dependencies, plan.items, ranges])
+    const displayRanges = useMemo(() => new Map([...ranges, ...gatedRanges]), [gatedRanges, ranges])
+    const scheduledItems = plan.items.filter((item) => item.section === "relationship" && displayRanges.has(item.id))
+    const sharedItems = plan.items.filter((item) => item.section === "shared" && displayRanges.has(item.id))
+    const unscheduledItems = plan.items.filter((item) => !displayRanges.has(item.id))
     const scheduledRows = collapsedCategories.has("scheduled") ? [] : flattenRows(scheduledItems, collapsed, "scheduled")
     const sharedRows = collapsedCategories.has("shared") ? [] : flattenRows(sharedItems, collapsed, "shared")
     const unscheduledRows = collapsedCategories.has("unscheduled") ? [] : flattenRows(unscheduledItems, collapsed, "unscheduled")
@@ -683,7 +716,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const categoryItems = row.category === "scheduled" ? scheduledItems : row.category === "shared" ? sharedItems : unscheduledItems
         const hasChildren = !row.external && categoryItems.some((item) => item.parentWorkItemId === row.item.id)
         const isActive = activeItemId === row.item.id
-        const isUnscheduled = !ranges.has(row.item.id)
+        const isUnscheduled = !displayRanges.has(row.item.id)
         const contextLabel = row.external ? "external" : row.category === "unscheduled" && row.item.section === "shared" ? "shared" : null
         return <div
             className={`sticky left-0 z-40 flex min-w-0 items-center gap-1 overflow-hidden border-b border-b-neutral-800 transition-colors ${effectiveLeftWidth ? "border-r border-r-neutral-700 px-1.5" : "border-r-0 px-0"} ${isActive ? "bg-neutral-900" : "bg-neutral-950"}`}
@@ -717,12 +750,16 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const item = row.item
         const height = rowHeight(row)
         const barHeight = row.depth === 0 ? ROOT_BAR_HEIGHT : CHILD_BAR_HEIGHT
-        const range = ranges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
-        const geometry = range ? barGeometry(range) : null
+        const range = displayRanges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
+        const isGated = gatedRanges.has(item.id)
+        const openEnded = hasOpenEnd(item, range)
+        const showOpenTrail = openEnded && row.depth === 0
+        const baseGeometry = range ? barGeometry(range) : null
+        const geometry = baseGeometry && (openEnded || isGated) ? withMinimumBarWidth(baseGeometry, row.depth === 0 ? 148 : 116) : baseGeometry
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         const flashing = flashingItemId === item.id
         const barBorder = flashing ? "#ef4444" : colours.border
-        const canDrag = canEdit && !pending && !row.external && !["done", "canceled"].includes(item.status)
+        const canDrag = canEdit && !pending && !row.external && !isGated && !openEnded && !["done", "canceled"].includes(item.status)
         // Derived summary bars move their descendants as a group and cannot be
         // resized independently without changing the hierarchy's meaning.
         const isSummary = range?.derived === true
@@ -732,7 +769,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const showBarLink = Boolean(geometry && geometry.width >= linkSize + handleSpace * 2 + 12)
         const showAssignee = Boolean(geometry && geometry.width >= 92)
         const isActive = activeItemId === item.id
-        const overdue = Boolean(range && dateDay(range.end) < dateDay(today) && !["done", "canceled"].includes(item.status))
+        const overdue = Boolean(range && !openEnded && !isGated && dateDay(range.end) < dateDay(today) && !["done", "canceled"].includes(item.status))
         const statusLabel = item.status === "done" ? "Completed" : item.status === "canceled" ? "Canceled" : overdue ? "Overdue" : null
         const derived = Boolean(range?.derived)
         return <div
@@ -741,14 +778,15 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             onMouseEnter={() => setActiveItemId(item.id)}
             onMouseLeave={() => setActiveItemId(null)}
         >
+            {showOpenTrail && geometry ? <div aria-label={`${item.title} remains open after ${range!.start}`} className="pointer-events-none absolute z-10 border-t border-dashed" style={{ left: `${geometry.right}px`, right: `${BAR_INSET}px`, top: `${height / 2}px`, borderColor: colours.border, opacity: .7 }}><span aria-hidden="true" className="absolute -right-0.5 -top-[13px] text-lg leading-none" style={{ color: colours.border }}>›</span></div> : null}
             {range && geometry ? <div
                 data-gantt-bar
-                className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 && !canResize ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: isActive ? "scale(1.01)" : undefined, transformOrigin: "center" }}
+                className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 && !canResize || isGated ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: isGated ? "transparent" : colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: isActive ? "scale(1.01)" : undefined, transformOrigin: "center", opacity: isGated ? .72 : undefined }}
                 onPointerDown={(event) => startBarDrag(event, item, range, "move")}
                 onFocus={() => setActiveItemId(item.id)}
                 onBlur={() => setActiveItemId(null)}
-                title={`${item.title}: ${range.start} → ${range.end}${derived ? " · Derived from child work" : ""}${statusLabel ? ` · ${statusLabel}` : ""}`}
+                title={isGated ? `${item.title}: starts when its predecessor finishes` : `${item.title}: ${range.start}${openEnded ? " · Open-ended" : ` → ${range.end}`}${derived ? " · Derived from child work" : ""}${statusLabel ? ` · ${statusLabel}` : ""}`}
             >
                 {item.actualStartAt ? <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md opacity-25" style={{ width: `${Math.min(100, Math.max(2, ((dateDay((item.actualCompletedAt ?? today).slice(0, 10)) - dateDay(range.start) + 1) / Math.max(1, dateDay(range.end) - dateDay(range.start) + 1)) * 100))}%`, backgroundColor: colours.text }} /> : null}
                 {row.depth > 0 && canResize ? <span aria-hidden="true" className="pointer-events-none absolute inset-x-2.5 inset-y-0 z-30 border-y border-dashed" style={{ borderColor: barBorder }} /> : null}
@@ -765,14 +803,17 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const dependencyPaths = plan.dependencies.flatMap((edge) => {
         const fromTop = rowTop.get(edge.dependsOnWorkItemId)
         const toTop = rowTop.get(edge.workItemId)
-        const fromRange = ranges.get(edge.dependsOnWorkItemId)
-        const toRange = ranges.get(edge.workItemId)
+        const fromRange = displayRanges.get(edge.dependsOnWorkItemId)
+        const toRange = displayRanges.get(edge.workItemId)
         const fromHeight = rowHeights.get(edge.dependsOnWorkItemId)
         const toHeight = rowHeights.get(edge.workItemId)
         if (fromTop === undefined || toTop === undefined || fromHeight === undefined || toHeight === undefined || !fromRange || !toRange) return []
-        const sourceGeometry = barGeometry(fromRange)
-        const targetGeometry = barGeometry(toRange)
-        const sourceDivider = sourceGeometry.sourceDivider
+        const sourceItem = plan.items.find((item) => item.id === edge.dependsOnWorkItemId) ?? plan.externalItems.find((item) => item.id === edge.dependsOnWorkItemId)
+        const targetItem = plan.items.find((item) => item.id === edge.workItemId)
+        const sourceOpenEnded = sourceItem ? hasOpenEnd(sourceItem, fromRange) : false
+        const sourceGeometry = sourceOpenEnded ? withMinimumBarWidth(barGeometry(fromRange), sourceItem?.parentWorkItemId ? 116 : 148) : barGeometry(fromRange)
+        const targetGeometry = targetItem && gatedRanges.has(targetItem.id) ? withMinimumBarWidth(barGeometry(toRange), targetItem.parentWorkItemId ? 116 : 148) : barGeometry(toRange)
+        const sourceDivider = sourceOpenEnded && !sourceItem?.parentWorkItemId ? Math.max(sourceGeometry.right, timelineWidth - BAR_INSET) : sourceGeometry.sourceDivider
         const sourceBarRight = sourceGeometry.right
         const targetDivider = targetGeometry.targetDivider
         const targetBarLeft = targetGeometry.left
@@ -787,14 +828,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     // sequential child dependencies continue to use the existing overlay above.
     const siblingDependencyPairs = new Set(plan.dependencies.map((edge) => `${edge.workItemId}:${edge.dependsOnWorkItemId}`))
     const parallelChildPaths = [...new Set(plan.items.map((item) => item.parentWorkItemId).filter((id): id is string => Boolean(id)))].flatMap((parentId) => {
-        const children = plan.items.filter((item) => item.parentWorkItemId === parentId && rowTop.has(item.id) && ranges.has(item.id))
+        const children = plan.items.filter((item) => item.parentWorkItemId === parentId && rowTop.has(item.id) && displayRanges.has(item.id))
         if (children.length < 2 || children.some((child) => children.some((other) => child.id !== other.id && (siblingDependencyPairs.has(`${child.id}:${other.id}`) || siblingDependencyPairs.has(`${other.id}:${child.id}`))))) return []
         const parentTop = rowTop.get(parentId)
         const parentHeight = rowHeights.get(parentId)
-        const parentRange = ranges.get(parentId)
+        const parentRange = displayRanges.get(parentId)
         if (parentTop === undefined || !parentHeight || !parentRange) return []
         const parentGeometry = barGeometry(parentRange)
-        const branchRows = children.map((child) => ({ child, top: rowTop.get(child.id)!, height: rowHeights.get(child.id)!, geometry: barGeometry(ranges.get(child.id)!) })).sort((a, b) => a.top - b.top)
+        const branchRows = children.map((child) => ({ child, top: rowTop.get(child.id)!, height: rowHeights.get(child.id)!, geometry: barGeometry(displayRanges.get(child.id)!) })).sort((a, b) => a.top - b.top)
         const trunkX = parentGeometry.sourceDivider
         const parentY = parentTop + parentHeight / 2
         const lastY = branchRows[branchRows.length - 1].top + branchRows[branchRows.length - 1].height / 2

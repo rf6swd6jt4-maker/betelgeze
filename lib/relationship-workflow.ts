@@ -17,6 +17,7 @@ const STAGES: Record<StagePhase, { title: string; action?: string; completionMod
     fulfilment: { title: "Fulfil Client", action: "begin_retention", completionMode: "all_required_children" },
     retention: { title: "Retain Client" },
 }
+const STAGE_SEQUENCE: StagePhase[] = ["lead", "potential_client", "invoiced", "onboarding", "onboarding_review", "fulfilment", "retention"]
 function today() {
     return new Date().toISOString().slice(0, 10)
 }
@@ -98,7 +99,7 @@ export async function ensureRelationshipStage(input: {
     assigneeId?: string | null
 }) {
     const stage = STAGES[input.phase]
-    return createWorkflowItem({
+    const stageId = await createWorkflowItem({
         workspaceId: input.workspaceId,
         relationshipId: input.relationshipId,
         title: stage.title,
@@ -108,9 +109,34 @@ export async function ensureRelationshipStage(input: {
         completionMode: stage.completionMode ?? "manual",
         assigneeId: input.assigneeId ?? null,
         startDate: today(),
-        dueDate: today(),
         nativeKey: `${input.relationshipId}:${input.phase}`,
     })
+    await ensureNextLifecycleStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: input.phase, stageId })
+    return stageId
+}
+
+async function ensureNextLifecycleStage(input: { workspaceId: string; relationshipId: string; phase: StagePhase; stageId: string }) {
+    const nextPhase = STAGE_SEQUENCE[STAGE_SEQUENCE.indexOf(input.phase) + 1]
+    if (!nextPhase) return null
+    const nextStage = STAGES[nextPhase]
+    const nextStageId = await createWorkflowItem({
+        workspaceId: input.workspaceId,
+        relationshipId: input.relationshipId,
+        title: nextStage.title,
+        phase: nextPhase,
+        role: "lifecycle_stage",
+        action: nextStage.action ?? null,
+        completionMode: nextStage.completionMode ?? "manual",
+        nativeKey: `${input.relationshipId}:${nextPhase}`,
+    })
+    const { error } = await supabaseAdmin.from("work_item_dependencies").upsert({
+        workspace_id: input.workspaceId,
+        work_item_id: nextStageId,
+        depends_on_work_item_id: input.stageId,
+        source: "manual",
+    }, { onConflict: "work_item_id,depends_on_work_item_id" })
+    if (error) throw new Error(error.message)
+    return nextStageId
 }
 
 export async function ensureCurrentRelationshipStage(input: {
@@ -128,7 +154,10 @@ export async function ensureCurrentRelationshipStage(input: {
     ])
     const linkedIds = new Set((links ?? []).map((link) => link.work_item_id))
     const existing = (items ?? []).find((item) => linkedIds.has(item.id) && item.lifecycle_phase === input.phase)
-    if (existing) return existing.id
+    if (existing) {
+        await ensureNextLifecycleStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: input.phase, stageId: existing.id })
+        return existing.id
+    }
     return ensureRelationshipStage({
         workspaceId: input.workspaceId,
         relationshipId: input.relationshipId,
@@ -172,18 +201,11 @@ export async function createOnboardingReviewWork(input: {
         .select("fulfilment_manager_user_id")
         .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).maybeSingle()
     const reviewerId = relationship?.fulfilment_manager_user_id ?? null
-    const reviewId = await createWorkflowItem({
+    const reviewId = await ensureRelationshipStage({
         workspaceId: input.workspaceId,
         relationshipId: input.relationshipId,
-        title: STAGES.onboarding_review.title,
         phase: "onboarding_review",
-        role: "lifecycle_stage",
-        completionMode: "all_required_children",
-        action: STAGES.onboarding_review.action,
         assigneeId: reviewerId,
-        startDate: today(),
-        dueDate: today(),
-        nativeKey: `${input.relationshipId}:onboarding-review:${input.sessionId}`,
     })
     const { data: submitted } = await supabaseAdmin.from("work_items")
         .select("id, title, sort_order")
@@ -253,6 +275,7 @@ export async function createFulfilmentWork(input: {
         dueDate,
         nativeKey: `${input.relationshipId}:fulfilment`,
     })
+    await ensureNextLifecycleStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "fulfilment", stageId })
     const services = await serviceRows(input.workspaceId, input.relationshipId)
     const byAssignee = new Map<string, typeof services>()
     for (const service of services) {

@@ -22,6 +22,7 @@ export type RelationshipGanttItem = {
     actualStartAt: string | null
     actualCompletedAt: string | null
     sortOrder: number
+    createdAt: string
     updatedAt: string
     section: "relationship" | "shared"
     assignees: GanttPerson[]
@@ -64,6 +65,7 @@ type RawItem = {
     actual_start_at: string | null
     actual_completed_at: string | null
     sort_order: number
+    created_at: string
     updated_at: string
     native_key: string | null
 }
@@ -72,7 +74,7 @@ type RawDependency = { work_item_id: string; depends_on_work_item_id: string; so
 
 export async function getRelationshipGanttPlan(_workspaceSlug: string, relationship: RelationshipRecord): Promise<RelationshipGanttPlan> {
     const [itemsResult, linksResult, dependenciesResult, assigneesResult, sessionsResult] = await Promise.all([
-        supabaseAdmin.from("work_items").select("id, title, status, lifecycle_phase, workflow_role, workflow_action, parent_work_item_id, planned_start_date, planned_start_time, due_date, due_time, actual_start_at, actual_completed_at, sort_order, updated_at, native_key").eq("workspace_id", relationship.workspace_id),
+        supabaseAdmin.from("work_items").select("id, title, status, lifecycle_phase, workflow_role, workflow_action, parent_work_item_id, planned_start_date, planned_start_time, due_date, due_time, actual_start_at, actual_completed_at, sort_order, created_at, updated_at, native_key").eq("workspace_id", relationship.workspace_id),
         supabaseAdmin.from("work_item_relationships").select("work_item_id, relationship_id, link_source, inherited_from_work_item_id").eq("workspace_id", relationship.workspace_id),
         supabaseAdmin.from("work_item_dependencies").select("work_item_id, depends_on_work_item_id, source").eq("workspace_id", relationship.workspace_id),
         supabaseAdmin.from("work_item_assignees").select("work_item_id, user_id").eq("workspace_id", relationship.workspace_id),
@@ -148,6 +150,7 @@ export async function getRelationshipGanttPlan(_workspaceSlug: string, relations
         actualStartAt: item.actual_start_at,
         actualCompletedAt: item.actual_completed_at,
         sortOrder: item.sort_order,
+        createdAt: item.created_at,
         updatedAt: item.updated_at,
         section,
         assignees: peopleByItem.get(item.id) ?? [],

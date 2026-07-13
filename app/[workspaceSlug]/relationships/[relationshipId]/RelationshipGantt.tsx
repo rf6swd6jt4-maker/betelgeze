@@ -108,6 +108,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const previousGeometryRef = useRef<{ leftWidth: number; rangeStart: number } | null>(null)
     const zoomAnchorRef = useRef<{ timelineDay: number; localX: number; scrollTop: number } | null>(null)
     const touchPointsRef = useRef(new Map<number, { x: number; y: number }>())
+    const touchPanRef = useRef<{ pointerId: number; x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null)
+    const touchZoomOnlyRef = useRef(false)
     const pinchRef = useRef<{ distance: number; zoom: number; timelineDay: number; localX: number; scrollTop: number } | null>(null)
     const pinchReleaseFrameRef = useRef<number | null>(null)
     // The plan is held locally so edits can be painted optimistically and so
@@ -459,7 +461,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             for (const change of descendantChanges) if (change.plannedStartDate && change.dueDate) changes.set(change.id, { start: change.plannedStartDate, end: change.dueDate })
             setDragPreview({ itemId: item.id, pointerX: pointer.clientX, pointerY: pointer.clientY, label: `${next.start} → ${next.due}`, changes })
         }
-        const move = (pointer: PointerEvent) => paint(ganttDragDayDelta(pointer.clientX - originX, dayWidth), pointer)
+        const move = (pointer: PointerEvent) => {
+            if (pointer.pointerType === "touch" && touchZoomOnlyRef.current) {
+                latestDays = 0
+                setDragPreview(null)
+                return
+            }
+            paint(ganttDragDayDelta(pointer.clientX - originX, dayWidth), pointer)
+        }
         const cleanup = () => {
             window.removeEventListener("pointermove", move)
             window.removeEventListener("pointerup", finish)
@@ -522,7 +531,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     }
 
     function updateTouchPoint(event: ReactPointerEvent<HTMLDivElement>) {
-        if (event.pointerType !== "touch") return
+        if (event.pointerType !== "touch" || !isNarrow) return
         if (event.type === "pointerdown") {
             if (pinchReleaseFrameRef.current !== null) {
                 cancelAnimationFrame(pinchReleaseFrameRef.current)
@@ -532,6 +541,30 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         }
         touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
         const points = [...touchPointsRef.current.values()]
+        if (points.length === 1 && !pinchRef.current) {
+            const node = scrollRef.current
+            if (!node) return
+            if (event.type === "pointerdown") {
+                if ((event.target as Element).closest("[data-gantt-bar]")) {
+                    touchPanRef.current = null
+                    return
+                }
+                touchPanRef.current = {
+                    pointerId: event.pointerId,
+                    x: event.clientX,
+                    y: event.clientY,
+                    scrollLeft: node.scrollLeft,
+                    scrollTop: node.scrollTop,
+                }
+                return
+            }
+            const pan = touchPanRef.current
+            if (!pan || pan.pointerId !== event.pointerId) return
+            if (event.cancelable) event.preventDefault()
+            node.scrollLeft = pan.scrollLeft - (event.clientX - pan.x)
+            node.scrollTop = pan.scrollTop - (event.clientY - pan.y)
+            return
+        }
         if (points.length !== 2) return
         const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
         const centerX = (points[0].x + points[1].x) / 2
@@ -539,6 +572,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         if (!pinchRef.current) {
             const node = scrollRef.current
             if (!node) return
+            touchPanRef.current = null
+            touchZoomOnlyRef.current = true
+            setDragPreview(null)
             const localX = Math.min(node.clientWidth, Math.max(effectiveLeftWidth, centerX - node.getBoundingClientRect().left))
             pinchRef.current = {
                 distance,
@@ -564,10 +600,15 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     }
 
     function endTouch(event: ReactPointerEvent<HTMLDivElement>) {
-        if (event.pointerType !== "touch") return
+        if (event.pointerType !== "touch" || !isNarrow) return
         if (event.cancelable) event.preventDefault()
         touchPointsRef.current.delete(event.pointerId)
-        if (touchPointsRef.current.size || !pinchRef.current) return
+        if (touchPointsRef.current.size) return
+        touchPanRef.current = null
+        if (!pinchRef.current) {
+            touchZoomOnlyRef.current = false
+            return
+        }
         const node = scrollRef.current
         const anchor = pinchRef.current
         const restoreAnchor = () => {
@@ -582,6 +623,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 restoreAnchor()
                 pinchReleaseFrameRef.current = null
                 pinchRef.current = null
+                touchZoomOnlyRef.current = false
                 setPinching(false)
             })
         })
@@ -767,11 +809,11 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         <div
             ref={scrollRef}
             className="relative overflow-auto overscroll-contain bg-neutral-950/40"
-            style={{ touchAction: pinching ? "none" : "pan-x pan-y", height: `min(clamp(20rem, calc(100vh - 20.25rem), 42rem), ${chartHeight}px)` }}
-            onPointerDown={updateTouchPoint}
-            onPointerMove={updateTouchPoint}
-            onPointerUp={endTouch}
-            onPointerCancel={endTouch}
+            style={{ touchAction: isNarrow ? "none" : (pinching ? "none" : "pan-x pan-y"), height: `min(clamp(20rem, calc(100vh - 20.25rem), 42rem), ${chartHeight}px)` }}
+            onPointerDownCapture={updateTouchPoint}
+            onPointerMoveCapture={updateTouchPoint}
+            onPointerUpCapture={endTouch}
+            onPointerCancelCapture={endTouch}
         >
             <div className="grid items-start" style={{ gridTemplateColumns: `${effectiveLeftWidth}px ${timelineWidth}px`, gridAutoRows: "max-content", minWidth: `${effectiveLeftWidth + timelineWidth}px` }}>
                 <div className={`sticky left-0 top-0 z-50 flex h-11 min-w-0 items-center overflow-hidden border-b border-neutral-700 bg-neutral-950 text-xs font-semibold text-white ${effectiveLeftWidth ? "border-r px-2" : "border-r-0 px-0"}`}>

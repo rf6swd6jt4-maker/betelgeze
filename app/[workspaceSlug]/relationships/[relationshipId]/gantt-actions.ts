@@ -56,11 +56,12 @@ export async function previewGanttScheduleChange(
     try {
         const { workspace } = await requireGantt(slug, relationshipId)
         const [itemsResult, dependenciesResult] = await Promise.all([
-            supabaseAdmin.from("work_items").select("id, title, status, lifecycle_phase, parent_work_item_id, planned_start_date, planned_start_time, due_date, due_time, actual_start_at, actual_completed_at, sort_order, updated_at").eq("workspace_id", workspace.id),
+            supabaseAdmin.from("work_items").select("id, title, status, lifecycle_phase, workflow_role, workflow_action, parent_work_item_id, planned_start_date, planned_start_time, due_date, due_time, actual_start_at, actual_completed_at, sort_order, updated_at").eq("workspace_id", workspace.id),
             supabaseAdmin.from("work_item_dependencies").select("work_item_id, depends_on_work_item_id, source").eq("workspace_id", workspace.id),
         ])
         const items: RelationshipGanttItem[] = (itemsResult.data ?? []).map((item) => ({
             id: item.id, title: item.title, status: item.status, lifecyclePhase: item.lifecycle_phase,
+            workflowRole: item.workflow_role, workflowAction: item.workflow_action,
             parentWorkItemId: item.parent_work_item_id, plannedStartDate: item.planned_start_date,
             plannedStartTime: item.planned_start_time, dueDate: item.due_date, dueTime: item.due_time,
             actualStartAt: item.actual_start_at, actualCompletedAt: item.actual_completed_at,

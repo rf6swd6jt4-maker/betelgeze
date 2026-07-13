@@ -12,6 +12,8 @@ export type RelationshipGanttItem = {
     title: string
     status: RelationshipWorkItemStatus
     lifecyclePhase: RelationshipPhase
+    workflowRole: string
+    workflowAction: string | null
     parentWorkItemId: string | null
     plannedStartDate: string | null
     plannedStartTime: string | null
@@ -52,6 +54,8 @@ type RawItem = {
     title: string
     status: RelationshipWorkItemStatus
     lifecycle_phase: RelationshipPhase
+    workflow_role: string
+    workflow_action: string | null
     parent_work_item_id: string | null
     planned_start_date: string | null
     planned_start_time: string | null
@@ -68,7 +72,7 @@ type RawDependency = { work_item_id: string; depends_on_work_item_id: string; so
 
 export async function getRelationshipGanttPlan(_workspaceSlug: string, relationship: RelationshipRecord): Promise<RelationshipGanttPlan> {
     const [itemsResult, linksResult, dependenciesResult, assigneesResult, sessionsResult] = await Promise.all([
-        supabaseAdmin.from("work_items").select("id, title, status, lifecycle_phase, parent_work_item_id, planned_start_date, planned_start_time, due_date, due_time, actual_start_at, actual_completed_at, sort_order, updated_at, native_key").eq("workspace_id", relationship.workspace_id),
+        supabaseAdmin.from("work_items").select("id, title, status, lifecycle_phase, workflow_role, workflow_action, parent_work_item_id, planned_start_date, planned_start_time, due_date, due_time, actual_start_at, actual_completed_at, sort_order, updated_at, native_key").eq("workspace_id", relationship.workspace_id),
         supabaseAdmin.from("work_item_relationships").select("work_item_id, relationship_id, link_source, inherited_from_work_item_id").eq("workspace_id", relationship.workspace_id),
         supabaseAdmin.from("work_item_dependencies").select("work_item_id, depends_on_work_item_id, source").eq("workspace_id", relationship.workspace_id),
         supabaseAdmin.from("work_item_assignees").select("work_item_id, user_id").eq("workspace_id", relationship.workspace_id),
@@ -134,6 +138,8 @@ export async function getRelationshipGanttPlan(_workspaceSlug: string, relations
         title: item.title,
         status: item.status,
         lifecyclePhase: item.lifecycle_phase,
+        workflowRole: item.workflow_role,
+        workflowAction: item.workflow_action,
         parentWorkItemId: item.parent_work_item_id,
         plannedStartDate: item.planned_start_date,
         plannedStartTime: item.planned_start_time,

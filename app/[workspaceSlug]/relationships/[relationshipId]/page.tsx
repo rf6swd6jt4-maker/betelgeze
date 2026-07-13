@@ -39,7 +39,23 @@ export default async function RelationshipDetailPage({ params }: PageProps) {
     const profilesResult = memberIds.length ? await supabaseAdmin.from("user_profiles").select("user_id, username").in("user_id", memberIds).order("username") : { data: [] }
     const members = profilesResult.data ?? []
     const selectedServices = new Map((servicesResult.data ?? []).map((service) => [service.service_key, service]))
-    const currentWork = await currentRelationshipWork({ workspaceId: workspace.id, relationshipId: relationship.id, userId: user.id, isManager: role === "owner" || role === "admin" })
+    const lookedUpCurrentWork = await currentRelationshipWork({ workspaceId: workspace.id, relationshipId: relationship.id, userId: user.id, isManager: role === "owner" || role === "admin" })
+    // The Gantt plan is the authoritative rendered view. If the compact current-work
+    // query temporarily misses a just-created link, keep the visible assigned stage actionable.
+    const fallbackCurrentWork = plan.items.find((item) => (
+        item.workflowRole === "lifecycle_stage"
+        && !["done", "canceled"].includes(item.status)
+        && item.assignees.some((assignee) => assignee.userId === user.id)
+    ))
+    const currentWork = lookedUpCurrentWork ?? (fallbackCurrentWork ? {
+        id: fallbackCurrentWork.id,
+        title: fallbackCurrentWork.title,
+        action: fallbackCurrentWork.workflowAction,
+        role: fallbackCurrentWork.workflowRole,
+        status: fallbackCurrentWork.status,
+        unassignedCount: 0,
+        blocked: false,
+    } : null)
 
     const isOnboarding = ["onboarding", "onboarding_review"].includes(relationship.lifecycle_phase)
     const isFulfilment = relationship.lifecycle_phase === "fulfilment"

@@ -85,6 +85,16 @@ function getConsentStatus(flow: SaleFlow, state: "sending" | "awaiting" | "faile
     }[state]
 }
 
+function getEquivalentSalePhoneAddresses(value: string) {
+    const addresses = new Set(getEquivalentMessageAddresses(value))
+    // Older sales store the bridge address; relationship-created sales used to
+    // store the same phone without that prefix. Treat them as the same recipient.
+    for (const address of [...addresses]) {
+        if (address.startsWith("whatsapp:")) addresses.add(address.slice("whatsapp:".length))
+    }
+    return [...addresses]
+}
+
 function asStringArray(value: unknown) {
     return Array.isArray(value)
         ? value.filter((item): item is string => typeof item === "string")
@@ -337,7 +347,7 @@ export async function handlePaidStripeInvoice(invoice: StripeInvoiceLike) {
 }
 
 async function findPendingConfirmedSale(fromAddress: string) {
-    const equivalentAddresses = getEquivalentMessageAddresses(fromAddress)
+    const equivalentAddresses = getEquivalentSalePhoneAddresses(fromAddress)
     const { data: sales } = await supabaseAdmin
         .from("client_sales")
         .select(

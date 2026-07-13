@@ -3,6 +3,7 @@ import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { SERVICES } from "@/lib/onboarding/services"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { RelationshipPhase } from "@/lib/relationship-phases"
+import { normalizeMessageAddress } from "@/lib/client-messages/addresses"
 
 type WorkflowRole = "task" | "lifecycle_stage" | "service_group" | "review" | "automation"
 type StagePhase = Exclude<RelationshipPhase, "nurturing" | "completed_lost">
@@ -386,7 +387,7 @@ export async function sendRelationshipInvoice(input: {
         relationship_id: input.relationshipId,
         client_name: relationship.business_name ?? relationship.primary_person_name,
         client_email: relationship.primary_email,
-        client_phone: relationship.whatsapp_phone,
+        client_phone: normalizeMessageAddress(relationship.whatsapp_phone),
         service_keys: lineItems.map((item) => item.serviceKey),
         line_items: lineItems,
         project_timeframe_days: relationship.project_timeframe_days,

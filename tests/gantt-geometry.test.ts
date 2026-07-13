@@ -18,6 +18,16 @@ test("zoom anchoring keeps the same timeline day under the pointer", () => {
     assert.equal((scrollLeft + localX - leftWidth) / nextDayWidth, timelineDay)
 })
 
+test("repeated mobile zoom-out steps keep the original focal day anchored", () => {
+    const timelineDay = 61.25
+    const localX = 286
+    const leftWidth = 152
+    for (const dayWidth of [56, 42, 28, 21, 14, 7]) {
+        const scrollLeft = ganttAnchoredScrollLeft({ timelineDay, dayWidth, leftWidth, localX })
+        assert.equal((scrollLeft + localX - leftWidth) / dayWidth, timelineDay)
+    }
+})
+
 test("arrowheads are hidden when the target lead-in cannot contain them", () => {
     assert.equal(ganttArrowHeadPath(103, 100, 40), null)
     assert.equal(ganttArrowHeadPath(108, 100, 40), "M 104 36 L 108 40 L 104 44")

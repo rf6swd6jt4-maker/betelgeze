@@ -1,8 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react"
-import { createPortal } from "react-dom"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
+import { createPortal, flushSync } from "react-dom"
 import { Assignee, Status, relationshipPhaseColours } from "@/components/ui"
 import { ganttSyncChannelName, postGanttSync } from "@/lib/ui/gantt-sync"
 import { ganttAnchoredScrollLeft, ganttArrowHeadPath, ganttDragDayDelta } from "@/lib/ui/gantt-geometry"
@@ -41,7 +41,8 @@ const MIN_ZOOM = .25
 const MAX_ZOOM = 6
 const BAR_INSET = 8
 const STRUCTURAL_LINE = "#737373"
-const ACTIVE_STRUCTURAL_LINE = "#e5e5e5"
+const ACTIVE_STRUCTURAL_LINE = "#c4c4c4"
+const CATEGORY_BACKGROUND = "repeating-linear-gradient(135deg, transparent 0 8px, #262626 8px 9px)"
 const SCALE_WIDTH: Record<Scale, number> = { day: 64, week: 28, month: 12 }
 
 function dateLabel(day: number, scale: Scale) {
@@ -58,6 +59,10 @@ function localDateValue(date = new Date()) {
 
 function rowHeight(row: DisplayRow) {
     return row.depth === 0 ? ROOT_ROW_HEIGHT : CHILD_ROW_HEIGHT
+}
+
+function fixedRowStyle(height: number): CSSProperties {
+    return { boxSizing: "border-box", height: `${height}px`, minHeight: `${height}px`, maxHeight: `${height}px` }
 }
 
 function flattenRows(items: RelationshipGanttItem[], collapsed: Set<string>, category: Category) {
@@ -104,7 +109,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const previousGeometryRef = useRef<{ leftWidth: number; rangeStart: number } | null>(null)
     const zoomAnchorRef = useRef<{ timelineDay: number; localX: number; scrollTop: number } | null>(null)
     const touchPointsRef = useRef(new Map<number, { x: number; y: number }>())
-    const pinchRef = useRef<{ distance: number; zoom: number; timelineDay: number; scrollTop: number } | null>(null)
+    const pinchRef = useRef<{ distance: number; zoom: number; timelineDay: number; localX: number; scrollTop: number } | null>(null)
     // The plan is held locally so edits can be painted optimistically and so
     // cross-tab changes can refresh it without a full route reload.
     const [plan, setPlan] = useState(initialPlan)
@@ -114,7 +119,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const [isNarrow, setIsNarrow] = useState(false)
     const [labelsVisible, setLabelsVisible] = useState(true)
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-    const [collapsedCategories, setCollapsedCategories] = useState<Set<Category>>(new Set())
+    const [collapsedCategories, setCollapsedCategories] = useState<Set<Category>>(() => new Set(["shared", "unscheduled"]))
     const [pinching, setPinching] = useState(false)
     const [activeItemId, setActiveItemId] = useState<string | null>(null)
     const [dragPreview, setDragPreview] = useState<DragPreview | null>(null)
@@ -187,7 +192,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     ]
     const rowTop = new Map<string, number>()
     const rowHeights = new Map<string, number>()
-    let rowCursor = HEADER_HEIGHT + ROOT_ROW_HEIGHT
+    let rowCursor = HEADER_HEIGHT + CATEGORY_ROW_HEIGHT
     for (const group of categoryRows) {
         rowCursor += CATEGORY_ROW_HEIGHT
         for (const row of group.rows) {
@@ -254,13 +259,20 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         setZoom(nextZoom)
     }, [dayWidth, effectiveLeftWidth, zoom])
 
+    const zoomAtTimelineCentre = useCallback((requestedZoom: number) => {
+        const node = scrollRef.current
+        if (!node) return
+        const timelineCentre = effectiveLeftWidth + Math.max(0, node.clientWidth - effectiveLeftWidth) / 2
+        zoomAt(node.getBoundingClientRect().left + timelineCentre, requestedZoom)
+    }, [effectiveLeftWidth, zoomAt])
+
     useEffect(() => {
         if (!isNarrow || mobileZoomInitialisedRef.current || zoom !== DEFAULT_ZOOM) return
         const node = scrollRef.current
         if (!node) return
         mobileZoomInitialisedRef.current = true
-        zoomAt(node.getBoundingClientRect().left + node.clientWidth / 2, .5)
-    }, [isNarrow, zoom, zoomAt])
+        zoomAtTimelineCentre(.5)
+    }, [isNarrow, zoom, zoomAtTimelineCentre])
 
     useEffect(() => {
         const node = scrollRef.current
@@ -511,6 +523,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
 
     function updateTouchPoint(event: ReactPointerEvent<HTMLDivElement>) {
         if (event.pointerType !== "touch") return
+        if (event.type === "pointerdown") event.currentTarget.setPointerCapture(event.pointerId)
         touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
         const points = [...touchPointsRef.current.values()]
         if (points.length !== 2) return
@@ -520,26 +533,28 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         if (!pinchRef.current) {
             const node = scrollRef.current
             if (!node) return
-            const localX = centerX - node.getBoundingClientRect().left
+            const localX = Math.min(node.clientWidth, Math.max(effectiveLeftWidth, centerX - node.getBoundingClientRect().left))
             pinchRef.current = {
                 distance,
                 zoom,
                 timelineDay: (node.scrollLeft + localX - effectiveLeftWidth) / dayWidth,
+                localX,
                 scrollTop: node.scrollTop,
             }
-            setPinching(true)
+            flushSync(() => setPinching(true))
             return
         }
         const node = scrollRef.current
         if (!node) return
         const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinchRef.current.zoom * distance / pinchRef.current.distance))
+        if (Math.abs(nextZoom - zoom) < .001) return
         zoomAnchorRef.current = {
             timelineDay: pinchRef.current.timelineDay,
-            localX: centerX - node.getBoundingClientRect().left,
+            localX: pinchRef.current.localX,
             scrollTop: pinchRef.current.scrollTop,
         }
         node.scrollTop = pinchRef.current.scrollTop
-        setZoom(nextZoom)
+        flushSync(() => setZoom(nextZoom))
     }
 
     function endTouch(event: ReactPointerEvent<HTMLDivElement>) {
@@ -585,13 +600,13 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${label}`}
                 onClick={() => toggleCategory(category)}
                 className={`sticky left-0 z-40 flex min-w-0 items-center gap-1 border-b border-neutral-800 bg-neutral-950 px-1.5 text-left text-[10px] font-semibold uppercase tracking-[.08em] text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200 disabled:opacity-40 ${effectiveLeftWidth ? "border-r border-r-neutral-700" : "border-r-0 px-0"}`}
-                style={{ height: `${CATEGORY_ROW_HEIGHT}px` }}
+                style={{ ...fixedRowStyle(CATEGORY_ROW_HEIGHT), backgroundImage: CATEGORY_BACKGROUND }}
             >
                 <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={`h-3 w-3 shrink-0 transition-transform ${isCollapsed ? "" : "rotate-90"}`}><path d="m6 3 5 5-5 5" /></svg>
                 <span className="truncate">{label}</span>
                 <span className="ml-auto text-[9px] font-normal tabular-nums text-neutral-600">{count}</span>
             </button>
-            <div aria-hidden="true" className="border-b border-neutral-800 bg-white/[0.008]" style={{ height: `${CATEGORY_ROW_HEIGHT}px` }} />
+            <div aria-hidden="true" className="border-b border-neutral-800 bg-neutral-950" style={{ ...fixedRowStyle(CATEGORY_ROW_HEIGHT), backgroundImage: CATEGORY_BACKGROUND }} />
         </div>
     }
 
@@ -604,7 +619,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const contextLabel = row.external ? "external" : row.category === "unscheduled" && row.item.section === "shared" ? "shared" : null
         return <div
             className={`sticky left-0 z-40 flex min-w-0 items-center gap-1 overflow-hidden border-b border-b-neutral-800 transition-colors ${effectiveLeftWidth ? "border-r border-r-neutral-700 px-1.5" : "border-r-0 px-0"} ${isActive ? "bg-neutral-900" : "bg-neutral-950"}`}
-            style={{ height: `${rowHeight(row)}px` }}
+            style={fixedRowStyle(rowHeight(row))}
             onMouseEnter={() => setActiveItemId(row.item.id)}
             onMouseLeave={() => setActiveItemId(null)}
         >
@@ -645,7 +660,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const isSummary = range?.derived === true
         const canResize = Boolean(canDrag && !isSummary && geometry && geometry.width >= 40)
         const handleSpace = canResize ? 10 : 0
-        const showBarLink = Boolean(geometry && geometry.width >= barHeight + handleSpace * 2 + 12)
+        const linkSize = barHeight - 2
+        const showBarLink = Boolean(geometry && geometry.width >= linkSize + handleSpace * 2 + 12)
         const showAssignee = Boolean(geometry && geometry.width >= 92)
         const isActive = activeItemId === item.id
         const overdue = Boolean(range && dateDay(range.end) < dateDay(today) && !["done", "canceled"].includes(item.status))
@@ -653,14 +669,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const derived = Boolean(range?.derived)
         return <div
             className={`relative border-b border-neutral-800 transition-colors ${isActive ? "bg-white/[0.025]" : ""}`}
-            style={{ height: `${height}px` }}
+            style={fixedRowStyle(height)}
             onMouseEnter={() => setActiveItemId(item.id)}
             onMouseLeave={() => setActiveItemId(null)}
         >
             {range && geometry ? <div
                 data-gantt-bar
                 className={`absolute z-20 flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[border-color,box-shadow,opacity] ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? barHeight : 0) + handleSpace + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: barBorder, backgroundColor: colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : isActive ? `0 0 0 1px ${barBorder}` : undefined }}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize : 0) + handleSpace + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: barBorder, backgroundColor: colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : isActive ? `0 0 0 1px ${barBorder}` : undefined }}
                 onPointerDown={(event) => startBarDrag(event, item, range, "move")}
                 onFocus={() => setActiveItemId(item.id)}
                 onBlur={() => setActiveItemId(null)}
@@ -671,7 +687,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 {statusLabel ? <Status label={statusLabel} tone={item.status === "done" ? "green" : item.status === "canceled" ? "grey" : "red"} compact className="relative shrink-0" /> : null}
                 {showAssignee && item.assignees[0] ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact compactSize={row.depth === 0 ? "md" : "sm"} />{item.assignees.length > 1 ? <span className={`shrink-0 font-medium ${row.depth === 0 ? "text-xs" : "text-[9px]"}`}>+{item.assignees.length - 1}</span> : null}</div> : null}
                 <span className={`relative min-w-0 flex-1 truncate leading-none ${row.depth === 0 ? "text-sm font-semibold" : "text-[11px] font-normal"}`}>{item.title}</span>
-                {showBarLink ? <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="absolute inset-y-0 z-10 flex items-center justify-center border-l" style={{ right: `${handleSpace}px`, width: `${barHeight}px`, borderColor: barBorder, color: barBorder }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[22px] w-[22px]" : "h-[18px] w-[18px]"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link> : null}
+                {showBarLink ? <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="absolute top-1/2 z-10 flex -translate-y-1/2 items-center justify-center border-x" style={{ right: `${handleSpace}px`, width: `${linkSize}px`, height: `${linkSize}px`, borderColor: barBorder, backgroundColor: colours.background, color: barBorder }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[18px] w-[18px]" : "h-3.5 w-3.5"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link> : null}
                 {canResize ? <button type="button" aria-label={`Resize end of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "end")} className="absolute inset-y-0 right-0 z-20 flex w-5 cursor-ew-resize items-stretch justify-end rounded-r-md"><span aria-hidden="true" className="w-1.5" style={{ backgroundColor: barBorder }} /></button> : null}
             </div> : null}
         </div>
@@ -710,8 +726,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             </div>
             <div className="flex shrink-0 items-center gap-1">
                 <div className="flex items-center rounded-md border border-neutral-700 bg-neutral-900 p-0.5">
-                    <button type="button" disabled={dragging || zoom <= MIN_ZOOM} onClick={() => zoomAt((scrollRef.current?.getBoundingClientRect().left ?? 0) + (scrollRef.current?.clientWidth ?? 0) / 2, zoom - (zoom > 1 ? .5 : .25))} aria-label="Zoom out" title="Zoom out" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="minus" /></button>
-                    <button type="button" disabled={dragging || zoom >= MAX_ZOOM} onClick={() => zoomAt((scrollRef.current?.getBoundingClientRect().left ?? 0) + (scrollRef.current?.clientWidth ?? 0) / 2, zoom + (zoom >= 1 ? .5 : .25))} aria-label="Zoom in" title="Zoom in" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="plus" /></button>
+                    <button type="button" disabled={dragging || zoom <= MIN_ZOOM} onClick={() => zoomAtTimelineCentre(zoom - (zoom > 1 ? .5 : .25))} aria-label="Zoom out" title="Zoom out" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="minus" /></button>
+                    <button type="button" disabled={dragging || zoom >= MAX_ZOOM} onClick={() => zoomAtTimelineCentre(zoom + (zoom >= 1 ? .5 : .25))} aria-label="Zoom in" title="Zoom in" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="plus" /></button>
                 </div>
                 <div className="flex items-center rounded-md border border-neutral-700 bg-neutral-900 p-0.5">
                     {([['day', 'd'], ['week', 'w'], ['month', 'mo']] as const).map(([value, label]) => <button
@@ -729,14 +745,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         </div>
         <div
             ref={scrollRef}
-            className="relative overflow-auto overscroll-contain"
+            className="relative overflow-auto overscroll-contain bg-neutral-950/40"
             style={{ touchAction: pinching ? "none" : "pan-x pan-y", height: "clamp(20rem, calc(100vh - 20.25rem), 42rem)" }}
             onPointerDown={updateTouchPoint}
             onPointerMove={updateTouchPoint}
             onPointerUp={endTouch}
             onPointerCancel={endTouch}
         >
-            <div className="grid" style={{ gridTemplateColumns: `${effectiveLeftWidth}px ${timelineWidth}px`, minWidth: `${effectiveLeftWidth + timelineWidth}px` }}>
+            <div className="grid items-start" style={{ gridTemplateColumns: `${effectiveLeftWidth}px ${timelineWidth}px`, gridAutoRows: "max-content", minWidth: `${effectiveLeftWidth + timelineWidth}px` }}>
                 <div className={`sticky left-0 top-0 z-50 flex h-11 min-w-0 items-center overflow-hidden border-b border-neutral-700 bg-neutral-950 text-xs font-semibold text-white ${effectiveLeftWidth ? "border-r px-2" : "border-r-0 px-0"}`}>
                     <span className="truncate">Plan</span>
                     {!isNarrow ? <button type="button" aria-label="Resize timeline label column" title="Drag to resize" onPointerDown={startDividerDrag} className="group absolute -right-1.5 inset-y-0 hidden w-3 cursor-col-resize touch-none lg:block"><span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-neutral-400" /></button> : null}
@@ -745,19 +761,19 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                     {headerLabels.map((label) => <span key={label.day} className="absolute top-0 flex h-full items-center border-l border-neutral-800 px-1 text-[10px] text-neutral-500" style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
                     <span className="absolute inset-y-0 z-10 w-px bg-red-400/60" style={{ left: `${todayLeft}px` }} />
                 </div>
-                <div className={`sticky left-0 z-40 flex min-w-0 items-center overflow-hidden border-b border-b-neutral-800 bg-neutral-950 text-[10px] font-semibold uppercase tracking-[.08em] text-neutral-400 ${effectiveLeftWidth ? "border-r border-r-neutral-700 px-2" : "border-r-0 px-0"}`} style={{ height: `${ROOT_ROW_HEIGHT}px` }}>{effectiveLeftWidth ? "Milestones" : null}</div><div className="relative border-b border-neutral-800" style={{ height: `${ROOT_ROW_HEIGHT}px` }}>{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-2.5 w-2.5 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded hover:bg-emerald-400/10 focus:outline-none focus:ring-1 focus:ring-emerald-400" style={{ left, top: `${(ROOT_ROW_HEIGHT - 28) / 2}px` }}>{marker}</a> : <span key={milestone.id} role="img" aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center" style={{ left, top: `${(ROOT_ROW_HEIGHT - 28) / 2}px` }}>{marker}</span> })}</div>
+                <div className={`sticky left-0 z-40 flex min-w-0 items-center overflow-hidden border-b border-b-neutral-800 bg-neutral-950 text-[10px] font-semibold uppercase tracking-[.08em] text-neutral-400 ${effectiveLeftWidth ? "border-r border-r-neutral-700 px-2" : "border-r-0 px-0"}`} style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{effectiveLeftWidth ? "Milestones" : null}</div><div className="relative border-b border-neutral-800" style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const marker = <span className="block h-2.5 w-2.5 rotate-45 border border-emerald-400 bg-emerald-950" />; return milestone.href ? <a key={milestone.id} href={milestone.href} aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded hover:bg-emerald-400/10 focus:outline-none focus:ring-1 focus:ring-emerald-400" style={{ left, top: 0 }}>{marker}</a> : <span key={milestone.id} role="img" aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center" style={{ left, top: 0 }}>{marker}</span> })}</div>
                 {renderCategory("scheduled", "Scheduled", scheduledItems.length)}
                 {scheduledRows.map((row) => <div className="contents" key={`scheduled-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
                 {renderCategory("shared", "Shared", sharedItems.length + plan.externalItems.filter((item) => committedRanges.has(item.id)).length)}
                 {[...sharedRows, ...scheduledExternalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
                 {renderCategory("unscheduled", "Unscheduled", unscheduledItems.length + plan.externalItems.filter((item) => !committedRanges.has(item.id)).length)}
                 {[...unscheduledRows, ...unscheduledExternalRows].map((row) => <div className="contents" key={`unscheduled-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
-                {fillerHeight ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 border-r border-neutral-700 bg-neutral-950" style={{ height: `${fillerHeight}px` }} /><div aria-hidden="true" style={{ height: `${fillerHeight}px` }} /></div> : null}
+                {fillerHeight ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 border-r border-neutral-700 bg-neutral-950" style={fixedRowStyle(fillerHeight)} /><div aria-hidden="true" className="bg-neutral-950/40" style={fixedRowStyle(fillerHeight)} /></div> : null}
             </div>
             {weekendDays.map((day) => <div aria-hidden="true" key={`weekend-${day}`} className="pointer-events-none absolute z-0 bg-white/[0.012]" style={{ left: `${effectiveLeftWidth + timelineX(day)}px`, top: `${HEADER_HEIGHT}px`, width: `${dayWidth}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             {headerLabels.map((label) => <div aria-hidden="true" key={`column-${label.day}`} className="pointer-events-none absolute z-10 w-px bg-neutral-800" style={{ left: `${effectiveLeftWidth + label.left}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${effectiveLeftWidth + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />
-            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${effectiveLeftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path, arrow }) => { const active = activeItemId === edge.workItemId || activeItemId === edge.dependsOnWorkItemId; return <g key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} fill="none" stroke={active ? ACTIVE_STRUCTURAL_LINE : STRUCTURAL_LINE} strokeWidth={active ? "2.25" : "1.5"} strokeDasharray={edge.external ? "4 3" : undefined} strokeLinejoin="miter" strokeLinecap="square" opacity={activeItemId && !active ? .3 : 1}><path d={path} />{arrow ? <path d={arrow} /> : null}</g> })}</svg>
+            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${effectiveLeftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path, arrow }) => { const active = activeItemId === edge.workItemId || activeItemId === edge.dependsOnWorkItemId; return <g key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} fill="none" stroke={active ? ACTIVE_STRUCTURAL_LINE : STRUCTURAL_LINE} strokeWidth={active ? "2" : "1.5"} strokeDasharray={edge.external ? "4 3" : undefined} strokeLinejoin="miter" strokeLinecap="square" opacity={activeItemId && !active ? .3 : 1}><path d={path} />{arrow ? <path d={arrow} /> : null}</g> })}</svg>
             {dragPreview ? <div aria-live="polite" className="pointer-events-none fixed z-[80] -translate-y-full rounded-md border border-neutral-600 bg-neutral-950 px-2 py-1 font-mono text-[10px] text-neutral-200 shadow-xl" style={{ left: `${Math.min(dragPreview.pointerX + 10, (typeof window !== "undefined" ? window.innerWidth : dragPreview.pointerX + 200) - 160)}px`, top: `${dragPreview.pointerY - 8}px` }}>{dragPreview.label}</div> : null}
         </div>
         <MutationError result={result} />

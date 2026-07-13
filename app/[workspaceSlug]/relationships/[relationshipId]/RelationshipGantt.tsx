@@ -32,7 +32,6 @@ const ROOT_BAR_HEIGHT = 32
 const CHILD_BAR_HEIGHT = 24
 const HEADER_HEIGHT = 44
 const CATEGORY_ROW_HEIGHT = 28
-const MIN_CHART_HEIGHT = 412
 const MIN_LEFT_WIDTH = 220
 const DEFAULT_LEFT_WIDTH = 260
 const MAX_LEFT_WIDTH = 360
@@ -42,7 +41,7 @@ const MAX_ZOOM = 6
 const BAR_INSET = 8
 const STRUCTURAL_LINE = "#737373"
 const ACTIVE_STRUCTURAL_LINE = "#c4c4c4"
-const CATEGORY_BACKGROUND = "repeating-linear-gradient(135deg, transparent 0 8px, #262626 8px 9px)"
+const CATEGORY_BACKGROUND = "repeating-linear-gradient(135deg, transparent 0 14px, #262626 14px 15px)"
 const SCALE_WIDTH: Record<Scale, number> = { day: 64, week: 28, month: 12 }
 
 function dateLabel(day: number, scale: Scale) {
@@ -110,6 +109,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const zoomAnchorRef = useRef<{ timelineDay: number; localX: number; scrollTop: number } | null>(null)
     const touchPointsRef = useRef(new Map<number, { x: number; y: number }>())
     const pinchRef = useRef<{ distance: number; zoom: number; timelineDay: number; localX: number; scrollTop: number } | null>(null)
+    const pinchReleaseFrameRef = useRef<number | null>(null)
     // The plan is held locally so edits can be painted optimistically and so
     // cross-tab changes can refresh it without a full route reload.
     const [plan, setPlan] = useState(initialPlan)
@@ -203,8 +203,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         }
     }
     const contentHeight = rowCursor
-    const chartHeight = Math.max(MIN_CHART_HEIGHT, contentHeight)
-    const fillerHeight = chartHeight - contentHeight
+    const chartHeight = contentHeight
 
     const headerLabels = useMemo(() => {
         return Array.from({ length: rangeDays }, (_, index) => ({ day: rangeStart + index, left: index * dayWidth }))
@@ -289,6 +288,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
 
     useEffect(() => () => {
         if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
+        if (pinchReleaseFrameRef.current !== null) cancelAnimationFrame(pinchReleaseFrameRef.current)
     }, [])
 
     const reload = useCallback(async () => {
@@ -523,7 +523,13 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
 
     function updateTouchPoint(event: ReactPointerEvent<HTMLDivElement>) {
         if (event.pointerType !== "touch") return
-        if (event.type === "pointerdown") event.currentTarget.setPointerCapture(event.pointerId)
+        if (event.type === "pointerdown") {
+            if (pinchReleaseFrameRef.current !== null) {
+                cancelAnimationFrame(pinchReleaseFrameRef.current)
+                pinchReleaseFrameRef.current = null
+            }
+            event.currentTarget.setPointerCapture(event.pointerId)
+        }
         touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
         const points = [...touchPointsRef.current.values()]
         if (points.length !== 2) return
@@ -559,11 +565,26 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
 
     function endTouch(event: ReactPointerEvent<HTMLDivElement>) {
         if (event.pointerType !== "touch") return
+        if (event.cancelable) event.preventDefault()
         touchPointsRef.current.delete(event.pointerId)
-        if (touchPointsRef.current.size < 2) {
-            pinchRef.current = null
-            setPinching(false)
+        if (touchPointsRef.current.size || !pinchRef.current) return
+        const node = scrollRef.current
+        const anchor = pinchRef.current
+        const restoreAnchor = () => {
+            if (!node) return
+            node.scrollLeft = ganttAnchoredScrollLeft({ timelineDay: anchor.timelineDay, dayWidth, leftWidth: effectiveLeftWidth, localX: anchor.localX })
+            node.scrollTop = anchor.scrollTop
         }
+        restoreAnchor()
+        pinchReleaseFrameRef.current = requestAnimationFrame(() => {
+            restoreAnchor()
+            pinchReleaseFrameRef.current = requestAnimationFrame(() => {
+                restoreAnchor()
+                pinchReleaseFrameRef.current = null
+                pinchRef.current = null
+                setPinching(false)
+            })
+        })
     }
 
     function startDividerDrag(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -600,7 +621,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${label}`}
                 onClick={() => toggleCategory(category)}
                 className={`sticky left-0 z-40 flex min-w-0 items-center gap-1 border-b border-neutral-800 bg-neutral-950 px-1.5 text-left text-[10px] font-semibold uppercase tracking-[.08em] text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200 disabled:opacity-40 ${effectiveLeftWidth ? "border-r border-r-neutral-700" : "border-r-0 px-0"}`}
-                style={{ ...fixedRowStyle(CATEGORY_ROW_HEIGHT), backgroundImage: CATEGORY_BACKGROUND }}
+                style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}
             >
                 <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={`h-3 w-3 shrink-0 transition-transform ${isCollapsed ? "" : "rotate-90"}`}><path d="m6 3 5 5-5 5" /></svg>
                 <span className="truncate">{label}</span>
@@ -676,7 +697,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             {range && geometry ? <div
                 data-gantt-bar
                 className={`absolute z-20 flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[border-color,box-shadow,opacity] ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize : 0) + handleSpace + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: barBorder, backgroundColor: colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : isActive ? `0 0 0 1px ${barBorder}` : undefined }}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: barBorder, backgroundColor: colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : isActive ? `0 0 0 1px ${barBorder}` : undefined }}
                 onPointerDown={(event) => startBarDrag(event, item, range, "move")}
                 onFocus={() => setActiveItemId(item.id)}
                 onBlur={() => setActiveItemId(null)}
@@ -687,8 +708,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 {statusLabel ? <Status label={statusLabel} tone={item.status === "done" ? "green" : item.status === "canceled" ? "grey" : "red"} compact className="relative shrink-0" /> : null}
                 {showAssignee && item.assignees[0] ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact compactSize={row.depth === 0 ? "md" : "sm"} />{item.assignees.length > 1 ? <span className={`shrink-0 font-medium ${row.depth === 0 ? "text-xs" : "text-[9px]"}`}>+{item.assignees.length - 1}</span> : null}</div> : null}
                 <span className={`relative min-w-0 flex-1 truncate leading-none ${row.depth === 0 ? "text-sm font-semibold" : "text-[11px] font-normal"}`}>{item.title}</span>
-                {showBarLink ? <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="absolute top-1/2 z-10 flex -translate-y-1/2 items-center justify-center border-x" style={{ right: `${handleSpace}px`, width: `${linkSize}px`, height: `${linkSize}px`, borderColor: barBorder, backgroundColor: colours.background, color: barBorder }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[18px] w-[18px]" : "h-3.5 w-3.5"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link> : null}
-                {canResize ? <button type="button" aria-label={`Resize end of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "end")} className="absolute inset-y-0 right-0 z-20 flex w-5 cursor-ew-resize items-stretch justify-end rounded-r-md"><span aria-hidden="true" className="w-1.5" style={{ backgroundColor: barBorder }} /></button> : null}
+                {showBarLink ? <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="absolute right-0 top-1/2 z-10 flex -translate-y-1/2 items-center justify-center border-l" style={{ width: `${linkSize}px`, height: `${linkSize}px`, borderColor: barBorder, borderLeftStyle: row.depth > 0 ? "dashed" : "solid", backgroundColor: colours.background, color: barBorder }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[18px] w-[18px]" : "h-3.5 w-3.5"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link> : null}
+                {canResize ? <button type="button" aria-label={`Resize end of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "end")} className="absolute inset-y-0 right-0 z-20 flex w-2 cursor-ew-resize items-stretch justify-end rounded-r-md"><span aria-hidden="true" className="w-1" style={{ backgroundColor: barBorder }} /></button> : null}
             </div> : null}
         </div>
     }
@@ -746,7 +767,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         <div
             ref={scrollRef}
             className="relative overflow-auto overscroll-contain bg-neutral-950/40"
-            style={{ touchAction: pinching ? "none" : "pan-x pan-y", height: "clamp(20rem, calc(100vh - 20.25rem), 42rem)" }}
+            style={{ touchAction: pinching ? "none" : "pan-x pan-y", height: `min(clamp(20rem, calc(100vh - 20.25rem), 42rem), ${chartHeight}px)` }}
             onPointerDown={updateTouchPoint}
             onPointerMove={updateTouchPoint}
             onPointerUp={endTouch}
@@ -768,7 +789,6 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 {[...sharedRows, ...scheduledExternalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
                 {renderCategory("unscheduled", "Unscheduled", unscheduledItems.length + plan.externalItems.filter((item) => !committedRanges.has(item.id)).length)}
                 {[...unscheduledRows, ...unscheduledExternalRows].map((row) => <div className="contents" key={`unscheduled-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
-                {fillerHeight ? <div className="contents"><div aria-hidden="true" className="sticky left-0 z-40 border-r border-neutral-700 bg-neutral-950" style={fixedRowStyle(fillerHeight)} /><div aria-hidden="true" className="bg-neutral-950/40" style={fixedRowStyle(fillerHeight)} /></div> : null}
             </div>
             {weekendDays.map((day) => <div aria-hidden="true" key={`weekend-${day}`} className="pointer-events-none absolute z-0 bg-white/[0.012]" style={{ left: `${effectiveLeftWidth + timelineX(day)}px`, top: `${HEADER_HEIGHT}px`, width: `${dayWidth}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             {headerLabels.map((label) => <div aria-hidden="true" key={`column-${label.day}`} className="pointer-events-none absolute z-10 w-px bg-neutral-800" style={{ left: `${effectiveLeftWidth + label.left}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}

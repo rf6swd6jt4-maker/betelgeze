@@ -39,8 +39,8 @@ const DEFAULT_ZOOM = 2
 const MIN_ZOOM = .25
 const MAX_ZOOM = 6
 const BAR_INSET = 8
-const STRUCTURAL_LINE = "#737373"
-const ACTIVE_STRUCTURAL_LINE = "#c4c4c4"
+const STRUCTURAL_LINE = "#858585"
+const ACTIVE_STRUCTURAL_LINE = "#b8b8b8"
 const CATEGORY_BACKGROUND = "repeating-linear-gradient(135deg, transparent 0 14px, #262626 14px 15px)"
 const SCALE_WIDTH: Record<Scale, number> = { day: 64, week: 28, month: 12 }
 
@@ -681,7 +681,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const isSummary = range?.derived === true
         const canResize = Boolean(canDrag && !isSummary && geometry && geometry.width >= 40)
         const handleSpace = canResize ? 10 : 0
-        const linkSize = barHeight - 2
+        const linkSize = barHeight
         const showBarLink = Boolean(geometry && geometry.width >= linkSize + handleSpace * 2 + 12)
         const showAssignee = Boolean(geometry && geometry.width >= 92)
         const isActive = activeItemId === item.id
@@ -696,8 +696,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         >
             {range && geometry ? <div
                 data-gantt-bar
-                className={`absolute z-20 flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[border-color,box-shadow,opacity] ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: barBorder, backgroundColor: colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : isActive ? `0 0 0 1px ${barBorder}` : undefined }}
+                className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: barBorder, backgroundColor: colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: isActive ? "scale(1.01)" : undefined, transformOrigin: "center" }}
                 onPointerDown={(event) => startBarDrag(event, item, range, "move")}
                 onFocus={() => setActiveItemId(item.id)}
                 onBlur={() => setActiveItemId(null)}
@@ -708,7 +708,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 {statusLabel ? <Status label={statusLabel} tone={item.status === "done" ? "green" : item.status === "canceled" ? "grey" : "red"} compact className="relative shrink-0" /> : null}
                 {showAssignee && item.assignees[0] ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact compactSize={row.depth === 0 ? "md" : "sm"} />{item.assignees.length > 1 ? <span className={`shrink-0 font-medium ${row.depth === 0 ? "text-xs" : "text-[9px]"}`}>+{item.assignees.length - 1}</span> : null}</div> : null}
                 <span className={`relative min-w-0 flex-1 truncate leading-none ${row.depth === 0 ? "text-sm font-semibold" : "text-[11px] font-normal"}`}>{item.title}</span>
-                {showBarLink ? <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="absolute right-0 top-1/2 z-10 flex -translate-y-1/2 items-center justify-center border-l" style={{ width: `${linkSize}px`, height: `${linkSize}px`, borderColor: barBorder, borderLeftStyle: row.depth > 0 ? "dashed" : "solid", backgroundColor: colours.background, color: barBorder }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[18px] w-[18px]" : "h-3.5 w-3.5"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link> : null}
+                {showBarLink ? <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="absolute inset-y-0 right-0 z-10 flex items-center justify-center border-l" style={{ width: `${linkSize}px`, borderColor: barBorder, borderLeftStyle: row.depth > 0 ? "dashed" : "solid", backgroundColor: colours.background, color: barBorder }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[18px] w-[18px]" : "h-3.5 w-3.5"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link> : null}
                 {canResize ? <button type="button" aria-label={`Resize end of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "end")} className="absolute inset-y-0 right-0 z-20 flex w-2 cursor-ew-resize items-stretch justify-end rounded-r-md"><span aria-hidden="true" className="w-1" style={{ backgroundColor: barBorder }} /></button> : null}
             </div> : null}
         </div>
@@ -793,7 +793,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             {weekendDays.map((day) => <div aria-hidden="true" key={`weekend-${day}`} className="pointer-events-none absolute z-0 bg-white/[0.012]" style={{ left: `${effectiveLeftWidth + timelineX(day)}px`, top: `${HEADER_HEIGHT}px`, width: `${dayWidth}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             {headerLabels.map((label) => <div aria-hidden="true" key={`column-${label.day}`} className="pointer-events-none absolute z-10 w-px bg-neutral-800" style={{ left: `${effectiveLeftWidth + label.left}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${effectiveLeftWidth + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />
-            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${effectiveLeftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path, arrow }) => { const active = activeItemId === edge.workItemId || activeItemId === edge.dependsOnWorkItemId; return <g key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} fill="none" stroke={active ? ACTIVE_STRUCTURAL_LINE : STRUCTURAL_LINE} strokeWidth={active ? "2" : "1.5"} strokeDasharray={edge.external ? "4 3" : undefined} strokeLinejoin="miter" strokeLinecap="square" opacity={activeItemId && !active ? .3 : 1}><path d={path} />{arrow ? <path d={arrow} /> : null}</g> })}</svg>
+            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${effectiveLeftWidth}px` }} width={timelineWidth} height={chartHeight}>{dependencyPaths.map(({ edge, path, arrow }) => { const active = activeItemId === edge.workItemId || activeItemId === edge.dependsOnWorkItemId; return <g key={`${edge.workItemId}-${edge.dependsOnWorkItemId}`} fill="none" stroke={active ? ACTIVE_STRUCTURAL_LINE : STRUCTURAL_LINE} strokeWidth={active ? "2" : "1.5"} strokeDasharray={edge.external ? "4 3" : undefined} strokeLinejoin="miter" strokeLinecap="square"><path d={path} />{arrow ? <path d={arrow} /> : null}</g> })}</svg>
             {dragPreview ? <div aria-live="polite" className="pointer-events-none fixed z-[80] -translate-y-full rounded-md border border-neutral-600 bg-neutral-950 px-2 py-1 font-mono text-[10px] text-neutral-200 shadow-xl" style={{ left: `${Math.min(dragPreview.pointerX + 10, (typeof window !== "undefined" ? window.innerWidth : dragPreview.pointerX + 200) - 160)}px`, top: `${dragPreview.pointerY - 8}px` }}>{dragPreview.label}</div> : null}
         </div>
         <MutationError result={result} />

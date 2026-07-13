@@ -70,8 +70,8 @@ function compareWorkItems(left: RelationshipGanttItem, right: RelationshipGanttI
     const leftStart = left.plannedStartDate ?? "9999-12-31"
     const rightStart = right.plannedStartDate ?? "9999-12-31"
     if (leftStart !== rightStart) return leftStart.localeCompare(rightStart)
-    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder
     if (left.createdAt !== right.createdAt) return left.createdAt.localeCompare(right.createdAt)
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder
     return left.title.localeCompare(right.title)
 }
 

@@ -152,7 +152,8 @@ export function OnboardingForm({
             setUploadLabel("Saving your answers...")
             setSaving(true)
 
-            await submitPreparedFormStep(token, stepKey, form.key, response)
+            const outcome = await submitPreparedFormStep(token, stepKey, form.key, response)
+            if (!outcome.ok) throw new Error(outcome.error)
             setUploadLabel(null)
             setUploadProgress(0)
             setSaving(false)

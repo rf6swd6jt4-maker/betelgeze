@@ -76,7 +76,7 @@ export default async function CanonicalSessionPage({ params, searchParams }: Pag
                         }
                         skipAction={async () => {
                             "use server"
-                            await skipTestStep(token, currentStep.key, currentStep.formKey)
+                            return skipTestStep(token, currentStep.key, currentStep.formKey)
                         }}
                     />
                 ) : null

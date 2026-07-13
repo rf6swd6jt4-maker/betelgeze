@@ -1,6 +1,5 @@
 "use server"
 
-import { redirect } from "next/navigation"
 import { getOnboardingForm, OnboardingFormDefinition, FormResponse } from "@/lib/onboarding/forms"
 import {
     completeCanonicalStep,
@@ -60,9 +59,17 @@ export async function submitPreparedFormStep(
     formKey: string,
     response: FormResponse
 ) {
-    const form = getOnboardingForm(formKey)
-    if (!form) throw new Error("Unknown onboarding form")
-    await submitCanonicalFormStep(token, stepKey, form, response)
+    try {
+        const form = getOnboardingForm(formKey)
+        if (!form) throw new Error("Unknown onboarding form")
+        await submitCanonicalFormStep(token, stepKey, form, response)
+        return { ok: true as const }
+    } catch (error) {
+        return {
+            ok: false as const,
+            error: error instanceof Error ? error.message : "Could not save this onboarding step.",
+        }
+    }
 }
 
 export async function skipTestStep(
@@ -70,17 +77,24 @@ export async function skipTestStep(
     stepKey: string,
     formKey?: string
 ) {
-    const { session } = await getPublicSession(token)
-    if (!session.is_test) throw new Error("Invalid test onboarding session")
+    try {
+        const { session } = await getPublicSession(token)
+        if (!session.is_test) throw new Error("Invalid test onboarding session")
 
-    if (formKey) {
-        const form = getOnboardingForm(formKey)
-        if (form) {
-            await submitCanonicalFormStep(token, stepKey, form, createFillerResponse(form))
-            redirect(await getPublicOnboardingPath(token))
+        if (formKey) {
+            const form = getOnboardingForm(formKey)
+            if (form) {
+                await submitCanonicalFormStep(token, stepKey, form, createFillerResponse(form))
+                return { ok: true as const, nextPath: await getPublicOnboardingPath(token) }
+            }
+        }
+
+        await completeCanonicalStep(token, stepKey)
+        return { ok: true as const, nextPath: await getPublicOnboardingPath(token) }
+    } catch (error) {
+        return {
+            ok: false as const,
+            error: error instanceof Error ? error.message : "Could not skip this test step.",
         }
     }
-
-    await completeCanonicalStep(token, stepKey)
-    redirect(await getPublicOnboardingPath(token))
 }

@@ -7,6 +7,7 @@ import {
     sendMetaWhatsAppTemplate,
 } from "@/lib/client-messages/meta-whatsapp"
 import { isConsentConfirmationText } from "@/lib/client-sales/consent"
+import { completePaymentStage } from "@/lib/relationship-workflow"
 
 type ClientSale = {
     id: string
@@ -273,7 +274,7 @@ export async function handlePaidStripeInvoice(invoice: StripeInvoiceLike) {
             ? invoice.metadata.client_sale_id
             : null
 
-    let query = supabaseAdmin.from("client_sales").select("id, status").limit(1)
+    let query = supabaseAdmin.from("client_sales").select("id, status, workspace_id, relationship_id").limit(1)
 
     if (saleId) {
         query = query.eq("id", saleId)
@@ -326,6 +327,10 @@ export async function handlePaidStripeInvoice(invoice: StripeInvoiceLike) {
 
     if (!claimedPaidSale) {
         return { ok: true, skipped: true }
+    }
+
+    if (sale.relationship_id) {
+        await completePaymentStage({ workspaceId: sale.workspace_id, relationshipId: sale.relationship_id })
     }
 
     return sendSaleConsentTemplate(sale.id)

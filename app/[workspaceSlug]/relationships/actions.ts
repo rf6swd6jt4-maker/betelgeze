@@ -13,7 +13,7 @@ import {
 } from "@/lib/relationships"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
-import { completeWorkflowParents, ensureSalesStage, sendRelationshipInvoice } from "@/lib/relationship-workflow"
+import { advanceRelationshipWorkflow, ensureRelationshipStage, ensureSalesStage, sendRelationshipInvoice } from "@/lib/relationship-workflow"
 
 const creatablePhases = new Set<RelationshipPhase>([
     "lead",
@@ -76,6 +76,7 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
             primary_person_name: primaryPersonName,
             primary_email: nullableFormString(formData, "primary_email"),
             primary_phone: nullableFormString(formData, "primary_phone"),
+            whatsapp_phone: nullableFormString(formData, "whatsapp_phone"),
             business_name: businessName,
             website_url: nullableFormString(formData, "website_url"),
             industry_value: nullableFormString(formData, "industry_value"),
@@ -88,6 +89,7 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
             source_metadata: {
                 created_from: "manual_relationship_form",
                 created_by: user.id,
+                is_test: formData.get("is_test") === "on",
             },
         })
         .select("id")
@@ -112,11 +114,10 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
             createOnboardingWork: false,
             activitySource: "Relationship manual creation",
             createdBy: user.id,
+            isTest: formData.get("is_test") === "on",
         })
-    }
-
-    if (phase === "potential_client") {
-        await ensureSalesStage({ workspaceId: workspace.id, relationshipId: relationship.id, sellerId: user.id })
+    } else if (!["nurturing", "completed_lost"].includes(phase)) {
+        await ensureRelationshipStage({ workspaceId: workspace.id, relationshipId: relationship.id, phase: phase as Exclude<RelationshipPhase, "nurturing" | "completed_lost">, assigneeId: user.id })
     }
 
     relationshipRevalidatePaths(slug, relationship.id)
@@ -134,12 +135,14 @@ export async function saveRelationshipCommercialDetails(slug: string, relationsh
     const serviceKeys = [...new Set(formData.getAll("service_key").map(String).filter(Boolean))]
     const sellerId = nullableFormString(formData, "seller_user_id")
     const managerId = nullableFormString(formData, "fulfilment_manager_user_id")
+    const whatsappPhone = nullableFormString(formData, "whatsapp_phone")
     const timeframe = Number(formData.get("project_timeframe_days") ?? 0)
     const { data: relationship, error: relationshipError } = await supabaseAdmin.from("relationships").select("lifecycle_phase").eq("workspace_id", workspace.id).eq("id", relationshipId).maybeSingle()
     if (relationshipError || !relationship) throw new Error(relationshipError?.message ?? "Relationship not found")
     const { error } = await supabaseAdmin.from("relationships").update({
         seller_user_id: sellerId,
         fulfilment_manager_user_id: managerId,
+        whatsapp_phone: whatsappPhone,
         project_timeframe_days: Number.isFinite(timeframe) && timeframe > 0 ? Math.round(timeframe) : null,
         updated_at: new Date().toISOString(),
     }).eq("workspace_id", workspace.id).eq("id", relationshipId)
@@ -176,12 +179,10 @@ export async function proceedRelationshipCurrentWork(slug: string, relationshipI
         if (!assignment) throw new Error("This work item is not assigned to you")
     }
     if (item.workflow_action === "send_invoice") {
-        await sendRelationshipInvoice({ workspaceId: workspace.id, relationshipId, workItemId, actorId: user.id })
+        await sendRelationshipInvoice({ workspaceId: workspace.id, workspaceSlug: workspace.slug, relationshipId, workItemId, actorId: user.id })
     } else {
-        const { error } = await supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() })
-            .eq("workspace_id", workspace.id).eq("id", workItemId)
-        if (error) throw new Error(error.message)
-        await completeWorkflowParents({ workspaceId: workspace.id, relationshipId, workItemId })
+        if (item.workflow_action === "await_payment" || item.workflow_action === "await_onboarding") throw new Error("This stage advances automatically when the external step completes")
+        await advanceRelationshipWorkflow({ workspaceId: workspace.id, relationshipId, workItemId, action: item.workflow_action, actorId: user.id })
     }
     relationshipRevalidatePaths(slug, relationshipId)
 }
@@ -190,7 +191,7 @@ export async function startRelationshipOnboarding(slug: string, relationshipId: 
     const { workspace, user } = await requireWorkspace(slug, "admin")
     const { data: relationship } = await supabaseAdmin
         .from("relationships")
-        .select("id, primary_person_name, primary_email, primary_phone, business_name")
+        .select("id, primary_person_name, primary_email, primary_phone, business_name, source_metadata")
         .eq("workspace_id", workspace.id)
         .eq("id", relationshipId)
         .maybeSingle()
@@ -210,6 +211,7 @@ export async function startRelationshipOnboarding(slug: string, relationshipId: 
         createOnboardingWork: false,
         activitySource: "Relationship onboarding start",
         createdBy: user.id,
+        isTest: relationship.source_metadata && typeof relationship.source_metadata === "object" && relationship.source_metadata.is_test === true,
     })
 
     relationshipRevalidatePaths(slug, relationshipId)

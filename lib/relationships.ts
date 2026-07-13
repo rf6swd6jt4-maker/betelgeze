@@ -16,6 +16,7 @@ export type RelationshipRecord = {
     primary_person_name: string
     primary_email: string | null
     primary_phone: string | null
+    whatsapp_phone: string | null
     business_name: string | null
     website_url: string | null
     industry_value: string | null
@@ -128,7 +129,7 @@ type ClientRow = {
     is_test?: boolean | null
 }
 
-const RELATIONSHIP_SELECT = "id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, business_name, website_url, industry_value, location_value, address, source_label, primary_contact_role, notes_summary, started_onboarding_at, seller_user_id, fulfilment_manager_user_id, project_timeframe_days, lifecycle_phase, status, source_metadata, created_at, updated_at"
+const RELATIONSHIP_SELECT = "id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, whatsapp_phone, business_name, website_url, industry_value, location_value, address, source_label, primary_contact_role, notes_summary, started_onboarding_at, seller_user_id, fulfilment_manager_user_id, project_timeframe_days, lifecycle_phase, status, source_metadata, created_at, updated_at"
 const RELATIONSHIP_LEGACY_SELECT = "id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, business_name, website_url, lifecycle_phase, status, source_metadata, created_at, updated_at"
 
 function isMissingRelationshipSchema(error: QueryError) {
@@ -150,6 +151,10 @@ function isRelationshipColumnDrift(error: QueryError) {
         message.includes("location_value") ||
         message.includes("primary_contact_role") ||
         message.includes("started_onboarding_at") ||
+        message.includes("whatsapp_phone") ||
+        message.includes("seller_user_id") ||
+        message.includes("fulfilment_manager_user_id") ||
+        message.includes("project_timeframe_days") ||
         message.includes("relationship_assets")
     ))
 }
@@ -206,6 +211,7 @@ function fallbackRelationshipFromClient(client: ClientRow): RelationshipRecord {
         primary_person_name: identity,
         primary_email: client.email ?? null,
         primary_phone: client.phone ?? null,
+        whatsapp_phone: client.phone ?? null,
         business_name: client.name ?? null,
         website_url: null,
         industry_value: null,
@@ -271,6 +277,7 @@ export async function listRelationshipsForWorkspace(workspaceId: string): Promis
         primary_contact_role: relationship.primary_contact_role ?? null,
         notes_summary: relationship.notes_summary ?? null,
         started_onboarding_at: relationship.started_onboarding_at ?? null,
+        whatsapp_phone: relationship.whatsapp_phone ?? null,
         seller_user_id: relationship.seller_user_id ?? null,
         fulfilment_manager_user_id: relationship.fulfilment_manager_user_id ?? null,
         project_timeframe_days: relationship.project_timeframe_days ?? null,
@@ -310,6 +317,7 @@ export async function getRelationship(workspaceId: string, relationshipId: strin
             primary_contact_role: relationship.primary_contact_role ?? null,
             notes_summary: relationship.notes_summary ?? null,
             started_onboarding_at: relationship.started_onboarding_at ?? null,
+            whatsapp_phone: relationship.whatsapp_phone ?? null,
             seller_user_id: relationship.seller_user_id ?? null,
             fulfilment_manager_user_id: relationship.fulfilment_manager_user_id ?? null,
             project_timeframe_days: relationship.project_timeframe_days ?? null,
@@ -337,6 +345,7 @@ export async function getRelationship(workspaceId: string, relationshipId: strin
                 primary_contact_role: relationship.primary_contact_role ?? null,
                 notes_summary: relationship.notes_summary ?? null,
                 started_onboarding_at: relationship.started_onboarding_at ?? null,
+                whatsapp_phone: relationship.whatsapp_phone ?? null,
                 seller_user_id: relationship.seller_user_id ?? null,
                 fulfilment_manager_user_id: relationship.fulfilment_manager_user_id ?? null,
                 project_timeframe_days: relationship.project_timeframe_days ?? null,

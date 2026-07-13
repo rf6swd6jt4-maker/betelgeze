@@ -5,7 +5,7 @@ import { SERVICES, getModuleKeysForServices } from "@/lib/onboarding/services"
 import { FormResponse, OnboardingFormDefinition, StoredUpload } from "@/lib/onboarding/forms"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { assetHref, onboardingDetailHref, relationshipHubHref, workItemHref } from "@/lib/relationships"
-import { createOnboardingReviewWork, createWorkflowItem } from "@/lib/relationship-workflow"
+import { completeWorkflowParents, createOnboardingReviewWork, createWorkflowItem } from "@/lib/relationship-workflow"
 import {
     classifyUploadAsset,
     FINAL_ONBOARDING_STEP,
@@ -317,6 +317,8 @@ async function maybeCompleteOnboarding(session: CanonicalOnboardingSession, work
         relationshipId: session.relationship_id,
         sessionId: session.id,
     })
+    const finalItem = items?.at(-1)
+    if (finalItem) await completeWorkflowParents({ workspaceId: session.workspace_id, relationshipId: session.relationship_id, workItemId: finalItem.id })
     revalidatePath(`/${workspaceSlug}/work`)
 }
 
@@ -455,6 +457,9 @@ export async function createRelationshipOnboardingSession({
         phase: "onboarding",
         role: "lifecycle_stage",
         completionMode: "all_required_children",
+        action: "await_onboarding",
+        startDate: now.slice(0, 10),
+        dueDate: now.slice(0, 10),
         nativeKey: `${relationshipId}:onboarding:${session.id}`,
     })
     const { data: items, error: itemsError } = await supabaseAdmin

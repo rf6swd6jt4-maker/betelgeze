@@ -2,8 +2,20 @@ import { createAndSendStripeInvoice } from "@/lib/stripe/api"
 import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { SERVICES } from "@/lib/onboarding/services"
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import type { RelationshipPhase } from "@/lib/relationship-phases"
 
 type WorkflowRole = "task" | "lifecycle_stage" | "service_group" | "review" | "automation"
+type StagePhase = Exclude<RelationshipPhase, "nurturing" | "completed_lost">
+
+const STAGES: Record<StagePhase, { title: string; action?: string; completionMode?: "manual" | "all_required_children" }> = {
+    lead: { title: "Make Contact", action: "move_to_potential_client" },
+    potential_client: { title: "Sell Client", action: "send_invoice" },
+    invoiced: { title: "Collect Payment", action: "await_payment" },
+    onboarding: { title: "Onboard Client", action: "await_onboarding", completionMode: "all_required_children" },
+    onboarding_review: { title: "Review Onboarding Information", action: "begin_fulfilment", completionMode: "all_required_children" },
+    fulfilment: { title: "Fulfil Client", action: "begin_retention", completionMode: "all_required_children" },
+    retention: { title: "Retain Client" },
+}
 function today() {
     return new Date().toISOString().slice(0, 10)
 }
@@ -40,6 +52,12 @@ export async function createWorkflowItem(input: {
     nativeKey: string
     description?: string | null
 }) {
+    const { data: existing } = await supabaseAdmin.from("work_items")
+        .select("planned_start_date, due_date")
+        .eq("workspace_id", input.workspaceId)
+        .eq("native_kind", "relationship_workflow")
+        .eq("native_key", input.nativeKey)
+        .maybeSingle()
     const { data: item, error } = await supabaseAdmin.from("work_items").upsert({
         workspace_id: input.workspaceId,
         title: input.title,
@@ -49,8 +67,8 @@ export async function createWorkflowItem(input: {
         completion_mode: input.completionMode ?? "manual",
         workflow_action: input.action ?? null,
         parent_work_item_id: input.parentId ?? null,
-        planned_start_date: input.startDate ?? null,
-        due_date: input.dueDate ?? null,
+        planned_start_date: existing?.planned_start_date ?? input.startDate ?? null,
+        due_date: existing?.due_date ?? input.dueDate ?? null,
         native_kind: "relationship_workflow",
         native_key: input.nativeKey,
         sort_order: input.sortOrder ?? 0,
@@ -69,21 +87,51 @@ export async function createWorkflowItem(input: {
     return item.id as string
 }
 
-export async function ensureSalesStage(input: {
+export async function ensureRelationshipStage(input: {
     workspaceId: string
     relationshipId: string
-    sellerId: string | null
+    phase: StagePhase
+    assigneeId?: string | null
 }) {
+    const stage = STAGES[input.phase]
     return createWorkflowItem({
         workspaceId: input.workspaceId,
         relationshipId: input.relationshipId,
-        title: "Sell Client",
-        phase: "potential_client",
+        title: stage.title,
+        phase: input.phase,
         role: "lifecycle_stage",
-        action: "send_invoice",
-        assigneeId: input.sellerId,
-        nativeKey: `${input.relationshipId}:potential-client`,
+        action: stage.action ?? null,
+        completionMode: stage.completionMode ?? "manual",
+        assigneeId: input.assigneeId ?? null,
+        startDate: today(),
+        dueDate: today(),
+        nativeKey: `${input.relationshipId}:${input.phase}`,
     })
+}
+
+export async function ensureSalesStage(input: { workspaceId: string; relationshipId: string; sellerId: string | null }) {
+    return ensureRelationshipStage({ ...input, phase: "potential_client", assigneeId: input.sellerId })
+}
+
+export async function completePaymentStage(input: { workspaceId: string; relationshipId: string }) {
+    const stageId = await ensureRelationshipStage({ ...input, phase: "invoiced" })
+    const { error } = await supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() })
+        .eq("workspace_id", input.workspaceId).eq("id", stageId)
+    if (error) throw new Error(error.message)
+}
+
+async function moveRelationshipToStage(input: {
+    workspaceId: string
+    relationshipId: string
+    phase: StagePhase
+    assigneeId?: string | null
+}) {
+    const { data: relationship } = await supabaseAdmin.from("relationships")
+        .select("seller_user_id")
+        .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).maybeSingle()
+    await supabaseAdmin.from("relationships").update({ lifecycle_phase: input.phase, updated_at: new Date().toISOString() })
+        .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId)
+    return ensureRelationshipStage({ ...input, assigneeId: input.assigneeId ?? relationship?.seller_user_id ?? null })
 }
 
 export async function createOnboardingReviewWork(input: {
@@ -99,12 +147,14 @@ export async function createOnboardingReviewWork(input: {
     const reviewId = await createWorkflowItem({
         workspaceId: input.workspaceId,
         relationshipId: input.relationshipId,
-        title: "Review Onboarding Information",
+        title: STAGES.onboarding_review.title,
         phase: "onboarding_review",
         role: "lifecycle_stage",
         completionMode: "all_required_children",
-        action: "begin_fulfilment",
+        action: STAGES.onboarding_review.action,
         assigneeId: reviewerId,
+        startDate: today(),
+        dueDate: today(),
         nativeKey: `${input.relationshipId}:onboarding-review:${input.sessionId}`,
     })
     const { data: submitted } = await supabaseAdmin.from("work_items")
@@ -165,10 +215,11 @@ export async function createFulfilmentWork(input: {
     const stageId = await createWorkflowItem({
         workspaceId: input.workspaceId,
         relationshipId: input.relationshipId,
-        title: "Fulfil Client",
+        title: STAGES.fulfilment.title,
         phase: "fulfilment",
         role: "lifecycle_stage",
         completionMode: "all_required_children",
+        action: STAGES.fulfilment.action,
         assigneeId: input.managerId,
         startDate,
         dueDate,
@@ -243,6 +294,19 @@ export async function createFulfilmentWork(input: {
     return stageId
 }
 
+export async function beginRelationshipFulfilment(input: { workspaceId: string; relationshipId: string }) {
+    const { data: relationship } = await supabaseAdmin.from("relationships")
+        .select("fulfilment_manager_user_id, project_timeframe_days")
+        .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).maybeSingle()
+    if (!relationship?.fulfilment_manager_user_id) throw new Error("Choose a fulfilment manager before completing onboarding review")
+    return createFulfilmentWork({
+        workspaceId: input.workspaceId,
+        relationshipId: input.relationshipId,
+        managerId: relationship.fulfilment_manager_user_id,
+        timeframeDays: relationship.project_timeframe_days,
+    })
+}
+
 export async function completeWorkflowParents(input: { workspaceId: string; relationshipId: string; workItemId: string }) {
     let childId: string | null = input.workItemId
     while (childId) {
@@ -260,10 +324,10 @@ export async function completeWorkflowParents(input: { workspaceId: string; rela
         await supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() })
             .eq("workspace_id", input.workspaceId).eq("id", parentId)
         if (parent.workflow_action === "begin_fulfilment") {
-            const { data: relationship } = await supabaseAdmin.from("relationships")
-                .select("fulfilment_manager_user_id, project_timeframe_days").eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).maybeSingle()
-            if (!relationship?.fulfilment_manager_user_id) throw new Error("Choose a fulfilment manager before completing onboarding review")
-            await createFulfilmentWork({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, managerId: relationship.fulfilment_manager_user_id, timeframeDays: relationship.project_timeframe_days })
+            await beginRelationshipFulfilment({ workspaceId: input.workspaceId, relationshipId: input.relationshipId })
+        }
+        if (parent.workflow_action === "begin_retention") {
+            await moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "retention" })
         }
         childId = parentId
     }
@@ -271,12 +335,13 @@ export async function completeWorkflowParents(input: { workspaceId: string; rela
 
 export async function sendRelationshipInvoice(input: {
     workspaceId: string
+    workspaceSlug: string
     relationshipId: string
     workItemId: string
     actorId: string
 }) {
     const [{ data: relationship }, { data: services }] = await Promise.all([
-        supabaseAdmin.from("relationships").select("primary_person_name, primary_email, primary_phone, business_name, project_timeframe_days").eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).single(),
+        supabaseAdmin.from("relationships").select("primary_person_name, primary_email, primary_phone, whatsapp_phone, business_name, project_timeframe_days, source_metadata").eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).single(),
         supabaseAdmin.from("relationship_services").select("service_key, price_cents, currency").eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId),
     ])
     const lineItems = (services ?? []).filter((service) => typeof service.price_cents === "number" && service.price_cents > 0).map((service) => ({
@@ -284,14 +349,15 @@ export async function sendRelationshipInvoice(input: {
         description: SERVICES[service.service_key]?.title ?? service.service_key,
         amount: service.price_cents,
     }))
-    if (!relationship || !relationship.primary_email || !lineItems.length) throw new Error("Add a billing email and a positive price for every selected service before sending the invoice")
+    if (!relationship || !relationship.primary_email || !relationship.whatsapp_phone || !lineItems.length) throw new Error("Add a billing email, WhatsApp phone, and a positive price for every selected service before sending the invoice")
+    const isTest = relationship.source_metadata && typeof relationship.source_metadata === "object" && relationship.source_metadata.is_test === true
     const currency = services?.[0]?.currency ?? "usd"
     const { data: sale, error: saleError } = await supabaseAdmin.from("client_sales").insert({
         workspace_id: input.workspaceId,
         relationship_id: input.relationshipId,
         client_name: relationship.business_name ?? relationship.primary_person_name,
         client_email: relationship.primary_email,
-        client_phone: relationship.primary_phone ?? "",
+        client_phone: relationship.whatsapp_phone,
         service_keys: lineItems.map((item) => item.serviceKey),
         line_items: lineItems,
         project_timeframe_days: relationship.project_timeframe_days,
@@ -301,12 +367,36 @@ export async function sendRelationshipInvoice(input: {
         created_by: input.actorId,
     }).select("id").single()
     if (saleError || !sale) throw new Error(saleError?.message ?? "Could not create invoice record")
+    if (isTest) {
+        const { createOnboardingClient } = await import("@/lib/onboarding/client-creation")
+        const collectPaymentId = await moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "invoiced" })
+        const { error: testSaleError } = await supabaseAdmin.from("client_sales").update({ status: "test_paid", raw_payload: { flow: "test", test: true } }).eq("id", sale.id)
+        if (testSaleError) throw new Error(testSaleError.message)
+        await Promise.all([
+            supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() }).eq("workspace_id", input.workspaceId).in("id", [input.workItemId, collectPaymentId]),
+            createOnboardingClient({
+                workspaceId: input.workspaceId,
+                workspaceSlug: input.workspaceSlug,
+                name: relationship.business_name ?? relationship.primary_person_name,
+                email: relationship.primary_email,
+                phone: relationship.whatsapp_phone,
+                relationshipId: input.relationshipId,
+                serviceKeys: lineItems.map((item) => item.serviceKey),
+                projectTimeframeDays: relationship.project_timeframe_days,
+                isTest: true,
+                createClickUpResources: false,
+                activitySource: `Test sale ${sale.id}`,
+                createdBy: input.actorId,
+            }),
+        ])
+        return
+    }
     const config = await getWorkspaceProviderConfig(input.workspaceId, "stripe")
     const invoice = await createAndSendStripeInvoice({
         saleId: sale.id,
         name: relationship.business_name ?? relationship.primary_person_name,
         email: relationship.primary_email,
-        phone: relationship.primary_phone,
+        phone: relationship.whatsapp_phone,
         currency,
         lineItems,
         serviceKeys: lineItems.map((item) => item.serviceKey),
@@ -316,9 +406,30 @@ export async function sendRelationshipInvoice(input: {
     })
     await Promise.all([
         supabaseAdmin.from("client_sales").update({ status: "invoice_sent", stripe_customer_id: invoice.customerId, stripe_invoice_id: invoice.invoiceId, stripe_invoice_status: invoice.invoiceStatus, stripe_hosted_invoice_url: invoice.hostedInvoiceUrl, stripe_invoice_pdf: invoice.invoicePdf, raw_payload: invoice.rawInvoice }).eq("id", sale.id),
-        supabaseAdmin.from("relationships").update({ lifecycle_phase: "invoiced", updated_at: new Date().toISOString() }).eq("workspace_id", input.workspaceId).eq("id", input.relationshipId),
+        moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "invoiced" }),
         supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() }).eq("workspace_id", input.workspaceId).eq("id", input.workItemId),
     ])
+}
+
+export async function advanceRelationshipWorkflow(input: { workspaceId: string; relationshipId: string; workItemId: string; action: string | null; actorId: string }) {
+    const complete = () => supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() })
+        .eq("workspace_id", input.workspaceId).eq("id", input.workItemId)
+    if (input.action === "move_to_potential_client") {
+        await Promise.all([complete(), moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "potential_client", assigneeId: input.actorId })])
+        return
+    }
+    if (input.action === "begin_fulfilment") {
+        await complete()
+        await beginRelationshipFulfilment({ workspaceId: input.workspaceId, relationshipId: input.relationshipId })
+        return
+    }
+    if (input.action === "begin_retention") {
+        await Promise.all([complete(), moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "retention" })])
+        return
+    }
+    const { error } = await complete()
+    if (error) throw new Error(error.message)
+    await completeWorkflowParents(input)
 }
 
 export async function currentRelationshipWork(input: { workspaceId: string; relationshipId: string; userId: string; isManager: boolean }) {

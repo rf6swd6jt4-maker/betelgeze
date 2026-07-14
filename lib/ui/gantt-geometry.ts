@@ -8,13 +8,17 @@ export function ganttAnchoredScrollLeft({
     dayWidth,
     leftWidth,
     localX,
+    gutter = 0,
 }: {
     timelineDay: number
     dayWidth: number
     leftWidth: number
     localX: number
+    // Empty space padded before the first day so an edge day can still be
+    // scrolled to the centre of the viewport instead of clamping short.
+    gutter?: number
 }) {
-    return Math.max(0, leftWidth + timelineDay * dayWidth - localX)
+    return Math.max(0, leftWidth + gutter + timelineDay * dayWidth - localX)
 }
 
 export function ganttArrowHeadPath(targetBarLeft: number, targetDivider: number, y: number, arrowSize = 4) {

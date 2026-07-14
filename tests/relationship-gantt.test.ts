@@ -108,23 +108,21 @@ test("a parent-child hierarchy edge does not push the child outside the parent t
     assert.deepEqual(changes.map((change) => change.id), ["parent"])
 })
 
-test("the timeline range includes work, milestones, today, and padding", () => {
+test("the timeline range stays fixed from two weeks before work through three months after it", () => {
     const range = ganttTimelineRange(
         [item("a", "2026-01-10", "2026-02-12")],
         ["2026-03-04T10:00:00Z"],
         "2026-02-01",
-        { paddingDays: 10, minimumDays: 30 },
     )
-    assert.equal(range.start, Math.floor(Date.parse("2025-12-31T00:00:00Z") / 86_400_000))
-    assert.equal(range.end, Math.floor(Date.parse("2026-03-14T00:00:00Z") / 86_400_000))
+    assert.equal(range.start, dateDay("2025-12-27"))
+    assert.equal(range.end, dateDay("2026-05-12"))
     assert.equal(range.days, range.end - range.start + 1)
 })
 
-test("the timeline range keeps an empty plan useful and compact", () => {
-    const range = ganttTimelineRange([], [], "2026-07-12", { paddingDays: 7, minimumDays: 60 })
-    assert.equal(range.days, 60)
-    assert.ok(range.start < dateDay("2026-07-12"))
-    assert.ok(range.end > dateDay("2026-07-12"))
+test("the timeline range defaults an undated plan to three months from today", () => {
+    const range = ganttTimelineRange([], [], "2026-07-12")
+    assert.equal(range.start, dateDay("2026-07-12"))
+    assert.equal(range.end, dateDay("2026-10-12"))
 })
 
 test("a persisted schedule must exactly match the requested dates and minute times", () => {

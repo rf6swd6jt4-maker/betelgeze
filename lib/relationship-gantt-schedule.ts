@@ -58,25 +58,32 @@ export function persistedScheduleMatchesChange(record: PersistedSchedule, change
 
 export function ganttTimelineRange(
     items: GanttScheduleItem[],
-    milestoneDates: string[],
+    _milestoneDates: string[],
     today: string,
-    options: { paddingDays?: number; minimumDays?: number } = {},
+    options: { beforeDays?: number; afterMonths?: number; fallbackMonths?: number } = {},
 ) {
-    const paddingDays = options.paddingDays ?? 28
-    const minimumDays = options.minimumDays ?? 120
+    const beforeDays = options.beforeDays ?? 14
+    const afterMonths = options.afterMonths ?? 3
+    const fallbackMonths = options.fallbackMonths ?? 3
     const ranges = effectiveGanttRanges(items)
-    const days = [dateDay(today)]
-    for (const range of ranges.values()) days.push(dateDay(range.start), dateDay(range.end))
-    for (const date of milestoneDates) days.push(dateDay(date))
-
-    let start = Math.min(...days) - paddingDays
-    let end = Math.max(...days) + paddingDays
-    const currentDays = end - start + 1
-    if (currentDays < minimumDays) {
-        const missing = minimumDays - currentDays
-        start -= Math.floor(missing / 2)
-        end += Math.ceil(missing / 2)
+    const shiftMonths = (day: number, months: number) => {
+        const date = new Date(day * DAY_MS)
+        const originalDay = date.getUTCDate()
+        date.setUTCDate(1)
+        date.setUTCMonth(date.getUTCMonth() + months)
+        const lastDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate()
+        date.setUTCDate(Math.min(originalDay, lastDay))
+        return Math.floor(date.getTime() / DAY_MS)
     }
+    if (!ranges.size) {
+        const start = dateDay(today)
+        const end = shiftMonths(start, fallbackMonths)
+        return { start, end, days: end - start + 1 }
+    }
+    const first = Math.min(...[...ranges.values()].map((range) => dateDay(range.start)))
+    const last = Math.max(...[...ranges.values()].map((range) => dateDay(range.end)))
+    const start = first - beforeDays
+    const end = shiftMonths(last, afterMonths)
     return { start, end, days: end - start + 1 }
 }
 

@@ -190,6 +190,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const [zoom, setZoom] = useState(DEFAULT_ZOOM)
     const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH)
     const [isNarrow, setIsNarrow] = useState(false)
+    const [viewportWidth, setViewportWidth] = useState(0)
     const [labelsVisible, setLabelsVisible] = useState(true)
     // The overview should answer "how long are the stages?" before it asks a
     // user to parse every task. Each nested parent remains independently
@@ -218,6 +219,16 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return () => media.removeEventListener("change", update)
     }, [])
 
+    useEffect(() => {
+        const node = scrollRef.current
+        if (!node) return
+        const update = () => setViewportWidth(node.clientWidth)
+        update()
+        const observer = new ResizeObserver(update)
+        observer.observe(node)
+        return () => observer.disconnect()
+    }, [])
+
     const dayWidth = zoom
     const scale = scaleForDayWidth(dayWidth)
     const timeScale = isTimeScale(scale)
@@ -226,12 +237,13 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         [...plan.items, ...plan.externalItems],
         plan.milestones.map((milestone) => milestone.occurredAt),
         today,
-        timeScale ? { paddingDays: 2, minimumDays: 14 } : undefined,
-    ), [plan, timeScale, today])
+    ), [plan, today])
     const timelineRange = requestedTimelineRange
     const rangeStart = timelineRange.start
     const rangeDays = timelineRange.days
     const effectiveLeftWidth = isNarrow ? (labelsVisible ? 152 : 0) : leftWidth
+    const visibleTimelineWidth = Math.max(120, viewportWidth - effectiveLeftWidth)
+    const minimumZoom = Math.min(MIN_ZOOM, Math.max(1, visibleTimelineWidth / rangeDays))
     const timelineX = useCallback((day: number, minutes = 0) => (day - rangeStart) * dayWidth + (timeScale ? minutes / 1440 * dayWidth : 0), [dayWidth, rangeStart, timeScale])
     const timelineWidth = rangeDays * dayWidth
     const now = new Date()
@@ -370,13 +382,13 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const zoomAt = useCallback((clientX: number, requestedZoom: number) => {
         const node = scrollRef.current
         if (!node) return
-        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, requestedZoom))
+        const nextZoom = Math.min(MAX_ZOOM, Math.max(minimumZoom, requestedZoom))
         if (Math.abs(nextZoom - zoom) < .001) return
         const localX = clientX - node.getBoundingClientRect().left
         const calendarDay = rangeStart + (node.scrollLeft + localX - effectiveLeftWidth) / dayWidth
         zoomAnchorRef.current = { calendarDay, localX, scrollTop: node.scrollTop }
         setZoom(nextZoom)
-    }, [dayWidth, effectiveLeftWidth, rangeStart, zoom])
+    }, [dayWidth, effectiveLeftWidth, minimumZoom, rangeStart, zoom])
 
     const zoomAtTimelineCentre = useCallback((requestedZoom: number) => {
         const node = scrollRef.current
@@ -654,22 +666,17 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const last = Math.max(...planRanges.map((range) => dateDay(range.end))) + 1
         const available = Math.max(120, node.clientWidth - effectiveLeftWidth - 32)
         const span = Math.max(1, last - first)
-        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, available / span))
+        const nextZoom = Math.min(MAX_ZOOM, Math.max(minimumZoom, available / span))
+        zoomAnchorRef.current = { calendarDay: (first + last) / 2, localX: effectiveLeftWidth + available / 2, scrollTop: node.scrollTop }
         setZoom(nextZoom)
-        requestAnimationFrame(() => {
-            const centre = ((first + last) / 2 - rangeStart) * nextZoom
-            node.scrollTo({ left: Math.max(0, centre - available / 2), behavior: "smooth" })
-        })
     }
 
     function selectScale(nextScale: Scale) {
         const node = scrollRef.current
         const localX = node ? effectiveLeftWidth + Math.max(0, node.clientWidth - effectiveLeftWidth) / 2 : 0
-        const centredDay = node ? (node.scrollLeft + localX - effectiveLeftWidth) / dayWidth : dateDay(today) - rangeStart
+        const calendarDay = node ? rangeStart + (node.scrollLeft + localX - effectiveLeftWidth) / dayWidth : dateDay(today)
+        if (node) zoomAnchorRef.current = { calendarDay, localX, scrollTop: node.scrollTop }
         setZoom(ZOOM_PRESET[nextScale])
-        requestAnimationFrame(() => {
-            if (node) node.scrollLeft = Math.max(0, effectiveLeftWidth + centredDay * ZOOM_PRESET[nextScale] - localX)
-        })
     }
 
     function updateTouchPoint(event: ReactPointerEvent<HTMLDivElement>) {
@@ -730,7 +737,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         }
         const node = scrollRef.current
         if (!node) return
-        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinchRef.current.zoom * distance / pinchRef.current.distance))
+        const nextZoom = Math.min(MAX_ZOOM, Math.max(minimumZoom, pinchRef.current.zoom * distance / pinchRef.current.distance))
         if (Math.abs(nextZoom - zoom) < .001) return
         zoomAnchorRef.current = {
             calendarDay: pinchRef.current.calendarDay,
@@ -980,7 +987,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             </div>
             <div className="flex shrink-0 items-center gap-1">
                 <div className="flex items-center rounded-md border border-neutral-700 bg-neutral-900 p-0.5">
-                    <button type="button" disabled={dragging || zoom <= MIN_ZOOM} onClick={() => zoomAtTimelineCentre(zoom / 1.6)} aria-label="Zoom out" title="Zoom out" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="minus" /></button>
+                    <button type="button" disabled={dragging || zoom <= minimumZoom} onClick={() => zoomAtTimelineCentre(zoom / 1.6)} aria-label="Zoom out" title="Zoom out" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="minus" /></button>
                     <button type="button" disabled={dragging || zoom >= MAX_ZOOM} onClick={() => zoomAtTimelineCentre(zoom * 1.6)} aria-label="Zoom in" title="Zoom in" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="plus" /></button>
                 </div>
                 <div className="flex items-center rounded-md border border-neutral-700 bg-neutral-900 p-0.5">

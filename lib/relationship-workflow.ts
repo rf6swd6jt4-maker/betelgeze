@@ -262,6 +262,34 @@ async function serviceRows(workspaceId: string, relationshipId: string) {
     return data ?? []
 }
 
+async function setRelationshipFulfilmentPhase(workspaceId: string, relationshipId: string) {
+    const { error } = await supabaseAdmin.from("relationships")
+        .update({ lifecycle_phase: "fulfilment", updated_at: new Date().toISOString() })
+        .eq("workspace_id", workspaceId)
+        .eq("id", relationshipId)
+    if (error) throw new Error(`Could not enter fulfilment: ${error.message}`)
+}
+
+async function existingFulfilmentPlan(input: { workspaceId: string; relationshipId: string }) {
+    const { data: stage, error: stageError } = await supabaseAdmin.from("work_items")
+        .select("id")
+        .eq("workspace_id", input.workspaceId)
+        .eq("native_kind", "relationship_workflow")
+        .eq("native_key", `${input.relationshipId}:fulfilment`)
+        .maybeSingle()
+    if (stageError) throw new Error(stageError.message)
+    if (!stage) return null
+
+    const services = await serviceRows(input.workspaceId, input.relationshipId)
+    const { count, error: groupsError } = await supabaseAdmin.from("work_items")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", input.workspaceId)
+        .eq("parent_work_item_id", stage.id)
+        .eq("workflow_role", "service_group")
+    if (groupsError) throw new Error(groupsError.message)
+    return count === services.length ? stage.id : null
+}
+
 export async function createFulfilmentWork(input: {
     workspaceId: string
     relationshipId: string
@@ -349,8 +377,7 @@ export async function createFulfilmentWork(input: {
             previousServiceId = serviceId
         }
     }
-    await supabaseAdmin.from("relationships").update({ lifecycle_phase: "fulfilment", updated_at: new Date().toISOString() })
-        .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId)
+    await setRelationshipFulfilmentPhase(input.workspaceId, input.relationshipId)
     return stageId
 }
 
@@ -359,6 +386,11 @@ export async function beginRelationshipFulfilment(input: { workspaceId: string; 
         .select("fulfilment_manager_user_id, project_timeframe_days")
         .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).maybeSingle()
     if (!relationship?.fulfilment_manager_user_id) throw new Error("Choose a fulfilment manager before completing onboarding review")
+    const existingPlanId = await existingFulfilmentPlan(input)
+    if (existingPlanId) {
+        await setRelationshipFulfilmentPhase(input.workspaceId, input.relationshipId)
+        return existingPlanId
+    }
     return createFulfilmentWork({
         workspaceId: input.workspaceId,
         relationshipId: input.relationshipId,

@@ -43,7 +43,11 @@ const MAX_ZOOM = 6
 const BAR_INSET = 8
 const STRUCTURAL_LINE = "#858585"
 const ACTIVE_STRUCTURAL_LINE = "#b8b8b8"
-const CATEGORY_BACKGROUND = "repeating-linear-gradient(135deg, transparent 0 24px, #262626 24px 26px)"
+const HOVER_BAR_OUTSET = 1
+// A single, tiled slash is cheaper to paint than a scroll-attached repeating
+// gradient and keeps its 36px cadence stable at every zoom level.
+const CATEGORY_BACKGROUND = "linear-gradient(135deg, transparent 0 47%, #262626 47% 53%, transparent 53%)"
+const CATEGORY_BACKGROUND_SIZE = "36px 36px"
 // In hour view this is the width of one hour; the rest of the chart still
 // projects in days, so a complete day remains 24 of these columns wide.
 const SCALE_WIDTH: Record<Scale, number> = { hour: 3, day: 64, week: 28, month: 12 }
@@ -764,7 +768,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 <span className="truncate">{label}</span>
                 <span className="ml-auto text-[9px] font-normal tabular-nums text-neutral-600">{count}</span>
             </button>
-            <div aria-hidden="true" className="border-b border-neutral-800 bg-neutral-950" style={{ ...fixedRowStyle(CATEGORY_ROW_HEIGHT), backgroundImage: CATEGORY_BACKGROUND, backgroundAttachment: "local" }} />
+            <div aria-hidden="true" className="border-b border-neutral-800 bg-neutral-950" style={{ ...fixedRowStyle(CATEGORY_ROW_HEIGHT), backgroundImage: CATEGORY_BACKGROUND, backgroundPosition: "0 0", backgroundRepeat: "repeat", backgroundSize: CATEGORY_BACKGROUND_SIZE }} />
         </div>
     }
 
@@ -830,6 +834,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const showBarLink = Boolean(geometry && geometry.width >= linkSize + handleSpace * 2 + 12)
         const showAssignee = Boolean(geometry && geometry.width >= 92)
         const isActive = activeItemId === item.id
+        // Percentage scaling made wide lifecycle-stage bars grow by many more
+        // pixels than ordinary work items. Expand every bar by the same one
+        // pixel on each edge instead.
+        const hoverTransform = isActive ? `scaleX(${1 + HOVER_BAR_OUTSET * 2 / geometry!.width}) scaleY(${1 + HOVER_BAR_OUTSET * 2 / barHeight})` : undefined
         const overdue = Boolean(range && !openEnded && !isGated && dateDay(range.end) < dateDay(today) && !["done", "canceled"].includes(item.status))
         const statusLabel = item.status === "done" ? "Completed" : item.status === "canceled" ? "Canceled" : overdue ? "Overdue" : null
         const derived = Boolean(range?.derived)
@@ -841,7 +849,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             {range && geometry ? <div
                 data-gantt-bar
                 className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 && !canResize || isGated ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: isGated ? "transparent" : colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: isActive ? "scale(1.05)" : undefined, transformOrigin: "center", opacity: isGated ? .72 : undefined }}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: isGated ? "transparent" : colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: hoverTransform, transformOrigin: "center", opacity: isGated ? .72 : undefined }}
                 onPointerDown={(event) => startBarDrag(event, item, range, "move")}
                 onMouseEnter={() => setActiveItemId(item.id)}
                 onMouseLeave={() => setActiveItemId(null)}

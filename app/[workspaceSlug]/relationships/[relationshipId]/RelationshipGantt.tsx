@@ -43,8 +43,7 @@ const MAX_ZOOM = 6
 const BAR_INSET = 8
 const STRUCTURAL_LINE = "#858585"
 const ACTIVE_STRUCTURAL_LINE = "#b8b8b8"
-const CATEGORY_BACKGROUND = "linear-gradient(135deg, transparent 0 24px, #262626 24px 26px)"
-const CATEGORY_BACKGROUND_SIZE = "26px 26px"
+const CATEGORY_BACKGROUND = "repeating-linear-gradient(135deg, transparent 0 24px, #262626 24px 26px)"
 // In hour view this is the width of one hour; the rest of the chart still
 // projects in days, so a complete day remains 24 of these columns wide.
 const SCALE_WIDTH: Record<Scale, number> = { hour: 3, day: 64, week: 28, month: 12 }
@@ -765,7 +764,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 <span className="truncate">{label}</span>
                 <span className="ml-auto text-[9px] font-normal tabular-nums text-neutral-600">{count}</span>
             </button>
-            <div aria-hidden="true" className="border-b border-neutral-800 bg-neutral-950" style={{ ...fixedRowStyle(CATEGORY_ROW_HEIGHT), backgroundImage: CATEGORY_BACKGROUND, backgroundPosition: "0 0", backgroundRepeat: "repeat", backgroundSize: CATEGORY_BACKGROUND_SIZE }} />
+            <div aria-hidden="true" className="border-b border-neutral-800 bg-neutral-950" style={{ ...fixedRowStyle(CATEGORY_ROW_HEIGHT), backgroundImage: CATEGORY_BACKGROUND, backgroundAttachment: "local" }} />
         </div>
     }
 
@@ -837,15 +836,15 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return <div
             className={`relative border-b border-neutral-800 transition-colors ${isActive ? "bg-white/[0.025]" : ""}`}
             style={fixedRowStyle(height)}
-            onMouseEnter={() => setActiveItemId(item.id)}
-            onMouseLeave={() => setActiveItemId(null)}
         >
             {showOpenTrail && geometry ? <div aria-label={`${item.title} remains open after ${range!.start}`} className="pointer-events-none absolute z-10 border-t border-dashed" style={{ left: `${geometry.right}px`, right: `${BAR_INSET}px`, top: `${height / 2}px`, borderColor: colours.border, opacity: .7 }}><span aria-hidden="true" className="absolute -right-0.5 -top-[13px] text-lg leading-none" style={{ color: colours.border }}>›</span></div> : null}
             {range && geometry ? <div
                 data-gantt-bar
                 className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 && !canResize || isGated ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: isGated ? "transparent" : colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, opacity: isGated ? .72 : undefined }}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: isGated ? "transparent" : colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: isActive ? "scale(1.05)" : undefined, transformOrigin: "center", opacity: isGated ? .72 : undefined }}
                 onPointerDown={(event) => startBarDrag(event, item, range, "move")}
+                onMouseEnter={() => setActiveItemId(item.id)}
+                onMouseLeave={() => setActiveItemId(null)}
                 onFocus={() => setActiveItemId(item.id)}
                 onBlur={() => setActiveItemId(null)}
                 title={isGated ? `${item.title}: starts when its predecessor finishes` : `${item.title}: ${range.start}${scale === "hour" ? ` ${timeLabel(item.plannedStartTime)}` : ""}${openEnded ? " · Open-ended" : ` → ${range.end}${scale === "hour" ? ` ${timeLabel(item.dueTime)}` : ""}`}${derived ? " · Derived from child work" : ""}${statusLabel ? ` · ${statusLabel}` : ""}`}

@@ -177,7 +177,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const scrollRef = useRef<HTMLDivElement>(null)
     const initiallyCenteredRef = useRef(false)
     const mobileZoomInitialisedRef = useRef(false)
-    const previousGeometryRef = useRef<{ dayWidth: number; leftWidth: number; rangeStart: number } | null>(null)
+    const previousGeometryRef = useRef<{ dayWidth: number; leftWidth: number; rangeStart: number; gutter: number } | null>(null)
     const zoomAnchorRef = useRef<{ calendarDay: number; localX: number; scrollTop: number } | null>(null)
     const touchPointsRef = useRef(new Map<number, { x: number; y: number }>())
     const touchPanRef = useRef<{ pointerId: number; x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null)
@@ -248,8 +248,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const effectiveLeftWidth = isNarrow ? (labelsVisible ? 152 : 0) : leftWidth
     const visibleTimelineWidth = Math.max(120, viewportWidth - effectiveLeftWidth)
     const minimumZoom = Math.min(MIN_ZOOM, Math.max(1, visibleTimelineWidth / rangeDays))
-    const timelineX = useCallback((day: number, minutes = 0) => (day - rangeStart) * dayWidth + (positionByTime ? minutes / 1440 * dayWidth : 0), [dayWidth, positionByTime, rangeStart])
+    // Pad half a viewport of empty space on each side of the day grid so the
+    // first and last days can still reach the centre of the visible chart when
+    // zooming; without it the anchored scroll clamps at the content edge and
+    // the point under the cursor / viewport centre visibly drifts.
+    const timelineGutter = Math.round(visibleTimelineWidth / 2)
+    const timelineX = useCallback((day: number, minutes = 0) => timelineGutter + (day - rangeStart) * dayWidth + (positionByTime ? minutes / 1440 * dayWidth : 0), [dayWidth, positionByTime, rangeStart, timelineGutter])
     const timelineWidth = rangeDays * dayWidth
+    const contentWidth = timelineGutter * 2 + timelineWidth
     const now = new Date()
     const todayLeft = timelineX(dateDay(today), positionByTime ? now.getHours() * 60 + now.getMinutes() : 0)
     // Bars span their actual start→due dates (the due day is inclusive, so the
@@ -322,18 +328,18 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const chartHeight = contentHeight
 
     const headerLabels = useMemo(() => {
-        return Array.from({ length: rangeDays }, (_, index) => ({ day: rangeStart + index, left: index * dayWidth }))
+        return Array.from({ length: rangeDays }, (_, index) => ({ day: rangeStart + index, left: timelineGutter + index * dayWidth }))
             .filter(({ day }) => {
                 const date = new Date(day * 86_400_000)
                 if (scale === "month") return date.getUTCDate() === 1
                 if (scale === "week") return date.getUTCDay() === 1
                 return true
             })
-    }, [dayWidth, rangeDays, rangeStart, scale])
+    }, [dayWidth, rangeDays, rangeStart, scale, timelineGutter])
     const timeLabelMinutes = scale === "quarter_hour" ? 15 : scale === "hour" ? 60 : scale === "three_hour" ? 180 : null
     const hourLabels = useMemo(() => timeLabelMinutes
-        ? Array.from({ length: rangeDays * 1440 / timeLabelMinutes }, (_, index) => ({ minutes: index * timeLabelMinutes, left: index * timeLabelMinutes / 1440 * dayWidth }))
-        : [], [dayWidth, rangeDays, timeLabelMinutes])
+        ? Array.from({ length: rangeDays * 1440 / timeLabelMinutes }, (_, index) => ({ minutes: index * timeLabelMinutes, left: timelineGutter + index * timeLabelMinutes / 1440 * dayWidth }))
+        : [], [dayWidth, rangeDays, timeLabelMinutes, timelineGutter])
     const visibleMilestones = useMemo(() => {
         const rendered: Array<{ milestone: RelationshipGanttPlan["milestones"][number]; left: number }> = []
         for (const milestone of plan.milestones) {
@@ -370,19 +376,19 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     useEffect(() => {
         const previous = previousGeometryRef.current
         const node = scrollRef.current
-        const frameChanged = previous && (previous.leftWidth !== effectiveLeftWidth || previous.rangeStart !== rangeStart)
-        if (frameChanged && node && !zoomAnchorRef.current) node.scrollLeft = Math.max(0, node.scrollLeft + effectiveLeftWidth - previous.leftWidth + (previous.rangeStart - rangeStart) * dayWidth)
-        previousGeometryRef.current = { dayWidth, leftWidth: effectiveLeftWidth, rangeStart }
-    }, [dayWidth, effectiveLeftWidth, rangeStart])
+        const frameChanged = previous && (previous.leftWidth !== effectiveLeftWidth || previous.rangeStart !== rangeStart || previous.gutter !== timelineGutter)
+        if (frameChanged && node && !zoomAnchorRef.current) node.scrollLeft = Math.max(0, node.scrollLeft + effectiveLeftWidth - previous.leftWidth + timelineGutter - previous.gutter + (previous.rangeStart - rangeStart) * dayWidth)
+        previousGeometryRef.current = { dayWidth, leftWidth: effectiveLeftWidth, rangeStart, gutter: timelineGutter }
+    }, [dayWidth, effectiveLeftWidth, rangeStart, timelineGutter])
 
     useLayoutEffect(() => {
         const anchor = zoomAnchorRef.current
         const node = scrollRef.current
         if (!anchor || !node) return
-        node.scrollLeft = ganttAnchoredScrollLeft({ timelineDay: anchor.calendarDay - rangeStart, dayWidth, leftWidth: effectiveLeftWidth, localX: anchor.localX })
+        node.scrollLeft = ganttAnchoredScrollLeft({ timelineDay: anchor.calendarDay - rangeStart, dayWidth, leftWidth: effectiveLeftWidth, localX: anchor.localX, gutter: timelineGutter })
         node.scrollTop = anchor.scrollTop
         zoomAnchorRef.current = null
-    }, [dayWidth, effectiveLeftWidth, rangeStart])
+    }, [dayWidth, effectiveLeftWidth, rangeStart, timelineGutter])
 
     const zoomAt = useCallback((clientX: number, requestedZoom: number) => {
         const node = scrollRef.current
@@ -390,10 +396,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const nextZoom = Math.min(MAX_ZOOM, Math.max(minimumZoom, requestedZoom))
         if (Math.abs(nextZoom - zoom) < .001) return
         const localX = clientX - node.getBoundingClientRect().left
-        const calendarDay = rangeStart + (node.scrollLeft + localX - effectiveLeftWidth) / dayWidth
+        const calendarDay = rangeStart + (node.scrollLeft + localX - effectiveLeftWidth - timelineGutter) / dayWidth
         zoomAnchorRef.current = { calendarDay, localX, scrollTop: node.scrollTop }
         setZoom(nextZoom)
-    }, [dayWidth, effectiveLeftWidth, minimumZoom, rangeStart, zoom])
+    }, [dayWidth, effectiveLeftWidth, minimumZoom, rangeStart, timelineGutter, zoom])
 
     const zoomAtTimelineCentre = useCallback((requestedZoom: number) => {
         const node = scrollRef.current
@@ -679,7 +685,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     function selectScale(nextScale: Scale) {
         const node = scrollRef.current
         const localX = node ? effectiveLeftWidth + Math.max(0, node.clientWidth - effectiveLeftWidth) / 2 : 0
-        const calendarDay = node ? rangeStart + (node.scrollLeft + localX - effectiveLeftWidth) / dayWidth : dateDay(today)
+        const calendarDay = node ? rangeStart + (node.scrollLeft + localX - effectiveLeftWidth - timelineGutter) / dayWidth : dateDay(today)
         if (node) zoomAnchorRef.current = { calendarDay, localX, scrollTop: node.scrollTop }
         setZoom(ZOOM_PRESET[nextScale])
     }
@@ -733,7 +739,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             pinchRef.current = {
                 distance,
                 zoom,
-                calendarDay: rangeStart + (node.scrollLeft + localX - effectiveLeftWidth) / dayWidth,
+                calendarDay: rangeStart + (node.scrollLeft + localX - effectiveLeftWidth - timelineGutter) / dayWidth,
                 localX,
                 scrollTop: node.scrollTop,
             }
@@ -767,7 +773,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const anchor = pinchRef.current
         const restoreAnchor = () => {
             if (!node) return
-            node.scrollLeft = ganttAnchoredScrollLeft({ timelineDay: anchor.calendarDay - rangeStart, dayWidth, leftWidth: effectiveLeftWidth, localX: anchor.localX })
+            node.scrollLeft = ganttAnchoredScrollLeft({ timelineDay: anchor.calendarDay - rangeStart, dayWidth, leftWidth: effectiveLeftWidth, localX: anchor.localX, gutter: timelineGutter })
             node.scrollTop = anchor.scrollTop
         }
         restoreAnchor()
@@ -941,7 +947,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const sourceOpenEnded = sourceItem ? hasOpenEnd(sourceItem, fromRange) : false
         const sourceGeometry = sourceOpenEnded ? withMinimumBarWidth(barGeometry(fromRange, sourceItem), sourceItem?.parentWorkItemId ? 116 : 148) : barGeometry(fromRange, sourceItem)
         const targetGeometry = targetItem && gatedRanges.has(targetItem.id) ? withMinimumBarWidth(barGeometry(toRange, targetItem), targetItem.parentWorkItemId ? 116 : 148) : barGeometry(toRange, targetItem)
-        const sourceDivider = sourceOpenEnded && !sourceItem?.parentWorkItemId ? Math.max(sourceGeometry.right, timelineWidth - BAR_INSET) : sourceGeometry.sourceDivider
+        const sourceDivider = sourceOpenEnded && !sourceItem?.parentWorkItemId ? Math.max(sourceGeometry.right, timelineGutter + timelineWidth - BAR_INSET) : sourceGeometry.sourceDivider
         const sourceBarRight = sourceGeometry.right
         const targetDivider = targetGeometry.targetDivider
         const targetBarLeft = targetGeometry.left
@@ -1018,7 +1024,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             onPointerUpCapture={endTouch}
             onPointerCancelCapture={endTouch}
         >
-            <div className="grid items-start" style={{ gridTemplateColumns: `${effectiveLeftWidth}px ${timelineWidth}px`, gridAutoRows: "max-content", minWidth: `${effectiveLeftWidth + timelineWidth}px` }}>
+            <div className="grid items-start" style={{ gridTemplateColumns: `${effectiveLeftWidth}px ${contentWidth}px`, gridAutoRows: "max-content", minWidth: `${effectiveLeftWidth + contentWidth}px` }}>
                 <div className={`sticky left-0 top-0 z-50 flex h-11 min-w-0 items-center overflow-hidden border-b border-neutral-700 bg-neutral-950 text-xs font-semibold text-white ${effectiveLeftWidth ? "border-r px-2" : "border-r-0 px-0"}`}>
                     <span className="truncate">Plan</span>
                     {!isNarrow ? <button type="button" aria-label="Resize timeline label column" title="Drag to resize" onPointerDown={startDividerDrag} className="group absolute -right-1.5 inset-y-0 hidden w-3 cursor-col-resize touch-none lg:block"><span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-neutral-400" /></button> : null}
@@ -1039,7 +1045,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             {weekendDays.map((day) => <div aria-hidden="true" key={`weekend-${day}`} className="pointer-events-none absolute z-0 bg-white/[0.012]" style={{ left: `${effectiveLeftWidth + timelineX(day)}px`, top: `${HEADER_HEIGHT}px`, width: `${dayWidth}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             {headerLabels.map((label) => <div aria-hidden="true" key={`column-${label.day}`} className="pointer-events-none absolute z-10 w-px bg-neutral-800" style={{ left: `${effectiveLeftWidth + label.left}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${effectiveLeftWidth + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />
-            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${effectiveLeftWidth}px` }} width={timelineWidth} height={chartHeight}>{connectorPaths.map(({ key, itemIds, external, path, arrow }) => { const active = itemIds.includes(activeItemId ?? ""); return <g key={key} fill="none" stroke={active ? ACTIVE_STRUCTURAL_LINE : STRUCTURAL_LINE} strokeWidth={active ? "2" : "1.5"} strokeDasharray={external ? "4 3" : undefined} strokeLinejoin="miter" strokeLinecap="square"><path d={path} />{arrow ? <path d={arrow} /> : null}</g> })}</svg>
+            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${effectiveLeftWidth}px` }} width={contentWidth} height={chartHeight}>{connectorPaths.map(({ key, itemIds, external, path, arrow }) => { const active = itemIds.includes(activeItemId ?? ""); return <g key={key} fill="none" stroke={active ? ACTIVE_STRUCTURAL_LINE : STRUCTURAL_LINE} strokeWidth={active ? "2" : "1.5"} strokeDasharray={external ? "4 3" : undefined} strokeLinejoin="miter" strokeLinecap="square"><path d={path} />{arrow ? <path d={arrow} /> : null}</g> })}</svg>
             {dragPreview ? <div aria-live="polite" className="pointer-events-none fixed z-[80] -translate-y-full rounded-md border border-neutral-600 bg-neutral-950 px-2 py-1 font-mono text-[10px] text-neutral-200 shadow-xl" style={{ left: `${Math.min(dragPreview.pointerX + 10, (typeof window !== "undefined" ? window.innerWidth : dragPreview.pointerX + 200) - 160)}px`, top: `${dragPreview.pointerY - 8}px` }}>{dragPreview.label}</div> : null}
         </div>
         {currentWork ? <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-neutral-700 bg-neutral-950 px-3 py-2 text-xs">

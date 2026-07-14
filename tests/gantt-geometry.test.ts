@@ -28,6 +28,22 @@ test("repeated mobile zoom-out steps keep the original focal day anchored", () =
     }
 })
 
+test("a gutter lets the first day be centred instead of clamping short", () => {
+    const leftWidth = 260
+    const chart = 900
+    const centre = leftWidth + chart / 2
+    const dayWidth = 64
+    // The first day (timelineDay 0) anchored to the viewport centre. Without a
+    // gutter the required scroll is negative, clamps to 0, and the day lands far
+    // from centre; half a chart of gutter gives it room to sit dead centre.
+    const gutter = chart / 2
+    const clamped = ganttAnchoredScrollLeft({ timelineDay: 0, dayWidth, leftWidth, localX: centre })
+    assert.equal(clamped, 0)
+    assert.notEqual((clamped + centre - leftWidth) / dayWidth, 0)
+    const anchored = ganttAnchoredScrollLeft({ timelineDay: 0, dayWidth, leftWidth, localX: centre, gutter })
+    assert.equal((anchored + centre - leftWidth - gutter) / dayWidth, 0)
+})
+
 test("an absolute calendar anchor survives a timeline-range change", () => {
     const calendarDay = 20_500.25
     const nextRangeStart = 20_440

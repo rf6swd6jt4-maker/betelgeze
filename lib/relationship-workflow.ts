@@ -197,10 +197,18 @@ export async function createOnboardingReviewWork(input: {
     relationshipId: string
     sessionId: string
 }) {
-    const { data: relationship } = await supabaseAdmin.from("relationships")
-        .select("fulfilment_manager_user_id")
-        .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).maybeSingle()
-    const reviewerId = relationship?.fulfilment_manager_user_id ?? null
+    const [{ data: relationship }, { data: session }] = await Promise.all([
+        supabaseAdmin.from("relationships")
+            .select("fulfilment_manager_user_id")
+            .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).maybeSingle(),
+        supabaseAdmin.from("relationship_onboarding_sessions")
+            .select("created_by")
+            .eq("workspace_id", input.workspaceId).eq("id", input.sessionId).maybeSingle(),
+    ])
+    // Until a delivery manager is assigned, the person who initiated the
+    // onboarding owns its review. This keeps the review sequence actionable
+    // for the first clients without bypassing the eventual team assignment.
+    const reviewerId = relationship?.fulfilment_manager_user_id ?? session?.created_by ?? null
     const reviewId = await ensureRelationshipStage({
         workspaceId: input.workspaceId,
         relationshipId: input.relationshipId,
@@ -227,6 +235,7 @@ export async function createOnboardingReviewWork(input: {
             assigneeId: reviewerId,
             nativeKey: `${input.relationshipId}:onboarding-review:${input.sessionId}:${step.id}`,
             sortOrder: index * 10,
+            startDate: today(),
             description: "Review the submitted onboarding information before fulfilment begins.",
         })
         if (previousId) {
@@ -358,6 +367,18 @@ export async function beginRelationshipFulfilment(input: { workspaceId: string; 
     })
 }
 
+async function assertRequiredChildrenCompleted(input: { workspaceId: string; workItemId: string }) {
+    const { data: children, error } = await supabaseAdmin.from("work_items")
+        .select("status, workflow_required")
+        .eq("workspace_id", input.workspaceId)
+        .eq("parent_work_item_id", input.workItemId)
+    if (error) throw new Error(error.message)
+    const requiredChildren = (children ?? []).filter((child) => child.workflow_required)
+    if (requiredChildren.some((child) => child.status !== "done")) {
+        throw new Error("Complete every required review work item before moving to fulfilment")
+    }
+}
+
 export async function completeWorkflowParents(input: { workspaceId: string; relationshipId: string; workItemId: string }) {
     let childId: string | null = input.workItemId
     while (childId) {
@@ -372,14 +393,15 @@ export async function completeWorkflowParents(input: { workspaceId: string; rela
         const { data: children } = await supabaseAdmin.from("work_items")
             .select("status, workflow_required").eq("workspace_id", input.workspaceId).eq("parent_work_item_id", parentId)
         if (!(children ?? []).filter((item) => item.workflow_required).every((item) => item.status === "done")) return
-        await supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() })
-            .eq("workspace_id", input.workspaceId).eq("id", parentId)
         if (parent.workflow_action === "begin_fulfilment") {
             await beginRelationshipFulfilment({ workspaceId: input.workspaceId, relationshipId: input.relationshipId })
         }
         if (parent.workflow_action === "begin_retention") {
             await moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "retention" })
         }
+        const { error } = await supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() })
+            .eq("workspace_id", input.workspaceId).eq("id", parentId)
+        if (error) throw new Error(error.message)
         childId = parentId
     }
 }
@@ -447,8 +469,10 @@ export async function advanceRelationshipWorkflow(input: { workspaceId: string; 
         return
     }
     if (input.action === "begin_fulfilment") {
-        await complete()
+        await assertRequiredChildrenCompleted({ workspaceId: input.workspaceId, workItemId: input.workItemId })
         await beginRelationshipFulfilment({ workspaceId: input.workspaceId, relationshipId: input.relationshipId })
+        const { error } = await complete()
+        if (error) throw new Error(error.message)
         return
     }
     if (input.action === "begin_retention") {

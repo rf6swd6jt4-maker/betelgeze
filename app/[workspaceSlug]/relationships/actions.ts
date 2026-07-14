@@ -170,12 +170,14 @@ export async function saveRelationshipCommercialDetails(slug: string, relationsh
 }
 
 export async function proceedRelationshipCurrentWork(slug: string, relationshipId: string, workItemId: string) {
+    let workflowAction: string | null = null
     try {
         const { workspace, user, role } = await requireWorkspace(slug)
         const { data: item } = await supabaseAdmin.from("work_items")
             .select("id, workflow_action")
             .eq("workspace_id", workspace.id).eq("id", workItemId).maybeSingle()
         if (!item) throw new Error("Work item not found")
+        workflowAction = item.workflow_action
         const { data: link } = await supabaseAdmin.from("work_item_relationships")
             .select("work_item_id").eq("workspace_id", workspace.id).eq("relationship_id", relationshipId).eq("work_item_id", workItemId).maybeSingle()
         if (!link) throw new Error("Work item does not belong to this relationship")
@@ -184,19 +186,21 @@ export async function proceedRelationshipCurrentWork(slug: string, relationshipI
                 .select("user_id").eq("workspace_id", workspace.id).eq("work_item_id", workItemId).eq("user_id", user.id).maybeSingle()
             if (!assignment) throw new Error("This work item is not assigned to you")
         }
-        if (item.workflow_action === "send_invoice") {
+        if (workflowAction === "send_invoice") {
             await sendRelationshipInvoice({ workspaceId: workspace.id, relationshipId, workItemId, actorId: user.id })
         } else {
-            if (item.workflow_action === "await_payment" || item.workflow_action === "await_onboarding") throw new Error("This stage advances automatically when the external step completes")
-            await advanceRelationshipWorkflow({ workspaceId: workspace.id, relationshipId, workItemId, action: item.workflow_action, actorId: user.id })
+            if (workflowAction === "await_payment" || workflowAction === "await_onboarding") throw new Error("This stage advances automatically when the external step completes")
+            await advanceRelationshipWorkflow({ workspaceId: workspace.id, relationshipId, workItemId, action: workflowAction, actorId: user.id })
         }
         relationshipRevalidatePaths(slug, relationshipId)
         return { ok: true as const }
     } catch (error) {
         const message = error instanceof Error ? error.message : "Could not proceed with this work item"
-        const safeMessage = message.startsWith("Add a billing") || message.endsWith("is not connected for this workspace.") || message === "Work item not found" || message === "Work item does not belong to this relationship" || message === "This work item is not assigned to you" || message === "This stage advances automatically when the external step completes"
+        const safeMessage = message.startsWith("Add a billing") || message.endsWith("is not connected for this workspace.") || message === "Work item not found" || message === "Work item does not belong to this relationship" || message === "This work item is not assigned to you" || message === "This stage advances automatically when the external step completes" || message === "Choose a fulfilment manager before completing onboarding review" || message === "Complete every required review work item before moving to fulfilment"
             ? message
-            : "Could not send the invoice. Check the Stripe connection and commercial details, then try again."
+            : workflowAction === "send_invoice"
+                ? "Could not send the invoice. Check the Stripe connection and commercial details, then try again."
+                : "Could not proceed with this work item. Please try again."
         return { ok: false as const, error: safeMessage }
     }
 }

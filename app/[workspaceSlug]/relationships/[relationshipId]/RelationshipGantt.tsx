@@ -17,7 +17,7 @@ import {
 } from "./gantt-actions"
 import { proceedRelationshipCurrentWork } from "../actions"
 
-type Scale = "day" | "week" | "month"
+type Scale = "hour" | "day" | "week" | "month"
 type Category = "scheduled" | "shared" | "unscheduled"
 type DisplayRow = { item: RelationshipGanttItem; depth: number; category: Category; external?: boolean }
 type DragPreview = {
@@ -44,11 +44,32 @@ const BAR_INSET = 8
 const STRUCTURAL_LINE = "#858585"
 const ACTIVE_STRUCTURAL_LINE = "#b8b8b8"
 const CATEGORY_BACKGROUND = "repeating-linear-gradient(135deg, transparent 0 24px, #262626 24px 26px)"
-const SCALE_WIDTH: Record<Scale, number> = { day: 64, week: 28, month: 12 }
+// In hour view this is the width of one hour; the rest of the chart still
+// projects in days, so a complete day remains 24 of these columns wide.
+const SCALE_WIDTH: Record<Scale, number> = { hour: 3, day: 64, week: 28, month: 12 }
+
+function scaleDayWidth(scale: Scale) {
+    return scale === "hour" ? SCALE_WIDTH.hour * 24 : SCALE_WIDTH[scale]
+}
 
 function dateLabel(day: number, scale: Scale) {
     const date = new Date(day * 86_400_000)
     return new Intl.DateTimeFormat("en-IE", scale === "month" ? { month: "short", year: "2-digit" } : { day: "numeric", month: "short" }).format(date)
+}
+
+function timeMinutes(value: string | null) {
+    if (!value) return null
+    const [hours, minutes] = value.slice(0, 5).split(":").map(Number)
+    return Number.isInteger(hours) && Number.isInteger(minutes) ? hours * 60 + minutes : null
+}
+
+function timeLabel(value: string | null) {
+    return value ? value.slice(0, 5) : "All day"
+}
+
+function parentIds(items: RelationshipGanttItem[]) {
+    const ids = new Set(items.map((item) => item.id))
+    return new Set(items.flatMap((item) => item.parentWorkItemId && ids.has(item.parentWorkItemId) ? [item.parentWorkItemId] : []))
 }
 
 function localDateValue(date = new Date()) {
@@ -142,7 +163,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH)
     const [isNarrow, setIsNarrow] = useState(false)
     const [labelsVisible, setLabelsVisible] = useState(true)
-    const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+    // The overview should answer "how long are the stages?" before it asks a
+    // user to parse every task. Each nested parent remains independently
+    // collapsed until its own disclosure is opened.
+    const [collapsed, setCollapsed] = useState<Set<string>>(() => parentIds(initialPlan.items))
     const [collapsedCategories, setCollapsedCategories] = useState<Set<Category>>(() => new Set(["shared", "unscheduled"]))
     const [pinching, setPinching] = useState(false)
     const [activeItemId, setActiveItemId] = useState<string | null>(null)
@@ -166,29 +190,35 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return () => media.removeEventListener("change", update)
     }, [])
 
-    const dayWidth = SCALE_WIDTH[scale] * zoom
+    const dayWidth = scaleDayWidth(scale) * zoom
     const today = localDateValue()
     const requestedTimelineRange = useMemo(() => ganttTimelineRange(
         [...plan.items, ...plan.externalItems],
         plan.milestones.map((milestone) => milestone.occurredAt),
         today,
-    ), [plan, today])
+        scale === "hour" ? { paddingDays: 2, minimumDays: 14 } : undefined,
+    ), [plan, scale, today])
     const timelineRange = requestedTimelineRange
     const rangeStart = timelineRange.start
     const rangeDays = timelineRange.days
     const effectiveLeftWidth = isNarrow ? (labelsVisible ? 152 : 0) : leftWidth
-    const timelineX = useCallback((day: number) => (day - rangeStart) * dayWidth, [dayWidth, rangeStart])
+    const timelineX = useCallback((day: number, minutes = 0) => (day - rangeStart) * dayWidth + (scale === "hour" ? minutes / 1440 * dayWidth : 0), [dayWidth, rangeStart, scale])
     const timelineWidth = rangeDays * dayWidth
-    const todayLeft = timelineX(dateDay(today))
+    const now = new Date()
+    const todayLeft = timelineX(dateDay(today), scale === "hour" ? now.getHours() * 60 + now.getMinutes() : 0)
     // Bars span their actual start→due dates (the due day is inclusive, so the
     // bar reaches the end of that day) rather than snapping to whole columns,
     // which previously made every bar fill its week or month at coarse scales.
-    const barGeometry = useCallback((range: { start: string; end: string }) => {
-        const columnLeft = timelineX(dateDay(range.start))
-        const columnRight = timelineX(dateDay(range.end) + 1)
+    const barGeometry = useCallback((range: { start: string; end: string }, item?: RelationshipGanttItem) => {
+        const startMinutes = scale === "hour" ? timeMinutes(item?.plannedStartTime ?? null) ?? 0 : 0
+        const endMinutes = scale === "hour" ? timeMinutes(item?.dueTime ?? null) : null
+        const columnLeft = timelineX(dateDay(range.start), startMinutes)
+        const columnRight = scale === "hour"
+            ? timelineX(dateDay(range.end) + (endMinutes === null ? 1 : 0), endMinutes ?? 0)
+            : timelineX(dateDay(range.end) + 1)
         const inset = Math.min(BAR_INSET, Math.max(1, dayWidth * .15))
         return { left: columnLeft + inset, right: columnRight - inset, width: Math.max(4, columnRight - columnLeft - inset * 2), sourceDivider: columnRight, targetDivider: columnLeft }
-    }, [dayWidth, timelineX])
+    }, [dayWidth, scale, timelineX])
     const committedItems = useMemo(() => [...plan.items, ...plan.externalItems], [plan])
     const committedRanges = useMemo(() => effectiveGanttRanges(committedItems), [committedItems])
     const allVisibleItems = useMemo(() => committedItems.map((item) => {
@@ -254,6 +284,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 return true
             })
     }, [dayWidth, rangeDays, rangeStart, scale])
+    const hourLabels = useMemo(() => scale === "hour"
+        ? Array.from({ length: rangeDays * 4 }, (_, index) => ({ hour: index * 6, left: index / 4 * dayWidth }))
+        : [], [dayWidth, rangeDays, scale])
     const weekendDays = useMemo(() => Array.from({ length: rangeDays }, (_, index) => rangeStart + index).filter((day) => {
         const weekday = new Date(day * 86_400_000).getUTCDay()
         return weekday === 0 || weekday === 6
@@ -546,12 +579,12 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const available = Math.max(120, node.clientWidth - effectiveLeftWidth - 32)
         const span = Math.max(1, last - first)
         const candidates = [...new Set<Scale>([scale, "week", "month"])]
-        const nextScale = candidates.find((candidate) => span * SCALE_WIDTH[candidate] * MIN_ZOOM <= available) ?? "month"
-        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, available / span / SCALE_WIDTH[nextScale]))
+        const nextScale = candidates.find((candidate) => span * scaleDayWidth(candidate) * MIN_ZOOM <= available) ?? "month"
+        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, available / span / scaleDayWidth(nextScale)))
         setScale(nextScale)
         setZoom(nextZoom)
         requestAnimationFrame(() => {
-            const nextDayWidth = SCALE_WIDTH[nextScale] * nextZoom
+            const nextDayWidth = scaleDayWidth(nextScale) * nextZoom
             const centre = ((first + last) / 2 - rangeStart) * nextDayWidth
             node.scrollTo({ left: Math.max(0, centre - available / 2), behavior: "smooth" })
         })
@@ -564,7 +597,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         setZoom(1)
         setScale(nextScale)
         requestAnimationFrame(() => {
-            if (node) node.scrollLeft = Math.max(0, effectiveLeftWidth + centredDay * SCALE_WIDTH[nextScale] - localX)
+            if (node) node.scrollLeft = Math.max(0, effectiveLeftWidth + centredDay * scaleDayWidth(nextScale) - localX)
         })
     }
 
@@ -691,6 +724,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         })
     }
 
+    function collapseAllParents() {
+        setCollapsed(parentIds(plan.items))
+    }
+
+    function expandAllParents() {
+        setCollapsed(new Set())
+    }
+
     function renderCategory(category: Category, label: string, count: number) {
         const isCollapsed = collapsedCategories.has(category)
         return <div className="contents" key={`category-${category}`}>
@@ -754,12 +795,16 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const isGated = gatedRanges.has(item.id)
         const openEnded = hasOpenEnd(item, range)
         const showOpenTrail = openEnded && row.depth === 0
-        const baseGeometry = range ? barGeometry(range) : null
+        const baseGeometry = range ? barGeometry(range, item) : null
         const geometry = baseGeometry && (openEnded || isGated) ? withMinimumBarWidth(baseGeometry, row.depth === 0 ? 148 : 116) : baseGeometry
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         const flashing = flashingItemId === item.id
         const barBorder = flashing ? "#ef4444" : colours.border
-        const canDrag = canEdit && !pending && !row.external && !isGated && !openEnded && !["done", "canceled"].includes(item.status)
+        // Existing direct manipulation is deliberately date-based. Keep the
+        // hour scale read-only until moving/resizing also persists minute
+        // values, rather than presenting a precise-looking edit that discards
+        // a meeting's time.
+        const canDrag = scale !== "hour" && canEdit && !pending && !row.external && !isGated && !openEnded && !["done", "canceled"].includes(item.status)
         // Derived summary bars move their descendants as a group and cannot be
         // resized independently without changing the hierarchy's meaning.
         const isSummary = range?.derived === true
@@ -786,7 +831,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 onPointerDown={(event) => startBarDrag(event, item, range, "move")}
                 onFocus={() => setActiveItemId(item.id)}
                 onBlur={() => setActiveItemId(null)}
-                title={isGated ? `${item.title}: starts when its predecessor finishes` : `${item.title}: ${range.start}${openEnded ? " · Open-ended" : ` → ${range.end}`}${derived ? " · Derived from child work" : ""}${statusLabel ? ` · ${statusLabel}` : ""}`}
+                title={isGated ? `${item.title}: starts when its predecessor finishes` : `${item.title}: ${range.start}${scale === "hour" ? ` ${timeLabel(item.plannedStartTime)}` : ""}${openEnded ? " · Open-ended" : ` → ${range.end}${scale === "hour" ? ` ${timeLabel(item.dueTime)}` : ""}`}${derived ? " · Derived from child work" : ""}${statusLabel ? ` · ${statusLabel}` : ""}`}
             >
                 {item.actualStartAt ? <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md opacity-25" style={{ width: `${Math.min(100, Math.max(2, ((dateDay((item.actualCompletedAt ?? today).slice(0, 10)) - dateDay(range.start) + 1) / Math.max(1, dateDay(range.end) - dateDay(range.start) + 1)) * 100))}%`, backgroundColor: colours.text }} /> : null}
                 {row.depth > 0 && canResize ? <span aria-hidden="true" className="pointer-events-none absolute inset-x-2.5 inset-y-0 z-30 border-y border-dashed" style={{ borderColor: barBorder }} /> : null}
@@ -811,8 +856,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const sourceItem = plan.items.find((item) => item.id === edge.dependsOnWorkItemId) ?? plan.externalItems.find((item) => item.id === edge.dependsOnWorkItemId)
         const targetItem = plan.items.find((item) => item.id === edge.workItemId)
         const sourceOpenEnded = sourceItem ? hasOpenEnd(sourceItem, fromRange) : false
-        const sourceGeometry = sourceOpenEnded ? withMinimumBarWidth(barGeometry(fromRange), sourceItem?.parentWorkItemId ? 116 : 148) : barGeometry(fromRange)
-        const targetGeometry = targetItem && gatedRanges.has(targetItem.id) ? withMinimumBarWidth(barGeometry(toRange), targetItem.parentWorkItemId ? 116 : 148) : barGeometry(toRange)
+        const sourceGeometry = sourceOpenEnded ? withMinimumBarWidth(barGeometry(fromRange, sourceItem), sourceItem?.parentWorkItemId ? 116 : 148) : barGeometry(fromRange, sourceItem)
+        const targetGeometry = targetItem && gatedRanges.has(targetItem.id) ? withMinimumBarWidth(barGeometry(toRange, targetItem), targetItem.parentWorkItemId ? 116 : 148) : barGeometry(toRange, targetItem)
         const sourceDivider = sourceOpenEnded && !sourceItem?.parentWorkItemId ? Math.max(sourceGeometry.right, timelineWidth - BAR_INSET) : sourceGeometry.sourceDivider
         const sourceBarRight = sourceGeometry.right
         const targetDivider = targetGeometry.targetDivider
@@ -834,8 +879,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const parentHeight = rowHeights.get(parentId)
         const parentRange = displayRanges.get(parentId)
         if (parentTop === undefined || !parentHeight || !parentRange) return []
-        const parentGeometry = barGeometry(parentRange)
-        const branchRows = children.map((child) => ({ child, top: rowTop.get(child.id)!, height: rowHeights.get(child.id)!, geometry: barGeometry(displayRanges.get(child.id)!) })).sort((a, b) => a.top - b.top)
+        const parent = plan.items.find((item) => item.id === parentId)
+        const parentGeometry = barGeometry(parentRange, parent)
+        const branchRows = children.map((child) => ({ child, top: rowTop.get(child.id)!, height: rowHeights.get(child.id)!, geometry: barGeometry(displayRanges.get(child.id)!, child) })).sort((a, b) => a.top - b.top)
         const trunkX = parentGeometry.sourceDivider
         const parentY = parentTop + parentHeight / 2
         const lastY = branchRows[branchRows.length - 1].top + branchRows[branchRows.length - 1].height / 2
@@ -857,6 +903,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 {isNarrow ? <button type="button" disabled={dragging} onClick={() => setLabelsVisible((current) => !current)} aria-label={labelsVisible ? "Hide work item labels" : "Show work item labels"} aria-pressed={labelsVisible} title={labelsVisible ? "Hide labels" : "Show labels"} className={`flex h-7 w-7 items-center justify-center rounded-md border disabled:opacity-40 ${labelsVisible ? "border-neutral-600 bg-neutral-800 text-white" : "border-neutral-800 text-neutral-500"}`}><Icon kind="labels" /></button> : null}
                 <button type="button" disabled={dragging} onClick={goToToday} className="h-7 rounded-md border border-neutral-700 bg-white px-2 text-[11px] font-semibold text-neutral-950 disabled:opacity-40">Today</button>
                 <button type="button" disabled={dragging} onClick={fitPlan} aria-label="Fit plan" title="Fit plan" className="flex h-7 w-7 items-center justify-center rounded-md border border-neutral-700 text-neutral-300 hover:border-neutral-500 hover:text-white disabled:opacity-40"><Icon kind="fit" /></button>
+                <button type="button" disabled={dragging} onClick={expandAllParents} className="hidden h-7 px-1.5 text-[10px] font-medium text-neutral-400 hover:text-white disabled:opacity-40 sm:block">Expand all</button>
+                <button type="button" disabled={dragging} onClick={collapseAllParents} className="hidden h-7 px-1.5 text-[10px] font-medium text-neutral-400 hover:text-white disabled:opacity-40 sm:block">Collapse all</button>
                 {pending ? <span role="status" aria-live="polite" className="ml-1 truncate text-[10px] text-neutral-500">Saving…</span> : null}
             </div>
             <div className="flex shrink-0 items-center gap-1">
@@ -865,7 +913,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                     <button type="button" disabled={dragging || zoom >= MAX_ZOOM} onClick={() => zoomAtTimelineCentre(zoom + (zoom >= 1 ? .5 : .25))} aria-label="Zoom in" title="Zoom in" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="plus" /></button>
                 </div>
                 <div className="flex items-center rounded-md border border-neutral-700 bg-neutral-900 p-0.5">
-                    {([['day', 'd'], ['week', 'w'], ['month', 'mo']] as const).map(([value, label]) => <button
+                    {([['hour', 'hr'], ['day', 'd'], ['week', 'w'], ['month', 'mo']] as const).map(([value, label]) => <button
                         type="button"
                         key={value}
                         disabled={dragging}
@@ -893,10 +941,11 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                     {!isNarrow ? <button type="button" aria-label="Resize timeline label column" title="Drag to resize" onPointerDown={startDividerDrag} className="group absolute -right-1.5 inset-y-0 hidden w-3 cursor-col-resize touch-none lg:block"><span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-neutral-400" /></button> : null}
                 </div>
                 <div className="sticky top-0 z-40 h-11 border-b border-neutral-700 bg-neutral-950">
-                    {headerLabels.map((label) => <span key={label.day} className="absolute top-0 flex h-full items-center border-l border-neutral-800 px-1 text-[10px] text-neutral-500" style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
+                    {headerLabels.map((label) => <span key={label.day} className={`absolute left-0 flex border-l border-neutral-800 px-1 text-[10px] text-neutral-500 ${scale === "hour" ? "h-5 items-center" : "top-0 h-full items-center"}`} style={{ left: `${label.left}px` }}>{dateLabel(label.day, scale)}</span>)}
+                    {hourLabels.map((label) => <span key={label.hour} className="absolute top-5 flex h-6 items-center border-l border-neutral-800 px-1 font-mono text-[9px] text-neutral-600" style={{ left: `${label.left}px` }}>{String(label.hour % 24).padStart(2, "0")}:00</span>)}
                     <span className="absolute inset-y-0 z-10 w-px bg-red-400/60" style={{ left: `${todayLeft}px` }} />
                 </div>
-                <div className={`sticky left-0 z-40 flex min-w-0 items-center overflow-hidden border-b border-b-neutral-800 bg-neutral-950 text-[10px] font-semibold uppercase tracking-[.08em] text-neutral-400 ${effectiveLeftWidth ? "border-r border-r-neutral-700 px-2" : "border-r-0 px-0"}`} style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{effectiveLeftWidth ? "Milestones" : null}</div><div className="relative border-b border-neutral-800" style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{plan.milestones.map((milestone) => { const left = (dateDay(milestone.occurredAt.slice(0, 10)) - rangeStart) * dayWidth; const colours = milestone.kind === "relationship_started" ? "border-sky-400 bg-sky-950" : milestone.kind === "client_invoiced" ? "border-amber-400 bg-amber-950" : milestone.kind === "onboarding_completed" ? "border-violet-400 bg-violet-950" : "border-emerald-400 bg-emerald-950"; const marker = <span className={`block h-2.5 w-2.5 rotate-45 border ${colours}`} />; return milestone.href ? <a key={milestone.id} href={milestone.href} aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded focus:outline-none focus:ring-1 focus:ring-neutral-300" style={{ left, top: 0 }}>{marker}</a> : <span key={milestone.id} role="img" aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center" style={{ left, top: 0 }}>{marker}</span> })}</div>
+                <div className={`sticky left-0 z-40 flex min-w-0 items-center overflow-hidden border-b border-b-neutral-800 bg-neutral-950 text-[10px] font-semibold uppercase tracking-[.08em] text-neutral-400 ${effectiveLeftWidth ? "border-r border-r-neutral-700 px-2" : "border-r-0 px-0"}`} style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{effectiveLeftWidth ? "Milestones" : null}</div><div className="relative border-b border-neutral-800" style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{plan.milestones.map((milestone) => { const moment = new Date(milestone.occurredAt); const milestoneMinutes = scale === "hour" ? moment.getUTCHours() * 60 + moment.getUTCMinutes() : 0; const left = timelineX(dateDay(milestone.occurredAt.slice(0, 10)), milestoneMinutes); const colours = milestone.kind === "relationship_started" ? "border-sky-400 bg-sky-950" : milestone.kind === "client_invoiced" ? "border-amber-400 bg-amber-950" : milestone.kind === "onboarding_completed" ? "border-violet-400 bg-violet-950" : "border-emerald-400 bg-emerald-950"; const marker = <span className={`block h-2.5 w-2.5 rotate-45 border ${colours}`} />; return milestone.href ? <a key={milestone.id} href={milestone.href} aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded focus:outline-none focus:ring-1 focus:ring-neutral-300" style={{ left, top: 0 }}>{marker}</a> : <span key={milestone.id} role="img" aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center" style={{ left, top: 0 }}>{marker}</span> })}</div>
                 {renderCategory("scheduled", "Scheduled", scheduledItems.length)}
                 {scheduledRows.map((row) => <div className="contents" key={`scheduled-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
                 {renderCategory("shared", "Shared", sharedItems.length + plan.externalItems.filter((item) => committedRanges.has(item.id)).length)}

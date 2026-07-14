@@ -47,6 +47,9 @@ const BAR_INSET = 8
 // bar. Its length is deliberately constant at every zoom so it always reads as
 // "still open" rather than implying a duration.
 const OPEN_TRAIL_WIDTH = 44
+// Gap between a predecessor's rendered right edge (bar plus any open trail) and
+// the gated successor placed after it, so the two read as sequential.
+const GATED_GAP = 14
 const STRUCTURAL_LINE = "#858585"
 const ACTIVE_STRUCTURAL_LINE = "#b8b8b8"
 const HOVER_BAR_OUTSET = 1
@@ -155,6 +158,14 @@ function withMinimumBarWidth(geometry: { left: number; right: number; width: num
 function openBarGeometry(geometry: { left: number; right: number; width: number; sourceDivider: number; targetDivider: number }, todayLeft: number, minimumWidth: number) {
     const right = Math.max(geometry.left + minimumWidth, todayLeft)
     return { ...geometry, width: right - geometry.left, right, sourceDivider: right }
+}
+
+// A geometry pinned to explicit pixels, for bars positioned relative to another
+// row (a gated successor placed after its predecessor) rather than to a date.
+// The target divider sits an inset left of the bar so an incoming connector
+// keeps room to draw its arrowhead.
+function fixedGeometry(left: number, width: number) {
+    return { left, right: left + width, width, sourceDivider: left + width, targetDivider: left - BAR_INSET }
 }
 
 function hasOpenEnd(item: RelationshipGanttItem, range: { derived: boolean } | null) {
@@ -377,6 +388,27 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return output
     }, [plan.dependencies, plan.items, ranges, today])
     const displayRanges = useMemo(() => new Map([...ranges, ...gatedRanges]), [gatedRanges, ranges])
+    // A gated successor has no real dates, so it can't be placed by a calendar
+    // range: the predecessor's open bar keeps a readable minimum width and can
+    // extend past "now", so a date anchor would sit underneath it. Position the
+    // successor in pixels, just past the predecessor's rendered right edge
+    // (bar plus any open trail), so it reads as beginning after the current work.
+    const gatedLefts = useMemo(() => {
+        const byId = new Map(allVisibleItems.map((item) => [item.id, item]))
+        const output = new Map<string, number>()
+        for (const edge of plan.dependencies) {
+            if (!gatedRanges.has(edge.workItemId)) continue
+            const predecessorRange = displayRanges.get(edge.dependsOnWorkItemId)
+            const predecessor = byId.get(edge.dependsOnWorkItemId)
+            if (!predecessorRange || !predecessor) continue
+            const predecessorOpen = hasOpenEnd(predecessor, predecessorRange)
+            const base = barGeometry(predecessorRange, predecessor)
+            const rightEdge = (predecessorOpen ? openBarGeometry(base, todayLeft, predecessor.parentWorkItemId ? 116 : 148) : base).right
+                + (predecessorOpen && !predecessor.parentWorkItemId ? OPEN_TRAIL_WIDTH : 0)
+            output.set(edge.workItemId, rightEdge + GATED_GAP)
+        }
+        return output
+    }, [allVisibleItems, plan.dependencies, gatedRanges, displayRanges, barGeometry, todayLeft])
     const { hiddenStepIds, remainingByNextStep } = useMemo(() => collapseSequentialSteps(plan.items), [plan.items])
     const scheduledItems = plan.items.filter((item) => item.section === "relationship" && displayRanges.has(item.id) && !hiddenStepIds.has(item.id))
     const sharedItems = plan.items.filter((item) => item.section === "shared" && displayRanges.has(item.id) && !hiddenStepIds.has(item.id))
@@ -971,7 +1003,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const openEnded = hasOpenEnd(item, range)
         const showOpenTrail = openEnded && row.depth === 0
         const baseGeometry = range ? barGeometry(range, item) : null
+        const gatedLeft = gatedLefts.get(item.id)
         const geometry = !baseGeometry ? null
+            : gatedLeft !== undefined ? fixedGeometry(gatedLeft, 148)
             : openEnded && row.depth === 0 ? openBarGeometry(baseGeometry, todayLeft, 148)
             : openEnded || isGated ? withMinimumBarWidth(baseGeometry, row.depth === 0 ? 148 : 116)
             : baseGeometry
@@ -999,7 +1033,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             className={`relative border-b border-neutral-800 transition-colors ${isActive ? "bg-white/[0.025]" : ""}`}
             style={fixedRowStyle(height)}
         >
-            {showOpenTrail && geometry ? <div aria-label={`${item.title} remains open after ${range!.start}`} className="pointer-events-none absolute z-10 border-t border-dashed" style={{ left: `${geometry.right}px`, width: `${OPEN_TRAIL_WIDTH}px`, top: `${height / 2}px`, borderColor: colours.border, opacity: .7 }}><span aria-hidden="true" className="absolute -right-0.5 -top-[13px] text-lg leading-none" style={{ color: colours.border }}>›</span></div> : null}
+            {showOpenTrail && geometry ? <div aria-label={`${item.title} remains open after ${range!.start}`} className="pointer-events-none absolute z-10 border-t border-dashed" style={{ left: `${geometry.right}px`, width: `${OPEN_TRAIL_WIDTH}px`, top: `${height / 2}px`, borderColor: colours.border, opacity: .7 }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute h-3 w-3" style={{ right: "-8px", top: "-6px", color: colours.border }}><path d="m6 4 4 4-4 4" /></svg></div> : null}
             {range && geometry ? <div
                 data-gantt-bar
                 className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 && !canResize || isGated ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
@@ -1037,8 +1071,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const sourceGeometry = !sourceOpenEnded ? barGeometry(fromRange, sourceItem)
             : sourceItem?.parentWorkItemId ? withMinimumBarWidth(barGeometry(fromRange, sourceItem), 116)
             : openBarGeometry(barGeometry(fromRange, sourceItem), todayLeft, 148)
-        const targetGeometry = targetItem && gatedRanges.has(targetItem.id) ? withMinimumBarWidth(barGeometry(toRange, targetItem), targetItem.parentWorkItemId ? 116 : 148) : barGeometry(toRange, targetItem)
-        const sourceDivider = sourceGeometry.sourceDivider
+        const gatedTargetLeft = targetItem ? gatedLefts.get(targetItem.id) : undefined
+        const targetGeometry = gatedTargetLeft !== undefined ? fixedGeometry(gatedTargetLeft, 148)
+            : targetItem && gatedRanges.has(targetItem.id) ? withMinimumBarWidth(barGeometry(toRange, targetItem), targetItem.parentWorkItemId ? 116 : 148)
+            : barGeometry(toRange, targetItem)
+        // An open-ended source's bar edge is its live "now" front; route the
+        // connector out past its trail before it turns down so it leaves from a
+        // divider rather than dropping straight off the bar.
+        const sourceDivider = sourceOpenEnded ? sourceGeometry.right + (sourceItem?.parentWorkItemId ? GATED_GAP : OPEN_TRAIL_WIDTH) : sourceGeometry.sourceDivider
         const sourceBarRight = sourceGeometry.right
         const targetDivider = targetGeometry.targetDivider
         const targetBarLeft = targetGeometry.left

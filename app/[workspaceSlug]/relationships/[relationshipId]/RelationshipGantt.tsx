@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal, flushSync } from "react-dom"
-import { Assignee, Status, relationshipPhaseColours } from "@/components/ui"
+import { Assignee, RoundPill, Status, relationshipPhaseColours } from "@/components/ui"
 import { ganttSyncChannelName, postGanttSync } from "@/lib/ui/gantt-sync"
 import { ganttAnchoredScrollLeft, ganttArrowHeadPath, ganttDragDayDelta } from "@/lib/ui/gantt-geometry"
 import { addCalendarDays, dateDay, effectiveGanttRanges, ganttTimelineRange, rangeContainsRange, type ScheduleChange } from "@/lib/relationship-gantt-schedule"
@@ -145,6 +145,35 @@ function openBarGeometry(geometry: { left: number; right: number; width: number;
 
 function hasOpenEnd(item: RelationshipGanttItem, range: { derived: boolean } | null) {
     return Boolean(range && !range.derived && item.plannedStartDate && !item.dueDate && !["done", "canceled"].includes(item.status))
+}
+
+// Onboarding and review steps are stored as open-ended children of a lifecycle
+// stage — a shared start date, no finish, chained by finish-to-start
+// dependencies. Drawn literally they stack at the same start and read as
+// parallel work rather than a sequence. Collapse each such chain to its next
+// incomplete step so only one shows at a time, and report how many further
+// steps remain so the row can hint at the rest. Dated stage children (e.g.
+// fulfilment services) carry real timeframes and are deliberately untouched.
+function collapseSequentialSteps(items: RelationshipGanttItem[]) {
+    const byId = new Map(items.map((item) => [item.id, item]))
+    const chains = new Map<string, RelationshipGanttItem[]>()
+    for (const item of items) {
+        const parent = item.parentWorkItemId ? byId.get(item.parentWorkItemId) : null
+        if (parent?.workflowRole === "lifecycle_stage" && item.plannedStartDate && !item.dueDate) {
+            chains.set(parent.id, [...(chains.get(parent.id) ?? []), item])
+        }
+    }
+    const hiddenStepIds = new Set<string>()
+    const remainingByNextStep = new Map<string, number>()
+    for (const chain of chains.values()) {
+        if (chain.length <= 1) continue
+        const ordered = [...chain].sort((left, right) => left.sortOrder - right.sortOrder)
+        const incomplete = ordered.filter((item) => !["done", "canceled"].includes(item.status))
+        const next = incomplete[0]
+        for (const item of ordered) if (item.id !== next?.id) hiddenStepIds.add(item.id)
+        if (next && incomplete.length > 1) remainingByNextStep.set(next.id, incomplete.length - 1)
+    }
+    return { hiddenStepIds, remainingByNextStep }
 }
 
 function flattenRows(items: RelationshipGanttItem[], collapsed: Set<string>, category: Category) {
@@ -306,9 +335,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return output
     }, [plan.dependencies, plan.items, ranges])
     const displayRanges = useMemo(() => new Map([...ranges, ...gatedRanges]), [gatedRanges, ranges])
-    const scheduledItems = plan.items.filter((item) => item.section === "relationship" && displayRanges.has(item.id))
-    const sharedItems = plan.items.filter((item) => item.section === "shared" && displayRanges.has(item.id))
-    const unscheduledItems = plan.items.filter((item) => !displayRanges.has(item.id))
+    const { hiddenStepIds, remainingByNextStep } = useMemo(() => collapseSequentialSteps(plan.items), [plan.items])
+    const scheduledItems = plan.items.filter((item) => item.section === "relationship" && displayRanges.has(item.id) && !hiddenStepIds.has(item.id))
+    const sharedItems = plan.items.filter((item) => item.section === "shared" && displayRanges.has(item.id) && !hiddenStepIds.has(item.id))
+    const unscheduledItems = plan.items.filter((item) => !displayRanges.has(item.id) && !hiddenStepIds.has(item.id))
     const scheduledRows = collapsedCategories.has("scheduled") ? [] : flattenRows(scheduledItems, collapsed, "scheduled")
     const sharedRows = collapsedCategories.has("shared") ? [] : flattenRows(sharedItems, collapsed, "shared")
     const unscheduledRows = collapsedCategories.has("unscheduled") ? [] : flattenRows(unscheduledItems, collapsed, "unscheduled")
@@ -884,6 +914,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             {isRoot && !hasChildren ? <span className="w-5 shrink-0" style={{ marginLeft: "12px" }} /> : null}
             {!isRoot && !hasChildren ? <span className="w-5 shrink-0" style={{ marginLeft: `${(row.depth + 1) * 12}px` }} /> : null}
             <Link href={`/${workspaceSlug}/work-items/${row.item.id}`} className={`min-w-0 flex-1 truncate whitespace-nowrap text-left text-neutral-200 hover:text-white ${isRoot ? "text-sm font-semibold" : "text-xs font-normal"}`} title={row.item.title}>{row.item.title}</Link>
+            {remainingByNextStep.has(row.item.id) ? <span title={`${remainingByNextStep.get(row.item.id)} more step${remainingByNextStep.get(row.item.id) === 1 ? "" : "s"} follow in sequence`} className="shrink-0"><RoundPill tone="neutral">+{remainingByNextStep.get(row.item.id)} more</RoundPill></span> : null}
             {contextLabel ? <span title={contextLabel === "external" ? "Prerequisite from outside this relationship" : "Work shared with another relationship"} className="shrink-0 text-[9px] text-neutral-600">{contextLabel}</span> : null}
             {isUnscheduled ? <Link href={`/${workspaceSlug}/work-items/${row.item.id}`} aria-label={`Schedule ${row.item.title}`} title="Unscheduled — open to add dates" className="flex h-7 w-7 shrink-0 items-center justify-center text-neutral-600 hover:text-white"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" className="h-3.5 w-3.5"><path d="M5 3v3M15 3v3M3 7h14M4 5h12v12H4z" /></svg></Link> : null}
         </div>

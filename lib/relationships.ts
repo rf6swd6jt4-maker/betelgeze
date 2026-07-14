@@ -468,7 +468,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
         ? { data: null, error: { message: "fallback relationship" } }
         : await supabaseAdmin
             .from("work_item_relationships")
-            .select("work_items!inner(id, workspace_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, due_date, actual_start_at, actual_completed_at, sort_order, metadata, created_by, created_at, updated_at)")
+            .select("work_items!work_item_relationships_work_item_id_fkey(id, workspace_id, title, description, lifecycle_phase, status, priority, is_key_task, native_kind, native_id, native_href, planned_start_date, due_date, actual_start_at, actual_completed_at, sort_order, metadata, created_by, created_at, updated_at)")
             .eq("workspace_id", relationship.workspace_id)
             .eq("relationship_id", relationship.id)
             .order("created_at", { ascending: true })

@@ -486,7 +486,7 @@ export async function advanceRelationshipWorkflow(input: { workspaceId: string; 
 
 export async function currentRelationshipWork(input: { workspaceId: string; relationshipId: string; userId: string; isManager: boolean }) {
     const [{ data: links }, { data: assignments }, { data: dependencies }] = await Promise.all([
-        supabaseAdmin.from("work_item_relationships").select("work_item_id, work_items!inner(id, title, status, workflow_role, workflow_action, parent_work_item_id, sort_order)").eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId),
+        supabaseAdmin.from("work_item_relationships").select("work_item_id, work_items!work_item_relationships_work_item_id_fkey(id, title, status, workflow_role, workflow_action, parent_work_item_id, sort_order)").eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId),
         supabaseAdmin.from("work_item_assignees").select("work_item_id, user_id").eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("work_item_dependencies").select("work_item_id, depends_on_work_item_id").eq("workspace_id", input.workspaceId),
     ])

@@ -87,6 +87,18 @@ test("explicit times on the same date obey the finish-to-start boundary", () => 
     assert.equal(shifted?.dueTime, "18:00")
 })
 
+test("a timed Gantt edit retains its snapped start and due times", () => {
+    const call = item("call", "2026-07-10", "2026-07-10")
+    call.plannedStartTime = "09:00"
+    call.dueTime = "09:30"
+    const changes = previewScheduleCascade([call], [], {
+        id: "call", plannedStartDate: "2026-07-10", plannedStartTime: "09:05",
+        dueDate: "2026-07-10", dueTime: "09:35",
+    })
+    assert.equal(changes[0].plannedStartTime, "09:05")
+    assert.equal(changes[0].dueTime, "09:35")
+})
+
 test("a parent-child hierarchy edge does not push the child outside the parent timeframe", () => {
     const changes = previewScheduleCascade(
         [item("parent", "2026-07-01", "2026-07-03"), item("child", "2026-07-02", "2026-07-04", "parent")],

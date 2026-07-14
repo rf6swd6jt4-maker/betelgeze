@@ -108,13 +108,15 @@ export function rangeContainsRange(parent: { start: string; end: string }, child
 export function previewScheduleCascade<T extends GanttScheduleItem>(
     items: T[],
     dependencies: GanttScheduleDependency[],
-    requested: { id: string; plannedStartDate: string; dueDate: string },
+    requested: { id: string; plannedStartDate: string; plannedStartTime?: string | null; dueDate: string; dueTime?: string | null },
 ) {
     const drafts = new Map(items.map((item) => [item.id, { ...item }]))
     const primary = drafts.get(requested.id)
     if (!primary) return []
     primary.plannedStartDate = requested.plannedStartDate
+    if (requested.plannedStartTime !== undefined) primary.plannedStartTime = requested.plannedStartTime
     primary.dueDate = requested.dueDate
+    if (requested.dueTime !== undefined) primary.dueTime = requested.dueTime
     const changed = new Set([primary.id])
     const children = new Map<string, string[]>()
     for (const item of drafts.values()) if (item.parentWorkItemId) children.set(item.parentWorkItemId, [...(children.get(item.parentWorkItemId) ?? []), item.id])

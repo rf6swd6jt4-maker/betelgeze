@@ -51,7 +51,7 @@ export async function loadGanttPlan(slug: string, relationshipId: string): Promi
 export async function previewGanttScheduleChange(
     slug: string,
     relationshipId: string,
-    requested: { id: string; plannedStartDate: string; dueDate: string },
+    requested: { id: string; plannedStartDate: string; plannedStartTime?: string | null; dueDate: string; dueTime?: string | null },
 ): Promise<GanttMutationResult> {
     try {
         const { workspace } = await requireGantt(slug, relationshipId)

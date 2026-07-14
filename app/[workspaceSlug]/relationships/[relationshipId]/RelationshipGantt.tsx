@@ -177,7 +177,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const scrollRef = useRef<HTMLDivElement>(null)
     const initiallyCenteredRef = useRef(false)
     const mobileZoomInitialisedRef = useRef(false)
-    const previousGeometryRef = useRef<{ leftWidth: number; rangeStart: number } | null>(null)
+    const previousGeometryRef = useRef<{ dayWidth: number; leftWidth: number; rangeStart: number } | null>(null)
     const zoomAnchorRef = useRef<{ calendarDay: number; localX: number; scrollTop: number } | null>(null)
     const touchPointsRef = useRef(new Map<number, { x: number; y: number }>())
     const touchPanRef = useRef<{ pointerId: number; x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null)
@@ -232,6 +232,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const dayWidth = zoom
     const scale = scaleForDayWidth(dayWidth)
     const timeScale = isTimeScale(scale)
+    // Keep timed bars projected from their real timestamps through day view.
+    // Only the header density changes at the 3h → day boundary, so work stays
+    // visually anchored while the timeline widens or narrows.
+    const positionByTime = scale !== "week" && scale !== "month"
     const today = localDateValue()
     const requestedTimelineRange = useMemo(() => ganttTimelineRange(
         [...plan.items, ...plan.externalItems],
@@ -244,23 +248,23 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const effectiveLeftWidth = isNarrow ? (labelsVisible ? 152 : 0) : leftWidth
     const visibleTimelineWidth = Math.max(120, viewportWidth - effectiveLeftWidth)
     const minimumZoom = Math.min(MIN_ZOOM, Math.max(1, visibleTimelineWidth / rangeDays))
-    const timelineX = useCallback((day: number, minutes = 0) => (day - rangeStart) * dayWidth + (timeScale ? minutes / 1440 * dayWidth : 0), [dayWidth, rangeStart, timeScale])
+    const timelineX = useCallback((day: number, minutes = 0) => (day - rangeStart) * dayWidth + (positionByTime ? minutes / 1440 * dayWidth : 0), [dayWidth, positionByTime, rangeStart])
     const timelineWidth = rangeDays * dayWidth
     const now = new Date()
-    const todayLeft = timelineX(dateDay(today), timeScale ? now.getHours() * 60 + now.getMinutes() : 0)
+    const todayLeft = timelineX(dateDay(today), positionByTime ? now.getHours() * 60 + now.getMinutes() : 0)
     // Bars span their actual start→due dates (the due day is inclusive, so the
     // bar reaches the end of that day) rather than snapping to whole columns,
     // which previously made every bar fill its week or month at coarse scales.
     const barGeometry = useCallback((range: { start: string; end: string }, item?: RelationshipGanttItem) => {
-        const startMinutes = timeScale ? timeMinutes(item?.plannedStartTime ?? null) ?? 0 : 0
-        const endMinutes = timeScale ? timeMinutes(item?.dueTime ?? null) : null
+        const startMinutes = positionByTime ? timeMinutes(item?.plannedStartTime ?? null) ?? 0 : 0
+        const endMinutes = positionByTime ? timeMinutes(item?.dueTime ?? null) : null
         const columnLeft = timelineX(dateDay(range.start), startMinutes)
-        const columnRight = timeScale
+        const columnRight = positionByTime
             ? timelineX(dateDay(range.end) + (endMinutes === null ? 1 : 0), endMinutes ?? 0)
             : timelineX(dateDay(range.end) + 1)
         const inset = Math.min(BAR_INSET, Math.max(1, dayWidth * .15))
         return { left: columnLeft + inset, right: columnRight - inset, width: Math.max(4, columnRight - columnLeft - inset * 2), sourceDivider: columnRight, targetDivider: columnLeft }
-    }, [dayWidth, timeScale, timelineX])
+    }, [dayWidth, positionByTime, timelineX])
     const committedItems = useMemo(() => [...plan.items, ...plan.externalItems], [plan])
     const committedRanges = useMemo(() => effectiveGanttRanges(committedItems), [committedItems])
     const allVisibleItems = useMemo(() => committedItems.map((item) => {
@@ -334,7 +338,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const rendered: Array<{ milestone: RelationshipGanttPlan["milestones"][number]; left: number }> = []
         for (const milestone of plan.milestones) {
             const moment = new Date(milestone.occurredAt)
-            const minutes = timeScale ? moment.getUTCHours() * 60 + moment.getUTCMinutes() : 0
+            const minutes = positionByTime ? moment.getUTCHours() * 60 + moment.getUTCMinutes() : 0
             const left = timelineX(dateDay(milestone.occurredAt.slice(0, 10)), minutes)
             // Later milestones sit above earlier ones. When a marker would
             // substantially obscure an earlier marker at this scale, omit the
@@ -345,7 +349,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             rendered.push({ milestone, left })
         }
         return rendered
-    }, [plan.milestones, timeScale, timelineX])
+    }, [plan.milestones, positionByTime, timelineX])
     const weekendDays = useMemo(() => Array.from({ length: rangeDays }, (_, index) => rangeStart + index).filter((day) => {
         const weekday = new Date(day * 86_400_000).getUTCDay()
         return weekday === 0 || weekday === 6
@@ -366,8 +370,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     useEffect(() => {
         const previous = previousGeometryRef.current
         const node = scrollRef.current
-        if (previous && node && !zoomAnchorRef.current) node.scrollLeft = Math.max(0, node.scrollLeft + effectiveLeftWidth - previous.leftWidth + (previous.rangeStart - rangeStart) * dayWidth)
-        previousGeometryRef.current = { leftWidth: effectiveLeftWidth, rangeStart }
+        const frameChanged = previous && (previous.leftWidth !== effectiveLeftWidth || previous.rangeStart !== rangeStart)
+        if (frameChanged && node && !zoomAnchorRef.current) node.scrollLeft = Math.max(0, node.scrollLeft + effectiveLeftWidth - previous.leftWidth + (previous.rangeStart - rangeStart) * dayWidth)
+        previousGeometryRef.current = { dayWidth, leftWidth: effectiveLeftWidth, rangeStart }
     }, [dayWidth, effectiveLeftWidth, rangeStart])
 
     useLayoutEffect(() => {
@@ -991,7 +996,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                     <button type="button" disabled={dragging || zoom >= MAX_ZOOM} onClick={() => zoomAtTimelineCentre(zoom * 1.6)} aria-label="Zoom in" title="Zoom in" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="plus" /></button>
                 </div>
                 <div className="flex items-center rounded-md border border-neutral-700 bg-neutral-900 p-0.5">
-                    {([['quarter_hour', '15m'], ['hour', 'hr'], ['three_hour', '3h'], ['day', 'd'], ['week', 'w'], ['month', 'mo']] as const).map(([value, label]) => <button
+                    {([['hour', 'hr'], ['day', 'd'], ['week', 'w'], ['month', 'mo']] as const).map(([value, label]) => <button
                         type="button"
                         key={value}
                         disabled={dragging}

@@ -96,6 +96,20 @@ function localDateValue(date = new Date()) {
     return `${year}-${month}-${day}`
 }
 
+// Split a saved timestamp into the local calendar date and HH:MM the Gantt
+// positions by, so a completion recorded to the minute lands on the same wall
+// clock the rest of the chart uses.
+function localClock(value: string | null) {
+    if (!value) return null
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return null
+    return { date: localDateValue(parsed), time: `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}` }
+}
+
+function scheduleMinutes(date: string, time: string | null) {
+    return dateDay(date) * 1440 + (timeMinutes(time) ?? 0)
+}
+
 function addCalendarMonths(value: string, months: number) {
     const date = new Date(`${value}T00:00:00Z`)
     const day = date.getUTCDate()
@@ -315,25 +329,53 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     }, [dayWidth, positionByTime, timelineX])
     const committedItems = useMemo(() => [...plan.items, ...plan.externalItems], [plan])
     const committedRanges = useMemo(() => effectiveGanttRanges(committedItems), [committedItems])
-    const allVisibleItems = useMemo(() => committedItems.map((item) => {
+    const previewedItems = useMemo(() => committedItems.map((item) => {
         const preview = dragPreview?.changes.get(item.id)
-        return preview ? { ...item, plannedStartDate: preview.start, plannedStartTime: preview.startTime, dueDate: preview.end, dueTime: preview.dueTime } : item
+        if (preview) return { ...item, plannedStartDate: preview.start, plannedStartTime: preview.startTime, dueDate: preview.end, dueTime: preview.dueTime }
+        // A finished open-ended item (e.g. a lifecycle stage that never had a
+        // planned finish) ends the moment it was actually completed. Surface
+        // that already-saved timestamp to the minute so a zoomed-in Gantt shows
+        // 16:05 rather than a stub at the start day.
+        const completion = ["done", "canceled"].includes(item.status) && item.plannedStartDate && !item.dueDate ? localClock(item.actualCompletedAt) : null
+        return completion ? { ...item, dueDate: completion.date, dueTime: completion.time } : item
     }), [committedItems, dragPreview])
+    // A stage begins when its predecessor finishes. A freshly-activated stage is
+    // planned to a whole start day, so it would share the predecessor's start
+    // column and read as concurrent. Push its display start to the predecessor's
+    // real finish instead; storage keeps the whole-day plan.
+    const stageStartOverrides = useMemo(() => {
+        const byId = new Map(previewedItems.map((item) => [item.id, item]))
+        const overrides = new Map<string, { date: string; time: string | null }>()
+        for (const edge of plan.dependencies) {
+            const successor = byId.get(edge.workItemId)
+            const predecessor = byId.get(edge.dependsOnWorkItemId)
+            if (!successor || !predecessor || successor.workflowRole !== "lifecycle_stage" || successor.dueDate || !successor.plannedStartDate || !predecessor.dueDate) continue
+            if (scheduleMinutes(successor.plannedStartDate, successor.plannedStartTime) >= scheduleMinutes(predecessor.dueDate, predecessor.dueTime)) continue
+            overrides.set(successor.id, { date: predecessor.dueDate, time: predecessor.dueTime })
+        }
+        return overrides
+    }, [plan.dependencies, previewedItems])
+    const allVisibleItems = useMemo(() => previewedItems.map((item) => {
+        const override = stageStartOverrides.get(item.id)
+        return override ? { ...item, plannedStartDate: override.date, plannedStartTime: override.time } : item
+    }), [previewedItems, stageStartOverrides])
     const ranges = useMemo(() => effectiveGanttRanges(allVisibleItems), [allVisibleItems])
     // A lifecycle stage waiting on the current stage has no truthful calendar
-    // date yet. Anchor its outlined preview to the predecessor's start solely
-    // for display; it remains unscheduled in storage until it actually begins.
+    // date yet. Anchor its outlined preview to the predecessor's live front — its
+    // finish if scheduled, otherwise today — so it reads as starting after the
+    // current work rather than sharing its start. It stays unscheduled in storage.
     const gatedRanges = useMemo(() => {
         const output = new Map<string, { start: string; end: string; derived: boolean }>()
         for (const edge of plan.dependencies) {
             const item = plan.items.find((candidate) => candidate.id === edge.workItemId)
             const predecessor = ranges.get(edge.dependsOnWorkItemId)
             if (item?.workflowRole === "lifecycle_stage" && !item.plannedStartDate && !item.dueDate && predecessor) {
-                output.set(item.id, { start: predecessor.start, end: predecessor.start, derived: false })
+                const anchor = dateDay(predecessor.end) > dateDay(today) ? predecessor.end : today
+                output.set(item.id, { start: anchor, end: anchor, derived: false })
             }
         }
         return output
-    }, [plan.dependencies, plan.items, ranges])
+    }, [plan.dependencies, plan.items, ranges, today])
     const displayRanges = useMemo(() => new Map([...ranges, ...gatedRanges]), [gatedRanges, ranges])
     const { hiddenStepIds, remainingByNextStep } = useMemo(() => collapseSequentialSteps(plan.items), [plan.items])
     const scheduledItems = plan.items.filter((item) => item.section === "relationship" && displayRanges.has(item.id) && !hiddenStepIds.has(item.id))

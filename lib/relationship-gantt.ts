@@ -174,14 +174,13 @@ export async function getRelationshipGanttPlan(_workspaceSlug: string, relations
     const fulfilmentStage = rawItems.find((item) => item.native_key === `${relationship.id}:fulfilment` && item.actual_completed_at)
     if (fulfilmentStage?.actual_completed_at) milestones.push({ id: `client-fulfilled-${relationship.id}`, title: "Client Fulfilled", occurredAt: fulfilmentStage.actual_completed_at, kind: "client_fulfilled", href: null })
 
-    const milestoneByDay = new Map<string, RelationshipGanttMilestone>()
-    for (const milestone of milestones) milestoneByDay.set(milestone.occurredAt.slice(0, 10), milestone)
-
     return {
         items,
         externalItems,
         dependencies: relevantDependencies.map((edge) => ({ workItemId: edge.work_item_id, dependsOnWorkItemId: edge.depends_on_work_item_id, source: edge.source, external: externalIds.has(edge.depends_on_work_item_id) })),
-        milestones: [...milestoneByDay.values()].sort((left, right) => left.occurredAt.localeCompare(right.occurredAt)),
+        // Preserve every event. The chart deliberately resolves visual overlap
+        // at its active scale, with the most recent event painted on top.
+        milestones: milestones.sort((left, right) => left.occurredAt.localeCompare(right.occurredAt)),
     }
 }
 

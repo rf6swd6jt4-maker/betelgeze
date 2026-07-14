@@ -43,7 +43,8 @@ const MAX_ZOOM = 6
 const BAR_INSET = 8
 const STRUCTURAL_LINE = "#858585"
 const ACTIVE_STRUCTURAL_LINE = "#b8b8b8"
-const CATEGORY_BACKGROUND = "repeating-linear-gradient(135deg, transparent 0 24px, #262626 24px 26px)"
+const CATEGORY_BACKGROUND = "linear-gradient(135deg, transparent 0 24px, #262626 24px 26px)"
+const CATEGORY_BACKGROUND_SIZE = "26px 26px"
 // In hour view this is the width of one hour; the rest of the chart still
 // projects in days, so a complete day remains 24 of these columns wide.
 const SCALE_WIDTH: Record<Scale, number> = { hour: 3, day: 64, week: 28, month: 12 }
@@ -287,6 +288,22 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const hourLabels = useMemo(() => scale === "hour"
         ? Array.from({ length: rangeDays * 4 }, (_, index) => ({ hour: index * 6, left: index / 4 * dayWidth }))
         : [], [dayWidth, rangeDays, scale])
+    const visibleMilestones = useMemo(() => {
+        const rendered: Array<{ milestone: RelationshipGanttPlan["milestones"][number]; left: number }> = []
+        for (const milestone of plan.milestones) {
+            const moment = new Date(milestone.occurredAt)
+            const minutes = scale === "hour" ? moment.getUTCHours() * 60 + moment.getUTCMinutes() : 0
+            const left = timelineX(dateDay(milestone.occurredAt.slice(0, 10)), minutes)
+            // Later milestones sit above earlier ones. When a marker would
+            // substantially obscure an earlier marker at this scale, omit the
+            // obscured one instead of leaving an indistinguishable stack.
+            for (let index = rendered.length - 1; index >= 0; index -= 1) {
+                if (Math.abs(rendered[index].left - left) < 10) rendered.splice(index, 1)
+            }
+            rendered.push({ milestone, left })
+        }
+        return rendered
+    }, [plan.milestones, scale, timelineX])
     const weekendDays = useMemo(() => Array.from({ length: rangeDays }, (_, index) => rangeStart + index).filter((day) => {
         const weekday = new Date(day * 86_400_000).getUTCDay()
         return weekday === 0 || weekday === 6
@@ -748,7 +765,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 <span className="truncate">{label}</span>
                 <span className="ml-auto text-[9px] font-normal tabular-nums text-neutral-600">{count}</span>
             </button>
-            <div aria-hidden="true" className="border-b border-neutral-800 bg-neutral-950" style={{ ...fixedRowStyle(CATEGORY_ROW_HEIGHT), backgroundImage: CATEGORY_BACKGROUND, backgroundAttachment: "local" }} />
+            <div aria-hidden="true" className="border-b border-neutral-800 bg-neutral-950" style={{ ...fixedRowStyle(CATEGORY_ROW_HEIGHT), backgroundImage: CATEGORY_BACKGROUND, backgroundPosition: "0 0", backgroundRepeat: "repeat", backgroundSize: CATEGORY_BACKGROUND_SIZE }} />
         </div>
     }
 
@@ -827,7 +844,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             {range && geometry ? <div
                 data-gantt-bar
                 className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 && !canResize || isGated ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: isGated ? "transparent" : colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: isActive ? "scale(1.01)" : undefined, transformOrigin: "center", opacity: isGated ? .72 : undefined }}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: isGated ? "transparent" : colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, opacity: isGated ? .72 : undefined }}
                 onPointerDown={(event) => startBarDrag(event, item, range, "move")}
                 onFocus={() => setActiveItemId(item.id)}
                 onBlur={() => setActiveItemId(null)}
@@ -945,7 +962,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                     {hourLabels.map((label) => <span key={label.hour} className="absolute top-5 flex h-6 items-center border-l border-neutral-800 px-1 font-mono text-[9px] text-neutral-600" style={{ left: `${label.left}px` }}>{String(label.hour % 24).padStart(2, "0")}:00</span>)}
                     <span className="absolute inset-y-0 z-10 w-px bg-red-400/60" style={{ left: `${todayLeft}px` }} />
                 </div>
-                <div className={`sticky left-0 z-40 flex min-w-0 items-center overflow-hidden border-b border-b-neutral-800 bg-neutral-950 text-[10px] font-semibold uppercase tracking-[.08em] text-neutral-400 ${effectiveLeftWidth ? "border-r border-r-neutral-700 px-2" : "border-r-0 px-0"}`} style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{effectiveLeftWidth ? "Milestones" : null}</div><div className="relative border-b border-neutral-800" style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{plan.milestones.map((milestone) => { const moment = new Date(milestone.occurredAt); const milestoneMinutes = scale === "hour" ? moment.getUTCHours() * 60 + moment.getUTCMinutes() : 0; const left = timelineX(dateDay(milestone.occurredAt.slice(0, 10)), milestoneMinutes); const colours = milestone.kind === "relationship_started" ? "border-sky-400 bg-sky-950" : milestone.kind === "client_invoiced" ? "border-amber-400 bg-amber-950" : milestone.kind === "onboarding_completed" ? "border-violet-400 bg-violet-950" : "border-emerald-400 bg-emerald-950"; const marker = <span className={`block h-2.5 w-2.5 rotate-45 border ${colours}`} />; return milestone.href ? <a key={milestone.id} href={milestone.href} aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded focus:outline-none focus:ring-1 focus:ring-neutral-300" style={{ left, top: 0 }}>{marker}</a> : <span key={milestone.id} role="img" aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center" style={{ left, top: 0 }}>{marker}</span> })}</div>
+                <div className={`sticky left-0 z-40 flex min-w-0 items-center overflow-hidden border-b border-b-neutral-800 bg-neutral-950 text-[10px] font-semibold uppercase tracking-[.08em] text-neutral-400 ${effectiveLeftWidth ? "border-r border-r-neutral-700 px-2" : "border-r-0 px-0"}`} style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{effectiveLeftWidth ? "Milestones" : null}</div><div className="relative border-b border-neutral-800" style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{visibleMilestones.map(({ milestone, left }) => { const colours = milestone.kind === "relationship_started" ? "border-sky-400 bg-sky-950" : milestone.kind === "client_invoiced" ? "border-amber-400 bg-amber-950" : milestone.kind === "onboarding_completed" ? "border-violet-400 bg-violet-950" : "border-emerald-400 bg-emerald-950"; const marker = <span className={`block h-2.5 w-2.5 rotate-45 border ${colours}`} />; return milestone.href ? <a key={milestone.id} href={milestone.href} aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded focus:outline-none focus:ring-1 focus:ring-neutral-300" style={{ left, top: 0 }}>{marker}</a> : <span key={milestone.id} role="img" aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center" style={{ left, top: 0 }}>{marker}</span> })}</div>
                 {renderCategory("scheduled", "Scheduled", scheduledItems.length)}
                 {scheduledRows.map((row) => <div className="contents" key={`scheduled-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
                 {renderCategory("shared", "Shared", sharedItems.length + plan.externalItems.filter((item) => committedRanges.has(item.id)).length)}

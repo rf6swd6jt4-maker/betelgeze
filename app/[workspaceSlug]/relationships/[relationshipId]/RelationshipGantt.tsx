@@ -43,6 +43,10 @@ const DEFAULT_ZOOM = 56
 const MIN_ZOOM = 8
 const MAX_ZOOM = 3_456
 const BAR_INSET = 8
+// A short, fixed dashed continuation past the live "now" front of an open-ended
+// bar. Its length is deliberately constant at every zoom so it always reads as
+// "still open" rather than implying a duration.
+const OPEN_TRAIL_WIDTH = 44
 const STRUCTURAL_LINE = "#858585"
 const ACTIVE_STRUCTURAL_LINE = "#b8b8b8"
 const HOVER_BAR_OUTSET = 1
@@ -128,6 +132,15 @@ function compareWorkItems(left: RelationshipGanttItem, right: RelationshipGanttI
 function withMinimumBarWidth(geometry: { left: number; right: number; width: number; sourceDivider: number; targetDivider: number }, minimumWidth: number) {
     const width = Math.max(minimumWidth, geometry.width)
     return { ...geometry, width, right: geometry.left + width, sourceDivider: geometry.left + width }
+}
+
+// An open-ended item has no finish, so a bar length can't tell the truth about
+// when it ends. Instead of running to the timeline edge, the solid bar spans
+// from its start to the live "now" front (never below a readable minimum); the
+// dashed trail then carries the "still open" signal a short, fixed distance on.
+function openBarGeometry(geometry: { left: number; right: number; width: number; sourceDivider: number; targetDivider: number }, todayLeft: number, minimumWidth: number) {
+    const right = Math.max(geometry.left + minimumWidth, todayLeft)
+    return { ...geometry, width: right - geometry.left, right, sourceDivider: right }
 }
 
 function hasOpenEnd(item: RelationshipGanttItem, range: { derived: boolean } | null) {
@@ -885,7 +898,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const openEnded = hasOpenEnd(item, range)
         const showOpenTrail = openEnded && row.depth === 0
         const baseGeometry = range ? barGeometry(range, item) : null
-        const geometry = baseGeometry && (openEnded || isGated) ? withMinimumBarWidth(baseGeometry, row.depth === 0 ? 148 : 116) : baseGeometry
+        const geometry = !baseGeometry ? null
+            : openEnded && row.depth === 0 ? openBarGeometry(baseGeometry, todayLeft, 148)
+            : openEnded || isGated ? withMinimumBarWidth(baseGeometry, row.depth === 0 ? 148 : 116)
+            : baseGeometry
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         const flashing = flashingItemId === item.id
         const barBorder = flashing ? "#ef4444" : colours.border
@@ -910,7 +926,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             className={`relative border-b border-neutral-800 transition-colors ${isActive ? "bg-white/[0.025]" : ""}`}
             style={fixedRowStyle(height)}
         >
-            {showOpenTrail && geometry ? <div aria-label={`${item.title} remains open after ${range!.start}`} className="pointer-events-none absolute z-10 border-t border-dashed" style={{ left: `${geometry.right}px`, right: `${BAR_INSET}px`, top: `${height / 2}px`, borderColor: colours.border, opacity: .7 }}><span aria-hidden="true" className="absolute -right-0.5 -top-[13px] text-lg leading-none" style={{ color: colours.border }}>›</span></div> : null}
+            {showOpenTrail && geometry ? <div aria-label={`${item.title} remains open after ${range!.start}`} className="pointer-events-none absolute z-10 border-t border-dashed" style={{ left: `${geometry.right}px`, width: `${OPEN_TRAIL_WIDTH}px`, top: `${height / 2}px`, borderColor: colours.border, opacity: .7 }}><span aria-hidden="true" className="absolute -right-0.5 -top-[13px] text-lg leading-none" style={{ color: colours.border }}>›</span></div> : null}
             {range && geometry ? <div
                 data-gantt-bar
                 className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 && !canResize || isGated ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
@@ -945,9 +961,11 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const sourceItem = plan.items.find((item) => item.id === edge.dependsOnWorkItemId) ?? plan.externalItems.find((item) => item.id === edge.dependsOnWorkItemId)
         const targetItem = plan.items.find((item) => item.id === edge.workItemId)
         const sourceOpenEnded = sourceItem ? hasOpenEnd(sourceItem, fromRange) : false
-        const sourceGeometry = sourceOpenEnded ? withMinimumBarWidth(barGeometry(fromRange, sourceItem), sourceItem?.parentWorkItemId ? 116 : 148) : barGeometry(fromRange, sourceItem)
+        const sourceGeometry = !sourceOpenEnded ? barGeometry(fromRange, sourceItem)
+            : sourceItem?.parentWorkItemId ? withMinimumBarWidth(barGeometry(fromRange, sourceItem), 116)
+            : openBarGeometry(barGeometry(fromRange, sourceItem), todayLeft, 148)
         const targetGeometry = targetItem && gatedRanges.has(targetItem.id) ? withMinimumBarWidth(barGeometry(toRange, targetItem), targetItem.parentWorkItemId ? 116 : 148) : barGeometry(toRange, targetItem)
-        const sourceDivider = sourceOpenEnded && !sourceItem?.parentWorkItemId ? Math.max(sourceGeometry.right, timelineGutter + timelineWidth - BAR_INSET) : sourceGeometry.sourceDivider
+        const sourceDivider = sourceGeometry.sourceDivider
         const sourceBarRight = sourceGeometry.right
         const targetDivider = targetGeometry.targetDivider
         const targetBarLeft = targetGeometry.left

@@ -43,13 +43,6 @@ const DEFAULT_ZOOM = 56
 const MIN_ZOOM = 8
 const MAX_ZOOM = 3_456
 const BAR_INSET = 8
-// A short, fixed dashed continuation past the live "now" front of an open-ended
-// bar. Its length is deliberately constant at every zoom so it always reads as
-// "still open" rather than implying a duration.
-const OPEN_TRAIL_WIDTH = 44
-// Gap between a predecessor's rendered right edge (bar plus any open trail) and
-// the gated successor placed after it, so the two read as sequential.
-const GATED_GAP = 14
 const STRUCTURAL_LINE = "#858585"
 const ACTIVE_STRUCTURAL_LINE = "#b8b8b8"
 const HOVER_BAR_OUTSET = 1
@@ -146,26 +139,23 @@ function compareWorkItems(left: RelationshipGanttItem, right: RelationshipGanttI
     return left.title.localeCompare(right.title)
 }
 
-function withMinimumBarWidth(geometry: { left: number; right: number; width: number; sourceDivider: number; targetDivider: number }, minimumWidth: number) {
-    const width = Math.max(minimumWidth, geometry.width)
-    return { ...geometry, width, right: geometry.left + width, sourceDivider: geometry.left + width }
+type BarGeometry = { left: number; right: number; width: number; sourceDivider: number; targetDivider: number; liveRight?: number }
+
+// Open work has a truthful solid portion (start → now) and only extends past
+// now when a small readable label area is required. The extension is rendered
+// separately and translucent, so it can never be mistaken for scheduled time.
+function openBarGeometry(geometry: BarGeometry, todayLeft: number, minimumWidth: number): BarGeometry {
+    const liveRight = Math.max(geometry.left, todayLeft)
+    const right = Math.max(liveRight, geometry.left + minimumWidth)
+    return { ...geometry, width: right - geometry.left, right, sourceDivider: right, liveRight }
 }
 
-// An open-ended item has no finish, so a bar length can't tell the truth about
-// when it ends. Instead of running to the timeline edge, the solid bar spans
-// from its start to the live "now" front (never below a readable minimum); the
-// dashed trail then carries the "still open" signal a short, fixed distance on.
-function openBarGeometry(geometry: { left: number; right: number; width: number; sourceDivider: number; targetDivider: number }, todayLeft: number, minimumWidth: number) {
-    const right = Math.max(geometry.left + minimumWidth, todayLeft)
-    return { ...geometry, width: right - geometry.left, right, sourceDivider: right }
-}
-
-// A geometry pinned to explicit pixels, for bars positioned relative to another
-// row (a gated successor placed after its predecessor) rather than to a date.
-// The target divider sits an inset left of the bar so an incoming connector
-// keeps room to draw its arrowhead.
-function fixedGeometry(left: number, width: number) {
-    return { left, right: left + width, width, sourceDivider: left + width, targetDivider: left - BAR_INSET }
+// A gated item has no calendar end date yet. Its placeholder is deliberately
+// tied to the current zoom (two days of space, with a readable minimum) rather
+// than pinned to a magic width, and begins after its predecessor's visible end.
+function gatedBarGeometry(left: number, dayWidth: number, minimumWidth: number, leadIn: number): BarGeometry {
+    const width = Math.max(minimumWidth, dayWidth * 2)
+    return { left, right: left + width, width, sourceDivider: left + width, targetDivider: left - leadIn }
 }
 
 function hasOpenEnd(item: RelationshipGanttItem, range: { derived: boolean } | null) {
@@ -325,19 +315,24 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const contentWidth = timelineGutter * 2 + timelineWidth
     const now = new Date()
     const todayLeft = timelineX(dateDay(today), positionByTime ? now.getHours() * 60 + now.getMinutes() : 0)
+    const barInset = Math.min(BAR_INSET, Math.max(1, dayWidth * .15))
+    const openTrailWidth = Math.min(64, Math.max(16, dayWidth * .5))
+    const gatedGap = Math.max(barInset * 2, dayWidth * .2)
     // Bars span their actual start→due dates (the due day is inclusive, so the
     // bar reaches the end of that day) rather than snapping to whole columns,
     // which previously made every bar fill its week or month at coarse scales.
-    const barGeometry = useCallback((range: { start: string; end: string }, item?: RelationshipGanttItem) => {
+    const barGeometry = useCallback((range: { start: string; end: string }, item?: RelationshipGanttItem): BarGeometry => {
         const startMinutes = positionByTime ? timeMinutes(item?.plannedStartTime ?? null) ?? 0 : 0
         const endMinutes = positionByTime ? timeMinutes(item?.dueTime ?? null) : null
         const columnLeft = timelineX(dateDay(range.start), startMinutes)
         const columnRight = positionByTime
             ? timelineX(dateDay(range.end) + (endMinutes === null ? 1 : 0), endMinutes ?? 0)
             : timelineX(dateDay(range.end) + 1)
-        const inset = Math.min(BAR_INSET, Math.max(1, dayWidth * .15))
-        return { left: columnLeft + inset, right: columnRight - inset, width: Math.max(4, columnRight - columnLeft - inset * 2), sourceDivider: columnRight, targetDivider: columnLeft }
-    }, [dayWidth, positionByTime, timelineX])
+        const left = columnLeft + barInset
+        const width = Math.max(4, columnRight - columnLeft - barInset * 2)
+        const right = left + width
+        return { left, right, width, sourceDivider: Math.max(columnRight, right), targetDivider: Math.min(columnLeft, left) }
+    }, [barInset, positionByTime, timelineX])
     const committedItems = useMemo(() => [...plan.items, ...plan.externalItems], [plan])
     const committedRanges = useMemo(() => effectiveGanttRanges(committedItems), [committedItems])
     const previewedItems = useMemo(() => committedItems.map((item) => {
@@ -371,16 +366,22 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return override ? { ...item, plannedStartDate: override.date, plannedStartTime: override.time } : item
     }), [previewedItems, stageStartOverrides])
     const ranges = useMemo(() => effectiveGanttRanges(allVisibleItems), [allVisibleItems])
-    // A lifecycle stage waiting on the current stage has no truthful calendar
-    // date yet. Anchor its outlined preview to the predecessor's live front — its
-    // finish if scheduled, otherwise today — so it reads as starting after the
-    // current work rather than sharing its start. It stays unscheduled in storage.
+    // An undated dependent has no truthful calendar end yet. Anchor its outlined
+    // preview after its predecessor so next steps remain visibly sequential,
+    // while siblings without an explicit dependency remain parallel.
     const gatedRanges = useMemo(() => {
         const output = new Map<string, { start: string; end: string; derived: boolean }>()
+        const byId = new Map(plan.items.map((item) => [item.id, item]))
         for (const edge of plan.dependencies) {
-            const item = plan.items.find((candidate) => candidate.id === edge.workItemId)
+            const item = byId.get(edge.workItemId)
             const predecessor = ranges.get(edge.dependsOnWorkItemId)
-            if (item?.workflowRole === "lifecycle_stage" && !item.plannedStartDate && !item.dueDate && predecessor) {
+            let ancestorId = item?.parentWorkItemId ?? null
+            let predecessorIsAncestor = false
+            while (ancestorId) {
+                if (ancestorId === edge.dependsOnWorkItemId) { predecessorIsAncestor = true; break }
+                ancestorId = byId.get(ancestorId)?.parentWorkItemId ?? null
+            }
+            if (item && !predecessorIsAncestor && !item.plannedStartDate && !item.dueDate && predecessor) {
                 const anchor = dateDay(predecessor.end) > dateDay(today) ? predecessor.end : today
                 output.set(item.id, { start: anchor, end: anchor, derived: false })
             }
@@ -388,27 +389,43 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         return output
     }, [plan.dependencies, plan.items, ranges, today])
     const displayRanges = useMemo(() => new Map([...ranges, ...gatedRanges]), [gatedRanges, ranges])
-    // A gated successor has no real dates, so it can't be placed by a calendar
-    // range: the predecessor's open bar keeps a readable minimum width and can
-    // extend past "now", so a date anchor would sit underneath it. Position the
-    // successor in pixels, just past the predecessor's rendered right edge
-    // (bar plus any open trail), so it reads as beginning after the current work.
+    // A gated successor has no real dates, so it cannot be placed by a calendar
+    // range. Place it after the predecessor's rendered end (including an open
+    // item's readable continuation and dashed trail), then let its placeholder
+    // widen with the same zoom as the rest of the chart.
     const gatedLefts = useMemo(() => {
         const byId = new Map(allVisibleItems.map((item) => [item.id, item]))
         const output = new Map<string, number>()
-        for (const edge of plan.dependencies) {
-            if (!gatedRanges.has(edge.workItemId)) continue
-            const predecessorRange = displayRanges.get(edge.dependsOnWorkItemId)
-            const predecessor = byId.get(edge.dependsOnWorkItemId)
-            if (!predecessorRange || !predecessor) continue
-            const predecessorOpen = hasOpenEnd(predecessor, predecessorRange)
-            const base = barGeometry(predecessorRange, predecessor)
-            const rightEdge = (predecessorOpen ? openBarGeometry(base, todayLeft, predecessor.parentWorkItemId ? 116 : 148) : base).right
-                + (predecessorOpen && !predecessor.parentWorkItemId ? OPEN_TRAIL_WIDTH : 0)
-            output.set(edge.workItemId, rightEdge + GATED_GAP)
+        for (let pass = 0; pass < plan.dependencies.length; pass += 1) {
+            let changed = false
+            for (const edge of plan.dependencies) {
+                if (!gatedRanges.has(edge.workItemId)) continue
+                const predecessorRange = displayRanges.get(edge.dependsOnWorkItemId)
+                const predecessor = byId.get(edge.dependsOnWorkItemId)
+                if (!predecessorRange || !predecessor) continue
+                const predecessorGatedLeft = output.get(predecessor.id)
+                const base = predecessorGatedLeft === undefined
+                    ? barGeometry(predecessorRange, predecessor)
+                    : gatedBarGeometry(predecessorGatedLeft, dayWidth, predecessor.parentWorkItemId ? 116 : 148, barInset)
+                const geometry = predecessorGatedLeft !== undefined
+                    ? base
+                    : hasOpenEnd(predecessor, predecessorRange) ? openBarGeometry(base, todayLeft, predecessor.parentWorkItemId ? 116 : 148) : base
+                const nextLeft = geometry.right + (hasOpenEnd(predecessor, predecessorRange) ? openTrailWidth : 0) + gatedGap
+                if (output.get(edge.workItemId) !== nextLeft) {
+                    output.set(edge.workItemId, nextLeft)
+                    changed = true
+                }
+            }
+            if (!changed) break
         }
         return output
-    }, [allVisibleItems, plan.dependencies, gatedRanges, displayRanges, barGeometry, todayLeft])
+    }, [allVisibleItems, barInset, barGeometry, dayWidth, displayRanges, gatedGap, gatedRanges, openTrailWidth, plan.dependencies, todayLeft])
+    const renderedGeometry = useCallback((item: RelationshipGanttItem, range: { start: string; end: string; derived: boolean }) => {
+        const gatedLeft = gatedLefts.get(item.id)
+        if (gatedLeft !== undefined) return gatedBarGeometry(gatedLeft, dayWidth, item.parentWorkItemId ? 116 : 148, barInset)
+        const base = barGeometry(range, item)
+        return hasOpenEnd(item, range) ? openBarGeometry(base, todayLeft, item.parentWorkItemId ? 116 : 148) : base
+    }, [barInset, barGeometry, dayWidth, gatedLefts, todayLeft])
     const { hiddenStepIds, remainingByNextStep } = useMemo(() => collapseSequentialSteps(plan.items), [plan.items])
     const scheduledItems = plan.items.filter((item) => item.section === "relationship" && displayRanges.has(item.id) && !hiddenStepIds.has(item.id))
     const sharedItems = plan.items.filter((item) => item.section === "shared" && displayRanges.has(item.id) && !hiddenStepIds.has(item.id))
@@ -1001,17 +1018,11 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const range = displayRanges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
         const isGated = gatedRanges.has(item.id)
         const openEnded = hasOpenEnd(item, range)
-        const showOpenTrail = openEnded && row.depth === 0
-        const baseGeometry = range ? barGeometry(range, item) : null
-        const gatedLeft = gatedLefts.get(item.id)
-        const geometry = !baseGeometry ? null
-            : gatedLeft !== undefined ? fixedGeometry(gatedLeft, 148)
-            : openEnded && row.depth === 0 ? openBarGeometry(baseGeometry, todayLeft, 148)
-            : openEnded || isGated ? withMinimumBarWidth(baseGeometry, row.depth === 0 ? 148 : 116)
-            : baseGeometry
+        const showOpenTrail = openEnded
+        const geometry = range ? renderedGeometry(item, range) : null
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         const flashing = flashingItemId === item.id
-        const barBorder = flashing ? "#ef4444" : colours.border
+        const barBorder = flashing ? "#ef4444" : isGated ? "#737373" : colours.border
         const canDrag = canEdit && !pending && !row.external && !isGated && !openEnded && !["done", "canceled"].includes(item.status)
         // Derived summary bars move their descendants as a group and cannot be
         // resized independently without changing the hierarchy's meaning.
@@ -1033,11 +1044,11 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             className={`relative border-b border-neutral-800 transition-colors ${isActive ? "bg-white/[0.025]" : ""}`}
             style={fixedRowStyle(height)}
         >
-            {showOpenTrail && geometry ? <div aria-label={`${item.title} remains open after ${range!.start}`} className="pointer-events-none absolute z-10 border-t border-dashed" style={{ left: `${geometry.right}px`, width: `${OPEN_TRAIL_WIDTH}px`, top: `${height / 2}px`, borderColor: colours.border, opacity: .7 }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute h-3 w-3" style={{ right: "-8px", top: "-6px", color: colours.border }}><path d="m6 4 4 4-4 4" /></svg></div> : null}
+            {showOpenTrail && geometry ? <div aria-label={`${item.title} remains open after ${range!.start}`} className="pointer-events-none absolute z-10 border-t border-dashed" style={{ left: `${geometry.right}px`, width: `${openTrailWidth}px`, top: `${height / 2}px`, borderColor: colours.border, opacity: .7 }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute h-3 w-3" style={{ right: "-8px", top: "-6px", color: colours.border }}><path d="m6 4 4 4-4 4" /></svg></div> : null}
             {range && geometry ? <div
                 data-gantt-bar
                 className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 && !canResize || isGated ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: isGated ? "transparent" : colours.background, backgroundImage: derived ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: hoverTransform, transformOrigin: "center", opacity: isGated ? .72 : undefined }}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: openEnded ? "transparent" : isGated ? "rgba(115,115,115,.28)" : colours.background, backgroundImage: derived && !openEnded ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: isGated ? "#d4d4d4" : colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: hoverTransform, transformOrigin: "center", opacity: isGated ? .72 : undefined }}
                 onPointerDown={(event) => startBarDrag(event, item, range, "move")}
                 onMouseEnter={() => setActiveItemId(item.id)}
                 onMouseLeave={() => setActiveItemId(null)}
@@ -1045,6 +1056,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 onBlur={() => setActiveItemId(null)}
                 title={isGated ? `${item.title}: starts when its predecessor finishes` : `${item.title}: ${range.start}${timeScale ? ` ${timeLabel(item.plannedStartTime)}` : ""}${openEnded ? " · Open-ended" : ` → ${range.end}${timeScale ? ` ${timeLabel(item.dueTime)}` : ""}`}${derived ? " · Derived from child work" : ""}${statusLabel ? ` · ${statusLabel}` : ""}`}
             >
+                {openEnded ? <>
+                    <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md" style={{ width: `${Math.max(0, (geometry.liveRight ?? geometry.left) - geometry.left)}px`, backgroundColor: colours.background }} />
+                    <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 rounded-r-md" style={{ left: `${Math.max(0, (geometry.liveRight ?? geometry.left) - geometry.left)}px`, right: 0, backgroundColor: colours.background, opacity: .38 }} />
+                </> : null}
                 {item.actualStartAt ? <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md opacity-25" style={{ width: `${Math.min(100, Math.max(2, ((dateDay((item.actualCompletedAt ?? today).slice(0, 10)) - dateDay(range.start) + 1) / Math.max(1, dateDay(range.end) - dateDay(range.start) + 1)) * 100))}%`, backgroundColor: colours.text }} /> : null}
                 {row.depth > 0 && canResize ? <span aria-hidden="true" className="pointer-events-none absolute inset-x-2.5 inset-y-0 z-30 border-y border-dashed" style={{ borderColor: barBorder }} /> : null}
                 {canResize ? <button type="button" aria-label={`Resize start of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "start")} className="absolute -inset-y-px -left-px z-40 w-[11px] cursor-ew-resize" style={{ backgroundColor: barBorder }} /> : null}
@@ -1067,29 +1082,21 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         if (fromTop === undefined || toTop === undefined || fromHeight === undefined || toHeight === undefined || !fromRange || !toRange) return []
         const sourceItem = plan.items.find((item) => item.id === edge.dependsOnWorkItemId) ?? plan.externalItems.find((item) => item.id === edge.dependsOnWorkItemId)
         const targetItem = plan.items.find((item) => item.id === edge.workItemId)
-        const sourceOpenEnded = sourceItem ? hasOpenEnd(sourceItem, fromRange) : false
-        const sourceGeometry = !sourceOpenEnded ? barGeometry(fromRange, sourceItem)
-            : sourceItem?.parentWorkItemId ? withMinimumBarWidth(barGeometry(fromRange, sourceItem), 116)
-            : openBarGeometry(barGeometry(fromRange, sourceItem), todayLeft, 148)
-        const gatedTargetLeft = targetItem ? gatedLefts.get(targetItem.id) : undefined
-        const targetGeometry = gatedTargetLeft !== undefined ? fixedGeometry(gatedTargetLeft, 148)
-            : targetItem && gatedRanges.has(targetItem.id) ? withMinimumBarWidth(barGeometry(toRange, targetItem), targetItem.parentWorkItemId ? 116 : 148)
-            : barGeometry(toRange, targetItem)
+        if (!sourceItem || !targetItem) return []
+        const sourceOpenEnded = hasOpenEnd(sourceItem, fromRange)
+        const sourceGeometry = renderedGeometry(sourceItem, fromRange)
+        const targetGeometry = renderedGeometry(targetItem, toRange)
         // An open-ended source's bar edge is its live "now" front; route the
         // connector out past its trail before it turns down so it leaves from a
         // divider rather than dropping straight off the bar.
-        const sourceDivider = sourceOpenEnded ? sourceGeometry.right + (sourceItem?.parentWorkItemId ? GATED_GAP : OPEN_TRAIL_WIDTH) : sourceGeometry.sourceDivider
+        const sourceDivider = sourceOpenEnded ? sourceGeometry.right + openTrailWidth : sourceGeometry.sourceDivider
         const sourceBarRight = sourceGeometry.right
         const targetDivider = targetGeometry.targetDivider
         const targetBarLeft = targetGeometry.left
         const y1 = fromTop + fromHeight / 2
         const y2 = toTop + toHeight / 2
-        // One clean elbow: run out from the bar to a single divider channel,
-        // drop straight to the target's row, then turn in. The channel sits just
-        // past the source but never beyond the target's approach, so the two
-        // vertical segments of the old staircase can't collapse into a jog.
-        const channel = Math.max(sourceBarRight, Math.min(sourceDivider, targetDivider))
-        return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path: `M ${sourceBarRight} ${y1} H ${channel} V ${y2} H ${targetBarLeft}`, arrow: ganttArrowHeadPath(targetBarLeft, targetDivider, y2) }]
+        const yTrack = y2 >= y1 ? fromTop + fromHeight : fromTop
+        return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path: `M ${sourceBarRight} ${y1} H ${sourceDivider} V ${yTrack} H ${targetDivider} V ${y2} H ${targetBarLeft}`, arrow: ganttArrowHeadPath(targetBarLeft, targetDivider, y2) }]
     })
 
     // A parent with siblings that do not depend on one another represents
@@ -1104,8 +1111,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const parentRange = displayRanges.get(parentId)
         if (parentTop === undefined || !parentHeight || !parentRange) return []
         const parent = plan.items.find((item) => item.id === parentId)
-        const parentGeometry = barGeometry(parentRange, parent)
-        const branchRows = children.map((child) => ({ child, top: rowTop.get(child.id)!, height: rowHeights.get(child.id)!, geometry: barGeometry(displayRanges.get(child.id)!, child) })).sort((a, b) => a.top - b.top)
+        if (!parent) return []
+        const parentGeometry = renderedGeometry(parent, parentRange)
+        const branchRows = children.map((child) => ({ child, top: rowTop.get(child.id)!, height: rowHeights.get(child.id)!, geometry: renderedGeometry(child, displayRanges.get(child.id)!) })).sort((a, b) => a.top - b.top)
         const trunkX = parentGeometry.sourceDivider
         const parentY = parentTop + parentHeight / 2
         const lastY = branchRows[branchRows.length - 1].top + branchRows[branchRows.length - 1].height / 2

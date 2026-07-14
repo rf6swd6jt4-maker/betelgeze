@@ -28,6 +28,16 @@ test("repeated mobile zoom-out steps keep the original focal day anchored", () =
     }
 })
 
+test("an absolute calendar anchor survives a timeline-range change", () => {
+    const calendarDay = 20_500.25
+    const nextRangeStart = 20_440
+    const localX = 480
+    const leftWidth = 260
+    const dayWidth = 64
+    const scrollLeft = ganttAnchoredScrollLeft({ timelineDay: calendarDay - nextRangeStart, dayWidth, leftWidth, localX })
+    assert.equal(nextRangeStart + (scrollLeft + localX - leftWidth) / dayWidth, calendarDay)
+})
+
 test("arrowheads are hidden when the target lead-in cannot contain them", () => {
     assert.equal(ganttArrowHeadPath(103, 100, 40), null)
     assert.equal(ganttArrowHeadPath(108, 100, 40), "M 104 36 L 108 40 L 104 44")

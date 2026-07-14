@@ -178,11 +178,11 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const initiallyCenteredRef = useRef(false)
     const mobileZoomInitialisedRef = useRef(false)
     const previousGeometryRef = useRef<{ leftWidth: number; rangeStart: number } | null>(null)
-    const zoomAnchorRef = useRef<{ timelineDay: number; localX: number; scrollTop: number } | null>(null)
+    const zoomAnchorRef = useRef<{ calendarDay: number; localX: number; scrollTop: number } | null>(null)
     const touchPointsRef = useRef(new Map<number, { x: number; y: number }>())
     const touchPanRef = useRef<{ pointerId: number; x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null)
     const touchZoomOnlyRef = useRef(false)
-    const pinchRef = useRef<{ distance: number; zoom: number; timelineDay: number; localX: number; scrollTop: number } | null>(null)
+    const pinchRef = useRef<{ distance: number; zoom: number; calendarDay: number; localX: number; scrollTop: number } | null>(null)
     const pinchReleaseFrameRef = useRef<number | null>(null)
     // The plan is held locally so edits can be painted optimistically and so
     // cross-tab changes can refresh it without a full route reload.
@@ -362,10 +362,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const anchor = zoomAnchorRef.current
         const node = scrollRef.current
         if (!anchor || !node) return
-        node.scrollLeft = ganttAnchoredScrollLeft({ timelineDay: anchor.timelineDay, dayWidth, leftWidth: effectiveLeftWidth, localX: anchor.localX })
+        node.scrollLeft = ganttAnchoredScrollLeft({ timelineDay: anchor.calendarDay - rangeStart, dayWidth, leftWidth: effectiveLeftWidth, localX: anchor.localX })
         node.scrollTop = anchor.scrollTop
         zoomAnchorRef.current = null
-    }, [dayWidth, effectiveLeftWidth])
+    }, [dayWidth, effectiveLeftWidth, rangeStart])
 
     const zoomAt = useCallback((clientX: number, requestedZoom: number) => {
         const node = scrollRef.current
@@ -373,10 +373,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, requestedZoom))
         if (Math.abs(nextZoom - zoom) < .001) return
         const localX = clientX - node.getBoundingClientRect().left
-        const timelineDay = (node.scrollLeft + localX - effectiveLeftWidth) / dayWidth
-        zoomAnchorRef.current = { timelineDay, localX, scrollTop: node.scrollTop }
+        const calendarDay = rangeStart + (node.scrollLeft + localX - effectiveLeftWidth) / dayWidth
+        zoomAnchorRef.current = { calendarDay, localX, scrollTop: node.scrollTop }
         setZoom(nextZoom)
-    }, [dayWidth, effectiveLeftWidth, zoom])
+    }, [dayWidth, effectiveLeftWidth, rangeStart, zoom])
 
     const zoomAtTimelineCentre = useCallback((requestedZoom: number) => {
         const node = scrollRef.current
@@ -721,7 +721,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             pinchRef.current = {
                 distance,
                 zoom,
-                timelineDay: (node.scrollLeft + localX - effectiveLeftWidth) / dayWidth,
+                calendarDay: rangeStart + (node.scrollLeft + localX - effectiveLeftWidth) / dayWidth,
                 localX,
                 scrollTop: node.scrollTop,
             }
@@ -733,7 +733,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinchRef.current.zoom * distance / pinchRef.current.distance))
         if (Math.abs(nextZoom - zoom) < .001) return
         zoomAnchorRef.current = {
-            timelineDay: pinchRef.current.timelineDay,
+            calendarDay: pinchRef.current.calendarDay,
             localX: pinchRef.current.localX,
             scrollTop: pinchRef.current.scrollTop,
         }
@@ -755,7 +755,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const anchor = pinchRef.current
         const restoreAnchor = () => {
             if (!node) return
-            node.scrollLeft = ganttAnchoredScrollLeft({ timelineDay: anchor.timelineDay, dayWidth, leftWidth: effectiveLeftWidth, localX: anchor.localX })
+            node.scrollLeft = ganttAnchoredScrollLeft({ timelineDay: anchor.calendarDay - rangeStart, dayWidth, leftWidth: effectiveLeftWidth, localX: anchor.localX })
             node.scrollTop = anchor.scrollTop
         }
         restoreAnchor()

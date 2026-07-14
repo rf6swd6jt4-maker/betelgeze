@@ -1084,8 +1084,12 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const targetBarLeft = targetGeometry.left
         const y1 = fromTop + fromHeight / 2
         const y2 = toTop + toHeight / 2
-        const yTrack = y2 >= y1 ? fromTop + fromHeight : fromTop
-        return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path: `M ${sourceBarRight} ${y1} H ${sourceDivider} V ${yTrack} H ${targetDivider} V ${y2} H ${targetBarLeft}`, arrow: ganttArrowHeadPath(targetBarLeft, targetDivider, y2) }]
+        // One clean elbow: run out from the bar to a single divider channel,
+        // drop straight to the target's row, then turn in. The channel sits just
+        // past the source but never beyond the target's approach, so the two
+        // vertical segments of the old staircase can't collapse into a jog.
+        const channel = Math.max(sourceBarRight, Math.min(sourceDivider, targetDivider))
+        return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path: `M ${sourceBarRight} ${y1} H ${channel} V ${y2} H ${targetBarLeft}`, arrow: ganttArrowHeadPath(targetBarLeft, targetDivider, y2) }]
     })
 
     // A parent with siblings that do not depend on one another represents

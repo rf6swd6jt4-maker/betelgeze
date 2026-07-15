@@ -4,9 +4,27 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal, flushSync } from "react-dom"
-import { Assignee, RoundPill, Status, relationshipPhaseColours } from "@/components/ui"
+import { Assignee, Status, relationshipPhaseColours } from "@/components/ui"
 import { ganttSyncChannelName, postGanttSync } from "@/lib/ui/gantt-sync"
-import { ganttAnchoredScrollLeft, ganttArrowHeadPath, ganttDragDayDelta } from "@/lib/ui/gantt-geometry"
+import {
+    ganttAnchoredScrollLeft,
+    ganttArrowHeadPath,
+    ganttBoundaryConnectorPath,
+    ganttDependencyGhostRanges,
+    ganttDisplayRanges,
+    ganttDragDayDelta,
+    ganttGridDividers,
+    ganttNextGridDivider,
+    ganttOpenOverflowConnectorPath,
+    ganttOpenTrailEnd,
+    ganttPreviousGridDivider,
+    ganttProjectDay,
+    ganttProjectedBarGeometry,
+    ganttStableTopologicalOrder,
+    type GanttDisplayRange,
+    type GanttProjectedBarGeometry,
+    type GanttScale,
+} from "@/lib/ui/gantt-geometry"
 import { addCalendarDays, dateDay, effectiveGanttRanges, ganttTimelineRange, rangeContainsRange, type ScheduleChange } from "@/lib/relationship-gantt-schedule"
 import type { RelationshipGanttItem, RelationshipGanttPlan } from "@/lib/relationship-gantt"
 import {
@@ -17,7 +35,7 @@ import {
 } from "./gantt-actions"
 import { proceedRelationshipCurrentWork } from "../actions"
 
-type Scale = "quarter_hour" | "hour" | "three_hour" | "day" | "week" | "month"
+type Scale = GanttScale
 type Category = "scheduled" | "shared" | "unscheduled"
 type DisplayRow = { item: RelationshipGanttItem; depth: number; category: Category; external?: boolean }
 type DragPreview = {
@@ -42,7 +60,6 @@ const MAX_LEFT_WIDTH = 360
 const DEFAULT_ZOOM = 56
 const MIN_ZOOM = 8
 const MAX_ZOOM = 3_456
-const BAR_INSET = 8
 const STRUCTURAL_LINE = "#858585"
 const ACTIVE_STRUCTURAL_LINE = "#b8b8b8"
 const HOVER_BAR_OUTSET = 1
@@ -70,16 +87,6 @@ function dateLabel(day: number, scale: Scale) {
     return new Intl.DateTimeFormat("en-IE", scale === "month" ? { month: "short", year: "2-digit" } : { day: "numeric", month: "short" }).format(date)
 }
 
-function timeMinutes(value: string | null) {
-    if (!value) return null
-    const [hours, minutes] = value.slice(0, 5).split(":").map(Number)
-    return Number.isInteger(hours) && Number.isInteger(minutes) ? hours * 60 + minutes : null
-}
-
-function timeLabel(value: string | null) {
-    return value ? value.slice(0, 5) : "All day"
-}
-
 function parentIds(items: RelationshipGanttItem[]) {
     const ids = new Set(items.map((item) => item.id))
     return new Set(items.flatMap((item) => item.parentWorkItemId && ids.has(item.parentWorkItemId) ? [item.parentWorkItemId] : []))
@@ -92,18 +99,15 @@ function localDateValue(date = new Date()) {
     return `${year}-${month}-${day}`
 }
 
-// Split a saved timestamp into the local calendar date and HH:MM the Gantt
-// positions by, so a completion recorded to the minute lands on the same wall
-// clock the rest of the chart uses.
-function localClock(value: string | null) {
+function actualDateTimeLabel(value: string | null, hasTime: boolean) {
     if (!value) return null
+    if (!hasTime) return value.slice(0, 10)
     const parsed = new Date(value)
-    if (Number.isNaN(parsed.getTime())) return null
-    return { date: localDateValue(parsed), time: `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}` }
+    return Number.isNaN(parsed.getTime()) ? value : new Intl.DateTimeFormat("en-IE", { dateStyle: "medium", timeStyle: "short" }).format(parsed)
 }
 
-function scheduleMinutes(date: string, time: string | null) {
-    return dateDay(date) * 1440 + (timeMinutes(time) ?? 0)
+function plannedDateTimeLabel(date: string | null, time: string | null) {
+    return date ? `${date}${time ? ` ${time.slice(0, 5)}` : ""}` : null
 }
 
 function addCalendarMonths(value: string, months: number) {
@@ -139,64 +143,12 @@ function compareWorkItems(left: RelationshipGanttItem, right: RelationshipGanttI
     return left.title.localeCompare(right.title)
 }
 
-type BarGeometry = { left: number; right: number; width: number; sourceDivider: number; targetDivider: number; liveRight?: number }
-
-// Open work has a truthful solid portion (start → now) and only extends past
-// now when a small readable label area is required. The extension is rendered
-// separately and translucent, so it can never be mistaken for scheduled time.
-function openBarGeometry(geometry: BarGeometry, todayLeft: number, minimumWidth: number): BarGeometry {
-    const liveRight = Math.max(geometry.left, todayLeft)
-    const right = Math.max(liveRight, geometry.left + minimumWidth)
-    return { ...geometry, width: right - geometry.left, right, sourceDivider: right, liveRight }
-}
-
-// A gated item has no calendar end date yet. Its placeholder is deliberately
-// tied to the current zoom (two days of space, with a readable minimum) rather
-// than pinned to a magic width, and begins after its predecessor's visible end.
-function gatedBarGeometry(left: number, dayWidth: number, minimumWidth: number, leadIn: number): BarGeometry {
-    const width = Math.max(minimumWidth, dayWidth * 2)
-    return { left, right: left + width, width, sourceDivider: left + width, targetDivider: left - leadIn }
-}
-
-function hasOpenEnd(item: RelationshipGanttItem, range: { derived: boolean } | null) {
-    return Boolean(range && !range.derived && item.plannedStartDate && !item.dueDate && !["done", "canceled"].includes(item.status))
-}
-
-// Onboarding and review steps are stored as open-ended children of a lifecycle
-// stage — a shared start date, no finish, chained by finish-to-start
-// dependencies. Drawn literally they stack at the same start and read as
-// parallel work rather than a sequence. Collapse each such chain to its next
-// incomplete step so only one shows at a time, and report how many further
-// steps remain so the row can hint at the rest. Dated stage children (e.g.
-// fulfilment services) carry real timeframes and are deliberately untouched.
-function collapseSequentialSteps(items: RelationshipGanttItem[]) {
-    const byId = new Map(items.map((item) => [item.id, item]))
-    const chains = new Map<string, RelationshipGanttItem[]>()
-    for (const item of items) {
-        const parent = item.parentWorkItemId ? byId.get(item.parentWorkItemId) : null
-        if (parent?.workflowRole === "lifecycle_stage" && item.plannedStartDate && !item.dueDate) {
-            chains.set(parent.id, [...(chains.get(parent.id) ?? []), item])
-        }
-    }
-    const hiddenStepIds = new Set<string>()
-    const remainingByNextStep = new Map<string, number>()
-    for (const chain of chains.values()) {
-        if (chain.length <= 1) continue
-        const ordered = [...chain].sort((left, right) => left.sortOrder - right.sortOrder)
-        const incomplete = ordered.filter((item) => !["done", "canceled"].includes(item.status))
-        const next = incomplete[0]
-        for (const item of ordered) if (item.id !== next?.id) hiddenStepIds.add(item.id)
-        if (next && incomplete.length > 1) remainingByNextStep.set(next.id, incomplete.length - 1)
-    }
-    return { hiddenStepIds, remainingByNextStep }
-}
-
-function flattenRows(items: RelationshipGanttItem[], collapsed: Set<string>, category: Category) {
+function flattenRows(items: RelationshipGanttItem[], collapsed: Set<string>, category: Category, dependencies: RelationshipGanttPlan["dependencies"]) {
     const byId = new Map(items.map((item) => [item.id, item]))
     const children = new Map<string, RelationshipGanttItem[]>()
     for (const item of items) if (item.parentWorkItemId && byId.has(item.parentWorkItemId)) children.set(item.parentWorkItemId, [...(children.get(item.parentWorkItemId) ?? []), item])
-    for (const rows of children.values()) rows.sort(compareWorkItems)
-    const roots = items.filter((item) => !item.parentWorkItemId || !byId.has(item.parentWorkItemId)).sort(compareWorkItems)
+    for (const [parentId, rows] of children) children.set(parentId, ganttStableTopologicalOrder(rows, dependencies, compareWorkItems))
+    const roots = ganttStableTopologicalOrder(items.filter((item) => !item.parentWorkItemId || !byId.has(item.parentWorkItemId)), dependencies, compareWorkItems)
     const output: DisplayRow[] = []
     const visit = (item: RelationshipGanttItem, depth: number) => {
         output.push({ item, depth, category })
@@ -258,6 +210,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const [activeItemId, setActiveItemId] = useState<string | null>(null)
     const [dragPreview, setDragPreview] = useState<DragPreview | null>(null)
     const [flashingItemId, setFlashingItemId] = useState<string | null>(null)
+    const [openContentWidths, setOpenContentWidths] = useState<Map<string, number>>(() => new Map())
     const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [cascade, setCascade] = useState<ScheduleChange[] | null>(null)
     const [result, setResult] = useState<GanttMutationResult | null>(null)
@@ -289,14 +242,15 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const dayWidth = zoom
     const scale = scaleForDayWidth(dayWidth)
     const timeScale = isTimeScale(scale)
-    // Keep timed bars projected from their real timestamps through day view.
-    // Only the header density changes at the 3h → day boundary, so work stays
-    // visually anchored while the timeline widens or narrows.
-    const positionByTime = scale !== "week" && scale !== "month"
     const today = localDateValue()
+    const now = new Date()
+    const nowDay = dateDay(today) + (now.getHours() * 60 + now.getMinutes()) / 1440
     const requestedTimelineRange = useMemo(() => ganttTimelineRange(
         [...plan.items, ...plan.externalItems],
-        plan.milestones.map((milestone) => milestone.occurredAt),
+        [
+            ...plan.milestones.map((milestone) => milestone.occurredAt),
+            ...[...plan.items, ...plan.externalItems].flatMap((item) => [item.actualStartAt, item.actualCompletedAt].filter((value): value is string => Boolean(value))),
+        ],
         today,
     ), [plan, today])
     const timelineRange = requestedTimelineRange
@@ -310,135 +264,34 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     // zooming; without it the anchored scroll clamps at the content edge and
     // the point under the cursor / viewport centre visibly drifts.
     const timelineGutter = Math.round(visibleTimelineWidth / 2)
-    const timelineX = useCallback((day: number, minutes = 0) => timelineGutter + (day - rangeStart) * dayWidth + (positionByTime ? minutes / 1440 * dayWidth : 0), [dayWidth, positionByTime, rangeStart, timelineGutter])
+    const timelineX = useCallback((day: number) => ganttProjectDay(day, rangeStart, dayWidth, timelineGutter), [dayWidth, rangeStart, timelineGutter])
     const timelineWidth = rangeDays * dayWidth
     const contentWidth = timelineGutter * 2 + timelineWidth
-    const now = new Date()
-    const todayLeft = timelineX(dateDay(today), positionByTime ? now.getHours() * 60 + now.getMinutes() : 0)
-    const barInset = Math.min(BAR_INSET, Math.max(1, dayWidth * .15))
-    const openTrailWidth = Math.min(64, Math.max(16, dayWidth * .5))
-    const gatedGap = Math.max(barInset * 2, dayWidth * .2)
-    // Bars span their actual start→due dates (the due day is inclusive, so the
-    // bar reaches the end of that day) rather than snapping to whole columns,
-    // which previously made every bar fill its week or month at coarse scales.
-    const barGeometry = useCallback((range: { start: string; end: string }, item?: RelationshipGanttItem): BarGeometry => {
-        const startMinutes = positionByTime ? timeMinutes(item?.plannedStartTime ?? null) ?? 0 : 0
-        const endMinutes = positionByTime ? timeMinutes(item?.dueTime ?? null) : null
-        const columnLeft = timelineX(dateDay(range.start), startMinutes)
-        const columnRight = positionByTime
-            ? timelineX(dateDay(range.end) + (endMinutes === null ? 1 : 0), endMinutes ?? 0)
-            : timelineX(dateDay(range.end) + 1)
-        const left = columnLeft + barInset
-        const width = Math.max(4, columnRight - columnLeft - barInset * 2)
-        const right = left + width
-        return { left, right, width, sourceDivider: Math.max(columnRight, right), targetDivider: Math.min(columnLeft, left) }
-    }, [barInset, positionByTime, timelineX])
+    const todayLeft = timelineX(nowDay)
+    const barInset = 0
     const committedItems = useMemo(() => [...plan.items, ...plan.externalItems], [plan])
     const committedRanges = useMemo(() => effectiveGanttRanges(committedItems), [committedItems])
     const previewedItems = useMemo(() => committedItems.map((item) => {
         const preview = dragPreview?.changes.get(item.id)
-        if (preview) return { ...item, plannedStartDate: preview.start, plannedStartTime: preview.startTime, dueDate: preview.end, dueTime: preview.dueTime }
-        // A finished open-ended item (e.g. a lifecycle stage that never had a
-        // planned finish) ends the moment it was actually completed. Surface
-        // that already-saved timestamp to the minute so a zoomed-in Gantt shows
-        // 16:05 rather than a stub at the start day.
-        const completion = ["done", "canceled"].includes(item.status) && item.plannedStartDate && !item.dueDate ? localClock(item.actualCompletedAt) : null
-        return completion ? { ...item, dueDate: completion.date, dueTime: completion.time } : item
+        return preview ? { ...item, plannedStartDate: preview.start, plannedStartTime: preview.startTime, dueDate: preview.end, dueTime: preview.dueTime } : item
     }), [committedItems, dragPreview])
-    // A stage begins when its predecessor finishes. A freshly-activated stage is
-    // planned to a whole start day, so it would share the predecessor's start
-    // column and read as concurrent. Push its display start to the predecessor's
-    // real finish instead; storage keeps the whole-day plan.
-    const stageStartOverrides = useMemo(() => {
-        const byId = new Map(previewedItems.map((item) => [item.id, item]))
-        const overrides = new Map<string, { date: string; time: string | null }>()
-        for (const edge of plan.dependencies) {
-            const successor = byId.get(edge.workItemId)
-            const predecessor = byId.get(edge.dependsOnWorkItemId)
-            if (!successor || !predecessor || successor.workflowRole !== "lifecycle_stage" || successor.dueDate || !successor.plannedStartDate || !predecessor.dueDate) continue
-            if (scheduleMinutes(successor.plannedStartDate, successor.plannedStartTime) >= scheduleMinutes(predecessor.dueDate, predecessor.dueTime)) continue
-            overrides.set(successor.id, { date: predecessor.dueDate, time: predecessor.dueTime })
-        }
-        return overrides
-    }, [plan.dependencies, previewedItems])
-    const allVisibleItems = useMemo(() => previewedItems.map((item) => {
-        const override = stageStartOverrides.get(item.id)
-        return override ? { ...item, plannedStartDate: override.date, plannedStartTime: override.time } : item
-    }), [previewedItems, stageStartOverrides])
-    const ranges = useMemo(() => effectiveGanttRanges(allVisibleItems), [allVisibleItems])
-    // An undated dependent has no truthful calendar end yet. Anchor its outlined
-    // preview after its predecessor so next steps remain visibly sequential,
-    // while siblings without an explicit dependency remain parallel.
-    const gatedRanges = useMemo(() => {
-        const output = new Map<string, { start: string; end: string; derived: boolean }>()
-        const byId = new Map(plan.items.map((item) => [item.id, item]))
-        for (const edge of plan.dependencies) {
-            const item = byId.get(edge.workItemId)
-            const predecessor = ranges.get(edge.dependsOnWorkItemId)
-            let ancestorId = item?.parentWorkItemId ?? null
-            let predecessorIsAncestor = false
-            while (ancestorId) {
-                if (ancestorId === edge.dependsOnWorkItemId) { predecessorIsAncestor = true; break }
-                ancestorId = byId.get(ancestorId)?.parentWorkItemId ?? null
-            }
-            if (item && !predecessorIsAncestor && !item.plannedStartDate && !item.dueDate && predecessor) {
-                const anchor = dateDay(predecessor.end) > dateDay(today) ? predecessor.end : today
-                output.set(item.id, { start: anchor, end: anchor, derived: false })
-            }
-        }
-        return output
-    }, [plan.dependencies, plan.items, ranges, today])
-    const displayRanges = useMemo(() => new Map([...ranges, ...gatedRanges]), [gatedRanges, ranges])
-    // A gated successor has no real dates, so it cannot be placed by a calendar
-    // range. Place it after the predecessor's rendered end (including an open
-    // item's readable continuation and dashed trail), then let its placeholder
-    // widen with the same zoom as the rest of the chart.
-    const gatedLefts = useMemo(() => {
-        const byId = new Map(allVisibleItems.map((item) => [item.id, item]))
-        const output = new Map<string, number>()
-        for (let pass = 0; pass < plan.dependencies.length; pass += 1) {
-            let changed = false
-            for (const edge of plan.dependencies) {
-                if (!gatedRanges.has(edge.workItemId)) continue
-                const predecessorRange = displayRanges.get(edge.dependsOnWorkItemId)
-                const predecessor = byId.get(edge.dependsOnWorkItemId)
-                if (!predecessorRange || !predecessor) continue
-                const predecessorGatedLeft = output.get(predecessor.id)
-                const base = predecessorGatedLeft === undefined
-                    ? barGeometry(predecessorRange, predecessor)
-                    : gatedBarGeometry(predecessorGatedLeft, dayWidth, predecessor.parentWorkItemId ? 116 : 148, barInset)
-                const geometry = predecessorGatedLeft !== undefined
-                    ? base
-                    : hasOpenEnd(predecessor, predecessorRange) ? openBarGeometry(base, todayLeft, predecessor.parentWorkItemId ? 116 : 148) : base
-                const nextLeft = geometry.right + (hasOpenEnd(predecessor, predecessorRange) ? openTrailWidth : 0) + gatedGap
-                if (output.get(edge.workItemId) !== nextLeft) {
-                    output.set(edge.workItemId, nextLeft)
-                    changed = true
-                }
-            }
-            if (!changed) break
-        }
-        return output
-    }, [allVisibleItems, barInset, barGeometry, dayWidth, displayRanges, gatedGap, gatedRanges, openTrailWidth, plan.dependencies, todayLeft])
-    const renderedGeometry = useCallback((item: RelationshipGanttItem, range: { start: string; end: string; derived: boolean }) => {
-        const gatedLeft = gatedLefts.get(item.id)
-        if (gatedLeft !== undefined) return gatedBarGeometry(gatedLeft, dayWidth, item.parentWorkItemId ? 116 : 148, barInset)
-        const base = barGeometry(range, item)
-        return hasOpenEnd(item, range) ? openBarGeometry(base, todayLeft, item.parentWorkItemId ? 116 : 148) : base
-    }, [barInset, barGeometry, dayWidth, gatedLefts, todayLeft])
-    const { hiddenStepIds, remainingByNextStep } = useMemo(() => collapseSequentialSteps(plan.items), [plan.items])
-    const scheduledItems = plan.items.filter((item) => item.section === "relationship" && displayRanges.has(item.id) && !hiddenStepIds.has(item.id))
-    const sharedItems = plan.items.filter((item) => item.section === "shared" && displayRanges.has(item.id) && !hiddenStepIds.has(item.id))
-    const unscheduledItems = plan.items.filter((item) => !displayRanges.has(item.id) && !hiddenStepIds.has(item.id))
-    const scheduledRows = collapsedCategories.has("scheduled") ? [] : flattenRows(scheduledItems, collapsed, "scheduled")
-    const sharedRows = collapsedCategories.has("shared") ? [] : flattenRows(sharedItems, collapsed, "shared")
-    const unscheduledRows = collapsedCategories.has("unscheduled") ? [] : flattenRows(unscheduledItems, collapsed, "unscheduled")
+    const ranges = useMemo(() => effectiveGanttRanges(previewedItems), [previewedItems])
+    const explicitDisplayRanges = useMemo(() => ganttDisplayRanges(previewedItems, nowDay), [nowDay, previewedItems])
+    const ghostRanges = useMemo(() => ganttDependencyGhostRanges(previewedItems, plan.dependencies, explicitDisplayRanges, nowDay, scale), [explicitDisplayRanges, nowDay, plan.dependencies, previewedItems, scale])
+    const displayRanges = useMemo(() => new Map([...explicitDisplayRanges, ...ghostRanges]), [explicitDisplayRanges, ghostRanges])
+    const renderedGeometry = useCallback((item: RelationshipGanttItem, range: GanttDisplayRange): GanttProjectedBarGeometry => ganttProjectedBarGeometry({ range, scale, rangeStart, dayWidth, gutter: timelineGutter, inset: barInset, contentWidth: range.open ? openContentWidths.get(item.id) ?? 0 : 0 }), [barInset, dayWidth, openContentWidths, rangeStart, scale, timelineGutter])
+    const scheduledItems = plan.items.filter((item) => item.section === "relationship" && displayRanges.has(item.id))
+    const sharedItems = plan.items.filter((item) => item.section === "shared" && displayRanges.has(item.id))
+    const unscheduledItems = plan.items.filter((item) => !displayRanges.has(item.id))
+    const scheduledRows = collapsedCategories.has("scheduled") ? [] : flattenRows(scheduledItems, collapsed, "scheduled", plan.dependencies)
+    const sharedRows = collapsedCategories.has("shared") ? [] : flattenRows(sharedItems, collapsed, "shared", plan.dependencies)
+    const unscheduledRows = collapsedCategories.has("unscheduled") ? [] : flattenRows(unscheduledItems, collapsed, "unscheduled", plan.dependencies)
     const scheduledExternalRows: DisplayRow[] = collapsedCategories.has("shared") ? [] : [...plan.externalItems]
-        .filter((item) => committedRanges.has(item.id))
+        .filter((item) => displayRanges.has(item.id))
         .sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title))
         .map((item) => ({ item, depth: 0, category: "shared", external: true }))
     const unscheduledExternalRows: DisplayRow[] = collapsedCategories.has("unscheduled") ? [] : [...plan.externalItems]
-        .filter((item) => !committedRanges.has(item.id))
+        .filter((item) => !displayRanges.has(item.id))
         .sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title))
         .map((item) => ({ item, depth: 0, category: "unscheduled", external: true }))
     const categoryRows: Array<{ category: Category; rows: DisplayRow[] }> = [
@@ -474,12 +327,12 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const hourLabels = useMemo(() => timeLabelMinutes
         ? Array.from({ length: rangeDays * 1440 / timeLabelMinutes }, (_, index) => ({ minutes: index * timeLabelMinutes, left: timelineGutter + index * timeLabelMinutes / 1440 * dayWidth }))
         : [], [dayWidth, rangeDays, timeLabelMinutes, timelineGutter])
+    const gridDividerDays = useMemo(() => ganttGridDividers(rangeStart, rangeDays, scale), [rangeDays, rangeStart, scale])
     const visibleMilestones = useMemo(() => {
         const rendered: Array<{ milestone: RelationshipGanttPlan["milestones"][number]; left: number }> = []
         for (const milestone of plan.milestones) {
             const moment = new Date(milestone.occurredAt)
-            const minutes = positionByTime ? moment.getUTCHours() * 60 + moment.getUTCMinutes() : 0
-            const left = timelineX(dateDay(milestone.occurredAt.slice(0, 10)), minutes)
+            const left = timelineX(Date.UTC(moment.getFullYear(), moment.getMonth(), moment.getDate()) / 86_400_000 + (moment.getHours() * 60 + moment.getMinutes()) / 1440)
             // Later milestones sit above earlier ones. When a marker would
             // substantially obscure an earlier marker at this scale, omit the
             // obscured one instead of leaving an indistinguishable stack.
@@ -489,7 +342,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             rendered.push({ milestone, left })
         }
         return rendered
-    }, [plan.milestones, positionByTime, timelineX])
+    }, [plan.milestones, timelineX])
     const weekendDays = useMemo(() => Array.from({ length: rangeDays }, (_, index) => rangeStart + index).filter((day) => {
         const weekday = new Date(day * 86_400_000).getUTCDay()
         return weekday === 0 || weekday === 6
@@ -500,12 +353,12 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const node = scrollRef.current
         if (!node) return
         initiallyCenteredRef.current = true
-        const planDays = [...ranges.values()].flatMap((range) => [dateDay(range.start), dateDay(range.end)])
+        const planDays = [...displayRanges.values()].flatMap((range) => [range.start, range.end ?? range.start])
         const targetDay = planDays.length && (Math.max(...planDays) < dateDay(today) - 14 || Math.min(...planDays) > dateDay(today) + 14)
             ? (Math.min(...planDays) + Math.max(...planDays)) / 2
             : dateDay(today)
         node.scrollLeft = Math.max(0, timelineX(targetDay) - (node.clientWidth - effectiveLeftWidth) / 2)
-    }, [effectiveLeftWidth, ranges, timelineX, today])
+    }, [displayRanges, effectiveLeftWidth, timelineX, today])
 
     useEffect(() => {
         const previous = previousGeometryRef.current
@@ -523,6 +376,20 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         node.scrollTop = anchor.scrollTop
         zoomAnchorRef.current = null
     }, [dayWidth, effectiveLeftWidth, rangeStart, timelineGutter])
+
+    useLayoutEffect(() => {
+        const node = scrollRef.current
+        if (!node) return
+        const measured = new Map<string, number>()
+        for (const element of node.querySelectorAll<HTMLElement>("[data-gantt-measure]")) {
+            const id = element.dataset.ganttMeasure
+            if (id) measured.set(id, Math.ceil(element.scrollWidth + Number(element.dataset.ganttExtra ?? 0)))
+        }
+        setOpenContentWidths((current) => {
+            if (current.size === measured.size && [...measured].every(([id, width]) => current.get(id) === width)) return current
+            return measured
+        })
+    }, [displayRanges, plan.items])
 
     const zoomAt = useCallback((clientX: number, requestedZoom: number) => {
         const node = scrollRef.current
@@ -805,10 +672,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     function fitPlan() {
         const node = scrollRef.current
         if (!node) return
-        const planRanges = [...ranges.values()]
+        const planRanges = [...displayRanges.values()]
         if (!planRanges.length) { goToToday(); return }
-        const first = Math.min(...planRanges.map((range) => dateDay(range.start)))
-        const last = Math.max(...planRanges.map((range) => dateDay(range.end))) + 1
+        const first = Math.min(...planRanges.map((range) => range.start))
+        const last = Math.max(...planRanges.map((range) => range.end ?? range.start))
         const available = Math.max(120, node.clientWidth - effectiveLeftWidth - 32)
         const span = Math.max(1, last - first)
         const nextZoom = Math.min(MAX_ZOOM, Math.max(minimumZoom, available / span))
@@ -1005,7 +872,6 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             {isRoot && !hasChildren ? <span className="w-5 shrink-0" style={{ marginLeft: "12px" }} /> : null}
             {!isRoot && !hasChildren ? <span className="w-5 shrink-0" style={{ marginLeft: `${(row.depth + 1) * 12}px` }} /> : null}
             <Link href={`/${workspaceSlug}/work-items/${row.item.id}`} className={`min-w-0 flex-1 truncate whitespace-nowrap text-left text-neutral-200 hover:text-white ${isRoot ? "text-sm font-semibold" : "text-xs font-normal"}`} title={row.item.title}>{row.item.title}</Link>
-            {remainingByNextStep.has(row.item.id) ? <span title={`${remainingByNextStep.get(row.item.id)} more step${remainingByNextStep.get(row.item.id) === 1 ? "" : "s"} follow in sequence`} className="shrink-0"><RoundPill tone="neutral">+{remainingByNextStep.get(row.item.id)} more</RoundPill></span> : null}
             {contextLabel ? <span title={contextLabel === "external" ? "Prerequisite from outside this relationship" : "Work shared with another relationship"} className="shrink-0 text-[9px] text-neutral-600">{contextLabel}</span> : null}
             {isUnscheduled ? <Link href={`/${workspaceSlug}/work-items/${row.item.id}`} aria-label={`Schedule ${row.item.title}`} title="Unscheduled — open to add dates" className="flex h-7 w-7 shrink-0 items-center justify-center text-neutral-600 hover:text-white"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" className="h-3.5 w-3.5"><path d="M5 3v3M15 3v3M3 7h14M4 5h12v12H4z" /></svg></Link> : null}
         </div>
@@ -1015,59 +881,63 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const item = row.item
         const height = rowHeight(row)
         const barHeight = row.depth === 0 ? ROOT_BAR_HEIGHT : CHILD_BAR_HEIGHT
-        const range = displayRanges.get(item.id) ?? (row.external && item.plannedStartDate ? { start: item.plannedStartDate, end: item.dueDate ?? item.plannedStartDate, derived: false } : null)
-        const isGated = gatedRanges.has(item.id)
-        const openEnded = hasOpenEnd(item, range)
-        const showOpenTrail = openEnded
+        const range = displayRanges.get(item.id) ?? null
+        const scheduleRange = ranges.get(item.id)
+        const isGhost = ghostRanges.has(item.id)
+        const openEnded = Boolean(range?.open)
+        const showOpenTrail = Boolean(range?.open || range?.futureOpen)
         const geometry = range ? renderedGeometry(item, range) : null
         const colours = relationshipPhaseColours(item.lifecyclePhase)
         const flashing = flashingItemId === item.id
-        const barBorder = flashing ? "#ef4444" : isGated ? "#737373" : colours.border
-        const canDrag = canEdit && !pending && !row.external && !isGated && !openEnded && !["done", "canceled"].includes(item.status)
+        const barBorder = flashing ? "#ef4444" : isGhost ? "#737373" : colours.border
+        const canDrag = Boolean(canEdit && !pending && !row.external && scheduleRange && !isGhost && !openEnded && !range?.futureOpen && !item.actualStartAt && !item.actualCompletedAt && !["done", "canceled"].includes(item.status))
         // Derived summary bars move their descendants as a group and cannot be
         // resized independently without changing the hierarchy's meaning.
         const isSummary = range?.derived === true
         const canResize = Boolean(canDrag && !isSummary && geometry && geometry.width >= 40)
         const handleSpace = canResize ? 10 : 0
         const linkSize = barHeight
-        const showBarLink = Boolean(geometry && geometry.width >= linkSize + handleSpace * 2 + 12)
-        const showAssignee = Boolean(geometry && geometry.width >= 92)
+        const showBarLink = Boolean(geometry && (openEnded || geometry.width >= linkSize + handleSpace * 2 + 12))
+        const showAssignee = Boolean(geometry && (openEnded || geometry.width >= 92))
         const isActive = activeItemId === item.id
-        // Percentage scaling made wide lifecycle-stage bars grow by many more
-        // pixels than ordinary work items. Expand every bar by the same one
-        // pixel on each edge instead.
-        const hoverTransform = isActive ? `scaleX(${1 + HOVER_BAR_OUTSET * 2 / geometry!.width}) scaleY(${1 + HOVER_BAR_OUTSET * 2 / barHeight})` : undefined
-        const overdue = Boolean(range && !openEnded && !isGated && dateDay(range.end) < dateDay(today) && !["done", "canceled"].includes(item.status))
+        // Hover emphasis must not alter the bar's truthful horizontal extent.
+        const hoverTransform = isActive ? `scaleY(${1 + HOVER_BAR_OUTSET * 2 / barHeight})` : undefined
+        const overdue = Boolean(range?.end && !openEnded && !isGhost && range.end < nowDay && !["done", "canceled"].includes(item.status))
         const statusLabel = item.status === "done" ? "Completed" : item.status === "canceled" ? "Canceled" : overdue ? "Overdue" : null
         const derived = Boolean(range?.derived)
+        const startLabel = actualDateTimeLabel(item.actualStartAt, item.actualStartHasTime) ?? plannedDateTimeLabel(item.plannedStartDate, item.plannedStartTime) ?? "Derived from child work"
+        const endLabel = actualDateTimeLabel(item.actualCompletedAt, item.actualCompletedHasTime) ?? plannedDateTimeLabel(item.dueDate, item.dueTime) ?? "No finish date"
+        const trailEnd = geometry && showOpenTrail ? timelineX(ganttOpenTrailEnd(range!.start + (geometry.right - timelineX(range!.start)) / dayWidth, scale)) : null
+        const trailWidth = trailEnd === null || !geometry ? 0 : Math.max(0, trailEnd - geometry.right)
         return <div
             className={`relative border-b border-neutral-800 transition-colors ${isActive ? "bg-white/[0.025]" : ""}`}
             style={fixedRowStyle(height)}
         >
-            {showOpenTrail && geometry ? <div aria-label={`${item.title} remains open after ${range!.start}`} className="pointer-events-none absolute z-10 border-t border-dashed" style={{ left: `${geometry.right}px`, width: `${openTrailWidth}px`, top: `${height / 2}px`, borderColor: colours.border, opacity: .7 }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute h-3 w-3" style={{ right: "-8px", top: "-6px", color: colours.border }}><path d="m6 4 4 4-4 4" /></svg></div> : null}
+            {showOpenTrail && geometry ? <div aria-label={`${item.title} has no finish date`} className="pointer-events-none absolute z-10 border-t border-dashed" style={{ left: `${geometry.right}px`, width: `${trailWidth}px`, top: `${height / 2}px`, borderColor: colours.border, opacity: .78 }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute h-3 w-3" style={{ right: "-7px", top: "-6px", color: colours.border }}><path d="m6 4 4 4-4 4" /></svg></div> : null}
             {range && geometry ? <div
                 data-gantt-bar
-                className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 && !canResize || isGated ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: openEnded ? "transparent" : isGated ? "rgba(115,115,115,.28)" : colours.background, backgroundImage: derived && !openEnded ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: isGated ? "#d4d4d4" : colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: hoverTransform, transformOrigin: "center", opacity: isGated ? .72 : undefined }}
-                onPointerDown={(event) => startBarDrag(event, item, range, "move")}
+                className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 && !canResize || isGhost ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: openEnded ? "transparent" : isGhost ? "rgba(115,115,115,.25)" : colours.background, backgroundImage: range.futureOpen ? `linear-gradient(to right, ${colours.background}, transparent)` : derived && !openEnded ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: isGhost ? "#d4d4d4" : colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: hoverTransform, transformOrigin: "center", opacity: isGhost ? .68 : undefined }}
+                onPointerDown={(event) => { if (scheduleRange) startBarDrag(event, item, scheduleRange, "move") }}
                 onMouseEnter={() => setActiveItemId(item.id)}
                 onMouseLeave={() => setActiveItemId(null)}
                 onFocus={() => setActiveItemId(item.id)}
                 onBlur={() => setActiveItemId(null)}
-                title={isGated ? `${item.title}: starts when its predecessor finishes` : `${item.title}: ${range.start}${timeScale ? ` ${timeLabel(item.plannedStartTime)}` : ""}${openEnded ? " · Open-ended" : ` → ${range.end}${timeScale ? ` ${timeLabel(item.dueTime)}` : ""}`}${derived ? " · Derived from child work" : ""}${statusLabel ? ` · ${statusLabel}` : ""}`}
+                title={isGhost ? `${item.title}: starts when its predecessor finishes` : `${item.title}: ${startLabel} → ${endLabel}${derived ? " · Derived from child work" : ""}${statusLabel ? ` · ${statusLabel}` : ""}`}
             >
                 {openEnded ? <>
-                    <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md" style={{ width: `${Math.max(0, (geometry.liveRight ?? geometry.left) - geometry.left)}px`, backgroundColor: colours.background }} />
-                    <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 rounded-r-md" style={{ left: `${Math.max(0, (geometry.liveRight ?? geometry.left) - geometry.left)}px`, right: 0, backgroundColor: colours.background, opacity: .38 }} />
+                    <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md" style={{ width: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, backgroundColor: colours.background }} />
+                    {geometry.overflow ? <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 rounded-r-md" style={{ left: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, right: 0, backgroundColor: colours.background, opacity: .32 }} /> : null}
                 </> : null}
-                {item.actualStartAt ? <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md opacity-25" style={{ width: `${Math.min(100, Math.max(2, ((dateDay((item.actualCompletedAt ?? today).slice(0, 10)) - dateDay(range.start) + 1) / Math.max(1, dateDay(range.end) - dateDay(range.start) + 1)) * 100))}%`, backgroundColor: colours.text }} /> : null}
                 {row.depth > 0 && canResize ? <span aria-hidden="true" className="pointer-events-none absolute inset-x-2.5 inset-y-0 z-30 border-y border-dashed" style={{ borderColor: barBorder }} /> : null}
-                {canResize ? <button type="button" aria-label={`Resize start of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "start")} className="absolute -inset-y-px -left-px z-40 w-[11px] cursor-ew-resize" style={{ backgroundColor: barBorder }} /> : null}
-                {statusLabel ? <Status label={statusLabel} tone={item.status === "done" ? "green" : item.status === "canceled" ? "grey" : "red"} compact className="relative shrink-0" /> : null}
-                {showAssignee && item.assignees[0] ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact compactSize={row.depth === 0 ? "md" : "sm"} />{item.assignees.length > 1 ? <span className={`shrink-0 font-medium ${row.depth === 0 ? "text-xs" : "text-[9px]"}`}>+{item.assignees.length - 1}</span> : null}</div> : null}
-                <span className={`relative min-w-0 flex-1 truncate leading-none ${row.depth === 0 ? "text-sm font-semibold" : "text-[11px] font-normal"}`}>{item.title}</span>
+                {canResize && scheduleRange ? <button type="button" aria-label={`Resize start of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, scheduleRange, "start")} className="absolute -inset-y-px -left-px z-40 w-[11px] cursor-ew-resize" style={{ backgroundColor: barBorder }} /> : null}
+                <div data-gantt-measure={openEnded ? item.id : undefined} data-gantt-extra={openEnded ? linkSize + 16 : undefined} className={`relative flex items-center gap-1.5 ${openEnded ? "w-max shrink-0 whitespace-nowrap" : "min-w-0 flex-1"}`}>
+                    {statusLabel ? <Status label={statusLabel} tone={item.status === "done" ? "green" : item.status === "canceled" ? "grey" : "red"} compact className="relative shrink-0" /> : null}
+                    {showAssignee && item.assignees[0] ? <div className="relative flex shrink-0 items-center gap-1"><Assignee name={item.assignees[0].username} avatarSrc={item.assignees[0].avatarUrl} compact compactSize={row.depth === 0 ? "md" : "sm"} />{item.assignees.length > 1 ? <span className={`shrink-0 font-medium ${row.depth === 0 ? "text-xs" : "text-[9px]"}`}>+{item.assignees.length - 1}</span> : null}</div> : null}
+                    <span className={`relative leading-none ${openEnded ? "whitespace-nowrap" : "min-w-0 flex-1 truncate"} ${row.depth === 0 ? "text-sm font-semibold" : "text-[11px] font-normal"}`}>{item.title}</span>
+                </div>
                 {showBarLink ? <Link href={`/${workspaceSlug}/work-items/${item.id}`} aria-label={`Open ${item.title}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="absolute inset-y-0 z-10 flex items-center justify-center border-l" style={{ right: `${handleSpace}px`, width: `${linkSize}px`, borderColor: barBorder, borderLeftStyle: row.depth > 0 ? "dashed" : "solid", backgroundColor: colours.background, color: barBorder }}><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={row.depth === 0 ? "h-[18px] w-[18px]" : "h-3.5 w-3.5"}><path d="M5 11 11 5M6 5h5v5" /></svg></Link> : null}
-                {canResize ? <button type="button" aria-label={`Resize end of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, range, "end")} className="absolute -inset-y-px -right-px z-40 w-[11px] cursor-ew-resize" style={{ backgroundColor: barBorder }} /> : null}
+                {canResize && scheduleRange ? <button type="button" aria-label={`Resize end of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, scheduleRange, "end")} className="absolute -inset-y-px -right-px z-40 w-[11px] cursor-ew-resize" style={{ backgroundColor: barBorder }} /> : null}
             </div> : null}
         </div>
     }
@@ -1083,20 +953,37 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const sourceItem = plan.items.find((item) => item.id === edge.dependsOnWorkItemId) ?? plan.externalItems.find((item) => item.id === edge.dependsOnWorkItemId)
         const targetItem = plan.items.find((item) => item.id === edge.workItemId)
         if (!sourceItem || !targetItem) return []
-        const sourceOpenEnded = hasOpenEnd(sourceItem, fromRange)
+        let ancestorId = targetItem.parentWorkItemId
+        while (ancestorId) {
+            if (ancestorId === sourceItem.id) return []
+            ancestorId = plan.items.find((item) => item.id === ancestorId)?.parentWorkItemId ?? null
+        }
         const sourceGeometry = renderedGeometry(sourceItem, fromRange)
         const targetGeometry = renderedGeometry(targetItem, toRange)
-        // An open-ended source's bar edge is its live "now" front; route the
-        // connector out past its trail before it turns down so it leaves from a
-        // divider rather than dropping straight off the bar.
-        const sourceDivider = sourceOpenEnded ? sourceGeometry.right + openTrailWidth : sourceGeometry.sourceDivider
-        const sourceBarRight = sourceGeometry.right
-        const targetDivider = targetGeometry.targetDivider
-        const targetBarLeft = targetGeometry.left
         const y1 = fromTop + fromHeight / 2
         const y2 = toTop + toHeight / 2
         const yTrack = y2 >= y1 ? fromTop + fromHeight : fromTop
-        return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path: `M ${sourceBarRight} ${y1} H ${sourceDivider} V ${yTrack} H ${targetDivider} V ${y2} H ${targetBarLeft}`, arrow: ganttArrowHeadPath(targetBarLeft, targetDivider, y2) }]
+        if (fromRange.open && ghostRanges.has(targetItem.id)) {
+            if (sourceGeometry.overflow) {
+                const solidWidth = Math.max(0, sourceGeometry.truthfulRight - sourceGeometry.left)
+                const sourceX = solidWidth >= 16 ? sourceGeometry.truthfulRight - 8 : sourceGeometry.left + solidWidth / 2
+                return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path: ganttOpenOverflowConnectorPath({ sourceX, sourceBottom: y2 >= y1 ? fromTop + fromHeight : fromTop, targetY: y2, targetLeft: targetGeometry.left }), arrow: ganttArrowHeadPath(targetGeometry.left, sourceX, y2) }]
+            }
+            const path = ganttBoundaryConnectorPath({ sourceRight: sourceGeometry.truthfulRight, sourceY: y1, sourceDivider: todayLeft, rowBoundaryY: y2, targetDivider: todayLeft, targetY: y2, targetLeft: targetGeometry.left })
+            return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path, arrow: ganttArrowHeadPath(targetGeometry.left, todayLeft - 8, y2) }]
+        }
+        const sourceDay = rangeStart + (sourceGeometry.right - timelineGutter) / dayWidth
+        const targetDay = rangeStart + (targetGeometry.left - timelineGutter) / dayWidth
+        const sourceDividerDay = ganttNextGridDivider(sourceDay, scale)
+        let targetDividerDay = ganttPreviousGridDivider(targetDay, scale)
+        if (sourceDividerDay > targetDividerDay) {
+            targetDividerDay = sourceDividerDay
+        }
+        const sourceDivider = timelineX(sourceDividerDay)
+        const targetDivider = timelineX(targetDividerDay)
+        const path = ganttBoundaryConnectorPath({ sourceRight: sourceGeometry.right, sourceY: y1, sourceDivider, rowBoundaryY: yTrack, targetDivider, targetY: y2, targetLeft: targetGeometry.left })
+        const arrowDivider = Math.abs(targetGeometry.left - targetDivider) < 5 ? targetGeometry.left - 8 : targetDivider
+        return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path, arrow: ganttArrowHeadPath(targetGeometry.left, arrowDivider, y2) }]
     })
 
     // A parent with siblings that do not depend on one another represents
@@ -1114,13 +1001,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         if (!parent) return []
         const parentGeometry = renderedGeometry(parent, parentRange)
         const branchRows = children.map((child) => ({ child, top: rowTop.get(child.id)!, height: rowHeights.get(child.id)!, geometry: renderedGeometry(child, displayRanges.get(child.id)!) })).sort((a, b) => a.top - b.top)
-        const trunkX = parentGeometry.sourceDivider
+        const parentStartDivider = ganttPreviousGridDivider(parentRange.start, scale)
+        const trunkX = timelineX(parentStartDivider)
         const parentY = parentTop + parentHeight / 2
         const lastY = branchRows[branchRows.length - 1].top + branchRows[branchRows.length - 1].height / 2
-        const paths: Array<{ key: string; itemIds: string[]; external: boolean; path: string; arrow: string | null }> = [{ key: `parallel-trunk-${parentId}`, itemIds: [parentId, ...children.map((child) => child.id)], external: false, path: `M ${parentGeometry.right} ${parentY} H ${trunkX} V ${lastY}`, arrow: null }]
+        const paths: Array<{ key: string; itemIds: string[]; external: boolean; path: string; arrow: string | null }> = [{ key: `parallel-trunk-${parentId}`, itemIds: [parentId, ...children.map((child) => child.id)], external: false, path: `M ${parentGeometry.left} ${parentY} H ${trunkX} V ${lastY}`, arrow: null }]
         for (const row of branchRows) {
             const y = row.top + row.height / 2
-            paths.push({ key: `parallel-branch-${parentId}-${row.child.id}`, itemIds: [parentId, row.child.id], external: false, path: `M ${trunkX} ${y} H ${row.geometry.targetDivider} H ${row.geometry.left}`, arrow: ganttArrowHeadPath(row.geometry.left, row.geometry.targetDivider, y) })
+            paths.push({ key: `parallel-branch-${parentId}-${row.child.id}`, itemIds: [parentId, row.child.id], external: false, path: `M ${trunkX} ${y} H ${row.geometry.left}`, arrow: ganttArrowHeadPath(row.geometry.left, trunkX, y) })
         }
         return paths
     })
@@ -1180,15 +1068,15 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 <div className={`sticky left-0 z-40 flex min-w-0 items-center overflow-hidden border-b border-b-neutral-800 bg-neutral-950 text-[10px] font-semibold uppercase tracking-[.08em] text-neutral-400 ${effectiveLeftWidth ? "border-r border-r-neutral-700 px-2" : "border-r-0 px-0"}`} style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{effectiveLeftWidth ? "Milestones" : null}</div><div className="relative border-b border-neutral-800" style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{visibleMilestones.map(({ milestone, left }) => { const colours = milestone.kind === "relationship_started" ? "border-sky-400 bg-sky-950" : milestone.kind === "client_invoiced" ? "border-amber-400 bg-amber-950" : milestone.kind === "onboarding_completed" ? "border-violet-400 bg-violet-950" : "border-emerald-400 bg-emerald-950"; const marker = <span className={`block h-2.5 w-2.5 rotate-45 border ${colours}`} />; return milestone.href ? <a key={milestone.id} href={milestone.href} aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded focus:outline-none focus:ring-1 focus:ring-neutral-300" style={{ left, top: 0 }}>{marker}</a> : <span key={milestone.id} role="img" aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center" style={{ left, top: 0 }}>{marker}</span> })}</div>
                 {renderCategory("scheduled", "Scheduled", scheduledItems.length)}
                 {scheduledRows.map((row) => <div className="contents" key={`scheduled-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
-                {renderCategory("shared", "Shared", sharedItems.length + plan.externalItems.filter((item) => committedRanges.has(item.id)).length)}
+                {renderCategory("shared", "Shared", sharedItems.length + plan.externalItems.filter((item) => displayRanges.has(item.id)).length)}
                 {[...sharedRows, ...scheduledExternalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
-                {renderCategory("unscheduled", "Unscheduled", unscheduledItems.length + plan.externalItems.filter((item) => !committedRanges.has(item.id)).length)}
+                {renderCategory("unscheduled", "Unscheduled", unscheduledItems.length + plan.externalItems.filter((item) => !displayRanges.has(item.id)).length)}
                 {[...unscheduledRows, ...unscheduledExternalRows].map((row) => <div className="contents" key={`unscheduled-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
             </div>
             {weekendDays.map((day) => <div aria-hidden="true" key={`weekend-${day}`} className="pointer-events-none absolute z-0 bg-white/[0.012]" style={{ left: `${effectiveLeftWidth + timelineX(day)}px`, top: `${HEADER_HEIGHT}px`, width: `${dayWidth}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
-            {headerLabels.map((label) => <div aria-hidden="true" key={`column-${label.day}`} className="pointer-events-none absolute z-10 w-px bg-neutral-800" style={{ left: `${effectiveLeftWidth + label.left}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
+            {gridDividerDays.map((day) => <div aria-hidden="true" key={`column-${day}`} className="pointer-events-none absolute z-10 w-px bg-neutral-800" style={{ left: `${effectiveLeftWidth + timelineX(day)}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />)}
             <div className="pointer-events-none absolute z-20 w-px bg-red-400/70" style={{ left: `${effectiveLeftWidth + todayLeft}px`, top: `${HEADER_HEIGHT}px`, height: `${chartHeight - HEADER_HEIGHT}px` }} />
-            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-30 overflow-visible" style={{ left: `${effectiveLeftWidth}px` }} width={contentWidth} height={chartHeight}>{connectorPaths.map(({ key, itemIds, external, path, arrow }) => { const active = itemIds.includes(activeItemId ?? ""); return <g key={key} fill="none" stroke={active ? ACTIVE_STRUCTURAL_LINE : STRUCTURAL_LINE} strokeWidth={active ? "2" : "1.5"} strokeDasharray={external ? "4 3" : undefined} strokeLinejoin="miter" strokeLinecap="square"><path d={path} />{arrow ? <path d={arrow} /> : null}</g> })}</svg>
+            <svg aria-hidden="true" className="pointer-events-none absolute top-0 z-[15] overflow-visible" style={{ left: `${effectiveLeftWidth}px` }} width={contentWidth} height={chartHeight}>{connectorPaths.map(({ key, itemIds, external, path, arrow }) => { const active = itemIds.includes(activeItemId ?? ""); return <g key={key} fill="none" stroke={active ? ACTIVE_STRUCTURAL_LINE : STRUCTURAL_LINE} strokeWidth={active ? "2" : "1.5"} strokeDasharray={external ? "4 3" : undefined} strokeLinejoin="miter" strokeLinecap="square"><path d={path} />{arrow ? <path d={arrow} /> : null}</g> })}</svg>
             {dragPreview ? <div aria-live="polite" className="pointer-events-none fixed z-[80] -translate-y-full rounded-md border border-neutral-600 bg-neutral-950 px-2 py-1 font-mono text-[10px] text-neutral-200 shadow-xl" style={{ left: `${Math.min(dragPreview.pointerX + 10, (typeof window !== "undefined" ? window.innerWidth : dragPreview.pointerX + 200) - 160)}px`, top: `${dragPreview.pointerY - 8}px` }}>{dragPreview.label}</div> : null}
         </div>
         {currentWork ? <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-neutral-700 bg-neutral-950 px-3 py-2 text-xs">

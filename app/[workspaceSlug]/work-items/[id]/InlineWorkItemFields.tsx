@@ -60,6 +60,10 @@ function displayDate(value: string | null, time: string | null = null) {
 
 function dateInputValue(value: string | null) {
     if (!value) return ""
+    if (value.includes("T")) {
+        const parsed = new Date(value)
+        if (!Number.isNaN(parsed.getTime())) return `${String(parsed.getDate()).padStart(2, "0")}/${String(parsed.getMonth() + 1).padStart(2, "0")}/${parsed.getFullYear()}`
+    }
     const [year, month, day] = value.slice(0, 10).split("-")
     return `${day}/${month}/${year}`
 }
@@ -87,9 +91,22 @@ function timeStorageValue(value: string) {
     return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
 }
 
+function actualIsoValue(dateValue: string, timeValue: string) {
+    const date = dateStorageValue(dateValue)
+    if (!date) return null
+    const time = timeStorageValue(timeValue) ?? "00:00"
+    const [year, month, day] = date.split("-").map(Number)
+    const [hours, minutes] = time.split(":").map(Number)
+    return new Date(year, month - 1, day, hours, minutes).toISOString()
+}
+
 function timeInputValue(value: string | null) {
     if (!value) return ""
-    return value.includes("T") ? value.slice(11, 16) : value.slice(0, 5)
+    if (value.includes("T")) {
+        const parsed = new Date(value)
+        if (!Number.isNaN(parsed.getTime())) return `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`
+    }
+    return value.slice(0, 5)
 }
 
 type FieldIcon = "status" | "schedule" | "user" | "parent" | "dependency" | "relationship" | "priority" | "description"
@@ -160,8 +177,9 @@ export function InlineWorkItemFields(props: Props) {
     const [error, setError] = useState<string | null>(null)
     const [pending, startTransition] = useTransition()
     const completed = props.status === "done"
-    const [startDate, setStartDate] = useState(dateInputValue(completed ? props.actualStartAt : props.plannedStartDate))
-    const [startTime, setStartTime] = useState(timeInputValue(completed && props.actualStartHasTime ? props.actualStartAt : completed ? null : props.plannedStartTime))
+    const started = Boolean(props.actualStartAt)
+    const [startDate, setStartDate] = useState(dateInputValue(started ? props.actualStartAt : props.plannedStartDate))
+    const [startTime, setStartTime] = useState(timeInputValue(started ? props.actualStartHasTime ? props.actualStartAt : null : props.plannedStartTime))
     const [dueDate, setDueDate] = useState(dateInputValue(completed ? props.actualCompletedAt : props.dueDate))
     const [dueTime, setDueTime] = useState(timeInputValue(completed && props.actualCompletedHasTime ? props.actualCompletedAt : completed ? null : props.dueTime))
     const [assigneeIds, setAssigneeIds] = useState(props.assignees.map((person) => person.user_id))
@@ -197,8 +215,8 @@ export function InlineWorkItemFields(props: Props) {
         activePopupTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
         setError(null); setQuery("")
         if (open !== name) {
-            setStartDate(dateInputValue(completed ? props.actualStartAt : props.plannedStartDate))
-            setStartTime(timeInputValue(completed && props.actualStartHasTime ? props.actualStartAt : completed ? null : props.plannedStartTime))
+            setStartDate(dateInputValue(started ? props.actualStartAt : props.plannedStartDate))
+            setStartTime(timeInputValue(started ? props.actualStartHasTime ? props.actualStartAt : null : props.plannedStartTime))
             setDueDate(dateInputValue(completed ? props.actualCompletedAt : props.dueDate))
             setDueTime(timeInputValue(completed && props.actualCompletedHasTime ? props.actualCompletedAt : completed ? null : props.dueTime))
             setAssigneeIds(props.assignees.map((person) => person.user_id))
@@ -232,8 +250,8 @@ export function InlineWorkItemFields(props: Props) {
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                                 <div className="flex items-center gap-2 whitespace-nowrap">
                                 <div className="relative">
-                                    <button data-work-item-popup-trigger type="button" onClick={() => toggle("start")} className="rounded py-0.5 hover:text-white">{completed ? displayDate(props.actualStartAt, props.actualStartHasTime ? timeInputValue(props.actualStartAt) : null) : displayDate(props.plannedStartDate, props.plannedStartTime)}</button>
-                                    {open === "start" ? <Popup className="w-64"><div className="p-2.5"><p className="mb-1.5 text-xs text-neutral-500">{completed ? "Actual start" : "Planned start"}</p><MinimalDateTimeInputs date={startDate} time={startTime} onDateChange={setStartDate} onTimeChange={setStartTime} timeLabel="Optional start time" /></div><PopupFooter pending={pending} onClear={startDate || startTime ? () => { setStartDate(""); setStartTime("") } : undefined} onSave={() => save(() => updateWorkItemSchedule(props.workspaceSlug, props.workItemId, dateStorageValue(startDate), timeStorageValue(startTime), dateStorageValue(dueDate), timeStorageValue(dueTime), completed))} /></Popup> : null}
+                                    <button data-work-item-popup-trigger type="button" onClick={() => toggle("start")} className="rounded py-0.5 hover:text-white">{started ? displayDate(props.actualStartAt, props.actualStartHasTime ? timeInputValue(props.actualStartAt) : null) : displayDate(props.plannedStartDate, props.plannedStartTime)}</button>
+                                    {open === "start" ? <Popup className="w-64"><div className="p-2.5"><p className="mb-1.5 text-xs text-neutral-500">{started ? "Actual start" : "Planned start"}</p><MinimalDateTimeInputs date={startDate} time={startTime} onDateChange={setStartDate} onTimeChange={setStartTime} timeLabel="Optional start time" /></div><PopupFooter pending={pending} onClear={startDate || startTime ? () => { setStartDate(""); setStartTime("") } : undefined} onSave={() => save(() => updateWorkItemSchedule(props.workspaceSlug, props.workItemId, dateStorageValue(startDate), timeStorageValue(startTime), dateStorageValue(dueDate), timeStorageValue(dueTime), completed, started, started ? actualIsoValue(startDate, startTime) : undefined, completed ? actualIsoValue(dueDate, dueTime) : undefined))} /></Popup> : null}
                                 </div>
                                 <span className="text-neutral-600">→</span>
                                 </div>
@@ -241,7 +259,7 @@ export function InlineWorkItemFields(props: Props) {
                                 <span className="text-neutral-500">{props.status === "done" ? "Finished" : "Due"}</span>
                                 <div className="relative">
                                     <button data-work-item-popup-trigger type="button" onClick={() => toggle("due")} className="rounded py-0.5 hover:text-white">{completed ? displayDate(props.actualCompletedAt, props.actualCompletedHasTime ? timeInputValue(props.actualCompletedAt) : null) : displayDate(props.dueDate, props.dueTime)}</button>
-                                    {open === "due" ? <Popup className="w-64"><div className="p-2.5"><p className="mb-1.5 text-xs text-neutral-500">{completed ? "Finished" : "Due date"}</p><MinimalDateTimeInputs date={dueDate} time={dueTime} onDateChange={setDueDate} onTimeChange={setDueTime} timeLabel="Optional finish time" /></div><PopupFooter pending={pending} onClear={dueDate || dueTime ? () => { setDueDate(""); setDueTime("") } : undefined} onSave={() => save(() => updateWorkItemSchedule(props.workspaceSlug, props.workItemId, dateStorageValue(startDate), timeStorageValue(startTime), dateStorageValue(dueDate), timeStorageValue(dueTime), completed))} /></Popup> : null}
+                                    {open === "due" ? <Popup className="w-64"><div className="p-2.5"><p className="mb-1.5 text-xs text-neutral-500">{completed ? "Finished" : "Due date"}</p><MinimalDateTimeInputs date={dueDate} time={dueTime} onDateChange={setDueDate} onTimeChange={setDueTime} timeLabel="Optional finish time" /></div><PopupFooter pending={pending} onClear={dueDate || dueTime ? () => { setDueDate(""); setDueTime("") } : undefined} onSave={() => save(() => updateWorkItemSchedule(props.workspaceSlug, props.workItemId, dateStorageValue(startDate), timeStorageValue(startTime), dateStorageValue(dueDate), timeStorageValue(dueTime), completed, started, started ? actualIsoValue(startDate, startTime) : undefined, completed ? actualIsoValue(dueDate, dueTime) : undefined))} /></Popup> : null}
                                 </div>
                                 </div>
                             </div>

@@ -13,8 +13,8 @@ import {
     ganttDependencyGhostRanges,
     ganttDisplayRanges,
     ganttDragDayDelta,
+    ganttGridDividerAtOrAfter,
     ganttGridDividers,
-    ganttNextGridDivider,
     ganttOpenOverflowConnectorPath,
     ganttOpenTrailEnd,
     ganttPreviousGridDivider,
@@ -268,7 +268,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const timelineWidth = rangeDays * dayWidth
     const contentWidth = timelineGutter * 2 + timelineWidth
     const todayLeft = timelineX(nowDay)
-    const barInset = 0
+    const barInset = 8
     const committedItems = useMemo(() => [...plan.items, ...plan.externalItems], [plan])
     const committedRanges = useMemo(() => effectiveGanttRanges(committedItems), [committedItems])
     const previewedItems = useMemo(() => committedItems.map((item) => {
@@ -301,6 +301,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     ]
     const rowTop = new Map<string, number>()
     const rowHeights = new Map<string, number>()
+    const rowDepths = new Map<string, number>()
     let rowCursor = HEADER_HEIGHT + CATEGORY_ROW_HEIGHT
     for (const group of categoryRows) {
         rowCursor += CATEGORY_ROW_HEIGHT
@@ -308,6 +309,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             const height = rowHeight(row)
             rowTop.set(row.item.id, rowCursor)
             rowHeights.set(row.item.id, height)
+            rowDepths.set(row.item.id, row.depth)
             rowCursor += height
         }
     }
@@ -380,15 +382,26 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     useLayoutEffect(() => {
         const node = scrollRef.current
         if (!node) return
-        const measured = new Map<string, number>()
-        for (const element of node.querySelectorAll<HTMLElement>("[data-gantt-measure]")) {
-            const id = element.dataset.ganttMeasure
-            if (id) measured.set(id, Math.ceil(element.scrollWidth + Number(element.dataset.ganttExtra ?? 0)))
+        const elements = [...node.querySelectorAll<HTMLElement>("[data-gantt-measure]")]
+        const measure = () => {
+            const measured = new Map<string, number>()
+            for (const element of elements) {
+                const id = element.dataset.ganttMeasure
+                if (id) measured.set(id, Math.ceil(element.scrollWidth + Number(element.dataset.ganttExtra ?? 0)))
+            }
+            setOpenContentWidths((current) => {
+                if (current.size === measured.size && [...measured].every(([id, width]) => current.get(id) === width)) return current
+                return measured
+            })
         }
-        setOpenContentWidths((current) => {
-            if (current.size === measured.size && [...measured].every(([id, width]) => current.get(id) === width)) return current
-            return measured
-        })
+        measure()
+        const observer = new ResizeObserver(measure)
+        elements.forEach((element) => observer.observe(element))
+        const frame = requestAnimationFrame(measure)
+        return () => {
+            cancelAnimationFrame(frame)
+            observer.disconnect()
+        }
     }, [displayRanges, plan.items])
 
     const zoomAt = useCallback((clientX: number, requestedZoom: number) => {
@@ -917,7 +930,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             {range && geometry ? <div
                 data-gantt-bar
                 className={`absolute flex touch-none select-none items-center gap-1.5 overflow-hidden rounded-md border transition-[transform,border-color,opacity] ${isActive ? "z-30" : "z-20"} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${row.depth > 0 && !canResize || isGhost ? "border-dashed" : ""} ${item.status === "canceled" ? "opacity-45" : ""}`}
-                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize ? "transparent" : barBorder, backgroundColor: openEnded ? "transparent" : isGhost ? "rgba(115,115,115,.25)" : colours.background, backgroundImage: range.futureOpen ? `linear-gradient(to right, ${colours.background}, transparent)` : derived && !openEnded ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: isGhost ? "#d4d4d4" : colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: hoverTransform, transformOrigin: "center", opacity: isGhost ? .68 : undefined }}
+                style={{ top: `${(height - barHeight) / 2}px`, height: `${barHeight}px`, paddingLeft: `${handleSpace + 5}px`, paddingRight: `${(showBarLink ? linkSize + handleSpace : handleSpace) + 3}px`, left: `${geometry.left}px`, width: `${geometry.width}px`, borderColor: row.depth > 0 && canResize || geometry.overflow ? "transparent" : barBorder, backgroundColor: openEnded ? "transparent" : isGhost ? "rgba(115,115,115,.25)" : colours.background, backgroundImage: range.futureOpen ? `linear-gradient(to right, ${colours.background}, transparent)` : derived && !openEnded ? "repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.055) 5px 7px)" : undefined, color: isGhost ? "#d4d4d4" : colours.text, boxShadow: flashing ? "0 0 0 2px rgba(239,68,68,.6)" : undefined, transform: hoverTransform, transformOrigin: "center", opacity: isGhost ? .68 : undefined }}
                 onPointerDown={(event) => { if (scheduleRange) startBarDrag(event, item, scheduleRange, "move") }}
                 onMouseEnter={() => setActiveItemId(item.id)}
                 onMouseLeave={() => setActiveItemId(null)}
@@ -926,8 +939,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 title={isGhost ? `${item.title}: starts when its predecessor finishes` : `${item.title}: ${startLabel} → ${endLabel}${derived ? " · Derived from child work" : ""}${statusLabel ? ` · ${statusLabel}` : ""}`}
             >
                 {openEnded ? <>
-                    <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md" style={{ width: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, backgroundColor: colours.background }} />
-                    {geometry.overflow ? <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 rounded-r-md" style={{ left: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, right: 0, backgroundColor: colours.background, opacity: .32 }} /> : null}
+                    <span aria-hidden="true" className={`pointer-events-none absolute inset-y-0 left-0 rounded-l-md ${geometry.overflow ? "border-y border-l" : ""}`} style={{ width: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, backgroundColor: colours.background, borderColor: barBorder }} />
+                    {geometry.overflow ? <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-20 rounded-r-md border-y border-r" style={{ left: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, right: 0, backgroundColor: "rgba(0,0,0,.42)", borderColor: `color-mix(in srgb, ${barBorder} 48%, black)`, color: `color-mix(in srgb, ${colours.text} 58%, black)` }} /> : null}
                 </> : null}
                 {row.depth > 0 && canResize ? <span aria-hidden="true" className="pointer-events-none absolute inset-x-2.5 inset-y-0 z-30 border-y border-dashed" style={{ borderColor: barBorder }} /> : null}
                 {canResize && scheduleRange ? <button type="button" aria-label={`Resize start of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, scheduleRange, "start")} className="absolute -inset-y-px -left-px z-40 w-[11px] cursor-ew-resize" style={{ backgroundColor: barBorder }} /> : null}
@@ -962,26 +975,22 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const targetGeometry = renderedGeometry(targetItem, toRange)
         const y1 = fromTop + fromHeight / 2
         const y2 = toTop + toHeight / 2
-        const yTrack = y2 >= y1 ? fromTop + fromHeight : fromTop
-        if (fromRange.open && ghostRanges.has(targetItem.id)) {
-            if (sourceGeometry.overflow) {
-                const solidWidth = Math.max(0, sourceGeometry.truthfulRight - sourceGeometry.left)
-                const sourceX = solidWidth >= 16 ? sourceGeometry.truthfulRight - 8 : sourceGeometry.left + solidWidth / 2
-                return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path: ganttOpenOverflowConnectorPath({ sourceX, sourceBottom: y2 >= y1 ? fromTop + fromHeight : fromTop, targetY: y2, targetLeft: targetGeometry.left }), arrow: ganttArrowHeadPath(targetGeometry.left, sourceX, y2) }]
-            }
-            const path = ganttBoundaryConnectorPath({ sourceRight: sourceGeometry.truthfulRight, sourceY: y1, sourceDivider: todayLeft, rowBoundaryY: y2, targetDivider: todayLeft, targetY: y2, targetLeft: targetGeometry.left })
-            return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path, arrow: ganttArrowHeadPath(targetGeometry.left, todayLeft - 8, y2) }]
-        }
-        const sourceDay = rangeStart + (sourceGeometry.right - timelineGutter) / dayWidth
-        const targetDay = rangeStart + (targetGeometry.left - timelineGutter) / dayWidth
-        const sourceDividerDay = ganttNextGridDivider(sourceDay, scale)
-        let targetDividerDay = ganttPreviousGridDivider(targetDay, scale)
-        if (sourceDividerDay > targetDividerDay) {
-            targetDividerDay = sourceDividerDay
-        }
-        const sourceDivider = timelineX(sourceDividerDay)
+        const targetBoundaryY = y2 >= y1 ? toTop : toTop + toHeight
+        const targetDividerDay = ganttPreviousGridDivider(toRange.start, scale)
         const targetDivider = timelineX(targetDividerDay)
-        const path = ganttBoundaryConnectorPath({ sourceRight: sourceGeometry.right, sourceY: y1, sourceDivider, rowBoundaryY: yTrack, targetDivider, targetY: y2, targetLeft: targetGeometry.left })
+        if (fromRange.open && sourceGeometry.overflow && ghostRanges.has(targetItem.id)) {
+            const solidWidth = Math.max(0, sourceGeometry.truthfulRight - sourceGeometry.left)
+            const sourceX = solidWidth >= 8 ? sourceGeometry.truthfulRight : sourceGeometry.left + solidWidth / 2
+            const sourceDepth = rowDepths.get(sourceItem.id) ?? 0
+            const sourceBarHeight = sourceDepth === 0 ? ROOT_BAR_HEIGHT : CHILD_BAR_HEIGHT
+            const sourceBarEdge = y2 >= y1 ? fromTop + (fromHeight + sourceBarHeight) / 2 : fromTop + (fromHeight - sourceBarHeight) / 2
+            const path = ganttOpenOverflowConnectorPath({ sourceX, sourceBottom: sourceBarEdge, rowBoundaryY: targetBoundaryY, targetDivider, targetY: y2, targetLeft: targetGeometry.left })
+            return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path, arrow: ganttArrowHeadPath(targetGeometry.left, targetDivider, y2) }]
+        }
+        const sourceDay = fromRange.end ?? fromRange.start
+        const sourceDividerDay = ganttGridDividerAtOrAfter(sourceDay, scale, nowDay)
+        const sourceDivider = timelineX(sourceDividerDay)
+        const path = ganttBoundaryConnectorPath({ sourceRight: sourceGeometry.right, sourceY: y1, sourceDivider, rowBoundaryY: targetBoundaryY, targetDivider, targetY: y2, targetLeft: targetGeometry.left })
         const arrowDivider = Math.abs(targetGeometry.left - targetDivider) < 5 ? targetGeometry.left - 8 : targetDivider
         return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path, arrow: ganttArrowHeadPath(targetGeometry.left, arrowDivider, y2) }]
     })

@@ -9,6 +9,7 @@ import {
     ganttDisplayRanges,
     ganttDragDayDelta,
     ganttGridDividers,
+    ganttGridDividerAtOrAfter,
     ganttOpenOverflowConnectorPath,
     ganttOpenTrailEnd,
     ganttProjectDay,
@@ -125,6 +126,14 @@ test("open bars end truthfully at now and overflow only to fit intrinsic content
     assert.equal(overflows.overflow, true)
 })
 
+test("bars preserve an eight pixel connector clearance inside projected boundaries", () => {
+    const start = day("2026-07-10")
+    const range = { start, end: start + 1, derived: false, open: false, futureOpen: false }
+    const geometry = ganttProjectedBarGeometry({ range, scale: "day", rangeStart: start, dayWidth: 100, inset: 8 })
+    assert.equal(geometry.left, 8)
+    assert.equal(geometry.right, 92)
+})
+
 test("future start-only work occupies one and a half active intervals", () => {
     const start = day("2026-07-12")
     const range = ganttDisplayRanges([timingItem("future", { plannedStartDate: "2026-07-12" })], day("2026-07-10")).get("future")!
@@ -174,7 +183,14 @@ test("topological ordering keeps predecessors first while retaining stable sibli
 
 test("standard connectors bend only at supplied dividers and row tracks", () => {
     assert.equal(ganttBoundaryConnectorPath({ sourceRight: 110, sourceY: 20, sourceDivider: 120, rowBoundaryY: 32, targetDivider: 160, targetY: 48, targetLeft: 170 }), "M 110 20 H 120 V 32 H 160 V 48 H 170")
-    assert.equal(ganttOpenOverflowConnectorPath({ sourceX: 112, sourceBottom: 32, targetY: 48, targetLeft: 170 }), "M 112 32 V 48 H 170")
+    assert.equal(ganttOpenOverflowConnectorPath({ sourceX: 112, sourceBottom: 28, rowBoundaryY: 32, targetDivider: 100, targetY: 48, targetLeft: 170 }), "M 112 28 V 32 H 100 V 48 H 170")
+})
+
+test("connector source routing uses an exact divider or the nearer now line", () => {
+    const start = day("2026-07-10")
+    assert.equal(ganttGridDividerAtOrAfter(start, "day", start + .4), start)
+    assert.equal(ganttGridDividerAtOrAfter(start + .25, "day", start + .4), start + .4)
+    assert.equal(ganttGridDividerAtOrAfter(start + .25, "day", start + 2), start + 1)
 })
 
 test("visible divider generation follows the active scale", () => {

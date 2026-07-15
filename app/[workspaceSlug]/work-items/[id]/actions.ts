@@ -31,17 +31,23 @@ async function refreshScheduleSurfaces(slug: string, workspaceId: string, workIt
     }
 }
 
-export async function updateWorkItemSchedule(slug: string, workItemId: string, startDate: string | null, startTime: string | null, endDate: string | null, endTime: string | null, completed: boolean) {
+export async function updateWorkItemSchedule(slug: string, workItemId: string, startDate: string | null, startTime: string | null, endDate: string | null, endTime: string | null, completed: boolean, started = false, actualStartIso?: string | null, actualEndIso?: string | null) {
     const { workspace } = await requireWorkItem(slug, workItemId)
     const datePattern = /^\d{4}-\d{2}-\d{2}$/
     const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/
     if (startDate && !datePattern.test(startDate) || endDate && !datePattern.test(endDate)) throw new Error("Invalid schedule date")
     if (startTime && !timePattern.test(startTime) || endTime && !timePattern.test(endTime)) throw new Error("Invalid schedule time")
+    if (actualStartIso && Number.isNaN(Date.parse(actualStartIso)) || actualEndIso && Number.isNaN(Date.parse(actualEndIso))) throw new Error("Invalid actual schedule timestamp")
     const values = completed ? {
-        actual_start_at: startDate ? `${startDate}T${startTime || "00:00"}:00.000Z` : null,
+        actual_start_at: startDate ? actualStartIso ?? `${startDate}T${startTime || "00:00"}:00.000Z` : null,
         actual_start_has_time: Boolean(startDate && startTime),
-        actual_completed_at: endDate ? `${endDate}T${endTime || "00:00"}:00.000Z` : null,
+        actual_completed_at: endDate ? actualEndIso ?? `${endDate}T${endTime || "00:00"}:00.000Z` : null,
         actual_completed_has_time: Boolean(endDate && endTime),
+    } : started ? {
+        actual_start_at: startDate ? actualStartIso ?? `${startDate}T${startTime || "00:00"}:00.000Z` : null,
+        actual_start_has_time: Boolean(startDate && startTime),
+        due_date: endDate || null,
+        due_time: endDate ? endTime || null : null,
     } : { planned_start_date: startDate || null, planned_start_time: startDate ? startTime || null : null, due_date: endDate || null, due_time: endDate ? endTime || null : null }
     const { error } = await supabaseAdmin.from("work_items").update(values).eq("workspace_id", workspace.id).eq("id", workItemId)
     if (error) throw new Error(error.message)

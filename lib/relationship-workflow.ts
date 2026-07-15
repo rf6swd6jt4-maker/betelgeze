@@ -28,6 +28,64 @@ function addDays(date: string, days: number) {
     return value.toISOString().slice(0, 10)
 }
 
+async function dependencyCompletionStart(workspaceId: string, workItemId: string) {
+    const { data: edges } = await supabaseAdmin.from("work_item_dependencies")
+        .select("depends_on_work_item_id")
+        .eq("workspace_id", workspaceId)
+        .eq("work_item_id", workItemId)
+    const predecessorIds = (edges ?? []).map((edge) => edge.depends_on_work_item_id)
+    if (!predecessorIds.length) return null
+    const { data: predecessors } = await supabaseAdmin.from("work_items")
+        .select("actual_completed_at")
+        .eq("workspace_id", workspaceId)
+        .in("id", predecessorIds)
+        .not("actual_completed_at", "is", null)
+    return (predecessors ?? []).map((item) => item.actual_completed_at).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null
+}
+
+async function markWorkflowItemStarted(workspaceId: string, workItemId: string, fallback?: string) {
+    const { data: item, error } = await supabaseAdmin.from("work_items")
+        .select("actual_start_at, created_at")
+        .eq("workspace_id", workspaceId).eq("id", workItemId).maybeSingle()
+    if (error) throw new Error(error.message)
+    if (!item || item.actual_start_at) return item?.actual_start_at ?? null
+    const actualStartAt = await dependencyCompletionStart(workspaceId, workItemId) ?? fallback ?? item.created_at ?? new Date().toISOString()
+    const { error: updateError } = await supabaseAdmin.from("work_items").update({
+        actual_start_at: actualStartAt,
+        actual_start_has_time: true,
+    }).eq("workspace_id", workspaceId).eq("id", workItemId).is("actual_start_at", null)
+    if (updateError) throw new Error(updateError.message)
+    return actualStartAt
+}
+
+async function completeWorkflowItem(workspaceId: string, workItemId: string, completedAt = new Date().toISOString()) {
+    await markWorkflowItemStarted(workspaceId, workItemId, completedAt)
+    return supabaseAdmin.from("work_items").update({
+        status: "done",
+        actual_completed_at: completedAt,
+        actual_completed_has_time: true,
+    }).eq("workspace_id", workspaceId).eq("id", workItemId)
+}
+
+async function repairRelationshipWorkflowTimings(workspaceId: string, relationshipId: string) {
+    const { data: links } = await supabaseAdmin.from("work_item_relationships")
+        .select("work_item_id").eq("workspace_id", workspaceId).eq("relationship_id", relationshipId)
+    const ids = (links ?? []).map((link) => link.work_item_id)
+    if (!ids.length) return
+    const { data: items, error } = await supabaseAdmin.from("work_items")
+        .select("id, status, workflow_role, native_kind, planned_start_date, actual_start_at, actual_start_has_time, actual_completed_at, actual_completed_has_time, created_at")
+        .eq("workspace_id", workspaceId).in("id", ids).eq("native_kind", "relationship_workflow")
+    if (error) throw new Error(error.message)
+    for (const item of items ?? []) {
+        if (item.workflow_role === "lifecycle_stage" && !item.actual_start_at && (item.status === "done" || item.planned_start_date)) await markWorkflowItemStarted(workspaceId, item.id)
+        if (item.workflow_role === "lifecycle_stage" && item.status === "done" && item.actual_completed_at && !item.actual_completed_has_time) {
+            const { error: flagError } = await supabaseAdmin.from("work_items").update({ actual_completed_has_time: true })
+                .eq("workspace_id", workspaceId).eq("id", item.id).eq("actual_completed_at", item.actual_completed_at)
+            if (flagError) throw new Error(flagError.message)
+        }
+    }
+}
+
 async function linkItems(workspaceId: string, relationshipId: string, itemIds: string[]) {
     if (!itemIds.length) return
     const { error } = await supabaseAdmin.from("work_item_relationships").upsert(itemIds.map((workItemId) => ({
@@ -111,6 +169,7 @@ export async function ensureRelationshipStage(input: {
         startDate: today(),
         nativeKey: `${input.relationshipId}:${input.phase}`,
     })
+    await markWorkflowItemStarted(input.workspaceId, stageId)
     await ensureNextLifecycleStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: input.phase, stageId })
     return stageId
 }
@@ -156,14 +215,17 @@ export async function ensureCurrentRelationshipStage(input: {
     const existing = (items ?? []).find((item) => linkedIds.has(item.id) && item.lifecycle_phase === input.phase)
     if (existing) {
         await ensureNextLifecycleStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: input.phase, stageId: existing.id })
+        await repairRelationshipWorkflowTimings(input.workspaceId, input.relationshipId)
         return existing.id
     }
-    return ensureRelationshipStage({
+    const stageId = await ensureRelationshipStage({
         workspaceId: input.workspaceId,
         relationshipId: input.relationshipId,
         phase: input.phase,
         assigneeId: input.assigneeId,
     })
+    await repairRelationshipWorkflowTimings(input.workspaceId, input.relationshipId)
+    return stageId
 }
 
 export async function ensureSalesStage(input: { workspaceId: string; relationshipId: string; sellerId: string | null }) {
@@ -172,8 +234,7 @@ export async function ensureSalesStage(input: { workspaceId: string; relationshi
 
 export async function completePaymentStage(input: { workspaceId: string; relationshipId: string }) {
     const stageId = await ensureRelationshipStage({ ...input, phase: "invoiced" })
-    const { error } = await supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() })
-        .eq("workspace_id", input.workspaceId).eq("id", stageId)
+    const { error } = await completeWorkflowItem(input.workspaceId, stageId)
     if (error) throw new Error(error.message)
 }
 
@@ -425,15 +486,14 @@ export async function completeWorkflowParents(input: { workspaceId: string; rela
         const { data: children } = await supabaseAdmin.from("work_items")
             .select("status, workflow_required").eq("workspace_id", input.workspaceId).eq("parent_work_item_id", parentId)
         if (!(children ?? []).filter((item) => item.workflow_required).every((item) => item.status === "done")) return
+        const { error } = await completeWorkflowItem(input.workspaceId, parentId)
+        if (error) throw new Error(error.message)
         if (parent.workflow_action === "begin_fulfilment") {
             await beginRelationshipFulfilment({ workspaceId: input.workspaceId, relationshipId: input.relationshipId })
         }
         if (parent.workflow_action === "begin_retention") {
             await moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "retention" })
         }
-        const { error } = await supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() })
-            .eq("workspace_id", input.workspaceId).eq("id", parentId)
-        if (error) throw new Error(error.message)
         childId = parentId
     }
 }
@@ -488,27 +548,30 @@ export async function sendRelationshipInvoice(input: {
     })
     await Promise.all([
         supabaseAdmin.from("client_sales").update({ status: "invoice_sent", stripe_customer_id: invoice.customerId, stripe_invoice_id: invoice.invoiceId, stripe_invoice_status: invoice.invoiceStatus, stripe_hosted_invoice_url: invoice.hostedInvoiceUrl, stripe_invoice_pdf: invoice.invoicePdf, raw_payload: invoice.rawInvoice }).eq("id", sale.id),
-        moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "invoiced" }),
-        supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() }).eq("workspace_id", input.workspaceId).eq("id", input.workItemId),
+        completeWorkflowItem(input.workspaceId, input.workItemId),
     ])
+    await moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "invoiced" })
 }
 
 export async function advanceRelationshipWorkflow(input: { workspaceId: string; relationshipId: string; workItemId: string; action: string | null; actorId: string }) {
-    const complete = () => supabaseAdmin.from("work_items").update({ status: "done", actual_completed_at: new Date().toISOString() })
-        .eq("workspace_id", input.workspaceId).eq("id", input.workItemId)
+    const complete = () => completeWorkflowItem(input.workspaceId, input.workItemId)
     if (input.action === "move_to_potential_client") {
-        await Promise.all([complete(), moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "potential_client", assigneeId: input.actorId })])
+        const { error } = await complete()
+        if (error) throw new Error(error.message)
+        await moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "potential_client", assigneeId: input.actorId })
         return
     }
     if (input.action === "begin_fulfilment") {
         await assertRequiredChildrenCompleted({ workspaceId: input.workspaceId, workItemId: input.workItemId })
-        await beginRelationshipFulfilment({ workspaceId: input.workspaceId, relationshipId: input.relationshipId })
         const { error } = await complete()
         if (error) throw new Error(error.message)
+        await beginRelationshipFulfilment({ workspaceId: input.workspaceId, relationshipId: input.relationshipId })
         return
     }
     if (input.action === "begin_retention") {
-        await Promise.all([complete(), moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "retention" })])
+        const { error } = await complete()
+        if (error) throw new Error(error.message)
+        await moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "retention" })
         return
     }
     const { error } = await complete()

@@ -207,6 +207,13 @@ export function ganttOpenTrailEnd(visualRightDay: number, scale: GanttScale) {
     return divider + (ganttAdvanceIntervals(divider, scale, 1) - divider) / 2
 }
 
+export function ganttGridDividerAtOrAfter(day: number, scale: GanttScale, nowDay?: number) {
+    const previous = ganttPreviousGridDivider(day, scale)
+    const activeDivider = Math.abs(previous - day) < 1e-7 ? previous : ganttNextGridDivider(day, scale)
+    if (nowDay !== undefined && nowDay >= day - 1e-7) return Math.min(activeDivider, nowDay)
+    return activeDivider
+}
+
 export function ganttProjectDay(day: number, rangeStart: number, dayWidth: number, gutter = 0) {
     return gutter + (day - rangeStart) * dayWidth
 }
@@ -221,8 +228,11 @@ export function ganttProjectedBarGeometry({ range, scale, rangeStart, dayWidth, 
     contentWidth?: number
 }): GanttProjectedBarGeometry {
     const endDay = range.end ?? (range.futureOpen ? ganttAdvanceIntervals(range.start, scale, 1.5) : range.start)
-    const left = ganttProjectDay(range.start, rangeStart, dayWidth, gutter) + inset
-    const truthfulRight = Math.max(left + 1, ganttProjectDay(endDay, rangeStart, dayWidth, gutter) - inset)
+    const projectedLeft = ganttProjectDay(range.start, rangeStart, dayWidth, gutter)
+    const projectedRight = ganttProjectDay(endDay, rangeStart, dayWidth, gutter)
+    const effectiveInset = Math.min(inset, Math.max(0, (projectedRight - projectedLeft - 1) / 2))
+    const left = projectedLeft + effectiveInset
+    const truthfulRight = Math.max(left + 1, projectedRight - effectiveInset)
     const right = range.open ? Math.max(truthfulRight, left + contentWidth) : truthfulRight
     return { left, right, width: Math.max(1, right - left), truthfulRight, overflow: range.open && right > truthfulRight + .5 }
 }
@@ -281,8 +291,15 @@ export function ganttBoundaryConnectorPath({ sourceRight, sourceY, sourceDivider
     return `M ${sourceRight} ${sourceY} H ${sourceDivider} V ${rowBoundaryY} H ${targetDivider} V ${targetY} H ${targetLeft}`
 }
 
-export function ganttOpenOverflowConnectorPath({ sourceX, sourceBottom, targetY, targetLeft }: { sourceX: number; sourceBottom: number; targetY: number; targetLeft: number }) {
-    return `M ${sourceX} ${sourceBottom} V ${targetY} H ${targetLeft}`
+export function ganttOpenOverflowConnectorPath({ sourceX, sourceBottom, rowBoundaryY, targetDivider, targetY, targetLeft }: {
+    sourceX: number
+    sourceBottom: number
+    rowBoundaryY: number
+    targetDivider: number
+    targetY: number
+    targetLeft: number
+}) {
+    return `M ${sourceX} ${sourceBottom} V ${rowBoundaryY} H ${targetDivider} V ${targetY} H ${targetLeft}`
 }
 
 export function ganttAnchoredScrollLeft({

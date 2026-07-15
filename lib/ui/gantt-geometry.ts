@@ -232,7 +232,9 @@ export function ganttProjectedBarGeometry({ range, scale, rangeStart, dayWidth, 
     const projectedRight = ganttProjectDay(endDay, rangeStart, dayWidth, gutter)
     const effectiveInset = Math.min(inset, Math.max(0, (projectedRight - projectedLeft - 1) / 2))
     const left = projectedLeft + effectiveInset
-    const truthfulRight = Math.max(left + 1, projectedRight - effectiveInset)
+    // Open work reaches the now line exactly. Completed/due work retains the
+    // visual clearance that keeps its edge and connector arrow off a divider.
+    const truthfulRight = range.open ? projectedRight : Math.max(left + 1, projectedRight - effectiveInset)
     const right = range.open ? Math.max(truthfulRight, left + contentWidth) : truthfulRight
     return { left, right, width: Math.max(1, right - left), truthfulRight, overflow: range.open && right > truthfulRight + .5 }
 }

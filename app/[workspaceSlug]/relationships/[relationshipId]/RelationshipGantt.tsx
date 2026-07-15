@@ -939,8 +939,12 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 title={isGhost ? `${item.title}: starts when its predecessor finishes` : `${item.title}: ${startLabel} → ${endLabel}${derived ? " · Derived from child work" : ""}${statusLabel ? ` · ${statusLabel}` : ""}`}
             >
                 {openEnded ? <>
-                    <span aria-hidden="true" className={`pointer-events-none absolute inset-y-0 left-0 rounded-l-md ${geometry.overflow ? "border-y border-l" : ""}`} style={{ width: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, backgroundColor: colours.background, borderColor: barBorder }} />
-                    {geometry.overflow ? <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-20 rounded-r-md border-y border-r" style={{ left: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, right: 0, backgroundColor: "rgba(0,0,0,.42)", borderColor: `color-mix(in srgb, ${barBorder} 48%, black)`, color: `color-mix(in srgb, ${colours.text} 58%, black)` }} /> : null}
+                    <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md" style={{ width: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, backgroundColor: colours.background }} />
+                    {geometry.overflow ? <>
+                        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-20 rounded-r-md" style={{ left: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, right: 0, backgroundColor: "rgba(0,0,0,.42)" }} />
+                        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 z-30 rounded-l-md border-y border-l" style={{ width: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, borderColor: barBorder }} />
+                        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-30 rounded-r-md border-y border-r" style={{ left: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, right: 0, borderColor: `color-mix(in srgb, ${barBorder} 48%, black)` }} />
+                    </> : null}
                 </> : null}
                 {row.depth > 0 && canResize ? <span aria-hidden="true" className="pointer-events-none absolute inset-x-2.5 inset-y-0 z-30 border-y border-dashed" style={{ borderColor: barBorder }} /> : null}
                 {canResize && scheduleRange ? <button type="button" aria-label={`Resize start of ${item.title}`} onPointerDown={(event) => startBarDrag(event, item, scheduleRange, "start")} className="absolute -inset-y-px -left-px z-40 w-[11px] cursor-ew-resize" style={{ backgroundColor: barBorder }} /> : null}
@@ -980,7 +984,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const targetDivider = timelineX(targetDividerDay)
         if (fromRange.open && sourceGeometry.overflow && ghostRanges.has(targetItem.id)) {
             const solidWidth = Math.max(0, sourceGeometry.truthfulRight - sourceGeometry.left)
-            const sourceX = solidWidth >= 8 ? sourceGeometry.truthfulRight : sourceGeometry.left + solidWidth / 2
+            const sourceX = solidWidth >= 16 ? sourceGeometry.truthfulRight - 8 : sourceGeometry.left + solidWidth / 2
             const sourceDepth = rowDepths.get(sourceItem.id) ?? 0
             const sourceBarHeight = sourceDepth === 0 ? ROOT_BAR_HEIGHT : CHILD_BAR_HEIGHT
             const sourceBarEdge = y2 >= y1 ? fromTop + (fromHeight + sourceBarHeight) / 2 : fromTop + (fromHeight - sourceBarHeight) / 2

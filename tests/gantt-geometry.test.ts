@@ -124,6 +124,15 @@ test("open bars end truthfully at now and overflow only to fit intrinsic content
     assert.equal(overflows.truthfulRight, 120)
     assert.equal(overflows.right, 210)
     assert.equal(overflows.overflow, true)
+
+    const insetOverflow = ganttProjectedBarGeometry({ range, scale: "hour", rangeStart: day("2026-07-10"), dayWidth: 240, inset: 8, contentWidth: 120 })
+    assert.equal(insetOverflow.left, 98)
+    assert.equal(insetOverflow.truthfulRight, 120)
+    assert.equal(insetOverflow.right, 218)
+
+    const startsNow = ganttProjectedBarGeometry({ range: { ...range, start: now }, scale: "hour", rangeStart: day("2026-07-10"), dayWidth: 240, inset: 8, contentWidth: 80 })
+    assert.equal(startsNow.left, 120)
+    assert.equal(startsNow.truthfulRight, 120)
 })
 
 test("bars preserve an eight pixel connector clearance inside projected boundaries", () => {

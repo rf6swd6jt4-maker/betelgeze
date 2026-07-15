@@ -322,7 +322,7 @@ function WorkspaceTabFrame({ tab, active, assignRef, onLoad }: {
         ref={assignRef}
         name={`${WORKSPACE_TAB_FRAME_NAME_PREFIX}${tab.id}`}
         src={src}
-        title={workspaceTabDisplayTitle(tab)}
+        aria-label={`${workspaceTabDisplayTitle(tab)} workspace tab`}
         hidden={!active}
         aria-hidden={!active}
         onLoad={onLoad}

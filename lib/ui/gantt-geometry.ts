@@ -293,6 +293,43 @@ export function ganttBoundaryConnectorPath({ sourceRight, sourceY, sourceDivider
     return `M ${sourceRight} ${sourceY} H ${sourceDivider} V ${rowBoundaryY} H ${targetDivider} V ${targetY} H ${targetLeft}`
 }
 
+export type GanttConnectorRail = {
+    sourceDivider: number
+    targetDivider: number
+    mode: "grid" | "local"
+}
+
+// Keep grid-aligned routing when it is already direct. When zoom makes the
+// next/previous grid dividers form a long U-turn, use one local vertical rail
+// just outside the source instead. The caller can retain the old route by
+// bypassing this helper, which makes the policy deliberately easy to revert.
+export function ganttConnectorRail({
+    sourceRight,
+    targetLeft,
+    sourceDivider,
+    targetDivider,
+    clearance = 8,
+    maxGridDetour = 96,
+}: {
+    sourceRight: number
+    targetLeft: number
+    sourceDivider: number
+    targetDivider: number
+    clearance?: number
+    maxGridDetour?: number
+}): GanttConnectorRail {
+    const gridLength = Math.abs(sourceDivider - sourceRight) + Math.abs(targetDivider - sourceDivider) + Math.abs(targetLeft - targetDivider)
+    const directLength = Math.abs(targetLeft - sourceRight)
+    const gridReverses = sourceRight <= targetLeft && (sourceDivider > targetDivider || sourceDivider > targetLeft || targetDivider < sourceRight)
+    if (!gridReverses && gridLength <= directLength + maxGridDetour) return { sourceDivider, targetDivider, mode: "grid" }
+
+    if (targetLeft > sourceRight) {
+        const localRail = sourceRight + Math.min(clearance, (targetLeft - sourceRight) / 2)
+        return { sourceDivider: localRail, targetDivider: localRail, mode: "local" }
+    }
+    return { sourceDivider: sourceRight, targetDivider: sourceRight, mode: "local" }
+}
+
 export function ganttOpenOverflowConnectorPath({ sourceX, sourceBottom, rowBoundaryY, targetDivider, targetY, targetLeft }: {
     sourceX: number
     sourceBottom: number

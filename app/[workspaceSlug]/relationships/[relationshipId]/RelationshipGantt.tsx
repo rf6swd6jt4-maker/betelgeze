@@ -10,6 +10,7 @@ import {
     ganttAnchoredScrollLeft,
     ganttArrowHeadPath,
     ganttBoundaryConnectorPath,
+    ganttConnectorRail,
     ganttDependencyGhostRanges,
     ganttDisplayRanges,
     ganttDragDayDelta,
@@ -68,6 +69,9 @@ const HOVER_BAR_OUTSET = 1
 const CATEGORY_BACKGROUND = "linear-gradient(135deg, transparent 0 47%, #262626 47% 53%, transparent 53%)"
 const CATEGORY_BACKGROUND_SIZE = "36px 36px"
 const ZOOM_PRESET: Record<Scale, number> = { quarter_hour: 3_456, hour: 1_056, three_hour: 576, day: 64, week: 28, month: 12 }
+// The old grid-only route remains below as a one-switch fallback should this
+// adaptive policy prove less readable on a real plan.
+const USE_ADAPTIVE_CONNECTOR_RAILS = true
 
 function scaleForDayWidth(dayWidth: number): Scale {
     if (dayWidth >= 3_072) return "quarter_hour"
@@ -982,20 +986,25 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const targetBoundaryY = y2 >= y1 ? toTop : toTop + toHeight
         const targetDividerDay = ganttPreviousGridDivider(toRange.start, scale)
         const targetDivider = timelineX(targetDividerDay)
+        const sourceDay = fromRange.end ?? fromRange.start
+        const sourceDivider = timelineX(ganttGridDividerAtOrAfter(sourceDay, scale, nowDay))
         if (fromRange.open && sourceGeometry.overflow && ghostRanges.has(targetItem.id)) {
             const solidWidth = Math.max(0, sourceGeometry.truthfulRight - sourceGeometry.left)
             const sourceX = solidWidth >= 16 ? sourceGeometry.truthfulRight - 8 : sourceGeometry.left + solidWidth / 2
             const sourceDepth = rowDepths.get(sourceItem.id) ?? 0
             const sourceBarHeight = sourceDepth === 0 ? ROOT_BAR_HEIGHT : CHILD_BAR_HEIGHT
             const sourceBarEdge = y2 >= y1 ? fromTop + (fromHeight + sourceBarHeight) / 2 : fromTop + (fromHeight - sourceBarHeight) / 2
-            const path = ganttOpenOverflowConnectorPath({ sourceX, sourceBottom: sourceBarEdge, rowBoundaryY: targetBoundaryY, targetDivider, targetY: y2, targetLeft: targetGeometry.left })
-            return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path, arrow: ganttArrowHeadPath(targetGeometry.left, targetDivider, y2) }]
+            const rail = USE_ADAPTIVE_CONNECTOR_RAILS
+                ? ganttConnectorRail({ sourceRight: sourceX, targetLeft: targetGeometry.left, sourceDivider, targetDivider })
+                : { sourceDivider, targetDivider, mode: "grid" as const }
+            const path = ganttOpenOverflowConnectorPath({ sourceX, sourceBottom: sourceBarEdge, rowBoundaryY: targetBoundaryY, targetDivider: rail.targetDivider, targetY: y2, targetLeft: targetGeometry.left })
+            return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path, arrow: ganttArrowHeadPath(targetGeometry.left, rail.targetDivider, y2) }]
         }
-        const sourceDay = fromRange.end ?? fromRange.start
-        const sourceDividerDay = ganttGridDividerAtOrAfter(sourceDay, scale, nowDay)
-        const sourceDivider = timelineX(sourceDividerDay)
-        const path = ganttBoundaryConnectorPath({ sourceRight: sourceGeometry.right, sourceY: y1, sourceDivider, rowBoundaryY: targetBoundaryY, targetDivider, targetY: y2, targetLeft: targetGeometry.left })
-        const arrowDivider = Math.abs(targetGeometry.left - targetDivider) < 5 ? targetGeometry.left - 8 : targetDivider
+        const rail = USE_ADAPTIVE_CONNECTOR_RAILS
+            ? ganttConnectorRail({ sourceRight: sourceGeometry.right, targetLeft: targetGeometry.left, sourceDivider, targetDivider })
+            : { sourceDivider, targetDivider, mode: "grid" as const }
+        const path = ganttBoundaryConnectorPath({ sourceRight: sourceGeometry.right, sourceY: y1, sourceDivider: rail.sourceDivider, rowBoundaryY: targetBoundaryY, targetDivider: rail.targetDivider, targetY: y2, targetLeft: targetGeometry.left })
+        const arrowDivider = Math.abs(targetGeometry.left - rail.targetDivider) < 5 ? targetGeometry.left - 8 : rail.targetDivider
         return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path, arrow: ganttArrowHeadPath(targetGeometry.left, arrowDivider, y2) }]
     })
 

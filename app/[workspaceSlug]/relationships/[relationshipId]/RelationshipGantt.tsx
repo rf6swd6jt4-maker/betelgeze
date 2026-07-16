@@ -22,6 +22,7 @@ import {
     ganttProjectDay,
     ganttProjectedBarGeometry,
     ganttStableTopologicalOrder,
+    ganttWorkflowChildProjection,
     type GanttDisplayRange,
     type GanttProjectedBarGeometry,
     type GanttScale,
@@ -281,12 +282,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     }), [committedItems, dragPreview])
     const ranges = useMemo(() => effectiveGanttRanges(previewedItems), [previewedItems])
     const explicitDisplayRanges = useMemo(() => ganttDisplayRanges(previewedItems, nowDay), [nowDay, previewedItems])
-    const ghostRanges = useMemo(() => ganttDependencyGhostRanges(previewedItems, plan.dependencies, explicitDisplayRanges, nowDay, scale), [explicitDisplayRanges, nowDay, plan.dependencies, previewedItems, scale])
-    const displayRanges = useMemo(() => new Map([...explicitDisplayRanges, ...ghostRanges]), [explicitDisplayRanges, ghostRanges])
+    const workflowProjection = useMemo(() => ganttWorkflowChildProjection(previewedItems, plan.dependencies, explicitDisplayRanges, nowDay, scale), [explicitDisplayRanges, nowDay, plan.dependencies, previewedItems, scale])
+    const ghostRanges = useMemo(() => ganttDependencyGhostRanges(previewedItems, plan.dependencies, workflowProjection.ranges, nowDay, scale, workflowProjection.completionAnchors), [nowDay, plan.dependencies, previewedItems, scale, workflowProjection])
+    const ghostItemIds = useMemo(() => new Set([...workflowProjection.ghostItemIds, ...ghostRanges.keys()]), [ghostRanges, workflowProjection.ghostItemIds])
+    const displayRanges = useMemo(() => new Map([...workflowProjection.ranges, ...ghostRanges]), [ghostRanges, workflowProjection.ranges])
     const renderedGeometry = useCallback((item: RelationshipGanttItem, range: GanttDisplayRange): GanttProjectedBarGeometry => ganttProjectedBarGeometry({ range, scale, rangeStart, dayWidth, gutter: timelineGutter, inset: barInset, contentWidth: range.open ? openContentWidths.get(item.id) ?? 0 : 0 }), [barInset, dayWidth, openContentWidths, rangeStart, scale, timelineGutter])
     const scheduledItems = plan.items.filter((item) => item.section === "relationship" && displayRanges.has(item.id))
     const sharedItems = plan.items.filter((item) => item.section === "shared" && displayRanges.has(item.id))
-    const unscheduledItems = plan.items.filter((item) => !displayRanges.has(item.id))
+    const unscheduledItems = plan.items.filter((item) => !displayRanges.has(item.id) && !workflowProjection.hiddenItemIds.has(item.id))
     const scheduledRows = collapsedCategories.has("scheduled") ? [] : flattenRows(scheduledItems, collapsed, "scheduled", plan.dependencies)
     const sharedRows = collapsedCategories.has("shared") ? [] : flattenRows(sharedItems, collapsed, "shared", plan.dependencies)
     const unscheduledRows = collapsedCategories.has("unscheduled") ? [] : flattenRows(unscheduledItems, collapsed, "unscheduled", plan.dependencies)
@@ -900,7 +903,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const barHeight = row.depth === 0 ? ROOT_BAR_HEIGHT : CHILD_BAR_HEIGHT
         const range = displayRanges.get(item.id) ?? null
         const scheduleRange = ranges.get(item.id)
-        const isGhost = ghostRanges.has(item.id)
+        const isGhost = ghostItemIds.has(item.id)
         const openEnded = Boolean(range?.open)
         const showOpenTrail = Boolean(range?.open || range?.futureOpen)
         const geometry = range ? renderedGeometry(item, range) : null
@@ -974,6 +977,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const sourceItem = plan.items.find((item) => item.id === edge.dependsOnWorkItemId) ?? plan.externalItems.find((item) => item.id === edge.dependsOnWorkItemId)
         const targetItem = plan.items.find((item) => item.id === edge.workItemId)
         if (!sourceItem || !targetItem) return []
+        // Older fulfilment plans persisted same-assignee services as a chain.
+        // They are a user-facing parallel service fan-out, so the view ignores
+        // that implementation detail and lets the shared parent trunk render.
+        if (sourceItem.parentWorkItemId && sourceItem.parentWorkItemId === targetItem.parentWorkItemId && sourceItem.workflowRole === "service_group" && targetItem.workflowRole === "service_group") return []
         let ancestorId = targetItem.parentWorkItemId
         while (ancestorId) {
             if (ancestorId === sourceItem.id) return []
@@ -988,7 +995,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const targetDivider = timelineX(targetDividerDay)
         const sourceDay = fromRange.end ?? fromRange.start
         const sourceDivider = timelineX(ganttGridDividerAtOrAfter(sourceDay, scale, nowDay))
-        if (fromRange.open && sourceGeometry.overflow && ghostRanges.has(targetItem.id)) {
+        if (fromRange.open && sourceGeometry.overflow && ghostItemIds.has(targetItem.id)) {
             const solidWidth = Math.max(0, sourceGeometry.truthfulRight - sourceGeometry.left)
             const sourceX = solidWidth >= 16 ? sourceGeometry.truthfulRight - 8 : sourceGeometry.left + solidWidth / 2
             const sourceDepth = rowDepths.get(sourceItem.id) ?? 0
@@ -1014,7 +1021,8 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const siblingDependencyPairs = new Set(plan.dependencies.map((edge) => `${edge.workItemId}:${edge.dependsOnWorkItemId}`))
     const parallelChildPaths = [...new Set(plan.items.map((item) => item.parentWorkItemId).filter((id): id is string => Boolean(id)))].flatMap((parentId) => {
         const children = plan.items.filter((item) => item.parentWorkItemId === parentId && rowTop.has(item.id) && displayRanges.has(item.id))
-        if (children.length < 2 || children.some((child) => children.some((other) => child.id !== other.id && (siblingDependencyPairs.has(`${child.id}:${other.id}`) || siblingDependencyPairs.has(`${other.id}:${child.id}`))))) return []
+        const serviceFanOut = children.every((child) => child.workflowRole === "service_group")
+        if (children.length < 2 || (!serviceFanOut && children.some((child) => children.some((other) => child.id !== other.id && (siblingDependencyPairs.has(`${child.id}:${other.id}`) || siblingDependencyPairs.has(`${other.id}:${child.id}`)))))) return []
         const parentTop = rowTop.get(parentId)
         const parentHeight = rowHeights.get(parentId)
         const parentRange = displayRanges.get(parentId)

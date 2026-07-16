@@ -17,6 +17,8 @@ export type GanttTimingItem = {
     actualStartHasTime: boolean
     actualCompletedAt: string | null
     actualCompletedHasTime: boolean
+    workflowRole?: string
+    sortOrder?: number
 }
 
 export type GanttDisplayRange = {
@@ -25,6 +27,13 @@ export type GanttDisplayRange = {
     derived: boolean
     open: boolean
     futureOpen: boolean
+}
+
+export type GanttWorkflowProjection = {
+    ranges: Map<string, GanttDisplayRange>
+    ghostItemIds: Set<string>
+    hiddenItemIds: Set<string>
+    completionAnchors: Map<string, number>
 }
 
 export type GanttProjectedBarGeometry = {
@@ -113,12 +122,105 @@ export function ganttDisplayRanges(items: GanttTimingItem[], nowDay: number) {
     return output
 }
 
+// Lifecycle automation has several backend implementations (canonical forms,
+// review work, and SOP work), but the chart deliberately presents one model:
+// children of a workflow stage are a sequence; direct service groups fan out.
+// This is a view projection only, so it can be removed without touching the
+// persisted schedules or the automation paths that create them.
+export function ganttWorkflowChildProjection(
+    items: GanttTimingItem[],
+    dependencies: Array<{ workItemId: string; dependsOnWorkItemId: string }>,
+    baseRanges: Map<string, GanttDisplayRange>,
+    nowDay: number,
+    scale: GanttScale,
+): GanttWorkflowProjection {
+    const byId = new Map(items.map((item) => [item.id, item]))
+    const childrenByParent = new Map<string, GanttTimingItem[]>()
+    for (const item of items) {
+        if (!item.parentWorkItemId || !byId.has(item.parentWorkItemId)) continue
+        childrenByParent.set(item.parentWorkItemId, [...(childrenByParent.get(item.parentWorkItemId) ?? []), item])
+    }
+    const ranges = new Map(baseRanges)
+    const ghostItemIds = new Set<string>()
+    const hiddenItemIds = new Set<string>()
+    const completionAnchors = new Map<string, number>()
+    const depth = (item: GanttTimingItem) => {
+        let result = 0
+        let parentId = item.parentWorkItemId
+        const seen = new Set<string>()
+        while (parentId && !seen.has(parentId)) {
+            seen.add(parentId)
+            result += 1
+            parentId = byId.get(parentId)?.parentWorkItemId ?? null
+        }
+        return result
+    }
+
+    for (const parent of [...items].sort((left, right) => depth(left) - depth(right))) {
+        const children = childrenByParent.get(parent.id) ?? []
+        const parentRange = ranges.get(parent.id)
+        if (!parentRange || !children.length) continue
+
+        // A fulfilment stage's direct service groups genuinely start together.
+        // Their internal SOP children are handled by the sequential branch below.
+        if (children.every((child) => child.workflowRole === "service_group")) {
+            for (const child of children) {
+                const childRange = ranges.get(child.id)
+                const completed = childRange && !childRange.open && childRange.end !== null && ["done", "canceled"].includes(child.status)
+                if (completed && childRange?.end !== null && childRange?.end !== undefined) {
+                    ranges.set(child.id, { ...childRange, start: parentRange.start, end: Math.max(parentRange.start, childRange.end), derived: false, futureOpen: false })
+                } else {
+                    ranges.set(child.id, { start: parentRange.start, end: parentRange.open ? nowDay : parentRange.end, derived: false, open: parentRange.open, futureOpen: false })
+                }
+            }
+            continue
+        }
+
+        if (parent.workflowRole !== "lifecycle_stage" && parent.workflowRole !== "service_group") continue
+        const ordered = ganttStableTopologicalOrder(children, dependencies, (left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0) || items.indexOf(left) - items.indexOf(right))
+        let cursor = parentRange.start
+        let firstIncomplete = true
+        let visibleFuture = false
+        for (const child of ordered) {
+            const childRange = ranges.get(child.id)
+            const complete = ["done", "canceled"].includes(child.status)
+            if (complete) {
+                const end = Math.max(cursor, childRange?.end ?? cursor)
+                ranges.set(child.id, { start: cursor, end, derived: false, open: false, futureOpen: false })
+                cursor = end
+                continue
+            }
+            if (firstIncomplete) {
+                const end = parentRange.open ? Math.max(cursor, nowDay) : ganttAdvanceIntervals(cursor, scale, 1)
+                ranges.set(child.id, { start: cursor, end, derived: false, open: parentRange.open, futureOpen: false })
+                if (!parentRange.open) ghostItemIds.add(child.id)
+                cursor = end
+                firstIncomplete = false
+                continue
+            }
+            const end = ganttAdvanceIntervals(cursor, scale, 1)
+            if (!visibleFuture) {
+                ranges.set(child.id, { start: cursor, end, derived: false, open: false, futureOpen: false })
+                ghostItemIds.add(child.id)
+                visibleFuture = true
+            } else {
+                ranges.delete(child.id)
+                hiddenItemIds.add(child.id)
+            }
+            cursor = end
+        }
+        completionAnchors.set(parent.id, Math.max(cursor, parentRange.end ?? cursor))
+    }
+    return { ranges, ghostItemIds, hiddenItemIds, completionAnchors }
+}
+
 export function ganttDependencyGhostRanges(
     items: GanttTimingItem[],
     dependencies: Array<{ workItemId: string; dependsOnWorkItemId: string }>,
     explicitRanges: Map<string, GanttDisplayRange>,
     nowDay: number,
     scale: GanttScale,
+    completionAnchors = new Map<string, number>(),
 ) {
     const output = new Map<string, GanttDisplayRange>()
     const byId = new Map(items.map((item) => [item.id, item]))
@@ -136,7 +238,7 @@ export function ganttDependencyGhostRanges(
             if (predecessorIsAncestor) continue
             const predecessor = output.get(edge.dependsOnWorkItemId) ?? explicitRanges.get(edge.dependsOnWorkItemId)
             if (!predecessor) continue
-            const start = predecessor.open ? nowDay : predecessor.end ?? predecessor.start
+            const start = completionAnchors.get(edge.dependsOnWorkItemId) ?? (predecessor.open ? nowDay : predecessor.end ?? predecessor.start)
             output.set(item.id, { start, end: ganttAdvanceIntervals(start, scale, 1), derived: false, open: false, futureOpen: false })
             changed = true
         }

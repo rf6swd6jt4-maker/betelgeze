@@ -375,67 +375,45 @@ export async function createFulfilmentWork(input: {
     })
     await ensureNextLifecycleStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "fulfilment", stageId })
     const services = await serviceRows(input.workspaceId, input.relationshipId)
-    const byAssignee = new Map<string, typeof services>()
-    for (const service of services) {
-        const key = service.assignee_user_id ?? `unassigned:${service.service_key}`
-        byAssignee.set(key, [...(byAssignee.get(key) ?? []), service])
-    }
     let serviceIndex = 0
-    for (const group of byAssignee.values()) {
-        const slotDays = Math.max(1, Math.floor(timeframe / group.length))
-        let previousServiceId: string | null = null
-        for (const [index, service] of group.entries()) {
-            const serviceStart = service.assignee_user_id ? addDays(startDate, index * slotDays) : startDate
-            const serviceEnd = service.assignee_user_id
-                ? (index === group.length - 1 ? dueDate : addDays(startDate, (index + 1) * slotDays - 1))
-                : dueDate
-            const definition = SERVICES[service.service_key]
-            const serviceId = await createWorkflowItem({
+    for (const service of services) {
+        const definition = SERVICES[service.service_key]
+        const serviceId = await createWorkflowItem({
+            workspaceId: input.workspaceId,
+            relationshipId: input.relationshipId,
+            title: definition?.title ?? service.service_key,
+            phase: "fulfilment",
+            role: "service_group",
+            completionMode: "all_required_children",
+            parentId: stageId,
+            assigneeId: service.assignee_user_id,
+            startDate,
+            dueDate,
+            nativeKey: `${input.relationshipId}:fulfilment:${service.service_key}`,
+            sortOrder: serviceIndex++ * 10,
+        })
+        let previousStepId: string | null = null
+        const steps = definition?.sopSteps?.length ? definition.sopSteps : [{ key: "complete", title: `Complete ${definition?.title ?? service.service_key}`, description: "Complete this service's delivery work." }]
+        for (const [stepIndex, step] of steps.entries()) {
+            const stepDays = Math.max(1, Math.floor(Math.max(1, timeframe) / Math.max(1, steps.length)))
+            const stepId = await createWorkflowItem({
                 workspaceId: input.workspaceId,
                 relationshipId: input.relationshipId,
-                title: definition?.title ?? service.service_key,
+                title: step.title,
+                description: step.description,
                 phase: "fulfilment",
-                role: "service_group",
-                completionMode: "all_required_children",
-                parentId: stageId,
+                role: "task",
+                parentId: serviceId,
                 assigneeId: service.assignee_user_id,
-                startDate: serviceStart,
-                dueDate: serviceEnd,
-                nativeKey: `${input.relationshipId}:fulfilment:${service.service_key}`,
-                sortOrder: serviceIndex++ * 10,
+                startDate: addDays(startDate, stepIndex * stepDays),
+                dueDate: stepIndex === steps.length - 1 ? dueDate : addDays(startDate, (stepIndex + 1) * stepDays - 1),
+                nativeKey: `${input.relationshipId}:fulfilment:${service.service_key}:${step.key}`,
+                sortOrder: stepIndex * 10,
             })
-            if (previousServiceId && service.assignee_user_id) {
-                await supabaseAdmin.from("work_item_dependencies").upsert({
-                    workspace_id: input.workspaceId,
-                    work_item_id: serviceId,
-                    depends_on_work_item_id: previousServiceId,
-                    source: "manual",
-                }, { onConflict: "work_item_id,depends_on_work_item_id" })
-            }
-            let previousStepId: string | null = null
-            const steps = definition?.sopSteps?.length ? definition.sopSteps : [{ key: "complete", title: `Complete ${definition?.title ?? service.service_key}`, description: "Complete this service's delivery work." }]
-            for (const [stepIndex, step] of steps.entries()) {
-                const stepDays = Math.max(1, Math.floor(Math.max(1, timeframe) / Math.max(1, steps.length)))
-                const stepId = await createWorkflowItem({
-                    workspaceId: input.workspaceId,
-                    relationshipId: input.relationshipId,
-                    title: step.title,
-                    description: step.description,
-                    phase: "fulfilment",
-                    role: "task",
-                    parentId: serviceId,
-                    assigneeId: service.assignee_user_id,
-                    startDate: addDays(serviceStart, stepIndex * stepDays),
-                    dueDate: stepIndex === steps.length - 1 ? serviceEnd : addDays(serviceStart, (stepIndex + 1) * stepDays - 1),
-                    nativeKey: `${input.relationshipId}:fulfilment:${service.service_key}:${step.key}`,
-                    sortOrder: stepIndex * 10,
-                })
-                if (previousStepId) await supabaseAdmin.from("work_item_dependencies").upsert({
-                    workspace_id: input.workspaceId, work_item_id: stepId, depends_on_work_item_id: previousStepId, source: "manual",
-                }, { onConflict: "work_item_id,depends_on_work_item_id" })
-                previousStepId = stepId
-            }
-            previousServiceId = serviceId
+            if (previousStepId) await supabaseAdmin.from("work_item_dependencies").upsert({
+                workspace_id: input.workspaceId, work_item_id: stepId, depends_on_work_item_id: previousStepId, source: "manual",
+            }, { onConflict: "work_item_id,depends_on_work_item_id" })
+            previousStepId = stepId
         }
     }
     await setRelationshipFulfilmentPhase(input.workspaceId, input.relationshipId)

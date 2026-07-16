@@ -16,6 +16,7 @@ import {
     ganttProjectDay,
     ganttProjectedBarGeometry,
     ganttStableTopologicalOrder,
+    ganttWorkflowChildProjection,
     type GanttScale,
     type GanttTimingItem,
 } from "../lib/ui/gantt-geometry.ts"
@@ -183,6 +184,64 @@ test("parallel undated siblings share a predecessor anchor", () => {
     const explicit = ganttDisplayRanges(items, now)
     const ghosts = ganttDependencyGhostRanges(items, [{ workItemId: "a", dependsOnWorkItemId: "parent" }, { workItemId: "b", dependsOnWorkItemId: "parent" }], explicit, now, "day")
     assert.equal(ghosts.get("a")?.start, ghosts.get("b")?.start)
+})
+
+test("workflow children form a time-accurate staircase with only the next inactive step visible", () => {
+    const start = day("2026-07-10") + 9 / 24
+    const now = day("2026-07-10") + 12 / 24
+    const items = [
+        timingItem("onboarding", { status: "doing", workflowRole: "lifecycle_stage", actualStartAt: "2026-07-10T09:00:00", actualStartHasTime: true }),
+        timingItem("welcome", { status: "done", parentWorkItemId: "onboarding", workflowRole: "task", sortOrder: 0, actualStartAt: "2026-07-10T09:00:00", actualStartHasTime: true, actualCompletedAt: "2026-07-10T10:30:00", actualCompletedHasTime: true }),
+        timingItem("access", { parentWorkItemId: "onboarding", workflowRole: "task", sortOrder: 10 }),
+        timingItem("details", { parentWorkItemId: "onboarding", workflowRole: "task", sortOrder: 20 }),
+        timingItem("later", { parentWorkItemId: "onboarding", workflowRole: "task", sortOrder: 30 }),
+    ]
+    const base = ganttDisplayRanges(items, now)
+    const projection = ganttWorkflowChildProjection(items, [
+        { workItemId: "access", dependsOnWorkItemId: "welcome" },
+        { workItemId: "details", dependsOnWorkItemId: "access" },
+        { workItemId: "later", dependsOnWorkItemId: "details" },
+    ], base, now, "hour")
+    assert.equal(projection.ranges.get("welcome")?.start, start)
+    assert.equal(projection.ranges.get("welcome")?.end, day("2026-07-10") + 10.5 / 24)
+    assert.equal(projection.ranges.get("access")?.start, day("2026-07-10") + 10.5 / 24)
+    assert.equal(projection.ranges.get("access")?.end, now)
+    assert.equal(projection.ranges.get("access")?.open, true)
+    assert.equal(projection.ranges.get("details")?.start, now)
+    assert.equal(projection.ranges.get("details")?.end, now + 1 / 24)
+    assert.equal(projection.ghostItemIds.has("details"), true)
+    assert.equal(projection.hiddenItemIds.has("later"), true)
+    assert.ok(Math.abs(projection.completionAnchors.get("onboarding")! - (now + 2 / 24)) < 1e-10)
+})
+
+test("direct fulfilment service groups fan out from the parent while their SOPs remain sequential", () => {
+    const start = day("2026-07-10") + 9 / 24
+    const now = day("2026-07-10") + 12 / 24
+    const items = [
+        timingItem("fulfilment", { status: "doing", workflowRole: "lifecycle_stage", actualStartAt: "2026-07-10T09:00:00", actualStartHasTime: true }),
+        timingItem("design", { parentWorkItemId: "fulfilment", workflowRole: "service_group", plannedStartDate: "2026-07-12" }),
+        timingItem("seo", { parentWorkItemId: "fulfilment", workflowRole: "service_group", plannedStartDate: "2026-07-13" }),
+        timingItem("draft", { parentWorkItemId: "design", workflowRole: "task", sortOrder: 0 }),
+        timingItem("approve", { parentWorkItemId: "design", workflowRole: "task", sortOrder: 10 }),
+    ]
+    const projection = ganttWorkflowChildProjection(items, [{ workItemId: "approve", dependsOnWorkItemId: "draft" }], ganttDisplayRanges(items, now), now, "hour")
+    for (const id of ["design", "seo"]) {
+        assert.equal(projection.ranges.get(id)?.start, start)
+        assert.equal(projection.ranges.get(id)?.end, now)
+        assert.equal(projection.ranges.get(id)?.open, true)
+    }
+    assert.equal(projection.ranges.get("draft")?.start, start)
+    assert.equal(projection.ranges.get("draft")?.end, now)
+    assert.equal(projection.ranges.get("approve")?.start, now)
+    assert.equal(projection.ghostItemIds.has("approve"), true)
+})
+
+test("lifecycle successor ghosts begin after the projected child sequence", () => {
+    const now = day("2026-07-10") + .5
+    const items = [timingItem("stage", { status: "doing", workflowRole: "lifecycle_stage", plannedStartDate: "2026-07-10" }), timingItem("next", { workflowRole: "lifecycle_stage" })]
+    const base = ganttDisplayRanges(items, now)
+    const anchored = ganttDependencyGhostRanges(items, [{ workItemId: "next", dependsOnWorkItemId: "stage" }], base, now, "hour", new Map([["stage", now + 3 / 24]]))
+    assert.equal(anchored.get("next")?.start, now + 3 / 24)
 })
 
 test("topological ordering keeps predecessors first while retaining stable sibling order", () => {

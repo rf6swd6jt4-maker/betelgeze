@@ -171,7 +171,7 @@ export async function getFormResponseAsset(sessionId: string, stepKey: string): 
 async function findStepWorkItem(workspaceId: string, sessionId: string, stepKey: string) {
     const { data } = await supabaseAdmin
         .from("work_items")
-        .select("id, status")
+        .select("id, status, actual_start_at")
         .eq("workspace_id", workspaceId)
         .eq("native_kind", "onboarding_step")
         .eq("native_key", onboardingStepNativeKey(sessionId, stepKey))
@@ -328,12 +328,39 @@ export async function completeCanonicalStep(token: string, stepKey: string) {
     const workItem = await findStepWorkItem(resolved.session.workspace_id, resolved.session.id, stepKey)
     if (!workItem) throw new Error("Unknown onboarding step")
     const now = new Date().toISOString()
+    const { data: predecessorEdges } = await supabaseAdmin
+        .from("work_item_dependencies")
+        .select("depends_on_work_item_id")
+        .eq("workspace_id", resolved.session.workspace_id)
+        .eq("work_item_id", workItem.id)
+    const predecessorIds = (predecessorEdges ?? []).map((edge) => edge.depends_on_work_item_id)
+    const { data: predecessors } = predecessorIds.length
+        ? await supabaseAdmin.from("work_items").select("actual_completed_at").eq("workspace_id", resolved.session.workspace_id).in("id", predecessorIds)
+        : { data: [] as Array<{ actual_completed_at: string | null }> }
+    const predecessorFinishedAt = (predecessors ?? []).map((item) => item.actual_completed_at).filter((value): value is string => Boolean(value)).sort().at(-1)
     const { error } = await supabaseAdmin
         .from("work_items")
-        .update({ status: "done", actual_completed_at: now, updated_at: now })
+        .update({
+            status: "done",
+            actual_start_at: workItem.actual_start_at ?? predecessorFinishedAt ?? now,
+            actual_start_has_time: true,
+            actual_completed_at: now,
+            actual_completed_has_time: true,
+            updated_at: now,
+        })
         .eq("id", workItem.id)
         .eq("workspace_id", resolved.session.workspace_id)
     if (error) throw new Error("Could not save progress")
+    const { data: nextEdges } = await supabaseAdmin
+        .from("work_item_dependencies")
+        .select("work_item_id")
+        .eq("workspace_id", resolved.session.workspace_id)
+        .eq("depends_on_work_item_id", workItem.id)
+    const nextIds = (nextEdges ?? []).map((edge) => edge.work_item_id)
+    if (nextIds.length) {
+        await supabaseAdmin.from("work_items").update({ actual_start_at: now, actual_start_has_time: true })
+            .eq("workspace_id", resolved.session.workspace_id).in("id", nextIds).is("actual_start_at", null)
+    }
     await maybeCompleteOnboarding(resolved.session, resolved.workspace.slug)
     revalidateOnboarding(resolved.workspace.slug, resolved.session.relationship_id, token)
 }
@@ -471,6 +498,8 @@ export async function createRelationshipOnboardingSession({
             parent_work_item_id: onboardingStageId,
             workflow_role: "task",
             planned_start_date: now.slice(0, 10),
+            actual_start_at: index === 0 ? now : null,
+            actual_start_has_time: index === 0,
             sort_order: index * 10,
             metadata: {
                 session_id: session.id,

@@ -211,7 +211,8 @@ test("workflow children form a time-accurate staircase with only the next inacti
     assert.equal(projection.ranges.get("details")?.end, now + 1 / 24)
     assert.equal(projection.ghostItemIds.has("details"), true)
     assert.equal(projection.hiddenItemIds.has("later"), true)
-    assert.ok(Math.abs(projection.completionAnchors.get("onboarding")! - (now + 2 / 24)) < 1e-10)
+    assert.equal(projection.completionAnchors.get("onboarding"), projection.ranges.get("details")?.start)
+    assert.equal(projection.completionAnchors.get("onboarding"), now)
 })
 
 test("direct fulfilment service groups fan out from the parent while their SOPs remain sequential", () => {

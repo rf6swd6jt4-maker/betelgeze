@@ -181,6 +181,10 @@ export function ganttWorkflowChildProjection(
         let cursor = parentRange.start
         let firstIncomplete = true
         let visibleFuture = false
+        // The following lifecycle stage is the next actionable stage, not a
+        // forecast of every hidden onboarding/SOP step. Keep its anchor on the
+        // visible next step so collapsing this parent does not push it away.
+        let nextStageAnchor: number | null = null
         for (const child of ordered) {
             const childRange = ranges.get(child.id)
             const complete = ["done", "canceled"].includes(child.status)
@@ -195,11 +199,13 @@ export function ganttWorkflowChildProjection(
                 ranges.set(child.id, { start: cursor, end, derived: false, open: parentRange.open, futureOpen: false })
                 if (!parentRange.open) ghostItemIds.add(child.id)
                 cursor = end
+                nextStageAnchor = end
                 firstIncomplete = false
                 continue
             }
             const end = ganttAdvanceIntervals(cursor, scale, 1)
             if (!visibleFuture) {
+                nextStageAnchor = cursor
                 ranges.set(child.id, { start: cursor, end, derived: false, open: false, futureOpen: false })
                 ghostItemIds.add(child.id)
                 visibleFuture = true
@@ -209,7 +215,7 @@ export function ganttWorkflowChildProjection(
             }
             cursor = end
         }
-        completionAnchors.set(parent.id, Math.max(cursor, parentRange.end ?? cursor))
+        completionAnchors.set(parent.id, nextStageAnchor ?? Math.max(cursor, parentRange.end ?? cursor))
     }
     return { ranges, ghostItemIds, hiddenItemIds, completionAnchors }
 }

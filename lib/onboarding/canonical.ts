@@ -195,42 +195,67 @@ async function createCanonicalStepWorkItem(input: {
     predecessorId?: string | null
     startAt?: string | null
 }) {
-    const { data: item, error } = await supabaseAdmin
-        .from("work_items")
-        .insert({
-            workspace_id: input.session.workspace_id,
-            title: input.step.title,
-            description: input.step.description,
-            lifecycle_phase: "onboarding",
-            status: "todo",
-            priority: 3,
-            is_key_task: true,
-            native_kind: "onboarding_step",
-            native_key: onboardingStepNativeKey(input.session.id, input.step.key),
-            native_href: onboardingDetailHref(input.workspaceSlug, input.session.relationship_id),
-            parent_work_item_id: input.parentWorkItemId,
-            workflow_role: "task",
-            planned_start_date: (input.startAt ?? new Date().toISOString()).slice(0, 10),
-            actual_start_at: input.startAt ?? null,
-            actual_start_has_time: Boolean(input.startAt),
-            sort_order: input.index * 10,
-            metadata: {
-                session_id: input.session.id,
-                relationship_id: input.session.relationship_id,
-                step_key: input.step.key,
-                module_title: input.step.moduleTitle,
-                kind: input.step.kind,
-                form_key: input.step.formKey ?? null,
-                auto_created: true,
-            },
-        })
-        .select("id")
-        .single()
-    if (error || !item) throw new Error("create-onboarding-work-failed")
+    const existing = await findStepWorkItem(input.session.workspace_id, input.session.id, input.step.key)
+    let workItemId = existing?.id
+
+    if (!workItemId) {
+        const { data: item, error } = await supabaseAdmin
+            .from("work_items")
+            .insert({
+                workspace_id: input.session.workspace_id,
+                title: input.step.title,
+                description: input.step.description,
+                lifecycle_phase: "onboarding",
+                status: "todo",
+                priority: 3,
+                is_key_task: true,
+                native_kind: "onboarding_step",
+                native_key: onboardingStepNativeKey(input.session.id, input.step.key),
+                native_href: onboardingDetailHref(input.workspaceSlug, input.session.relationship_id),
+                parent_work_item_id: input.parentWorkItemId,
+                workflow_role: "task",
+                // These are rolling, actual-time workflow steps. Giving a future
+                // step an invented planned date lets the legacy schedule guard
+                // reject it once its open parent spans more than one day.
+                planned_start_date: null,
+                actual_start_at: input.startAt ?? null,
+                actual_start_has_time: Boolean(input.startAt),
+                sort_order: input.index * 10,
+                metadata: {
+                    session_id: input.session.id,
+                    relationship_id: input.session.relationship_id,
+                    step_key: input.step.key,
+                    module_title: input.step.moduleTitle,
+                    kind: input.step.kind,
+                    form_key: input.step.formKey ?? null,
+                    auto_created: true,
+                },
+            })
+            .select("id")
+            .single()
+
+        if (error?.code === "23505") {
+            // A duplicate submit may have won the insert race. Continue through
+            // the relationship/dependency repair below using that item instead.
+            workItemId = (await findStepWorkItem(input.session.workspace_id, input.session.id, input.step.key))?.id
+        } else if (error || !item) {
+            console.error("Could not create canonical onboarding work item", {
+                sessionId: input.session.id,
+                stepKey: input.step.key,
+                code: error?.code,
+                message: error?.message,
+            })
+            throw new Error("Could not create the next onboarding step")
+        } else {
+            workItemId = item.id
+        }
+    }
+
+    if (!workItemId) throw new Error("Could not create the next onboarding step")
 
     const { error: linkError } = await supabaseAdmin.from("work_item_relationships").upsert({
         workspace_id: input.session.workspace_id,
-        work_item_id: item.id,
+        work_item_id: workItemId,
         relationship_id: input.session.relationship_id,
     }, { onConflict: "work_item_id,relationship_id" })
     if (linkError) throw new Error("link-onboarding-work-failed")
@@ -238,13 +263,13 @@ async function createCanonicalStepWorkItem(input: {
     if (input.predecessorId) {
         const { error: dependencyError } = await supabaseAdmin.from("work_item_dependencies").upsert({
             workspace_id: input.session.workspace_id,
-            work_item_id: item.id,
+            work_item_id: workItemId,
             depends_on_work_item_id: input.predecessorId,
             source: "manual",
         }, { onConflict: "work_item_id,depends_on_work_item_id" })
         if (dependencyError) throw new Error("link-onboarding-step-failed")
     }
-    return item.id
+    return workItemId
 }
 
 async function linkAsset(assetId: string, workspaceId: string, relationshipId: string, workItemId: string) {
@@ -436,9 +461,10 @@ export async function completeCanonicalStep(token: string, stepKey: string) {
                 startAt: now,
             })
             nextWorkItem = { id: nextId, status: "todo", actual_start_at: now, parent_work_item_id: workItem.parent_work_item_id }
-        } else {
-            await supabaseAdmin.from("work_items").update({ actual_start_at: now, actual_start_has_time: true })
+    } else {
+            const { error: startError } = await supabaseAdmin.from("work_items").update({ actual_start_at: now, actual_start_has_time: true })
                 .eq("workspace_id", resolved.session.workspace_id).eq("id", nextWorkItem.id).is("actual_start_at", null)
+            if (startError) throw new Error("Could not start the next onboarding step")
         }
     }
     const upcomingStep = resolved.completableSteps[stepIndex + 2]

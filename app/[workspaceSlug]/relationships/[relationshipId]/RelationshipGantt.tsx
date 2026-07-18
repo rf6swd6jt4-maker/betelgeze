@@ -999,13 +999,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         if (sourceItem.workflowRole === "lifecycle_stage" && targetItem.workflowRole === "lifecycle_stage" && fromRange.open && ghostItemIds.has(targetItem.id)) {
             const sourceDepth = rowDepths.get(sourceItem.id) ?? 0
             const sourceBarHeight = sourceDepth === 0 ? ROOT_BAR_HEIGHT : CHILD_BAR_HEIGHT
-            const solidWidth = Math.max(0, sourceGeometry.truthfulRight - sourceGeometry.left)
-            const sourceX = sourceGeometry.overflow && solidWidth >= 16 ? sourceGeometry.truthfulRight - 8 : sourceGeometry.right
+            const sourceX = sourceGeometry.truthfulRight
             const sourceY = sourceGeometry.overflow ? fromTop + (fromHeight + sourceBarHeight) / 2 : y1
-            const leadIn = Math.max(0, targetGeometry.left - sourceX)
-            const railX = targetGeometry.left - Math.min(8, leadIn / 2)
-            const path = ganttLifecycleSuccessorPath({ sourceX, sourceY, railX, targetY: y2, targetLeft: targetGeometry.left })
-            return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path, arrow: ganttArrowHeadPath(targetGeometry.left, railX, y2) }]
+            const path = ganttLifecycleSuccessorPath({ sourceX, sourceY, targetY: y2, targetLeft: targetGeometry.left })
+            return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path, arrow: ganttArrowHeadPath(targetGeometry.left, sourceX, y2) }]
         }
         if (fromRange.open && sourceGeometry.overflow && ghostItemIds.has(targetItem.id)) {
             const solidWidth = Math.max(0, sourceGeometry.truthfulRight - sourceGeometry.left)

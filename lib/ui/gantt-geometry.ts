@@ -449,17 +449,15 @@ export function ganttOpenOverflowConnectorPath({ sourceX, sourceBottom, rowBound
     return `M ${sourceX} ${sourceBottom} V ${rowBoundaryY} H ${targetDivider} V ${targetY} H ${targetLeft}`
 }
 
-// A current lifecycle stage and its next stage often meet at now. Give that
-// dependency a single local rail so it stays separate from child-step routes
-// which are also anchored at now.
-export function ganttLifecycleSuccessorPath({ sourceX, sourceY, railX, targetY, targetLeft }: {
+// A current lifecycle stage and its next stage often meet at now. Leave from
+// the stage's bottom edge and use one uninterrupted vertical leg.
+export function ganttLifecycleSuccessorPath({ sourceX, sourceY, targetY, targetLeft }: {
     sourceX: number
     sourceY: number
-    railX: number
     targetY: number
     targetLeft: number
 }) {
-    return `M ${sourceX} ${sourceY} H ${railX} V ${targetY} H ${targetLeft}`
+    return `M ${sourceX} ${sourceY} V ${targetY} H ${targetLeft}`
 }
 
 export function ganttAnchoredScrollLeft({

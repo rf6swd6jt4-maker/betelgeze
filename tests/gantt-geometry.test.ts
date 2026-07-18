@@ -11,6 +11,7 @@ import {
     ganttDragDayDelta,
     ganttGridDividers,
     ganttGridDividerAtOrAfter,
+    ganttLifecycleSuccessorPath,
     ganttOpenOverflowConnectorPath,
     ganttOpenTrailEnd,
     ganttProjectDay,
@@ -86,7 +87,8 @@ test("an absolute calendar anchor survives a timeline-range change", () => {
 
 test("arrowheads are hidden when the target lead-in cannot contain them", () => {
     assert.equal(ganttArrowHeadPath(103, 100, 40), null)
-    assert.equal(ganttArrowHeadPath(108, 100, 40), "M 104 36 L 108 40 L 104 44")
+    assert.equal(ganttArrowHeadPath(111, 100, 40), null)
+    assert.equal(ganttArrowHeadPath(112, 100, 40), "M 108 36 L 112 40 L 108 44")
 })
 
 test("actual timestamps independently override planned start and finish times", () => {
@@ -254,6 +256,7 @@ test("topological ordering keeps predecessors first while retaining stable sibli
 test("standard connectors bend only at supplied dividers and row tracks", () => {
     assert.equal(ganttBoundaryConnectorPath({ sourceRight: 110, sourceY: 20, sourceDivider: 120, rowBoundaryY: 32, targetDivider: 160, targetY: 48, targetLeft: 170 }), "M 110 20 H 120 V 32 H 160 V 48 H 170")
     assert.equal(ganttOpenOverflowConnectorPath({ sourceX: 112, sourceBottom: 28, rowBoundaryY: 32, targetDivider: 100, targetY: 48, targetLeft: 170 }), "M 112 28 V 32 H 100 V 48 H 170")
+    assert.equal(ganttLifecycleSuccessorPath({ sourceX: 112, sourceY: 28, railX: 160, targetY: 48, targetLeft: 170 }), "M 112 28 H 160 V 48 H 170")
 })
 
 test("adaptive connector rails keep a direct grid route but reject a wide grid U-turn", () => {

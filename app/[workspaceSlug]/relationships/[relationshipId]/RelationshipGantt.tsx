@@ -16,6 +16,7 @@ import {
     ganttDragDayDelta,
     ganttGridDividerAtOrAfter,
     ganttGridDividers,
+    ganttLifecycleSuccessorPath,
     ganttOpenOverflowConnectorPath,
     ganttOpenTrailEnd,
     ganttPreviousGridDivider,
@@ -995,6 +996,17 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const targetDivider = timelineX(targetDividerDay)
         const sourceDay = fromRange.end ?? fromRange.start
         const sourceDivider = timelineX(ganttGridDividerAtOrAfter(sourceDay, scale, nowDay))
+        if (sourceItem.workflowRole === "lifecycle_stage" && targetItem.workflowRole === "lifecycle_stage" && fromRange.open && ghostItemIds.has(targetItem.id)) {
+            const sourceDepth = rowDepths.get(sourceItem.id) ?? 0
+            const sourceBarHeight = sourceDepth === 0 ? ROOT_BAR_HEIGHT : CHILD_BAR_HEIGHT
+            const solidWidth = Math.max(0, sourceGeometry.truthfulRight - sourceGeometry.left)
+            const sourceX = sourceGeometry.overflow && solidWidth >= 16 ? sourceGeometry.truthfulRight - 8 : sourceGeometry.right
+            const sourceY = sourceGeometry.overflow ? fromTop + (fromHeight + sourceBarHeight) / 2 : y1
+            const leadIn = Math.max(0, targetGeometry.left - sourceX)
+            const railX = targetGeometry.left - Math.min(8, leadIn / 2)
+            const path = ganttLifecycleSuccessorPath({ sourceX, sourceY, railX, targetY: y2, targetLeft: targetGeometry.left })
+            return [{ key: `${edge.workItemId}-${edge.dependsOnWorkItemId}`, itemIds: [edge.workItemId, edge.dependsOnWorkItemId], external: edge.external, path, arrow: ganttArrowHeadPath(targetGeometry.left, railX, y2) }]
+        }
         if (fromRange.open && sourceGeometry.overflow && ghostItemIds.has(targetItem.id)) {
             const solidWidth = Math.max(0, sourceGeometry.truthfulRight - sourceGeometry.left)
             const sourceX = solidWidth >= 16 ? sourceGeometry.truthfulRight - 8 : sourceGeometry.left + solidWidth / 2

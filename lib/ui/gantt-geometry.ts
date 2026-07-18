@@ -449,6 +449,19 @@ export function ganttOpenOverflowConnectorPath({ sourceX, sourceBottom, rowBound
     return `M ${sourceX} ${sourceBottom} V ${rowBoundaryY} H ${targetDivider} V ${targetY} H ${targetLeft}`
 }
 
+// A current lifecycle stage and its next stage often meet at now. Give that
+// dependency a single local rail so it stays separate from child-step routes
+// which are also anchored at now.
+export function ganttLifecycleSuccessorPath({ sourceX, sourceY, railX, targetY, targetLeft }: {
+    sourceX: number
+    sourceY: number
+    railX: number
+    targetY: number
+    targetLeft: number
+}) {
+    return `M ${sourceX} ${sourceY} H ${railX} V ${targetY} H ${targetLeft}`
+}
+
 export function ganttAnchoredScrollLeft({
     timelineDay,
     dayWidth,
@@ -467,9 +480,9 @@ export function ganttAnchoredScrollLeft({
     return Math.max(0, leftWidth + gutter + timelineDay * dayWidth - localX)
 }
 
-export function ganttArrowHeadPath(targetBarLeft: number, targetDivider: number, y: number, arrowSize = 4) {
+export function ganttArrowHeadPath(targetBarLeft: number, targetDivider: number, y: number, arrowSize = 4, minimumLeadIn = 12) {
     const distance = targetBarLeft - targetDivider
-    if (Math.abs(distance) < arrowSize + 1) return null
+    if (Math.abs(distance) < minimumLeadIn) return null
     const wingX = targetBarLeft - Math.sign(distance) * arrowSize
     return `M ${wingX} ${y - arrowSize} L ${targetBarLeft} ${y} L ${wingX} ${y + arrowSize}`
 }

@@ -8,6 +8,7 @@ import { RoundPill, SquarePill, Status } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { MODULES } from "@/lib/onboarding/modules"
 import { getOnboardingUrl } from "@/lib/onboarding/custom-domain"
+import { getOnboardingStepsForModules } from "@/lib/onboarding/canonical-helpers"
 import { getProgressPercentage } from "@/lib/onboarding/progress"
 import { SERVICES } from "@/lib/onboarding/services"
 import { isOnboardingStuck } from "@/lib/onboarding/stuck"
@@ -29,6 +30,12 @@ type PageProps = {
 function metadataSessionId(metadata: unknown) {
     return metadata && typeof metadata === "object" && "session_id" in metadata
         ? String((metadata as Record<string, unknown>).session_id ?? "")
+        : ""
+}
+
+function metadataStepKey(metadata: unknown) {
+    return metadata && typeof metadata === "object" && "step_key" in metadata
+        ? String((metadata as Record<string, unknown>).step_key ?? "")
         : ""
 }
 
@@ -118,8 +125,8 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
             const relationship = relationshipById.get(session.relationship_id)
             if (!relationship) return null
             const items = workItemsBySession.get(session.id) ?? []
-            const steps = items.map((item) => ({ key: item.id }))
-            const completedKeys = items.filter((item) => item.status === "done").map((item) => item.id)
+            const steps = getOnboardingStepsForModules(moduleKeysByRelationship.get(session.relationship_id) ?? [])
+            const completedKeys = items.filter((item) => item.status === "done").map((item) => metadataStepKey(item.metadata)).filter(Boolean)
             const percentage = getProgressPercentage(steps, completedKeys)
             const latestWork = items.reduce<string | null>((latest, item) => {
                 const date = item.updated_at ?? item.created_at ?? null
@@ -133,8 +140,8 @@ export default async function RelationshipOnboardingPage({ params }: PageProps) 
             return {
                 relationship,
                 session,
-                completedCount: completedKeys.length,
-                missingCount: Math.max(0, items.length - completedKeys.length),
+                completedCount: Math.min(steps.length, completedKeys.length),
+                missingCount: Math.max(0, steps.length - completedKeys.length),
                 stuck,
                 latestActivity,
                 assetSummary,

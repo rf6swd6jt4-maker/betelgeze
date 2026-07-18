@@ -56,6 +56,13 @@ export type PublicOnboardingSession = {
     completedKeys: Set<string>
 }
 
+type CanonicalStepWorkItem = {
+    id: string
+    status: SessionStep["status"]
+    actual_start_at: string | null
+    parent_work_item_id: string | null
+}
+
 type QueryError = { message?: string; code?: string } | null | undefined
 
 function isMissingCanonicalOnboarding(error: QueryError) {
@@ -171,12 +178,73 @@ export async function getFormResponseAsset(sessionId: string, stepKey: string): 
 async function findStepWorkItem(workspaceId: string, sessionId: string, stepKey: string) {
     const { data } = await supabaseAdmin
         .from("work_items")
-        .select("id, status, actual_start_at")
+        .select("id, status, actual_start_at, parent_work_item_id")
         .eq("workspace_id", workspaceId)
         .eq("native_kind", "onboarding_step")
         .eq("native_key", onboardingStepNativeKey(sessionId, stepKey))
         .maybeSingle()
     return data
+}
+
+async function createCanonicalStepWorkItem(input: {
+    session: Pick<CanonicalOnboardingSession, "id" | "workspace_id" | "relationship_id">
+    workspaceSlug: string
+    parentWorkItemId: string
+    step: CanonicalSessionStep
+    index: number
+    predecessorId?: string | null
+    startAt?: string | null
+}) {
+    const { data: item, error } = await supabaseAdmin
+        .from("work_items")
+        .insert({
+            workspace_id: input.session.workspace_id,
+            title: input.step.title,
+            description: input.step.description,
+            lifecycle_phase: "onboarding",
+            status: "todo",
+            priority: 3,
+            is_key_task: true,
+            native_kind: "onboarding_step",
+            native_key: onboardingStepNativeKey(input.session.id, input.step.key),
+            native_href: onboardingDetailHref(input.workspaceSlug, input.session.relationship_id),
+            parent_work_item_id: input.parentWorkItemId,
+            workflow_role: "task",
+            planned_start_date: (input.startAt ?? new Date().toISOString()).slice(0, 10),
+            actual_start_at: input.startAt ?? null,
+            actual_start_has_time: Boolean(input.startAt),
+            sort_order: input.index * 10,
+            metadata: {
+                session_id: input.session.id,
+                relationship_id: input.session.relationship_id,
+                step_key: input.step.key,
+                module_title: input.step.moduleTitle,
+                kind: input.step.kind,
+                form_key: input.step.formKey ?? null,
+                auto_created: true,
+            },
+        })
+        .select("id")
+        .single()
+    if (error || !item) throw new Error("create-onboarding-work-failed")
+
+    const { error: linkError } = await supabaseAdmin.from("work_item_relationships").upsert({
+        workspace_id: input.session.workspace_id,
+        work_item_id: item.id,
+        relationship_id: input.session.relationship_id,
+    }, { onConflict: "work_item_id,relationship_id" })
+    if (linkError) throw new Error("link-onboarding-work-failed")
+
+    if (input.predecessorId) {
+        const { error: dependencyError } = await supabaseAdmin.from("work_item_dependencies").upsert({
+            workspace_id: input.session.workspace_id,
+            work_item_id: item.id,
+            depends_on_work_item_id: input.predecessorId,
+            source: "manual",
+        }, { onConflict: "work_item_id,depends_on_work_item_id" })
+        if (dependencyError) throw new Error("link-onboarding-step-failed")
+    }
+    return item.id
 }
 
 async function linkAsset(assetId: string, workspaceId: string, relationshipId: string, workItemId: string) {
@@ -327,6 +395,8 @@ export async function completeCanonicalStep(token: string, stepKey: string) {
     if (!resolved) throw new Error("Invalid onboarding session")
     const workItem = await findStepWorkItem(resolved.session.workspace_id, resolved.session.id, stepKey)
     if (!workItem) throw new Error("Unknown onboarding step")
+    const stepIndex = resolved.completableSteps.findIndex((step) => step.key === stepKey)
+    if (stepIndex < 0 || !workItem.parent_work_item_id) throw new Error("Invalid onboarding step")
     const now = new Date().toISOString()
     const { data: predecessorEdges } = await supabaseAdmin
         .from("work_item_dependencies")
@@ -351,15 +421,39 @@ export async function completeCanonicalStep(token: string, stepKey: string) {
         .eq("id", workItem.id)
         .eq("workspace_id", resolved.session.workspace_id)
     if (error) throw new Error("Could not save progress")
-    const { data: nextEdges } = await supabaseAdmin
-        .from("work_item_dependencies")
-        .select("work_item_id")
-        .eq("workspace_id", resolved.session.workspace_id)
-        .eq("depends_on_work_item_id", workItem.id)
-    const nextIds = (nextEdges ?? []).map((edge) => edge.work_item_id)
-    if (nextIds.length) {
-        await supabaseAdmin.from("work_items").update({ actual_start_at: now, actual_start_has_time: true })
-            .eq("workspace_id", resolved.session.workspace_id).in("id", nextIds).is("actual_start_at", null)
+    const nextStep = resolved.completableSteps[stepIndex + 1]
+    let nextWorkItem: CanonicalStepWorkItem | null = null
+    if (nextStep) {
+        nextWorkItem = await findStepWorkItem(resolved.session.workspace_id, resolved.session.id, nextStep.key)
+        if (!nextWorkItem) {
+            const nextId = await createCanonicalStepWorkItem({
+                session: resolved.session,
+                workspaceSlug: resolved.workspace.slug,
+                parentWorkItemId: workItem.parent_work_item_id,
+                step: nextStep,
+                index: stepIndex + 1,
+                predecessorId: workItem.id,
+                startAt: now,
+            })
+            nextWorkItem = { id: nextId, status: "todo", actual_start_at: now, parent_work_item_id: workItem.parent_work_item_id }
+        } else {
+            await supabaseAdmin.from("work_items").update({ actual_start_at: now, actual_start_has_time: true })
+                .eq("workspace_id", resolved.session.workspace_id).eq("id", nextWorkItem.id).is("actual_start_at", null)
+        }
+    }
+    const upcomingStep = resolved.completableSteps[stepIndex + 2]
+    if (upcomingStep && nextWorkItem) {
+        const existingUpcoming = await findStepWorkItem(resolved.session.workspace_id, resolved.session.id, upcomingStep.key)
+        if (!existingUpcoming) {
+            await createCanonicalStepWorkItem({
+                session: resolved.session,
+                workspaceSlug: resolved.workspace.slug,
+                parentWorkItemId: workItem.parent_work_item_id,
+                step: upcomingStep,
+                index: stepIndex + 2,
+                predecessorId: nextWorkItem.id,
+            })
+        }
     }
     await maybeCompleteOnboarding(resolved.session, resolved.workspace.slug)
     revalidateOnboarding(resolved.workspace.slug, resolved.session.relationship_id, token)
@@ -482,52 +576,17 @@ export async function createRelationshipOnboardingSession({
         relationshipId,
         phase: "onboarding",
     })
-    const { data: items, error: itemsError } = await supabaseAdmin
-        .from("work_items")
-        .insert(steps.map((step, index) => ({
-            workspace_id: workspaceId,
-            title: step.title,
-            description: step.description,
-            lifecycle_phase: "onboarding",
-            status: "todo",
-            priority: 3,
-            is_key_task: true,
-            native_kind: "onboarding_step",
-            native_key: onboardingStepNativeKey(session.id, step.key),
-            native_href: onboardingDetailHref(workspaceSlug, relationshipId),
-            parent_work_item_id: onboardingStageId,
-            workflow_role: "task",
-            planned_start_date: now.slice(0, 10),
-            actual_start_at: index === 0 ? now : null,
-            actual_start_has_time: index === 0,
-            sort_order: index * 10,
-            metadata: {
-                session_id: session.id,
-                relationship_id: relationshipId,
-                step_key: step.key,
-                module_title: step.moduleTitle,
-                kind: step.kind,
-                form_key: step.formKey ?? null,
-                auto_created: true,
-            },
-        })))
-        .select("id")
-    if (itemsError) throw new Error("create-onboarding-work-failed")
-
-    if (items?.length) {
-        await supabaseAdmin.from("work_item_relationships").insert(items.map((item) => ({
-            workspace_id: workspaceId,
-            work_item_id: item.id,
-            relationship_id: relationshipId,
-        })))
-        for (let index = 1; index < items.length; index += 1) {
-            await supabaseAdmin.from("work_item_dependencies").upsert({
-                workspace_id: workspaceId,
-                work_item_id: items[index].id,
-                depends_on_work_item_id: items[index - 1].id,
-                source: "manual",
-            }, { onConflict: "work_item_id,depends_on_work_item_id" })
-        }
+    let predecessorId: string | null = null
+    for (const [index, step] of steps.slice(0, 2).entries()) {
+        predecessorId = await createCanonicalStepWorkItem({
+            session: { ...session, workspace_id: workspaceId, relationship_id: relationshipId },
+            workspaceSlug,
+            parentWorkItemId: onboardingStageId,
+            step,
+            index,
+            predecessorId,
+            startAt: index === 0 ? now : null,
+        })
     }
 
     await supabaseAdmin

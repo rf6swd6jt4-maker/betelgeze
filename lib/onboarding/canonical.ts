@@ -130,7 +130,7 @@ export async function getCanonicalSessionByToken(token: string): Promise<PublicO
             .order("created_at", { ascending: true }),
         supabaseAdmin
             .from("work_items")
-            .select("id, status, updated_at, metadata")
+            .select("id, status, actual_start_at, actual_completed_at, updated_at, parent_work_item_id, metadata")
             .eq("workspace_id", session.workspace_id)
             .eq("native_kind", "onboarding_step")
             .like("native_key", `${session.id}:%`),
@@ -139,14 +139,44 @@ export async function getCanonicalSessionByToken(token: string): Promise<PublicO
     if (!workspace || !relationship) return null
 
     const moduleKeys = (modules ?? []).map((row) => row.module_key).filter((key): key is string => Boolean(key))
+    const canonicalSteps = getOnboardingStepsForModules(moduleKeys)
+    let canonicalWorkItems = workItems ?? []
+
+    if (session.status === "active") {
+        try {
+            const repaired = await reconcileCanonicalStepWindow({
+                session: session as CanonicalOnboardingSession,
+                workspaceSlug: workspace.slug,
+                steps: canonicalSteps,
+                workItems: canonicalWorkItems,
+            })
+            if (repaired) {
+                const { data: refreshedWorkItems } = await supabaseAdmin
+                    .from("work_items")
+                    .select("id, status, actual_start_at, actual_completed_at, updated_at, parent_work_item_id, metadata")
+                    .eq("workspace_id", session.workspace_id)
+                    .eq("native_kind", "onboarding_step")
+                    .like("native_key", `${session.id}:%`)
+                canonicalWorkItems = refreshedWorkItems ?? canonicalWorkItems
+            }
+        } catch (error) {
+            // An existing session must remain usable even if a legacy data repair
+            // cannot run on this request. The next write retries the same repair.
+            console.error("Could not reconcile canonical onboarding work window", {
+                sessionId: session.id,
+                message: error instanceof Error ? error.message : String(error),
+            })
+        }
+    }
+
     const workItemByStepKey = new Map<string, { id: string; status: SessionStep["status"]; updated_at: string | null }>()
-    for (const item of workItems ?? []) {
+    for (const item of canonicalWorkItems) {
         const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata as Record<string, unknown> : {}
         const stepKey = typeof metadata.step_key === "string" ? metadata.step_key : null
         if (stepKey) workItemByStepKey.set(stepKey, { id: item.id, status: item.status as SessionStep["status"], updated_at: item.updated_at ?? null })
     }
 
-    const completableSteps = getOnboardingStepsForModules(moduleKeys).map((step) => {
+    const completableSteps = canonicalSteps.map((step) => {
         const item = workItemByStepKey.get(step.key)
         return { ...step, workItemId: item?.id ?? null, status: item?.status ?? "todo", updatedAt: item?.updated_at ?? null }
     })
@@ -270,6 +300,88 @@ async function createCanonicalStepWorkItem(input: {
         if (dependencyError) throw new Error("link-onboarding-step-failed")
     }
     return workItemId
+}
+
+type CanonicalStepWindowItem = {
+    id: string
+    status: SessionStep["status"]
+    actual_start_at: string | null
+    actual_completed_at: string | null
+    updated_at: string | null
+    parent_work_item_id: string | null
+    metadata: unknown
+}
+
+function canonicalStepKey(item: Pick<CanonicalStepWindowItem, "metadata">) {
+    const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata as Record<string, unknown> : {}
+    return typeof metadata.step_key === "string" ? metadata.step_key : null
+}
+
+async function reconcileCanonicalStepWindow(input: {
+    session: CanonicalOnboardingSession
+    workspaceSlug: string
+    steps: CanonicalSessionStep[]
+    workItems: CanonicalStepWindowItem[]
+}) {
+    const itemsByStepKey = new Map<string, CanonicalStepWindowItem>()
+    for (const item of input.workItems) {
+        const stepKey = canonicalStepKey(item)
+        if (stepKey) itemsByStepKey.set(stepKey, item)
+    }
+    const currentIndex = input.steps.findIndex((step) => itemsByStepKey.get(step.key)?.status !== "done")
+    if (currentIndex < 0) return false
+
+    const currentStep = input.steps[currentIndex]
+    const previousItem = currentIndex > 0 ? itemsByStepKey.get(input.steps[currentIndex - 1].key) ?? null : null
+    const currentItem = itemsByStepKey.get(currentStep.key) ?? null
+    const parentWorkItemId = currentItem?.parent_work_item_id
+        ?? previousItem?.parent_work_item_id
+        ?? (await ensureRelationshipStage({
+            workspaceId: input.session.workspace_id,
+            relationshipId: input.session.relationship_id,
+            phase: "onboarding",
+        }))
+    const actualStartAt = previousItem?.actual_completed_at ?? previousItem?.updated_at ?? input.session.created_at
+    let currentWorkItemId = currentItem?.id
+    let changed = false
+
+    if (!currentWorkItemId) {
+        currentWorkItemId = await createCanonicalStepWorkItem({
+            session: input.session,
+            workspaceSlug: input.workspaceSlug,
+            parentWorkItemId,
+            step: currentStep,
+            index: currentIndex,
+            predecessorId: previousItem?.id,
+            startAt: actualStartAt,
+        })
+        changed = true
+    } else if (!currentItem.actual_start_at) {
+        const { error } = await supabaseAdmin.from("work_items").update({
+            actual_start_at: actualStartAt,
+            actual_start_has_time: true,
+        }).eq("workspace_id", input.session.workspace_id).eq("id", currentWorkItemId).is("actual_start_at", null)
+        if (error) throw new Error(error.message)
+        changed = true
+    }
+
+    const nextStep = input.steps[currentIndex + 1]
+    if (nextStep) {
+        const nextItem = itemsByStepKey.get(nextStep.key)
+        if (!nextItem) {
+            await createCanonicalStepWorkItem({
+                session: input.session,
+                workspaceSlug: input.workspaceSlug,
+                parentWorkItemId,
+                step: nextStep,
+                index: currentIndex + 1,
+                predecessorId: currentWorkItemId,
+            })
+            changed = true
+        }
+    }
+
+    return changed
 }
 
 async function linkAsset(assetId: string, workspaceId: string, relationshipId: string, workItemId: string) {

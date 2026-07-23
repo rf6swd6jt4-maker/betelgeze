@@ -227,6 +227,7 @@ export function ganttDependencyGhostRanges(
     nowDay: number,
     scale: GanttScale,
     completionAnchors = new Map<string, number>(),
+    hiddenItemIds = new Set<string>(),
 ) {
     const output = new Map<string, GanttDisplayRange>()
     const byId = new Map(items.map((item) => [item.id, item]))
@@ -234,7 +235,10 @@ export function ganttDependencyGhostRanges(
         let changed = false
         for (const edge of dependencies) {
             const item = byId.get(edge.workItemId)
-            if (!item || explicitRanges.has(item.id) || output.has(item.id)) continue
+            // The sequential workflow projection intentionally keeps only the
+            // active child and one successor. Do not recreate its hidden tail
+            // as generic dependency ghosts.
+            if (!item || hiddenItemIds.has(item.id) || explicitRanges.has(item.id) || output.has(item.id)) continue
             let ancestorId = item.parentWorkItemId
             let predecessorIsAncestor = false
             while (ancestorId) {

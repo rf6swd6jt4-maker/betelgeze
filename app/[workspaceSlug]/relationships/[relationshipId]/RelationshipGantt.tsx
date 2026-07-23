@@ -284,7 +284,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const ranges = useMemo(() => effectiveGanttRanges(previewedItems), [previewedItems])
     const explicitDisplayRanges = useMemo(() => ganttDisplayRanges(previewedItems, nowDay), [nowDay, previewedItems])
     const workflowProjection = useMemo(() => ganttWorkflowChildProjection(previewedItems, plan.dependencies, explicitDisplayRanges, nowDay, scale), [explicitDisplayRanges, nowDay, plan.dependencies, previewedItems, scale])
-    const ghostRanges = useMemo(() => ganttDependencyGhostRanges(previewedItems, plan.dependencies, workflowProjection.ranges, nowDay, scale, workflowProjection.completionAnchors), [nowDay, plan.dependencies, previewedItems, scale, workflowProjection])
+    const ghostRanges = useMemo(() => ganttDependencyGhostRanges(previewedItems, plan.dependencies, workflowProjection.ranges, nowDay, scale, workflowProjection.completionAnchors, workflowProjection.hiddenItemIds), [nowDay, plan.dependencies, previewedItems, scale, workflowProjection])
     const ghostItemIds = useMemo(() => new Set([...workflowProjection.ghostItemIds, ...ghostRanges.keys()]), [ghostRanges, workflowProjection.ghostItemIds])
     const displayRanges = useMemo(() => new Map([...workflowProjection.ranges, ...ghostRanges]), [ghostRanges, workflowProjection.ranges])
     const renderedGeometry = useCallback((item: RelationshipGanttItem, range: GanttDisplayRange): GanttProjectedBarGeometry => ganttProjectedBarGeometry({ range, scale, rangeStart, dayWidth, gutter: timelineGutter, inset: barInset, contentWidth: range.open ? openContentWidths.get(item.id) ?? 0 : 0 }), [barInset, dayWidth, openContentWidths, rangeStart, scale, timelineGutter])
@@ -909,6 +909,12 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         const showOpenTrail = Boolean(range?.open || range?.futureOpen)
         const geometry = range ? renderedGeometry(item, range) : null
         const colours = relationshipPhaseColours(item.lifecyclePhase)
+        const justStartedLifecycleStage = Boolean(
+            geometry
+            && geometry.overflow
+            && item.workflowRole === "lifecycle_stage"
+            && geometry.truthfulRight - geometry.left < 1
+        )
         const flashing = flashingItemId === item.id
         const barBorder = flashing ? "#ef4444" : isGhost ? "#737373" : colours.border
         const canDrag = Boolean(canEdit && !pending && !row.external && scheduleRange && !isGhost && !openEnded && !range?.futureOpen && !item.actualStartAt && !item.actualCompletedAt && !["done", "canceled"].includes(item.status))
@@ -949,9 +955,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 {openEnded ? <>
                     <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md" style={{ width: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, backgroundColor: colours.background }} />
                     {geometry.overflow ? <>
-                        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-20 rounded-r-md" style={{ left: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, right: 0, backgroundColor: "rgba(0,0,0,.42)" }} />
+                        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-20 rounded-r-md" style={{ left: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, right: 0, backgroundColor: justStartedLifecycleStage ? "rgba(0,0,0,.16)" : "rgba(0,0,0,.42)" }} />
                         <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 z-30 rounded-l-md border-y border-l" style={{ width: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, borderColor: barBorder }} />
-                        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-30 rounded-r-md border-y border-r" style={{ left: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, right: 0, borderColor: `color-mix(in srgb, ${barBorder} 48%, black)` }} />
+                        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-30 rounded-r-md border-y border-r" style={{ left: `${Math.max(0, geometry.truthfulRight - geometry.left)}px`, right: 0, borderColor: `color-mix(in srgb, ${barBorder} ${justStartedLifecycleStage ? 82 : 48}%, black)` }} />
                     </> : null}
                 </> : null}
                 {row.depth > 0 && canResize ? <span aria-hidden="true" className="pointer-events-none absolute inset-x-2.5 inset-y-0 z-30 border-y border-dashed" style={{ borderColor: barBorder }} /> : null}

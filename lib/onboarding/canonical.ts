@@ -356,7 +356,7 @@ async function reconcileCanonicalStepWindow(input: {
             startAt: actualStartAt,
         })
         changed = true
-    } else if (!currentItem.actual_start_at) {
+    } else if (currentItem && !currentItem.actual_start_at) {
         const { error } = await supabaseAdmin.from("work_items").update({
             actual_start_at: actualStartAt,
             actual_start_has_time: true,

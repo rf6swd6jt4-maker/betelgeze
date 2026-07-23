@@ -36,6 +36,9 @@ alter table public.relationship_work_items
 alter table public.work_items
     drop constraint if exists work_items_lifecycle_phase_check;
 update public.work_items set lifecycle_phase = 'onboarding_review' where lifecycle_phase = 'onboarding_complete';
+-- The Gantt schedule guard is a deferred constraint trigger. Flush its
+-- pending events before altering work_items again in this transaction.
+set constraints all immediate;
 alter table public.work_items
     add constraint work_items_lifecycle_phase_check
     check (lifecycle_phase in ('lead', 'nurturing', 'potential_client', 'invoiced', 'onboarding', 'onboarding_review', 'fulfilment', 'retention', 'completed_lost'));

@@ -516,14 +516,18 @@ async function maybeCompleteOnboarding(session: CanonicalOnboardingSession, work
         .from("relationship_onboarding_sessions")
         .update({ status: "completed", completed_at: now })
         .eq("id", session.id)
+    // Complete the open onboarding lifecycle stage before materialising the
+    // review stage. Review already depends on onboarding, so this gives it the
+    // final step's exact completion timestamp rather than its old ghost-creation
+    // time when ensureRelationshipStage activates it.
+    const finalItem = items?.at(-1)
+    if (finalItem) await completeWorkflowParents({ workspaceId: session.workspace_id, relationshipId: session.relationship_id, workItemId: finalItem.id })
     await createOnboardingReviewWork({
         workspaceId: session.workspace_id,
         workspaceSlug,
         relationshipId: session.relationship_id,
         sessionId: session.id,
     })
-    const finalItem = items?.at(-1)
-    if (finalItem) await completeWorkflowParents({ workspaceId: session.workspace_id, relationshipId: session.relationship_id, workItemId: finalItem.id })
     revalidatePath(`/${workspaceSlug}/work`)
 }
 

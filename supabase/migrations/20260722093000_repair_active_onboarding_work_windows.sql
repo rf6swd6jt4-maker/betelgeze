@@ -85,6 +85,11 @@ left join step_items previous on previous.session_id = current.session_id and pr
 where current.work_item_id is null
 on conflict (workspace_id, native_kind, native_key) where native_kind is not null and native_key is not null do nothing;
 
+-- work_items has deferred Gantt schedule triggers. Flush their events before
+-- the next repair phase so this script also works in SQL consoles that wrap
+-- schema bookkeeping around the submitted statement batch.
+set constraints all immediate;
+
 -- A previously-created current item may also be missing its exact start.
 with session_steps as (
     select session.id as session_id, session.workspace_id, session.created_at as session_created_at, 0 as ordinal, 'welcome-video'::text as step_key
@@ -112,6 +117,8 @@ from current_steps current_step
 left join step_items previous on previous.session_id = current_step.session_id and previous.ordinal = current_step.ordinal - 1
 where current.id = current_step.work_item_id
   and current.actual_start_at is null;
+
+set constraints all immediate;
 
 -- Maintain one grey next step after the active one, without giving it a
 -- fictional planned range. Its dependency makes the Gantt anchor it at now.
@@ -151,6 +158,8 @@ join step_items next on next.session_id = current.session_id and next.ordinal = 
 join public.workspaces workspace on workspace.id = next.workspace_id
 where next.work_item_id is null
 on conflict (workspace_id, native_kind, native_key) where native_kind is not null and native_key is not null do nothing;
+
+set constraints all immediate;
 
 -- Make all repaired work visible on the relationship and restore the two
 -- sequential dependency edges around the active step.
@@ -193,3 +202,5 @@ with session_steps as (
 insert into public.work_item_dependencies (workspace_id, work_item_id, depends_on_work_item_id, source)
 select workspace_id, work_item_id, depends_on_work_item_id, 'manual' from edges
 on conflict (work_item_id, depends_on_work_item_id) do nothing;
+
+set constraints all immediate;

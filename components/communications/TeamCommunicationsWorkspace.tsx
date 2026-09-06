@@ -35,6 +35,7 @@ import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { openWorkspaceMemberProfile } from "@/lib/workspace-member-profile"
 import type { CommunicationAttachment, CommunicationSticker } from "@/lib/communications/types"
 import { nativeConversationUnreadCount } from "@/lib/communications/unread"
+import { activeTeamServiceAssignments } from "@/lib/teams/service-assignments"
 import { nativeMessageCanEdit } from "@/lib/teams/message-editing"
 import type { NativeCommunicationsBootstrap, NativeConversation, NativeMessage, NativeReaction, NativeReadCursor, WorkspaceTeam } from "@/lib/teams/types"
 import { closeWorkspaceComposer } from "@/lib/workspace-composer-viewport"
@@ -118,7 +119,7 @@ function TeamEditor({ bootstrap, team, onClose, onSaved }: { bootstrap: NativeCo
     async function save() {
         if (!editable || pending) return
         setPending(true); setError(null)
-        const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/teams`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: creating ? "create" : "update", teamId: selected.id, name, memberIds, responsibilities: Object.entries(responsibilities).filter(([, userId]) => memberIds.includes(userId)).map(([serviceId, userId]) => ({ serviceId, userId })), maintenanceResponsibilities: Object.entries(maintenance).filter(([, userId]) => memberIds.includes(userId)).map(([category, userId]) => ({ category, userId })) }) })
+        const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/teams`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: creating ? "create" : "update", teamId: selected.id, name, memberIds, responsibilities: activeTeamServiceAssignments(bootstrap.services, responsibilities, memberIds), maintenanceResponsibilities: Object.entries(maintenance).filter(([, userId]) => memberIds.includes(userId)).map(([category, userId]) => ({ category, userId })) }) })
         const result = await response.json().catch(() => null) as { error?: string } | null
         if (!response.ok) { setError(result?.error ?? "Could not save team."); setPending(false); return }
         await onSaved(); onClose()

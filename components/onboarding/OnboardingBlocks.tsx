@@ -5,6 +5,7 @@ import { satisfyBlockRequirement } from "@/app/onboarding/session/[token]/action
 import { OnboardingForm } from "@/components/onboarding/OnboardingForm"
 import { AppointmentSetupBlock } from "@/components/onboarding/AppointmentSetupBlock"
 import { CalendarDateTimeBlock } from "@/components/onboarding/CalendarDateTimeBlock"
+import { GoogleAdsConnectionBlock } from "@/components/onboarding/GoogleAdsConnectionBlock"
 import { OnboardingSaveCoordinator } from "@/components/onboarding/OnboardingSaveCoordinator"
 import { RequestHelpLink } from "@/components/onboarding/RequestHelpLink"
 import { StripePaymentButtonLabel } from "@/components/onboarding/StripePaymentButtonLabel"
@@ -158,6 +159,7 @@ function OnboardingBlocksContent({
             }
             if (block.kind === "connection") {
                 const requirementId = block.sessionBlockId ?? block.id
+                if (block.provider === "google_ads") return <BlockFrame key={block.id} block={block}><GoogleAdsConnectionBlock block={block} token={token} sessionBlockId={block.sessionBlockId} initialResponse={initialBlockResponses[requirementId]} locked={locked} preview={preview} satisfied={satisfied.has(requirementId)} onSatisfied={() => setSatisfied((current) => new Set(current).add(requirementId))} onUnsatisfied={() => setSatisfied((current) => { const next = new Set(current); next.delete(requirementId); return next })} /></BlockFrame>
                 const connected = satisfied.has(requirementId)
                 const href = preview || !block.sessionBlockId ? undefined : `/api/onboarding/session/${encodeURIComponent(token)}/meta-ads/start?block=${encodeURIComponent(block.sessionBlockId)}`
                 return <BlockFrame key={block.id} block={block}>

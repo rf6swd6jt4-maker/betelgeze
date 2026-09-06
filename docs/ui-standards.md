@@ -30,6 +30,8 @@ Preserve embedded links, buttons, audio/video controls, and scrolling. Keyboard 
 
 Statuses have exactly four tones:
 
+Use `surface="light"` on light client-facing surfaces such as onboarding. This keeps the same diamond and tone meanings with darker text and marks for readable contrast. The default remains the workspace's dark surface.
+
 | Tone | Meaning | Typical examples |
 | --- | --- | --- |
 | `grey` | Not started, inactive, unknown, or neutral | Initialising, queued, disabled |

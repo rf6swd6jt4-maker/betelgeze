@@ -199,13 +199,13 @@ function normalizeStep(step: OnboardingStepV2, options: { bookend: boolean; firs
         if (block.kind === "connection") {
             connectionCount += 1
             if (connectionCount > 1) throw new Error("A step can contain only one Connection block.")
-            if (block.provider !== "meta_ads") throw new Error("That onboarding connection is not supported.")
+            if (block.provider !== "meta_ads" && block.provider !== "google_ads") throw new Error("That onboarding connection is not supported.")
             return {
                 id: blockId,
-                name: name(block, "Facebook connection"),
+                name: name(block, block.provider === "google_ads" ? "Google Ads connection" : "Facebook connection"),
                 kind: "connection",
-                provider: "meta_ads",
-                label: text(block.label, 120) || "Connect Facebook",
+                provider: block.provider,
+                label: text(block.label, 120) || (block.provider === "google_ads" ? "Connect Google Ads" : "Connect Facebook"),
                 description: text(block.description, 1_000),
                 required: true,
                 layout: layout(block),

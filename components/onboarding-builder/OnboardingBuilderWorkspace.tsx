@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState, useTransition, type DragEvent, 
 import { createOnboardingModule, removeOnboardingModule } from "@/app/[workspaceSlug]/onboarding-builder/actions"
 import { saveOnboardingHelpSettings } from "@/app/[workspaceSlug]/settings/onboarding-actions"
 import { prepareVisualBuilderVideoUpload, publishVisualOnboardingRelease, rotateVisualOnboardingPreview } from "@/app/[workspaceSlug]/onboarding-builder/visual-actions"
+import { GoogleAdsLogo } from "@/components/brand/GoogleAdsLogo"
 import { Avatar } from "@/components/account/Avatar"
 import { VisualBuilderCanvas } from "@/components/onboarding-builder/VisualBuilderCanvas"
 import { BackToBetelgeze } from "@/components/onboarding-builder/OnboardingBuilderWindowControls"
@@ -49,7 +50,7 @@ type Selection = { groupKey: string; stepId: string; blockId: string | null; fie
 type LeftTab = "outline" | "blocks" | "modules"
 type RightTab = "inspect" | "styles"
 type OnboardingField = Extract<OnboardingBlock, { kind: "form" }>["fields"][number]
-type BuilderBlockKind = Exclude<OnboardingBlock["kind"], "header">
+type BuilderBlockKind = Exclude<OnboardingBlock["kind"], "header"> | "google_ads_connection"
 const HELP_BLOCK_ID = "builder:client-help"
 
 type ReleaseFingerprint = {
@@ -83,7 +84,7 @@ function definitionId(groupKey: string) {
 }
 
 function blockName(block: OnboardingBlock) {
-    return block.name?.trim() || (block.kind === "header" ? "Header block" : block.kind === "estimate" ? "Estimated time" : block.kind === "checklist" ? "Checklist" : block.kind === "form" ? "Form" : block.kind === "video" ? "Video" : block.kind === "calendar" ? "Calendar" : block.kind === "connection" ? "Facebook connection" : block.kind === "appointment_medium" ? "Appointment medium" : block.kind === "appointment_fields" ? "Appointment information" : "Button")
+    return block.name?.trim() || (block.kind === "header" ? "Header block" : block.kind === "estimate" ? "Estimated time" : block.kind === "checklist" ? "Checklist" : block.kind === "form" ? "Form" : block.kind === "video" ? "Video" : block.kind === "calendar" ? "Calendar" : block.kind === "connection" ? (block.provider === "google_ads" ? "Google Ads connection" : "Facebook connection") : block.kind === "appointment_medium" ? "Appointment medium" : block.kind === "appointment_fields" ? "Appointment information" : "Button")
 }
 
 function createBuilderBlock(kind: BuilderBlockKind): OnboardingBlock {
@@ -93,6 +94,7 @@ function createBuilderBlock(kind: BuilderBlockKind): OnboardingBlock {
     if (kind === "video") return createVideoBlock()
     if (kind === "calendar") return createCalendarBlock()
     if (kind === "connection") return createConnectionBlock()
+    if (kind === "google_ads_connection") return createConnectionBlock("google_ads")
     if (kind === "appointment_medium") return createAppointmentMediumBlock()
     if (kind === "appointment_fields") return createAppointmentFieldsBlock()
     return createButtonBlock()
@@ -434,7 +436,7 @@ function InspectorPanel({ currentGroup, step, block, field, help, helpSelected, 
         <label className="block text-xs text-neutral-500">Element name<input value={blockName(block)} disabled={!editable} onChange={(event) => updateBlock({ ...block, name: event.target.value })} className={inspectorInputClass} /></label>
         <label className="block text-xs text-neutral-500">Button text<input value={block.label} disabled={!editable} onChange={(event) => updateBlock({ ...block, label: event.target.value })} className={inspectorInputClass} /></label>
         <label className="block text-xs text-neutral-500">Description<textarea value={block.description} disabled={!editable} onChange={(event) => updateBlock({ ...block, description: event.target.value })} rows={4} className={inspectorTextareaClass} /></label>
-        <p className="text-xs leading-5 text-neutral-600">This required action completes only after Facebook authorization succeeds.</p>
+        <p className="text-xs leading-5 text-neutral-600">{block.provider === "google_ads" ? "Clients enter their account ID, approve the manager request in Google Ads, then return to verify access. The agency service account needs Admin access to send requests automatically." : "This required action completes only after Facebook authorization succeeds."}</p>
         <button type="button" disabled={!editable} onClick={deleteSelection} className="text-xs text-red-300 disabled:opacity-30">Delete connection</button>
     </div>
     if (block.kind === "appointment_medium") return <div className="space-y-4">
@@ -566,13 +568,14 @@ const LIBRARY_BLOCK_PRESENTATION: Record<BuilderBlockKind, { label: string; icon
     button: { label: "Button", icon: "↗" },
     calendar: { label: "Calendar", icon: "▦" },
     connection: { label: "Facebook connection", icon: "f" },
+    google_ads_connection: { label: "Google Ads connection", icon: "" },
     appointment_medium: { label: "Appointment medium", icon: "◉" },
     appointment_fields: { label: "Appointment information", icon: "≡" },
 }
 
 function BlockLibraryItem({ kind, label, editable, addBlock }: { kind: BuilderBlockKind; label?: string; editable: boolean; addBlock: (kind: BuilderBlockKind) => void }) {
     const presentation = LIBRARY_BLOCK_PRESENTATION[kind]
-    return <button type="button" draggable={editable} disabled={!editable} onDragStart={(event) => { event.dataTransfer.setData("application/x-betelgeze-builder-item", JSON.stringify({ type: "library", kind })); event.dataTransfer.effectAllowed = "copy" }} onClick={() => addBlock(kind)} className="flex w-full cursor-grab items-center gap-3 rounded-xl border border-neutral-800 bg-black p-3 text-left hover:border-neutral-600 disabled:cursor-not-allowed disabled:opacity-30"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-800 text-sm">{presentation.icon}</span><span className="text-sm">{label ?? presentation.label}</span></button>
+    return <button type="button" draggable={editable} disabled={!editable} onDragStart={(event) => { event.dataTransfer.setData("application/x-betelgeze-builder-item", JSON.stringify({ type: "library", kind })); event.dataTransfer.effectAllowed = "copy" }} onClick={() => addBlock(kind)} className="flex w-full cursor-grab items-center gap-3 rounded-xl border border-neutral-800 bg-black p-3 text-left hover:border-neutral-600 disabled:cursor-not-allowed disabled:opacity-30"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-800 text-sm">{kind === "google_ads_connection" ? <GoogleAdsLogo className="h-5 w-5" /> : presentation.icon}</span><span className="text-sm">{label ?? presentation.label}</span></button>
 }
 
 export function OnboardingBuilderWorkspace({ workspaceSlug, workspaceName, logoSrc, privacyPolicyUrl, termsOfServiceUrl, data, initialBookend }: { workspaceSlug: string; workspaceName: string; logoSrc?: string | null; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null; data: OnboardingBuilderData; initialBookend?: "welcome" | "completion" | null }) {
@@ -870,7 +873,7 @@ export function OnboardingBuilderWorkspace({ workspaceSlug, workspaceName, logoS
                     const targetDefinition = documentDefinition(document, target.groupKey)
                     const targetStep = targetDefinition?.steps.find((step) => step.id === target.stepId)
                     if (!targetDefinition || !targetStep) return document
-                    if (targetStep.blocks.some((candidate) => candidate.kind === payload.kind)) {
+                    if (targetStep.blocks.some((candidate) => candidate.kind === block.kind)) {
                         setError(`That step already has a ${payload.kind === "estimate" ? "Estimated time" : payload.kind} block.`)
                         return document
                     }
@@ -969,7 +972,7 @@ export function OnboardingBuilderWorkspace({ workspaceSlug, workspaceName, logoS
 
     function addBlock(kind: BuilderBlockKind) {
         if (!currentStep || !currentGroup) return
-        if (currentStep.blocks.some((block) => block.kind === kind)) {
+        if (currentStep.blocks.some((block) => block.kind === (kind === "google_ads_connection" ? "connection" : kind))) {
             setError(`This step already contains a ${kind === "estimate" ? "Estimated time" : kind} block.`)
             return
         }

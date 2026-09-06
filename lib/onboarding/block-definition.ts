@@ -87,7 +87,7 @@ export type CalendarBlock = BlockBase & {
 
 export type ConnectionBlock = BlockBase & {
     kind: "connection"
-    provider: "meta_ads"
+    provider: "meta_ads" | "google_ads"
     label: string
     description: string
     required: true
@@ -224,14 +224,15 @@ export function createCalendarBlock(): CalendarBlock {
     }
 }
 
-export function createConnectionBlock(): ConnectionBlock {
+export function createConnectionBlock(provider: ConnectionBlock["provider"] = "meta_ads"): ConnectionBlock {
+    const google = provider === "google_ads"
     return {
         id: stableUuid(),
-        name: "Facebook connection",
+        name: google ? "Google Ads connection" : "Facebook connection",
         kind: "connection",
-        provider: "meta_ads",
-        label: "Connect Facebook",
-        description: "Sign in with Facebook so we can securely connect the advertising accounts you manage.",
+        provider,
+        label: google ? "Connect Google Ads" : "Connect Facebook",
+        description: google ? "Connect your Google Ads account so our team can manage your campaigns and report on their performance." : "Sign in with Facebook so we can securely connect the advertising accounts you manage.",
         required: true,
         layout: { ...DEFAULT_BLOCK_LAYOUT, width: "wide" },
     }

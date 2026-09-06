@@ -26,11 +26,11 @@ test("the service template catalogue starts with the Meta Ads template", () => {
     assert.equal(existsSync(`public${appointmentSetting.thumbnail.src}`), true)
 })
 
-test("Google Ads installs a manager connection without onboarding blocks", () => {
+test("Google Ads includes its manager connection and onboarding block", () => {
     const googleAds = SERVICE_TEMPLATES.find((template) => template.id === "google-ads")!
     assert.equal(googleAds.name, "Google Ads")
     assert.deepEqual(googleAds.setup, { kind: "connection", connectionKey: "google_ads" })
-    assert.deepEqual(googleAds.onboardingBlocks, [])
+    assert.deepEqual(googleAds.onboardingBlocks, [{ kind: "google_ads_connection", label: "Google Ads connection" }])
     assert.equal(existsSync(`public${googleAds.thumbnail.src}`), true)
 })
 

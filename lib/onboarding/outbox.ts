@@ -12,7 +12,7 @@ import {
 
 export { sanitizeOnboardingOutboxError } from "@/lib/onboarding/outbox-safety"
 
-type DeliveryKind = "module_update" | "onboarding_link" | "client_portal_link"
+type DeliveryKind = "module_update" | "onboarding_link" | "client_portal_link" | "onboarding_link_revoked"
 
 type DeliveryOutboxRow = {
     id: string
@@ -183,6 +183,12 @@ async function deliveryContext(row: DeliveryOutboxRow) {
         .eq("id", row.session_id)
         .maybeSingle()
     if (sessionError || !session) throw new Error(sessionError?.message ?? "Onboarding delivery session was not found")
+    if (row.kind === "onboarding_link_revoked") {
+        if (!row.relationship_id || session.relationship_id !== row.relationship_id) throw new Error("Onboarding notification relationship does not match")
+        // This describes the revoked link, even if a replacement was created
+        // before delivery. Never include the revoked or replacement token.
+        return { relationshipId: row.relationship_id, workspaceName: publicBranding.displayName, publicUrl: "" }
+    }
     if (!["active", "completed"].includes(session.status) || session.token_revoked_at) throw new Error("Onboarding delivery session link is not available")
     const relationshipId = session.relationship_id ?? row.relationship_id
     if (!relationshipId) throw new Error("Onboarding delivery has no relationship")
@@ -197,6 +203,7 @@ async function deliveryContext(row: DeliveryOutboxRow) {
 
 function deliveryBody(row: DeliveryOutboxRow, publicUrl: string, workspaceName: string, smsConsentConfirmed: boolean) {
     const payload = payloadRecord(row.payload)
+    if (row.kind === "onboarding_link_revoked") return payloadText(payload, "message", 2_000) || "Your previous onboarding link has been disabled. Your saved progress and submitted information have been kept. Please reply here if you need help accessing onboarding."
     if (row.kind === "client_portal_link") {
         const introduction = payloadText(payload, "message", 2_000) || "Your client portal is ready."
         return [introduction, `Open your portal: ${publicUrl}`].join("\n\n").slice(0, 4_000)
@@ -230,6 +237,7 @@ async function deliveryHasConfirmedSmsConsent(row: DeliveryOutboxRow) {
 }
 
 function deliveryAutomationLabel(kind: DeliveryKind) {
+    if (kind === "onboarding_link_revoked") return "Onboarding link revoked"
     if (kind === "module_update") return "Onboarding update"
     if (kind === "client_portal_link") return "Client portal link"
     return "Onboarding link"
@@ -262,6 +270,9 @@ async function processDeliveryRow(row: DeliveryOutboxRow) {
             return true
         }
 
+        const existingMessage = await existingDeliveryMessage(row, false)
+        if (existingMessage.error) throw existingMessage.error
+        messageLogId = existingMessage.data?.id ?? null
         const context = await deliveryContext(row)
         const body = deliveryBody(row, context.publicUrl, context.workspaceName, await deliveryHasConfirmedSmsConsent(row))
         const channels = await resolveCommunicationDestinations({ workspaceId: row.workspace_id, relationshipId: context.relationshipId })
@@ -277,8 +288,6 @@ async function processDeliveryRow(row: DeliveryOutboxRow) {
             portal_session_id: row.portal_session_id,
             client_sale_id: saleId,
         }
-        const existingMessage = await existingDeliveryMessage(row, false)
-        if (existingMessage.error) throw existingMessage.error
         if (existingMessage.data) {
             messageLogId = existingMessage.data.id
             const { error } = await supabaseAdmin.from("client_messages").update({

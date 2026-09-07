@@ -2,6 +2,8 @@
 
 import { randomBytes } from "crypto"
 import { revalidatePath } from "next/cache"
+import { after } from "next/server"
+import { processWorkspaceOnboardingOutbox } from "@/lib/onboarding/outbox"
 import { getOnboardingUrl } from "@/lib/onboarding/client-creation"
 import { recordAdminActivity } from "@/lib/admin/activity"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -106,51 +108,29 @@ export async function restartOnboarding(workspaceSlug: string, relationshipId: s
     revalidatePath(`/${workspace.slug}/relationships/${relationshipId}`)
 }
 
-export async function revokeOnboardingToken(workspaceSlug: string, relationshipId: string) {
+export async function revokeOnboardingToken(workspaceSlug: string, relationshipId: string, sessionId: string, tokenVersion: number) {
     const { workspace, user } = await requireOnboardingManager(workspaceSlug, relationshipId)
-    const { data: session } = await supabaseAdmin.from("relationship_onboarding_sessions")
-        .select("id, token_revoked_at, token_version, source_sale_id")
-        .eq("workspace_id", workspace.id).eq("relationship_id", relationshipId)
-        .in("status", ["active", "completed"]).order("updated_at", { ascending: false }).limit(1).maybeSingle()
-    if (!session || session.token_revoked_at) return { ok: true as const, revoked: true as const }
-    const tokenVersion = Number(session.token_version) || 1
-    const correlationId = session.source_sale_id ?? session.id
-    const idempotencyKey = `onboarding.token.revoked:${session.id}:${tokenVersion}`
-    const { error: rpcError } = await supabaseAdmin.rpc("revoke_relationship_onboarding_session_token", {
+    const { data, error } = await supabaseAdmin.rpc("revoke_relationship_onboarding_session_token", {
         p_workspace_id: workspace.id,
         p_relationship_id: relationshipId,
-        p_session_id: session.id,
+        p_session_id: sessionId,
         p_actor_user_id: user.id,
         p_expected_token_version: tokenVersion,
-        p_correlation_id: correlationId,
-        p_idempotency_key: idempotencyKey,
+        p_correlation_id: sessionId,
+        p_idempotency_key: `onboarding.token.revoked:${sessionId}:${tokenVersion}`,
     })
-    if (!rpcError) {
-        revalidatePath(`/${workspace.slug}/onboarding/${relationshipId}`)
-        return { ok: true as const, revoked: true as const }
+    if (error) throw new Error(error.message || "Could not revoke the onboarding link")
+    const notificationQueued = Boolean(data?.notification_queued)
+    if (notificationQueued) {
+        // The notification is durable before the response; provider delivery
+        // must not keep the link controls waiting. The outbox owns retries.
+        after(async () => {
+            await processWorkspaceOnboardingOutbox(workspace.id, 25)
+        })
     }
-    if (!isMissingOnboardingMutationRpc(rpcError, "revoke_relationship_onboarding_session_token")) {
-        throw new Error(rpcError.message || "Could not revoke the onboarding link")
-    }
-    const { error } = await supabaseAdmin.from("relationship_onboarding_sessions")
-        .update({ token_revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-        .eq("workspace_id", workspace.id).eq("id", session.id).is("token_revoked_at", null)
-    if (error) throw new Error("Could not revoke the onboarding link")
-    await recordAdminActivity({
-        workspaceId: workspace.id,
-        category: "onboarding",
-        eventKey: "onboarding.token.revoked",
-        summary: "Onboarding link revoked",
-        entityType: "onboarding_session",
-        entityId: session.id,
-        actorUserId: user.id,
-        correlationId,
-        idempotencyKey,
-        sourceHref: `/${workspace.slug}/onboarding/${relationshipId}`,
-        metadata: { relationship_id: relationshipId, token_version: session.token_version ?? 1 },
-    })
     revalidatePath(`/${workspace.slug}/onboarding/${relationshipId}`)
-    return { ok: true as const, revoked: true as const }
+    revalidatePath(`/${workspace.slug}/communications`)
+    return { ok: true as const, revoked: true as const, notificationQueued }
 }
 
 export async function rotateOnboardingToken(workspaceSlug: string, relationshipId: string) {

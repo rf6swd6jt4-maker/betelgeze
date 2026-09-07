@@ -213,7 +213,8 @@ test("manual and flagged-test session creation records sanitized composition bef
 })
 
 test("token rotation and revocation preserve sessions while invalidating old links", () => {
-    assert.match(tokenActions, /token_revoked_at:\s*new Date/u)
+    assert.match(tokenActions, /rpc\("revoke_relationship_onboarding_session_token"/u)
+    assert.match(tokenActions, /p_expected_token_version: tokenVersion/u)
     assert.match(tokenActions, /session_token:\s*token, token_version:\s*tokenVersion, token_revoked_at:\s*null/u)
     assert.match(tokenActions, /getOnboardingUrl\(/u)
 })

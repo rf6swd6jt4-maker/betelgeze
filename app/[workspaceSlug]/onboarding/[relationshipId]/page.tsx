@@ -661,24 +661,24 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
         </section>
 
         <section className="mt-6 rounded-xl border border-neutral-800 bg-black p-5">
-                            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                            <div className="flex flex-col gap-3">
                                 <div>
-                                    <h2 className="text-lg font-semibold">Onboarding link</h2>
-                                    <p className="mt-1 text-sm text-neutral-500">The client-facing canonical session link for this relationship.</p>
+                                    <h2 className="text-base font-semibold">Onboarding link</h2>
+                                    <p className="mt-1 text-sm text-neutral-500">Manage the client’s access to onboarding.</p>
                                 </div>
                                 {activity.session && activity.canManage ? (
                                     <OnboardingLinkControls
-                                        key={activity.session.id}
+                                        key={`${activity.session.id}:${activity.session.token_version ?? 1}`}
                                         initialPath={activity.onboardingUrl}
                                         revoked={Boolean(activity.session.token_revoked_at)}
-                                        revokeAction={revokeOnboardingToken.bind(null, workspaceSlug, relationshipId)}
+                                        revokeAction={revokeOnboardingToken.bind(null, workspaceSlug, relationshipId, activity.session.id, Number(activity.session.token_version) || 1)}
                                         rotateAction={rotateOnboardingToken.bind(null, workspaceSlug, relationshipId)}
                                     />
                                 ) : activity.onboardingUrl && !activity.session?.token_revoked_at && activity.canOpenCompleteClientSession ? (
-                                    <div className="grid grid-cols-2 gap-2 sm:flex">
+                                    <div className="flex flex-wrap items-center gap-2">
                                         <CopyOnboardingLink path={activity.onboardingUrl} />
-                                        <a href={activity.onboardingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium text-black">
-                                            Preview session
+                                        <a href={activity.onboardingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 shrink-0 sm:min-h-9 items-center justify-center whitespace-nowrap rounded-lg bg-white px-3 text-sm font-medium text-black">
+                                            Preview
                                         </a>
                                     </div>
                                 ) : (

@@ -84,7 +84,7 @@ export function googleAdsDiagnosticError(error: unknown) {
 
 function adsErrorMessage(codes: string[], status: number): string {
     if (codes.includes("NOT_ADS_USER")) return "Add the service-account email in Google Ads → Admin → Access and security for this manager account."
-    if (codes.includes("DEVELOPER_TOKEN_NOT_APPROVED")) return "This developer token only has test-account access. Use a token with Explorer, Basic, or Standard Access."
+    if (codes.includes("DEVELOPER_TOKEN_NOT_APPROVED")) return "Google has not approved this developer token for the requested operation. Check its access level in the manager account's API Center."
     if (codes.includes("DEVELOPER_TOKEN_INVALID")) return "Google rejected the developer token. Copy it again from the manager account’s API Center."
     if (codes.includes("SERVICE_DISABLED")) return "Enable the Google Ads API in the service account’s Google Cloud project, then retry."
     if (codes.includes("USER_PERMISSION_DENIED")) return "Grant the service-account email Read-only access in Google Ads → Admin → Access and security for this manager account."
@@ -198,6 +198,7 @@ export async function connectGoogleAdsClient(
 
 export function googleAdsClientError(error: unknown) {
     if (error instanceof GoogleAdsApiError) {
+        if (error.step === "invitation" && error.codes.includes("DEVELOPER_TOKEN_NOT_APPROVED")) return "Your agency needs to send this access request from Google Ads. Contact your agency, then return here to finish connecting once they have sent it."
         if (error.codes.some((code) => ["INVALID_CUSTOMER_ID", "CLIENT_CUSTOMER_ID_INVALID", "CUSTOMER_NOT_FOUND"].includes(code))) return "Google could not find that customer ID. Check the 10 digits in your Google Ads account."
         if (error.codes.some((code) => ["TOO_MANY_MANAGERS", "CLIENT_HAS_TOO_MANY_MANAGERS", "TOO_MANY_INVITES"].includes(code))) return "Google could not add another manager request. Ask your agency to review this account’s existing managers and invitations."
         if (error.codes.includes("CUSTOMER_NOT_ENABLED")) return "This Google Ads account is not active. Check its status in Google Ads."

@@ -52,6 +52,15 @@ test("owner diagnostics validate invitations without creating them", async () =>
     assert.equal(calls.filter((call) => call.url.includes("mutate")).length, 1)
 })
 
+test("invitation token restrictions direct the client to an agency-sent request without calling the account test-only", async () => {
+    const { fetcher } = mock([empty, empty, Response.json({ error: { details: [{ errors: [{ errorCode: { authorizationError: "DEVELOPER_TOKEN_NOT_APPROVED" } }] }] } }, { status: 403 })])
+    await assert.rejects(connectGoogleAdsClient(config, customerId, true, fetcher), (error: Error) => {
+        assert.match(googleAdsClientError(error), /agency needs to send this access request from Google Ads/)
+        assert.doesNotMatch(googleAdsDiagnosticError(error), /only has test/)
+        return true
+    })
+})
+
 test("diagnostics distinguish the failed operation and retain only safe provider codes", async () => {
     for (const [responses, step] of [
         [[], "account_hierarchy"],

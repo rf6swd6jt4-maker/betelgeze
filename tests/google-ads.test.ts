@@ -59,7 +59,7 @@ test("verification rejects client accounts, test managers, and mismatched identi
 
 test("Google errors give actionable guidance without returning provider secrets", async () => {
     for (const [code, message] of [
-        ["DEVELOPER_TOKEN_NOT_APPROVED", /test-account access/],
+        ["DEVELOPER_TOKEN_NOT_APPROVED", /not approved.*requested operation/],
         ["DEVELOPER_TOKEN_INVALID", /rejected the developer token/],
         ["USER_PERMISSION_DENIED", /Read-only access/],
     ] as const) {

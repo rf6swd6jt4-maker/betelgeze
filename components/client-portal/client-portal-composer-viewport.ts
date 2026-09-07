@@ -1,11 +1,11 @@
 "use client"
 
 import { type RefObject, useEffect } from "react"
+import { requestChatViewportMotion } from "@/lib/chat-viewport-motion"
 
 const PORTAL_KEYBOARD_MOTION_MS = 300
 const PORTAL_KEYBOARD_SETTLE_MS = PORTAL_KEYBOARD_MOTION_MS + 340
 const PORTAL_KEYBOARD_MINIMUM_SHIFT_PX = 64
-const PORTAL_KEYBOARD_EASING = "cubic-bezier(0.32, 0.72, 0, 1)"
 
 export function useClientPortalComposerViewport(composerRef: RefObject<HTMLElement | null>) {
     useEffect(() => {
@@ -14,10 +14,7 @@ export function useClientPortalComposerViewport(composerRef: RefObject<HTMLEleme
         if (!composer || !panel) return
 
         const mobile = window.matchMedia("(max-width: 1023px)")
-        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)")
         const originalViewportBottom = panel.style.getPropertyValue("--client-portal-viewport-bottom")
-        const originalTransition = panel.style.transition
-        const originalWillChange = panel.style.willChange
         const readViewportBottom = () => {
             const visualViewport = window.visualViewport
             return Math.round((visualViewport?.offsetTop ?? 0) + (visualViewport?.height ?? window.innerHeight))
@@ -27,25 +24,23 @@ export function useClientPortalComposerViewport(composerRef: RefObject<HTMLEleme
         let composerFocused = document.activeElement === composer
         let viewportMode: "idle" | "pending" | "continuous" | "synthetic" | "closing" | "suspended" = composerFocused ? "pending" : "idle"
         let syntheticTargetCommitted = false
-        let animationFrame = 0
         let closeTimer = 0
 
-        const setMotion = (enabled: boolean) => {
-            panel.style.transition = enabled && !reducedMotion.matches
-                ? `height ${PORTAL_KEYBOARD_MOTION_MS}ms ${PORTAL_KEYBOARD_EASING}`
-                : "none"
-        }
-        const writeViewportBottom = (viewportBottom: number) => {
+        let motion = false
+        let appliedViewportBottom = restingViewportBottom
+        const setMotion = (enabled: boolean) => { motion = enabled }
+        const applyViewportBottom = (viewportBottom: number) => {
+            appliedViewportBottom = viewportBottom
             panel.style.setProperty("--client-portal-viewport-bottom", `${viewportBottom}px`)
         }
+        const writeViewportBottom = (viewportBottom: number) => {
+            requestChatViewportMotion(panel, appliedViewportBottom, viewportBottom,
+                motion ? PORTAL_KEYBOARD_MOTION_MS : 0, applyViewportBottom)
+        }
         const scheduleSyntheticViewport = () => {
-            if (animationFrame || syntheticTargetCommitted) return
-            animationFrame = window.requestAnimationFrame(() => {
-                animationFrame = 0
-                if (viewportMode !== "synthetic" || keyboardViewportBottom === null || syntheticTargetCommitted) return
-                syntheticTargetCommitted = true
-                writeViewportBottom(keyboardViewportBottom)
-            })
+            if (keyboardViewportBottom === null) return
+            syntheticTargetCommitted = true
+            writeViewportBottom(keyboardViewportBottom)
         }
         const holdPortalViewport = () => {
             if (document.visibilityState === "hidden") return
@@ -77,7 +72,9 @@ export function useClientPortalComposerViewport(composerRef: RefObject<HTMLEleme
             // Browser chrome and caret tracking can briefly report a taller visual
             // viewport after the keyboard settles. Keep the smallest open-keyboard
             // edge so that noise cannot push the chat back down while typing.
-            keyboardViewportBottom = Math.min(keyboardViewportBottom ?? viewportBottom, viewportBottom)
+            const nextBottom = Math.min(keyboardViewportBottom ?? viewportBottom, viewportBottom)
+            if (viewportMode === "synthetic" && syntheticTargetCommitted && nextBottom === keyboardViewportBottom) return
+            keyboardViewportBottom = nextBottom
             if (viewportMode === "synthetic") {
                 scheduleSyntheticViewport()
             } else {
@@ -112,8 +109,6 @@ export function useClientPortalComposerViewport(composerRef: RefObject<HTMLEleme
                 holdPortalViewport()
                 return
             }
-            if (animationFrame) window.cancelAnimationFrame(animationFrame)
-            animationFrame = 0
             viewportMode = "closing"
             setMotion(true)
             writeViewportBottom(restingViewportBottom)
@@ -129,8 +124,6 @@ export function useClientPortalComposerViewport(composerRef: RefObject<HTMLEleme
         const suspendPortalViewport = () => {
             composer.blur()
             composerFocused = false
-            if (animationFrame) window.cancelAnimationFrame(animationFrame)
-            animationFrame = 0
             if (closeTimer) window.clearTimeout(closeTimer)
             closeTimer = 0
             viewportMode = "suspended"
@@ -154,7 +147,6 @@ export function useClientPortalComposerViewport(composerRef: RefObject<HTMLEleme
             else resumePortalViewport()
         }
 
-        panel.style.willChange = "height"
         setMotion(false)
         writeViewportBottom(restingViewportBottom)
         composer.addEventListener("focus", handleComposerFocus)
@@ -175,10 +167,9 @@ export function useClientPortalComposerViewport(composerRef: RefObject<HTMLEleme
             document.removeEventListener("visibilitychange", handleVisibility)
             window.removeEventListener("pagehide", suspendPortalViewport)
             window.removeEventListener("pageshow", resumePortalViewport)
-            if (animationFrame) window.cancelAnimationFrame(animationFrame)
             if (closeTimer) window.clearTimeout(closeTimer)
-            panel.style.transition = originalTransition
-            panel.style.willChange = originalWillChange
+            setMotion(false)
+            writeViewportBottom(restingViewportBottom)
             if (originalViewportBottom) panel.style.setProperty("--client-portal-viewport-bottom", originalViewportBottom)
             else panel.style.removeProperty("--client-portal-viewport-bottom")
         }

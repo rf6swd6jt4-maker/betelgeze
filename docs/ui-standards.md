@@ -26,6 +26,12 @@ Message bubbles use `NativeMessageBubble` for action activation in client chats,
 
 Preserve embedded links, buttons, audio/video controls, and scrolling. Keyboard users can open actions with Enter, Space, the context-menu key, or Shift+F10 while the bubble is focused. Popups use the shared opening motion above.
 
+## Chat layout motion
+
+Client, team/direct, and portal chats share `ChatMotionViewport` for keyboard movement. The shell (or standalone portal controller) remains the sole owner of viewport geometry. Keep the chat header stationary and move the messages and composer together inside a clipped layer, using a 300ms transform with `cubic-bezier(0.32, 0.72, 0, 1)`. Resize the scrollable layout at transition boundaries and synchronously preserve its reading position; do not animate the containing iframe's height or add a second footer keyboard animation. Interrupted movement starts from its current visible position. Continuous browser viewport updates are applied directly, and reduced motion skips animation. Final scroller resizing waits for an active touch scroll to settle.
+
+`ComposerFooter` owns the 180ms height transition for multiline drafts, reply previews, and attachment/sticker trays. Its footer stays aligned to the bottom while the message pane follows the changing height. Desktop and reduced motion use immediate sizing. Keep native editor scrolling, selection, and composition intact; mark its scroller with `data-composer-scroll` so footer gesture containment permits long drafts to scroll.
+
 ## Chat message formatting
 
 Client, team/direct, and portal message bodies use `ChatMessageText`. Supported inline syntax is `**bold**`, `__italic__`, `~~strikethrough~~`, and `##heading##` (slightly larger and bold). HTTP(S) links remain clickable and message HTML remains plain text. Message-content lists use semantic `ol`/`ul` elements, with `1. `, `- `, and `[ ] ` markers and two-space nesting. These are authored message content, not record collections covered by `List`.

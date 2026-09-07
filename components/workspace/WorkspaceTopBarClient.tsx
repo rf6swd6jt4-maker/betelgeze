@@ -1,5 +1,7 @@
 "use client"
 
+import { requestChatViewportMotion } from "@/lib/chat-viewport-motion"
+
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link"
@@ -1252,23 +1254,29 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         let composerFocused = false
         let viewportMode: "idle" | "pending" | "continuous" | "synthetic" | "closing" | "suspended" = "idle"
         let syntheticTargetCommitted = false
-        let animationFrame = 0
         let closeTimer = 0
-        const writeViewportBottom = (viewportBottom: number) => {
+        const panel = shellRoot.querySelector<HTMLElement>("[data-workspace-tab-panels]")
+        let appliedViewportBottom = restingViewportBottom
+        const applyViewportBottom = (viewportBottom: number) => {
+            appliedViewportBottom = viewportBottom
             root.style.setProperty("--workspace-visual-viewport-bottom", `${viewportBottom}px`)
+        }
+        const writeViewportBottom = (viewportBottom: number) => {
+            if (!panel) { applyViewportBottom(viewportBottom); return }
+            requestChatViewportMotion(panel, appliedViewportBottom, viewportBottom,
+                root.dataset.workspaceKeyboardMotion === "true" ? WORKSPACE_KEYBOARD_MOTION_MS : 0,
+                applyViewportBottom)
         }
         const keepWorkspaceDocumentAtOrigin = () => {
             if (root.scrollTop !== 0) root.scrollTop = 0
             if (document.body.scrollTop !== 0) document.body.scrollTop = 0
         }
         const scheduleSyntheticViewport = () => {
-            if (animationFrame || syntheticTargetCommitted) return
-            animationFrame = window.requestAnimationFrame(() => {
-                animationFrame = 0
-                if (viewportMode !== "synthetic" || keyboardViewportBottom === null || syntheticTargetCommitted) return
-                syntheticTargetCommitted = true
-                writeViewportBottom(keyboardViewportBottom)
-            })
+            if (keyboardViewportBottom === null) return
+            // Start on the first usable geometry event, without an extra frame
+            // of delay. Later endpoints can retarget the current visible motion.
+            syntheticTargetCommitted = true
+            writeViewportBottom(keyboardViewportBottom)
         }
         const holdWorkspaceViewport = () => {
             if (document.visibilityState === "hidden") return
@@ -1294,7 +1302,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
                 if (viewportMode === "synthetic") root.dataset.workspaceKeyboardMotion = "true"
             }
             if (viewportMode === "synthetic") {
-                keyboardViewportBottom = Math.min(keyboardViewportBottom ?? viewportBottom, viewportBottom)
+                const nextBottom = Math.min(keyboardViewportBottom ?? viewportBottom, viewportBottom)
+                if (syntheticTargetCommitted && nextBottom === keyboardViewportBottom) return
+                keyboardViewportBottom = nextBottom
                 scheduleSyntheticViewport()
             } else {
                 writeViewportBottom(viewportBottom)
@@ -1335,8 +1345,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
                 holdWorkspaceViewport()
                 return
             }
-            if (animationFrame) window.cancelAnimationFrame(animationFrame)
-            animationFrame = 0
             viewportMode = "closing"
             root.dataset.workspaceKeyboardMotion = "true"
             // Start the return from the same captured resting edge rather than waiting
@@ -1355,8 +1363,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
             const activeElement = document.activeElement
             if (activeElement instanceof HTMLElement) activeElement.blur()
             composerFocused = false
-            if (animationFrame) window.cancelAnimationFrame(animationFrame)
-            animationFrame = 0
             if (closeTimer) window.clearTimeout(closeTimer)
             closeTimer = 0
             viewportMode = "suspended"
@@ -1407,12 +1413,12 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
             document.removeEventListener("visibilitychange", handleWorkspaceVisibility)
             window.removeEventListener("pagehide", suspendWorkspaceViewport)
             window.removeEventListener("pageshow", resumeWorkspaceViewport)
-            if (animationFrame) window.cancelAnimationFrame(animationFrame)
             if (closeTimer) window.clearTimeout(closeTimer)
             document.body.style.overflow = previousOverflow
             delete document.body.dataset.workspaceTabsHosted
             delete root.dataset.workspaceViewportLocked
             delete root.dataset.workspaceKeyboardMotion
+            writeViewportBottom(restingViewportBottom)
             root.style.removeProperty("--workspace-visual-viewport-bottom")
             window.dispatchEvent(new Event(WORKSPACE_TAB_VISIBILITY_EVENT))
             previousStates.forEach(({ element, hidden, inert, ariaHidden }) => {

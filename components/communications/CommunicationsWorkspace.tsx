@@ -23,6 +23,7 @@ import { useConversationHistory } from "@/components/communications/useConversat
 import { useConversationLayout } from "@/components/communications/useConversationLayout"
 import { prepareCommunicationMedia } from "@/lib/communications/prepare-media"
 import { ConversationMedia } from "@/components/communications/ConversationMedia"
+import { ChatMotionViewport } from "@/components/communications/ChatMotionViewport"
 import { NativeChatViewport } from "@/components/communications/NativeChatViewport"
 import { NativeMessageBubble } from "@/components/communications/NativeMessageBubble"
 import { VoiceNotePlayer } from "@/components/communications/VoiceNotePlayer"
@@ -932,6 +933,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                     </header>
                     {selected.pinnedMessageId && pinnedPreview ? <PinnedMessageBar preview={pinnedPreview} onClick={() => jumpToMessage(selected.pinnedMessageId!)} /> : null}
 
+                    <ChatMotionViewport key={selectedId}>
                     <div className="relative min-h-0 flex-1">
                     <div key={selectedId} data-message-pane tabIndex={0} ref={messagePaneRef} {...messagePaneInteractions} style={{ overflowAnchor: "none" }} className="invisible data-[positioned=true]:visible h-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-contain bg-[radial-gradient(circle_at_top,_rgba(38,38,38,0.5),_transparent_38%)] px-3 py-5 sm:px-6">
                         <div className="mx-auto flex min-h-full w-full min-w-0 max-w-3xl flex-col gap-2 lg:max-w-none">
@@ -1067,6 +1069,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                             </>}
                         />
                     </ComposerFooter>
+                    </ChatMotionViewport>
                 </> : <div className="flex flex-1 items-center justify-center p-6 text-center"><div><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950 text-xl">◌</div><h2 className="mt-4 text-sm font-semibold">Select a client chat</h2><p className="mt-2 text-xs text-neutral-600">Messages update here without reloading the panel.</p></div></div>}
             </NativeChatViewport></ConversationMedia>
         </ResizableConversationColumns>

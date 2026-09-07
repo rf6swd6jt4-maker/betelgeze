@@ -164,6 +164,7 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
                 ],
             }),
         })
+        view.scrollDOM.setAttribute("data-composer-scroll", "")
         editor.current = view
         inputRef.current = view.contentDOM
         return () => { inputRef.current = null; editor.current = null; view.destroy() }

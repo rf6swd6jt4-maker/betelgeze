@@ -241,3 +241,33 @@ test("disposing a scrolling conversation cancels pending frames and settling wor
     f.tick(1000)
     assert.equal(f.state.scrollTop, 180)
 })
+
+test("an atomic keyboard layout commit does not compensate twice for browser scroll clamping", () => {
+    const f = fixture(false)
+    try {
+        f.state.scrollTop = 690
+        f.scroll(); f.flush()
+        f.emit("conversation-layout-will-change")
+        f.state.clientHeight = 500
+        f.state.scrollTop = 500 // Browser clamps to the expanded pane's maximum.
+        f.emit("conversation-layout-commit")
+        assert.equal(f.state.scrollTop, 490) // Captured 690 minus the 200px expansion.
+        f.emit("conversation-layout-will-change")
+        f.state.clientHeight = 300
+        f.emit("conversation-layout-commit")
+        assert.equal(f.state.scrollTop, 690)
+    } finally { f.cleanup() }
+})
+
+test("a keyboard close triggered by a stationary tap commits before the touch settles", () => {
+    const f = fixture(false)
+    try {
+        f.emit("touchstart")
+        f.emit("conversation-layout-will-change")
+        f.state.clientHeight = 400
+        f.emit("conversation-layout-commit")
+        assert.equal(f.state.scrollTop, 100)
+        f.emit("touchend", { touches: [] }); f.tick(250)
+        assert.equal(f.state.scrollTop, 100)
+    } finally { f.cleanup() }
+})

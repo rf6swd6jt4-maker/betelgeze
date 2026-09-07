@@ -6,6 +6,7 @@ import { ChatMessageText } from "@/components/communications/ChatMessageText"
 
 import Image from "next/image"
 import { NativeMessageBubble } from "@/components/communications/NativeMessageBubble"
+import { ChatMotionViewport } from "@/components/communications/ChatMotionViewport"
 import { ComposerFooter } from "@/components/communications/ComposerFooter"
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 
@@ -459,7 +460,9 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
     const messageById = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages])
 
     return <div className="flex min-h-0 flex-1 flex-col bg-[var(--onboarding-page,#F8F7F3)]">
+        <ChatMotionViewport>
         <div
+            data-message-pane
             ref={scrollRef}
             onScroll={(event) => {
                 const pane = event.currentTarget
@@ -607,6 +610,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
                 <p className="mt-1.5 hidden text-center text-[10px] text-[var(--onboarding-muted,#475569)] lg:block">Enter to send · Shift+Enter for a new line · Lists: Enter for next item, twice to finish · Tab to indent</p>
             </div>
         </ComposerFooter>
+        </ChatMotionViewport>
         <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} />
     </div>
 }

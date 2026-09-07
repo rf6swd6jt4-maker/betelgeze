@@ -59,7 +59,7 @@ export function observeConversationLayout(
         publish()
     }
 
-    function restore(force = false) {
+    function restore(force = false, geometryCommit = false) {
         const nextHeight = pane.clientHeight
         if (nextHeight <= 0) {
             hidden = true
@@ -71,7 +71,7 @@ export function observeConversationLayout(
         // Accept the current layout; settling must not replay an old correction.
         if (interacting) { remember(false); return }
         if (!force && !hidden && nextHeight === height && pane.scrollHeight === contentHeight) return
-        let nextTop = hidden ? scrollTop : pane.scrollTop
+        let nextTop = hidden || geometryCommit ? scrollTop : pane.scrollTop
         if (followLatest.current) nextTop = pane.scrollHeight - nextHeight
         else if (anchor?.element.isConnected && pane.contains(anchor.element)) {
             const top = anchor.element.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop
@@ -138,6 +138,15 @@ export function observeConversationLayout(
         })
     }
     function onResize() { restore() }
+    function onLayoutCommit() {
+        // A stationary tap can close the keyboard before touchend. Permit the
+        // atomic geometry correction, while leaving real drags/inertia alone.
+        const wasInteracting = interacting
+        if (!scrolled) interacting = false
+        restore(false, true)
+        interacting = wasInteracting
+    }
+    function onLayoutWillChange() { remember() }
     function onVisible() { restore(true) }
     const observer = new ResizeObserver(onResize)
     observer.observe(pane)
@@ -150,6 +159,8 @@ export function observeConversationLayout(
     pane.addEventListener("keydown", onKeyDown)
     pane.addEventListener("pointerdown", onPointerDown, { passive: true })
     pane.addEventListener("conversation-visible", onVisible)
+    pane.addEventListener("conversation-layout-will-change", onLayoutWillChange)
+    pane.addEventListener("conversation-layout-commit", onLayoutCommit)
     restore(true)
     return () => {
         observer.disconnect()
@@ -163,5 +174,7 @@ export function observeConversationLayout(
         pane.removeEventListener("keydown", onKeyDown)
         pane.removeEventListener("pointerdown", onPointerDown)
         pane.removeEventListener("conversation-visible", onVisible)
+        pane.removeEventListener("conversation-layout-will-change", onLayoutWillChange)
+        pane.removeEventListener("conversation-layout-commit", onLayoutCommit)
     }
 }

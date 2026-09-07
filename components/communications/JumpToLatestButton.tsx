@@ -24,7 +24,7 @@ export function observeMessagePaneResize(
         previousHeight = pane.clientHeight
         previousScrollTop = pane.scrollTop
     }
-    const observer = new ResizeObserver(() => {
+    const restore = () => {
         const nextHeight = pane.clientHeight
         if (nextHeight === previousHeight) return
         const nextScrollTop = anchoredMessagePaneScrollTop({
@@ -38,11 +38,16 @@ export function observeMessagePaneResize(
         previousHeight = nextHeight
         pane.scrollTo({ top: nextScrollTop, left: 0 })
         previousScrollTop = pane.scrollTop
-    })
+    }
+    const observer = new ResizeObserver(restore)
     pane.addEventListener("scroll", rememberScrollPosition, { passive: true })
+    pane.addEventListener("conversation-layout-will-change", rememberScrollPosition)
+    pane.addEventListener("conversation-layout-commit", restore)
     observer.observe(pane)
     return () => {
         observer.disconnect()
+        pane.removeEventListener("conversation-layout-will-change", rememberScrollPosition)
+        pane.removeEventListener("conversation-layout-commit", restore)
         pane.removeEventListener("scroll", rememberScrollPosition)
     }
 }

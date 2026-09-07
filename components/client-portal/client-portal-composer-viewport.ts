@@ -7,7 +7,7 @@ const PORTAL_KEYBOARD_SETTLE_MS = PORTAL_KEYBOARD_MOTION_MS + 340
 const PORTAL_KEYBOARD_MINIMUM_SHIFT_PX = 64
 const PORTAL_KEYBOARD_EASING = "cubic-bezier(0.32, 0.72, 0, 1)"
 
-export function useClientPortalComposerViewport(composerRef: RefObject<HTMLTextAreaElement | null>) {
+export function useClientPortalComposerViewport(composerRef: RefObject<HTMLElement | null>) {
     useEffect(() => {
         const composer = composerRef.current
         const panel = composer?.closest<HTMLElement>("[data-client-portal-panel]") ?? null

@@ -1,6 +1,6 @@
 "use client"
 
-import { handleChatListKey, useChatListInput } from "@/components/communications/chat-composer-list"
+import { ChatComposerInput } from "@/components/communications/ChatComposerInput"
 
 import { ChatMessageText } from "@/components/communications/ChatMessageText"
 
@@ -13,7 +13,6 @@ import { MessageReactionActions, PrimaryMessageActions, copyMessageText, downloa
 import { DeleteIcon, ReplyIcon } from "@/components/communications/MessageInteractionIcons"
 import { MessageMediaLightbox, type MessageMediaPreview } from "@/components/communications/MessageMediaLightbox"
 import { observeMessagePaneResize } from "@/components/communications/JumpToLatestButton"
-import { keepComposerCurrentLineCentered } from "@/components/communications/composer-scroll"
 import { useClientPortalComposerViewport } from "@/components/client-portal/client-portal-composer-viewport"
 
 type PortalAttachment = {
@@ -179,9 +178,6 @@ function FileIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" /><path d="M14 3v5h5" /></svg>
 }
 
-function MessageText({ body, own }: { body: string; own: boolean }) {
-    return <ChatMessageText body={body} className="text-[15px] leading-6" linkClassName={`underline decoration-1 underline-offset-2 ${own ? "decoration-white/60" : "text-[var(--onboarding-primary,#1E3A5F)]"}`} />
-}
 
 function MessageAttachment({ attachment, url, own, onOpenImage }: {
     attachment: PortalAttachment
@@ -228,24 +224,25 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
     const [swipePosition, setSwipePosition] = useState<{ id: string; offset: number; active: boolean } | null>(null)
     const [previewMedia, setPreviewMedia] = useState<MessageMediaPreview | null>(null)
     const scrollRef = useRef<HTMLDivElement>(null)
-    const textareaRef = useRef<HTMLTextAreaElement>(null)
+    const textareaRef = useRef<HTMLElement>(null)
     const refreshingRef = useRef(false)
+    const checklistRevisionRef = useRef(0)
     const followingLatestRef = useRef(true)
     const scrollToLatestRef = useRef(true)
     const swipeStartRef = useRef<{ id: string; x: number; y: number; cancelled: boolean; maxDeltaX: number; minDeltaX: number; verticalAtMax: number; verticalAtMin: number } | null>(null)
-    useChatListInput(textareaRef, setDraft)
     useClientPortalComposerViewport(textareaRef)
 
     const refreshLatest = useCallback(async (initial = false) => {
         if (refreshingRef.current) return
         refreshingRef.current = true
+        const checklistRevision = checklistRevisionRef.current
         try {
             const response = await fetch(`${apiPath}?limit=100`, { cache: "no-store" })
             const result = await response.json().catch(() => null) as MessagesResponse | null
             if (!response.ok) throw new Error(typeof result?.error === "string" ? result.error : "Messages are unavailable.")
             const incoming = Array.isArray(result?.messages) ? result.messages.flatMap((value) => messageFromValue(value) ?? []) : []
             if (initial || followingLatestRef.current) scrollToLatestRef.current = true
-            setMessages((current) => initial ? mergeMessages(current, incoming) : mergeLatestSnapshot(current, incoming))
+            if (checklistRevision === checklistRevisionRef.current) setMessages((current) => initial ? mergeMessages(current, incoming) : mergeLatestSnapshot(current, incoming))
             if (initial) setNextBefore(typeof result?.nextBefore === "string" ? result.nextBefore : null)
             setInitialState("ready")
         } catch {
@@ -283,9 +280,6 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
         return () => window.cancelAnimationFrame(frame)
     }, [messages])
 
-    useEffect(() => {
-        keepComposerCurrentLineCentered(textareaRef.current)
-    }, [draft])
 
     useEffect(() => observeMessagePaneResize(scrollRef.current, () => followingLatestRef.current, true), [])
 
@@ -299,6 +293,17 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
         document.addEventListener("pointerdown", dismiss, true)
         return () => document.removeEventListener("pointerdown", dismiss, true)
     }, [actionMessageId])
+
+    async function toggleCheckbox(message: PortalMessage, line: number, checked: boolean) {
+        const response = await fetch(`/api/client-portal/session/${encodeURIComponent(token)}/checklist`, {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messageId: message.id, line, checked, expectedBody: message.body }),
+        })
+        const result = await response.json().catch(() => null)
+        if (!response.ok || typeof result?.body !== "string") throw new Error(result?.error ?? "Could not update checkbox. Try again.")
+        checklistRevisionRef.current++
+        setMessages((current) => current.map((item) => item.id === message.id ? { ...item, body: result.body } : item))
+    }
 
     async function loadOlder() {
         const pane = scrollRef.current
@@ -566,7 +571,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
                                 <p className={`${isSticker ? "mb-1 w-fit rounded-full bg-black/70 px-2 py-0.5 text-white/75" : `mb-1 ${own ? "text-white/70" : "text-[var(--onboarding-muted,#475569)]"}`} text-[10px] font-semibold`}>{senderLabel}</p>
                                 {message.replyToMessageId ? <div className={`mb-2 rounded-lg border-l-2 px-2.5 py-2 ${own ? "border-white/50 bg-black/10" : "border-[var(--onboarding-primary,#1E3A5F)]/40 bg-black/[0.03]"}`}><p className="truncate text-[10px] font-semibold opacity-70">{repliedMessage ? (repliedMessage.direction === "inbound" ? "You" : workspaceName) : "Replied message"}</p><p className="mt-0.5 truncate text-xs opacity-70">{repliedMessage ? messagePreview(repliedMessage) : "Message unavailable"}</p></div> : null}
                                 {message.attachment ? <MessageAttachment attachment={message.attachment} url={attachmentUrl} own={own} onOpenImage={setPreviewMedia} /> : null}
-                                {message.body && !(message.attachment && message.body === attachmentPlaceholder(message.attachment)) ? <MessageText body={message.body} own={own} /> : null}
+                                {message.body && !(message.attachment && message.body === attachmentPlaceholder(message.attachment)) ? <ChatMessageText body={message.body} className="text-[15px] leading-6" linkClassName={`underline decoration-1 underline-offset-2 ${own ? "decoration-white/60" : "text-[var(--onboarding-primary,#1E3A5F)]"}`} onToggleCheckbox={message.id.startsWith("local:") ? undefined : (line, checked) => toggleCheckbox(message, line, checked)} /> : null}
                                 {isSticker && message.reactions.length ? <div className={`absolute bottom-5 z-10 flex gap-0.5 ${own ? "right-0" : "left-0"}`}>{message.reactions.map((reaction) => <span key={reaction.id} title={reaction.direction === "inbound" ? "You reacted" : `${workspaceName} reacted`} className="rounded-full border border-black/15 bg-[var(--onboarding-surface,#FFFFFF)] px-1.5 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
                                 <div className={`mt-1.5 flex items-center justify-end gap-2 text-[10px] ${isSticker ? "ml-auto w-fit rounded-full bg-black/70 px-2 py-0.5 text-white/75" : own ? "text-white/65" : "text-[var(--onboarding-muted,#475569)]"}`}><time dateTime={message.createdAt}>{messageTime(message.createdAt)}</time>{message.sendState === "sending" ? <span>Sending…</span> : null}</div>
                                 {message.sendState === "failed" ? <div className="mt-2 border-t border-white/15 pt-2"><p className="text-xs text-white/85">{message.sendError}</p><button type="button" onClick={() => void sendMessage(message)} className="mt-1 text-xs font-semibold underline underline-offset-2">Try again</button></div> : null}
@@ -587,29 +592,15 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
                 {interactionError ? <div role="alert" className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700"><span>{interactionError}</span><button type="button" onClick={() => setInteractionError(null)} aria-label="Dismiss interaction error">×</button></div> : null}
                 {sendError ? <p role="alert" className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{sendError}</p> : null}
                 <form onSubmit={(event) => { event.preventDefault(); void sendMessage() }} className="flex touch-manipulation items-center gap-2 rounded-2xl border border-black/10 bg-[var(--onboarding-page,#F8F7F3)] p-1.5 focus-within:border-[var(--onboarding-primary,#1E3A5F)]/50">
-                    <textarea
-                        ref={textareaRef}
-                        rows={1}
+                    <ChatComposerInput
+                        inputRef={textareaRef}
                         value={draft}
-                        maxLength={4_000}
-                        enterKeyHint={/^ *(?:-|\d+\.) /m.test(draft) ? "enter" : "send"}
+                        onChange={setDraft}
+                        onSend={() => void sendMessage()}
+                        sendDisabled={!draft.trim()}
+                        maxLength={4000}
                         placeholder={`Message ${workspaceName}`}
-                        aria-label={`Message ${workspaceName}`}
-                        onPointerDown={(event) => {
-                            if (document.activeElement !== event.currentTarget) event.currentTarget.focus({ preventScroll: true })
-                        }}
-                        onClick={(event) => {
-                            if (document.activeElement !== event.currentTarget) event.currentTarget.focus({ preventScroll: true })
-                        }}
-                        onChange={(event) => setDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                            if (handleChatListKey(event, setDraft)) return
-                            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                                event.preventDefault()
-                                if (draft.trim()) void sendMessage()
-                            }
-                        }}
-                        className="h-11 min-h-11 min-w-0 flex-1 resize-none overscroll-y-none overflow-y-hidden bg-transparent px-2.5 py-2.5 text-base leading-6 outline-none transition-[height] duration-[180ms] ease-[cubic-bezier(0.25,0.1,0.25,1)] motion-reduce:transition-none placeholder:text-[var(--onboarding-muted,#475569)]/70 lg:text-sm lg:leading-5"
+                        portal
                     />
                     <button type="submit" disabled={!draft.trim()} aria-label="Send message" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--onboarding-primary,#1E3A5F)] text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-35"><SendIcon /></button>
                 </form>

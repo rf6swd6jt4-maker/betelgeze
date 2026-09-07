@@ -1,5 +1,6 @@
 "use client"
 
+import { chatCheckboxBody } from "@/lib/chat-formatting"
 import { ChatMessageText } from "@/components/communications/ChatMessageText"
 
 import Link from "next/link"
@@ -26,7 +27,6 @@ import { NativeChatViewport } from "@/components/communications/NativeChatViewpo
 import { NativeMessageBubble } from "@/components/communications/NativeMessageBubble"
 import { VoiceNotePlayer } from "@/components/communications/VoiceNotePlayer"
 import { UnreadMessageCount } from "@/components/communications/UnreadMessageCount"
-import { keepComposerCurrentLineCentered } from "@/components/communications/composer-scroll"
 import { createCoordinatedChat, chatMutationRequest, ChatMutationError, type ChatRead } from "@/lib/communications/coordinated-updates"
 import { useMessagePaneInteractions } from "@/components/communications/useMessagePaneInteractions"
 import { useReliableCommunicationsRealtime, type CommunicationsConnectionState } from "@/components/communications/useReliableCommunicationsRealtime"
@@ -132,9 +132,6 @@ function sameDay(left: string, right: string) {
     return new Date(left).toDateString() === new Date(right).toDateString()
 }
 
-function MessageBody({ body }: { body: string }) {
-    return <ChatMessageText body={body} />
-}
 
 function DeliveryTicks({ message }: { message: CommunicationMessage }) {
     const status = message.status.toLowerCase()
@@ -263,7 +260,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const searchRef = useRef<HTMLInputElement | null>(null)
     const attachmentInputRef = useRef<HTMLInputElement | null>(null)
     const stickerInputRef = useRef<HTMLInputElement | null>(null)
-    const composerRef = useRef<HTMLTextAreaElement | null>(null)
+    const composerRef = useRef<HTMLElement | null>(null)
     const attachmentRef = useRef<CommunicationAttachment | null>(null)
     const swipeStartRef = useRef<{ id: string; x: number; y: number; cancelled: boolean; maxDeltaX: number; verticalAtMax: number } | null>(null)
     const selectedRef = useRef(selectedId)
@@ -295,9 +292,6 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         return () => window.clearTimeout(timer)
     }, [bootstrap.workspaceId])
 
-    useEffect(() => {
-        keepComposerCurrentLineCentered(composerRef.current)
-    }, [draft])
 
     useConversationLayout(messagePaneRef, followLatestRef, selectedId, active && workspaceTabActive && documentVisible, setAtLatest, setShowJumpToLatest)
 
@@ -609,6 +603,18 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         const result = await response.json().catch(() => null) as { message?: CommunicationMessage; error?: string; retryable?: boolean } | null
         if (result?.message) updateConversationMessages(selected.id, [result.message], false, acknowledgementRead, true)
         else updateConversationMessages(selected.id, [{ ...optimistic, status: result?.retryable ? "send_failed" : "send_uncertain", error: result?.error ?? "Could not send sticker", failedAt: result?.retryable ? new Date().toISOString() : null }])
+    }
+
+    async function toggleCheckbox(message: CommunicationMessage, line: number, checked: boolean) {
+        const body = chatCheckboxBody(message.body, line, checked)
+        if (body === null) return
+        try {
+            await updates.mutateMessage(message.id, { ...message, body }, async () => {
+                const result = await chatMutationRequest<{ message?: CommunicationMessage }>(`/api/workspaces/${bootstrap.workspaceSlug}/communications/checklist`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ relationshipId: message.relationshipId, messageId: message.id, line, checked, expectedBody: message.body }) })
+                if (!result.message) throw new ChatMutationError("Could not confirm the checkbox change.", true)
+                return result.message
+            })
+        } finally { void synchronize().catch(() => undefined) }
     }
 
     async function sendReaction(message: CommunicationMessage, emoji: string) {
@@ -1018,7 +1024,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                                         <p className={`${isSticker ? "mb-1 w-fit rounded-full bg-neutral-950/80 px-2 py-0.5 text-neutral-400" : `mb-0.5 leading-none ${isWhatsAppClientMessage ? "text-white/70" : "text-neutral-500"}`} text-[10px] font-semibold`}>{sender}</p>
                                         {message.replyToMessageId || message.replyToProviderMessageId ? <button type="button" disabled={!repliedMessage} aria-label="Jump to replied message" onPointerDown={(event) => { if (event.button === 0) event.preventDefault() }} onClick={(event) => { event.stopPropagation(); if (repliedMessage) jumpToMessage(repliedMessage.id) }} className={`block w-full text-left disabled:cursor-default focus-visible:outline focus-visible:outline-2 mb-2 rounded-lg border-l-2 px-2.5 py-2 ${isWhatsAppClientMessage ? "border-white/40 bg-black/20" : message.direction === "outbound" ? "border-neutral-500 bg-black/10" : "border-neutral-500 bg-black/35"}`}><p className="truncate text-[10px] font-semibold opacity-70">{repliedMessage ? senderName(repliedMessage) : "Replied message"}</p><p className="mt-0.5 truncate text-xs opacity-65">{repliedMessage ? messagePreview(repliedMessage) : "Message unavailable"}</p></button> : null}
                                         {message.attachment ? <MessageAttachment key={message.attachment.storagePath} attachment={message.attachment} onOpenImage={setPreviewMedia} light={message.direction === "outbound"} whiteOnColor={isWhatsAppClientMessage} /> : null}
-                                        {message.body && !(message.attachment && message.body === attachmentPlaceholder(message.attachment)) ? <MessageBody body={message.body} /> : null}
+                                        {message.body && !(message.attachment && message.body === attachmentPlaceholder(message.attachment)) ? <ChatMessageText body={message.body} onToggleCheckbox={selected.canSend && message.id !== message.clientRequestId ? (line, checked) => toggleCheckbox(message, line, checked) : undefined} /> : null}
                                         {isSticker && messageReactions.length ? <div className={`absolute bottom-5 z-10 flex gap-0.5 ${message.direction === "outbound" ? "right-0" : "left-0"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.direction}`} title={reaction.direction === "inbound" ? `Reacted by ${selected.title}` : `Reacted in Betelgeze by ${peopleById.get(reaction.reactorUserId ?? "")?.name ?? "Team"}`} className="rounded-full border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
                                         <div className={`mt-1.5 flex items-center justify-between gap-3 text-[10px] ${isSticker ? "ml-auto min-w-20 rounded-full bg-neutral-950/80 px-2 py-0.5 text-neutral-400" : isWhatsAppClientMessage ? "text-white/65" : message.direction === "outbound" ? "text-neutral-500" : "text-neutral-600"}`}><MessageReadAvatars readers={readers} /><span className="flex shrink-0 items-center gap-1.5"><time dateTime={message.createdAt}>{messageTime(message.createdAt)}</time>{message.direction === "outbound" ? <DeliveryTicks message={message} /> : null}</span></div>
                                         {message.error ? <p className={`mt-1 text-[10px] ${message.status === "send_failed" || message.status === "delivery_failed" ? "text-red-600" : "text-amber-700"}`}>{message.error}</p> : null}

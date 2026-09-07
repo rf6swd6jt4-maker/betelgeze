@@ -122,12 +122,11 @@ test("Communications interactions are durable and native to WhatsApp", async () 
 })
 
 test("message interactions keep the approved mobile and profile parity", async () => {
-    const [clients, team, composer, composerPreview, composerScroll, keyboardSlide, page, bootstrap, panel, types, icons, shell, resizableColumns, jumpToLatest, messagePaneScroll, globals, actions, pinnedBar, rootLayout, paneInteractions, composerViewport, readAvatars] = await Promise.all([
+    const [clients, team, composer, composerPreview, keyboardSlide, page, bootstrap, panel, types, icons, shell, resizableColumns, jumpToLatest, messagePaneScroll, globals, actions, pinnedBar, rootLayout, paneInteractions, composerViewport, readAvatars] = await Promise.all([
         readFile("components/communications/CommunicationsWorkspace.tsx", "utf8"),
         readFile("components/communications/TeamCommunicationsWorkspace.tsx", "utf8"),
         readFile("components/communications/MessageComposer.tsx", "utf8"),
         readFile("components/communications/ComposerMessagePreview.tsx", "utf8"),
-        readFile("components/communications/composer-scroll.ts", "utf8"),
         readFile("components/communications/composer-keyboard-slide.ts", "utf8"),
         readFile("app/[workspaceSlug]/communications/page.tsx", "utf8"),
         readFile("lib/communications/bootstrap.ts", "utf8"),
@@ -210,18 +209,22 @@ test("message interactions keep the approved mobile and profile parity", async (
     assert.doesNotMatch(team, /onClick=\{\(\) => composerRef\.current\?\.blur\(\)\}/)
     assert.doesNotMatch(clients, /onPointerDown=\{\(\) => composerRef\.current\?\.blur\(\)\}/)
     assert.doesNotMatch(team, /onPointerDown=\{\(\) => composerRef\.current\?\.blur\(\)\}/)
+    const richComposer = await readFile("components/communications/ChatComposerInput.tsx", "utf8")
     assert.match(composer, /max-w-3xl touch-manipulation items-center/)
-    assert.match(composer, /onPointerDown=\{\(event\) => \{[\s\S]{0,400}event\.currentTarget\.focus\(\{ preventScroll: true \}\)/)
-    assert.match(composer, /onClick=\{\(event\) => \{/)
-    assert.match(composer, /document\.activeElement !== event\.currentTarget/)
     assert.doesNotMatch(composer, /onPointerDown=\{[\s\S]{0,400}event\.preventDefault\(\)|setSelectionRange/)
+    assert.match(richComposer, /view\.contentDOM\.focus\(\{ preventScroll: true \}\)/)
+    assert.match(richComposer, /view\.composing/)
+    assert.match(richComposer, /historyKeymap/)
+    assert.match(richComposer, /maxHeight: "116px"/)
+    assert.match(richComposer, /maxHeight: "156px"/)
+    assert.match(composer, /ChatComposerInput/)
     assert.match(composer, /reportWorkspaceComposerFocus\(true\)/)
     assert.match(composer, /document\.addEventListener\("visibilitychange", blurComposerWhenHidden\)/)
     assert.match(composer, /window\.addEventListener\("pagehide", blurComposer\)/)
     assert.match(composer, /reportWorkspaceComposerFocus\(false\)/)
     assert.match(composerViewport, /WORKSPACE_COMPOSER_FOCUS_EVENT/)
     assert.match(composerViewport, /window\.parent === window/)
-    assert.match(composerViewport, /export function closeWorkspaceComposer\(composer: HTMLTextAreaElement \| null\)/)
+    assert.match(composerViewport, /export function closeWorkspaceComposer\(composer: HTMLElement \| null\)/)
     assert.match(composerViewport, /composer\?\.blur\(\)[\s\S]*reportWorkspaceComposerFocus\(false\)/)
     for (const source of [clients, team]) assert.match(source, /(?:const )?selectConversation[\s\S]{0,180}closeWorkspaceComposer\(composerRef\.current\)/)
     assert.match(team, /<button data-icon-button type="button" onClick=\{\(event\) => \{ event\.stopPropagation\(\); openWorkspaceMemberProfile\(message\.senderUserId\) \}\} className=\{`\$\{isSticker/)
@@ -270,11 +273,7 @@ test("message interactions keep the approved mobile and profile parity", async (
     assert.match(team, /former member/)
     assert.match(team, /NativeDeliveryTicks/)
     assert.match(team, /read=\{readers\.length > 0\}/)
-    assert.match(composer, /text-base leading-6[^\"]*lg:text-sm lg:leading-5/)
-    assert.match(composer, /enterKeyHint=\{[^\n]+"enter" : "send"\}/)
-    assert.match(composer, /event\.nativeEvent\.isComposing/)
     assert.match(composer, /hidden max-w-3xl[^\"]*lg:block/)
-    assert.match(composer, /h-11 min-h-11[^\"]*lg:h-9 lg:min-h-9/)
     assert.match(clients, /selected\.canSend \? `Message \$\{selected\.title\}`/)
     assert.match(team, /selected\.canWrite \? `Message \$\{selected\.title\}`/)
     assert.match(clients, /<SquarePill tone="yellow" className="!min-h-5/)
@@ -319,17 +318,6 @@ test("message interactions keep the approved mobile and profile parity", async (
     assert.match(team, /<MessageComposer/)
     assert.doesNotMatch(clients, /window\.addEventListener\("resize", resizeComposer\)/)
     assert.doesNotMatch(team, /window\.addEventListener\("resize", resizeComposer\)/)
-    assert.match(clients, /keepComposerCurrentLineCentered\(composerRef\.current\)/)
-    assert.match(team, /keepComposerCurrentLineCentered\(composerRef\.current\)/)
-    assert.match(composer, /transition-\[height\] duration-\[180ms\] ease-\[cubic-bezier\(0\.25,0\.1,0\.25,1\)\] motion-reduce:transition-none/)
-    assert.match(composerScroll, /maximumLines = window\.matchMedia\("\(min-width: 1024px\)"\)\.matches \? 7 : 4/)
-    assert.match(composerScroll, /const currentHeight = textarea\.getBoundingClientRect\(\)\.height \|\| minimumHeight/)
-    assert.match(composerScroll, /const measurement = textarea\.cloneNode\(false\)/)
-    assert.match(composerScroll, /const measurementHost = textarea\.parentElement \?\? document\.body[\s\S]*measurementHost\.appendChild\(measurement\)/)
-    assert.doesNotMatch(composerScroll, /textarea\.style\.height = `\$\{minimumHeight\}px`/)
-    assert.match(composerScroll, /const nextHeight = Math\.min\(maximumHeight/)
-    assert.match(composerScroll, /textarea\.style\.transition = "none"[\s\S]*textarea\.style\.height = `\$\{currentHeight\}px`[\s\S]*textarea\.style\.transition = inlineTransition[\s\S]*textarea\.style\.height = `\$\{nextHeight\}px`/)
-    assert.match(composerScroll, /textarea\.scrollTop = Math\.max\(0, textarea\.scrollHeight - textarea\.clientHeight\)/)
     for (const source of [clients, team]) {
         assert.doesNotMatch(source, /messageContentRef|composerFooterRef|useComposerKeyboardSlide/)
         assert.match(source, /<div className="mx-auto flex min-h-full w-full min-w-0 max-w-3xl flex-col/)

@@ -28,9 +28,13 @@ Preserve embedded links, buttons, audio/video controls, and scrolling. Keyboard 
 
 ## Chat message formatting
 
-Client, team/direct, and portal message bodies use `ChatMessageText`. Supported inline syntax is `**bold**`, `__italic__`, and `~~strikethrough~~`; HTTP(S) links remain clickable and message HTML remains plain text. Message-content lists use semantic `ol`/`ul` elements, with `1. ` and `- ` markers and two-space nesting. These are authored message content, not record collections covered by `List`.
+Client, team/direct, and portal message bodies use `ChatMessageText`. Supported inline syntax is `**bold**`, `__italic__`, `~~strikethrough~~`, and `##heading##` (slightly larger and bold). HTTP(S) links remain clickable and message HTML remains plain text. Message-content lists use semantic `ol`/`ul` elements, with `1. `, `- `, and `[ ] ` markers and two-space nesting. These are authored message content, not record collections covered by `List`.
 
-Composers share `chatListEdit` and the chat composer list handlers. Enter continues a list and increments numbered markers; Enter on an empty item removes the marker and exits the list. Tab/Shift+Tab indent/outdent a list line by two spaces. Shift+Enter inserts a plain newline, and Enter outside a list retains send behavior. The send button remains available while composing lists.
+Composers share `ChatComposerInput`, a CodeMirror text editor with live formatting and dimmed, editable syntax characters. Keep native selection, composition, paste, undo/redo, responsive wrapping, and keyboard navigation intact. Programmatic draft replacement resets undo history so text from another conversation cannot be restored. The editor grows up to the existing four-line mobile/seven-line desktop area and then scrolls; viewport focus/blur remains shell-owned.
+
+Enter continues a list and increments numbered markers; new checkbox items are always unchecked. Enter on an empty item removes the marker and exits the list. Tab/Shift+Tab indent/outdent a list line by two spaces. Shift+Enter inserts a plain newline, and Enter outside a list retains send behavior. The send button remains available while composing lists.
+
+Sent checkbox items use `[ ]`/`[x]` and an accessible checkbox control. Checking an item strikes through its text. Users with write access to a native chat, authorized staff in a client chat, and active relationship-scoped portal participants may toggle items. A dedicated action validates the stored checklist, changes only that marker, and uses a conditional encrypted-body update to preserve simultaneous changes. It does not grant general message editing rights or transmit an edit to SMS/WhatsApp. Activity records the actor, message, item line, and state without copying message text. Existing message subscriptions and portal refreshes distribute the saved state.
 
 ## Status
 

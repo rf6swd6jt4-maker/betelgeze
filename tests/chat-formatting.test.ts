@@ -30,3 +30,23 @@ test("list editing respects cursor, selection, indentation, and following text",
     assert.equal(chatListEdit("- \nafter", 2, 2, "Enter")?.value, "\nafter")
     assert.equal(chatListLine("1.2 decimal"), null)
 })
+
+test("headers and checkbox lists preserve their source and continue unchecked", async () => {
+    const { chatCheckboxBody, chatComposerDecorations, sameChatChecklist } = await import("../lib/chat-formatting.ts")
+    assert.deepEqual(parseChatInline("##Title **bold**##"), [{ kind: "header", children: [{ kind: "text", text: "Title " }, { kind: "bold", children: [{ kind: "text", text: "bold" }] }] }])
+    const original = "##Plan##\n[ ] One\n  [x] Two"
+    const checked = chatCheckboxBody(original, 1, true)!
+    assert.equal(checked, "##Plan##\n[x] One\n  [x] Two")
+    assert.equal(chatCheckboxBody(checked, 1, false), original)
+    assert.equal(chatCheckboxBody(original, 0, true), null)
+    assert.equal(chatCheckboxBody(original, 99, true), null)
+    assert.equal(sameChatChecklist(original, checked), true)
+    assert.equal(sameChatChecklist(original, original.replace("One", "Changed")), false)
+    assert.equal(sameChatChecklist(original, original.replace("[ ] One\n", "")), false)
+    const continued = chatListEdit(original, original.length, original.length, "Enter")!
+    assert.equal(continued.value, original + "\n  [ ] ")
+    assert.equal(chatListEdit(continued.value, continued.start, continued.end, "Enter")?.value, original + "\n")
+    const marks = chatComposerDecorations("##Title## **bold __nested__**")
+    assert.ok(marks.some((mark) => mark.className === "chat-header" && mark.from === 0 && mark.to === 9))
+    for (const mark of marks.filter((mark) => mark.className === "chat-syntax")) assert.match("##Title## **bold __nested__**".slice(mark.from, mark.to), /^(##|\*\*|__)$/)
+})

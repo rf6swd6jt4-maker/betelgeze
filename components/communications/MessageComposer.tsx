@@ -1,6 +1,6 @@
 "use client"
 
-import { handleChatListKey, useChatListInput } from "@/components/communications/chat-composer-list"
+import { ChatComposerInput } from "@/components/communications/ChatComposerInput"
 
 import { useEffect, type ReactNode, type RefObject } from "react"
 import { reportWorkspaceComposerFocus } from "@/lib/workspace-composer-viewport"
@@ -18,7 +18,7 @@ export function MessageComposer({
     onBlur,
     onSend,
 }: {
-    textareaRef: RefObject<HTMLTextAreaElement | null>
+    textareaRef: RefObject<HTMLElement | null>
     draft: string
     placeholder: string
     disabled: boolean
@@ -30,8 +30,6 @@ export function MessageComposer({
     onBlur?: () => void
     onSend: () => void
 }) {
-    useChatListInput(textareaRef, onDraftChange)
-
     useEffect(() => {
         const blurComposer = () => textareaRef.current?.blur()
         const blurComposerWhenHidden = () => {
@@ -56,41 +54,17 @@ export function MessageComposer({
             className="mx-auto flex max-w-3xl touch-manipulation items-center gap-1.5 rounded-2xl border border-neutral-800 bg-black px-1.5 py-1.5 focus-within:border-neutral-600"
         >
             <div className="flex shrink-0 items-center -space-x-1">{leadingActions}</div>
-            <div className="relative min-w-0 flex-1">
-                {!draft ? <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 truncate text-base leading-6 text-neutral-600 lg:text-sm lg:leading-5">{placeholder}</span> : null}
-                <textarea
-                    ref={textareaRef}
-                    rows={1}
-                    value={draft}
-                    enterKeyHint={/^ *(?:-|\d+\.) /m.test(draft) ? "enter" : "send"}
-                    onPointerDown={(event) => {
-                        // Prevent iOS from panning the iframe before its keyboard animation,
-                        // while leaving the native pointer/click activation intact.
-                        if (document.activeElement !== event.currentTarget) event.currentTarget.focus({ preventScroll: true })
-                    }}
-                    onClick={(event) => {
-                        if (document.activeElement !== event.currentTarget) event.currentTarget.focus({ preventScroll: true })
-                    }}
-                    onChange={(event) => onDraftChange(event.target.value)}
-                    onFocus={() => {
-                        reportWorkspaceComposerFocus(true)
-                    }}
-                    onBlur={() => {
-                        reportWorkspaceComposerFocus(false)
-                        onBlur?.()
-                    }}
-                    onKeyDown={(event) => {
-                        if (handleChatListKey(event, onDraftChange)) return
-                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                            event.preventDefault()
-                            if (!sendDisabled) onSend()
-                        }
-                    }}
-                    disabled={disabled}
-                    aria-label={placeholder}
-                    className="relative block h-11 min-h-11 w-full resize-none overscroll-y-none overflow-y-hidden bg-transparent py-2.5 text-base leading-6 outline-none transition-[height] duration-[180ms] ease-[cubic-bezier(0.25,0.1,0.25,1)] motion-reduce:transition-none disabled:cursor-not-allowed lg:h-9 lg:min-h-9 lg:py-2 lg:text-sm lg:leading-5"
-                />
-            </div>
+            <ChatComposerInput
+                inputRef={textareaRef}
+                value={draft}
+                onChange={onDraftChange}
+                onSend={onSend}
+                placeholder={placeholder}
+                disabled={disabled}
+                sendDisabled={sendDisabled}
+                onFocus={() => reportWorkspaceComposerFocus(true)}
+                onBlur={() => { reportWorkspaceComposerFocus(false); onBlur?.() }}
+            />
             <button data-icon-button type="submit" disabled={sendDisabled} aria-label={submitLabel} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-black disabled:bg-neutral-800 disabled:text-neutral-600 lg:h-9 lg:w-9">
                 {submitIcon ?? <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2"><path d="m4 4 17 8-17 8 3-8-3-8Z" /><path d="M7 12h14" /></svg>}
             </button>

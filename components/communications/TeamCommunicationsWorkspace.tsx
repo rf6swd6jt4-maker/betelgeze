@@ -1,5 +1,6 @@
 "use client"
 
+import { chatCheckboxBody } from "@/lib/chat-formatting"
 import { ChatMessageText } from "@/components/communications/ChatMessageText"
 
 import Image from "next/image"
@@ -26,7 +27,6 @@ import { NativeMessageBubble } from "@/components/communications/NativeMessageBu
 import { NativeAttachment } from "@/components/communications/NativeAttachment"
 import { validateNativeAttachmentFile } from "@/lib/communications/native-attachments"
 import { UnreadMessageCount } from "@/components/communications/UnreadMessageCount"
-import { keepComposerCurrentLineCentered } from "@/components/communications/composer-scroll"
 import { createCoordinatedChat, chatMutationRequest, ChatMutationError, type ChatRead } from "@/lib/communications/coordinated-updates"
 import { useMessagePaneInteractions } from "@/components/communications/useMessagePaneInteractions"
 import { useReliableCommunicationsRealtime, type CommunicationsConnectionState } from "@/components/communications/useReliableCommunicationsRealtime"
@@ -88,9 +88,6 @@ function AttachmentIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true" c
 function StickerIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2"><path d="M5 3h10a4 4 0 0 1 4 4v7l-7 7H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" /><path d="M12 21v-5a2 2 0 0 1 2-2h5" /><path d="M7 9h.01M15 9h.01M8 13c1.5 1.2 6.5 1.2 8 0" /></svg> }
 function TeamIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2"><circle cx="8" cy="8" r="3" /><circle cx="16" cy="9" r="2.5" /><path d="M3 19c0-3 2-5 5-5s5 2 5 5" /><path d="M13 15c1-.8 2-1.2 3.5-1 2.5.3 4 2.1 4 4.5" /></svg> }
 
-function MessageText({ body }: { body: string }) {
-    return <ChatMessageText body={body} />
-}
 
 function TeamAvatar({ conversation, currentUserId }: { conversation: NativeConversation; currentUserId: string }) {
     if (conversation.kind === "team") return <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-800 text-neutral-300"><TeamIcon /></span>
@@ -224,7 +221,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const followLatestRef = useRef(true)
     const messageAnimationTimersRef = useRef<number[]>([])
     const knownMessageKeysRef = useRef(new Set(bootstrap.conversations.flatMap((conversation) => conversation.messages.map(messageAnimationKey))))
-    const composerRef = useRef<HTMLTextAreaElement | null>(null)
+    const composerRef = useRef<HTMLElement | null>(null)
     const attachmentInputRef = useRef<HTMLInputElement | null>(null)
     const stickerInputRef = useRef<HTMLInputElement | null>(null)
     const swipeStartRef = useRef<MessageSwipe | null>(null)
@@ -246,7 +243,6 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     useEffect(() => { conversationsRef.current = conversations }, [conversations])
     useEffect(() => { const update = () => setDocumentVisible(document.visibilityState === "visible"); document.addEventListener("visibilitychange", update); return () => document.removeEventListener("visibilitychange", update) }, [])
     useEffect(() => { const timer = window.setTimeout(() => setRecentReaction(localStorage.getItem(`betelgeze:communications:recent-reaction:${bootstrap.workspaceId}`)), 0); return () => window.clearTimeout(timer) }, [bootstrap.workspaceId])
-    useEffect(() => { keepComposerCurrentLineCentered(composerRef.current) }, [draft])
     useConversationLayout(messagePaneRef, followLatestRef, selectedId, active && workspaceTabActive && documentVisible, setAtLatest, setShowJumpToLatest)
     useEffect(() => () => messageAnimationTimersRef.current.forEach((timer) => window.clearTimeout(timer)), [])
     useEffect(() => {
@@ -581,6 +577,18 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         finally { setEditState("idle"); void refresh().catch(() => undefined) }
     }
 
+    async function toggleCheckbox(message: NativeMessage, line: number, checked: boolean) {
+        const body = chatCheckboxBody(message.body, line, checked)
+        if (body === null) return
+        try {
+            await updates.mutateMessage(message.id, { ...message, body }, async () => {
+                const result = await chatMutationRequest<{ message?: NativeMessage }>(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/checklist`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: message.conversationId, messageId: message.id, line, checked, expectedBody: message.body }) })
+                if (!result.message) throw new ChatMutationError("Could not confirm the checkbox change.", true)
+                return result.message
+            })
+        } finally { void refresh().catch(() => undefined) }
+    }
+
     async function sendReaction(message: NativeMessage, emoji: string) {
         if (!selected?.canWrite) return
         const conversationId = selected.id
@@ -810,7 +818,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                                         : <button data-icon-button type="button" onClick={(event) => { event.stopPropagation(); openWorkspaceMemberProfile(message.senderUserId) }} className={`${isSticker ? "mb-1 w-fit rounded-full bg-neutral-950/80 px-2 py-0.5" : "mb-0.5"} block text-[10px] font-semibold leading-none text-neutral-500 hover:underline`}>{own ? "You" : sender?.name ?? "Team member"}</button> : null}
                                     {reply ? <button type="button" aria-label="Jump to replied message" onPointerDown={(event) => { if (event.button === 0) event.preventDefault() }} onClick={(event) => { event.stopPropagation(); jumpToMessage(reply.id) }} className={`block w-full text-left focus-visible:outline focus-visible:outline-2 mb-2 rounded-lg border-l-2 border-neutral-500 px-2.5 py-2 ${own ? "bg-black/10" : "bg-black/35"}`}><p className="truncate text-[10px] font-semibold opacity-70">{reply.senderUserId === bootstrap.currentUser.id ? "You" : peopleById.get(reply.senderUserId)?.name ?? "Team member"}</p><p className="mt-0.5 truncate text-xs opacity-65">{messagePreview(reply)}</p></button> : null}
                                     {message.attachment ? <NativeAttachment key={message.attachment.storagePath} attachment={message.attachment} onOpenImage={setPreviewMedia} light={own} /> : null}
-                                    {message.body ? <MessageText body={message.body} /> : null}
+                                    {message.body ? <ChatMessageText body={message.body} onToggleCheckbox={selected.canWrite && message.id !== message.clientRequestId ? (line, checked) => toggleCheckbox(message, line, checked) : undefined} /> : null}
                                     {isSticker && messageReactions.length ? <div className={`absolute bottom-5 z-10 flex gap-0.5 ${own ? "right-0" : "left-0"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.reactorUserId}`} title={`${peopleById.get(reaction.reactorUserId)?.name ?? "Team member"} reacted`} className="rounded-full border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
                                     <div className={`mt-1.5 flex items-center justify-between gap-3 text-[10px] ${isSticker ? "ml-auto min-w-20 rounded-full bg-neutral-950/80 px-2 py-0.5 text-neutral-400" : own ? "text-neutral-500" : "text-neutral-600"}`}>
                                         {selected.kind === "team" ? <MessageReadAvatars readers={readers} /> : <span />}

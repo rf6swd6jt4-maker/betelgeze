@@ -5,7 +5,7 @@ import { useRef, type PointerEvent, type RefObject } from "react"
 const POINTER_SCROLL_THRESHOLD_PX = 6
 
 export function useMessagePaneInteractions(
-    composerRef: RefObject<HTMLTextAreaElement | null>,
+    composerRef: RefObject<HTMLElement | null>,
 ) {
     const pointerGestureRef = useRef<{ pointerId: number; x: number; y: number; moved: boolean } | null>(null)
 

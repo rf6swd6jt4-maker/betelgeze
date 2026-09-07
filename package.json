@@ -17,6 +17,9 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1057.0",
     "@aws-sdk/s3-request-presigner": "^3.1057.0",
+    "@codemirror/commands": "^6.11.0",
+    "@codemirror/state": "^6.7.4",
+    "@codemirror/view": "^6.43.11",
     "@duckdb/node-api": "^1.5.4-r.1",
     "@mapbox/vector-tile": "^3.0.0",
     "@react-email/render": "^2.1.0",

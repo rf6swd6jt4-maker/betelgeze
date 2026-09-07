@@ -56,18 +56,30 @@ async function googleRequest(url: string, init: RequestInit, fetcher: typeof fet
 export class GoogleAdsApiError extends Error {
     codes: string[]
     status: number
-    constructor(message: string, codes: string[], status: number) {
+    step: string
+    constructor(message: string, codes: string[], status: number, step = "authorization") {
         super(message)
         this.name = "GoogleAdsApiError"
         this.codes = codes
         this.status = status
+        this.step = step
     }
 }
 
-function adsError(payload: unknown, status: number): GoogleAdsApiError {
+function adsError(payload: unknown, status: number, step: string): GoogleAdsApiError {
     const error = (payload as { error?: { details?: Array<{ errors?: Array<{ errorCode?: Record<string, string> }>; reason?: string }> } })?.error
     const codes = error?.details?.flatMap((detail) => [detail.reason, ...(detail.errors?.flatMap((item) => Object.values(item.errorCode ?? {})) ?? [])]) ?? []
-    return new GoogleAdsApiError(adsErrorMessage(codes.filter((code): code is string => Boolean(code)), status), codes.filter((code): code is string => Boolean(code)), status)
+    const safeCodes = codes.filter((code): code is string => typeof code === "string" && /^[A-Z][A-Z0-9_]{1,99}$/.test(code))
+    return new GoogleAdsApiError(adsErrorMessage(safeCodes, status), safeCodes, status, step)
+}
+
+/** Owner-facing diagnostics contain local messages and enum codes, never raw Google payloads. */
+export function googleAdsDiagnosticError(error: unknown) {
+    if (!(error instanceof GoogleAdsApiError)) return error instanceof Error ? error.message : "Google Ads could not be checked."
+    const message = error.codes.includes("USER_PERMISSION_DENIED") && error.step === "invitation"
+        ? "Google denied permission to send the manager invitation. Check the service account's Admin access in Google Ads."
+        : error.message
+    return `${message} [${error.step}; HTTP ${error.status}; ${error.codes.join(", ") || "NO_ERROR_CODE"}]`.slice(0, 500)
 }
 
 function adsErrorMessage(codes: string[], status: number): string {
@@ -107,14 +119,14 @@ type GoogleAdsRow = {
     customerClientLink?: { status?: string; resourceName?: string; managerLinkId?: string }
 }
 
-async function adsCall(config: GoogleAdsConfig, token: string, customerId: string, method: string, body: unknown, fetcher: typeof fetch) {
+async function adsCall(config: GoogleAdsConfig, token: string, customerId: string, method: string, body: unknown, fetcher: typeof fetch, step = "manager") {
     const response = await googleRequest(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/${method}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "developer-token": config.developer_token, "login-customer-id": config.manager_customer_id, "Content-Type": "application/json" },
         body: JSON.stringify(body),
     }, fetcher)
     const payload = await response.json().catch(() => null)
-    if (!response.ok) throw adsError(payload, response.status)
+    if (!response.ok) throw adsError(payload, response.status, step)
     return payload as { results?: GoogleAdsRow[]; result?: { resourceName?: string } } | null
 }
 
@@ -146,12 +158,14 @@ export async function connectGoogleAdsClient(
     customerId: string,
     sendRequest: boolean,
     fetcher: typeof fetch = fetch,
+    validateOnly = false,
 ) {
     if (!/^\d{10}$/.test(customerId)) throw new Error("Enter your 10-digit Google Ads customer ID.")
     const config = normalizeGoogleAdsConfig(input)
     if (customerId === config.manager_customer_id) throw new Error("Enter the account that runs your ads, rather than the agency’s manager account.")
     const token = await authorizeGoogleAds(config, fetcher)
-    const search = (query: string, id = config.manager_customer_id) => adsCall(config, token, id, "googleAds:search", { query }, fetcher)
+    const search = (query: string, id = config.manager_customer_id) => adsCall(config, token, id, "googleAds:search", { query }, fetcher,
+        id !== config.manager_customer_id ? "client_access" : query.includes("FROM customer_client_link") ? "invitation_lookup" : "account_hierarchy")
     const hierarchy = await search(`SELECT customer_client.id, customer_client.level, customer_client.manager, customer_client.status FROM customer_client WHERE customer_client.id = ${customerId} LIMIT 1`)
     const child = hierarchy?.results?.[0]?.customerClient
     if (child && String(child.id) === customerId && Number(child.level) > 0) {
@@ -171,8 +185,9 @@ export async function connectGoogleAdsClient(
     try {
         const invitation = await adsCall(config, token, config.manager_customer_id, "customerClientLinks:mutate", {
             operation: { create: { clientCustomer: `customers/${customerId}`, status: "PENDING" } },
-        }, fetcher)
-        if (!invitation?.result?.resourceName) throw new Error("Google did not confirm the access request. Try again before approving in Google Ads.")
+            ...(validateOnly ? { validateOnly: true } : {}),
+        }, fetcher, "invitation")
+        if (!validateOnly && !invitation?.result?.resourceName) throw new Error("Google did not confirm the access request. Try again before approving in Google Ads.")
     } catch (error) {
         // Another tab or a response lost in transit may already have created the invitation.
         if (error instanceof GoogleAdsApiError && error.codes.some((code) => ["ALREADY_INVITED_BY_THIS_MANAGER", "ALREADY_MANAGED_BY_THIS_MANAGER"].includes(code))) return { status: "pending" as const }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { generateKeyPairSync } from "node:crypto"
 import { readFileSync, readdirSync } from "node:fs"
 import test from "node:test"
-import { connectGoogleAdsClient, googleAdsClientError } from "../lib/google-ads.ts"
+import { connectGoogleAdsClient, googleAdsClientError, googleAdsDiagnosticError } from "../lib/google-ads.ts"
 import { createConnectionBlock } from "../lib/onboarding/block-definition.ts"
 import { formatGoogleAdsCustomerId, googleAdsOnboardingResponse, normalizeGoogleAdsCustomerId } from "../lib/onboarding/google-ads-state.ts"
 
@@ -43,6 +43,34 @@ test("new client access sends one pending invitation from the manager and never 
     assert.deepEqual(calls[2].body, { operation: { create: { clientCustomer: `customers/${customerId}`, status: "PENDING" } } })
     assert.ok(calls.every((call) => call.headers.get("login-customer-id") === config.manager_customer_id))
     assert.doesNotMatch(JSON.stringify(calls), /customerManagerLinks|"status":"ACTIVE"/)
+})
+
+test("owner diagnostics validate invitations without creating them", async () => {
+    const { calls, fetcher } = mock([empty, empty, {}])
+    assert.deepEqual(await connectGoogleAdsClient(config, customerId, true, fetcher, true), { status: "pending" })
+    assert.equal(calls[2].body.validateOnly, true)
+    assert.equal(calls.filter((call) => call.url.includes("mutate")).length, 1)
+})
+
+test("diagnostics distinguish the failed operation and retain only safe provider codes", async () => {
+    for (const [responses, step] of [
+        [[], "account_hierarchy"],
+        [[empty], "invitation_lookup"],
+        [[empty, empty], "invitation"],
+    ] as const) {
+        const { fetcher } = mock([...responses, Response.json({ error: { message: key, details: [{ errors: [
+            { errorCode: { authorizationError: "USER_PERMISSION_DENIED" }, message: "secret-token" },
+            { errorCode: { internalError: key } },
+        ] }] } }, { status: 403 })])
+        await assert.rejects(connectGoogleAdsClient(config, customerId, true, fetcher, true), (error: Error) => {
+            const message = googleAdsDiagnosticError(error)
+            assert.ok(message.includes(`[${step}; HTTP 403; USER_PERMISSION_DENIED]`))
+            if (step === "invitation") assert.match(message, /Admin access/)
+            assert.doesNotMatch(message, /PRIVATE KEY|secret-token/)
+            assert.doesNotMatch(googleAdsClientError(error), /USER_PERMISSION_DENIED|HTTP/)
+            return true
+        })
+    }
 })
 
 test("retries reuse pending invitations and verification never sends a new request", async () => {

@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { requireWorkspace } from "@/lib/workspaces"
-import { googleAdsConfigFromForm } from "@/lib/google-ads"
+import { connectGoogleAdsClient, googleAdsConfigFromForm, googleAdsDiagnosticError } from "@/lib/google-ads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { storeWorkspaceImage } from "@/lib/onboarding/uploads"
 import {
     discardWorkspaceIntegrationCandidate,
     disconnectWorkspaceIntegration,
+    getWorkspaceProviderConfig,
     INTEGRATION_PROVIDERS,
     IntegrationProvider,
     restorePreviousWorkspaceIntegration,
@@ -168,6 +169,27 @@ export async function verifyWorkspaceConnection(slug: string, provider: Integrat
 }
 
 export type WorkspaceConnectionActionResult = { ok: true } | { ok: false; error: string }
+
+export async function diagnoseGoogleAdsOnboarding(slug: string): Promise<{ ok: boolean; message: string }> {
+    const { workspace } = await requireWorkspace(slug, "owner")
+    const { data: failed, error } = await supabaseAdmin.from("relationship_google_ads_connections")
+        .select("relationship_id, customer_id, manager_customer_id, updated_at")
+        .eq("workspace_id", workspace.id).eq("status", "needs_attention").order("updated_at", { ascending: false }).limit(1).maybeSingle()
+    if (error) return { ok: false, message: "Could not load the failed onboarding connection." }
+    if (!failed) return { ok: true, message: "There are no failed Google Ads onboarding connections to check." }
+    try {
+        const config = await getWorkspaceProviderConfig(workspace.id, "google_ads")
+        if (config.manager_customer_id !== failed.manager_customer_id) throw new Error("The agency manager has changed. Ask the client to restart the Google Ads connection.")
+        const result = await connectGoogleAdsClient(config, failed.customer_id, true, fetch, true)
+        return { ok: true, message: `Account ${failed.customer_id}: ${result.status === "connected" ? "account access is working" : "the invitation checks passed"}. Ask the client to retry onboarding. No invitation was sent by this check.` }
+    } catch (failure) {
+        const message = googleAdsDiagnosticError(failure)
+        await supabaseAdmin.from("relationship_google_ads_connections").update({ last_error: message })
+            .eq("workspace_id", workspace.id).eq("relationship_id", failed.relationship_id)
+            .eq("updated_at", failed.updated_at).eq("status", "needs_attention")
+        return { ok: false, message: `Account ${failed.customer_id}: ${message}` }
+    }
+}
 
 async function connectionAction(run: () => Promise<void>): Promise<WorkspaceConnectionActionResult> {
     try {

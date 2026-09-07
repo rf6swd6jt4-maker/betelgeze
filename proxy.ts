@@ -155,6 +155,11 @@ async function getCustomDomainWorkspace(domain: string) {
 export async function proxy(request: NextRequest) {
     const path = request.nextUrl.pathname
     const domain = requestHostname(request)
+    // Legal pages are public documents, including for reviewers without a session.
+    // Keep them on the requested platform host rather than routing through auth.
+    if (domain && isPlatformHost(domain) && (path === "/privacy" || path === "/terms")) {
+        return NextResponse.next({ request: { headers: requestHeadersWithCurrentPath(request) } })
+    }
     // Refresh before constructing rewrites. Supabase may replace an expired
     // token, and those updated request cookies must be present in the headers
     // forwarded to the route that renders this same request.

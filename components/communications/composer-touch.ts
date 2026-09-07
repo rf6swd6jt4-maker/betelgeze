@@ -2,11 +2,25 @@
 export function containComposerTouch(surface: HTMLElement) {
     let previousY: number | null = null
     let scrollable: HTMLElement | null = null
-    const reset = () => { previousY = null; scrollable = null }
+    let selecting = false
+    const hasEditorSelection = () => {
+        const doc = surface.ownerDocument
+        const editor = doc.activeElement
+        if (!editor?.matches("[data-chat-composer], textarea") || !surface.contains(editor)) return false
+        if (editor.tagName === "TEXTAREA") {
+            const input = editor as HTMLTextAreaElement
+            return input.selectionStart !== input.selectionEnd
+        }
+        const selection = doc.getSelection()
+        return !!selection && !selection.isCollapsed && !!selection.anchorNode && !!selection.focusNode &&
+            editor.contains(selection.anchorNode) && editor.contains(selection.focusNode)
+    }
+    const reset = () => { previousY = null; scrollable = null; selecting = false }
     const start = (event: TouchEvent) => {
         reset()
         if (event.touches.length !== 1) return
         previousY = event.touches[0].clientY
+        selecting = hasEditorSelection()
         const target = event.target as HTMLElement | null
         scrollable = target?.closest?.<HTMLElement>("textarea, [data-composer-scroll]") ?? null
     }
@@ -15,6 +29,11 @@ export function containComposerTouch(surface: HTMLElement) {
         const y = event.touches[0].clientY
         const delta = previousY - y
         previousY = y
+        // Selection handles also emit touchmove, even on a one-line draft.
+        // A long press may establish the range after touchstart. Once selection
+        // owns the gesture, keep it native even when the handles cross/collapse.
+        selecting ||= hasEditorSelection()
+        if (selecting) return
         // Native scrolling is safe while a draft or sticker tray can consume the gesture.
         // At either edge (or for an empty draft), Safari otherwise pans the page.
         if (scrollable && scrollable.scrollHeight > scrollable.clientHeight && (

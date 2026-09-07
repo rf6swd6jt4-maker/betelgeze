@@ -348,6 +348,8 @@ export async function sendCommunicationDeliveries(input: {
         sent_at: succeeded.length ? now : null,
         failed_at: succeeded.length ? null : now,
     }).eq("workspace_id", input.workspaceId).eq("id", input.messageId)
-    if (update.error) throw new Error(update.error.message)
-    return { results, status: aggregateStatus, error: aggregateError }
+    // Provider outcomes are authoritative. The delivery rows retain the receipt
+    // even if updating the aggregate message fails; do not invite a duplicate send.
+    if (update.error) console.error("Could not record communication delivery summary", { messageId: input.messageId, error: update.error.message })
+    return { results, status: aggregateStatus, error: aggregateError, persistenceError: update.error?.message ?? null }
 }

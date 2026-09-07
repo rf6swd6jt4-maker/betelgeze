@@ -358,7 +358,7 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
         if (!releasedSale) return { ok: true, skipped: true, inProgress: true }
     }
 
-    const claimStartedAt = new Date().toISOString()
+    let claimStartedAt = new Date().toISOString()
     const claimableStatuses = flow === "manual_migration" || flow === "retention_confirmation"
         ? ["manual_consent_pending", "manual_consent_template_failed"]
         : flow === "onboarding_payment_gate"
@@ -374,7 +374,7 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
         .eq("workspace_id", sale.workspace_id)
         .is("consent_template_sent_at", null)
         .in("status", claimableStatuses)
-        .select("id")
+        .select("id, updated_at")
         .maybeSingle()
 
     if (claimError) {
@@ -385,6 +385,9 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
     if (!claimedSale) {
         return { ok: true, skipped: true }
     }
+
+    // Use the database value, including any trigger changes and timestamp precision.
+    claimStartedAt = claimedSale.updated_at
 
     const { data: messageLog, error: messageLogError } = await supabaseAdmin
         .from("client_messages")
@@ -461,7 +464,7 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
     const whatsappMessageId = delivery.results.find((result) => result.provider === "meta_whatsapp" && result.ok)?.providerMessageId ?? null
     const sentAt = new Date().toISOString()
     const messageUpdate = await supabaseAdmin.from("client_messages").select("id").eq("id", messageLog.id).maybeSingle()
-    const messageUpdateError = messageUpdate.error
+    const messageUpdateError = messageUpdate.error ?? (delivery.persistenceError ? { message: delivery.persistenceError } : null)
 
     const { data: finalizedSale, error: finalizeError } = await supabaseAdmin
         .from("client_sales")
@@ -478,9 +481,16 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
         .select("id")
         .maybeSingle()
     if (finalizeError || !finalizedSale) {
+        const { data: currentSale } = await supabaseAdmin.from("client_sales")
+            .select("status, consent_template_sent_at").eq("workspace_id", sale.workspace_id).eq("id", saleId).maybeSingle()
+        if (!finalizeError && currentSale && (currentSale.consent_template_sent_at || CONSENT_TEMPLATE_TERMINAL_STATUSES.has(currentSale.status))) {
+            return { ok: true, whatsappMessageId, providerMessageId: primaryDelivery.providerMessageId, reconciled: true }
+        }
         const message = finalizeError?.message ?? "Consent send claim changed before it was finalized"
         await reportSaleAutomationFailure(sale, "finalize_consent_send", message)
-        return { ok: false, error: message }
+        // Delivery is already accepted. A webhook can advance the sale before
+        // this compare-and-set finishes; never turn that into a resend prompt.
+        return { ok: true, whatsappMessageId, providerMessageId: primaryDelivery.providerMessageId, synchronizationPending: true }
     }
 
     if (messageUpdateError) {

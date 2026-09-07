@@ -543,19 +543,19 @@ export async function proceedRelationshipCurrentWork(
             if (sale.requiresSmsConsent) {
                 const confirmation = await sendSaleSmsConfirmationIfOptedIn({ workspaceId: workspace.id, saleId: sale.saleId })
                 if (!confirmation.ok) throw new Error(confirmation.error ?? "The client confirmation could not be sent")
-                await finalizeRelationshipSaleConfirmation({ workspaceId: workspace.id, relationshipId, workItemId, actorId: user.id, saleId: sale.saleId })
                 saleResult = {
                     id: sale.saleId,
                     kind: "sms",
                     sent: confirmation.sent,
                 }
+                await finalizeRelationshipSaleConfirmation({ workspaceId: workspace.id, relationshipId, workItemId, actorId: user.id, saleId: sale.saleId })
             } else {
                 const consent = await sendSaleConsentTemplate(sale.saleId, workspace.id)
                 if (!consent.ok) throw new Error(consent.error ?? "The client confirmation could not be sent")
+                saleResult = { id: sale.saleId, kind: "whatsapp", sent: true }
                 if (!("inProgress" in consent && consent.inProgress)) {
                     await finalizeRelationshipSaleConfirmation({ workspaceId: workspace.id, relationshipId, workItemId, actorId: user.id, saleId: sale.saleId })
                 }
-                saleResult = { id: sale.saleId, kind: "whatsapp", sent: true }
             }
         } else {
             if (workflowAction === "await_payment" || workflowAction === "await_onboarding") throw new Error("This stage advances automatically when the external step completes")
@@ -584,7 +584,10 @@ export async function proceedRelationshipCurrentWork(
             "Choose a recurring schedule",
             "ONBOARDING_",
         ].some((prefix) => message.startsWith(prefix))
-        const safeMessage = saleValidationMessage || message.endsWith("is not connected for this workspace.") || message === "Work item not found" || message === "Work item does not belong to this relationship" || message === "This work item is not assigned to you" || message === "This stage advances automatically when the external step completes" || message === "Choose a fulfilment manager before completing onboarding review" || message === "Complete every required review work item before moving to fulfilment"
+        console.error("Relationship workflow action failed", { relationshipId, workItemId, workflowAction, confirmationAccepted: saleResult?.sent === true, message })
+        const safeMessage = saleResult?.sent
+            ? "The confirmation was sent, but the relationship could not finish updating. Reload to check its status before trying again."
+            : saleValidationMessage || message.endsWith("is not connected for this workspace.") || message === "Work item not found" || message === "Work item does not belong to this relationship" || message === "This work item is not assigned to you" || message === "This stage advances automatically when the external step completes" || message === "Choose a fulfilment manager before completing onboarding review" || message === "Complete every required review work item before moving to fulfilment"
             ? message
             : workflowAction === "sell_client"
                 ? "Could not send the client confirmation. Check the messaging connection and commercial details, then try again."

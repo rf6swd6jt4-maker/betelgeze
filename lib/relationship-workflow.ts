@@ -828,7 +828,15 @@ export async function finalizeRelationshipSaleConfirmation(input: { workspaceId:
         supabaseAdmin.from("client_sales").update({ updated_at: new Date().toISOString() }).eq("workspace_id", input.workspaceId).eq("id", input.saleId),
     ])
     if (workError || saleError) throw new Error(workError?.message ?? saleError?.message ?? "Could not finalize the sold relationship")
-    await moveRelationshipToStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "sold", assigneeId: input.actorId })
+    // A fast confirmation/payment webhook may already have advanced onboarding.
+    // Only transition the sale's starting stages, atomically, so we cannot move it back.
+    const { data: moved, error: moveError } = await supabaseAdmin.from("relationships")
+        .update({ lifecycle_phase: "sold", updated_at: new Date().toISOString() })
+        .eq("workspace_id", input.workspaceId).eq("id", input.relationshipId)
+        .in("lifecycle_phase", ["lead", "potential_client", "sold"])
+        .select("id").maybeSingle()
+    if (moveError) throw new Error(moveError.message)
+    if (moved) await ensureRelationshipStage({ workspaceId: input.workspaceId, relationshipId: input.relationshipId, phase: "sold", assigneeId: input.actorId })
 }
 
 export async function advanceRelationshipWorkflow(input: { workspaceId: string; relationshipId: string; workItemId: string; action: string | null; actorId: string }) {

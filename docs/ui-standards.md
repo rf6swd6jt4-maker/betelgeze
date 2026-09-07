@@ -6,6 +6,8 @@ Repeated interface elements use the primitives exported from `components/ui`, `c
 
 Keep the shell stacking order explicit: tab content `30`, relationship context `35`, tab bar `40`, mobile sidebar dismiss surface `45`, sidebar `50`, top bar and its dropdowns `55`, notices `60`, and dialogs `90` or higher. The top bar creates a stacking context, so increasing a dropdown's own z-index cannot lift it above a sibling sidebar. Keep the entire top bar above the sidebar so account and desktop/mobile search popups stay visible and clickable. Use `AnchoredPopup` for editors that must escape an iframe or clipping ancestor; loading overlays remain above all interactive surfaces.
 
+Top-bar mutation feedback uses short, bounded labels (`Saving…`, `Saved`, `Action failed`). Full error details stay in the originating form and the status tooltip/accessibility label; they must never expand the header or displace search, navigation, presence, or account controls.
+
 ## Popup motion
 
 Every custom popup uses the shared opening motion on both mobile and desktop. Apply `betelgeze-popup-enter` to the visible menu, tooltip, field editor, or dialog surface: a `140ms ease-out` opacity fade with `4px` of upward travel into its final position. `AnchoredPopup` applies this automatically once its initial position is measured; do not animate its children a second time.

@@ -669,6 +669,7 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
                                 {activity.session && activity.canManage ? (
                                     <OnboardingLinkControls
                                         key={`${activity.session.id}:${activity.session.token_version ?? 1}`}
+                                        previewHref={`/${workspaceSlug}/onboarding/${relationshipId}/preview`}
                                         initialPath={activity.onboardingUrl}
                                         revoked={Boolean(activity.session.token_revoked_at)}
                                         revokeAction={revokeOnboardingToken.bind(null, workspaceSlug, relationshipId, activity.session.id, Number(activity.session.token_version) || 1)}
@@ -677,7 +678,7 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
                                 ) : activity.onboardingUrl && !activity.session?.token_revoked_at && activity.canOpenCompleteClientSession ? (
                                     <div className="flex flex-wrap items-center gap-2">
                                         <CopyOnboardingLink path={activity.onboardingUrl} />
-                                        <a href={activity.onboardingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 shrink-0 sm:min-h-9 items-center justify-center whitespace-nowrap rounded-lg bg-white px-3 text-sm font-medium text-black">
+                                        <a href={`/${workspaceSlug}/onboarding/${relationshipId}/preview`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 shrink-0 sm:min-h-9 items-center justify-center whitespace-nowrap rounded-lg bg-white px-3 text-sm font-medium text-black">
                                             Preview
                                         </a>
                                     </div>

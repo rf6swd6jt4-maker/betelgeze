@@ -162,8 +162,8 @@ function WorkspaceLogo({ src, name }: { src?: string | null; name: string }) {
 
 function WorkspaceMutationStatus({ state, error }: { state: "idle" | "saving" | "saved" | "error"; error?: string | null }) {
     if (state === "idle") return null
-    const label = state === "saving" ? "Saving…" : state === "saved" ? "Saved" : error || "Save failed"
-    return <span aria-live="polite" title={error ?? undefined} className={`hidden shrink-0 text-[11px] md:inline ${state === "error" ? "text-red-300" : "text-neutral-500"}`}>{label}</span>
+    const label = state === "saving" ? "Saving…" : state === "saved" ? "Saved" : "Action failed"
+    return <span aria-live="polite" title={error ?? undefined} aria-label={state === "error" ? error || label : label} className={`hidden max-w-24 shrink-0 truncate text-[11px] md:inline ${state === "error" ? "text-red-300" : "text-neutral-500"}`}>{label}</span>
 }
 
 function WorkspacePresenceAvatars({ members, state, error, onOpenProfile }: { members: WorkspacePresenceRosterMember[]; state: WorkspacePresenceState; error: string | null; onOpenProfile: (userId: string) => void }) {

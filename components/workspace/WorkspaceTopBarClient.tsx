@@ -2,6 +2,7 @@
 
 import { requestChatViewportMotion } from "@/lib/chat-viewport-motion"
 import { COMPOSER_KEYBOARD_MOTION_MS, createComposerViewportController } from "@/lib/composer-viewport-controller"
+import { createViewportOriginRecovery } from "@/lib/viewport-origin-recovery"
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -1263,31 +1264,42 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
                     animate ? COMPOSER_KEYBOARD_MOTION_MS : 0, applyViewportBottom)
             },
         })
-        const keepWorkspaceDocumentAtOrigin = () => {
-            if (root.scrollTop !== 0) root.scrollTop = 0
-            if (document.body.scrollTop !== 0) document.body.scrollTop = 0
-        }
+        const origin = createViewportOriginRecovery({
+            canRestore: () => {
+                const visualViewport = window.visualViewport
+                return document.visibilityState === "visible" && (!visualViewport || (
+                    Math.abs(visualViewport.scale - 1) < 0.01 &&
+                    Math.abs(visualViewport.offsetTop) < 1 &&
+                    visualViewport.height >= root.clientHeight - 1
+                ))
+            },
+            restore: () => {
+                if (root.scrollTop !== 0) root.scrollTop = 0
+                if (document.body.scrollTop !== 0) document.body.scrollTop = 0
+            },
+            requestFrame: (callback) => window.requestAnimationFrame(callback),
+            cancelFrame: (frame) => window.cancelAnimationFrame(frame),
+        })
         const holdWorkspaceViewport = () => {
             if (document.visibilityState === "hidden") return
-            keepWorkspaceDocumentAtOrigin()
+            origin.update()
             viewport.update()
         }
         const handleComposerFocus = (event: Event) => {
             const focused = (event as CustomEvent<WorkspaceComposerFocusEventDetail>).detail?.focused
             if (typeof focused !== "boolean" || document.visibilityState === "hidden") return
-            keepWorkspaceDocumentAtOrigin()
-            if (focused) viewport.focus()
-            else viewport.blur()
+            if (focused) { origin.focus(); viewport.focus() }
+            else { origin.blur(); viewport.blur() }
         }
         const suspendWorkspaceViewport = () => {
+            origin.suspend()
             const activeElement = document.activeElement
             if (activeElement instanceof HTMLElement) activeElement.blur()
             viewport.suspend()
-            keepWorkspaceDocumentAtOrigin()
         }
         const resumeWorkspaceViewport = () => {
             if (document.visibilityState !== "visible") return
-            keepWorkspaceDocumentAtOrigin()
+            origin.resume()
             viewport.resume()
         }
         const handleWorkspaceVisibility = () => {
@@ -1321,6 +1333,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
             document.removeEventListener("visibilitychange", handleWorkspaceVisibility)
             window.removeEventListener("pagehide", suspendWorkspaceViewport)
             window.removeEventListener("pageshow", resumeWorkspaceViewport)
+            origin.dispose()
             viewport.dispose()
             document.body.style.overflow = previousOverflow
             delete document.body.dataset.workspaceTabsHosted

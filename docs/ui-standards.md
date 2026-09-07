@@ -32,6 +32,8 @@ Client, team/direct, and portal chats share `ChatMotionViewport` for keyboard mo
 
 `createComposerViewportController` shares focus and keyboard state between the workspace and portal. A new focus uses the current viewport edge and preserves the known resting height; it must not replay a cached open-keyboard endpoint during a close. Repeated focus/blur notifications are idempotent. Deferred close cleanup only retires bookkeeping, never writes geometry, and is invalidated by newer input. Repeated taps have no cooldown. Touch/pen focus runs synchronously on a stationary pointer release; mouse focus stays on pointer-down. Do not move the composer on touch contact, cancel native activation, or use delayed blur/refocus retries.
 
+The workspace must not reset document scrolling during keyboard focus, blur, or viewport movement. WebKit's native focus scroll can otherwise move the whole fixed shell down and back up. `createViewportOriginRecovery` repairs residual document scroll only after the unfocused, unzoomed viewport has returned to its full height and origin for two frames. New focus, viewport changes, suspension, and teardown cancel pending recovery. Never compensate by translating the shell by `visualViewport.offsetTop`.
+
 `ComposerFooter` owns the 180ms height transition for multiline drafts, reply previews, and attachment/sticker trays. Its footer stays aligned to the bottom while the message pane follows the changing height. Desktop and reduced motion use immediate sizing. Keep native editor scrolling, selection, and composition intact; mark its scroller with `data-composer-scroll` so footer gesture containment permits long drafts to scroll.
 
 ## Chat message formatting

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation"
-import { BuilderPreview } from "@/components/onboarding-builder/BuilderPreview"
+import { OnboardingPreviewButton } from "@/components/onboarding-builder/OnboardingPreviewOverlay"
 import { fullyAccessibleRelationshipIds, requireWorkspacePanel } from "@/lib/workspace-access"
 import { loadPublishedOnboardingConfiguration } from "@/lib/onboarding/configuration"
 import { loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
@@ -7,12 +7,7 @@ import { loadWorkspacePublicBranding } from "@/lib/client-branding/public-brandi
 import { createPrivateUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
-export const dynamic = "force-dynamic"
-
-export default async function RelationshipOnboardingPreview({ params }: {
-    params: Promise<{ workspaceSlug: string; relationshipId: string }>
-}) {
-    const { workspaceSlug, relationshipId } = await params
+export async function RelationshipOnboardingPreview({ workspaceSlug, relationshipId }: { workspaceSlug: string; relationshipId: string }) {
     const { workspace, access } = await requireWorkspacePanel(workspaceSlug, "onboarding")
     const allowed = await fullyAccessibleRelationshipIds(access)
     if (allowed && !allowed.has(relationshipId)) notFound()
@@ -49,8 +44,8 @@ export default async function RelationshipOnboardingPreview({ params }: {
             }))),
         }))),
     ])
-    return <div className="fixed inset-0 h-dvh overflow-hidden"><BuilderPreview fullWindow modules={modules} payment={configuration.payment} theme={configuration.theme}
+    return <OnboardingPreviewButton modules={modules} payment={configuration.payment} theme={configuration.theme}
         help={configuration.help} workspaceName={branding.displayName} logoSrc={logoSrc}
         client={{ name: relationship.data.primary_person_name, email: relationship.data.primary_email, phone: relationship.data.primary_phone, isTest: false }}
-        privacyPolicyUrl={branding.privacyPolicyUrl} termsOfServiceUrl={branding.termsOfServiceUrl} /></div>
+        privacyPolicyUrl={branding.privacyPolicyUrl} termsOfServiceUrl={branding.termsOfServiceUrl} />
 }

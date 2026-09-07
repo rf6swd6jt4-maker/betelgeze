@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { type ReactNode, useState, useTransition } from "react"
 import { Status } from "@/components/ui"
 import { DetailDangerAction, DetailDangerButton, DetailDangerZone } from "@/components/detail"
 
@@ -22,12 +22,12 @@ export function CopyOnboardingLink({ path, label = "Copy link" }: { path: string
 
 export function OnboardingLinkControls({
     initialPath,
-    previewHref,
+    previewControl,
     revoked,
     revokeAction,
     rotateAction,
 }: {
-    previewHref: string
+    previewControl: ReactNode
     initialPath: string | null
     revoked: boolean
     revokeAction: () => Promise<{ ok: true; revoked: true; notificationQueued: boolean }>
@@ -71,7 +71,7 @@ export function OnboardingLinkControls({
         <div>
             <div className="flex flex-wrap items-center gap-2">
                 {path && !isRevoked ? <CopyOnboardingLink path={path} /> : null}
-                {path && !isRevoked ? <a href={previewHref} target="_blank" rel="noreferrer" className="inline-flex min-h-11 shrink-0 sm:min-h-9 items-center justify-center whitespace-nowrap rounded-lg bg-white px-3 text-sm font-medium text-black">Preview</a> : null}
+                {path && !isRevoked ? previewControl : null}
                 <button type="button" disabled={pending} onClick={rotate} className="inline-flex min-h-11 shrink-0 sm:min-h-9 items-center justify-center whitespace-nowrap rounded-lg border border-neutral-700 px-3 text-sm text-neutral-200 disabled:opacity-50">
                     {pending ? "Updating…" : path ? "Rotate link" : "Create new link"}
                 </button>

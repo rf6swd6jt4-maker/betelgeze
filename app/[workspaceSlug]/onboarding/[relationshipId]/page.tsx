@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
 import { DetailContentLoading, DetailField, DetailFields, DetailFieldsLoading, DetailLoadingLabel, DetailPageHeader } from "@/components/detail"
+import { RelationshipOnboardingPreview } from "@/components/onboarding/RelationshipOnboardingPreview"
 import { CopyOnboardingLink, OnboardingDangerZone, OnboardingLinkControls } from "@/components/onboarding/OnboardingDetailActions"
 import { archiveOnboarding, restartOnboarding, revokeOnboardingToken, rotateOnboardingToken } from "./actions"
 import { getOnboardingForm } from "@/lib/onboarding/forms"
@@ -639,6 +640,9 @@ async function OnboardingFields({ data }: { data: OnboardingDetailData }) {
 
 async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { data: OnboardingDetailData; workspaceSlug: string; relationshipId: string }) {
     const activity = await data.activityPromise
+    const previewControl = activity.canOpenCompleteClientSession ? <Suspense fallback={<button type="button" disabled className="min-h-9 px-3 text-sm text-neutral-500">Loading preview…</button>}>
+        <RelationshipOnboardingPreview workspaceSlug={workspaceSlug} relationshipId={relationshipId} />
+    </Suspense> : null
     return <>
         <section className="mt-4 overflow-hidden rounded-xl border border-neutral-800 bg-black sm:mt-6">
                             <div className="border-b border-neutral-900 px-5 py-4">
@@ -669,7 +673,7 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
                                 {activity.session && activity.canManage ? (
                                     <OnboardingLinkControls
                                         key={`${activity.session.id}:${activity.session.token_version ?? 1}`}
-                                        previewHref={`/${workspaceSlug}/onboarding/${relationshipId}/preview`}
+                                        previewControl={previewControl}
                                         initialPath={activity.onboardingUrl}
                                         revoked={Boolean(activity.session.token_revoked_at)}
                                         revokeAction={revokeOnboardingToken.bind(null, workspaceSlug, relationshipId, activity.session.id, Number(activity.session.token_version) || 1)}
@@ -678,9 +682,7 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
                                 ) : activity.onboardingUrl && !activity.session?.token_revoked_at && activity.canOpenCompleteClientSession ? (
                                     <div className="flex flex-wrap items-center gap-2">
                                         <CopyOnboardingLink path={activity.onboardingUrl} />
-                                        <a href={`/${workspaceSlug}/onboarding/${relationshipId}/preview`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 shrink-0 sm:min-h-9 items-center justify-center whitespace-nowrap rounded-lg bg-white px-3 text-sm font-medium text-black">
-                                            Preview
-                                        </a>
+                                        {previewControl}
                                     </div>
                                 ) : (
                                     <span className="text-sm text-neutral-500">{activity.session && !activity.canOpenCompleteClientSession ? "The complete client session is restricted because this relationship includes other services." : "No active session"}</span>

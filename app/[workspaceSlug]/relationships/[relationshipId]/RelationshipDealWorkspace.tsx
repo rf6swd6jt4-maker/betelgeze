@@ -4,6 +4,7 @@ import { Suspense, use, useCallback, useEffect, useRef, useState, useTransition 
 import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
+import { OnboardingPreviewOverlay } from "@/components/onboarding-builder/OnboardingPreviewOverlay"
 import { BuilderPreview } from "@/components/onboarding-builder/BuilderPreview"
 import { DetailContentLoading, DetailField, DetailFields } from "@/components/detail"
 import { RoundPill, SquarePill } from "@/components/ui"
@@ -620,12 +621,9 @@ export function RelationshipDealWorkspace({
         </section>
     </div>, parentDocument.body) : null
 
-    const preview = onboardingPreviewOpen && parentDocument ? createPortal(<div data-pos-onboarding-preview className="betelgeze-popup-fade fixed inset-0 z-[2147483646] overflow-hidden bg-neutral-100 text-white">
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start p-3 sm:p-4">
-            <button type="button" onClick={() => setOnboardingPreviewOpen(false)} className="pointer-events-auto rounded-full border border-white/20 bg-neutral-700 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(0,0,0,0.24)] transition hover:bg-neutral-600 focus:outline-none focus:ring-2 focus:ring-white/70">Exit preview</button>
-        </div>
-        <div className="h-full min-h-0"><BuilderPreview fullWindow modules={assignedModules} payment={payment} theme={theme} help={help} workspaceName={workspaceName} logoSrc={logoSrc} client={{ name: draft.primaryPersonName || "Preview client", email: draft.primaryEmail || null, phone: draft.primaryPhone || draft.whatsappPhone || null, isTest: false }} privacyPolicyUrl={privacyPolicyUrl} termsOfServiceUrl={termsOfServiceUrl} /></div>
-    </div>, parentDocument.body) : null
+    const preview = <OnboardingPreviewOverlay open={onboardingPreviewOpen} onClose={() => setOnboardingPreviewOpen(false)}>
+        <BuilderPreview fullWindow modules={assignedModules} payment={payment} theme={theme} help={help} workspaceName={workspaceName} logoSrc={logoSrc} client={{ name: draft.primaryPersonName || "Preview client", email: draft.primaryEmail || null, phone: draft.primaryPhone || draft.whatsappPhone || null, isTest: false }} privacyPolicyUrl={privacyPolicyUrl} termsOfServiceUrl={termsOfServiceUrl} />
+    </OnboardingPreviewOverlay>
 
     return <>
         {detailsPanel}

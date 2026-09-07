@@ -68,6 +68,7 @@ export type StoredUpload = {
     type: string
     kind: FileAccept
     provider?: "r2" | "supabase"
+    receipt?: string
 }
 
 export type FormResponseValue = string | StoredUpload[]

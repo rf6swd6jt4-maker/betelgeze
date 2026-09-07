@@ -110,8 +110,8 @@ export function OnboardingDangerZone({
             />
             <DetailDangerAction
                 title="Restart onboarding"
-                description="Create a fresh client link and reset every step. Previous submissions and uploads remain stored as historical assets."
-                control={<DetailDangerButton type="button" disabled={pending} onClick={() => run(restartAction, "Restart onboarding with a new client link? The current link will stop working.")}>{pending ? "Updating…" : "Restart onboarding"}</DetailDangerButton>}
+                description="Start the same onboarding again with a new client link and blank answers. Payment and test mode are preserved. Previous submissions and uploads remain in history."
+                control={<DetailDangerButton type="button" disabled={pending || !hasSession} onClick={() => run(restartAction, "Restart the same onboarding with blank answers and a new link? Payment stays unchanged. Previous submissions remain in history, and the current link will stop working.")}>{pending ? "Updating…" : "Restart onboarding"}</DetailDangerButton>}
             />
             <DetailDangerAction
                 title="Delete onboarding permanently"

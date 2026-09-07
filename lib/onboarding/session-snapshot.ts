@@ -275,17 +275,19 @@ function isMissingSnapshotSchema(error: { code?: string; message?: string } | nu
     return error?.code === "42P01" || error?.code === "42703" || message.includes("schema cache") || message.includes("does not exist")
 }
 
-export async function loadNormalizedSessionSnapshot(session: SnapshotSession) {
+export async function loadNormalizedSessionSnapshot(session: SnapshotSession, options: { fieldStepId?: string; includeBlocks?: boolean } = {}) {
     if (!session.snapshot_schema_version) return null
     let stepQuery = supabaseAdmin.from("relationship_onboarding_session_steps")
         .select("id, session_module_id, source_step_id, module_revision_id, bookend_revision_id, kind, title, description, estimated_time, why_we_ask, video_url, video_storage_path, sort_order, legacy_step_key, legacy_form_key, navigation, is_actionable")
         .eq("workspace_id", session.workspace_id).eq("session_id", session.id).order("sort_order")
     if (Number(session.snapshot_schema_version) >= 2) stepQuery = stepQuery.is("superseded_at", null)
+    let fieldQuery = supabaseAdmin.from("relationship_onboarding_session_fields").select("id, session_step_id, source_field_id, legacy_field_name, type, label, required, help_text, placeholder, file_accept, multiple, sort_order").eq("workspace_id", session.workspace_id).eq("session_id", session.id).order("sort_order")
+    if (options.fieldStepId) fieldQuery = fieldQuery.eq("session_step_id", options.fieldStepId)
     const [moduleResult, stepResult, fieldResult, blockResult] = await Promise.all([
         supabaseAdmin.from("relationship_onboarding_session_modules").select("id, module_id, module_revision_id, source_kind, source_service_revision_id, sort_order, title, description, is_test").eq("workspace_id", session.workspace_id).eq("session_id", session.id).order("sort_order"),
         stepQuery,
-        supabaseAdmin.from("relationship_onboarding_session_fields").select("id, session_step_id, source_field_id, legacy_field_name, type, label, required, help_text, placeholder, file_accept, multiple, sort_order").eq("workspace_id", session.workspace_id).eq("session_id", session.id).order("sort_order"),
-        supabaseAdmin.from("relationship_onboarding_session_blocks").select("id, session_step_id, source_block_id, definition, sort_order").eq("workspace_id", session.workspace_id).eq("session_id", session.id).order("sort_order"),
+        fieldQuery,
+        options.includeBlocks === false ? Promise.resolve({ data: [], error: null }) : supabaseAdmin.from("relationship_onboarding_session_blocks").select("id, session_step_id, source_block_id, definition, sort_order").eq("workspace_id", session.workspace_id).eq("session_id", session.id).order("sort_order"),
     ])
     const error = moduleResult.error ?? stepResult.error ?? fieldResult.error
     if (error) {

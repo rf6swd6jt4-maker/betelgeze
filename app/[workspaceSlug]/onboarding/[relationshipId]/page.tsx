@@ -668,6 +668,7 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
                                 </div>
                                 {activity.session && activity.canManage ? (
                                     <OnboardingLinkControls
+                                        key={activity.session.id}
                                         initialPath={activity.onboardingUrl}
                                         revoked={Boolean(activity.session.token_revoked_at)}
                                         revokeAction={revokeOnboardingToken.bind(null, workspaceSlug, relationshipId)}
@@ -705,7 +706,7 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
             <OnboardingDangerZone
                 hasSession={Boolean(activity.session)}
                 archiveAction={archiveOnboarding.bind(null, workspaceSlug, relationshipId)}
-                restartAction={restartOnboarding.bind(null, workspaceSlug, relationshipId)}
+                restartAction={restartOnboarding.bind(null, workspaceSlug, relationshipId, activity.session?.id ?? null)}
             />
         ) : null}
     </>

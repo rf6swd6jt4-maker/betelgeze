@@ -2,7 +2,6 @@
 
 import { randomBytes } from "crypto"
 import { revalidatePath } from "next/cache"
-import { createRelationshipOnboardingSession } from "@/lib/onboarding/canonical"
 import { getOnboardingUrl } from "@/lib/onboarding/client-creation"
 import { recordAdminActivity } from "@/lib/admin/activity"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -84,72 +83,27 @@ export async function archiveOnboarding(workspaceSlug: string, relationshipId: s
     revalidatePath(`/${workspace.slug}/onboarding/${relationshipId}`)
 }
 
-export async function restartOnboarding(workspaceSlug: string, relationshipId: string) {
+export async function restartOnboarding(workspaceSlug: string, relationshipId: string, sessionId: string | null) {
     const { workspace, user } = await requireOnboardingManager(workspaceSlug, relationshipId)
-    const [{ data: modules }, { data: services }, { data: currentSession }] = await Promise.all([
-        supabaseAdmin.from("relationship_onboarding_modules").select("module_key").eq("workspace_id", workspace.id).eq("relationship_id", relationshipId),
-        supabaseAdmin.from("relationship_services").select("service_key").eq("workspace_id", workspace.id).eq("relationship_id", relationshipId),
-        supabaseAdmin.from("relationship_onboarding_sessions").select("id, status, source_sale_id").eq("workspace_id", workspace.id).eq("relationship_id", relationshipId).in("status", ["active", "completed"]).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
-    ])
+    if (!sessionId) throw new Error("There is no onboarding session to restart")
 
-    let archivedWithRpc = false
-    let archiveEventId: string | null = null
-    if (currentSession) {
-        const { data, error: archiveRpcError } = await supabaseAdmin.rpc("archive_relationship_onboarding_session", {
-            p_workspace_id: workspace.id,
-            p_relationship_id: relationshipId,
-            p_session_id: currentSession.id,
-            p_actor_user_id: user.id,
-            p_correlation_id: currentSession.source_sale_id ?? currentSession.id,
-            p_idempotency_key: `onboarding.session.archived:${currentSession.id}`,
-        })
-        if (!archiveRpcError) {
-            archivedWithRpc = true
-            archiveEventId = data && typeof data === "object" && "event_id" in data && typeof (data as { event_id?: unknown }).event_id === "string"
-                ? (data as { event_id: string }).event_id
-                : null
-        } else if (!isMissingOnboardingMutationRpc(archiveRpcError, "archive_relationship_onboarding_session")) {
-            throw new Error(archiveRpcError.message || "Could not archive the current onboarding session")
-        }
-    }
-
-    if (currentSession?.status === "completed" && !archivedWithRpc) {
-        const { error } = await supabaseAdmin
-            .from("relationship_onboarding_sessions")
-            .update({ status: "archived", archived_at: new Date().toISOString() })
-            .eq("id", currentSession.id)
-            .eq("workspace_id", workspace.id)
-        if (error) throw new Error("Could not archive the completed onboarding session")
-    }
-
-    const nextSession = await createRelationshipOnboardingSession({
-        workspaceId: workspace.id,
-        workspaceSlug: workspace.slug,
-        relationshipId,
-        moduleKeys: (modules ?? []).map((module) => module.module_key),
-        serviceKeys: (services ?? []).map((service) => service.service_key),
-        createdBy: user.id,
+    // The rendered session ID is the retry key. A stale/double click must never
+    // restart a newly created run, and a failed clone must leave the old run intact.
+    const { error } = await supabaseAdmin.rpc("restart_relationship_onboarding_session", {
+        p_workspace_id: workspace.id,
+        p_relationship_id: relationshipId,
+        p_session_id: sessionId,
+        p_actor_user_id: user.id,
     })
-    if (currentSession && nextSession.created) {
-        await recordAdminActivity({
-            workspaceId: workspace.id,
-            category: "onboarding",
-            eventKey: "onboarding.session.restarted",
-            summary: "Onboarding session restarted",
-            entityType: "onboarding_session",
-            entityId: nextSession.id,
-            actorUserId: user.id,
-            correlationId: nextSession.id,
-            causationEventId: archiveEventId,
-            idempotencyKey: `onboarding.session.restarted:${currentSession.id}:${nextSession.id}`,
-            sourceHref: `/${workspace.slug}/onboarding/${relationshipId}`,
-            metadata: {
-                relationship_id: relationshipId,
-                previous_session_id: currentSession.id,
-                session_id: nextSession.id,
-            },
-        })
+    if (error) {
+        if (isMissingOnboardingMutationRpc(error, "restart_relationship_onboarding_session")) {
+            throw new Error("Restart is temporarily unavailable. The current onboarding has not been changed.")
+        }
+        throw new Error(error.message || "Could not restart onboarding")
     }
+    revalidatePath(`/${workspace.slug}/onboarding`)
+    revalidatePath(`/${workspace.slug}/onboarding/${relationshipId}`)
+    revalidatePath(`/${workspace.slug}/relationships/${relationshipId}`)
 }
 
 export async function revokeOnboardingToken(workspaceSlug: string, relationshipId: string) {

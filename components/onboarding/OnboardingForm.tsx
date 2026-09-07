@@ -4,10 +4,12 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
     prepareDirectUploads,
+    confirmDirectUploads,
     requestStepEdit,
     saveStepDraft,
-    submitPreparedFormStep,
 } from "@/app/onboarding/session/[token]/actions"
+import { postOnboardingSubmission } from "@/lib/onboarding/submission-client"
+import { useOnboardingAdvance } from "@/components/onboarding/OnboardingAdvanceContext"
 import {
     FormResponse,
     getFileAcceptValue,
@@ -71,8 +73,16 @@ function uploadFileToSignedUrl(
 ) {
     return new Promise<void>((resolve, reject) => {
         const request = new XMLHttpRequest()
+        let idleTimer: ReturnType<typeof setTimeout>
+        const renewDeadline = () => {
+            clearTimeout(idleTimer)
+            idleTimer = setTimeout(() => request.abort(), 90_000)
+        }
+        request.addEventListener("loadend", () => clearTimeout(idleTimer))
+        request.addEventListener("abort", () => reject(new Error("The upload stopped responding. Check your connection and try again.")))
 
         request.upload.addEventListener("progress", (event) => {
+            renewDeadline()
             if (event.lengthComputable) {
                 onProgress(Math.round((event.loaded / event.total) * 100))
             }
@@ -98,6 +108,7 @@ function uploadFileToSignedUrl(
             file.type || "application/octet-stream"
         )
         request.send(file)
+        renewDeadline()
     })
 }
 
@@ -120,6 +131,7 @@ export function OnboardingForm({
     onSubmittingChange,
 }: OnboardingFormProps) {
     const router = useRouter()
+    const navigation = useOnboardingAdvance()
     const { flushAll } = useOnboardingSaveCoordinator()
     const formRef = useRef<HTMLFormElement>(null)
     const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -299,6 +311,7 @@ export function OnboardingForm({
                 file,
                 status: "preparing",
                 progress: 0,
+                storedUpload: existing?.storedUpload,
             }
             uploadTasksRef.current.set(id, task)
             return [task]
@@ -309,7 +322,7 @@ export function OnboardingForm({
         const batch = (async () => {
             let prepared: Awaited<ReturnType<typeof prepareDirectUploads>>
             try {
-                prepared = await prepareDirectUploads(token, stepKey, freshTasks.map((task) => ({
+                prepared = await prepareDirectUploads(token, stepKey, freshTasks.filter((task) => !task.storedUpload).map((task) => ({
                     clientId: task.id,
                     fieldName: task.fieldName,
                     file: {
@@ -340,7 +353,6 @@ export function OnboardingForm({
                         task.progress = progress
                         publishUploadState()
                     })
-                    task.status = "uploaded"
                     task.progress = 100
                     task.storedUpload = upload.storedUpload
                     task.error = undefined
@@ -351,6 +363,32 @@ export function OnboardingForm({
                 publishUploadState()
             }))
 
+            // Confirm the stored objects in one server request. A failed
+            // confirmation retries these paths, without uploading bytes again.
+            const transferred = freshTasks.filter((task) => task.storedUpload && task.status !== "error")
+            if (transferred.length) {
+                try {
+                    const response: FormResponse = {}
+                    for (const task of transferred) {
+                        const files = response[task.fieldName]
+                        response[task.fieldName] = [...(Array.isArray(files) ? files : []), task.storedUpload!]
+                    }
+                    const confirmed = await confirmDirectUploads(token, stepKey, response)
+                    for (const task of transferred) {
+                        const receipt = confirmed.find((item) => item.upload.path === task.storedUpload?.path)
+                        if (!receipt) throw new Error("Could not confirm the uploaded file. Please try again.")
+                        task.storedUpload = receipt.upload
+                        task.status = "uploaded"
+                        task.progress = 100
+                        task.error = undefined
+                    }
+                } catch (caughtError) {
+                    for (const task of transferred) {
+                        task.status = "error"
+                        task.error = caughtError instanceof Error ? caughtError.message : "Could not confirm the uploaded files."
+                    }
+                }
+            }
             for (const task of freshTasks) task.promise = undefined
             if (freshTasks.some((task) => task.status === "uploaded")) scheduleDraftSave(true)
             publishUploadState()
@@ -420,12 +458,12 @@ export function OnboardingForm({
             clearTimeout(draftTimerRef.current)
             draftTimerRef.current = null
         }
-        await draftPumpRef.current
-        draftQueueRef.current = null
-
         try {
-            await flushAll()
-            await waitForCurrentUploads()
+            performance.mark("onboarding:continue")
+            draftQueueRef.current = null
+            await Promise.all([draftPumpRef.current, flushAll(), waitForCurrentUploads()])
+            performance.mark("onboarding:ready")
+            performance.measure("onboarding:pending-saves-and-uploads", "onboarding:continue", "onboarding:ready")
             const response = responseFromForm()
             for (const field of form.fields) {
                 const value = response[field.name]
@@ -434,20 +472,26 @@ export function OnboardingForm({
                 }
             }
 
-            const outcome = await submitPreparedFormStep(token, stepKey, response)
+            const outcome = await postOnboardingSubmission(token, stepKey, response, navigation?.compositionHash)
             if (!outcome.ok) throw new Error(outcome.error)
-            window.localStorage.removeItem(localDraftKey)
+            performance.mark("onboarding:acknowledged")
+            performance.measure("onboarding:submission", "onboarding:ready", "onboarding:acknowledged")
+            try { window.localStorage.removeItem(localDraftKey) } catch { /* The server has committed the submission. */ }
             if (outcome.clientPortalUrl) {
                 window.location.assign(outcome.clientPortalUrl)
                 return
             }
             setSelectedFilesByField({})
             selectedFilesRef.current = {}
+            if (navigation?.advance(outcome)) return
             router.replace(outcome.nextPath)
         } catch (caughtError) {
             submittingRef.current = false
             setSaving(false)
             onSubmittingChange?.(false)
+            // Submission supersedes the draft queue. If it fails, resume
+            // autosave so the latest answers do not remain stuck at "Saving".
+            scheduleDraftSave(true)
             setError(
                 caughtError instanceof Error
                     ? caughtError.message

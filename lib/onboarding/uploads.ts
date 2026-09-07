@@ -214,6 +214,19 @@ export async function createSignedRelationshipOnboardingUpload(
     }
 }
 
+/** Called only after the onboarding path and field have been authorized. */
+export async function inspectOnboardingUpload(upload: StoredUpload) {
+    if (upload.provider === "supabase") {
+        // Legacy uploads retain their existing storage implementation; all
+        // relationship onboarding uploads issued by this module use R2.
+        throw new Error("This older upload needs to be selected again before submitting.")
+    }
+    const object = await getR2Client().send(new HeadObjectCommand({ Bucket: getR2BucketName(), Key: upload.path }))
+    if (object.ContentLength !== upload.size || (object.ContentType ?? "application/octet-stream").split(";", 1)[0].toLowerCase() !== upload.type.toLowerCase()) {
+        throw new Error(`${upload.name} has not finished uploading correctly. Please try again.`)
+    }
+}
+
 export async function createSignedAssetUpload(
     workspaceId: string,
     file: {

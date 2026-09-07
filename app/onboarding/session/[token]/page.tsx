@@ -1,15 +1,12 @@
+import { OnboardingSessionFlow } from "@/components/onboarding/OnboardingSessionFlow"
+import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getCanonicalSessionByToken, getCanonicalStepDraft, getFormResponseAsset } from "@/lib/onboarding/canonical"
-import { getOnboardingForm } from "@/lib/onboarding/forms"
-import { skipTestStep } from "./actions"
+import { getOnboardingForm, type FormResponse } from "@/lib/onboarding/forms"
 import { OnboardingLayout } from "@/components/onboarding/OnboardingLayout"
-import { ScrollToTopOnStepChange } from "@/components/onboarding/ScrollToTopOnStepChange"
 import { OnboardingSessionRenderer } from "@/components/onboarding/OnboardingSessionRenderer"
-import { TestClientMenu } from "@/components/onboarding/TestClientMenu"
-import { OnboardingStepSubmit } from "@/components/onboarding/OnboardingStepSubmit"
 import { headers } from "next/headers"
 import { OnboardingThemeProvider } from "@/components/onboarding/OnboardingThemeProvider"
 import { createPrivateUploadSignedUrl } from "@/lib/onboarding/uploads"
-import { OnboardingSessionNotice } from "@/components/onboarding/OnboardingSessionNotice"
 import { getFrozenOnboardingPaymentDefinition, getOnboardingPaymentContext, onboardingPaymentPending } from "@/lib/client-sales/onboarding-checkout"
 import { ONBOARDING_PAYMENT_BUTTON_ID, stepEstimate, stepHeader } from "@/lib/onboarding/block-definition"
 import { getClientPortalUrlForOnboardingSession } from "@/lib/client-portal/session"
@@ -101,115 +98,38 @@ export default async function CanonicalSessionPage({ params, searchParams }: Pag
         ? requestedCandidate
         : null
     const currentStep = requestedStep ?? linearCurrentStep
-    const isFinalStep = currentStep.kind === "final"
-    const lastCompletableStep = completableSteps.at(-1) ?? null
-    const everyCompletableStepIsDone = completableSteps.length > 0 && completableSteps.every((step) => completedKeys.has(step.key))
-    const finalizationPending = session.status === "active" && everyCompletableStepIsDone
-    const canFinalizeHere = finalizationPending && (isFinalStep || currentStep.key === lastCompletableStep?.key)
-    const stepIsLocked = session.status === "completed" || completedKeys.has(currentStep.key)
-    const currentStepIndex = steps.findIndex((step) => step.key === currentStep.key)
-    const previousStep = currentStepIndex > 0 ? steps[currentStepIndex - 1] : null
-    const roadmapSteps = [
-        ...(paymentContext ? [{ key: "payment", title: "Payment", complete: true, current: false, href: null }] : []),
-        ...steps.map((step) => ({
-        key: step.key,
-        title: step.title,
-        complete: step.kind === "final" ? linearCurrentStep.kind === "final" : completedKeys.has(step.key),
-        current: step.key === currentStep.key,
-        href: session.status === "completed" || completedKeys.has(step.key) || step.key === linearCurrentStep.key
-            ? customOnboardingDomain
-                ? `/${token}?step=${step.key}`
-                : `/onboarding/session/${token}?step=${step.key}`
-            : null,
-        })),
-    ]
-    const currentForm = currentStep.kind === "form" ? currentStep.form ?? getOnboardingForm(currentStep.formKey) : null
-    const [submittedResponse, draft, storedVideoUrl, resolvedBlocks] = await Promise.all([
+    const [submittedResponse, draft, drafts, preparedSteps] = await Promise.all([
         currentStep.kind === "form" ? getFormResponseAsset(session.id, currentStep) : undefined,
-        currentStep.kind === "form" && !stepIsLocked ? getCanonicalStepDraft(token, currentStep.key) : null,
-        currentStep.videoPath ? createPrivateUploadSignedUrl(currentStep.videoPath) : null,
-        Promise.all((currentStep.blocks ?? []).map(async (block) => block.kind === "video" && block.upload?.path
-            ? { ...block, upload: { ...block.upload, resolvedUrl: await createPrivateUploadSignedUrl(block.upload.path) } }
-            : block)),
+        currentStep.kind === "form" ? getCanonicalStepDraft(token, currentStep.key, resolved) : null,
+        supabaseAdmin.from("onboarding_step_drafts").select("session_step_id, response")
+            .eq("workspace_id", session.workspace_id).eq("session_id", session.id),
+        Promise.all(steps.map(async (step) => ({
+            ...step,
+            form: step.kind === "form" ? step.form ?? getOnboardingForm(step.formKey) : null,
+            videoUrl: step.videoPath ? await createPrivateUploadSignedUrl(step.videoPath) : step.videoUrl,
+            blocks: await Promise.all((step.blocks ?? []).map(async (block) => block.kind === "video" && block.upload?.path
+                ? { ...block, upload: { ...block.upload, resolvedUrl: await createPrivateUploadSignedUrl(block.upload.path) } }
+                : block)),
+        }))),
     ])
     const initialResponse = submittedResponse ?? draft?.response
-    const videoUrl = storedVideoUrl ?? currentStep.videoUrl ?? ""
-    const visualFormBlock = currentStep.blocks?.find((block) => block.kind === "form")
-    const usesDirectVisualCompletion = Boolean(currentStep.blocks?.length) && (!visualFormBlock || (visualFormBlock.kind === "form" && visualFormBlock.fields.length === 0))
-    const migrationNotice = notices.find((notice) => (notice.sessionModuleId === currentStep.sessionModuleId || Boolean(currentStep.sessionStepId && notice.affectedStepIds.includes(currentStep.sessionStepId))) && (
-            notice.requiresCompletion ? !notice.moduleCompletedAt : !notice.firstSeenAt
-        )) ?? null
-
-    return (
-        <OnboardingThemeProvider theme={theme}>
-        <OnboardingLayout
-            clientSession
-            roadmapSteps={roadmapSteps}
-            client={{
-                name: relationship.primary_person_name,
-                email: relationship.primary_email,
-                phone: relationship.primary_phone,
-                isTest: session.is_test,
-            }}
-            workspaceName={publicBranding.displayName}
-            logoSrc={logoSrc}
-            help={help}
-            privacyPolicyUrl={publicBranding.privacyPolicyUrl}
-            termsOfServiceUrl={publicBranding.termsOfServiceUrl}
-            headerActions={
-                session.status === "active" && session.is_test && !isFinalStep ? (
-                    <TestClientMenu
-                        currentStepTitle={currentStep.title}
-                        previousStepHref={
-                            previousStep
-                                ? customOnboardingDomain
-                                    ? `/${token}?step=${previousStep.key}`
-                                    : `/onboarding/session/${token}?step=${previousStep.key}`
-                                : null
-                        }
-                        skipAction={async () => {
-                            "use server"
-                            return skipTestStep(token, currentStep.key)
-                        }}
-                    />
-                ) : null
-            }
-        >
-            <ScrollToTopOnStepChange stepKey={currentStep.key} />
-
-            <OnboardingSessionRenderer
-                step={{ ...currentStep, form: currentForm, videoUrl, blocks: resolvedBlocks }}
-                moduleTitles={moduleTitles}
-                showModuleSummary={Boolean(currentStep.blocks?.length) || (currentStep.kind === "video" && (currentStep.moduleTitle === "General" || ["welcome", "welcome-video"].includes(currentStep.legacyStepKey ?? "")))}
-                token={token}
-                initialResponse={initialResponse}
-                locked={stepIsLocked}
-                allowEditRequest={session.status === "active" && completedKeys.has(currentStep.key)}
-                notice={metaResult === "connected" ? <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Facebook is connected. You can continue onboarding.</div> : metaResult === "error" ? <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{connectionReason || "Facebook could not be connected. Please try again."}</div> : migrationNotice ? (
-                    <OnboardingSessionNotice
-                        token={token}
-                        noticeId={migrationNotice.id}
-                        explanation={migrationNotice.explanation}
-                        requiresCompletion={migrationNotice.requiresCompletion}
-                        sections={migrationNotice.sections}
-                    />
-                ) : null}
-                action={session.status === "active" && (canFinalizeHere || (!isFinalStep && (currentStep.kind === "video" || usesDirectVisualCompletion) && !stepIsLocked)) ? (
-                    <OnboardingStepSubmit
-                        token={token}
-                        stepKey={canFinalizeHere && lastCompletableStep ? lastCompletableStep.key : currentStep.key}
-                        label={canFinalizeHere || currentStep.key === lastCompletableStep?.key
-                            ? ["", "Continue", "Complete and continue"].includes(currentStep.navigation?.continueLabel ?? "")
-                                ? "Finish onboarding"
-                                : currentStep.navigation?.continueLabel ?? "Finish onboarding"
-                            : currentStep.navigation?.continueLabel || "Complete and continue"}
-                    />
-                ) : null}
-                satisfiedBlockIds={[...satisfiedBlockIds]}
-                blockResponses={blockResponses}
-                backHref={previousStep ? (customOnboardingDomain ? `/${token}?step=${previousStep.key}` : `/onboarding/session/${token}?step=${previousStep.key}`) : null}
-            />
-        </OnboardingLayout>
-        </OnboardingThemeProvider>
-    )
+    const initialResponses = Object.fromEntries((drafts.data ?? []).map((row) => [row.session_step_id, row.response as FormResponse]))
+    if (initialResponse) initialResponses[currentStep.key] = initialResponse
+    // Dynamic server request: timestamp the freshly signed media URLs.
+    // eslint-disable-next-line react-hooks/purity
+    const preparedAt = Date.now()
+    return <OnboardingSessionFlow
+        key={`${session.id}:${session.composition_hash}:${currentStep.key}`}
+        token={token} steps={preparedSteps} initialStepKey={currentStep.key}
+        completableStepKeys={completableSteps.map((step) => step.key)} initialCompletedKeys={[...completedKeys]}
+        initialResponses={initialResponses} compositionHash={session.composition_hash ?? null} preparedAt={preparedAt}
+        sessionStatus={session.status} isTest={session.is_test}
+        moduleTitles={moduleTitles} theme={theme} help={help} notices={notices}
+        satisfiedBlockIds={[...satisfiedBlockIds]} blockResponses={blockResponses}
+        client={{ name: relationship.primary_person_name, email: relationship.primary_email, phone: relationship.primary_phone }}
+        workspaceName={publicBranding.displayName} logoSrc={logoSrc}
+        privacyPolicyUrl={publicBranding.privacyPolicyUrl} termsOfServiceUrl={publicBranding.termsOfServiceUrl}
+        basePath={customOnboardingDomain ? `/${token}` : `/onboarding/session/${token}`}
+        paymentComplete={Boolean(paymentContext)} metaResult={metaResult} connectionReason={connectionReason}
+    />
 }

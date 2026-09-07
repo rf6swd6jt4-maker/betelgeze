@@ -20,6 +20,8 @@ import { assetHref, onboardingDetailHref, relationshipHubHref, workItemHref } fr
 import { completeWorkflowParents, createOnboardingReviewWork, ensureRelationshipStage } from "@/lib/relationship-workflow"
 import { platformFailureFingerprint, reportPlatformFailure } from "@/lib/admin/maintenance"
 import { recordAdminActivity } from "@/lib/admin/activity"
+import { sameOnboardingResponse } from "@/lib/onboarding/submission-response"
+import { confirmOnboardingUploads } from "@/lib/onboarding/confirm-uploads"
 import {
     classifyUploadAsset,
     FINAL_ONBOARDING_STEP,
@@ -117,6 +119,43 @@ type CanonicalStepWorkItem = {
     parent_work_item_id: string | null
 }
 
+type MutationSession = Pick<PublicOnboardingSession, "session" | "workspace" | "completableSteps" | "completedKeys" | "usesSnapshot"> & {
+    workItems?: Map<string, CanonicalStepWorkItem>
+}
+
+// Submission needs the frozen fields and live progress, not branding, notices,
+// published builder configuration, or visual block responses. Legacy sessions
+// still use the full resolver, including its work-item repair path.
+export async function getCanonicalMutationSessionByToken(token: string, stepKey?: string): Promise<MutationSession | null> {
+    const [session, workspaceSlug] = await Promise.all([loadSessionByToken(token, false), getWorkspaceSlugHeader()])
+    if (!session) return null
+    if (!session.snapshot_schema_version) return getCanonicalSessionByToken(token)
+    let workspaceQuery = supabaseAdmin.from("workspaces").select("id, name, slug").eq("id", session.workspace_id).eq("status", "active")
+    if (workspaceSlug) workspaceQuery = workspaceQuery.eq("slug", workspaceSlug)
+    const [snapshot, workspaceResult, itemResult] = await Promise.all([
+        loadNormalizedSessionSnapshot(session, { fieldStepId: stepKey, includeBlocks: false }),
+        workspaceQuery.maybeSingle(),
+        supabaseAdmin.from("work_items").select("id, status, actual_start_at, parent_work_item_id, native_key")
+            .eq("workspace_id", session.workspace_id).eq("native_kind", "onboarding_step").like("native_key", `${session.id}:%`),
+    ])
+    if (!workspaceResult.data || workspaceResult.error || itemResult.error) return null
+    if (!snapshot) return getCanonicalSessionByToken(token)
+    const workItems = new Map((itemResult.data ?? []).map((item) => [item.native_key, item as CanonicalStepWorkItem]))
+    const completableSteps = snapshot.actionableSteps.map((item) => {
+        const step = snapshotStepToSessionStep(item, Number(snapshot.schemaVersion) >= 2)
+        const workItem = workItems.get(stepNativeKey(session.id, step))
+        return { ...step, workItemId: workItem?.id, status: workItem?.status ?? "todo" as const }
+    })
+    // Only a corrupt/missing rolling work-item window needs the repair resolver.
+    const firstIncomplete = completableSteps.find((step) => step.status !== "done")
+    if (firstIncomplete && !firstIncomplete.workItemId) return getCanonicalSessionByToken(token)
+    return {
+        session, workspace: workspaceResult.data, completableSteps, workItems,
+        completedKeys: new Set(completableSteps.filter((step) => step.status === "done").map((step) => step.key)),
+        usesSnapshot: true,
+    }
+}
+
 type QueryError = { message?: string; code?: string } | null | undefined
 
 export const ONBOARDING_SESSION_UPDATED_MESSAGE = "Your onboarding session was updated. Reload this page to continue."
@@ -166,10 +205,10 @@ async function paidSessionHasPublicConsent(session: CanonicalOnboardingSession) 
     return !error && Boolean(data?.consent_confirmed_at)
 }
 
-async function loadSessionByToken(token: string) {
+async function loadSessionByToken(token: string, includeComposition = true) {
     const snapshotResult = await supabaseAdmin
         .from("relationship_onboarding_sessions")
-        .select(SNAPSHOT_SESSION_COLUMNS)
+        .select(includeComposition ? SNAPSHOT_SESSION_COLUMNS : SNAPSHOT_SESSION_COLUMNS.split(", ").filter((column) => column !== "composition_snapshot").join(", "))
         .eq("session_token", token)
         .in("status", ["active", "completed"])
         .maybeSingle()
@@ -909,25 +948,29 @@ export async function completeCanonicalStep(
     token: string,
     stepKey: string,
     submission?: { form: OnboardingFormDefinition; response: FormResponse },
-    resolvedSession?: PublicOnboardingSession,
+    resolvedSession?: MutationSession,
 ) {
-    const resolved = resolvedSession ?? await getCanonicalSessionByToken(token)
+    const resolved = resolvedSession ?? await getCanonicalMutationSessionByToken(token, stepKey)
     if (!resolved) throw new Error("Invalid onboarding session")
     const stepIndex = resolved.completableSteps.findIndex((step) => step.key === stepKey)
     const step = resolved.completableSteps[stepIndex]
-    if (resolved.session.status !== "active") throw new Error("This onboarding session is read-only")
     if (!step) throw new Error(resolved.usesSnapshot ? ONBOARDING_SESSION_UPDATED_MESSAGE : "Unknown onboarding step")
     if (resolved.completedKeys.has(step.key)) {
-        const everyStepIsComplete = resolved.completableSteps.length > 0
-            && resolved.completableSteps.every((candidate) => resolved.completedKeys.has(candidate.key))
-        if (!everyStepIsComplete) throw new Error("Submitted steps are locked")
-        const clientPortalUrl = await maybeCompleteOnboarding(resolved.session, resolved.workspace.slug)
+        if (submission && !sameOnboardingResponse(await getFormResponseAsset(resolved.session.id, step), submission.response)) {
+            throw new Error("This step was already submitted with different answers. Reload to see the saved information.")
+        }
+        const nextStepKey = resolved.completableSteps.find((candidate) => !resolved.completedKeys.has(candidate.key))?.key ?? null
+        const clientPortalUrl = nextStepKey ? null : resolved.session.status === "completed"
+            ? await getClientPortalUrlForOnboardingSession({ workspaceId: resolved.session.workspace_id, relationshipId: resolved.session.relationship_id })
+            : await maybeCompleteOnboarding(resolved.session, resolved.workspace.slug)
         revalidateOnboarding(resolved.workspace.slug, resolved.session.relationship_id, token)
-        return { clientPortalUrl, nextStepKey: null }
+        return { clientPortalUrl, nextStepKey }
     }
+    if (resolved.session.status !== "active") throw new Error("This onboarding session is read-only")
     const firstIncompleteIndex = resolved.completableSteps.findIndex((candidate) => !resolved.completedKeys.has(candidate.key))
     if (stepIndex !== firstIncompleteIndex) throw new Error("Complete the earlier onboarding step first.")
-    const workItem = await findStepWorkItem(resolved.session.workspace_id, resolved.session.id, step)
+    const workItem = resolved.workItems?.get(stepNativeKey(resolved.session.id, step))
+        ?? await findStepWorkItem(resolved.session.workspace_id, resolved.session.id, step)
     if (!workItem?.parent_work_item_id) throw new Error("Invalid onboarding step")
     const nextStepKey = resolved.completableSteps[stepIndex + 1]?.key ?? null
     let now = new Date().toISOString()
@@ -964,6 +1007,9 @@ export async function completeCanonicalStep(
         })
         if (!completionRpcError) {
             completedWithRpc = true
+            if (submission && completionData?.idempotent && !sameOnboardingResponse(await getFormResponseAsset(resolved.session.id, step), submission.response)) {
+                throw new Error("This step was already submitted with different answers. Reload to see the saved information.")
+            }
             const completedAt = completionData && typeof completionData === "object" && "completed_at" in completionData
                 ? (completionData as { completed_at?: unknown }).completed_at
                 : null
@@ -1103,22 +1149,22 @@ export async function submitCanonicalFormStep(
     token: string,
     stepKey: string,
     response: FormResponse,
-    options: { allowMissingRequiredFilesForTest?: boolean } = {}
+    options: { allowMissingRequiredFilesForTest?: boolean; resolvedSession?: MutationSession } = {}
 ) {
-    const resolved = await getCanonicalSessionByToken(token)
+    const resolved = options.resolvedSession ?? await getCanonicalMutationSessionByToken(token, stepKey)
     if (!resolved) throw new Error("Invalid onboarding session")
-    if (resolved.session.status !== "active") throw new Error("This onboarding session is read-only")
+    if (resolved.session.status !== "active" && resolved.session.status !== "completed") throw new Error("This onboarding session is read-only")
     const step = resolved.completableSteps.find((candidate) => candidate.key === stepKey)
     if (!step || step.kind !== "form") throw new Error(resolved.usesSnapshot ? ONBOARDING_SESSION_UPDATED_MESSAGE : "Unknown onboarding form")
-    if (resolved.completedKeys.has(step.key)) throw new Error("Submitted steps are locked")
     const form = step.form
         ?? (step.formKey ? (await import("@/lib/onboarding/forms")).getOnboardingForm(step.formKey) : null)
     if (!form) throw new Error("Unknown onboarding form")
     validateFormResponse(form, response, {
         allowMissingRequiredFiles: Boolean(options.allowMissingRequiredFilesForTest && resolved.session.is_test),
     })
-    const workItem = await findStepWorkItem(resolved.session.workspace_id, resolved.session.id, step)
-    if (!workItem) throw new Error(resolved.usesSnapshot ? ONBOARDING_SESSION_UPDATED_MESSAGE : "Unknown onboarding step")
+    if (!resolved.completedKeys.has(step.key) && form.fields.some((field) => field.type === "file" && Array.isArray(response[field.name]) && response[field.name].length)) {
+        await confirmOnboardingUploads({ workspaceId: resolved.session.workspace_id, relationshipId: resolved.session.relationship_id, sessionId: resolved.session.id, stepKey }, form, response)
+    }
     return completeCanonicalStep(token, stepKey, { form, response }, resolved)
 }
 
@@ -1135,8 +1181,8 @@ function draftResponseForForm(form: OnboardingFormDefinition, response: FormResp
     return draft
 }
 
-export async function getCanonicalStepDraft(token: string, stepKey: string): Promise<{ response: FormResponse; lockVersion: number } | null> {
-    const resolved = await getCanonicalSessionByToken(token)
+export async function getCanonicalStepDraft(token: string, stepKey: string, resolvedSession?: MutationSession): Promise<{ response: FormResponse; lockVersion: number } | null> {
+    const resolved = resolvedSession ?? await getCanonicalMutationSessionByToken(token, stepKey)
     if (!resolved) return null
     const step = resolved.completableSteps.find((candidate) => candidate.key === stepKey)
     if (!step?.sessionStepId || step.kind !== "form" || resolved.completedKeys.has(step.key)) return null

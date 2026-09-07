@@ -8,7 +8,7 @@ import {
 } from "@/lib/onboarding/forms"
 import {
     completeCanonicalStep,
-    getCanonicalSessionByToken,
+    getCanonicalMutationSessionByToken,
     getCanonicalStepDraft,
     getPublicOnboardingPath,
     markCanonicalSessionNoticeSeen,
@@ -27,11 +27,24 @@ import {
     type AppointmentMedium,
 } from "@/lib/appointment-setting"
 import { normalizeCalendarResponse, validateCalendarSelection } from "@/lib/onboarding/calendar"
+import { confirmOnboardingUploads } from "@/lib/onboarding/confirm-uploads"
 
-async function getPublicSession(token: string) {
-    const session = await getCanonicalSessionByToken(token)
+async function getPublicSession(token: string, stepKey: string) {
+    const session = await getCanonicalMutationSessionByToken(token, stepKey)
     if (!session) throw new Error("Invalid onboarding session")
     return session
+}
+
+export async function confirmDirectUploads(token: string, stepKey: string, response: FormResponse) {
+    const resolved = await getPublicSession(token, stepKey)
+    const step = resolved.completableSteps.find((candidate) => candidate.key === stepKey)
+    const form = step?.form ?? getOnboardingForm(step?.formKey)
+    if (resolved.session.status !== "active" || !step || !form || resolved.completedKeys.has(step.key)) throw new Error("This onboarding step is read-only.")
+    if (resolved.completableSteps.find((candidate) => !resolved.completedKeys.has(candidate.key))?.key !== stepKey) throw new Error("Complete the earlier onboarding step first.")
+    return confirmOnboardingUploads({
+        workspaceId: resolved.session.workspace_id, relationshipId: resolved.session.relationship_id,
+        sessionId: resolved.session.id, stepKey,
+    }, form, response)
 }
 
 async function onboardingPathForStep(token: string, stepKey: string | null) {
@@ -137,7 +150,7 @@ export async function prepareDirectUploads(
 ) {
     if (files.length === 0) return []
     if (files.length > 25) throw new Error("Choose no more than 25 files at once.")
-    const resolved = await getPublicSession(token)
+    const resolved = await getPublicSession(token, stepKey)
     if (resolved.session.status !== "active") throw new Error("This onboarding session is read-only")
     const stepIndex = resolved.completableSteps.findIndex((candidate) => candidate.key === stepKey)
     const step = resolved.completableSteps[stepIndex]
@@ -242,7 +255,7 @@ export async function skipTestStep(
     stepKey: string
 ) {
     try {
-        const resolved = await getPublicSession(token)
+        const resolved = await getPublicSession(token, stepKey)
         const { session } = resolved
         if (!session.is_test) throw new Error("Invalid test onboarding session")
 

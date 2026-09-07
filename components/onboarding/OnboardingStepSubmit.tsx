@@ -1,8 +1,9 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { type FormEvent, useState, useTransition } from "react"
-import { completePreparedStep } from "@/app/onboarding/session/[token]/actions"
+import { type FormEvent, useRef, useState, useTransition } from "react"
+import { postOnboardingSubmission } from "@/lib/onboarding/submission-client"
+import { useOnboardingAdvance } from "@/components/onboarding/OnboardingAdvanceContext"
 import { useOnboardingSaveCoordinator } from "@/components/onboarding/OnboardingSaveCoordinator"
 import { RequestHelpLink } from "@/components/onboarding/RequestHelpLink"
 
@@ -16,33 +17,37 @@ export function OnboardingStepSubmit({
     label: string
 }) {
     const router = useRouter()
+    const navigation = useOnboardingAdvance()
+    const submittingRef = useRef(false)
     const { flushAll } = useOnboardingSaveCoordinator()
     const [pending, startTransition] = useTransition()
     const [error, setError] = useState<string | null>(null)
 
     function submit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault()
+        if (submittingRef.current) return
+        submittingRef.current = true
         setError(null)
-        startTransition(() => {
-            void (async () => {
-                try {
-                    await flushAll()
-                    const outcome = await completePreparedStep(token, stepKey)
-                    if (!outcome.ok) {
-                        setError(outcome.error)
-                        return
-                    }
-                    if (outcome.clientPortalUrl) {
-                        window.location.assign(outcome.clientPortalUrl)
-                        return
-                    }
-                    router.replace(outcome.nextPath)
-                } catch (caughtError) {
-                    setError(caughtError instanceof Error
-                        ? caughtError.message
-                        : "Could not complete this onboarding step.")
+        startTransition(async () => {
+            try {
+                await flushAll()
+                const outcome = await postOnboardingSubmission(token, stepKey, undefined, navigation?.compositionHash)
+                if (!outcome.ok) {
+                    setError(outcome.error)
+                    return
                 }
-            })()
+                if (outcome.clientPortalUrl) {
+                    window.location.assign(outcome.clientPortalUrl)
+                    return
+                }
+                if (!navigation?.advance(outcome)) router.replace(outcome.nextPath)
+            } catch (caughtError) {
+                setError(caughtError instanceof Error
+                    ? caughtError.message
+                    : "Could not complete this onboarding step.")
+            } finally {
+                submittingRef.current = false
+            }
         })
     }
 

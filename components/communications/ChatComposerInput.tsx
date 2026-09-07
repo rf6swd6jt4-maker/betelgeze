@@ -2,18 +2,54 @@
 
 import { useLayoutEffect, useRef, type RefObject } from "react"
 import { Annotation, Compartment, EditorState, StateField, Transaction } from "@codemirror/state"
-import { Decoration, EditorView, keymap, placeholder as editorPlaceholder } from "@codemirror/view"
+import { Decoration, EditorView, WidgetType, drawSelection, keymap, placeholder as editorPlaceholder } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap, insertNewline } from "@codemirror/commands"
-import { chatComposerDecorations, chatListEdit } from "@/lib/chat-formatting"
+import { chatComposerDecorations, chatComposerListMarkers, chatLineStartsWithHeader, chatListEdit } from "@/lib/chat-formatting"
 
 const externalChange = Annotation.define<boolean>()
 const formatting = StateField.define({
     create: (state) => decorate(state.doc.toString()),
     update: (value, transaction) => transaction.docChanged ? decorate(transaction.newDoc.toString()) : value,
-    provide: (field) => EditorView.decorations.from(field),
+    provide: (field) => [
+        EditorView.decorations.from(field, (value) => value.decorations),
+        EditorView.atomicRanges.of((view) => view.state.field(field).atomic),
+    ],
 })
+class ListMarker extends WidgetType {
+    constructor(readonly marker: string, readonly width: number) { super() }
+    eq(other: ListMarker) { return other.marker === this.marker && other.width === this.width }
+    toDOM() {
+        const marker = document.createElement("span")
+        marker.className = "chat-list-marker"
+        marker.dataset.chatListMarker = this.marker
+        marker.style.width = `${this.width}em`
+        marker.setAttribute("aria-hidden", "true")
+        if (this.marker.startsWith("[")) {
+            const box = document.createElement("span")
+            box.className = "chat-list-box"
+            box.textContent = /^\[[xX]\]$/.test(this.marker) ? "✓" : ""
+            marker.appendChild(box)
+        } else marker.textContent = this.marker === "-" ? "•" : this.marker
+        return marker
+    }
+    ignoreEvent() { return false }
+}
 function decorate(body: string) {
-    return Decoration.set(chatComposerDecorations(body).map(({ from, to, className }) => Decoration.mark({ class: className }).range(from, to)), true)
+    const ranges = chatComposerDecorations(body).map(({ from, to, className }) => Decoration.mark({ class: className }).range(from, to))
+    const atomic = []
+    for (const item of chatComposerListMarkers(body)) {
+        const replacement = Decoration.replace({ widget: new ListMarker(item.marker, item.width) }).range(item.from, item.to)
+        ranges.push(replacement)
+        atomic.push(replacement)
+        ranges.push(Decoration.line({ attributes: { class: "chat-list-line", style: `padding-left: ${item.indent * 0.5 + item.width}em; text-indent: -${item.width}em` } }).range(item.from))
+    }
+    let offset = 0
+    const lines = body.split("\n")
+    for (let index = 0; index < lines.length; index++) {
+        if (index > 0 && lines[index - 1].trim() && chatLineStartsWithHeader(lines[index])) ranges.push(Decoration.line({ class: "chat-heading-line" }).range(offset))
+        offset += lines[index].length + 1
+    }
+    return { decorations: Decoration.set(ranges, true), atomic: Decoration.set(atomic, true) }
 }
 
 export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, onBlur, disabled = false, sendDisabled = false, placeholder, maxLength = 8000, portal = false }: {
@@ -62,6 +98,7 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
                 doc: current.current.value,
                 extensions: [
                     formatting, historyConfig.current.of(history()), EditorView.lineWrapping,
+                    drawSelection({ drawRangeCursor: false }),
                     keymap.of([
                         { key: "Enter", run: enter, shift: insertNewline },
                         { key: "Tab", run: (view) => editList(view, "Tab"), shift: (view) => editList(view, "Tab", true) },
@@ -105,10 +142,16 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
                         "&": { backgroundColor: "transparent", color: "inherit" },
                         "&.cm-focused": { outline: "none" },
                         ".cm-scroller": { fontFamily: "inherit", fontSize: "16px", lineHeight: "24px", maxHeight: "116px", overflow: "auto", overscrollBehavior: "contain" },
-                        ".cm-content": { boxSizing: "border-box", padding: "10px 0", caretColor: "currentColor", minHeight: "44px" },
+                        ".cm-content": { boxSizing: "border-box", padding: "10px 0", minHeight: "44px" },
                         ".cm-line": { padding: "0" },
                         ".cm-placeholder": { color: "inherit", opacity: "0.4" },
-                        ".chat-syntax": { opacity: "0.35" },
+                        ".chat-syntax": { color: "color-mix(in srgb, currentColor 35%, transparent)" },
+                        ".cm-cursor": { borderLeftColor: "currentColor" },
+                        ".cm-selectionBackground": { backgroundColor: "color-mix(in srgb, currentColor 20%, transparent)" },
+                        "&.cm-focused .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, currentColor 25%, transparent)" },
+                        ".chat-list-marker": { display: "inline-block", textIndent: "0", verticalAlign: "baseline", whiteSpace: "nowrap" },
+                        ".chat-list-box": { display: "inline-flex", boxSizing: "border-box", width: "0.85em", height: "0.85em", border: "1px solid currentColor", borderRadius: "3px", verticalAlign: "-0.05em", alignItems: "center", justifyContent: "center", fontSize: "inherit", lineHeight: "1" },
+                        ".chat-heading-line": { paddingTop: "0.5em" },
                         ".chat-bold": { fontWeight: "700" },
                         ".chat-italic": { fontStyle: "italic" },
                         ".chat-strike": { textDecoration: "line-through" },

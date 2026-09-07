@@ -1,5 +1,5 @@
 import { Fragment, useRef, useState, type ReactNode } from "react"
-import { chatListLine, parseChatInline, type ChatInline } from "@/lib/chat-formatting"
+import { chatListLine, chatLineStartsWithHeader, parseChatInline, type ChatInline } from "@/lib/chat-formatting"
 
 export function ChatMessageText({ body, className = "leading-5", linkClassName = "underline decoration-current/40 underline-offset-2 hover:decoration-current", onToggleCheckbox }: { body: string; className?: string; linkClassName?: string; onToggleCheckbox?: (line: number, checked: boolean) => Promise<void> }) {
     const [pending, setPending] = useState(false)
@@ -42,7 +42,8 @@ export function ChatMessageText({ body, className = "leading-5", linkClassName =
                 {kind === "checkbox" ? <div className="flex items-start gap-1.5"><button
                     type="button" role="checkbox" aria-checked={checked} aria-label={item.text || "Checklist item"}
                     disabled={!onToggleCheckbox || pending || !item.text.trim()}
-                    data-message-control
+                    data-message-control data-icon-button
+                    style={{ height: "1lh" }}
                     onClick={() => void toggle(key, !checked)}
                     className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-current disabled:cursor-default disabled:opacity-60"
                 ><span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border border-current text-[11px] leading-none">{checked ? "✓" : ""}</span></button><span className={checked ? "min-w-0 line-through opacity-70" : "min-w-0"}>{inline(parseChatInline(item.text))}</span></div> : inline(parseChatInline(item.text))}
@@ -57,7 +58,7 @@ export function ChatMessageText({ body, className = "leading-5", linkClassName =
         if (item) blocks.push(list(item.indent, listKind(item.marker)))
         else {
             const key = cursor
-            blocks.push(<div key={key}>{lines[cursor] ? inline(parseChatInline(lines[cursor])) : <br />}</div>)
+            blocks.push(<div key={key} data-chat-heading={chatLineStartsWithHeader(lines[cursor]) || undefined} className={key > 0 && lines[key - 1].trim() && chatLineStartsWithHeader(lines[cursor]) ? "pt-2" : undefined}>{lines[cursor] ? inline(parseChatInline(lines[cursor])) : <br />}</div>)
             cursor++
         }
     }

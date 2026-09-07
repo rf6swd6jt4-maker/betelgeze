@@ -50,3 +50,17 @@ test("headers and checkbox lists preserve their source and continue unchecked", 
     assert.ok(marks.some((mark) => mark.className === "chat-header" && mark.from === 0 && mark.to === 9))
     for (const mark of marks.filter((mark) => mark.className === "chat-syntax")) assert.match("##Title## **bold __nested__**".slice(mark.from, mark.to), /^(##|\*\*|__)$/)
 })
+
+test("composer list markers replace source prefixes without dimming numbers or item text", async () => {
+    const { chatComposerDecorations, chatComposerListMarkers, chatLineStartsWithHeader } = await import("../lib/chat-formatting.ts")
+    const body = "[ ] Task\n  - Nested **bold**\n12. Number"
+    const markers = chatComposerListMarkers(body)
+    assert.deepEqual(markers.map((item) => body.slice(item.from, item.to)), ["[ ] ", "  - ", "12. "])
+    assert.deepEqual(markers.map((item) => item.marker), ["[ ]", "-", "12."])
+    assert.equal(markers[1].indent, 2)
+    const dimmed = chatComposerDecorations(body).filter((mark) => mark.className === "chat-syntax")
+    assert.deepEqual(dimmed.map((mark) => body.slice(mark.from, mark.to)), ["**", "**"])
+    assert.equal(chatLineStartsWithHeader("##A heading##"), true)
+    assert.equal(chatLineStartsWithHeader("Text ##inline##"), false)
+    assert.equal(chatLineStartsWithHeader("##Incomplete"), false)
+})

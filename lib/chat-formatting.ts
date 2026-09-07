@@ -73,7 +73,6 @@ export function chatComposerDecorations(body: string): ChatDecoration[] {
     for (const line of body.split("\n")) {
         const item = chatListLine(line)
         if (item) {
-            decorations.push({ from: lineStart + item.indent, to: lineStart + item.prefixLength, className: "chat-syntax" })
             if (/^\[[xX]\]$/.test(item.marker) && item.text) decorations.push({ from: lineStart + item.prefixLength, to: lineStart + line.length, className: "chat-strike" })
         }
         function walk(tokens: ChatInline[], offset: number) {
@@ -92,4 +91,19 @@ export function chatComposerDecorations(body: string): ChatDecoration[] {
         lineStart += line.length + 1
     }
     return decorations
+}
+
+export function chatLineStartsWithHeader(line: string) {
+    return parseChatInline(line.trimStart())[0]?.kind === "header"
+}
+
+export function chatComposerListMarkers(body: string) {
+    const markers: { from: number; to: number; marker: string; indent: number; width: number }[] = []
+    let offset = 0
+    for (const line of body.split("\n")) {
+        const item = chatListLine(line)
+        if (item) markers.push({ from: offset, to: offset + item.prefixLength, marker: item.marker, indent: item.indent, width: Math.max(1.5, item.marker.startsWith("[") ? 1.5 : item.marker.length * 0.65 + 0.5) })
+        offset += line.length + 1
+    }
+    return markers
 }

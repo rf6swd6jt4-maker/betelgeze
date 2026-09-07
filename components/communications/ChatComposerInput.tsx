@@ -97,11 +97,15 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
                         blur: () => { current.current.onBlur?.() },
                         pointerdown: (_event, view) => { if (!view.hasFocus && !current.current.disabled) view.contentDOM.focus({ preventScroll: true }) },
                     }),
+                    // Size the scroller directly: its default 1.4 line-height
+                    // overrides editor inheritance, and a bare "&" inside this
+                    // theme's media rule is omitted by the style generator.
+                    // Symmetric padding + one line exactly fills the control.
                     EditorView.theme({
-                        "&": { backgroundColor: "transparent", color: "inherit", fontSize: "16px", lineHeight: "24px", minHeight: "44px" },
+                        "&": { backgroundColor: "transparent", color: "inherit" },
                         "&.cm-focused": { outline: "none" },
-                        ".cm-scroller": { fontFamily: "inherit", maxHeight: "116px", overflow: "auto", overscrollBehavior: "contain" },
-                        ".cm-content": { padding: "10px 0", caretColor: "currentColor", minHeight: "44px" },
+                        ".cm-scroller": { fontFamily: "inherit", fontSize: "16px", lineHeight: "24px", maxHeight: "116px", overflow: "auto", overscrollBehavior: "contain" },
+                        ".cm-content": { boxSizing: "border-box", padding: "10px 0", caretColor: "currentColor", minHeight: "44px" },
                         ".cm-line": { padding: "0" },
                         ".cm-placeholder": { color: "inherit", opacity: "0.4" },
                         ".chat-syntax": { opacity: "0.35" },
@@ -110,9 +114,8 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
                         ".chat-strike": { textDecoration: "line-through" },
                         ".chat-header": { fontSize: "1.15em", fontWeight: "700" },
                         "@media (min-width: 1024px)": {
-                            "&": { fontSize: "14px", lineHeight: "20px", minHeight: "36px" },
                             ".cm-content": { minHeight: "36px", padding: "8px 0" },
-                            ".cm-scroller": { maxHeight: "156px" },
+                            ".cm-scroller": { fontSize: "14px", lineHeight: "20px", maxHeight: "156px" },
                         },
                     }),
                 ],

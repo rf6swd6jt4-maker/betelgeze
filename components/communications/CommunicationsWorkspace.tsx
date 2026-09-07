@@ -1,5 +1,7 @@
 "use client"
 
+import { ChatMessageText } from "@/components/communications/ChatMessageText"
+
 import Link from "next/link"
 import Image from "next/image"
 import { ComposerFooter } from "@/components/communications/ComposerFooter"
@@ -131,10 +133,7 @@ function sameDay(left: string, right: string) {
 }
 
 function MessageBody({ body }: { body: string }) {
-    const parts = body.split(/(https?:\/\/[^\s)]+)/g)
-    return <p className="whitespace-pre-wrap break-words leading-5">{parts.map((part, index) => /^https?:\/\//.test(part)
-        ? <a key={`${part}:${index}`} href={part} target="_blank" rel="noreferrer" className="underline decoration-current/40 underline-offset-2 hover:decoration-current">{part}</a>
-        : <Fragment key={index}>{part}</Fragment>)}</p>
+    return <ChatMessageText body={body} />
 }
 
 function DeliveryTicks({ message }: { message: CommunicationMessage }) {

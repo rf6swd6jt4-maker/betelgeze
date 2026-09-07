@@ -1,5 +1,7 @@
 "use client"
 
+import { ChatMessageText } from "@/components/communications/ChatMessageText"
+
 import Image from "next/image"
 import { ComposerFooter } from "@/components/communications/ComposerFooter"
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
@@ -87,8 +89,7 @@ function StickerIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true" clas
 function TeamIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2"><circle cx="8" cy="8" r="3" /><circle cx="16" cy="9" r="2.5" /><path d="M3 19c0-3 2-5 5-5s5 2 5 5" /><path d="M13 15c1-.8 2-1.2 3.5-1 2.5.3 4 2.1 4 4.5" /></svg> }
 
 function MessageText({ body }: { body: string }) {
-    const parts = body.split(/(https?:\/\/[^\s)]+)/g)
-    return <p className="whitespace-pre-wrap break-words leading-5">{parts.map((part, index) => /^https?:\/\//.test(part) ? <a key={`${part}:${index}`} href={part} target="_blank" rel="noreferrer" className="underline decoration-current/40 underline-offset-2">{part}</a> : <Fragment key={index}>{part}</Fragment>)}</p>
+    return <ChatMessageText body={body} />
 }
 
 function TeamAvatar({ conversation, currentUserId }: { conversation: NativeConversation; currentUserId: string }) {

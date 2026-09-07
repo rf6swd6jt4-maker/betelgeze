@@ -26,6 +26,12 @@ Message bubbles use `NativeMessageBubble` for action activation in client chats,
 
 Preserve embedded links, buttons, audio/video controls, and scrolling. Keyboard users can open actions with Enter, Space, the context-menu key, or Shift+F10 while the bubble is focused. Popups use the shared opening motion above.
 
+## Chat message formatting
+
+Client, team/direct, and portal message bodies use `ChatMessageText`. Supported inline syntax is `**bold**`, `__italic__`, and `~~strikethrough~~`; HTTP(S) links remain clickable and message HTML remains plain text. Message-content lists use semantic `ol`/`ul` elements, with `1. ` and `- ` markers and two-space nesting. These are authored message content, not record collections covered by `List`.
+
+Composers share `chatListEdit` and the chat composer list handlers. Enter continues a list and increments numbered markers; Enter on an empty item removes the marker and exits the list. Tab/Shift+Tab indent/outdent a list line by two spaces. Shift+Enter inserts a plain newline, and Enter outside a list retains send behavior. The send button remains available while composing lists.
+
 ## Status
 
 `Status` communicates operational state, health, or progress. Its appearance follows the lead-generation poll UI: a Betelgeze diamond followed by plain text.

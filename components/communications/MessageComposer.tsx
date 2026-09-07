@@ -1,5 +1,7 @@
 "use client"
 
+import { handleChatListKey, useChatListInput } from "@/components/communications/chat-composer-list"
+
 import { useEffect, type ReactNode, type RefObject } from "react"
 import { reportWorkspaceComposerFocus } from "@/lib/workspace-composer-viewport"
 
@@ -28,6 +30,8 @@ export function MessageComposer({
     onBlur?: () => void
     onSend: () => void
 }) {
+    useChatListInput(textareaRef, onDraftChange)
+
     useEffect(() => {
         const blurComposer = () => textareaRef.current?.blur()
         const blurComposerWhenHidden = () => {
@@ -58,7 +62,7 @@ export function MessageComposer({
                     ref={textareaRef}
                     rows={1}
                     value={draft}
-                    enterKeyHint="send"
+                    enterKeyHint={/^ *(?:-|\d+\.) /m.test(draft) ? "enter" : "send"}
                     onPointerDown={(event) => {
                         // Prevent iOS from panning the iframe before its keyboard animation,
                         // while leaving the native pointer/click activation intact.
@@ -76,6 +80,7 @@ export function MessageComposer({
                         onBlur?.()
                     }}
                     onKeyDown={(event) => {
+                        if (handleChatListKey(event, onDraftChange)) return
                         if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                             event.preventDefault()
                             if (!sendDisabled) onSend()
@@ -90,6 +95,6 @@ export function MessageComposer({
                 {submitIcon ?? <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2"><path d="m4 4 17 8-17 8 3-8-3-8Z" /><path d="M7 12h14" /></svg>}
             </button>
         </form>
-        <p className="mx-auto mt-2 hidden max-w-3xl text-center text-[10px] text-neutral-600 lg:block">Enter to send · Shift+Enter for a new line</p>
+        <p className="mx-auto mt-2 hidden max-w-3xl text-center text-[10px] text-neutral-600 lg:block">Enter to send · Shift+Enter for a new line · Lists: Enter for next item, twice to finish · Tab to indent</p>
     </>
 }

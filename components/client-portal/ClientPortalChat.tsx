@@ -1,5 +1,9 @@
 "use client"
 
+import { handleChatListKey, useChatListInput } from "@/components/communications/chat-composer-list"
+
+import { ChatMessageText } from "@/components/communications/ChatMessageText"
+
 import Image from "next/image"
 import { NativeMessageBubble } from "@/components/communications/NativeMessageBubble"
 import { ComposerFooter } from "@/components/communications/ComposerFooter"
@@ -176,10 +180,7 @@ function FileIcon() {
 }
 
 function MessageText({ body, own }: { body: string; own: boolean }) {
-    const parts = body.split(/(https?:\/\/[^\s]+)/giu)
-    return <p className="whitespace-pre-wrap break-words text-[15px] leading-6">{parts.map((part, index) => part.match(/^https?:\/\//iu)
-        ? <a key={`${part}:${index}`} href={part} target="_blank" rel="noreferrer" className={`underline decoration-1 underline-offset-2 ${own ? "decoration-white/60" : "text-[var(--onboarding-primary,#1E3A5F)]"}`}>{part}</a>
-        : <Fragment key={index}>{part}</Fragment>)}</p>
+    return <ChatMessageText body={body} className="text-[15px] leading-6" linkClassName={`underline decoration-1 underline-offset-2 ${own ? "decoration-white/60" : "text-[var(--onboarding-primary,#1E3A5F)]"}`} />
 }
 
 function MessageAttachment({ attachment, url, own, onOpenImage }: {
@@ -232,6 +233,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
     const followingLatestRef = useRef(true)
     const scrollToLatestRef = useRef(true)
     const swipeStartRef = useRef<{ id: string; x: number; y: number; cancelled: boolean; maxDeltaX: number; minDeltaX: number; verticalAtMax: number; verticalAtMin: number } | null>(null)
+    useChatListInput(textareaRef, setDraft)
     useClientPortalComposerViewport(textareaRef)
 
     const refreshLatest = useCallback(async (initial = false) => {
@@ -590,7 +592,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
                         rows={1}
                         value={draft}
                         maxLength={4_000}
-                        enterKeyHint="send"
+                        enterKeyHint={/^ *(?:-|\d+\.) /m.test(draft) ? "enter" : "send"}
                         placeholder={`Message ${workspaceName}`}
                         aria-label={`Message ${workspaceName}`}
                         onPointerDown={(event) => {
@@ -601,6 +603,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
                         }}
                         onChange={(event) => setDraft(event.target.value)}
                         onKeyDown={(event) => {
+                            if (handleChatListKey(event, setDraft)) return
                             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                                 event.preventDefault()
                                 if (draft.trim()) void sendMessage()
@@ -610,7 +613,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
                     />
                     <button type="submit" disabled={!draft.trim()} aria-label="Send message" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--onboarding-primary,#1E3A5F)] text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-35"><SendIcon /></button>
                 </form>
-                <p className="mt-1.5 hidden text-center text-[10px] text-[var(--onboarding-muted,#475569)] lg:block">Enter to send · Shift+Enter for a new line</p>
+                <p className="mt-1.5 hidden text-center text-[10px] text-[var(--onboarding-muted,#475569)] lg:block">Enter to send · Shift+Enter for a new line · Lists: Enter for next item, twice to finish · Tab to indent</p>
             </div>
         </ComposerFooter>
         <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} />

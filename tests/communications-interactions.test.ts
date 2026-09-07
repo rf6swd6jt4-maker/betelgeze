@@ -271,7 +271,7 @@ test("message interactions keep the approved mobile and profile parity", async (
     assert.match(team, /NativeDeliveryTicks/)
     assert.match(team, /read=\{readers\.length > 0\}/)
     assert.match(composer, /text-base leading-6[^\"]*lg:text-sm lg:leading-5/)
-    assert.match(composer, /enterKeyHint="send"/)
+    assert.match(composer, /enterKeyHint=\{[^\n]+"enter" : "send"\}/)
     assert.match(composer, /event\.nativeEvent\.isComposing/)
     assert.match(composer, /hidden max-w-3xl[^\"]*lg:block/)
     assert.match(composer, /h-11 min-h-11[^\"]*lg:h-9 lg:min-h-9/)

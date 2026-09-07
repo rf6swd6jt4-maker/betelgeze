@@ -47,10 +47,11 @@ export async function listAppointmentSettingAppointments(input: {
 }): Promise<AppointmentSettingAppointment[]> {
     const { data, error } = await supabaseAdmin
         .from("appointment_setting_appointments")
-        .select("id, workspace_id, relationship_id, service_id, contact_name, phone, appointment_at, appointment_timezone, meeting_medium, meeting_link, details, created_by, updated_by, created_at, updated_at")
+        .select("id, workspace_id, relationship_id, service_id, contact_name, phone, appointment_at, appointment_date, appointment_time, appointment_timezone, meeting_medium, meeting_link, details, workflow_status, submitted_at, submitted_by, submission_message_id, created_by, updated_by, created_at, updated_at")
         .eq("workspace_id", input.workspaceId)
         .eq("relationship_id", input.relationshipId)
         .eq("service_id", input.serviceId)
+        .order("workflow_status", { ascending: true })
         .order("appointment_at", { ascending: true })
         .order("created_at", { ascending: true })
     if (error) throw new Error(error.message)

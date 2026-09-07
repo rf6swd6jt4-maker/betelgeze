@@ -64,13 +64,19 @@ export type AppointmentSettingAppointment = {
     workspace_id: string
     relationship_id: string
     service_id: string
-    contact_name: string
+    contact_name: string | null
     phone: string | null
-    appointment_at: string
+    appointment_at: string | null
+    appointment_date: string | null
+    appointment_time: string | null
     appointment_timezone: string
     meeting_medium: AppointmentMedium
     meeting_link: string | null
     details: Partial<Record<Exclude<AppointmentFieldKey, "phone">, string>>
+    workflow_status: "draft" | "submitted"
+    submitted_at: string | null
+    submitted_by: string | null
+    submission_message_id: string | null
     created_by: string | null
     updated_by: string | null
     created_at: string
@@ -84,6 +90,36 @@ export type AppointmentSettingInput = {
     meetingMedium: AppointmentMedium
     meetingLink: string
     details: Partial<Record<AppointmentFieldKey, string>>
+}
+
+export function formatAppointmentNotification(input: {
+    contactName: string
+    appointmentDate: string
+    appointmentTime: string
+    appointmentTimezone: string
+    meetingMedium: AppointmentMedium
+    meetingLink?: string | null
+}) {
+    const date = new Date(`${input.appointmentDate}T12:00:00Z`)
+    const [hourText, minuteText] = input.appointmentTime.split(":")
+    const hour = Number(hourText)
+    const minute = Number(minuteText)
+    const dateLabel = Number.isNaN(date.getTime())
+        ? input.appointmentDate
+        : new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date)
+    const timeLabel = Number.isInteger(hour) && Number.isInteger(minute)
+        ? `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${hour >= 12 ? "PM" : "AM"}`
+        : input.appointmentTime
+    const mediumLabel = APPOINTMENT_MEDIUM_OPTIONS.find((option) => option.key === input.meetingMedium)?.label ?? input.meetingMedium
+    return [
+        "A new appointment has been booked.",
+        "",
+        `Lead: ${input.contactName}`,
+        `Date: ${dateLabel}`,
+        `Time: ${timeLabel} (${input.appointmentTimezone.replaceAll("_", " ")})`,
+        `Medium: ${mediumLabel}`,
+        ...(input.meetingMedium !== "phone" && input.meetingLink ? [`Meeting link: ${input.meetingLink}`] : []),
+    ].join("\n")
 }
 
 export function appointmentSettingDetailHref(workspaceSlug: string, relationshipId: string) {

@@ -33,7 +33,8 @@ export default async function AppointmentSettingRelationshipPage({ params }: Pag
         listAppointmentSettingAppointments({ workspaceId: workspace.id, relationshipId: relationship.id, serviceId }),
         loadAppointmentSettingConfiguration({ workspaceId: workspace.id, relationshipId: relationship.id, serviceId }),
     ])
-    const uniquePhoneCount = new Set(appointments.map((appointment) => appointment.phone).filter(Boolean)).size
+    const submittedCount = appointments.filter((appointment) => appointment.workflow_status === "submitted").length
+    const draftCount = appointments.length - submittedCount
     const latestUpdatedAt = appointments.reduce((latest, appointment) => (
         appointment.updated_at > latest ? appointment.updated_at : latest
     ), relationship.updated_at)
@@ -50,8 +51,8 @@ export default async function AppointmentSettingRelationshipPage({ params }: Pag
                         subtitle={relationship.business_name ?? "No company saved"}
                         labels={<>{relationship.source_metadata.is_test === true ? <SquarePill tone="yellow">Test</SquarePill> : null}<RelationshipStage phase="retention" /></>}
                         facts={[
-                            { label: "appointments", value: appointments.length },
-                            { label: "contacts", value: uniquePhoneCount },
+                            { label: "submitted", value: submittedCount },
+                            { label: "drafts", value: draftCount },
                         ]}
                         updated={formatRelativeTime(latestUpdatedAt)}
                     />
@@ -71,8 +72,8 @@ export default async function AppointmentSettingRelationshipPage({ params }: Pag
                     workspaceSlug={workspace.slug}
                     relationship={relationship}
                     metrics={[
-                        { label: "Appointments", value: appointments.length },
-                        { label: "Contacts", value: uniquePhoneCount },
+                        { label: "Submitted", value: submittedCount },
+                        { label: "Drafts", value: draftCount },
                     ]}
                     allowedDestinations={role === "staff" ? ["onboarding", "fulfilment"] : undefined}
                 />

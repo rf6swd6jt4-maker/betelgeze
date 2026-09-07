@@ -1,6 +1,7 @@
 "use client"
 
 import { useLayoutEffect, useRef, type RefObject } from "react"
+import { createComposerPointerFocus } from "./composer-pointer-focus"
 import { Annotation, Compartment, EditorState, StateField, Transaction } from "@codemirror/state"
 import { Decoration, EditorView, WidgetType, drawSelection, keymap, placeholder as editorPlaceholder } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap, insertNewline } from "@codemirror/commands"
@@ -92,6 +93,10 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
             if (!current.current.sendDisabled) current.current.onSend()
             return true
         }
+        const pointerFocus = createComposerPointerFocus(() => {
+            const view = editor.current
+            if (view && !current.current.disabled) view.contentDOM.focus({ preventScroll: true })
+        })
         const view = new EditorView({
             parent: host.current,
             state: EditorState.create({
@@ -132,7 +137,7 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
                     EditorView.domEventHandlers({
                         focus: () => { current.current.onFocus?.() },
                         blur: () => { current.current.onBlur?.() },
-                        pointerdown: (_event, view) => { if (!view.hasFocus && !current.current.disabled) view.contentDOM.focus({ preventScroll: true }) },
+                        ...pointerFocus,
                     }),
                     // Size the scroller directly: its default 1.4 line-height
                     // overrides editor inheritance, and a bare "&" inside this

@@ -237,7 +237,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const workspaceTabActive = useWorkspaceTabActive()
     const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null
     const history = useConversationHistory(selectedId, selected?.messages ?? [])
-    const messagePaneInteractions = useMessagePaneInteractions(composerRef, followLatestRef, setAtLatest, setShowJumpToLatest)
+    const messagePaneInteractions = useMessagePaneInteractions(composerRef)
     const focusedMessageId = editingMessage?.id ?? replyingTo?.id ?? null
     const peopleById = useMemo(() => new Map([...bootstrap.people, ...bootstrap.formerPeople].map((person) => [person.id, person])), [bootstrap.formerPeople, bootstrap.people])
 
@@ -783,10 +783,10 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                                     }}
                                     onTouchMove={(event) => {
                                         const start = swipeStartRef.current, touch = event.touches[0]
-                                        if (!start || start.id !== message.id || !touch) return
+                                        if (!start || start.id !== message.id || !touch || start.axis === "vertical") return
                                         const next = moveMessageSwipe(start, touch, selected.canWrite, canDelete && selected.canWrite)
                                         swipeStartRef.current = next
-                                        setSwipePosition({ id: message.id, offset: next.offset, active: next.axis !== "vertical" })
+                                        if (next.offset !== start.offset || next.axis !== start.axis) setSwipePosition({ id: message.id, offset: next.offset, active: next.axis === "horizontal" })
                                     }}
                                     onTouchEnd={(event) => {
                                         const action = finishMessageSwipe(swipeStartRef.current, event.changedTouches[0], selected.canWrite, canDelete && selected.canWrite)

@@ -276,7 +276,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const workspaceTabActive = useWorkspaceTabActive()
     const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null
     const history = useConversationHistory(selectedId, selected?.messages ?? [])
-    const messagePaneInteractions = useMessagePaneInteractions(composerRef, followLatestRef, setAtLatest, setShowJumpToLatest)
+    const messagePaneInteractions = useMessagePaneInteractions(composerRef)
 
     useEffect(() => {
         selectedRef.current = selectedId
@@ -987,7 +987,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                                                 setSwipePosition({ id: message.id, offset: 0, active: false })
                                                 return
                                             }
-                                            if (deltaX > 0) {
+                                            if (deltaX > 12 && deltaX > Math.abs(deltaY) * 1.5) {
                                                 event.preventDefault()
                                                 setSwipePosition({ id: message.id, offset: Math.min(82, deltaX * 0.78), active: true })
                                             }

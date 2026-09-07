@@ -1,24 +1,42 @@
 import type { MutableRefObject } from "react"
 
-type Anchor = { element: HTMLElement; offset: number }
+// Store content coordinates so an unreported native scroll cannot look like
+// a layout shift. Touch scrolling may run ahead of main-thread scroll events.
+type Anchor = { element: HTMLElement; top: number }
+const SCROLL_SETTLE_MS = 200
 
-/** The pane has a fixed height; its content is the element that grows on decode. */
 export function observeConversationLayout(
     pane: HTMLDivElement,
     followLatest: MutableRefObject<boolean>,
     onPosition: (atLatest: boolean, away: boolean) => void,
 ) {
+    const view = pane.ownerDocument.defaultView!
     let height = 0
     let contentHeight = 0
     let scrollTop = pane.scrollTop
     let anchor: Anchor | null = null
-    let disposed = false
+    let hidden = false
+    let touching = false
+    let interacting = false
+    let scrolled = false
+    let frame = 0
+    let settleTimer = 0
+    let lastPosition = ""
     const content = pane.firstElementChild
+
+    function publish() {
+        const distance = pane.scrollHeight - pane.clientHeight - pane.scrollTop
+        const latest = distance <= 24, away = distance > 96
+        const position = `${latest}:${away}`
+        if (position !== lastPosition) {
+            lastPosition = position
+            onPosition(latest, away)
+        }
+    }
 
     function captureAnchor() {
         const bounds = pane.getBoundingClientRect()
         const rows = pane.querySelectorAll<HTMLElement>("[data-message-scroll-anchor]")
-        // Rows are ordered; avoid reading every message's bounds on each scroll.
         let low = 0, high = rows.length
         while (low < high) {
             const middle = (low + high) >>> 1
@@ -26,53 +44,124 @@ export function observeConversationLayout(
             else high = middle
         }
         const element = rows[low]
-        anchor = element ? { element, offset: element.getBoundingClientRect().top - bounds.top } : null
+        anchor = element ? { element, top: element.getBoundingClientRect().top - bounds.top + pane.scrollTop } : null
     }
 
-    function remember() {
+    function remember(capture = true) {
         if (pane.clientHeight <= 0) return
         height = pane.clientHeight
         contentHeight = pane.scrollHeight
         scrollTop = pane.scrollTop
-        if (!followLatest.current) captureAnchor()
-        else anchor = null
-        const distance = pane.scrollHeight - pane.clientHeight - pane.scrollTop
-        onPosition(distance <= 24, distance > 96)
+        if (capture) {
+            if (!followLatest.current) captureAnchor()
+            else anchor = null
+        }
+        publish()
     }
 
-    function restore() {
+    function restore(force = false) {
         const nextHeight = pane.clientHeight
-        if (nextHeight <= 0) return // Hidden workspace tabs must not overwrite the anchor.
-        let nextTop = scrollTop
+        if (nextHeight <= 0) {
+            hidden = true
+            touching = interacting = false
+            view.clearTimeout(settleTimer)
+            return
+        }
+        // Never write a scroll position during a gesture or its momentum.
+        // Accept the current layout; settling must not replay an old correction.
+        if (interacting) { remember(false); return }
+        if (!force && !hidden && nextHeight === height && pane.scrollHeight === contentHeight) return
+        let nextTop = hidden ? scrollTop : pane.scrollTop
         if (followLatest.current) nextTop = pane.scrollHeight - nextHeight
         else if (anchor?.element.isConnected && pane.contains(anchor.element)) {
-            const offset = anchor.element.getBoundingClientRect().top - pane.getBoundingClientRect().top
-            nextTop = pane.scrollTop + offset - anchor.offset + (height ? height - nextHeight : 0)
+            const top = anchor.element.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop
+            nextTop += top - anchor.top + (height ? height - nextHeight : 0)
         } else if (height) nextTop += height - nextHeight
+        hidden = false
         nextTop = Math.max(0, Math.min(pane.scrollHeight - nextHeight, nextTop))
         if (Math.abs(pane.scrollTop - nextTop) > 0.5 || pane.scrollLeft) pane.scrollTo({ top: nextTop, left: 0, behavior: "instant" })
         pane.dataset.positioned = "true"
         remember()
     }
 
-    function onScroll() {
-        // Browser clamping can dispatch scroll before the resize notification.
-        // Do not replace the old anchor with the displaced position in that gap.
-        if (pane.clientHeight !== height || pane.scrollHeight !== contentHeight) restore()
-        else queueMicrotask(() => { if (!disposed) remember() })
+    function scheduleSettle() {
+        view.clearTimeout(settleTimer)
+        if (touching) return
+        settleTimer = view.setTimeout(() => {
+            interacting = false
+            // A tap may have paused bottom-following while content arrived.
+            // A scroll, including inertia, always establishes a fresh position.
+            if (!scrolled) restore(true)
+            else remember()
+        }, SCROLL_SETTLE_MS)
     }
-    const observer = new ResizeObserver(restore)
+
+    function beginInteraction() {
+        if (!interacting) scrolled = false
+        interacting = true
+        scheduleSettle()
+    }
+    function onTouchStart() { touching = true; beginInteraction() }
+    function onTouchEnd(event: TouchEvent) {
+        touching = event.touches.length > 0
+        scheduleSettle()
+    }
+    function onWheel(event: WheelEvent) {
+        beginInteraction()
+        if (event.deltaY < 0) followLatest.current = false
+    }
+    function onKeyDown(event: KeyboardEvent) {
+        if (event.target instanceof Element && event.target.closest("input,textarea,video,audio,button,[role='slider']")) return
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
+            beginInteraction()
+            if (["ArrowUp", "PageUp", "Home"].includes(event.key)) followLatest.current = false
+        }
+    }
+    function onPointerDown(event: PointerEvent) {
+        // Native scrollbar drags have no wheel/touch events.
+        if (event.pointerType === "mouse" && event.clientX - pane.getBoundingClientRect().left >= pane.clientWidth) beginInteraction()
+    }
+    function onScroll() {
+        if (pane.clientHeight <= 0) return
+        if (interacting) {
+            scrolled = true
+            followLatest.current = pane.scrollHeight - pane.clientHeight - pane.scrollTop <= 24
+            scheduleSettle()
+        } else if (pane.clientHeight !== height || pane.scrollHeight !== contentHeight) {
+            restore()
+        }
+        if (!frame) frame = view.requestAnimationFrame(() => {
+            frame = 0
+            // Avoid message queries/bounds reads on every touch-scroll frame.
+            if (interacting) publish()
+            else remember()
+        })
+    }
+    function onResize() { restore() }
+    function onVisible() { restore(true) }
+    const observer = new ResizeObserver(onResize)
     observer.observe(pane)
     if (content) observer.observe(content)
     pane.addEventListener("scroll", onScroll, { passive: true })
-    pane.addEventListener("load", restore, true)
-    pane.addEventListener("conversation-visible", restore)
-    restore()
+    pane.addEventListener("touchstart", onTouchStart, { passive: true })
+    pane.addEventListener("touchend", onTouchEnd, { passive: true })
+    pane.addEventListener("touchcancel", onTouchEnd, { passive: true })
+    pane.addEventListener("wheel", onWheel, { passive: true })
+    pane.addEventListener("keydown", onKeyDown)
+    pane.addEventListener("pointerdown", onPointerDown, { passive: true })
+    pane.addEventListener("conversation-visible", onVisible)
+    restore(true)
     return () => {
-        disposed = true
         observer.disconnect()
+        view.cancelAnimationFrame(frame)
+        view.clearTimeout(settleTimer)
         pane.removeEventListener("scroll", onScroll)
-        pane.removeEventListener("load", restore, true)
-        pane.removeEventListener("conversation-visible", restore)
+        pane.removeEventListener("touchstart", onTouchStart)
+        pane.removeEventListener("touchend", onTouchEnd)
+        pane.removeEventListener("touchcancel", onTouchEnd)
+        pane.removeEventListener("wheel", onWheel)
+        pane.removeEventListener("keydown", onKeyDown)
+        pane.removeEventListener("pointerdown", onPointerDown)
+        pane.removeEventListener("conversation-visible", onVisible)
     }
 }

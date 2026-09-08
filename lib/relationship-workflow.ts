@@ -877,9 +877,17 @@ export async function currentRelationshipWork(input: { workspaceId: string; rela
     const completed = new Set(items.filter((item) => item.status === "done" || item.status === "canceled").map((item) => item.id))
     const blockedByDependency = new Set((dependencies ?? []).filter((edge) => ids.has(edge.work_item_id) && !completed.has(edge.depends_on_work_item_id)).map((edge) => edge.work_item_id))
     const mine = items.filter((item) => assignees.get(item.id)?.includes(input.userId) && !completed.has(item.id)).sort((a, b) => a.sort_order - b.sort_order)
-    const stage = mine.find((item) => item.workflow_role === "lifecycle_stage")
+    const stages = items.filter((item) => item.workflow_role === "lifecycle_stage" && !completed.has(item.id))
+        .sort((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id))
+    // Future stages are created ahead of time. Before POS there is deliberately
+    // no seller assignment, so the manager fallback must follow dependencies,
+    // never the database's unspecified row order.
+    const stage = mine.find((item) => item.workflow_role === "lifecycle_stage" && !blockedByDependency.has(item.id))
+        ?? (input.isManager ? stages.find((item) => !blockedByDependency.has(item.id)) : null)
     const ready = mine.find((item) => item.workflow_role !== "lifecycle_stage" && !blockedByDependency.has(item.id))
-    const selected = ready ?? stage ?? (input.isManager ? items.find((item) => item.workflow_role === "lifecycle_stage" && !completed.has(item.id)) ?? items.find((item) => item.workflow_role === "service_group" && !assignees.get(item.id)?.length && !completed.has(item.id)) : null)
+    const selected = ready ?? stage
+        ?? mine.find((item) => item.workflow_role === "lifecycle_stage")
+        ?? (input.isManager ? stages[0] ?? items.find((item) => item.workflow_role === "service_group" && !assignees.get(item.id)?.length && !completed.has(item.id)) : null)
     if (!selected) return null
     const unassignedCount = input.isManager ? items.filter((item) => item.workflow_role === "service_group" && !assignees.get(item.id)?.length && !completed.has(item.id)).length : 0
     return { id: selected.id, title: selected.title, action: selected.workflow_action, role: selected.workflow_role, status: selected.status, unassignedCount, blocked: blockedByDependency.has(selected.id) }

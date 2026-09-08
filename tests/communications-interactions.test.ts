@@ -298,7 +298,7 @@ test("message interactions keep the approved mobile and profile parity", async (
     assert.match(pinnedBar, /<PinIcon/)
     assert.match(clients, /setActionView\("reactions"\)/)
     assert.match(team, /setActionView\("reactions"\)/)
-    assert.match(clients, /communication_pinned_message_id/)
+    assert.match(clients, /event: "\*", schema: "public", table: "relationships"[\s\S]*?void synchronize\(\)/)
     assert.match(team, /pinnedMessageId/)
     assert.match(shell, /onClick=\{\(\) => onOpenProfile\(member\.id\)\}/)
     assert.match(clients, /-inset-x-3 inset-y-0/)

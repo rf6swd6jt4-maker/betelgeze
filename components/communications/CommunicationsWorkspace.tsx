@@ -755,11 +755,11 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                     const reaction = realtimeReaction(payload.new)
                     if (reaction) updates.receiveReaction(`${reaction.messageId}:${reaction.direction}`, reaction)
                 })
-                .on("postgres_changes", { event: "UPDATE", schema: "public", table: "relationships", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => {
-                    const row = record(payload.new)
-                    const relationshipId = stringValue(row.id)
-                    if (!relationshipId || !("communication_pinned_message_id" in row)) return
-                    if (updates.getSnapshot().conversations.find((conversation) => conversation.id === relationshipId)?.pinnedMessageId !== stringValue(row.communication_pinned_message_id)) void synchronize().catch(() => undefined)
+                .on("postgres_changes", { event: "*", schema: "public", table: "relationships", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, () => {
+                    // Beginning POS grants the seller access before any message
+                    // exists. Refresh the authorized roster for assignments,
+                    // creation and archiving as well as pinned-message changes.
+                    void synchronize().catch(() => undefined)
                 }), [bootstrap.workspaceId, bootstrap.workspaceSlug, supabase, updateConversationMessages, setConversations, updates, synchronize])
 
     const connection = useReliableCommunicationsRealtime({

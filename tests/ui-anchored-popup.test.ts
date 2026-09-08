@@ -43,6 +43,7 @@ test("field and list menus share the parent-aware anchored popup primitive", asy
     ])
 
     assert.match(popup, /createPortal/)
+    assert.match(popup, /betelgeze-popup-enter/)
     assert.match(popup, /sourceWindow\.parent\.document/)
     assert.match(popup, /visualViewport/)
     assert.match(popup, /ResizeObserver/)
@@ -65,4 +66,41 @@ test("portal detail navigation preserves the popup owner's close handler", async
 
     assert.match(handler, /event\.preventDefault\(\)/)
     assert.doesNotMatch(handler, /event\.stopPropagation\(\)/)
+})
+
+test("cursor popups center above the point and flip below near the top", () => {
+    const input = { trigger: { left: 500, right: 500, top: 400 }, popupWidth: 280, popupHeight: 50, viewport: { left: 0, top: 0, width: 1000, height: 700 }, align: "center" as const, fallbackBelow: true }
+    const above = anchoredPopupPosition(input)
+    assert.equal(above.left, 360)
+    assert.equal(above.top, 344)
+    const below = anchoredPopupPosition({ ...input, trigger: { left: 6, right: 6, top: 12 } })
+    assert.equal(below.left, 8)
+    assert.equal(below.top, 18)
+    assert.ok(below.maxHeight >= 50)
+})
+
+test("cursor popups remain bounded with viewport offsets, oversized content and offscreen anchors", () => {
+    const viewport = { left: 14, top: 90, width: 320, height: 350 }
+    for (const x of [-100, 14, 174, 334, 1000]) for (const y of [-100, 90, 265, 440, 1000]) {
+        const result = anchoredPopupPosition({ trigger: { left: x, right: x, top: y }, popupWidth: 480, popupHeight: 600, viewport, align: "center", fallbackBelow: true })
+        assert.ok(result.left >= viewport.left + 8)
+        assert.ok(result.top >= viewport.top + 8)
+        assert.ok(result.left + result.maxWidth <= viewport.left + viewport.width - 8)
+        assert.ok(result.top + result.maxHeight <= viewport.top + viewport.height - 8)
+        assert.ok(result.maxHeight > 0)
+    }
+})
+
+test("all chat surfaces use cursor anchors and a measured emoji picker", async () => {
+    for (const path of ["components/communications/TeamCommunicationsWorkspace.tsx", "components/communications/CommunicationsWorkspace.tsx", "components/client-portal/ClientPortalChat.tsx"]) {
+        const source = await readFile(path, "utf8")
+        assert.match(source, /<MessageActionPopup/)
+        assert.match(source, /setActionAnchor\(anchor\)/)
+        assert.doesNotMatch(source, /data-message-action-popup className=.*bottom-full/)
+    }
+    const actions = await readFile("components/communications/MessageActionMenu.tsx", "utf8")
+    assert.match(actions, /anchorPoint=\{anchor\?\.point\}/)
+    assert.match(actions, /data-message-action-popup/)
+    assert.match(actions, /flex-col-reverse/)
+    assert.doesNotMatch(actions, /absolute bottom-12/)
 })

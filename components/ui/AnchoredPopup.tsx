@@ -40,10 +40,13 @@ export function AnchoredPopup({
     role,
     onDismiss,
     workItemPopup = false,
+    anchorPoint,
 }: {
     anchor: HTMLElement | null
     children: ReactNode
-    align?: "start" | "end"
+    align?: "start" | "end" | "center"
+    /** Point relative to the anchor's top-left corner, in CSS pixels. */
+    anchorPoint?: { x: number; y: number }
     className?: string
     role?: string
     onDismiss?: () => void
@@ -57,7 +60,8 @@ export function AnchoredPopup({
         const popup = popupRef.current
         if (!anchor || !popup) return
         const currentHost = popupHost(anchor)
-        const triggerRect = anchorRectInHost(anchor, currentHost.frameRect)
+        const rect = anchorRectInHost(anchor, currentHost.frameRect)
+        const triggerRect = anchorPoint ? { left: rect.left + anchorPoint.x, right: rect.left + anchorPoint.x, top: rect.top + anchorPoint.y } : rect
         const visualViewport = currentHost.window.visualViewport
         const viewportLeft = visualViewport?.offsetLeft ?? 0
         const viewportTop = visualViewport?.offsetTop ?? 0
@@ -69,8 +73,9 @@ export function AnchoredPopup({
             popupHeight: popup.scrollHeight || popup.offsetHeight,
             viewport: { left: viewportLeft, top: viewportTop, width: viewportWidth, height: viewportHeight },
             align,
+            fallbackBelow: Boolean(anchorPoint),
         }))
-    }, [align, anchor])
+    }, [align, anchor, anchorPoint])
 
     useLayoutEffect(() => {
         updatePosition()
@@ -88,9 +93,9 @@ export function AnchoredPopup({
         const documents = sourceDocument === host.document ? [sourceDocument] : [sourceDocument, host.document]
         const sourceWindow = sourceDocument.defaultView
         const visualViewport = host.window.visualViewport
-        const dismiss = (event: MouseEvent) => {
+        const dismiss = (event: Event) => {
             const target = event.target as Node
-            if (popupRef.current?.contains(target) || anchor.contains(target)) return
+            if (popupRef.current?.contains(target) || (!anchorPoint && anchor.contains(target))) return
             onDismiss?.()
         }
         const escape = (event: KeyboardEvent) => {
@@ -102,7 +107,7 @@ export function AnchoredPopup({
         const dismissForOwnerNavigation = () => onDismiss?.()
 
         for (const document of documents) {
-            document.addEventListener("mousedown", dismiss)
+            document.addEventListener(anchorPoint ? "pointerdown" : "mousedown", dismiss)
             document.addEventListener("keydown", escape)
         }
         sourceWindow?.addEventListener("scroll", updatePosition, true)
@@ -118,7 +123,7 @@ export function AnchoredPopup({
         visualViewport?.addEventListener("scroll", updatePosition)
         return () => {
             for (const document of documents) {
-                document.removeEventListener("mousedown", dismiss)
+                document.removeEventListener(anchorPoint ? "pointerdown" : "mousedown", dismiss)
                 document.removeEventListener("keydown", escape)
             }
             sourceWindow?.removeEventListener("scroll", updatePosition, true)
@@ -133,7 +138,7 @@ export function AnchoredPopup({
             visualViewport?.removeEventListener("resize", updatePosition)
             visualViewport?.removeEventListener("scroll", updatePosition)
         }
-    }, [anchor, host, onDismiss, updatePosition])
+    }, [anchor, anchorPoint, host, onDismiss, updatePosition])
 
     if (!anchor || !host) return null
     return createPortal(<div

@@ -145,7 +145,7 @@ test("message interactions keep the approved mobile and profile parity", async (
         readFile("lib/workspace-composer-viewport.ts", "utf8"),
         readFile("components/communications/MessageReadAvatars.tsx", "utf8"),
     ])
-    assert.match(clients, /data-message-action-popup/)
+    assert.match(clients, /MessageActionPopup/)
     for (const source of [clients, team]) {
         assert.match(source, /touch-pan-y overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-contain/)
         assert.match(source, /style=\{\{ overflowAnchor: "none" \}\}/)
@@ -163,9 +163,9 @@ test("message interactions keep the approved mobile and profile parity", async (
         assert.match(source, /messagePaneCanShowNewMessage\(messagePaneRef\.current, followLatestRef\.current\)/)
         assert.match(source, /betelgeze-message-enter-right/)
         assert.match(source, /betelgeze-message-enter-left/)
-        assert.match(source, /betelgeze-popup-enter/)
+        assert.match(source, /MessageActionPopup/)
     }
-    assert.match(team, /data-message-action-popup/)
+    assert.match(team, /MessageActionPopup/)
     assert.doesNotMatch(panel, /visualViewport|scrollTo|useLayoutEffect/)
     assert.match(panel, /fixed inset-0 isolate overflow-hidden overscroll-none bg-black/)
     assert.match(shell, /dataset\.workspaceViewportLocked = "true"/)
@@ -203,8 +203,10 @@ test("message interactions keep the approved mobile and profile parity", async (
     assert.doesNotMatch(globals, /transition: height 300ms/)
     assert.match(globals, /backface-visibility: hidden;[\s\S]*transform: translateZ\(0\)/)
     assert.doesNotMatch(globals, /communications-keyboard-inset|communications-viewport-locked/)
-    assert.match(clients, /window\.parent\.document/)
-    assert.match(team, /window\.parent\.document/)
+    const messagePopup = await readFile("components/communications/MessageActionMenu.tsx", "utf8")
+    const anchoredPopup = await readFile("components/ui/AnchoredPopup.tsx", "utf8")
+    assert.match(messagePopup, /<AnchoredPopup/)
+    assert.match(anchoredPopup, /sourceWindow\.parent\.document/)
     assert.match(team, /window\.confirm\(message\.senderUserId/)
     assert.match(team, /Delete this message\? This cannot be undone\./)
     assert.match(team, /finishMessageSwipe/)

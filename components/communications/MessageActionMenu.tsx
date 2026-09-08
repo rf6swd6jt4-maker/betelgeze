@@ -3,6 +3,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import { CopyIcon, DeleteIcon, EditIcon, PinIcon, ReactIcon, ReplyIcon, SaveIcon } from "@/components/communications/MessageInteractionIcons"
+import { AnchoredPopup } from "@/components/ui/AnchoredPopup"
+import type { MessageActionAnchor } from "@/components/communications/NativeMessageBubble"
+
+export function MessageActionPopup({ anchor, onDismiss, children }: { anchor: MessageActionAnchor | null; onDismiss: () => void; children: ReactNode }) {
+    return <AnchoredPopup anchor={anchor?.element ?? null} anchorPoint={anchor?.point} align="center" onDismiss={onDismiss} className="w-max text-neutral-100">
+        <div data-message-action-popup>{children}</div>
+    </AnchoredPopup>
+}
 
 const DEFAULT_REACTIONS = ["👍", "❤️", "😂", "😮", "😢"]
 const ACTION_BUTTON_CLASS = "inline-flex h-10 w-10 min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-800 hover:text-white lg:h-8 lg:w-8 lg:min-h-8 lg:min-w-8"
@@ -62,7 +70,7 @@ export function PrimaryMessageActions({ onDelete, onEdit, onSave, saveLabel = "S
     onReact: (() => void) | null
     pinned: boolean
 }) {
-    return <div className="flex items-center rounded-full border border-neutral-800 bg-neutral-950 p-1 shadow-xl">
+    return <div className="flex max-w-full flex-wrap items-center rounded-full border border-neutral-800 bg-neutral-950 p-1 shadow-xl">
         {onDelete ? <ActionButton label="Delete message" onClick={onDelete} danger><DeleteIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
         {onEdit ? <ActionButton label="Edit message" onClick={onEdit}><EditIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
         {onSave ? <ActionButton label={saveLabel} onClick={onSave} disabled={saveDisabled} pressed={saveActive}><SaveIcon className={`h-5 w-5 lg:h-4 lg:w-4 ${saveActive ? "text-emerald-400" : ""}`} /></ActionButton> : null}
@@ -104,12 +112,12 @@ export function MessageReactionActions({ currentEmoji, recentEmoji, onReact, onR
         setCustomOpen(false)
     }
 
-    return <div className="relative">
-        <div className="flex items-center rounded-full border border-neutral-800 bg-neutral-950 p-1 shadow-xl">
+    return <div className={`flex max-w-full flex-col-reverse gap-2 ${side === "right" ? "items-end" : "items-start"}`}>
+        <div className="flex max-w-full flex-wrap items-center rounded-full border border-neutral-800 bg-neutral-950 p-1 shadow-xl">
             {recentReactionChoices(recentEmoji).map((emoji) => <button data-icon-button key={emoji} type="button" onClick={() => onReact(currentEmoji === emoji ? "" : emoji)} aria-label={`React with ${emoji}`} aria-pressed={currentEmoji === emoji} className={`inline-flex h-10 w-10 min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-lg hover:bg-neutral-800 lg:h-8 lg:w-8 lg:min-h-8 lg:min-w-8 lg:text-base ${currentEmoji === emoji ? "bg-neutral-800" : ""}`}>{emoji}</button>)}
             <button data-icon-button type="button" onClick={() => setCustomOpen((open) => !open)} aria-label="Use device emoji picker" aria-expanded={customOpen} className={`${ACTION_BUTTON_CLASS} text-xl lg:text-lg`}>+</button>
         </div>
-        {customOpen ? <form onSubmit={(event) => { event.preventDefault(); submitCustom() }} className={`betelgeze-popup-enter absolute bottom-12 flex w-64 gap-2 rounded-xl border border-neutral-800 bg-neutral-950 p-2 text-white shadow-2xl lg:bottom-10 ${side === "right" ? "right-0" : "left-0"}`}>
+        {customOpen ? <form onSubmit={(event) => { event.preventDefault(); submitCustom() }} className="betelgeze-popup-enter flex w-64 max-w-full gap-2 rounded-xl border border-neutral-800 bg-neutral-950 p-2 text-white shadow-2xl">
             <label className="min-w-0 flex-1"><span className="sr-only">Emoji reaction</span><input ref={inputRef} inputMode="text" value={customEmoji} onChange={(event) => { setCustomEmoji(event.target.value); setCustomError(null) }} maxLength={32} aria-invalid={Boolean(customError)} placeholder="Use device emoji picker" className="h-10 w-full rounded-lg border border-neutral-800 bg-black px-3 text-base outline-none focus:border-neutral-600 lg:h-9 lg:text-sm" />{customError ? <span className="mt-1 block text-[10px] text-red-400">{customError}</span> : null}</label>
             <button type="submit" className="h-10 rounded-lg bg-white px-3 text-xs font-semibold text-black lg:h-9">React</button>
         </form> : null}

@@ -3,11 +3,18 @@
 import { useEffect, useRef, useState, type ComponentProps } from "react"
 import { createMessageLongPress } from "@/lib/communications/message-long-press"
 
+export type MessageActionAnchor = { element: HTMLElement; point: { x: number; y: number } }
+
+function messageActionAnchor(element: HTMLElement, point?: { clientX: number; clientY: number }): MessageActionAnchor {
+    const rect = element.getBoundingClientRect()
+    return { element, point: point ? { x: point.clientX - rect.left, y: point.clientY - rect.top } : { x: rect.width / 2, y: 0 } }
+}
+
 function isMessageControl(target: EventTarget | null) {
     return target instanceof Element && Boolean(target.closest("video,audio,button,a,input,textarea,select,[role='slider'],[data-message-control]"))
 }
 
-export function NativeMessageBubble({ video, image = false, selectingText = false, style, children, onOpenActions, ...props }: Omit<ComponentProps<"article">, "ref" | "onClick" | "onContextMenu" | "onKeyDown"> & { video: boolean; image?: boolean; selectingText?: boolean; onOpenActions: () => void }) {
+export function NativeMessageBubble({ video, image = false, selectingText = false, style, children, onOpenActions, ...props }: Omit<ComponentProps<"article">, "ref" | "onClick" | "onContextMenu" | "onKeyDown"> & { video: boolean; image?: boolean; selectingText?: boolean; onOpenActions: (anchor: MessageActionAnchor) => void }) {
     const [longPress] = useState(createMessageLongPress)
     const suppressClick = useRef(false)
     const lastTouchAt = useRef(0)
@@ -26,11 +33,12 @@ export function NativeMessageBubble({ video, image = false, selectingText = fals
             if (isMessageControl(event.target)) return
             props.onTouchStart?.(event)
             const touch = event.touches[0]
+            const anchor = messageActionAnchor(event.currentTarget, touch)
             longPress.start(touch.clientX, touch.clientY, () => {
                 suppressClick.current = true
                 // A held message must not also finish as a swipe-to-reply/delete.
                 props.onTouchCancel?.(event)
-                onOpenActions()
+                onOpenActions(anchor)
             })
         }}
         onTouchMove={(event) => {
@@ -63,7 +71,7 @@ export function NativeMessageBubble({ video, image = false, selectingText = fals
             if (selectingText) return
             // Assistive technology activates with a zero-detail click rather than
             // a physical pointer click. Keep that non-pointer action accessible.
-            if (event.detail === 0 && !isMessageControl(event.target)) onOpenActions()
+            if (event.detail === 0 && !isMessageControl(event.target)) onOpenActions(messageActionAnchor(event.currentTarget))
         }}
         onContextMenu={(event) => {
             if (selectingText) return
@@ -73,14 +81,14 @@ export function NativeMessageBubble({ video, image = false, selectingText = fals
             // The hold timer owns touch activation; never open twice or after a swipe.
             const pointerType = (event.nativeEvent as PointerEvent).pointerType
             if (pointerType === "touch" || (pointerType !== "mouse" && Date.now() - lastTouchAt.current < 800)) return
-            onOpenActions()
+            onOpenActions(messageActionAnchor(event.currentTarget, event))
         }}
         onKeyDown={(event) => {
             if (selectingText) return
             if (isMessageControl(event.target)) return
             if (event.key === "Enter" || event.key === " " || event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
                 event.preventDefault()
-                onOpenActions()
+                onOpenActions(messageActionAnchor(event.currentTarget))
             }
         }}
     >{children}</article>

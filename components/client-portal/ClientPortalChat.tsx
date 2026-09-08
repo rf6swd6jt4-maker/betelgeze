@@ -5,12 +5,12 @@ import { ChatComposerInput } from "@/components/communications/ChatComposerInput
 import { ChatMessageText } from "@/components/communications/ChatMessageText"
 
 import Image from "next/image"
-import { NativeMessageBubble } from "@/components/communications/NativeMessageBubble"
+import { NativeMessageBubble, type MessageActionAnchor } from "@/components/communications/NativeMessageBubble"
 import { ChatMotionViewport } from "@/components/communications/ChatMotionViewport"
 import { ComposerFooter } from "@/components/communications/ComposerFooter"
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import { MessageReactionActions, PrimaryMessageActions, copyMessageText, downloadMessageAttachment, type MessageActionView } from "@/components/communications/MessageActionMenu"
+import { MessageReactionActions, MessageActionPopup, PrimaryMessageActions, copyMessageText, downloadMessageAttachment, type MessageActionView } from "@/components/communications/MessageActionMenu"
 import { DeleteIcon, ReplyIcon } from "@/components/communications/MessageInteractionIcons"
 import { MessageMediaLightbox, type MessageMediaPreview } from "@/components/communications/MessageMediaLightbox"
 import { observeMessagePaneResize } from "@/components/communications/JumpToLatestButton"
@@ -220,6 +220,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
     const [interactionError, setInteractionError] = useState<string | null>(null)
     const [replyingTo, setReplyingTo] = useState<PortalMessage | null>(null)
     const [actionMessageId, setActionMessageId] = useState<string | null>(null)
+    const [actionAnchor, setActionAnchor] = useState<MessageActionAnchor | null>(null)
     const [actionView, setActionView] = useState<MessageActionView>("actions")
     const [recentReaction, setRecentReaction] = useState<string | null>(() => typeof window === "undefined" ? null : localStorage.getItem("betelgeze:client-portal:recent-reaction"))
     const [swipePosition, setSwipePosition] = useState<{ id: string; offset: number; active: boolean } | null>(null)
@@ -284,16 +285,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
 
     useEffect(() => observeMessagePaneResize(scrollRef.current, () => followingLatestRef.current, true), [])
 
-    useEffect(() => {
-        if (!actionMessageId) return
-        const dismiss = (event: PointerEvent) => {
-            const target = event.target instanceof Element ? event.target : null
-            if (target?.closest("[data-message-action-popup]")) return
-            setActionMessageId(null)
-        }
-        document.addEventListener("pointerdown", dismiss, true)
-        return () => document.removeEventListener("pointerdown", dismiss, true)
-    }, [actionMessageId])
+
 
     async function toggleCheckbox(message: PortalMessage, line: number, checked: boolean) {
         const response = await fetch(`/api/client-portal/session/${encodeURIComponent(token)}/checklist`, {
@@ -504,7 +496,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
                             <span aria-hidden="true" style={{ opacity: Math.min(1, Math.abs(swipeOffset) / 36) }} className={`pointer-events-none absolute -inset-x-4 inset-y-0 lg:hidden ${swipeOffset < 0 ? "bg-gradient-to-l from-red-600/35 via-red-100/40 to-transparent" : "bg-gradient-to-r from-black/10 via-black/[0.03] to-transparent"}`} />
                             <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, swipeOffset) / 190)})` }} className="pointer-events-none absolute left-0 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-900 text-white lg:hidden"><ReplyIcon className="h-5 w-5" /></span>
                             {canDelete ? <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, -swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, -swipeOffset) / 190)})` }} className="pointer-events-none absolute right-0 flex h-9 w-9 items-center justify-center rounded-full bg-red-600 text-white lg:hidden"><DeleteIcon className="h-5 w-5" /></span> : null}
-                            {showActions ? <div key={`${message.id}:${actionView}`} data-message-action-popup className={`betelgeze-popup-enter absolute bottom-full z-20 mb-1 ${own ? "right-0" : "left-0"}`}>
+                            {showActions ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}>
                                 {actionView === "actions" ? <PrimaryMessageActions
                                     onDelete={canDelete ? () => void deleteMessage(message) : null}
                                     onEdit={null}
@@ -516,13 +508,13 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
                                     onReact={canReact ? () => setActionView("reactions") : null}
                                     pinned={false}
                                 /> : canReact ? <MessageReactionActions currentEmoji={clientReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} side={own ? "right" : "left"} /> : null}
-                            </div> : null}
+                            </MessageActionPopup> : null}
                             <NativeMessageBubble
                                 video={false}
                                 role="button"
                                 tabIndex={0}
                                 aria-label={`Message from ${senderLabel}. Right-click or long-press for message actions.`}
-                                onOpenActions={() => { setActionView("actions"); setActionMessageId(message.id) }}
+                                onOpenActions={(anchor) => { setActionAnchor(anchor); setActionView("actions"); setActionMessageId(message.id) }}
                                 onTouchStart={(event) => {
                                     const target = event.target instanceof Element ? event.target : null
                                     if (target?.closest("button,a,audio,video")) return

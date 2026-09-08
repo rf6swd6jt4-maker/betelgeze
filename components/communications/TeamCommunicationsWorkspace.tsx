@@ -12,7 +12,7 @@ import { flushSync } from "react-dom"
 import { Avatar } from "@/components/account/Avatar"
 import { CommunicationsConnectionStatus } from "@/components/communications/CommunicationsConnectionStatus"
 import { ComposerMessagePreview } from "@/components/communications/ComposerMessagePreview"
-import { copyMessageText, downloadMessageAttachment, MessageReactionActions, PrimaryMessageActions, type MessageActionView } from "@/components/communications/MessageActionMenu"
+import { copyMessageText, downloadMessageAttachment, MessageReactionActions, MessageActionPopup, PrimaryMessageActions, type MessageActionView } from "@/components/communications/MessageActionMenu"
 import { CancelIcon, CheckIcon, DeleteIcon, DoubleDeliveryCheckIcon, ReplyIcon, SingleDeliveryCheckIcon } from "@/components/communications/MessageInteractionIcons"
 import { JumpToLatestButton, messagePaneCanShowNewMessage } from "@/components/communications/JumpToLatestButton"
 import { MessageComposer } from "@/components/communications/MessageComposer"
@@ -27,7 +27,7 @@ import { ConversationMedia } from "@/components/communications/ConversationMedia
 import { ChatMotionViewport } from "@/components/communications/ChatMotionViewport"
 import { NativeChatViewport } from "@/components/communications/NativeChatViewport"
 import { beginMessageSwipe, moveMessageSwipe, finishMessageSwipe, type MessageSwipe } from "@/lib/communications/message-swipe"
-import { NativeMessageBubble } from "@/components/communications/NativeMessageBubble"
+import { NativeMessageBubble, type MessageActionAnchor } from "@/components/communications/NativeMessageBubble"
 import { NativeAttachment } from "@/components/communications/NativeAttachment"
 import { validateNativeAttachmentFile } from "@/lib/communications/native-attachments"
 import { UnreadMessageCount } from "@/components/communications/UnreadMessageCount"
@@ -214,6 +214,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [stickerUploadState, setStickerUploadState] = useState<"idle" | "uploading">("idle")
     const [error, setError] = useState<string | null>(null)
     const [actionMessageId, setActionMessageId] = useState<string | null>(null)
+    const [actionAnchor, setActionAnchor] = useState<MessageActionAnchor | null>(null)
     const [actionView, setActionView] = useState<MessageActionView>("actions")
     const [recentReaction, setRecentReaction] = useState<string | null>(null)
     const [downloadingMessageId, setDownloadingMessageId] = useState<string | null>(null)
@@ -272,18 +273,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         return () => window.clearInterval(interval)
     }, [])
 
-    useEffect(() => {
-        if (!actionMessageId) return
-        const dismiss = (event: PointerEvent) => {
-            const target = event.target instanceof Element ? event.target : null
-            if (target?.closest("[data-message-action-popup]")) return
-            setActionMessageId(null)
-        }
-        const documents = [document]
-        try { if (window.parent !== window) documents.push(window.parent.document) } catch { /* Cross-origin shells cannot be observed. */ }
-        documents.forEach((ownerDocument) => ownerDocument.addEventListener("pointerdown", dismiss, true))
-        return () => documents.forEach((ownerDocument) => ownerDocument.removeEventListener("pointerdown", dismiss, true))
-    }, [actionMessageId])
+
 
     const updateConversationMessages = useCallback((conversationId: string, incoming: NativeMessage[], animate = false, read?: ChatRead, acknowledgement = false) => {
         if (read) incoming = updates.mergeReadMessages(read, conversationId, incoming, acknowledgement)
@@ -832,7 +822,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                                 <span aria-hidden="true" style={{ opacity: Math.min(1, Math.abs(swipeOffset) / 36) }} className={`pointer-events-none absolute -inset-x-3 inset-y-0 lg:hidden ${swipeOffset < 0 ? "bg-gradient-to-l from-red-600/45 via-red-950/20 to-transparent" : "bg-gradient-to-r from-white/20 via-white/5 to-transparent"}`} />
                                 <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, swipeOffset) / 190)})` }} className="pointer-events-none absolute left-0 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-800 text-white lg:hidden"><ReplyIcon className="h-5 w-5" /></span>
                                 {canDelete ? <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, -swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, -swipeOffset) / 190)})` }} className="pointer-events-none absolute right-0 flex h-9 w-9 items-center justify-center rounded-full bg-red-600 text-white lg:hidden"><DeleteIcon className="h-5 w-5" /></span> : null}
-                                {actionMessageId === message.id ? <div key={`${message.id}:${actionView}`} data-message-action-popup className={`betelgeze-popup-enter absolute bottom-full z-20 mb-1 ${own ? "right-0" : "left-0"}`}>{actionView === "actions" ? <PrimaryMessageActions onDelete={canDelete && selected.canWrite ? () => void deleteMessage(message) : null} onEdit={canEdit ? () => startEditingMessage(message) : null} onSave={canSaveAttachment ? () => void downloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={downloadingMessageId === message.id} onQuote={selected.canWrite && message.body.trim() && message.id !== message.clientRequestId ? () => startQuotingMessage(message) : null} onReply={selected.canWrite ? () => { setReplyingTo(message); setActionMessageId(null); composerRef.current?.focus() } : null} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onReact={selected.canWrite ? () => setActionView("reactions") : null} pinned={selected.pinnedMessageId === message.id} /> : selected.canWrite ? <MessageReactionActions currentEmoji={ownReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} side={own ? "right" : "left"} /> : null}</div> : null}
+                                {actionMessageId === message.id ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}>{actionView === "actions" ? <PrimaryMessageActions onDelete={canDelete && selected.canWrite ? () => void deleteMessage(message) : null} onEdit={canEdit ? () => startEditingMessage(message) : null} onSave={canSaveAttachment ? () => void downloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={downloadingMessageId === message.id} onQuote={selected.canWrite && message.body.trim() && message.id !== message.clientRequestId ? () => startQuotingMessage(message) : null} onReply={selected.canWrite ? () => { setReplyingTo(message); setActionMessageId(null); composerRef.current?.focus() } : null} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onReact={selected.canWrite ? () => setActionView("reactions") : null} pinned={selected.pinnedMessageId === message.id} /> : selected.canWrite ? <MessageReactionActions currentEmoji={ownReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} side={own ? "right" : "left"} /> : null}</MessageActionPopup> : null}
                                 {!own && selected.kind === "team" ? sender?.former
                                     ? <span title={`${sender.name} · former member`} className="mb-1 mr-2 inline-flex h-7 w-7 shrink-0 overflow-hidden rounded-full opacity-70"><Avatar src={sender.avatarSrc} name={sender.name} className="h-full w-full object-center" /></span>
                                     : <button data-icon-button type="button" onClick={() => openWorkspaceMemberProfile(message.senderUserId)} aria-label={`Open ${sender?.name ?? "team member"} profile`} className="mb-1 mr-2 inline-flex h-7 w-7 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full p-0 outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"><Avatar src={sender?.avatarSrc} name={sender?.name ?? "Team member"} className="h-full w-full object-center" /></button> : null}
@@ -842,7 +832,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                                         image={message.attachment?.kind === "image"}
                                     role="button"
                                     tabIndex={0}
-                                    onOpenActions={() => { if (selectingQuote) return; setActionView("actions"); setActionMessageId(message.id) }}
+                                    onOpenActions={(anchor) => { setActionAnchor(anchor); if (selectingQuote) return; setActionView("actions"); setActionMessageId(message.id) }}
                                     onTouchStart={(event) => {
                                         const touch = event.touches[0]
                                         swipeStartRef.current = touch ? beginMessageSwipe(message.id, touch) : null

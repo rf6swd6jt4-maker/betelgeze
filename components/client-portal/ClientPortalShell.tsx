@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { ClientPortalChat } from "@/components/client-portal/ClientPortalChat"
 import { ClientPortalAppointments } from "@/components/client-portal/ClientPortalAppointments"
 import { ClientPortalResources } from "@/components/client-portal/ClientPortalResources"
+import { PortalIcon, portalPrimaryButton } from "@/components/client-portal/ClientPortalUI"
 import { ClientBrandLogo } from "@/components/client-branding/ClientBrandLogo"
 import { DetailField, DetailFields } from "@/components/detail"
 import { appointmentDateLabels, type PortalAppointment } from "@/lib/client-portal/appointments"
@@ -12,10 +13,6 @@ function localGreeting(hour: number) {
     if (hour < 12) return "Good morning"
     if (hour < 18) return "Good afternoon"
     return "Good evening"
-}
-
-function ChatIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M20 15a3 3 0 0 1-3 3H9l-5 3v-6a3 3 0 0 1-1-2.2V7a3 3 0 0 1 3-3h11a3 3 0 0 1 3 3Z" /><path d="M8 9h8M8 13h5" /></svg>
 }
 
 function PortalSidePanel({ title, workspaceName, onBack, children, chat = false }: { title: string; workspaceName: string; onBack: () => void; children: ReactNode; chat?: boolean }) {
@@ -76,7 +73,7 @@ function AppointmentDetail({ appointment }: { appointment: PortalAppointment }) 
             {appointment.details.address ? <DetailField label="Address" icon="relationship"><span className="whitespace-pre-wrap break-words">{appointment.details.address}</span></DetailField> : null}
             {appointment.details.notes ? <DetailField label="Notes" icon="description"><span className="whitespace-pre-wrap break-words">{appointment.details.notes}</span></DetailField> : null}
         </DetailFields>
-        {appointment.meetingLink ? <a href={appointment.meetingLink} target="_blank" rel="noopener noreferrer" className="mt-6 inline-flex min-h-11 items-center justify-center rounded-lg bg-[var(--onboarding-primary,#1E3A5F)] px-4 text-sm font-semibold text-white">Open {labels.medium} meeting</a> : null}
+        {appointment.meetingLink ? <a href={appointment.meetingLink} target="_blank" rel="noopener noreferrer" className={`mt-6 ${portalPrimaryButton}`}>Open {labels.medium} meeting</a> : null}
         <p className="mt-6 text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Need to change something? Send your team a message in Chat.</p>
     </>
 }
@@ -93,19 +90,22 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
     }, [])
 
     return <div data-betelgeze-client-portal-session="valid" className="min-h-screen bg-[var(--onboarding-page,#F8F7F3)] text-[var(--onboarding-text,#0F172A)]">
-        <div data-portal-content>
-            <header className="border-b border-black/10 bg-[var(--onboarding-surface,#FFFFFF)]">
+        <div data-portal-content className="flex min-h-svh flex-col">
+            <header className="border-b border-black/[0.07] bg-[var(--onboarding-surface,#FFFFFF)]">
                 <div className="mx-auto flex h-20 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
-                    <ClientBrandLogo logoSrc={logoSrc} workspaceName={workspaceName} className="h-9 max-w-[min(12rem,45vw)]" fallbackClassName="min-w-0 truncate text-lg font-semibold tracking-tight" />
-                    <nav aria-label="Client portal" className="flex shrink-0 items-center gap-2 sm:gap-4"><a href="#resources" className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-[var(--onboarding-muted,#475569)] hover:text-[var(--onboarding-text,#0F172A)]">Resources</a><button type="button" onClick={() => setPanel("chat")} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[var(--onboarding-primary,#1E3A5F)] px-4 text-sm font-semibold text-white hover:brightness-95"><ChatIcon /><span>Chat</span></button></nav>
+                    <ClientBrandLogo logoSrc={logoSrc} workspaceName={workspaceName} className="h-9 max-w-[min(12rem,38vw)]" fallbackClassName="min-w-0 truncate text-lg font-semibold tracking-tight" />
+                    <nav aria-label="Client portal" className="flex shrink-0 items-center gap-1 sm:gap-4"><a href="#appointments" className="hidden min-h-11 items-center px-2 text-sm font-medium text-[var(--onboarding-muted,#475569)] hover:text-[var(--onboarding-text,#0F172A)] sm:inline-flex">Appointments</a><a href="#resources" className="inline-flex min-h-11 items-center px-3 text-sm font-medium text-[var(--onboarding-muted,#475569)] hover:text-[var(--onboarding-text,#0F172A)]">Files</a><button type="button" onClick={() => setPanel("chat")} className={portalPrimaryButton}><PortalIcon name="chat" /><span>Chat</span></button></nav>
                 </div>
             </header>
-            <main data-client-portal-main className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
-                <section aria-labelledby="portal-greeting" className="mb-7 sm:mb-8"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--onboarding-muted,#475569)]">{workspaceName} · Client portal</p><h1 id="portal-greeting" className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-3 text-sm leading-6 text-[var(--onboarding-muted,#475569)] sm:text-base">Your appointments, shared files, and team. All in one place.</p></section>
-                <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"><ClientPortalAppointments token={token} onOpen={setPanel} /><ClientPortalResources token={token} /></div>
-                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 px-1"><p className="text-sm text-[var(--onboarding-muted,#475569)]">Have a question or an update for us?</p><button type="button" onClick={() => setPanel("chat")} className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[var(--onboarding-primary,#1E3A5F)]"><ChatIcon />Message your team <span aria-hidden="true">↗</span></button></div>
+            <main data-client-portal-main className="mx-auto w-full max-w-6xl flex-1 px-4 py-7 sm:px-6 sm:py-9 lg:px-8">
+                <section aria-labelledby="portal-greeting" className="mb-7 sm:mb-8"><p className="text-sm font-medium text-[var(--onboarding-muted,#475569)]">Your client portal</p><h1 id="portal-greeting" className="mt-2 text-[1.75rem] font-semibold leading-tight tracking-tight sm:text-[2rem]">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-3 text-base leading-6 text-[var(--onboarding-muted,#475569)]">Check your appointments or send files to your team.</p></section>
+                <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"><ClientPortalAppointments token={token} onOpen={setPanel} /><ClientPortalResources token={token} /></div>
+                <div className="mt-6 flex flex-col gap-4 rounded-2xl bg-[color-mix(in_srgb,var(--onboarding-primary,#1E3A5F)_5%,transparent)] p-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                    <div className="flex items-center gap-3.5"><span className="hidden text-[var(--onboarding-primary,#1E3A5F)] sm:block"><PortalIcon name="chat" className="h-6 w-6" /></span><div><h2 className="text-sm font-semibold">We’re here to help</h2><p className="mt-1 text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Questions about a booking or file? Just send us a message.</p></div></div>
+                    <button type="button" onClick={() => setPanel("chat")} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--onboarding-primary,#1E3A5F)_20%,transparent)] bg-[var(--onboarding-surface,#FFFFFF)] px-4 py-2 text-sm font-semibold text-[var(--onboarding-primary,#1E3A5F)] hover:bg-white/60 focus-visible:outline-2 focus-visible:outline-offset-4"><span>Message your team</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true" className="h-4 w-4"><path d="m9 5 7 7-7 7" /></svg></button>
+                </div>
             </main>
-            <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 pb-8 text-xs text-[var(--onboarding-muted,#475569)] sm:px-6 lg:px-8"><span>{workspaceName}</span><div className="flex gap-4">{privacyPolicyUrl ? <a href={privacyPolicyUrl} className="underline underline-offset-2">Privacy</a> : null}{termsOfServiceUrl ? <a href={termsOfServiceUrl} className="underline underline-offset-2">Terms</a> : null}</div></footer>
+            <footer className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-4 pb-6 pt-2 text-xs text-[var(--onboarding-muted,#475569)] sm:px-6 lg:px-8"><span>{workspaceName}</span><div className="flex gap-5">{privacyPolicyUrl ? <a href={privacyPolicyUrl} className="inline-flex min-h-11 items-center underline underline-offset-4">Privacy</a> : null}{termsOfServiceUrl ? <a href={termsOfServiceUrl} className="inline-flex min-h-11 items-center underline underline-offset-4">Terms</a> : null}</div></footer>
         </div>
         {panel ? <PortalSidePanel title={panel === "chat" ? "Chat" : "Appointment"} workspaceName={workspaceName} onBack={closePanel} chat={panel === "chat"}>{panel === "chat" ? <ClientPortalChat token={token} workspaceName={workspaceName} /> : <AppointmentDetail appointment={panel} />}</PortalSidePanel> : null}
     </div>

@@ -11,11 +11,11 @@ export type InstantFilterTarget = {
 }
 
 function itemClass(selected: boolean) {
-    return `shrink-0 border-b px-2 py-2 text-sm transition-colors ${selected ? "border-white text-white" : "border-transparent text-neutral-500 hover:border-neutral-700 hover:text-neutral-200"}`
+    return `shrink-0 border-b px-2 py-2 text-sm transition-colors group-data-[surface=light]/rail:min-h-11 group-data-[surface=light]/rail:px-3 group-data-[surface=light]/rail:focus-visible:outline-2 group-data-[surface=light]/rail:focus-visible:outline-offset-[-2px] ${selected ? "border-white text-white group-data-[surface=light]/rail:border-[var(--onboarding-primary,#1E3A5F)] group-data-[surface=light]/rail:font-semibold group-data-[surface=light]/rail:text-[var(--onboarding-primary,#1E3A5F)]" : "border-transparent text-neutral-500 hover:border-neutral-700 hover:text-neutral-200 group-data-[surface=light]/rail:text-[var(--onboarding-muted,#475569)] group-data-[surface=light]/rail:hover:border-black/20 group-data-[surface=light]/rail:hover:text-[var(--onboarding-text,#0F172A)]"}`
 }
 
-export function FilterRail({ ariaLabel, children, spacing = "default" }: { ariaLabel: string; children: ReactNode; spacing?: "default" | "tight" }) {
-    return <section className={`${spacing === "tight" ? "mt-2" : "mt-5"} border-y border-neutral-800/80 py-1`}>
+export function FilterRail({ ariaLabel, children, spacing = "default", surface = "dark" }: { ariaLabel: string; children: ReactNode; spacing?: "default" | "tight"; surface?: "dark" | "light" }) {
+    return <section data-surface={surface} className={`group/rail ${spacing === "tight" ? "mt-2" : "mt-5"} ${surface === "light" ? "border-b border-black/10" : "border-y border-neutral-800/80 py-1"}`}>
         <nav aria-label={ariaLabel} className="flex gap-1 overflow-x-auto overscroll-x-contain px-1 pb-1">
             {children}
         </nav>

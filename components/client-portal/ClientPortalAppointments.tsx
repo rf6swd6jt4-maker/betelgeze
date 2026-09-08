@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
-import { ListActionMenu } from "@/components/list/ListActionMenu"
-import { MobileListActionSurface } from "@/components/list/MobileCardActionSurface"
+import { ListPrimaryAction } from "@/components/list/ListPrimaryAction"
+import { FilterRail, FilterRailButton } from "@/components/panel/FilterRail"
+import { PortalIcon, PortalSection } from "@/components/client-portal/ClientPortalUI"
 import { Status } from "@/components/ui"
 import { appointmentDateLabels, type PortalAppointment } from "@/lib/client-portal/appointments"
 
@@ -36,22 +37,25 @@ export function ClientPortalAppointments({ token, onOpen }: { token: string; onO
         return () => { controller.abort(); window.clearInterval(interval); window.removeEventListener("focus", refresh) }
     }, [load])
 
-    return <section aria-labelledby="appointments-title" className="min-w-0 rounded-2xl border border-black/10 bg-[var(--onboarding-surface,#FFFFFF)] p-5 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 id="appointments-title" className="text-xl font-semibold tracking-tight">Your appointments</h2><p className="mt-1 text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Bookings shared by your team.</p></div>
-            <label className="text-sm"><span className="sr-only">Appointment period</span><select value={view} onChange={(event) => { setView(event.target.value); setAppointments([]); setHasMore(false); setLoading(true) }} className="min-h-11 rounded-lg border border-black/10 bg-transparent px-3 font-medium"><option value="upcoming">Upcoming</option><option value="past">Past appointments</option></select></label>
-        </div>
-        <p className="mt-3 text-xs text-[var(--onboarding-muted,#475569)]">Times shown in the booking timezone.</p>
+    return <PortalSection id="appointments" title="Your appointments" description="See what’s coming up and view past bookings." icon="calendar">
+        {/* This period filters the independently loaded booking panel without navigating the portal. */}
+        <FilterRail surface="light" ariaLabel="Appointment period">
+            {[{ value: "upcoming", label: "Upcoming" }, { value: "past", label: "Past appointments" }].map((period) => <FilterRailButton key={period.value} selected={view === period.value} onClick={() => { if (view === period.value) return; setView(period.value); setAppointments([]); setHasMore(false); setLoading(true); setError(null) }}>{period.label}</FilterRailButton>)}
+        </FilterRail>
         {error ? <p role="alert" className="mt-5 text-sm text-red-700">{error} <button type="button" onClick={() => { setLoading(true); void load() }} className="underline">Try again</button></p> : null}
         {loading && !appointments.length ? <p role="status" className="py-10 text-center text-sm text-[var(--onboarding-muted,#475569)]">Loading appointments…</p> : null}
-        {!loading && !error && !appointments.length ? <div className="py-8 text-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto h-9 w-9 text-[var(--onboarding-muted,#475569)]" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M16 3v4M8 3v4M3 11h18m-13 5 3 3 5-5" /></svg><h3 className="mt-4 font-semibold">{view === "past" ? "No past appointments" : "You’re up to date"}</h3><p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-[var(--onboarding-muted,#475569)]">{view === "past" ? "Earlier bookings will stay here for reference." : "New bookings will appear here as your team shares them."}</p></div> : null}
-        {appointments.length ? <List surface="light" ariaLabel={view === "past" ? "Past appointments" : "Upcoming appointments"}>{appointments.map((appointment) => {
+        {!loading && !error && !appointments.length ? <div className="px-3 py-9 text-center sm:py-12"><span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-black/[0.025] text-[var(--onboarding-muted,#475569)]"><PortalIcon name="calendar" className="h-7 w-7" /></span><h3 className="mt-4 text-base font-semibold">{view === "past" ? "No past appointments" : "No upcoming appointments"}</h3><p className="mx-auto mt-2 max-w-[17rem] text-sm leading-6 text-[var(--onboarding-muted,#475569)]">{view === "past" ? "Your previous bookings will be kept here." : "When your team adds a booking, you’ll find the date and details here."}</p></div> : null}
+        {appointments.length ? <List surface="light" embedded ariaLabel={view === "past" ? "Past appointments" : "Upcoming appointments"}>{appointments.map((appointment) => {
             const labels = appointmentDateLabels(appointment)
-            const actions = [{ label: "View appointment", action: () => onOpen(appointment) }]
-            return <ListItem key={appointment.id}><MobileListActionSurface actions={actions} label={`Open ${appointment.contactName} appointment`}>
-                <ListPrimaryRow><ListTitle className="flex-1"><button type="button" onClick={() => onOpen(appointment)} className="block w-full truncate text-left hover:underline">{appointment.contactName}</button></ListTitle><Status surface="light" tone={view === "past" ? "grey" : "green"} label={view === "past" ? "Past" : "Booked"} /></ListPrimaryRow>
-                <ListSecondaryRow className="text-[var(--onboarding-muted,#475569)]"><time dateTime={appointment.appointmentAt} className="min-w-0 truncate text-xs sm:text-sm">{labels.date} · {labels.time}</time><ListTrailing><span className="hidden text-xs xl:inline">{labels.medium}</span><ListActionMenu actions={actions} className="hidden sm:inline-flex" /></ListTrailing></ListSecondaryRow>
-            </MobileListActionSurface></ListItem>
+            const date = new Date(appointment.appointmentAt)
+            const compactDate = new Intl.DateTimeFormat("en-GB", { timeZone: appointment.timezone, day: "numeric", month: "short" }).format(date)
+            const compactTime = new Intl.DateTimeFormat("en-US", { timeZone: appointment.timezone, hour: "numeric", minute: "2-digit" }).format(date)
+            return <ListItem key={appointment.id}>
+                <ListPrimaryRow><ListTitle className="flex-1"><button type="button" title={appointment.contactName} onClick={() => onOpen(appointment)} className="block w-full truncate text-left hover:underline focus-visible:outline-2 focus-visible:outline-offset-[-2px]">{appointment.contactName}</button></ListTitle><Status surface="light" tone={view === "past" ? "grey" : "green"} label={view === "past" ? "Past" : "Booked"} /></ListPrimaryRow>
+                <ListSecondaryRow className="text-[var(--onboarding-muted,#475569)]"><time title={`${labels.date} · ${labels.time}`} aria-label={`${labels.date} · ${labels.time}`} dateTime={appointment.appointmentAt} className="min-w-0 truncate text-xs sm:text-sm"><span className="sm:hidden">{compactDate} · {compactTime}</span><span className="hidden sm:inline">{labels.date} · {labels.time}</span></time><ListTrailing><ListPrimaryAction label="Details" accessibleLabel={`View appointment for ${appointment.contactName}`} onClick={() => onOpen(appointment)} /></ListTrailing></ListSecondaryRow>
+            </ListItem>
         })}</List> : null}
+        {appointments.length ? <p className="mt-3 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">Times are local to each booking. Open Details for the timezone.</p> : null}
         {hasMore ? <button disabled={loading} type="button" onClick={() => { setLoading(true); void load(appointments.length) }} className="mt-4 min-h-11 text-sm font-semibold">{loading ? "Loading…" : "Load more appointments"}</button> : null}
-    </section>
+    </PortalSection>
 }

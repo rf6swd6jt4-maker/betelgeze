@@ -237,6 +237,7 @@ A list tab must not insert a page-specific summary, capacity note, explanatory p
 - Prefer `FilterRailLink` and URL-backed query parameters so filters survive refresh, back/forward navigation, sharing, and tab restoration.
 - When the complete candidate collection is already present in the page, add `instant` to `FilterRailLink` and render records through `InstantFilterResults`. This keeps the URL authoritative while applying the visible change locally instead of rerunning the server page. Keep paginated, permission-dependent, or data-dependent filters server-backed.
 - Use `FilterRailButton` only for local interactive state that cannot reasonably be URL-backed, such as the live Work Queue's Business/My work view.
+- Independently fetched panels in the client portal may retain their local filter state through `FilterRailButton`. Use `FilterRail surface="light"` for the same underline mechanic with theme-coloured selection, readable muted text, and 44px targets; the workspace default remains dark.
 - Rails never wrap. They scroll horizontally on mobile while preserving option order.
 - Do not recreate filter pills, segmented boxes, dropdowns, or page-local category chips when the available choices fit a rail.
 - When `QuickStats` and `FilterRail` are both present, every stats block comes first and the first rail follows beneath it.
@@ -244,6 +245,8 @@ A list tab must not insert a page-specific summary, capacity note, explanatory p
 ## List
 
 Client-facing collections use `List surface="light"`. This retains the same two-row structure, borders, and interactions with the onboarding theme's surface and text colours. The surface propagates to its shared row/title primitives. Client-facing detail panels likewise use `DetailFields surface="light"` and `Status surface="light"`; workspace defaults remain dark. Use `DetailFields columns={1}` in narrow side panels so fields do not split into two columns at desktop viewport widths.
+
+Inside an already bordered dashboard section, use `List embedded` to retain its consolidated collection and row dividers without a second rounded perimeter. Simple client-facing lists use `ListPrimaryAction` in `ListTrailing` for a single clearly labelled action, such as `Details` or `Download`, visible on desktop and mobile. Their titles also activate that destination directly; do not cover these actions with `MobileListActionSurface` or require an overflow menu for the only operation. Keep internal record IDs out of client-facing lists and prioritise the appointment time or file size and upload date instead. Staff lists retain their audit IDs and existing mobile action menus.
 
 `List` is the canonical presentation for a collection of comparable records that people need to scan, open, and act on. Leads, polls, and relationships are the reference implementations. A list is not a gallery, settings form, navigation rail, timeline, disclosure log, or nested planning structure such as OKRs.
 

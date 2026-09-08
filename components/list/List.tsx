@@ -2,8 +2,8 @@ import Link from "next/link"
 import type { ReactNode } from "react"
 import { serializeWorkspaceDetailPreview, type WorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 
-export function List({ children, ariaLabel, surface = "dark", className = "" }: { children: ReactNode; ariaLabel?: string; surface?: "dark" | "light"; className?: string }) {
-    return <section role="list" aria-label={ariaLabel} data-surface={surface} className={`group/list mt-5 overflow-hidden rounded-2xl border ${surface === "light" ? "border-black/10 bg-[var(--onboarding-surface,#FFFFFF)]" : "border-neutral-800 bg-black"} ${className}`}>{children}</section>
+export function List({ children, ariaLabel, surface = "dark", embedded = false, className = "" }: { children: ReactNode; ariaLabel?: string; surface?: "dark" | "light"; embedded?: boolean; className?: string }) {
+    return <section role="list" aria-label={ariaLabel} data-surface={surface} className={`group/list mt-5 overflow-hidden ${embedded ? "border-y" : "rounded-2xl border"} ${surface === "light" ? "border-black/10 bg-[var(--onboarding-surface,#FFFFFF)]" : "border-neutral-800 bg-black"} ${className}`}>{children}</section>
 }
 
 export function ListItem({ children, className = "", detailPreview }: { children: ReactNode; className?: string; detailPreview?: WorkspaceDetailPreview }) {
@@ -25,7 +25,7 @@ export function ListSecondaryRow({ children, className = "" }: { children: React
 export function ListTitle({ children, href, external = false, className = "" }: { children: ReactNode; href?: string | null; external?: boolean; className?: string }) {
     const classes = `min-w-0 truncate text-base font-medium text-neutral-100 group-data-[surface=light]/list:text-[var(--onboarding-text,#0F172A)] ${href ? "hover:text-white group-data-[surface=light]/list:hover:text-[var(--onboarding-text,#0F172A)] hover:underline hover:decoration-neutral-600 hover:underline-offset-4" : ""} ${className}`
     if (!href) return <p className={classes}>{children}</p>
-    if (external) return <a href={href} target="_blank" rel="noreferrer" className={classes}>{children}</a>
+    if (external) return <a href={href} title={typeof children === "string" ? children : undefined} target="_blank" rel="noreferrer" className={classes}>{children}</a>
     return <Link href={href} prefetch={false} className={classes}>{children}</Link>
 }
 

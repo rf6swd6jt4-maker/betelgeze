@@ -5,25 +5,12 @@ import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTraili
 import { ListPrimaryAction } from "@/components/list/ListPrimaryAction"
 import { PortalIcon, PortalSection, portalPrimaryButton } from "@/components/client-portal/ClientPortalUI"
 import { Status } from "@/components/ui"
-import { portalResourceFile, resourceSizeLabel, type PortalResource } from "@/lib/client-portal/resources"
-import type { StoredUpload } from "@/lib/onboarding/forms"
+import { resourceSizeLabel, type PortalResource } from "@/lib/client-portal/resources"
+import { droppedResources, fileSelection, selectedFolders, type ResourceSelection } from "@/lib/client-portal/resource-selection"
+import { ResourceTransfer, type TransferProgress } from "@/lib/client-portal/resource-transfer"
 
-type UploadTask = { id: string; file: File; progress: number; state: "queued" | "uploading" | "saving" | "failed"; error?: string; upload?: StoredUpload; uploadUrl?: string; uploaded?: boolean }
-
-function putFile(url: string, file: File, onProgress: (progress: number) => void) {
-    return new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open("PUT", url)
-        xhr.timeout = 30 * 60 * 1000
-        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream")
-        xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress(Math.round(event.loaded / event.total * 100)) }
-        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("The upload did not complete. Please retry."))
-        xhr.onerror = () => reject(new Error("Could not reach file storage. Check your connection and retry."))
-        xhr.ontimeout = () => reject(new Error("The upload timed out. Please retry."))
-        xhr.onabort = () => reject(new Error("The upload was interrupted. Please retry."))
-        xhr.send(file)
-    })
-}
+type UploadTask = { id: string; name: string; total: number; loaded: number; state: TransferProgress["state"] | "queued" | "failed" }
+type QueuedTransfer = { task: UploadTask; transfer: ResourceTransfer; controller: AbortController }
 
 export function ClientPortalResources({ token }: { token: string }) {
     const api = `/api/client-portal/session/${encodeURIComponent(token)}/resources`
@@ -32,18 +19,26 @@ export function ClientPortalResources({ token }: { token: string }) {
     const [error, setError] = useState<string | null>(null)
     const [hasMore, setHasMore] = useState(false)
     const [tasks, setTasks] = useState<UploadTask[]>([])
-    const [busy, setBusy] = useState(false)
+    const [reading, setReading] = useState(false)
+    const [folderSupported, setFolderSupported] = useState(true)
     const [notice, setNotice] = useState<string | null>(null)
     const [dragging, setDragging] = useState(false)
     const fileInput = useRef<HTMLInputElement>(null)
-    const busyRef = useRef(false)
+    const folderInput = useRef<HTMLInputElement>(null)
+    const queue = useRef<QueuedTransfer[]>([])
+    const running = useRef(false)
+    const alive = useRef(true)
+    const savedResources = useRef(new Map<string, PortalResource>())
 
     const load = useCallback(async (offset = 0) => {
         try {
             const response = await fetch(`${api}?offset=${offset}`, { cache: "no-store" })
             const result = await response.json()
             if (!response.ok) throw new Error(result.error || "Could not load resources.")
-            setResources((current) => offset ? [...current, ...result.resources.filter((item: PortalResource) => !current.some((old) => old.id === item.id))] : result.resources)
+            setResources((current) => {
+                const base = offset ? current : [...savedResources.current.values()]
+                return [...base, ...result.resources.filter((item: PortalResource) => !base.some((old) => old.id === item.id))]
+            })
             setHasMore(result.hasMore)
             setError(null)
         } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not load resources.") }
@@ -52,71 +47,103 @@ export function ClientPortalResources({ token }: { token: string }) {
 
     useEffect(() => { let active = true; queueMicrotask(() => { if (active) void load() }); return () => { active = false } }, [load])
     useEffect(() => {
-        if (!busy) return
+        alive.current = true
+        queueMicrotask(() => { if (alive.current) setFolderSupported("webkitdirectory" in document.createElement("input")) })
+        const transfers = queue.current
+        return () => { alive.current = false; for (const item of transfers) { item.controller.abort(); void item.transfer.cancel() } }
+    }, [])
+    useEffect(() => {
+        if (!tasks.length && !reading) return
         const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
         window.addEventListener("beforeunload", warn)
         return () => window.removeEventListener("beforeunload", warn)
-    }, [busy])
+    }, [tasks.length, reading])
 
-    async function run(queue: UploadTask[]) {
-        if (busyRef.current) return
-        busyRef.current = true
-        setBusy(true)
-        setNotice(null)
+    function update(item: QueuedTransfer, changes: Partial<UploadTask>) {
+        Object.assign(item.task, changes)
+        if (alive.current) setTasks((current) => current.map((task) => task.id === item.task.id ? { ...item.task } : task))
+    }
+
+    async function drain() {
+        if (running.current) return
+        running.current = true
         let saved = 0
-        for (const task of queue) {
-            const patch = (changes: Partial<UploadTask>) => {
-                Object.assign(task, changes)
-                setTasks((current) => current.map((item) => item.id === task.id ? { ...item, ...changes } : item))
+        try {
+            while (alive.current) {
+                const item = queue.current.find((candidate) => candidate.task.state === "queued" && !candidate.controller.signal.aborted)
+                if (!item) break
+                update(item, { state: "uploading" })
+                try {
+                    const resource = await item.transfer.run(item.controller.signal, (progress) => update(item, progress))
+                    if (!alive.current || item.controller.signal.aborted) continue
+                    savedResources.current.set(resource.id, resource)
+                    setResources((current) => [resource, ...current.filter((old) => old.id !== resource.id)])
+                    setTasks((current) => current.filter((task) => task.id !== item.task.id))
+                    queue.current.splice(queue.current.indexOf(item), 1)
+                    saved++
+                } catch {
+                    if (!item.controller.signal.aborted) update(item, { state: "failed" })
+                }
             }
-            try {
-                patch({ state: task.uploaded ? "saving" : "uploading", error: undefined })
-                if (!task.uploaded) {
-                    const response = await fetch(api, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "prepare", file: { name: task.file.name, size: task.file.size, type: task.file.type } }) })
-                    const result = await response.json()
-                    if (!response.ok) throw new Error(result.error || "Could not prepare upload.")
-                    patch({ upload: result.storedUpload, uploadUrl: result.uploadUrl })
-                    await putFile(result.uploadUrl, task.file, (progress) => patch({ progress }))
-                    patch({ uploaded: true, state: "saving", progress: 100 })
-                }
-                const response = await fetch(api, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "confirm", upload: task.upload }) })
-                const result = await response.json()
-                if (!response.ok) {
-                    if (response.status === 400 || response.status === 409) patch({ uploaded: false })
-                    throw new Error(result.error || "Could not save your file. Please retry.")
-                }
-                setResources((current) => [result.resource, ...current.filter((item) => item.id !== result.resource.id)])
-                setTasks((current) => current.filter((item) => item.id !== task.id))
-                saved++
-            } catch (failure) { patch({ state: "failed", error: failure instanceof Error ? failure.message : "Upload failed. Please retry." }) }
+        } finally {
+            running.current = false
+            if (alive.current && saved) setNotice(`${saved === 1 ? "Your file is" : `${saved} files are`} saved and available to your team.`)
         }
-        busyRef.current = false
-        setBusy(false)
-        if (saved) setNotice(`${saved === 1 ? "Your file is" : `${saved} files are`} saved and available to your team.`)
     }
 
-    function select(files: File[]) {
-        if (busyRef.current || !files.length) return
-        if (files.length > 10) { setNotice("Please choose up to 10 files at a time."); return }
-        const invalid = files.find((file) => !portalResourceFile({ name: file.name, size: file.size, type: file.type }))
-        if (invalid) { setNotice(`${invalid.name}: choose a non-empty file up to 500 MB.`); return }
-        const queue: UploadTask[] = files.map((file) => ({ id: crypto.randomUUID(), file, state: "queued", progress: 0 }))
-        setTasks((current) => [...current, ...queue])
-        void run(queue)
+    function enqueue(selections: ResourceSelection[]) {
+        if (!selections.length) return
+        setNotice(null)
+        const added = selections.map((selection) => {
+            const id = crypto.randomUUID()
+            return { task: { id, name: selection.name, total: selection.size, loaded: 0, state: "queued" as const }, transfer: new ResourceTransfer(api, id, selection), controller: new AbortController() }
+        })
+        queue.current.push(...added)
+        setTasks((current) => [...current, ...added.map((item) => item.task)])
+        void drain()
     }
 
-    return <PortalSection id="resources" title="Your files" description="Share documents, photos and videos with your team." icon="files">
-        <input ref={fileInput} type="file" multiple className="hidden" aria-label="Choose resources to upload" onChange={(event) => { select(Array.from(event.target.files ?? [])); event.target.value = "" }} />
-        <div onDragOver={(event) => { event.preventDefault(); if (!busy) setDragging(true) }} onDragLeave={(event) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDragging(false) }} onDrop={(event) => { event.preventDefault(); setDragging(false); select(Array.from(event.dataTransfer.files)) }} className={`mt-6 rounded-xl border border-dashed px-4 py-6 text-center transition-colors ${dragging ? "border-[var(--onboarding-primary,#1E3A5F)] bg-[color-mix(in_srgb,var(--onboarding-primary,#1E3A5F)_10%,transparent)]" : "border-black/15 bg-black/[0.015]"}`}>
-            <button type="button" disabled={busy} onClick={() => fileInput.current?.click()} className={portalPrimaryButton}><PortalIcon name="upload" />{busy ? "Uploading…" : "Upload files"}</button>
-            <p className="mt-3 text-sm text-[var(--onboarding-muted,#475569)]"><span className="hidden sm:inline">Or drag and drop files here</span><span className="sm:hidden">Choose files from your device</span></p><p className="mt-1 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">Up to 10 files at a time · 500 MB each</p>
+    function retry(id: string) {
+        const item = queue.current.find((candidate) => candidate.task.id === id)
+        if (!item) return
+        update(item, { state: "queued" })
+        void drain()
+    }
+
+    function remove(id: string) {
+        const item = queue.current.find((candidate) => candidate.task.id === id)
+        if (!item) return
+        item.controller.abort()
+        void item.transfer.cancel()
+        queue.current.splice(queue.current.indexOf(item), 1)
+        setTasks((current) => current.filter((task) => task.id !== id))
+    }
+
+    async function drop(transfer: DataTransfer) {
+        setReading(true)
+        try {
+            const { selections, failures } = await droppedResources(transfer)
+            enqueue(selections)
+            if (failures.length) setNotice(`We couldn’t read ${failures.join(", ")}. The other files will still upload.`)
+        } finally { setReading(false) }
+    }
+
+    return <PortalSection id="resources" title="Your files" description="Send any files or folders to your team." icon="files">
+        <input ref={fileInput} type="file" multiple className="hidden" aria-label="Choose files to upload" onChange={(event) => { enqueue(Array.from(event.target.files ?? []).map(fileSelection)); event.target.value = "" }} />
+        <input ref={(node) => { folderInput.current = node; node?.setAttribute("webkitdirectory", "") }} type="file" multiple className="hidden" aria-label="Choose a folder to upload" onChange={(event) => { enqueue(selectedFolders(Array.from(event.target.files ?? []))); event.target.value = "" }} />
+        <div onDragOver={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={(event) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDragging(false) }} onDrop={(event) => { event.preventDefault(); setDragging(false); void drop(event.dataTransfer) }} className={`mt-6 rounded-xl border border-dashed px-4 py-6 text-center transition-colors ${dragging ? "border-[var(--onboarding-primary,#1E3A5F)] bg-[color-mix(in_srgb,var(--onboarding-primary,#1E3A5F)_10%,transparent)]" : "border-black/15 bg-black/[0.015]"}`}>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+                <button type="button" onClick={() => fileInput.current?.click()} className={portalPrimaryButton}><PortalIcon name="upload" />Upload files</button>
+                {folderSupported ? <button type="button" onClick={() => folderInput.current?.click()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-black/15 bg-[var(--onboarding-surface,#FFFFFF)] px-4 py-2.5 text-sm font-semibold text-[var(--onboarding-primary,#1E3A5F)] hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-4"><PortalIcon name="folder" />Upload a folder</button> : null}
+            </div>
+            <p className="mt-3 text-sm text-[var(--onboarding-muted,#475569)]"><span className="hidden sm:inline">Or drag files and folders here</span><span className="sm:hidden">Choose anything you want to share</span></p><p className="mt-1 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">Any file type. Folders are packaged automatically.</p>
         </div>
         {notice ? <p role="status" className="mt-4 rounded-lg bg-[color-mix(in_srgb,var(--onboarding-primary,#1E3A5F)_5%,transparent)] px-3 py-2.5 text-sm leading-6">{notice}</p> : null}
-        {busy ? <p role="status" className="mt-3 text-xs text-[var(--onboarding-muted,#475569)]">Keep this page open until your files are saved.</p> : null}
-        {tasks.length ? <List surface="light" ariaLabel="Uploads in progress">{tasks.map((task) => <ListItem key={task.id}>
-            <ListPrimaryRow><ListTitle className="flex-1">{task.file.name}</ListTitle><Status surface="light" tone={task.state === "failed" ? "red" : "yellow"} label={task.state === "failed" ? "Failed" : task.state === "saving" ? "Saving" : task.state === "queued" ? "Queued" : `${task.progress}%`} /></ListPrimaryRow>
-            <ListSecondaryRow><span title={task.error} className="min-w-0 truncate text-xs text-[var(--onboarding-muted,#475569)]">{task.error || resourceSizeLabel(task.file.size)}</span>{task.state === "failed" ? <ListTrailing><button disabled={busy} type="button" className="font-semibold disabled:opacity-40" onClick={() => void run([task])}>Retry</button></ListTrailing> : null}</ListSecondaryRow>
-        </ListItem>)}</List> : null}
+        {reading ? <p role="status" className="mt-3 text-sm">Reading your folder…</p> : null}
+        {tasks.length ? <><p role="status" className="mt-3 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">Keep this page open while your files are sent. You can add more at any time.</p><List surface="light" ariaLabel="Uploads in progress">{tasks.map((task) => <ListItem key={task.id}>
+            <ListPrimaryRow><ListTitle className="flex-1">{task.name}</ListTitle><Status surface="light" tone={task.state === "failed" ? "red" : task.state === "queued" ? "grey" : "yellow"} label={task.state === "failed" ? "Not sent" : task.state === "saving" ? "Saving" : task.state === "queued" ? "Queued" : task.state === "waiting" ? "Reconnecting" : `${Math.min(99, Math.round(task.loaded / Math.max(1, task.total) * 100))}%`} /></ListPrimaryRow>
+            <ListSecondaryRow><span className="min-w-0 truncate text-xs text-[var(--onboarding-muted,#475569)]">{task.state === "failed" ? "Try again to finish sending" : `${resourceSizeLabel(task.loaded)} sent`}</span><ListTrailing>{task.state === "failed" ? <button type="button" onClick={() => retry(task.id)} className="min-h-11 px-2 text-sm font-semibold text-[var(--onboarding-primary,#1E3A5F)]" aria-label={`Retry ${task.name}`}>Retry</button> : null}<button type="button" onClick={() => remove(task.id)} className="min-h-11 px-2 text-sm text-[var(--onboarding-muted,#475569)]" aria-label={`Cancel ${task.name}`}>{task.state === "failed" ? "Remove" : "Cancel"}</button></ListTrailing></ListSecondaryRow>
+        </ListItem>)}</List></> : null}
         {error ? <div role="alert" className="mt-4 text-sm text-red-700">{error} <button type="button" onClick={() => { setLoading(true); void load() }} className="underline">Try again</button></div> : null}
         {loading && !resources.length ? <p role="status" className="py-6 text-sm text-[var(--onboarding-muted,#475569)]">Loading resources…</p> : null}
         {!loading && !error && !resources.length ? <p className="pt-5 text-center text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Files you upload will appear here.<br />Your team will be able to access them.</p> : null}

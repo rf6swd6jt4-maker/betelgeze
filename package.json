@@ -25,6 +25,7 @@
     "@react-email/render": "^2.1.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
+    "@zip.js/zip.js": "^2.13.1",
     "next": "^16.2.11",
     "pbf": "^5.1.0",
     "pmtiles": "^4.4.1",

@@ -96,6 +96,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
             : Promise.resolve(asset.external_url),
     ])
     const formEntries = asset.asset_kind === "form_submission" ? responseEntries(asset.metadata) : []
+    const downloadHref = asset.native_kind === "client_portal_resource" && asset.storage_path ? `/api/workspaces/${workspace.slug}/assets/${asset.id}/download` : null
     const onboardingRelationshipId = metadataValue(asset.metadata, "relationship_id") || contextRelationshipId
     const onboardingStepKey = metadataValue(asset.metadata, "step_key")
     const onboardingBackHref = onboardingRelationshipId && (asset.native_kind === "onboarding_form_submission" || asset.native_kind === "onboarding_upload")
@@ -150,6 +151,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
                         ) : null}
 
                 <section className="mt-6">
+                    {downloadHref ? <a href={downloadHref} target="_blank" rel="noreferrer" className="mb-4 inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-medium text-black">Download file</a> : null}
                     <div className="min-h-[24rem] overflow-hidden rounded-xl border border-neutral-800 bg-black">
                         {formEntries.length > 0 && (
                             <div className="divide-y divide-neutral-900">
@@ -182,8 +184,8 @@ export default async function AssetDetailPage({ params }: PageProps) {
                         {previewUrl && !isImage(asset.content_type) && !isVideo(asset.content_type) && !isAudio(asset.content_type) && !isPdf(asset.content_type, asset.title) && (
                             <div className="flex min-h-[24rem] flex-col items-center justify-center px-6 text-center">
                                 <p className="text-lg font-semibold">Preview is not available for this file type.</p>
-                                <a href={previewUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black">
-                                    Open file
+                                <a href={downloadHref ?? previewUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black">
+                                    {downloadHref ? "Download file" : "Open file"}
                                 </a>
                             </div>
                         )}

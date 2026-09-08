@@ -55,17 +55,21 @@ function resourceRoute(db: ReturnType<typeof database>, validAccess = true, insp
         "@/lib/onboarding/upload-receipt": receipts,
         "@/lib/onboarding/uploads": { inspectOnboardingUpload: inspect },
         "@/lib/supabase/admin": { supabaseAdmin: db },
+        "@/lib/client-portal/resource-persistence": loadServer("lib/client-portal/resource-persistence.ts", { "@/lib/supabase/admin": { supabaseAdmin: db } }),
     })
 }
 const post = (body: unknown) => new Request("https://portal.example/api", { method: "POST", body: JSON.stringify(body) })
 
-test("resource validation rejects empty, oversized and forged metadata", () => {
-    assert.equal(resources.portalResourceFile({ name: "x", size: 0 }), null)
-    assert.equal(resources.portalResourceFile({ name: "x", size: forms.MAX_ONBOARDING_UPLOAD_SIZE + 1 }), null)
-    assert.equal(resources.portalResourceFile({ name: "x\nHeader", size: 1 }), null)
-    assert.equal(resources.portalResourceFile({ name: "x", size: 1, type: "text/html\r\nX: bad" }), null)
+test("resource validation accepts arbitrary formats and empty files but rejects forged sizes and paths", () => {
+    assert.ok(resources.portalResourceFile({ name: "empty.unknown", size: 0 }))
+    assert.ok(resources.portalResourceFile({ name: "x", size: forms.MAX_ONBOARDING_UPLOAD_SIZE + 1 }))
+    assert.equal(resources.portalResourceFile({ name: "x", size: resources.MAX_PORTAL_RESOURCE_SIZE + 1 }), null)
+    assert.equal(resources.portalResourceFile({ name: "x", size: -1 }), null)
     assert.equal(resources.portalResourceFile({ name: "x", size: 1.5 }), null)
-    assert.ok(resources.portalResourceFile({ name: "資料.zip", size: forms.MAX_ONBOARDING_UPLOAD_SIZE, type: "application/zip" }))
+    assert.equal(resources.portalResourceFile({ name: "x\nHeader", size: 1 }).name, "x\nHeader")
+    assert.equal(resources.portalResourceFile({ name: "x", size: 1, type: "text/html\r\nX: bad" }).type, "application/octet-stream")
+    assert.equal(resources.portalResourceFile({ name: "資料".repeat(200) + ".zip", size: 1 }).name, "資料".repeat(200) + ".zip")
+    for (const type of ["image/heic", "application/x-msdownload", "application/x-autocad", "", "unknown type"]) assert.ok(resources.portalResourceFile({ name: "anything", size: 1, type }))
     assert.ok(resources.portalResourceUpload({ ...upload(), path: path.replace("report.pdf", "report..pdf") }, "workspace/client-portal/relationship/session/"))
     assert.equal(resources.portalResourceUpload({ ...upload(), path: "other/client-portal/a" }, "workspace/client-portal/relationship/session/"), null)
     assert.equal(resources.portalResourceUpload({ ...upload(), path: `${path}/../other` }, "workspace/client-portal/relationship/session/"), null)

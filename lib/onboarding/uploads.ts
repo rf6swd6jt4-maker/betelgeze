@@ -28,9 +28,11 @@ const R2_BRIDGE_MEDIA_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60
 const R2_UPLOAD_URL_TTL_SECONDS = 15 * 60
 const MAX_SERVICE_THUMBNAIL_SIZE = 10 * 1024 * 1024
 
-function getR2Client() {
+export function getR2Client() {
     return new S3Client({
         region: "auto",
+        // Browser PUT bodies are not present at signing time. Do not sign an empty-body CRC.
+        requestChecksumCalculation: "WHEN_REQUIRED",
         endpoint: `https://${getRequiredEnv("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com`,
         credentials: {
             accessKeyId: getRequiredEnv("R2_ACCESS_KEY_ID"),
@@ -39,7 +41,7 @@ function getR2Client() {
     })
 }
 
-function getR2BucketName() {
+export function getR2BucketName() {
     return getRequiredEnv("R2_BUCKET_NAME")
 }
 
@@ -283,9 +285,11 @@ export async function createSignedAssetUpload(
     }
 }
 
-export async function createSignedClientPortalResourceUpload(workspaceId: string, relationshipId: string, sessionId: string, file: { name: string; size: number; type: string }) {
-    if (file.size <= 0 || file.size > MAX_ONBOARDING_UPLOAD_SIZE) throw new Error("Choose a file up to 500 MB.")
-    const path = `${workspaceId}/client-portal/${relationshipId}/${sessionId}/${randomUUID()}-${sanitizeFileName(file.name) || "resource"}`
+export async function createSignedClientPortalResourceUpload(workspaceId: string, relationshipId: string, sessionId: string, file: { name: string; size: number; type: string }, requestId?: string) {
+    if (file.size < 0 || file.size > 5 * 1024 ** 3) throw new Error("This file needs a multipart upload.")
+    const identity = requestId && /^[a-f0-9-]{36}$/i.test(requestId) ? requestId : randomUUID()
+    const fingerprint = createHash("sha256").update(JSON.stringify(file)).digest("hex").slice(0, 16)
+    const path = `${workspaceId}/client-portal/${relationshipId}/${sessionId}/${identity}-${fingerprint}`
     const uploadUrl = await getSignedUrl(getR2Client(), new PutObjectCommand({
         Bucket: getR2BucketName(), Key: path, ContentType: file.type, ContentLength: file.size,
     }), { expiresIn: R2_UPLOAD_URL_TTL_SECONDS })

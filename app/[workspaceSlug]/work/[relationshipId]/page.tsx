@@ -84,11 +84,10 @@ export default async function FulfilmentDetailPlaceholder({ params }: PageProps)
                         </DetailDangerZone> : null}
                     </div>
 
-                    <ClientContextPanel
+                    <ClientContextPanel access={access}
                         workspaceSlug={workspace.slug}
                         relationship={relationship}
                         metrics={[{ label: "Open work", value: openItems.length }]}
-                        allowedDestinations={role === "staff" ? ["onboarding", "fulfilment"] : undefined}
                     />
                 </div>
             </div>

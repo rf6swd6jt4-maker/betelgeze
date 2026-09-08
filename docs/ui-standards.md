@@ -484,3 +484,11 @@ Mobile tab swipes scroll the strip. A stationary 650ms press lifts a tab for reo
 Settings > Teams uses the shared `Assignee` treatment with compact Seller and Manager checkboxes. Service eligibility is secondary text; permission controls and maintenance routing expand on demand. Do not present workspace authority (Owner/Admin/Staff) as interchangeable with these positions.
 
 `DeliveryUserPicker` is the shared compact multi-user selector for service eligibility and optional client-chat participation. It uses `List` and `Assignee`, adds search for larger workspaces, and keeps the list height bounded. POS makes one selection per purchased service using a compact field. The client and internal group rosters use shared assignees; internal membership is read-only, while the client manager controls optional client-chat participants.
+
+## Relationship context
+
+The relationship context is a companion reference, not a record detail page or a collection of navigable records. The shell and standalone pages share `ShellRelationshipContextPanel`: company/contact identity and `RelationshipStage`, services paired with `Assignee`, saved relationship notes, actionable contact details, optional secondary metadata, and `QuickStats`. Attached services use `RoundPill`; missing ownership reads `Unassigned`. Hide absent optional contact and metadata rows. Never label a failed data load as an empty service list or unassigned team.
+
+Keep permission-aware shortcuts outside the scrolling body. The Appointment Setting shortcut also requires a matching service and an eligible relationship. Service data respects the viewer's relationship/service scope. Use the existing relationship description as the notes source.
+
+At `lg` and above, retain the desktop sidebar preference and reserve its width in the page. Below `lg`, context opens explicitly from the tab-bar icon in a modal drawer with native focus containment, Escape/backdrop dismissal, and focus restoration. Opening this drawer does not change the desktop preference. Close it on navigation, tab switches, and desktop resizing. Contact values wrap and offer link/copy actions with visible success or failure feedback.

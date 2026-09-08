@@ -17,7 +17,7 @@ type PageProps = {
 
 export default async function AppointmentSettingRelationshipPage({ params }: PageProps) {
     const { workspaceSlug, relationshipId } = await params
-    const { workspace, user, role, access } = await requireWorkspacePanel(workspaceSlug, "appointment-setting")
+    const { workspace, user, access } = await requireWorkspacePanel(workspaceSlug, "appointment-setting")
     const [relationship, serviceId] = await Promise.all([
         getRelationship(workspace.id, relationshipId),
         loadAppointmentSettingRelationshipService(access, relationshipId),
@@ -68,14 +68,13 @@ export default async function AppointmentSettingRelationshipPage({ params }: Pag
                     />
                 </div>
 
-                <ClientContextPanel
+                <ClientContextPanel access={access}
                     workspaceSlug={workspace.slug}
                     relationship={relationship}
                     metrics={[
                         { label: "Submitted", value: submittedCount },
                         { label: "Drafts", value: draftCount },
                     ]}
-                    allowedDestinations={role === "staff" ? ["onboarding", "fulfilment"] : undefined}
                 />
             </div>
         </div>

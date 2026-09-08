@@ -1,4 +1,5 @@
 import type { WorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
+import type { RelationshipContextDestination, RelationshipContextPerson, RelationshipContextService } from "./relationship-context"
 
 export const WORKSPACE_TAB_FRAME_PARAM = "__betelgeze_tab"
 export const WORKSPACE_TAB_FRAME_NAME_PREFIX = "betelgeze-tab:"
@@ -68,6 +69,10 @@ export type WorkspaceTabRelationshipContext = {
     notes_summary: string | null
     lifecycle_phase: string
     metrics: WorkspaceTabContextMetric[]
+    services?: RelationshipContextService[]
+    manager?: RelationshipContextPerson | null
+    teamUnavailable?: boolean
+    allowedDestinations?: RelationshipContextDestination[]
 }
 
 export function normalizeWorkspaceUrl(value: string, workspaceSlug: string, origin: string) {

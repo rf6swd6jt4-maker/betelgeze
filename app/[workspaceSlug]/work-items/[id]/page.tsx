@@ -124,13 +124,9 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                         </DetailDangerZone> : null}
                     </div>
 
-                    <ClientContextPanel
+                    <ClientContextPanel access={access}
                         workspaceSlug={workspace.slug}
                         relationship={contextRelationship}
-                        allowedDestinations={role === "staff" ? [
-                            ...(workspaceAccessHasCapability(access, "onboarding.manage") ? ["onboarding" as const] : []),
-                            ...(workspaceAccessHasCapability(access, "fulfilment.manage") ? ["fulfilment" as const] : []),
-                        ] : undefined}
                         metrics={[
                             { label: "Status", value: status.label },
                             { label: "Assets", value: assets.length },

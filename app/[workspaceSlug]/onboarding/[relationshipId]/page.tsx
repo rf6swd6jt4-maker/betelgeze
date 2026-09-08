@@ -715,12 +715,11 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
     </>
 }
 
-async function OnboardingContext({ data, workspaceSlug, relationship, role }: { data: OnboardingDetailData; workspaceSlug: string; relationship: OnboardingRelationship; role: string }) {
+async function OnboardingContext({ data, workspaceSlug, relationship, access }: { data: OnboardingDetailData; workspaceSlug: string; relationship: OnboardingRelationship; access: import("@/lib/workspace-access").WorkspaceAccess }) {
     const activity = await data.activityPromise
-    return <ClientContextPanel
+    return <ClientContextPanel access={access}
         workspaceSlug={workspaceSlug}
         relationship={relationship}
-        allowedDestinations={role === "staff" ? ["onboarding", "fulfilment"] : undefined}
         metrics={[
             { label: "Progress", value: `${activity.percentage}%` },
             { label: "Assets", value: activity.assets.length },
@@ -772,7 +771,7 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
                     </Suspense>
                 </div>
                 <Suspense fallback={null}>
-                    <OnboardingContext data={data} workspaceSlug={workspace.slug} relationship={relationship} role={role} />
+                    <OnboardingContext data={data} workspaceSlug={workspace.slug} relationship={relationship} access={access} />
                 </Suspense>
             </div>
         </div>

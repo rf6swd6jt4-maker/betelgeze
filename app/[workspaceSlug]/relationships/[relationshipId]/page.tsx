@@ -218,7 +218,7 @@ export default async function RelationshipDetailPage({ params }: PageProps) {
                     </DetailDangerZone> : null}
                 </div>
 
-                <ClientContextPanel workspaceSlug={workspace.slug} relationship={relationship} />
+                <ClientContextPanel access={access} workspaceSlug={workspace.slug} relationship={relationship} />
             </div>
         </div>
     </main>

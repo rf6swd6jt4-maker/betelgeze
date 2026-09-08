@@ -384,6 +384,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
     const [tabDragPreview, setTabDragPreview] = useState<WorkspaceTabDragPreview | null>(null)
     const [editingTabId, setEditingTabId] = useState<string | null>(null)
     const [editingTabTitle, setEditingTabTitle] = useState("")
+    const [mobileContextKey, setMobileContextKey] = useState<string | null>(null)
     const [contextOpenByTab, setContextOpenByTab] = useState<Record<string, boolean>>({})
     const [contextStatusByTab, setContextStatusByTab] = useState<Record<string, WorkspaceTabContextStatus>>({})
     const [contextObstructedByTab, setContextObstructedByTab] = useState<Record<string, boolean>>({})
@@ -416,6 +417,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
     const capabilitySet = new Set(workspaceCapabilities)
     const canOpenWorkspaceUrl = useCallback((value: string) => canAccessWorkspaceUrl(value, workspace.slug, workspaceRole, workspaceCapabilities), [workspace.slug, workspaceRole, workspaceCapabilities])
     const activateWorkspaceTab = useCallback((tabId: string) => {
+        setMobileContextKey(null)
         setResidentTabIds((current) => {
             const next = [tabId, ...current.filter((id) => id !== tabId)].slice(0, MAX_RESIDENT_WORKSPACE_FRAMES)
             return next.length === current.length && next.every((id, index) => id === current[index]) ? current : next
@@ -1651,6 +1653,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
     }
 
     function navigateActiveTab(href: string) {
+        setMobileContextKey(null)
         const tabId = activeTabIdRef.current
         if (!tabId) return
         const url = normalizeWorkspaceUrl(href)
@@ -2018,7 +2021,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
     const activeContextSupported = activeContextStatus?.supported === true
     const activeContextOpen = activeContextSupported && (contextOpenByTab[activeTab.id] ?? true)
     const activeContextObstructed = contextObstructedByTab[activeTab.id] === true
-    const activeRelationshipContext = activeContextOpen && !activeContextObstructed ? activeContextStatus?.context ?? null : null
+    const activeRelationshipContext = activeContextSupported && !activeContextObstructed ? activeContextStatus?.context ?? null : null
     const activePathname = new URL(activeTab.url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname
     const activeRouteLoading = routeLoadingTabId === activeTabId
     const activeNavigation = navigationStateByTab[activeTabId]
@@ -2412,7 +2415,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
                         </div>
                     )}
                 </div>
-                <button data-icon-button type="button" onClick={toggleContextPanel} disabled={!activeContextSupported} aria-label={!activeContextSupported ? "Relationship context unavailable" : activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextSupported ? activeContextOpen : undefined} className="mb-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400 md:inline-flex">
+                <button data-icon-button type="button" onClick={toggleContextPanel} disabled={!activeContextSupported} aria-label={!activeContextSupported ? "Relationship context unavailable" : activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextSupported ? activeContextOpen : undefined} className="mb-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400 lg:inline-flex">
+                    <ContextPanelIcon />
+                </button>
+                <button data-icon-button type="button" onClick={() => setMobileContextKey(`${activeTab.id}:${activeTab.url}`)} disabled={!activeContextSupported || activeContextObstructed || activeRouteLoading} aria-label="Show relationship context" aria-haspopup="dialog" className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-white disabled:opacity-30 lg:hidden">
                     <ContextPanelIcon />
                 </button>
             </div>
@@ -2441,9 +2447,13 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
 
         {activeRelationshipContext && !activeRouteLoading && (
             <ShellRelationshipContextPanel
+                key={`${activeTab.id}:${activeTab.url}`}
+                desktopOpen={activeContextOpen}
+                mobileOpen={mobileContextKey === `${activeTab.id}:${activeTab.url}`}
+                onClose={() => setMobileContextKey(null)}
                 context={activeRelationshipContext}
                 workspaceSlug={workspace.slug}
-                onNavigate={navigateActiveTab}
+                onNavigate={(href) => { setMobileContextKey(null); navigateActiveTab(href) }}
                 workspaceCapabilities={workspaceCapabilities}
             />
         )}

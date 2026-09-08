@@ -603,6 +603,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
     }, [])
 
     const beginTabNavigation = useCallback((tabId: string, url: string) => {
+        if (tabId === activeTabIdRef.current) setMobileContextKey(null)
         navigationErrorRef.current.delete(tabId)
         const currentTab = tabsRef.current.find((tab) => tab.id === tabId)
         if (currentTab && !navigationFallbackRef.current.has(tabId)) {

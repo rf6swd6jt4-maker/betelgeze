@@ -39,9 +39,10 @@ export function ClientPortalAppointments({ token, onOpen }: { token: string; onO
 
     return <PortalSection id="appointments" title="Your appointments" description="See what’s coming up and view past bookings." icon="calendar">
         {/* This period filters the independently loaded booking panel without navigating the portal. */}
-        <FilterRail surface="light" ariaLabel="Appointment period">
+        <div data-portal-appointment-filter className="shrink-0"><FilterRail surface="light" ariaLabel="Appointment period">
             {[{ value: "upcoming", label: "Upcoming" }, { value: "past", label: "Past appointments" }].map((period) => <FilterRailButton key={period.value} selected={view === period.value} onClick={() => { if (view === period.value) return; setView(period.value); setAppointments([]); setHasMore(false); setLoading(true); setError(null) }}>{period.label}</FilterRailButton>)}
-        </FilterRail>
+        </FilterRail></div>
+        <div role="region" aria-label="Appointment history" tabIndex={0} className="min-h-0 flex-1 overflow-y-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-[-2px]">
         {error ? <p role="alert" className="mt-5 text-sm text-red-700">{error} <button type="button" onClick={() => { setLoading(true); void load() }} className="underline">Try again</button></p> : null}
         {loading && !appointments.length ? <p role="status" className="py-10 text-center text-sm text-[var(--onboarding-muted,#475569)]">Loading appointments…</p> : null}
         {!loading && !error && !appointments.length ? <div className="px-3 py-9 text-center sm:py-12"><span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-black/[0.025] text-[var(--onboarding-muted,#475569)]"><PortalIcon name="calendar" className="h-7 w-7" /></span><h3 className="mt-4 text-base font-semibold">{view === "past" ? "No past appointments" : "No upcoming appointments"}</h3><p className="mx-auto mt-2 max-w-[17rem] text-sm leading-6 text-[var(--onboarding-muted,#475569)]">{view === "past" ? "Your previous bookings will be kept here." : "When your team adds a booking, you’ll find the date and details here."}</p></div> : null}
@@ -57,5 +58,6 @@ export function ClientPortalAppointments({ token, onOpen }: { token: string; onO
         })}</List> : null}
         {appointments.length ? <p className="mt-3 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">Times are local to each booking. Open Details for the timezone.</p> : null}
         {hasMore ? <button disabled={loading} type="button" onClick={() => { setLoading(true); void load(appointments.length) }} className="mt-4 min-h-11 text-sm font-semibold">{loading ? "Loading…" : "Load more appointments"}</button> : null}
+        </div>
     </PortalSection>
 }

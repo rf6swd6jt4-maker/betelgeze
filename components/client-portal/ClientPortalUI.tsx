@@ -16,10 +16,10 @@ export const portalPrimaryButton = "inline-flex min-h-11 items-center justify-ce
 
 // Dashboard sections are task areas, rather than record detail pages or workspace panel tabs.
 export function PortalSection({ id, title, description, icon, children }: { id: string; title: string; description: string; icon: keyof typeof paths; children: ReactNode }) {
-    return <section id={id} aria-labelledby={`${id}-title`} className="min-w-0 scroll-mt-6 rounded-[1.25rem] border border-black/[0.08] bg-[var(--onboarding-surface,#FFFFFF)] p-5 shadow-[0_2px_8px_-4px_rgb(15_23_42_/_0.12)] sm:p-6">
-        <div className="flex items-center gap-3.5">
+    return <section id={id} aria-labelledby={`${id}-title`} className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-[1.25rem] border border-black/[0.08] bg-[var(--onboarding-surface,#FFFFFF)] p-4 shadow-[0_2px_8px_-4px_rgb(15_23_42_/_0.12)] sm:p-5">
+        <div data-portal-section-heading className="flex shrink-0 items-center gap-3.5">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--onboarding-primary,#1E3A5F)_7%,transparent)] text-[var(--onboarding-primary,#1E3A5F)]"><PortalIcon name={icon} className="h-5 w-5" /></span>
-            <div className="min-w-0"><h2 id={`${id}-title`} className="text-xl font-semibold tracking-tight">{title}</h2><p className="mt-1 text-sm leading-5 text-[var(--onboarding-muted,#475569)]">{description}</p></div>
+            <div className="min-w-0"><h2 id={`${id}-title`} className="text-xl font-semibold tracking-tight">{title}</h2><p data-portal-section-description className="mt-1 text-sm leading-5 text-[var(--onboarding-muted,#475569)]">{description}</p></div>
         </div>
         {children}
     </section>

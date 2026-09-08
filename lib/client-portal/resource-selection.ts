@@ -6,6 +6,11 @@ export function fileSelection(file: File): ResourceSelection {
     return { name: file.name, type: file.type, size: file.size, file }
 }
 
+export function resourceSelectionHasFiles(selection: ResourceSelection) {
+    // A zero-byte file is still a file; a tree containing only directories is empty.
+    return Boolean(selection.file || selection.entries?.some((entry) => entry.file))
+}
+
 export function folderSelection(name: string, entries: FolderEntry[]): ResourceSelection {
     const aliases = new Map<string, string>()
     const siblings = new Map<string, Set<string>>()

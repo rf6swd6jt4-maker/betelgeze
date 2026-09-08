@@ -8,6 +8,8 @@ import { PortalIcon, portalPrimaryButton } from "@/components/client-portal/Clie
 import { ClientBrandLogo } from "@/components/client-branding/ClientBrandLogo"
 import { DetailField, DetailFields } from "@/components/detail"
 import { appointmentDateLabels, type PortalAppointment } from "@/lib/client-portal/appointments"
+import { FilterRail, FilterRailButton } from "@/components/panel/FilterRail"
+import styles from "./ClientPortalLayout.module.css"
 
 function localGreeting(hour: number) {
     if (hour < 12) return "Good morning"
@@ -20,8 +22,6 @@ function PortalSidePanel({ title, workspaceName, onBack, children, chat = false 
     const backRef = useRef<HTMLButtonElement>(null)
     useEffect(() => {
         const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null
-        const previousOverflow = document.body.style.overflow
-        document.body.style.overflow = "hidden"
         const main = document.querySelector<HTMLElement>("[data-portal-content]")
         const wasInert = main?.inert ?? false
         if (main) main.inert = true
@@ -38,7 +38,6 @@ function PortalSidePanel({ title, workspaceName, onBack, children, chat = false 
         backRef.current?.focus({ preventScroll: true })
         document.addEventListener("keydown", keyboard)
         return () => {
-            document.body.style.overflow = previousOverflow
             if (main) main.inert = wasInert
             document.removeEventListener("keydown", keyboard)
             origin?.focus({ preventScroll: true })
@@ -81,7 +80,14 @@ function AppointmentDetail({ appointment }: { appointment: PortalAppointment }) 
 export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, privacyPolicyUrl, termsOfServiceUrl }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null }) {
     const [panel, setPanel] = useState<"chat" | PortalAppointment | null>(null)
     const [greeting, setGreeting] = useState("Welcome")
+    const [mobilePanel, setMobilePanel] = useState("appointments")
     const closePanel = useCallback(() => setPanel(null), [])
+    useEffect(() => {
+        const elements = [document.documentElement, document.body]
+        const previous = elements.map((element) => element.style.overflow)
+        elements.forEach((element) => { element.style.overflow = "hidden" })
+        return () => elements.forEach((element, index) => { element.style.overflow = previous[index] })
+    }, [])
     useEffect(() => {
         const update = () => setGreeting(localGreeting(new Date().getHours()))
         update()
@@ -89,23 +95,24 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
         return () => window.clearInterval(interval)
     }, [])
 
-    return <div data-betelgeze-client-portal-session="valid" className="min-h-screen bg-[var(--onboarding-page,#F8F7F3)] text-[var(--onboarding-text,#0F172A)]">
-        <div data-portal-content className="flex min-h-svh flex-col">
-            <header className="border-b border-black/[0.07] bg-[var(--onboarding-surface,#FFFFFF)]">
-                <div className="mx-auto flex h-20 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+    return <div data-betelgeze-client-portal-session="valid" className={`${styles.viewport} bg-[var(--onboarding-page,#F8F7F3)] text-[var(--onboarding-text,#0F172A)]`}>
+        <div data-portal-content className="flex h-full min-h-0 flex-col">
+            <header className="shrink-0 border-b border-black/[0.07] bg-[var(--onboarding-surface,#FFFFFF)]">
+                <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 lg:h-20 lg:px-8">
                     <ClientBrandLogo logoSrc={logoSrc} workspaceName={workspaceName} className="h-9 max-w-[min(12rem,38vw)]" fallbackClassName="min-w-0 truncate text-lg font-semibold tracking-tight" />
-                    <nav aria-label="Client portal" className="flex shrink-0 items-center gap-1 sm:gap-4"><a href="#appointments" className="hidden min-h-11 items-center px-2 text-sm font-medium text-[var(--onboarding-muted,#475569)] hover:text-[var(--onboarding-text,#0F172A)] sm:inline-flex">Appointments</a><a href="#resources" className="inline-flex min-h-11 items-center px-3 text-sm font-medium text-[var(--onboarding-muted,#475569)] hover:text-[var(--onboarding-text,#0F172A)]">Files</a><button type="button" onClick={() => setPanel("chat")} className={portalPrimaryButton}><PortalIcon name="chat" /><span>Chat</span></button></nav>
+                    <button type="button" onClick={() => setPanel("chat")} className={portalPrimaryButton}><PortalIcon name="chat" /><span>Chat</span></button>
                 </div>
             </header>
-            <main data-client-portal-main className="mx-auto w-full max-w-6xl flex-1 px-4 py-7 sm:px-6 sm:py-9 lg:px-8">
-                <section aria-labelledby="portal-greeting" className="mb-7 sm:mb-8"><p className="text-sm font-medium text-[var(--onboarding-muted,#475569)]">Your client portal</p><h1 id="portal-greeting" className="mt-2 text-[1.75rem] font-semibold leading-tight tracking-tight sm:text-[2rem]">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-3 text-base leading-6 text-[var(--onboarding-muted,#475569)]">Check your appointments or send files to your team.</p></section>
-                <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"><ClientPortalAppointments token={token} onOpen={setPanel} /><ClientPortalResources token={token} /></div>
-                <div className="mt-6 flex flex-col gap-4 rounded-2xl bg-[color-mix(in_srgb,var(--onboarding-primary,#1E3A5F)_5%,transparent)] p-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                    <div className="flex items-center gap-3.5"><span className="hidden text-[var(--onboarding-primary,#1E3A5F)] sm:block"><PortalIcon name="chat" className="h-6 w-6" /></span><div><h2 className="text-sm font-semibold">We’re here to help</h2><p className="mt-1 text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Questions about a booking or file? Just send us a message.</p></div></div>
-                    <button type="button" onClick={() => setPanel("chat")} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--onboarding-primary,#1E3A5F)_20%,transparent)] bg-[var(--onboarding-surface,#FFFFFF)] px-4 py-2 text-sm font-semibold text-[var(--onboarding-primary,#1E3A5F)] hover:bg-white/60 focus-visible:outline-2 focus-visible:outline-offset-4"><span>Message your team</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true" className="h-4 w-4"><path d="m9 5 7 7-7 7" /></svg></button>
+            <main data-client-portal-main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6">
+                <section data-portal-greeting aria-labelledby="portal-greeting" className="mb-3 shrink-0 lg:mb-6"><p className="hidden text-sm font-medium text-[var(--onboarding-muted,#475569)] lg:block">Your client portal</p><h1 id="portal-greeting" className="truncate text-2xl font-semibold leading-tight tracking-tight lg:mt-2 lg:text-[2rem]">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-2 hidden text-sm leading-6 text-[var(--onboarding-muted,#475569)] lg:block">Check your appointments or send files to your team.</p></section>
+                <div className="mb-3 shrink-0 lg:hidden"><FilterRail surface="light" spacing="tight" ariaLabel="Portal panels">{[{ value: "appointments", label: "Appointments" }, { value: "resources", label: "Files" }].map((item) => <FilterRailButton key={item.value} selected={mobilePanel === item.value} aria-controls={item.value} onClick={() => setMobilePanel(item.value)}>{item.label}</FilterRailButton>)}</FilterRail></div>
+                <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:gap-6">
+                    <div className={`min-h-0 min-w-0 ${mobilePanel === "appointments" ? "block" : "hidden lg:block"}`}><ClientPortalAppointments token={token} onOpen={setPanel} /></div>
+                    {/* Keep the uploader mounted when changing panels so active transfers continue. */}
+                    <div className={`min-h-0 min-w-0 ${mobilePanel === "resources" ? "block" : "hidden lg:block"}`}><ClientPortalResources token={token} /></div>
                 </div>
             </main>
-            <footer className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-4 pb-6 pt-2 text-xs text-[var(--onboarding-muted,#475569)] sm:px-6 lg:px-8"><span>{workspaceName}</span><div className="flex gap-5">{privacyPolicyUrl ? <a href={privacyPolicyUrl} className="inline-flex min-h-11 items-center underline underline-offset-4">Privacy</a> : null}{termsOfServiceUrl ? <a href={termsOfServiceUrl} className="inline-flex min-h-11 items-center underline underline-offset-4">Terms</a> : null}</div></footer>
+            <footer className="mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-4 px-4 pb-[env(safe-area-inset-bottom)] text-xs text-[var(--onboarding-muted,#475569)] sm:px-6 lg:px-8"><span className="min-w-0 truncate">{workspaceName}</span><div className="flex shrink-0 gap-5">{privacyPolicyUrl ? <a href={privacyPolicyUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center underline underline-offset-4">Privacy</a> : null}{termsOfServiceUrl ? <a href={termsOfServiceUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center underline underline-offset-4">Terms</a> : null}</div></footer>
         </div>
         {panel ? <PortalSidePanel title={panel === "chat" ? "Chat" : "Appointment"} workspaceName={workspaceName} onBack={closePanel} chat={panel === "chat"}>{panel === "chat" ? <ClientPortalChat token={token} workspaceName={workspaceName} /> : <AppointmentDetail appointment={panel} />}</PortalSidePanel> : null}
     </div>

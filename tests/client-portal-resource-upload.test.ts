@@ -80,6 +80,14 @@ test("folder names that need normalization do not overwrite one another", async 
     assert.deepEqual(folder.entries.map((entry: any) => entry.path), ["Project/a_b/", "Project/a_b/file", "Project/a_b (2)/", "Project/a_b (2)/file", "Project/a_b (2) (2)/file"])
 })
 
+test("empty folder trees are distinguished from folders containing zero-byte files", () => {
+    assert.equal(selection.resourceSelectionHasFiles(selection.folderSelection("Empty", [])), false)
+    assert.equal(selection.resourceSelectionHasFiles(selection.folderSelection("Nested empty", [{ path: "Root/" }, { path: "Root/Child/" }])), false)
+    const emptyFile = new File([], "empty.txt")
+    assert.equal(selection.resourceSelectionHasFiles(selection.folderSelection("Project", [{ path: "Project/empty.txt", file: emptyFile }])), true)
+    assert.equal(selection.resourceSelectionHasFiles(selection.fileSelection(emptyFile)), true)
+})
+
 test("an unreadable file fails the ZIP stream instead of producing a successful partial folder", { timeout: 3000 }, async () => {
     const broken = { size: 5, lastModified: 0, stream() { throw new Error("File unavailable") } }
     const archive = await selection.folderArchive([{ path: "Folder/broken", file: broken }], new AbortController().signal)

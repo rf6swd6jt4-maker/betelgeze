@@ -675,6 +675,14 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                         }
                         return
                     }
+                    // A newly sold client may not be in this mounted panel's
+                    // roster yet. Message merges cannot create conversation
+                    // metadata; discover it through the participant-scoped sync.
+                    const incomingRelationshipId = stringValue(record(payload.new).relationship_id)
+                    if (incomingRelationshipId && !updates.getSnapshot().conversations.some((conversation) => conversation.id === incomingRelationshipId)) {
+                        void synchronize().catch(() => undefined)
+                        return
+                    }
                     const message = realtimeMessage(payload.new)
                     if (message) updateConversationMessages(message.relationshipId, [message], true)
                     else {

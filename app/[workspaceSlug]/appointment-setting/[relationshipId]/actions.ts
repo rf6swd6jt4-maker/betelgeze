@@ -15,6 +15,7 @@ import {
 import { loadAppointmentSettingConfiguration, loadAppointmentSettingRelationshipService } from "@/lib/appointment-setting-server"
 import { resolveCommunicationDestinations, sendCommunicationDeliveries } from "@/lib/client-messages/omnichannel"
 import { getRelationship } from "@/lib/relationships"
+import { getClientPortalUrlForOnboardingSession } from "@/lib/client-portal/session"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspacePanel } from "@/lib/workspace-access"
 import type { WorkspaceMutationResult } from "@/lib/workspace-mutations"
@@ -215,6 +216,7 @@ export async function submitAppointmentSettingAppointment(workspaceSlug: string,
     const primaryDestination = resolved.destinations.find((destination) => destination.primary) ?? resolved.destinations[0]
     if (!primaryDestination) return { ok: false, error: "Connect a client SMS or WhatsApp destination before submitting." }
     const body = formatAppointmentNotification({
+        clientPortalUrl: await getClientPortalUrlForOnboardingSession({ workspaceId: workspace.id, relationshipId }),
         contactName: validated.value.contactName,
         appointmentDate: validated.value.appointmentDate,
         appointmentTime: validated.value.appointmentTime,

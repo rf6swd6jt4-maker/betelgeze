@@ -99,6 +99,7 @@ export function formatAppointmentNotification(input: {
     appointmentTimezone: string
     meetingMedium: AppointmentMedium
     meetingLink?: string | null
+    clientPortalUrl?: string | null
 }) {
     const date = new Date(`${input.appointmentDate}T12:00:00Z`)
     const [hourText, minuteText] = input.appointmentTime.split(":")
@@ -119,6 +120,7 @@ export function formatAppointmentNotification(input: {
         `Time: ${timeLabel} (${input.appointmentTimezone.replaceAll("_", " ")})`,
         `Medium: ${mediumLabel}`,
         ...(input.meetingMedium !== "phone" && input.meetingLink ? [`Meeting link: ${input.meetingLink}`] : []),
+        ...(input.clientPortalUrl ? ["", `Check your client portal: ${input.clientPortalUrl}`] : []),
     ].join("\n")
 }
 

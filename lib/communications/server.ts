@@ -1,4 +1,5 @@
 import { profileAvatarUrl } from "@/lib/profile-avatar"
+import { resourceUploadAssetId } from "@/lib/communications/resource-upload"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import type {
     CommunicationMessage,
@@ -71,6 +72,7 @@ export function communicationMessageFromRow(value: unknown): CommunicationMessag
         automationKind: text(row.automation_kind) ?? text(record(row.raw_payload).kind),
         automationLabel: text(row.automation_label) ?? legacyAutomationLabel(row),
         attachment: communicationAttachmentFromRawPayload(row.raw_payload),
+        uploadedAssetId: direction === "inbound" && senderKind === "client" ? resourceUploadAssetId(row.raw_payload) : null,
         providerMessageId: text(row.whatsapp_message_id) ?? text(row.provider_message_id),
         replyToProviderMessageId: text(row.reply_to_whatsapp_message_id),
         replyToMessageId: text(row.reply_to_message_id),

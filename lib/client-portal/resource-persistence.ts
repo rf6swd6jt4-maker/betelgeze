@@ -26,5 +26,19 @@ export async function persistPortalResource(upload: StoredUpload, scope: { works
         workspace_id: scope.workspaceId, relationship_id: scope.relationshipId, asset_id: existing.data.id,
     }, { onConflict: "asset_id,relationship_id" })
     if (linked.error) return { error: "Your file uploaded, but could not be attached to your account. Please retry saving." }
+    const relationship = await supabaseAdmin.from("relationships").select("client_id")
+        .eq("workspace_id", scope.workspaceId).eq("id", scope.relationshipId).single()
+    if (relationship.error || !relationship.data) return { error: "Your file uploaded. Please retry saving to notify your team." }
+    // Reuse the asset UUID as the message ID. ON CONFLICT DO NOTHING makes concurrent
+    // confirmation retries safe without replacing an existing (encrypted) message.
+    const notified = await supabaseAdmin.from("client_messages").upsert({
+        id: existing.data.id,
+        workspace_id: scope.workspaceId, relationship_id: scope.relationshipId,
+        client_id: relationship.data.client_id,
+        direction: "inbound", provider: "client_portal", sender_kind: "client",
+        body: `New upload\n${existing.data.title}`, status: "received",
+        raw_payload: { source: "client_portal", kind: "resource_upload", asset_id: existing.data.id, portal_session_id: scope.sessionId },
+    }, { onConflict: "id", ignoreDuplicates: true })
+    if (notified.error) return { error: "Your file uploaded. Please retry saving to notify your team." }
     return { resource: publicResource(existing.data) }
 }

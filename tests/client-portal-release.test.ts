@@ -26,7 +26,7 @@ function upload() {
     file.receipt = receipts.signUploadReceipt(scope, file, "test-key")
     return file
 }
-type Query = { table: string; operation: string; payload?: any; filters: Array<[string, string, unknown]>; selection?: string }
+type Query = { table: string; operation: string; payload?: any; filters: Array<[string, string, unknown]>; selection?: string; options?: any }
 function database(respond: (query: Query) => unknown) {
     const queries: Query[] = []
     return { queries, from(table: string) {
@@ -35,7 +35,7 @@ function database(respond: (query: Query) => unknown) {
         const builder: any = {
             select(selection: string) { query.selection = selection; return builder },
             insert(payload: unknown) { query.operation = "insert"; query.payload = payload; return builder },
-            upsert(payload: unknown) { query.operation = "upsert"; query.payload = payload; return builder },
+            upsert(payload: unknown, options: unknown) { query.operation = "upsert"; query.payload = payload; query.options = options; return builder },
             eq(key: string, value: unknown) { query.filters.push(["eq", key, value]); return builder },
             gte(key: string, value: unknown) { query.filters.push(["gte", key, value]); return builder },
             lt(key: string, value: unknown) { query.filters.push(["lt", key, value]); return builder },
@@ -104,10 +104,24 @@ test("resource save retries repair a failed relationship link without duplicatin
     let asset: any = null
     let links = 0
     let inserts = 0
+    let messageAttempts = 0
+    const messages = new Map()
     const db = database((query) => {
         if (query.table === "asset_relationships") {
             assert.deepEqual(query.payload, { workspace_id: "workspace", relationship_id: "relationship", asset_id: "asset" })
             return { error: ++links === 1 ? { message: "temporary failure" } : null }
+        }
+        if (query.table === "relationships") return { data: { client_id: "client" }, error: null }
+        if (query.table === "client_messages") {
+            assert.deepEqual(query.options, { onConflict: "id", ignoreDuplicates: true })
+            assert.equal(query.payload.direction, "inbound")
+            assert.equal(query.payload.sender_kind, "client")
+            assert.equal(query.payload.relationship_id, "relationship")
+            assert.equal(query.payload.raw_payload.asset_id, asset.id)
+            assert.equal(query.payload.body, "New upload\nReport.pdf")
+            // A response can fail after the database has committed the insert.
+            if (!messages.has(query.payload.id)) messages.set(query.payload.id, query.payload)
+            return { error: ++messageAttempts === 1 ? { message: "response lost" } : null }
         }
         if (query.operation === "insert") {
             inserts++
@@ -120,11 +134,15 @@ test("resource save retries repair a failed relationship link without duplicatin
     const first = await route.POST(post({ action: "confirm", upload: upload() }), context)
     assert.equal(first.status, 503)
     const second = await route.POST(post({ action: "confirm", upload: upload() }), context)
-    assert.equal(second.status, 201)
+    assert.equal(second.status, 503)
+    const third = await route.POST(post({ action: "confirm", upload: upload() }), context)
+    assert.equal(third.status, 201)
     assert.equal(inserts, 1)
-    assert.equal(links, 2)
-    assert.equal((await second.json()).resource.name, "Report.pdf")
-    for (const query of db.queries.filter((item) => item.operation === "read")) {
+    assert.equal(links, 3)
+    assert.equal(messages.size, 1)
+    assert.equal(messageAttempts, 2)
+    assert.equal((await third.json()).resource.name, "Report.pdf")
+    for (const query of db.queries.filter((item) => item.operation === "read" && item.table === "assets")) {
         assert.ok(query.filters.some((entry) => entry[1] === "workspace_id" && entry[2] === "workspace"))
         assert.ok(query.filters.some((entry) => entry[1] === "native_key" && entry[2] === path))
     }

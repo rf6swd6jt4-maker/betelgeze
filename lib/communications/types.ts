@@ -44,6 +44,7 @@ export type CommunicationSticker = {
 }
 
 export type CommunicationMessage = {
+    uploadedAssetId?: string | null
     id: string
     clientRequestId: string | null
     relationshipId: string

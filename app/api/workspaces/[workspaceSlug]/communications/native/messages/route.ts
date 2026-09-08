@@ -7,6 +7,7 @@ import { notifyNativeChatMessage } from "@/lib/push/chat-notifications"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { communicationFileKeyForCurrentUser } from "@/lib/communications/encryption"
 import { NATIVE_MESSAGE_EDIT_WINDOW_MS } from "@/lib/teams/message-editing"
+import { messageQuoteFromValue, messageQuoteMatches } from "@/lib/communications/message-quotes"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -42,6 +43,8 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     const replyToMessageId = typeof input?.replyToMessageId === "string" ? input.replyToMessageId : ""
     const body = typeof input?.body === "string" ? input.body.trim() : ""
     const attachment = nativeAttachmentFromInput(input?.attachment)
+    const quote = messageQuoteFromValue(input?.quote)
+    if (input?.quote != null && (!quote || !replyToMessageId)) return Response.json({ error: "A quote must contain selected text and an original message." }, { status: 400 })
     if (!UUID_PATTERN.test(conversationId) || !UUID_PATTERN.test(clientRequestId) || (replyToMessageId && !UUID_PATTERN.test(replyToMessageId)) || (!body && !attachment) || body.length > 8000 || (input?.attachment && !attachment)) return Response.json({ error: "A valid message or attachment is required." }, { status: 400 })
     if (!await assertNativeConversationAccess(conversationId, user.id, "write")) return Response.json({ error: "Conversation is unavailable or read-only." }, { status: 403 })
     const existingRow = await supabaseAdmin
@@ -65,6 +68,15 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
         const { data: replyTarget } = await supabaseAdmin.from("workspace_native_messages").select("id").eq("workspace_id", workspace.id).eq("conversation_id", conversationId).eq("id", replyToMessageId).maybeSingle()
         if (!replyTarget) return Response.json({ error: "The replied message was not found." }, { status: 404 })
     }
+    if (quote) {
+        try {
+            const original = await loadNativeMessageForCurrentUser({ workspaceId: workspace.id, messageId: replyToMessageId })
+            if (!original || original.conversationId !== conversationId) return Response.json({ error: "The quoted message is unavailable." }, { status: 404 })
+            if (!messageQuoteMatches(original.body, quote)) return Response.json({ error: "The quoted message changed. Select the text again." }, { status: 409 })
+        } catch {
+            return Response.json({ error: "Could not verify the quoted text. Try again." }, { status: 503 })
+        }
+    }
     let storedAttachment = attachment
     if (storedAttachment) {
         try {
@@ -81,7 +93,7 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
             return Response.json({ error: error instanceof Error ? error.message : "Could not verify attachment." }, { status: 400 })
         }
     }
-    const { data, error } = await supabaseAdmin.from("workspace_native_messages").insert({ workspace_id: workspace.id, conversation_id: conversationId, sender_user_id: user.id, client_request_id: clientRequestId, body: body || null, reply_to_message_id: replyToMessageId || null, attachment: storedAttachment }).select("id").single()
+    const { data, error } = await supabaseAdmin.from("workspace_native_messages").insert({ workspace_id: workspace.id, conversation_id: conversationId, sender_user_id: user.id, client_request_id: clientRequestId, body: body || null, reply_to_message_id: replyToMessageId || null, quote, attachment: storedAttachment }).select("id").single()
     if (error || !data) return Response.json({ error: error?.message ?? "Could not create message." }, { status: 503 })
     let message: Awaited<ReturnType<typeof loadNativeMessageForCurrentUser>> = null
     try {

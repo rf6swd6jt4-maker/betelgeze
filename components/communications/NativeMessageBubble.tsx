@@ -7,13 +7,13 @@ function isMessageControl(target: EventTarget | null) {
     return target instanceof Element && Boolean(target.closest("video,audio,button,a,input,textarea,select,[role='slider'],[data-message-control]"))
 }
 
-export function NativeMessageBubble({ video, image = false, style, children, onOpenActions, ...props }: Omit<ComponentProps<"article">, "ref" | "onClick" | "onContextMenu" | "onKeyDown"> & { video: boolean; image?: boolean; onOpenActions: () => void }) {
+export function NativeMessageBubble({ video, image = false, selectingText = false, style, children, onOpenActions, ...props }: Omit<ComponentProps<"article">, "ref" | "onClick" | "onContextMenu" | "onKeyDown"> & { video: boolean; image?: boolean; selectingText?: boolean; onOpenActions: () => void }) {
     const [longPress] = useState(createMessageLongPress)
     const suppressClick = useRef(false)
     const lastTouchAt = useRef(0)
     useEffect(() => () => longPress.cancel(), [longPress])
     // Media metadata must never resize the surrounding bubble after paint.
-    return <article {...props} role="button" data-message-bubble aria-haspopup="menu"
+    return <article {...props} role={selectingText ? undefined : "button"} data-message-bubble aria-haspopup={selectingText ? undefined : "menu"}
         style={{ ...style, ...(video ? { width: "min(35rem, 100%)" } : image ? { width: "min(22rem, 100%)" } : {}) }}
         // Native video controls retarget timeline touches to the video element.
         // Leave their default behavior alone and do not start a bubble gesture.
@@ -21,6 +21,7 @@ export function NativeMessageBubble({ video, image = false, style, children, onO
             lastTouchAt.current = Date.now()
             suppressClick.current = false
             longPress.cancel()
+            if (selectingText) return
             if (event.touches.length !== 1) { props.onTouchCancel?.(event); return }
             if (isMessageControl(event.target)) return
             props.onTouchStart?.(event)
@@ -33,6 +34,7 @@ export function NativeMessageBubble({ video, image = false, style, children, onO
             })
         }}
         onTouchMove={(event) => {
+            if (selectingText) return
             if (event.touches.length !== 1) { longPress.cancel(); props.onTouchCancel?.(event); return }
             const touch = event.touches[0]
             longPress.move(touch.clientX, touch.clientY)
@@ -41,6 +43,7 @@ export function NativeMessageBubble({ video, image = false, style, children, onO
         onTouchEnd={(event) => {
             lastTouchAt.current = Date.now()
             longPress.cancel()
+            if (selectingText) return
             if (!suppressClick.current && !isMessageControl(event.target)) props.onTouchEnd?.(event)
         }}
         onTouchCancel={(event) => {
@@ -57,11 +60,13 @@ export function NativeMessageBubble({ video, image = false, style, children, onO
             props.onClickCapture?.(event)
         }}
         onClick={(event) => {
+            if (selectingText) return
             // Assistive technology activates with a zero-detail click rather than
             // a physical pointer click. Keep that non-pointer action accessible.
             if (event.detail === 0 && !isMessageControl(event.target)) onOpenActions()
         }}
         onContextMenu={(event) => {
+            if (selectingText) return
             if (isMessageControl(event.target)) return
             event.preventDefault()
             // Mobile browsers may emit contextmenu before or after touchend.
@@ -71,6 +76,7 @@ export function NativeMessageBubble({ video, image = false, style, children, onO
             onOpenActions()
         }}
         onKeyDown={(event) => {
+            if (selectingText) return
             if (isMessageControl(event.target)) return
             if (event.key === "Enter" || event.key === " " || event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
                 event.preventDefault()

@@ -1,4 +1,5 @@
 import { communicationAttachmentFromValue } from "@/lib/communications/attachments"
+import { messageQuoteFromValue } from "@/lib/communications/message-quotes"
 import { loadCommunicationPeople, loadCommunicationStickers } from "@/lib/communications/server"
 import { maintenanceCategoryLabel, MAINTENANCE_CATEGORIES } from "@/lib/admin/maintenance"
 import { profileAvatarUrl } from "@/lib/profile-avatar"
@@ -32,6 +33,7 @@ export function nativeMessageFromRow(value: unknown): NativeMessage | null {
         senderWorkspaceRole: row.sender_workspace_role === "owner" || row.sender_workspace_role === "admin" || row.sender_workspace_role === "staff" ? row.sender_workspace_role : null,
         body: typeof row.body === "string" ? row.body : "",
         replyToMessageId: text(row.reply_to_message_id),
+        quote: messageQuoteFromValue(row.quote),
         attachment: communicationAttachmentFromValue(row.attachment),
         createdAt,
         editedAt: text(row.edited_at),

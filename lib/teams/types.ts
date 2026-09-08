@@ -1,4 +1,5 @@
 import type { ClientConversation, CommunicationAttachment, CommunicationPerson, CommunicationSticker } from "@/lib/communications/types"
+import type { MessageQuote } from "@/lib/communications/message-quotes"
 
 export type WorkspaceTeamKind = "admins" | "maintenance" | "custom"
 
@@ -26,6 +27,7 @@ export type NativeMessage = {
     senderWorkspaceRole: "owner" | "admin" | "staff" | null
     body: string
     replyToMessageId: string | null
+    quote?: MessageQuote | null
     attachment: CommunicationAttachment | null
     createdAt: string
     editedAt: string | null

@@ -1,7 +1,8 @@
-import { Fragment, useRef, useState, type ReactNode } from "react"
-import { chatListLine, chatLineStartsWithHeader, parseChatInline, type ChatInline } from "@/lib/chat-formatting"
+import { useRef, useState, type ReactNode } from "react"
+import { chatListLine, chatLineStartsWithHeader, type ChatInline } from "@/lib/chat-formatting"
+import { chatTextLines, type MessageQuote } from "@/lib/communications/message-quotes"
 
-export function ChatMessageText({ body, className = "leading-5", linkClassName = "underline decoration-current/40 underline-offset-2 hover:decoration-current", onToggleCheckbox }: { body: string; className?: string; linkClassName?: string; onToggleCheckbox?: (line: number, checked: boolean) => Promise<void> }) {
+export function ChatMessageText({ body, className = "leading-5", linkClassName = "underline decoration-current/40 underline-offset-2 hover:decoration-current", onToggleCheckbox, quoteSelection = false, highlight }: { body: string; className?: string; linkClassName?: string; onToggleCheckbox?: (line: number, checked: boolean) => Promise<void>; quoteSelection?: boolean; highlight?: MessageQuote | null }) {
     const [pending, setPending] = useState(false)
     const busy = useRef(false)
     const [error, setError] = useState<string | null>(null)
@@ -14,15 +15,24 @@ export function ChatMessageText({ body, className = "leading-5", linkClassName =
         catch (error) { setError(error instanceof Error ? error.message : "Could not update checkbox. Try again.") }
         finally { busy.current = false; setPending(false) }
     }
-    function inline(tokens: ChatInline[]): ReactNode {
+    function inline(tokens: ChatInline[], position: { offset: number }): ReactNode {
         return tokens.map((token, index) => {
-            if (token.kind === "text") return <Fragment key={index}>{token.text}</Fragment>
-            if (token.kind === "link") return <a key={index} href={token.text} target="_blank" rel="noreferrer" className={linkClassName}>{token.text}</a>
+            if ("text" in token) {
+                const start = position.offset
+                position.offset += token.text.length
+                const from = Math.max(0, (highlight?.start ?? position.offset) - start)
+                const to = Math.min(token.text.length, (highlight?.end ?? start) - start)
+                const content = from < to ? <>{token.text.slice(0, from)}<mark data-chat-quote-highlight className="rounded-sm bg-yellow-300 text-neutral-950">{token.text.slice(from, to)}</mark>{token.text.slice(to)}</> : token.text
+                const run = <span data-chat-text-start={start}>{content}</span>
+                return token.kind === "link" && !quoteSelection ? <a key={index} href={token.text} target="_blank" rel="noreferrer" className={linkClassName}>{run}</a> : <span key={index}>{run}</span>
+            }
             const Tag = token.kind === "bold" ? "strong" : token.kind === "italic" ? "em" : token.kind === "header" ? "span" : "s"
-            return <Tag key={index} className={token.kind === "header" ? "text-[1.15em] font-bold" : undefined}>{inline(token.children)}</Tag>
+            return <Tag key={index} className={token.kind === "header" ? "text-[1.15em] font-bold" : undefined}>{inline(token.children, position)}</Tag>
         })
     }
     const lines = body.split("\n")
+    const textLines = chatTextLines(body)
+    const lineContent = (line: number) => inline(textLines[line].tokens, { offset: textLines[line].start })
     let cursor = 0
     function list(indent: number, kind: "ordered" | "bullet" | "checkbox"): ReactNode {
         const first = chatListLine(lines[cursor])!
@@ -41,12 +51,12 @@ export function ChatMessageText({ body, className = "leading-5", linkClassName =
             items.push(<li key={key} value={kind === "ordered" ? Number.parseInt(item.marker, 10) : undefined}>
                 {kind === "checkbox" ? <div className="flex items-start gap-1.5"><button
                     type="button" role="checkbox" aria-checked={checked} aria-label={item.text || "Checklist item"}
-                    disabled={!onToggleCheckbox || pending || !item.text.trim()}
+                    disabled={quoteSelection || !onToggleCheckbox || pending || !item.text.trim()}
                     data-message-control data-icon-button
                     style={{ height: "1lh" }}
                     onClick={() => void toggle(key, !checked)}
                     className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-current disabled:cursor-default disabled:opacity-60"
-                ><span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border border-current text-[11px] leading-none">{checked ? "✓" : ""}</span></button><span className={checked ? "min-w-0 line-through opacity-70" : "min-w-0"}>{inline(parseChatInline(item.text))}</span></div> : inline(parseChatInline(item.text))}
+                ><span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border border-current text-[11px] leading-none">{checked ? "✓" : ""}</span></button><span className={checked ? "min-w-0 line-through opacity-70" : "min-w-0"}>{lineContent(key)}</span></div> : lineContent(key)}
                 {children}
             </li>)
         }
@@ -58,10 +68,10 @@ export function ChatMessageText({ body, className = "leading-5", linkClassName =
         if (item) blocks.push(list(item.indent, listKind(item.marker)))
         else {
             const key = cursor
-            blocks.push(<div key={key} data-chat-heading={chatLineStartsWithHeader(lines[cursor]) || undefined} className={key > 0 && lines[key - 1].trim() && chatLineStartsWithHeader(lines[cursor]) ? "pt-2" : undefined}>{lines[cursor] ? inline(parseChatInline(lines[cursor])) : <br />}</div>)
+            blocks.push(<div key={key} data-chat-heading={chatLineStartsWithHeader(lines[cursor]) || undefined} className={key > 0 && lines[key - 1].trim() && chatLineStartsWithHeader(lines[cursor]) ? "pt-2" : undefined}>{lines[cursor] ? lineContent(key) : <br />}</div>)
             cursor++
         }
     }
-    return <div className={`whitespace-pre-wrap break-words ${className}`}>{blocks}{error ? <p role="alert" className="mt-1 text-xs">{error}</p> : null}</div>
+    return <div data-chat-message-text data-chat-quote-selection={quoteSelection || undefined} tabIndex={quoteSelection ? 0 : undefined} role={quoteSelection ? "region" : undefined} aria-label={quoteSelection ? "Select text to quote" : undefined} className={`whitespace-pre-wrap break-words ${className}`}>{blocks}{error ? <p role="alert" className="mt-1 text-xs">{error}</p> : null}</div>
 }
 function listKind(marker: string) { return marker === "-" ? "bullet" : marker.startsWith("[") ? "checkbox" : "ordered" }

@@ -29,7 +29,7 @@ test("Communications is an opaque local-first client chat workspace", async () =
     ])
     assert.match(page, /fixed inset-0 overflow-hidden bg-black/)
     assert.doesNotMatch(page, /WorkspaceBanner|PanelTabs|area=/)
-    assert.match(bootstrap, /relationship\.status !== "archived"/)
+    assert.match(bootstrap, /r\.status !== "archived" && rosterById\.has\(r\.id\)/)
     assert.doesNotMatch(bootstrap, /relationship\.status !== "archived" && relationship\.client_id/)
     assert.match(workspace, /useState\(bootstrap\.selectedConversationId\)/)
     assert.match(workspace, /overflow-y-auto overscroll-contain/)

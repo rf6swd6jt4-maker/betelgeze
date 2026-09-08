@@ -1,3 +1,4 @@
+import { clientConversationCanAccess } from "@/lib/communications/access"
 import { createEncryptedPrivateUploadSignedRequest, createPrivateUploadSignedUrl, ensureCommunicationImagePreview } from "@/lib/onboarding/uploads"
 import { COMMUNICATION_PREVIEW_SUFFIX } from "@/lib/communications/attachments"
 import { communicationMediaRequestHeaders, communicationMediaStatusIsValid } from "@/lib/communications/media-http"
@@ -44,12 +45,17 @@ async function loadMediaResponse(request: Request, context: RouteContext) {
             .eq("workspace_id", workspaceId)
             .eq("user_id", user.id)
             .maybeSingle()
-        if (!membership || normalizeWorkspaceRole(membership.role) === "staff") return { error: new Response("Media not found", { status: 404 }) }
+        if (!membership) return { error: new Response("Media not found", { status: 404 }) }
         if (path[1] === "communications" && path[2] === "native") {
             const conversationId = path[3] ?? ""
             if (!await assertNativeConversationAccess(conversationId, user.id, "read")) return { error: new Response("Media not found", { status: 404 }) }
         }
         customerKey = await communicationFileKeyForCurrentUser(storagePath)
+        if (!customerKey) {
+            // Public workspace stickers are the only files without a conversation key.
+            const sticker = await supabaseAdmin.from("communication_stickers").select("id").eq("workspace_id", workspaceId).eq("storage_path", storagePath).maybeSingle()
+            if (!sticker.data && !(path[1] === "relationships" && await clientConversationCanAccess(workspaceId, path[2], user.id))) return { error: new Response("Media not found", { status: 404 }) }
+        }
     }
 
     try {

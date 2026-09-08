@@ -1,3 +1,4 @@
+import { clientConversationCanAccess } from "@/lib/communications/access"
 import { NextRequest } from "next/server"
 
 import { recordClientAdminActivity } from "@/lib/admin/activity"
@@ -23,8 +24,9 @@ async function scopedRelationship(workspaceId: string, relationshipId: string) {
 
 export async function GET(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
-    const { workspace } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
     const relationshipId = request.nextUrl.searchParams.get("relationshipId") ?? ""
+    if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const messageId = request.nextUrl.searchParams.get("messageId") ?? ""
     if (!UUID_PATTERN.test(relationshipId) || (messageId && !UUID_PATTERN.test(messageId))) return Response.json({ error: "Invalid conversation" }, { status: 400 })
     const relationship = await scopedRelationship(workspace.id, relationshipId)
@@ -43,6 +45,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
     const input = await request.json().catch(() => null) as { relationshipId?: unknown; body?: unknown; clientRequestId?: unknown; retry?: unknown; attachment?: unknown; replyToMessageId?: unknown; stickerId?: unknown } | null
     const relationshipId = typeof input?.relationshipId === "string" ? input.relationshipId : ""
+    if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const clientRequestId = typeof input?.clientRequestId === "string" ? input.clientRequestId : ""
     const replyToMessageId = typeof input?.replyToMessageId === "string" ? input.replyToMessageId : ""
     const stickerId = typeof input?.stickerId === "string" ? input.stickerId : ""

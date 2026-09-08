@@ -10,7 +10,7 @@ import { requireWorkspace } from "@/lib/workspaces"
 
 type SavedService = { service_id: string; revision_id: string; revision_number: number; state: OnboardingServiceState }
 
-export async function saveOnboardingService(slug: string, serviceId: string | null, input: OnboardingServiceDefinition): Promise<ConfigurationActionResult<SavedService>> {
+export async function saveOnboardingService(slug: string, serviceId: string | null, input: OnboardingServiceDefinition, eligibleUserIds: string[] = []): Promise<ConfigurationActionResult<SavedService>> {
     try {
         const { workspace, user } = await requireWorkspace(slug, "admin")
         if (configurationSchemaUnavailable(serviceId)) return { ok: false, error: "The editable service catalogue is still being prepared for this workspace." }
@@ -23,20 +23,18 @@ export async function saveOnboardingService(slug: string, serviceId: string | nu
             ? SERVICE_TEMPLATES.find((candidate) => candidate.id === normalized.definition.templateId)
             : null
         const installingConnectionTemplate = !serviceId && template?.setup.kind === "connection"
-        const operation = installingConnectionTemplate
-            ? "install_onboarding_service_template"
-            : "save_onboarding_service_revision"
         const definition = {
             ...normalized.definition,
             templateId: template?.id ?? normalized.definition.templateId,
             requiredConnectionKeys: template?.setup.kind === "connection" ? [template.setup.connectionKey] : normalized.definition.requiredConnectionKeys,
             defaultPriceCents: normalized.definition.defaultUpfrontPriceCents,
         }
-        const outcome = await configurationRpc<SavedService>(operation, {
+        const outcome = await configurationRpc<SavedService>("save_onboarding_service_with_delivery", {
             p_workspace_id: workspace.id,
             p_actor_user_id: user.id,
             p_service_id: serviceId || null,
             p_definition: definition,
+            p_user_ids: eligibleUserIds,
             ...(installingConnectionTemplate && template.setup.kind === "connection" ? {
                 p_template_id: template.id,
                 p_connection_provider: template.setup.connectionKey,

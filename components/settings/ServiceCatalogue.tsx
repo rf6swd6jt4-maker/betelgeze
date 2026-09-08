@@ -1,5 +1,6 @@
 "use client"
 
+import { DeliveryUserPicker } from "@/components/settings/DeliveryUserPicker"
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { createPortal } from "react-dom"
 import Image from "next/image"
@@ -135,15 +136,17 @@ function ServiceTemplatesModal({ onClose, onCreateCustom, onSelectTemplate }: { 
     </div>
 }
 
-function ServiceEditor({ workspaceSlug, service, assignees, schemaReady, onClose }: {
+function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schemaReady, onClose }: {
     workspaceSlug: string
     service: OnboardingServiceDefinition
     assignees: OnboardingAssigneeOption[]
+    eligibleUsers: string[]
     schemaReady: boolean
     onClose: () => void
 }) {
     const router = useRouter()
     const [draft, setDraft] = useState(service)
+    const [deliveryUsers, setDeliveryUsers] = useState(eligibleUsers)
     const [upfrontPrice, setUpfrontPrice] = useState((service.defaultUpfrontPriceCents / 100).toFixed(2))
     const [recurringPrice, setRecurringPrice] = useState((service.defaultRecurringPriceCents / 100).toFixed(2))
     const [error, setError] = useState<string | null>(null)
@@ -154,7 +157,7 @@ function ServiceEditor({ workspaceSlug, service, assignees, schemaReady, onClose
     const parsedUpfrontPriceCents = Math.max(0, Math.round((Number(upfrontPrice) || 0) * 100))
     const parsedRecurringPriceCents = draft.serviceType === "retainer" ? Math.max(0, Math.round((Number(recurringPrice) || 0) * 100)) : 0
     const effectiveDraft = { ...draft, defaultUpfrontPriceCents: parsedUpfrontPriceCents, defaultRecurringPriceCents: parsedRecurringPriceCents }
-    const dirty = JSON.stringify(effectiveDraft) !== JSON.stringify(service)
+    const dirty = JSON.stringify(effectiveDraft) !== JSON.stringify(service) || JSON.stringify(deliveryUsers) !== JSON.stringify(eligibleUsers)
     useEffect(() => {
         const hostDocument = editorRef.current?.ownerDocument ?? document
         const origin = hostDocument.activeElement instanceof HTMLElement ? hostDocument.activeElement : null
@@ -194,7 +197,7 @@ function ServiceEditor({ workspaceSlug, service, assignees, schemaReady, onClose
     }
 
     function save() {
-        run(() => saveOnboardingService(workspaceSlug, service.id || null, effectiveDraft))
+        run(() => saveOnboardingService(workspaceSlug, service.id || null, { ...effectiveDraft, defaultAssigneeId: null }, deliveryUsers))
     }
 
     function changeState(state: OnboardingServiceState) {
@@ -290,7 +293,7 @@ function ServiceEditor({ workspaceSlug, service, assignees, schemaReady, onClose
 
                 <div className="mt-5 grid gap-3 sm:grid-cols-2">
                     <label className="text-xs text-neutral-500">Currency<input value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value.toUpperCase().slice(0, 3) })} maxLength={3} className={`${inputClass} uppercase`} /></label>
-                    <label className="text-xs text-neutral-500">Default assignee<select value={draft.defaultAssigneeId ?? ""} onChange={(event) => setDraft({ ...draft, defaultAssigneeId: event.target.value || null })} className={inputClass}><option value="">Unassigned</option>{assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label>
+                    <fieldset className="sm:col-span-2"><legend className="text-sm font-medium text-neutral-300">Eligible fulfilment people</legend><p className="mt-1 text-xs text-neutral-500">Choose who can deliver this service. Select the client’s person during POS.</p><DeliveryUserPicker people={assignees} selected={deliveryUsers} onChange={setDeliveryUsers} disabled={pending} /></fieldset>
                     <label className="text-xs text-neutral-500">Display priority<input value={draft.displayPriority} onChange={(event) => setDraft({ ...draft, displayPriority: Math.max(0, Math.round(Number(event.target.value) || 0)) })} type="number" min="0" className={inputClass} /><span className="mt-1 block text-[11px] text-neutral-700">Higher numbers compose earlier in onboarding.</span></label>
                     <label className="mt-auto flex h-10 items-center gap-2 rounded-lg border border-neutral-800 bg-black px-3 text-sm text-neutral-300"><input type="checkbox" checked={draft.isTest} onChange={(event) => setDraft({ ...draft, isTest: event.target.checked })} className="h-4 w-4 accent-white" />Test service</label>
                 </div>
@@ -310,9 +313,9 @@ function ServiceEditor({ workspaceSlug, service, assignees, schemaReady, onClose
     </div>
 }
 
-function ServiceStaffPermissionsEditor({ workspaceSlug, service, initialPermissions, onClose }: {
+export function ServiceStaffPermissionsEditor({ workspaceSlug, service, initialPermissions, onClose }: {
     workspaceSlug: string
-    service: OnboardingServiceDefinition
+    service: { id: string; name: string }
     initialPermissions: WorkspaceCapability[]
     onClose: () => void
 }) {
@@ -358,7 +361,7 @@ function ServiceStaffPermissionsEditor({ workspaceSlug, service, initialPermissi
             const permissions = STAFF_SERVICE_PERMISSION_OPTIONS.flatMap((option) => selected.has(option.capability) ? [option.capability] : [])
             const outcome = await saveOnboardingServiceStaffPermissions(workspaceSlug, service.id, permissions)
             if (!outcome.ok) {
-                setError(outcome.error ?? "Staff permissions could not be saved.")
+                setError(outcome.error ?? "Fulfilment permissions could not be saved.")
                 return
             }
             router.refresh()
@@ -370,13 +373,13 @@ function ServiceStaffPermissionsEditor({ workspaceSlug, service, initialPermissi
         <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="service-staff-permissions-title" aria-describedby="service-staff-permissions-description" className="betelgeze-popup-enter flex max-h-[min(90dvh,36rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70">
             <header className="flex shrink-0 items-start gap-4 border-b border-neutral-800 px-4 py-4 sm:px-5">
                 <div className="min-w-0 flex-1">
-                    <h2 id="service-staff-permissions-title" className="text-lg font-semibold">Staff permissions</h2>
+                    <h2 id="service-staff-permissions-title" className="text-lg font-semibold">Fulfilment permissions</h2>
                     <p id="service-staff-permissions-description" className="mt-1 text-sm text-neutral-500">{service.name}</p>
                 </div>
-                <button ref={closeRef} type="button" onClick={onClose} aria-label="Close Staff permissions" className="inline-flex h-9 w-9 shrink-0 items-center justify-center text-xl text-neutral-500 hover:text-white">×</button>
+                <button ref={closeRef} type="button" onClick={onClose} aria-label="Close Fulfilment permissions" className="inline-flex h-9 w-9 shrink-0 items-center justify-center text-xl text-neutral-500 hover:text-white">×</button>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-                <p className="text-sm leading-6 text-neutral-400">Staff assigned to this service receive the selected panel permissions. Permissions from multiple assigned services add together.</p>
+                <p className="text-sm leading-6 text-neutral-400">These permissions apply when someone delivers this service. Client-chat participation is controlled separately by the client’s manager.</p>
                 <fieldset className="mt-4 space-y-2">
                     <legend className="sr-only">Panel permissions</legend>
                     {STAFF_SERVICE_PERMISSION_OPTIONS.map((option) => <label key={option.capability} className="flex min-h-11 items-center gap-3 rounded-lg border border-neutral-800 bg-black px-3 text-sm text-neutral-200">
@@ -412,7 +415,7 @@ function ServiceStatusSummary({ services }: { services: OnboardingServiceDefinit
     </div>
 }
 
-export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaReady, initialServiceId, serviceCapabilities }: {
+export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaReady, initialServiceId, serviceCapabilities, eligibleUsers }: {
     workspaceSlug: string
     services: OnboardingServiceDefinition[]
     modules: OnboardingModuleSummary[]
@@ -420,15 +423,15 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
     schemaReady: boolean
     initialServiceId?: string | null
     serviceCapabilities: Record<string, WorkspaceCapability[]>
+    eligibleUsers: Record<string, string[]>
 }) {
+    void serviceCapabilities
     const [selectedId, setSelectedId] = useState<string | null>(initialServiceId && initialServiceId !== "new" ? initialServiceId : null)
-    const [permissionsServiceId, setPermissionsServiceId] = useState<string | null>(null)
     const [templatesOpen, setTemplatesOpen] = useState(false)
     const selectedTemplate = selectedId?.startsWith("template:")
         ? SERVICE_TEMPLATES.find((template) => template.id === selectedId.slice("template:".length))
         : null
     const selected = selectedId === "new" ? blankService() : selectedTemplate ? blankService(selectedTemplate) : services.find((service) => service.id === selectedId) ?? null
-    const permissionsService = services.find((service) => service.id === permissionsServiceId) ?? null
     const assigneeById = useMemo(() => new Map(assignees.map((assignee) => [assignee.id, assignee])), [assignees])
     const portalTarget = typeof window !== "undefined" ? (window.parent !== window ? window.parent.document.body : document.body) : null
     const closeEditor = useCallback(() => setSelectedId(null), [])
@@ -453,7 +456,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
             <div role="list" aria-label="Services" className="divide-y divide-neutral-900">
             {services.map((service) => {
                 const status = serviceStatus(service.state)
-                const assignee = service.defaultAssigneeId ? assigneeById.get(service.defaultAssigneeId) : null
+                const eligibleNames = (eligibleUsers[service.id] ?? []).map((id) => assigneeById.get(id)?.name).filter(Boolean)
                 const pricing = service.serviceType === "retainer"
                     ? `${priceLabel(service.defaultUpfrontPriceCents, service.currency)} upfront · ${priceLabel(service.defaultRecurringPriceCents, service.currency)} ${intervalLabel(service)}`
                     : `${priceLabel(service.defaultUpfrontPriceCents, service.currency)} one-time`
@@ -464,13 +467,11 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
                             {service.serviceType === "retainer" ? <SquarePill tone="sky">Retainer</SquarePill> : null}
                             {service.isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}
                         </div>
-                        <p className="mt-0.5 truncate text-xs leading-4 text-neutral-500"><span className="tabular-nums text-neutral-400">{pricing}</span>{assignee ? ` · ${assignee.name}` : " · Unassigned"}</p>
+                        <p className="mt-0.5 truncate text-xs leading-4 text-neutral-500"><span className="tabular-nums text-neutral-400">{pricing}</span>{eligibleNames.length ? ` · ${eligibleNames.length} eligible` : " · Choose fulfilment people"}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                         <Status label={status.label} tone={status.tone} className="mr-1 shrink-0" />
-                        <button type="button" onClick={() => setPermissionsServiceId(service.id)} aria-label={`Edit Staff permissions for ${service.name}`} className="inline-flex h-8 shrink-0 items-center justify-center rounded-lg px-2 text-xs font-medium text-neutral-400 transition hover:bg-neutral-900 hover:text-white sm:px-2.5">
-                            Staff permissions
-                        </button>
+
                         <button type="button" onClick={() => setSelectedId(service.id)} aria-label={`Edit ${service.name}`} className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-medium text-neutral-300 transition hover:bg-neutral-900 hover:text-white sm:px-2.5">
                             <svg viewBox="0 0 20 20" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m13.8 3.2 3 3L7 16H4v-3L13.8 3.2Z" /><path d="m12.5 4.5 3 3" /></svg>
                             <span className="hidden sm:inline">Edit</span>
@@ -482,7 +483,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
             </div>
         </section>
         {templatesOpen && portalTarget ? createPortal(<ServiceTemplatesModal onClose={() => setTemplatesOpen(false)} onCreateCustom={() => { setTemplatesOpen(false); setSelectedId("new") }} onSelectTemplate={(template) => { setTemplatesOpen(false); setSelectedId(`template:${template.id}`) }} />, portalTarget) : null}
-        {selected && portalTarget ? createPortal(<ServiceEditor key={selectedId ?? "new"} workspaceSlug={workspaceSlug} service={selected} assignees={assignees} schemaReady={schemaReady} onClose={closeEditor} />, portalTarget) : null}
-        {permissionsService && portalTarget ? createPortal(<ServiceStaffPermissionsEditor key={permissionsService.id} workspaceSlug={workspaceSlug} service={permissionsService} initialPermissions={serviceCapabilities[permissionsService.id] ?? []} onClose={() => setPermissionsServiceId(null)} />, portalTarget) : null}
+        {selected && portalTarget ? createPortal(<ServiceEditor key={selectedId ?? "new"} workspaceSlug={workspaceSlug} service={selected} assignees={assignees} eligibleUsers={eligibleUsers[selected.id] ?? []} schemaReady={schemaReady} onClose={closeEditor} />, portalTarget) : null}
+
     </>
 }

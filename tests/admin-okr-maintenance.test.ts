@@ -458,7 +458,7 @@ test("Maintenance responsibility is managed through the required workspace team"
         readFile("supabase/migrations/20260815143000_workspace_teams_native_chat.sql", "utf8"),
         readFile("app/[workspaceSlug]/settings/page.tsx", "utf8"),
         readFile("components/settings/WorkspaceTeamSettings.tsx", "utf8"),
-        readFile("app/api/workspaces/[workspaceSlug]/teams/route.ts", "utf8"),
+        readFile("supabase/migrations/20260909100000_client_delivery_teams.sql", "utf8"),
         readFile("app/[workspaceSlug]/admin/maintenance/page.tsx", "utf8"),
         readFile("app/[workspaceSlug]/admin/page.tsx", "utf8"),
     ])
@@ -469,9 +469,9 @@ test("Maintenance responsibility is managed through the required workspace team"
     assert.match(settings, /id="teams"/)
     assert.match(settings, /<WorkspaceTeamSettings/)
     assert.doesNotMatch(settings, /WorkspaceOfficerSettings|id="officers"/)
-    assert.match(teamSettings, /Routes platform maintenance categories/)
+    assert.match(teamSettings, /Maintenance responsibility/)
     assert.match(teamRoute, /Only the workspace owner can edit Maintenance/)
-    assert.match(teamRoute, /Assign every maintenance category before saving/)
+    assert.match(teamRoute, /Assign every maintenance category to a current workspace member/)
     assert.doesNotMatch(maintenancePage, /Save routing|saveMaintenanceRouting/)
     assert.match(adminPage, /listAdminWorkItems/)
 })

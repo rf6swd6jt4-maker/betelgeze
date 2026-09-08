@@ -12,7 +12,6 @@ import { communicationAttachmentFromRawPayload } from "@/lib/communications/atta
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 
 export const COMMUNICATION_MESSAGE_COLUMNS = "id, client_request_id, relationship_id, body, direction, provider, provider_message_id, whatsapp_message_id, reply_to_whatsapp_message_id, reply_to_message_id, status, error, sender_kind, sender_user_id, automation_kind, automation_label, created_at, sent_at, delivered_at, read_at, failed_at, raw_payload"
-const legacyMessageColumns = "id, relationship_id, body, direction, provider, provider_message_id, whatsapp_message_id, reply_to_whatsapp_message_id, status, error, created_at, raw_payload"
 
 function record(value: unknown) {
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -136,14 +135,7 @@ export async function loadCommunicationMessages({
     }
     if (!missingCommunicationsSchema(current.error) && current.error.code !== "PGRST202") throw new Error(`Could not load communications: ${current.error.message}`)
 
-    let legacyQuery = supabaseAdmin.from("client_messages").select(legacyMessageColumns).eq("workspace_id", workspaceId)
-    if (relationshipId) legacyQuery = legacyQuery.eq("relationship_id", relationshipId)
-    const legacy = await legacyQuery.order("created_at", { ascending: false }).limit(limit)
-    if (legacy.error) throw new Error(`Could not load communications: ${legacy.error.message}`)
-    return {
-        messages: (legacy.data ?? []).flatMap((row) => communicationMessageFromRow(row) ?? []).reverse(),
-        schemaReady: false,
-    }
+    throw new Error("Secure conversation reads are unavailable. Reload after the database update completes.")
 }
 
 export async function loadCommunicationMessage({

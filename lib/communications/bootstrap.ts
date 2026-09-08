@@ -1,3 +1,4 @@
+import { clientConversationRosters } from "@/lib/communications/access"
 import { loadCommunicationMessages, loadCommunicationPeople, loadCommunicationReactions, loadCommunicationReadCursors, loadCommunicationStickers } from "@/lib/communications/server"
 import type { ClientConversation, CommunicationsBootstrap } from "@/lib/communications/types"
 import { listRelationshipsForWorkspace } from "@/lib/relationships"
@@ -9,7 +10,12 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
     workspaceId: string
     workspaceSlug: string
 }): Promise<CommunicationsBootstrap> {
-    const relationships = (await listRelationshipsForWorkspace(workspaceId)).filter((relationship) => relationship.status !== "archived")
+    const [candidates, rosterById] = await Promise.all([
+        listRelationshipsForWorkspace(workspaceId),
+        clientConversationRosters(workspaceId, currentUserId),
+    ])
+    const relationships = candidates.filter((r) => r.status !== "archived" && rosterById.has(r.id))
+    const conversationIds = new Set(relationships.map((r) => r.id))
     const clientIds = relationships.flatMap((relationship) => relationship.client_id ? [relationship.client_id] : [])
     const [messageResult, cursorResult, reactionResult, stickerResult, peopleResult, channelResult, integrationResult, selectedMessages] = await Promise.all([
         loadCommunicationMessages({ workspaceId }),
@@ -40,6 +46,7 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
     }
     const conversations: ClientConversation[] = relationships.map((relationship) => ({
         id: relationship.id,
+        participants: rosterById.get(relationship.id),
         clientId: relationship.client_id,
         title: relationship.business_name ? `${relationship.primary_person_name} – ${relationship.business_name}` : relationship.primary_person_name,
         subtitle: relationship.whatsapp_phone ?? relationship.primary_phone ?? relationship.primary_email,
@@ -70,8 +77,8 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
         currentUser: peopleResult.currentUser,
         people: peopleResult.people,
         conversations,
-        readCursors: cursorResult.cursors,
-        reactions: reactionResult.reactions,
+        readCursors: cursorResult.cursors.filter((c) => conversationIds.has(c.relationshipId)),
+        reactions: reactionResult.reactions.filter((r) => conversationIds.has(r.relationshipId)),
         stickers: stickerResult.stickers,
         selectedConversationId: conversations.some((conversation) => conversation.id === requestedConversationId) ? requestedConversationId ?? null : null,
         schemaReady: messageResult.schemaReady && cursorResult.schemaReady && reactionResult.schemaReady && stickerResult.schemaReady,

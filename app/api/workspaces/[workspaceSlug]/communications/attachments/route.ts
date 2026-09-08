@@ -1,3 +1,4 @@
+import { clientConversationCanAccess } from "@/lib/communications/access"
 import { NextRequest } from "next/server"
 
 import { deleteOnboardingUploads, createSignedClientMessageUpload } from "@/lib/onboarding/uploads"
@@ -24,7 +25,7 @@ async function activeRelationship(workspaceId: string, relationshipId: string) {
 
 export async function POST(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
-    const { workspace } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
     const input = await request.json().catch(() => null) as {
         relationshipId?: unknown
         name?: unknown
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
         previewSize?: unknown
     } | null
     const relationshipId = typeof input?.relationshipId === "string" ? input.relationshipId : ""
+    if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     if (!await activeRelationship(workspace.id, relationshipId)) {
         return Response.json({ error: "Conversation not found." }, { status: 404 })
     }
@@ -54,9 +56,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
-    const { workspace } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
     const input = await request.json().catch(() => null) as { relationshipId?: unknown; storagePath?: unknown } | null
     const relationshipId = typeof input?.relationshipId === "string" ? input.relationshipId : ""
+    if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const storagePath = typeof input?.storagePath === "string" ? input.storagePath : ""
     const prefix = `${workspace.id}/relationships/${relationshipId}/client-messages/`
     if (!await activeRelationship(workspace.id, relationshipId) || !storagePath.startsWith(prefix) || storagePath.slice(prefix.length).includes("/")) {

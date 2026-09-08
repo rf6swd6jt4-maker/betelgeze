@@ -27,6 +27,8 @@ export type RelationshipRecord = {
     notes_summary: string | null
     started_onboarding_at: string | null
     seller_user_id: string | null
+    pos_started_at?: string | null
+    team_locked_at?: string | null
     fulfilment_manager_user_id: string | null
     fulfilment_team_id: string | null
     project_timeframe_days: number | null
@@ -138,7 +140,7 @@ type ClientRow = {
     is_test?: boolean | null
 }
 
-const RELATIONSHIP_SELECT = "id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, whatsapp_phone, business_name, website_url, industry_value, location_value, address, source_label, primary_contact_role, notes_summary, started_onboarding_at, seller_user_id, fulfilment_manager_user_id, fulfilment_team_id, project_timeframe_days, communication_pinned_message_id, communication_primary_provider, communication_delivery_mode, lifecycle_phase, status, source_metadata, created_at, updated_at"
+const RELATIONSHIP_SELECT = "id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, whatsapp_phone, business_name, website_url, industry_value, location_value, address, source_label, primary_contact_role, notes_summary, started_onboarding_at, pos_started_at, team_locked_at, seller_user_id, fulfilment_manager_user_id, fulfilment_team_id, project_timeframe_days, communication_pinned_message_id, communication_primary_provider, communication_delivery_mode, lifecycle_phase, status, source_metadata, created_at, updated_at"
 const RELATIONSHIP_LEGACY_SELECT = "id, workspace_id, client_id, leadgen_company_id, source_type, primary_person_name, primary_email, primary_phone, business_name, website_url, lifecycle_phase, status, source_metadata, created_at, updated_at"
 
 function isMissingRelationshipSchema(error: QueryError) {

@@ -29,7 +29,6 @@ export function WorkspaceInvitationForm({
     workspaceSlug,
     action,
     canInviteAdmins,
-    services,
 }: {
     workspaceSlug: string
     action: (formData: FormData) => Promise<WorkspaceInvitationActionState>
@@ -44,7 +43,6 @@ export function WorkspaceInvitationForm({
     const [submitError, setSubmitError] = useState<string | null>(null)
     const [notice, setNotice] = useState<string | null>(null)
     const [role, setRole] = useState<"staff" | "admin">("staff")
-    const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(() => new Set())
     const [pending, startTransition] = useTransition()
     const dialogRef = useRef<HTMLElement>(null)
     const closeRef = useRef<HTMLButtonElement>(null)
@@ -119,7 +117,6 @@ export function WorkspaceInvitationForm({
         setLookupError(null)
         setSubmitError(null)
         setRole("staff")
-        setSelectedServiceIds(new Set())
         setOpen(true)
     }
 
@@ -148,7 +145,7 @@ export function WorkspaceInvitationForm({
     }
 
     const status = lookup ? lookupStatus(lookup.status) : null
-    const invitationDisabled = pending || (role === "staff" && selectedServiceIds.size === 0)
+    const invitationDisabled = pending
     const modal = open ? <div className="fixed inset-0 z-[2147483646] flex items-center justify-center overflow-hidden overscroll-none bg-black/75 p-3 text-white backdrop-blur-sm sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) setOpen(false) }}>
         <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="add-workspace-user-title" className="betelgeze-popup-enter flex max-h-[min(92dvh,44rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70">
             <header className="flex shrink-0 items-start gap-4 border-b border-neutral-800 px-4 py-4 sm:px-5">
@@ -186,22 +183,7 @@ export function WorkspaceInvitationForm({
                         </select>
                     </label>
 
-                    {role === "staff" ? <fieldset>
-                        <legend className="text-sm font-medium text-neutral-300">Services</legend>
-                        <p className="mt-1 text-xs leading-5 text-neutral-500">Select at least one service. Its Staff permissions determine workspace access.</p>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                            {services.map((service) => <label key={service.id} className="flex min-h-10 items-center gap-2 rounded-lg border border-neutral-800 bg-black px-3 text-sm text-neutral-300">
-                                <input type="checkbox" name="serviceId" value={service.id} checked={selectedServiceIds.has(service.id)} onChange={(event) => setSelectedServiceIds((current) => {
-                                    const next = new Set(current)
-                                    if (event.target.checked) next.add(service.id)
-                                    else next.delete(service.id)
-                                    return next
-                                })} className="h-4 w-4 accent-white" />
-                                <span className="min-w-0 truncate">{service.name}</span>
-                            </label>)}
-                        </div>
-                        {!services.length ? <p className="mt-2 text-sm text-amber-300">Add an active service before inviting Staff.</p> : null}
-                    </fieldset> : null}
+                    <p className="text-xs leading-5 text-neutral-500">Set selling and management positions in Teams, and service eligibility in Services, after they join.</p>
 
                     {submitError ? <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{submitError}</p> : null}
 

@@ -93,7 +93,7 @@ test("detail bootstrap queries share access reads and defer editor-only choices"
     const editorOptions = source("app/api/workspaces/[workspaceSlug]/work-items/[id]/editor-options/route.ts")
 
     assert.match(access, /const loadRelationshipScope = cache/)
-    assert.match(access, /const loadWorkItemAccessRows = cache/)
+    assert.match(access, /const loadDeliveryScope = cache/)
     assert.match(onboarding, /const normalizedSnapshotPromise/)
     assert.match(onboarding, /const serviceRevisionsPromise/)
     assert.match(onboarding, /const summaryPromise = Promise\.all/)

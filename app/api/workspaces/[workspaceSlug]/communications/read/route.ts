@@ -1,3 +1,4 @@
+import { clientConversationCanAccess } from "@/lib/communications/access"
 import { NextRequest } from "next/server"
 
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -12,6 +13,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
     const input = await request.json().catch(() => null) as { relationshipId?: unknown; messageId?: unknown } | null
     const relationshipId = typeof input?.relationshipId === "string" ? input.relationshipId : ""
+    if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const messageId = typeof input?.messageId === "string" ? input.messageId : ""
     if (!UUID_PATTERN.test(relationshipId) || !UUID_PATTERN.test(messageId)) return Response.json({ error: "Invalid read cursor" }, { status: 400 })
     const { data: target } = await supabaseAdmin.from("client_messages").select("id, created_at").eq("workspace_id", workspace.id).eq("relationship_id", relationshipId).eq("id", messageId).maybeSingle()

@@ -7,7 +7,7 @@ import Image from "next/image"
 import { OnboardingPreviewOverlay } from "@/components/onboarding-builder/OnboardingPreviewOverlay"
 import { BuilderPreview } from "@/components/onboarding-builder/BuilderPreview"
 import { DetailContentLoading, DetailField, DetailFields } from "@/components/detail"
-import { RoundPill, SquarePill } from "@/components/ui"
+import { Assignee, RoundPill, SquarePill } from "@/components/ui"
 import { WorkspaceSuccessNotice } from "@/components/workspace/WorkspaceSuccessNotice"
 import type { OnboardingPaymentDefinitionV2 } from "@/lib/onboarding/block-definition"
 import type { OnboardingHelpSettings, OnboardingModuleDefinition, OnboardingThemeDefinition } from "@/lib/onboarding/configuration-types"
@@ -16,11 +16,10 @@ import type { RelationshipGanttPlan } from "@/lib/relationship-gantt"
 import { postGanttSync } from "@/lib/ui/gantt-sync"
 import { registerWorkspaceAutosaveFlusher, runWorkspaceMutation } from "@/lib/workspace-mutations"
 import { isUsablePhoneNumber, resolvePrimaryMessagingProvider } from "@/lib/client-messages/addresses"
-import { proceedRelationshipCurrentWork, saveRelationshipBackgroundDetails, saveRelationshipDealDetails, type RelationshipDealDetailsInput } from "../actions"
+import { beginRelationshipPos, proceedRelationshipCurrentWork, saveRelationshipBackgroundDetails, saveRelationshipDealDetails, type RelationshipDealDetailsInput } from "../actions"
 import { RelationshipGantt } from "./RelationshipGantt"
 
 type Member = { id: string; name: string }
-type FulfilmentTeam = { id: string; name: string; responsibilities: Array<{ serviceId: string; userId: string }> }
 type DealService = {
     code: string
     serviceId: string | null
@@ -63,6 +62,7 @@ type RelationshipDetails = {
 }
 type CurrentWork = { id: string; title: string; action: string | null; role: string; status: string; unassignedCount: number; blocked: boolean }
 type Draft = Omit<RelationshipDetails, "lifecyclePhase"> & {
+    serviceAssignees: Record<string, string>
     selectedCodes: string[]
     upfrontPrices: Record<string, number>
     recurringPrices: Record<string, number>
@@ -127,6 +127,7 @@ function buildInitialDraft(details: RelationshipDetails, services: DealService[]
         fulfilmentTeamId: details.fulfilmentTeamId,
         projectTimeframeDays: details.projectTimeframeDays,
         description: details.description,
+        serviceAssignees: Object.fromEntries(services.map((service) => [service.code, service.selectedAssigneeId ?? ""])),
         selectedCodes: selected.map((service) => service.code),
         upfrontPrices: Object.fromEntries(services.map((service) => [service.code, service.selected ? service.selectedUpfrontPriceCents : service.defaultUpfrontPriceCents])),
         recurringPrices: Object.fromEntries(services.map((service) => [service.code, service.serviceType === "retainer" ? (service.selected ? service.selectedRecurringPriceCents : service.defaultRecurringPriceCents) : 0])),
@@ -154,7 +155,7 @@ function commercialDetailsKey(draft: Draft) {
     return JSON.stringify({
         sellerUserId: draft.sellerUserId,
         fulfilmentManagerUserId: draft.fulfilmentManagerUserId,
-        fulfilmentTeamId: draft.fulfilmentTeamId,
+        serviceAssignees: draft.serviceAssignees,
         projectTimeframeDays: draft.projectTimeframeDays,
         selectedCodes: draft.selectedCodes,
         upfrontPrices: draft.upfrontPrices,
@@ -208,7 +209,9 @@ export function RelationshipDealWorkspace({
     updatedAt,
     details,
     members,
-    fulfilmentTeams,
+    managers,
+    eligibleUsers,
+    canSell,
     services,
     modules,
     payment,
@@ -232,7 +235,9 @@ export function RelationshipDealWorkspace({
     updatedAt: string
     details: RelationshipDetails
     members: Member[]
-    fulfilmentTeams: FulfilmentTeam[]
+    managers: Member[]
+    eligibleUsers: Record<string, string[]>
+    canSell: boolean
     services: DealService[]
     modules: OnboardingModuleDefinition[]
     payment: OnboardingPaymentDefinitionV2
@@ -266,8 +271,6 @@ export function RelationshipDealWorkspace({
     const autosavePromiseRef = useRef<Promise<boolean> | null>(null)
     const parentDocument = typeof window !== "undefined" && window.parent !== window ? window.parent.document : typeof document !== "undefined" ? document : null
     const selectedServices = services.filter((service) => draft.selectedCodes.includes(service.code))
-    const selectedFulfilmentTeam = fulfilmentTeams.find((team) => team.id === draft.fulfilmentTeamId) ?? null
-    const missingTeamServices = selectedFulfilmentTeam ? selectedServices.filter((service) => !service.serviceId || !selectedFulfilmentTeam.responsibilities.some((responsibility) => responsibility.serviceId === service.serviceId)) : selectedServices
     const selectedModuleIds = new Set([
         ...modules.filter((module) => module.mandatory).map((module) => module.id),
         ...selectedServices.flatMap((service) => service.moduleIds),
@@ -296,8 +299,11 @@ export function RelationshipDealWorkspace({
         phoneIssue(draft.whatsappPhone, "WhatsApp"),
         messagingPhoneIssue(draft.primaryPhone, draft.whatsappPhone),
         draft.selectedCodes.length ? null : "Select at least one service",
-        draft.fulfilmentTeamId ? null : "Choose a fulfilment team",
-        draft.fulfilmentTeamId && missingTeamServices.length ? `${selectedFulfilmentTeam?.name ?? "This team"} does not cover: ${missingTeamServices.map((service) => service.name).join(", ")}` : null,
+
+    ].filter((issue): issue is string => Boolean(issue))
+    const teamIssues = [
+        managers.some((m) => m.id === draft.fulfilmentManagerUserId) ? null : "Choose a fulfilment manager",
+        ...selectedServices.flatMap((service) => service.serviceId && (eligibleUsers[service.serviceId] ?? []).includes(draft.serviceAssignees[service.code]) ? [] : [`Choose an eligible person for ${service.name}`]),
     ].filter((issue): issue is string => Boolean(issue))
     const onboardingIssues = [
         schemaReady ? null : "The Builder schema is not available",
@@ -471,7 +477,7 @@ export function RelationshipDealWorkspace({
                 upfrontPriceCents: Math.max(0, Math.round(source.upfrontPrices[service.code] ?? 0)),
                 recurringPriceCents: service.serviceType === "retainer" ? Math.max(0, Math.round(source.recurringPrices[service.code] ?? 0)) : 0,
                 currency: source.currency.toUpperCase(),
-                assigneeUserId: source.fulfilmentTeamId && service.serviceId ? fulfilmentTeams.find((team) => team.id === source.fulfilmentTeamId)?.responsibilities.find((responsibility) => responsibility.serviceId === service.serviceId)?.userId ?? null : service.selectedAssigneeId,
+                assigneeUserId: source.serviceAssignees[service.code] || null,
             })),
         }
     }
@@ -494,9 +500,21 @@ export function RelationshipDealWorkspace({
     }
 
     function openInvoiceReview() {
+        if (!canSell || pending) return
         setError(null)
-        setInvoiceStep(0)
-        setInvoiceOpen(true)
+        startTransition(async () => {
+            const result = await beginRelationshipPos(workspaceSlug, relationshipId)
+            if (!result.ok) { setError(result.error); return }
+            backgroundVersionRef.current = result.version
+            setDraft((current) => ({ ...current, sellerUserId: result.sellerUserId,
+                fulfilmentManagerUserId: current.fulfilmentManagerUserId || (managers.length === 1 ? managers[0].id : ""),
+                serviceAssignees: Object.fromEntries(services.map((service) => {
+                    const candidates = service.serviceId ? eligibleUsers[service.serviceId] ?? [] : []
+                    return [service.code, current.serviceAssignees[service.code] || (candidates.length === 1 ? candidates[0] : "")]
+                })),
+            }))
+            setInvoiceStep(0); setInvoiceOpen(true)
+        })
     }
 
     function nextFromRelationship() {
@@ -512,8 +530,8 @@ export function RelationshipDealWorkspace({
             setError("This relationship is no longer waiting to be sold. Reload and review its current stage.")
             return
         }
-        if (pricingIssues.length) {
-            setError(pricingIssues[0])
+        if (teamIssues.length || pricingIssues.length) {
+            setError(teamIssues[0] ?? pricingIssues[0])
             return
         }
         startTransition(() => {
@@ -549,29 +567,29 @@ export function RelationshipDealWorkspace({
             <DetailField label="Email" icon="contact" className="lg:border-l lg:border-neutral-900 lg:pl-8"><input disabled={!canEdit} type="email" value={draft.primaryEmail} onChange={(event) => update("primaryEmail", event.target.value)} onBlur={() => void saveBackground()} placeholder="Required before selling" className={inputClass} /></DetailField>
             <DetailField label="Primary messaging" icon="contact"><select disabled={!canEdit} value={draft.communicationPrimaryProvider} onChange={(event) => update("communicationPrimaryProvider", event.target.value as Draft["communicationPrimaryProvider"])} onBlur={() => void saveBackground()} className={inputClass}><option value="twilio_sms" disabled={!smsPhoneAvailable}>SMS (Twilio)</option><option value="meta_whatsapp" disabled={!whatsappPhoneAvailable}>WhatsApp</option></select></DetailField>
             <DetailField label="Outbound delivery" icon="contact" className="lg:border-l lg:border-neutral-900 lg:pl-8"><select disabled={!canEdit} value={draft.communicationDeliveryMode} onChange={(event) => update("communicationDeliveryMode", event.target.value as Draft["communicationDeliveryMode"])} onBlur={() => void saveBackground()} className={inputClass}><option value="mirror">Send to every connected channel</option><option value="primary_with_fallback">Primary, or fallback if unavailable</option><option value="primary_only">Primary only</option></select></DetailField>
-            <DetailField label="Seller" icon="person"><select disabled={!canEdit} value={draft.sellerUserId} onChange={(event) => update("sellerUserId", event.target.value)} className={inputClass}><option value="">Unassigned</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></DetailField>
-            <DetailField label="Fulfilment manager" icon="person" className="lg:border-l lg:border-neutral-900 lg:pl-8"><select disabled={!canEdit} value={draft.fulfilmentManagerUserId} onChange={(event) => update("fulfilmentManagerUserId", event.target.value)} className={inputClass}><option value="">Choose before fulfilment</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></DetailField>
-            <DetailField label="Fulfilment team" icon="person" className="lg:col-span-2"><select disabled={!canEdit || commercialLocked} value={draft.fulfilmentTeamId} onChange={(event) => update("fulfilmentTeamId", event.target.value)} className={inputClass}><option value="">Choose fulfilment team</option>{fulfilmentTeams.map((team) => { const missing = selectedServices.filter((service) => !service.serviceId || !team.responsibilities.some((responsibility) => responsibility.serviceId === service.serviceId)); return <option key={team.id} value={team.id} disabled={missing.length > 0}>{team.name}{missing.length ? ` · missing ${missing.map((service) => service.name).join(", ")}` : ""}</option> })}</select>{draft.fulfilmentTeamId && missingTeamServices.length ? <MissingHint message={`${selectedFulfilmentTeam?.name ?? "This team"} does not cover ${missingTeamServices.map((service) => service.name).join(", ")}.`} /> : null}</DetailField>
-            <DetailField label={invoiced ? "Project timeline" : "Planned project timeline"} icon="timeline" className="lg:col-span-2"><div className="flex items-center gap-2"><input disabled={!canEdit} type="number" min="1" value={draft.projectTimeframeDays ?? ""} onChange={(event) => update("projectTimeframeDays", event.target.value ? Number(event.target.value) : null)} placeholder="Not set" className={`${inputClass} max-w-24`} />{draft.projectTimeframeDays ? <span className="text-neutral-500">days</span> : null}</div></DetailField>
+            <DetailField label="Seller" icon="person"><span>{members.find((m) => m.id === draft.sellerUserId)?.name ?? "Assigned when POS begins"}</span></DetailField>
+            <DetailField label="Manager" icon="person" className="lg:border-l lg:border-neutral-900 lg:pl-8"><span>{members.find((m) => m.id === draft.fulfilmentManagerUserId)?.name ?? "Choose during POS"}</span></DetailField>
+            {invoiced ? <DetailField label="Client team" icon="person" className="lg:col-span-2"><div className="flex flex-wrap gap-2">{selectedServices.map((service) => <span key={service.code} className="flex items-center gap-2 text-xs text-neutral-500"><span>{service.name}</span><Assignee name={members.find((m) => m.id === draft.serviceAssignees[service.code])?.name ?? "Unassigned"} /></span>)}</div></DetailField> : null}
+            <DetailField label={invoiced ? "Project timeline" : "Planned project timeline"} icon="timeline" className="lg:col-span-2"><div className="flex items-center gap-2"><input disabled={!canSell || commercialLocked} type="number" min="1" value={draft.projectTimeframeDays ?? ""} onChange={(event) => update("projectTimeframeDays", event.target.value ? Number(event.target.value) : null)} placeholder="Not set" className={`${inputClass} max-w-24`} />{draft.projectTimeframeDays ? <span className="text-neutral-500">days</span> : null}</div></DetailField>
         <DetailField label="Services" icon="services" className="lg:col-span-2">
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                 {selectedServices.map((service) => <RoundPill key={service.code} tone="emerald">{service.name}</RoundPill>)}
                 {!selectedServices.length ? <span className="text-neutral-600">None</span> : null}
-                {canEdit && !commercialLocked ? <button type="button" onClick={() => setServicesOpen((open) => !open)} className="ml-auto text-xs text-neutral-400 underline underline-offset-4 hover:text-white">{servicesOpen ? "Done" : "Edit services"}</button> : null}
+                {canSell && !commercialLocked ? <button type="button" onClick={() => setServicesOpen((open) => !open)} className="ml-auto text-xs text-neutral-400 underline underline-offset-4 hover:text-white">{servicesOpen ? "Done" : "Edit services"}</button> : null}
             </div>
             {servicesOpen && !commercialLocked ? <div className="mt-2 grid gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950 p-2 sm:grid-cols-2 lg:grid-cols-3">{services.map((service) => <label key={service.code} className="flex items-start gap-2 rounded-md px-2 py-2 text-sm hover:bg-neutral-900"><input type="checkbox" checked={draft.selectedCodes.includes(service.code)} onChange={() => toggleService(service.code)} className="mt-0.5" /><span className="min-w-0"><span className="flex items-center gap-1.5"><span className="truncate text-neutral-200">{service.name}</span>{service.isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}</span><span className="mt-0.5 block truncate text-[11px] text-neutral-600">{service.revisionNumber ? `Revision ${service.revisionNumber}` : service.code}</span></span></label>)}</div> : null}
         </DetailField>
         <DetailField label="Description" icon="description" className="lg:col-span-2"><textarea disabled={!canEdit} value={draft.description} onChange={(event) => update("description", event.target.value)} onBlur={() => void saveBackground()} rows={3} placeholder="Add relationship context…" className={`${inputClass} min-h-20 resize-none leading-6`} /></DetailField>
         </DetailFields>
         {error && !invoiceOpen ? <p className="border-t border-red-500/20 py-2 text-sm text-red-300">{error}</p> : null}
-        {canEdit ? <div className="flex items-center justify-between gap-3 border-t border-neutral-900 py-2.5"><span aria-live="polite" className={`text-xs ${autosaveState === "error" ? "text-red-300" : "text-neutral-500"}`}>{autosaveState === "saving" ? "Saving relationship details…" : autosaveState === "error" ? "Relationship details could not save automatically" : backgroundDirty ? "Relationship details will save automatically" : autosaveState === "saved" ? "Relationship details saved" : "Relationship details save automatically"}</span>{autosaveState === "error" ? <button type="button" onClick={() => void saveBackground()} className="text-xs text-red-200 underline decoration-red-500/50 underline-offset-2 hover:text-white">Retry</button> : commercialDirty ? <div className="flex justify-end gap-2"><button type="button" disabled={pending} onClick={() => { setDraft((current) => ({ ...baseline, primaryPersonName: current.primaryPersonName, businessName: current.businessName, primaryContactRole: current.primaryContactRole, primaryPhone: current.primaryPhone, whatsappPhone: current.whatsappPhone, primaryEmail: current.primaryEmail, description: current.description })); setServicesOpen(false); setError(null) }} className="h-8 px-2 text-xs text-neutral-400 hover:text-white disabled:opacity-50">Cancel</button><button type="button" disabled={pending} onClick={() => startTransition(() => { void saveDetails() })} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-50">{pending ? "Saving…" : "Save commercial changes"}</button></div> : null}</div> : null}
+        {canEdit ? <div className="flex items-center justify-between gap-3 border-t border-neutral-900 py-2.5"><span aria-live="polite" className={`text-xs ${autosaveState === "error" ? "text-red-300" : "text-neutral-500"}`}>{autosaveState === "saving" ? "Saving relationship details…" : autosaveState === "error" ? "Relationship details could not save automatically" : backgroundDirty ? "Relationship details will save automatically" : autosaveState === "saved" ? "Relationship details saved" : "Relationship details save automatically"}</span>{autosaveState === "error" ? <button type="button" onClick={() => void saveBackground()} className="text-xs text-red-200 underline decoration-red-500/50 underline-offset-2 hover:text-white">Retry</button> : commercialDirty && canSell && !commercialLocked ? <div className="flex justify-end gap-2"><button type="button" disabled={pending} onClick={() => { setDraft((current) => ({ ...baseline, primaryPersonName: current.primaryPersonName, businessName: current.businessName, primaryContactRole: current.primaryContactRole, primaryPhone: current.primaryPhone, whatsappPhone: current.whatsappPhone, primaryEmail: current.primaryEmail, description: current.description })); setServicesOpen(false); setError(null) }} className="h-8 px-2 text-xs text-neutral-400 hover:text-white disabled:opacity-50">Cancel</button><button type="button" disabled={pending} onClick={() => startTransition(() => { void saveDetails() })} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-50">{pending ? "Saving…" : "Save commercial changes"}</button></div> : null}</div> : null}
     </div>
 
     const modal = invoiceOpen && parentDocument ? createPortal(<div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-3 text-white backdrop-blur-sm">
         <section role="dialog" aria-modal="true" aria-labelledby="invoice-review-title" className="betelgeze-popup-enter flex max-h-[min(92dvh,56rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70">
             <header className="shrink-0 border-b border-neutral-800 px-4 py-4 sm:px-6">
-                <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-medium uppercase tracking-[0.16em] text-neutral-500">Sell client</p><h2 id="invoice-review-title" className="mt-1 text-xl font-semibold">{invoiceStep === 0 ? "Review Relationship Information" : invoiceStep === 1 ? "Review Onboarding" : "Pricing"}</h2><p className="mt-1 text-sm text-neutral-500">{invoiceStep === 0 ? "Double-check the client's details and the services they are buying." : invoiceStep === 1 ? "Confirm the published onboarding this client will receive." : "Review each service's upfront and ongoing charges."}</p></div><button type="button" aria-label="Close sale review" onClick={() => { setInvoiceOpen(false); setError(null) }} className="text-neutral-500 hover:text-white">✕</button></div>
-                <div className="mt-4 grid grid-cols-3 gap-2" aria-label={`Step ${invoiceStep + 1} of 3`}>{["Relationship", "Onboarding", "Pricing"].map((label, index) => <div key={label}><div className={`h-1 rounded-full ${index <= invoiceStep ? "bg-white" : "bg-neutral-800"}`} /><p className={`mt-1.5 text-[11px] ${index === invoiceStep ? "text-white" : "text-neutral-600"}`}>{index + 1}. {label}</p></div>)}</div>
+                <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-medium uppercase tracking-[0.16em] text-neutral-500">Sell client</p><h2 id="invoice-review-title" className="mt-1 text-xl font-semibold">{invoiceStep === 0 ? "Review Relationship Information" : invoiceStep === 1 ? "Assemble Client Team" : invoiceStep === 2 ? "Review Onboarding" : "Pricing"}</h2><p className="mt-1 text-sm text-neutral-500">{invoiceStep === 0 ? "Double-check the client's details and the services they are buying." : invoiceStep === 1 ? "Choose the manager and the person delivering each service." : invoiceStep === 2 ? "Confirm the published onboarding this client will receive." : "Review each service's upfront and ongoing charges."}</p></div><button type="button" aria-label="Close sale review" onClick={() => { setInvoiceOpen(false); setError(null) }} className="text-neutral-500 hover:text-white">✕</button></div>
+                <div className="mt-4 grid grid-cols-4 gap-2" aria-label={`Step ${invoiceStep + 1} of 4`}>{["Relationship", "Team", "Onboarding", "Pricing"].map((label, index) => <div key={label}><div className={`h-1 rounded-full ${index <= invoiceStep ? "bg-white" : "bg-neutral-800"}`} /><p className={`mt-1.5 text-[11px] ${index === invoiceStep ? "text-white" : "text-neutral-600"}`}>{index + 1}. {label}</p></div>)}</div>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
                 {invoiceStep === 0 ? <div className="grid gap-3 sm:grid-cols-2">
@@ -583,14 +601,23 @@ export function RelationshipDealWorkspace({
                     <label className="text-xs text-neutral-500">Primary messaging<select value={draft.communicationPrimaryProvider} onChange={(event) => update("communicationPrimaryProvider", event.target.value as Draft["communicationPrimaryProvider"])} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-sm text-white"><option value="twilio_sms" disabled={!smsPhoneAvailable}>SMS (Twilio)</option><option value="meta_whatsapp" disabled={!whatsappPhoneAvailable}>WhatsApp</option></select><MissingHint message={messagingPhoneIssue(draft.primaryPhone, draft.whatsappPhone)} /></label>
                     <label className="text-xs text-neutral-500">Outbound delivery<select value={draft.communicationDeliveryMode} onChange={(event) => update("communicationDeliveryMode", event.target.value as Draft["communicationDeliveryMode"])} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-sm text-white"><option value="mirror">Every connected channel</option><option value="primary_with_fallback">Primary with fallback</option><option value="primary_only">Primary only</option></select></label>
                     <label className="text-xs text-neutral-500">Billing email<input type="email" value={draft.primaryEmail} onChange={(event) => update("primaryEmail", event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-sm text-white" /><MissingHint message={emailIssue(draft.primaryEmail)} /></label>
-                    <label className="text-xs text-neutral-500">Seller<select value={draft.sellerUserId} onChange={(event) => update("sellerUserId", event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-sm text-white"><option value="">Unassigned</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
-                    <label className="text-xs text-neutral-500">Fulfilment manager<select value={draft.fulfilmentManagerUserId} onChange={(event) => update("fulfilmentManagerUserId", event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-sm text-white"><option value="">Choose before fulfilment</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
-                    <label className="text-xs text-neutral-500">Fulfilment team<select value={draft.fulfilmentTeamId} onChange={(event) => update("fulfilmentTeamId", event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-sm text-white"><option value="">Choose team</option>{fulfilmentTeams.map((team) => { const missing = selectedServices.filter((service) => !service.serviceId || !team.responsibilities.some((responsibility) => responsibility.serviceId === service.serviceId)); return <option key={team.id} value={team.id} disabled={missing.length > 0}>{team.name}{missing.length ? ` · incomplete` : ""}</option> })}</select><MissingHint message={!draft.fulfilmentTeamId ? "Required" : missingTeamServices.length ? `${selectedFulfilmentTeam?.name ?? "Team"} does not cover every selected service` : null} /></label>
+                    <p className="text-xs text-neutral-500 sm:col-span-2">Seller: {members.find((m) => m.id === draft.sellerUserId)?.name ?? "You"}</p>
                     <label className="text-xs text-neutral-500">Planned project timeline<div className="mt-1.5 flex h-10 items-center rounded-lg border border-neutral-700 bg-black px-3"><input type="number" min="1" value={draft.projectTimeframeDays ?? ""} onChange={(event) => update("projectTimeframeDays", event.target.value ? Number(event.target.value) : null)} placeholder="Optional" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none" />{draft.projectTimeframeDays ? <span className="text-xs text-neutral-500">days</span> : null}</div></label>
                     <div className="sm:col-span-2"><p className="text-xs text-neutral-500">Services</p><div className="mt-1.5 grid gap-1.5 rounded-lg border border-neutral-800 bg-black p-2 sm:grid-cols-2">{services.map((service) => <label key={service.code} className="flex items-start gap-2 rounded-md px-2 py-2 hover:bg-neutral-900"><input type="checkbox" checked={draft.selectedCodes.includes(service.code)} onChange={() => toggleService(service.code)} className="mt-0.5" /><span className="min-w-0"><span className="flex items-center gap-1.5 text-sm text-neutral-200">{service.name}{service.isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}</span><span className="mt-0.5 block text-[11px] text-neutral-600">{service.description || `Service ${service.code}`}</span></span></label>)}</div><MissingHint message={draft.selectedCodes.length ? null : "Select at least one service"} /></div>
                     <label className="text-xs text-neutral-500 sm:col-span-2">Description<textarea value={draft.description} onChange={(event) => update("description", event.target.value)} rows={3} placeholder="Optional relationship context" className="mt-1.5 min-h-20 w-full resize-none rounded-lg border border-neutral-700 bg-black px-3 py-2 text-sm leading-6 text-white" /></label>
                 </div> : null}
-                {invoiceStep === 1 ? <div className="space-y-3">
+                {invoiceStep === 1 ? <div className="space-y-4">
+                    <DetailFields className="!mt-0 !grid-cols-1">
+                        <DetailField label="Manager" icon="person"><select aria-label="Client manager" disabled={commercialLocked} value={draft.fulfilmentManagerUserId} onChange={(e) => update("fulfilmentManagerUserId", e.target.value)} className="h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-sm"><option value="">Choose manager</option>{managers.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select>{!managers.length ? <MissingHint message="Add a manager in Settings → Teams." /> : null}</DetailField>
+                        {selectedServices.map((service) => {
+                            const candidates = members.filter((m) => service.serviceId && (eligibleUsers[service.serviceId] ?? []).includes(m.id))
+                            return <DetailField key={service.code} label={service.name} icon="services"><select aria-label={`Deliver ${service.name}`} disabled={commercialLocked} value={draft.serviceAssignees[service.code] ?? ""} onChange={(e) => update("serviceAssignees", { ...draft.serviceAssignees, [service.code]: e.target.value })} className="h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-sm"><option value="">Choose fulfilment person</option>{candidates.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select>{!candidates.length ? <MissingHint message="Choose eligible people in Settings → Services." /> : null}</DetailField>
+                        })}
+                    </DetailFields>
+                    <p className="text-xs leading-5 text-neutral-500">The seller, manager, and fulfilment people will share an internal team chat. The client conversation starts with the seller and manager.</p>
+                </div> : null}
+
+                {invoiceStep === 2 ? <div className="space-y-3">
                     {onboardingIssues.length ? <div className="rounded-lg border border-amber-500/25 bg-amber-950/15 px-3 py-2.5 text-xs leading-5 text-amber-200">{onboardingIssues.map((issue) => <p key={issue}>{issue}</p>)}</div> : null}
                     <div className="flex items-center justify-between gap-3">
                         <div><p className="text-sm font-medium text-neutral-200">Client onboarding</p><p className="mt-0.5 text-xs text-neutral-600">{assignedModules.length} module{assignedModules.length === 1 ? "" : "s"} · {assignedModules.reduce((count, module) => count + module.steps.length, 0)} onboarding steps</p></div>
@@ -598,7 +625,7 @@ export function RelationshipDealWorkspace({
                     </div>
                     <div className="divide-y divide-neutral-900 overflow-hidden rounded-xl border border-neutral-800 bg-black">{assignedModules.map((module, index) => <div key={module.id} className="flex items-center gap-3 px-3 py-3"><span className="w-5 shrink-0 text-center text-xs tabular-nums text-neutral-600">{index + 1}</span><div className="min-w-0 flex-1"><RoundPill tone="sky">{module.name}</RoundPill><p className="mt-1.5 text-xs text-neutral-600">{module.steps.length} step{module.steps.length === 1 ? "" : "s"}{module.mandatory ? " · mandatory" : " · selected service"}</p></div></div>)}</div>
                 </div> : null}
-                {invoiceStep === 2 ? <div className="space-y-4">
+                {invoiceStep === 3 ? <div className="space-y-4">
                     <div className="flex flex-col justify-between gap-3 rounded-xl border border-neutral-800 bg-black p-3 sm:flex-row sm:items-end">
                         <label className="text-xs text-neutral-500">Currency<input value={draft.currency} onChange={(event) => update("currency", event.target.value.toUpperCase().slice(0, 3))} maxLength={3} className="mt-1.5 h-9 w-24 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm uppercase text-white" /></label>
                         {recurringTotalCents > 0 ? <div className="flex gap-2">
@@ -617,7 +644,7 @@ export function RelationshipDealWorkspace({
                 </div> : null}
                 {error ? <p role="alert" className="mt-4 rounded-lg border border-red-500/20 bg-red-950/20 px-3 py-2.5 text-sm text-red-300">{error}</p> : null}
             </div>
-            <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3 sm:px-6"><button type="button" disabled={invoiceStep === 0 || pending} onClick={() => { setInvoiceStep((step) => Math.max(0, step - 1)); setError(null) }} className="h-9 px-2 text-sm text-neutral-400 hover:text-white disabled:opacity-0">Back</button>{invoiceStep === 0 ? <button type="button" disabled={pending} onClick={nextFromRelationship} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-50">{pending ? "Saving…" : "Review onboarding"}</button> : invoiceStep === 1 ? <button type="button" disabled={pending || onboardingIssues.length > 0} onClick={() => { setInvoiceStep(2); setError(null) }} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">Review pricing</button> : <button type="button" disabled={pending || pricingIssues.length > 0} onClick={invoiceClient} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">{pending ? "Selling…" : saleUsesSms ? "Sell and send SMS" : sendConfirmationLabel}</button>}</footer>
+            <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3 sm:px-6"><button type="button" disabled={invoiceStep === 0 || pending} onClick={() => { setInvoiceStep((step) => Math.max(0, step - 1)); setError(null) }} className="h-9 px-2 text-sm text-neutral-400 hover:text-white disabled:opacity-0">Back</button>{invoiceStep === 0 ? <button type="button" disabled={pending} onClick={nextFromRelationship} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-50">{pending ? "Saving…" : "Assemble team"}</button> : invoiceStep === 1 ? <button type="button" disabled={pending || teamIssues.length > 0} onClick={() => { startTransition(async () => { if (await saveDetails()) setInvoiceStep(2) }) }} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">Review onboarding</button> : invoiceStep === 2 ? <button type="button" disabled={pending || onboardingIssues.length > 0} onClick={() => { setInvoiceStep(3); setError(null) }} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">Review pricing</button> : <button type="button" disabled={pending || pricingIssues.length > 0} onClick={invoiceClient} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">{pending ? "Selling…" : saleUsesSms ? "Sell and send SMS" : sendConfirmationLabel}</button>}</footer>
         </section>
     </div>, parentDocument.body) : null
 

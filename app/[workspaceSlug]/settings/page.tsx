@@ -1,3 +1,4 @@
+import { loadWorkspaceOperations } from "@/lib/teams/operations"
 import { Suspense, type CSSProperties, type ReactNode } from "react"
 import { WorkspaceIdentityEditor } from "@/components/admin/WorkspaceIdentityEditor"
 import { PendingWorkspaceInvitations } from "@/components/admin/PendingWorkspaceInvitations"
@@ -22,7 +23,6 @@ import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { loadOnboardingSettingsPageData } from "@/lib/onboarding/configuration"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { normalizeWorkspaceRole, requireWorkspace, workspaceRoleLabel } from "@/lib/workspaces"
-import { loadWorkspaceTeams, loadWorkspaceMemberProfiles } from "@/lib/teams/server"
 import { BASE_INTEGRATION_PROVIDERS, listWorkspaceConnections } from "@/lib/workspace-integrations"
 import { loadWorkspacePublicBranding } from "@/lib/client-branding/public-branding"
 import { loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
@@ -128,9 +128,10 @@ function WorkspaceSettingsSection({ workspace }: { workspace: WorkspaceRecord })
 }
 
 async function ServicesSettingsSection({ workspace, initialServiceId, onboardingSettingsPromise }: { workspace: WorkspaceRecord; initialServiceId?: string; onboardingSettingsPromise: Promise<OnboardingSettingsData> }) {
-    const [onboardingSettings, serviceCapabilitiesResult] = await Promise.all([
+    const [onboardingSettings, serviceCapabilitiesResult, operations] = await Promise.all([
         onboardingSettingsPromise,
         supabaseAdmin.from("workspace_service_capabilities").select("service_id, capability").eq("workspace_id", workspace.id),
+        loadWorkspaceOperations(workspace.id),
     ])
     const capabilitiesByService = new Map<string, WorkspaceCapability[]>()
     for (const grant of serviceCapabilitiesResult.data ?? []) {
@@ -138,7 +139,7 @@ async function ServicesSettingsSection({ workspace, initialServiceId, onboarding
         if (capability) capabilitiesByService.set(grant.service_id, [...(capabilitiesByService.get(grant.service_id) ?? []), capability])
     }
     return <section id="services" className="min-w-0 max-w-full scroll-mt-5">
-        <ServiceCatalogue workspaceSlug={workspace.slug} services={onboardingSettings.services} modules={onboardingSettings.modules} assignees={onboardingSettings.assignees} schemaReady={onboardingSettings.schemaReady} initialServiceId={initialServiceId} serviceCapabilities={Object.fromEntries(capabilitiesByService)} />
+        <ServiceCatalogue workspaceSlug={workspace.slug} services={onboardingSettings.services} modules={onboardingSettings.modules} assignees={onboardingSettings.assignees} schemaReady={onboardingSettings.schemaReady} initialServiceId={initialServiceId} serviceCapabilities={Object.fromEntries(capabilitiesByService)} eligibleUsers={Object.fromEntries(operations.services.map((s) => [s.id, operations.eligible.filter((e) => e.service_id === s.id).map((e) => e.user_id)]))} />
     </section>
 }
 
@@ -209,13 +210,8 @@ async function UsersSettingsSection({ workspace, isOwner, onboardingSettingsProm
 }
 
 async function TeamsSettingsSection({ workspace, isOwner }: { workspace: WorkspaceRecord; isOwner: boolean }) {
-    const [teamResult, teamPeople, teamConversationResult] = await Promise.all([
-        loadWorkspaceTeams(workspace.id),
-        loadWorkspaceMemberProfiles(workspace.id),
-        supabaseAdmin.from("workspace_native_conversations").select("id, team_id").eq("workspace_id", workspace.id).eq("kind", "team"),
-    ])
-    const conversationIds = Object.fromEntries((teamConversationResult.data ?? []).flatMap((conversation) => conversation.team_id ? [[conversation.team_id, conversation.id]] : []))
-    return <UnifiedSection id="teams" title="Teams" description="Review required teams, maintenance responsibility, and fulfilment collaboration."><WorkspaceTeamSettings workspaceSlug={workspace.slug} teams={teamResult.teams} people={teamPeople} conversationIds={conversationIds} ownerCanEditMaintenance={isOwner} /></UnifiedSection>
+    const operations = await loadWorkspaceOperations(workspace.id)
+    return <UnifiedSection id="teams" title="Teams" description="Selling, management, and service delivery responsibilities."><WorkspaceTeamSettings workspaceSlug={workspace.slug} operations={operations} isOwner={isOwner} /></UnifiedSection>
 }
 
 async function LeadgenSettingsSection({ workspace }: { workspace: WorkspaceRecord }) {
@@ -264,7 +260,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps) 
                     <Suspense fallback={<SettingsSectionFallback id="agency-branding" title="Agency Branding" description="Manage the public identity, policies, metadata, favicon, and colours used across agency-branded pages." height="min-h-72" />}><AgencyBrandingSettingsSection workspace={workspace} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="connections" title="Connections" description="Manage active provider credentials and client communication delivery channels." height="min-h-64" />}><ConnectionsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="users" title="Users" description="Invite teammates and control workspace access." height="min-h-56" />}><UsersSettingsSection workspace={workspace} isOwner={isOwner} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
-                    <Suspense fallback={<SettingsSectionFallback id="teams" title="Teams" description="Review required teams, maintenance responsibility, and fulfilment collaboration." height="min-h-56" />}><TeamsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
+                    <Suspense fallback={<SettingsSectionFallback id="teams" title="Teams" description="Selling, management, and service delivery responsibilities." height="min-h-56" />}><TeamsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="leadgen" title="Lead Gen" description="Manage poll automation, ICP targeting, source readiness, mappings, and runtime controls." height="min-h-80" />}><LeadgenSettingsSection workspace={workspace} /></Suspense>
                     <p className="pt-2 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
                 </div>

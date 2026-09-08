@@ -43,9 +43,7 @@ export async function inviteWorkspaceUser(slug: string, formData: FormData): Pro
         return { ok: false, message: "Only workspace owners can invite admins." }
     }
     const serviceIds = requestedRole === "staff" ? requestedServiceIds(formData) : []
-    if (requestedRole === "staff" && !serviceIds.length) {
-        return { ok: false, message: "Choose at least one service for this Staff member." }
-    }
+
     const { data: targetState, error: targetStateError } = await supabaseAdmin.rpc("lookup_workspace_invitation_target", {
         p_workspace_id: workspace.id,
         p_actor_user_id: user.id,
@@ -141,12 +139,13 @@ export async function removeWorkspaceUser(slug: string, formData: FormData) {
     if (actingRole !== "owner" && normalizeWorkspaceRole(target.role) !== "staff") {
         throw new Error("Admins can only remove staff")
     }
-    await supabaseAdmin
+    const { error: removeError } = await supabaseAdmin
         .from("workspace_memberships")
         .delete()
         .eq("workspace_id", workspace.id)
         .eq("user_id", userId)
-    revalidatePath(`/${slug}/users`)
+    if (removeError) throw new Error(removeError.message)
+    revalidatePath(`/${slug}/settings`)
 }
 
 export type AdminMfaResetActionState = { ok: boolean; message: string }

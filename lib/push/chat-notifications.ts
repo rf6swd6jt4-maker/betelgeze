@@ -1,4 +1,5 @@
 import "server-only"
+import { clientConversationParticipants } from "@/lib/communications/access"
 
 import { createHash } from "node:crypto"
 import webPush, { WebPushError, type PushSubscription } from "web-push"
@@ -270,24 +271,23 @@ export async function notifyClientChatMessage(input: {
     attachment?: ChatPushAttachment | null
 }) {
     const [
-        { data: memberships, error: membershipError },
         { data: workspace, error: workspaceError },
         { data: relationship, error: relationshipError },
         { data: message, error: messageError },
     ] = await Promise.all([
-        supabaseAdmin.from("workspace_memberships").select("user_id").eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("workspaces").select("slug").eq("id", input.workspaceId).single(),
         supabaseAdmin.from("relationships").select("primary_person_name, business_name").eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).maybeSingle(),
         supabaseAdmin.from("client_messages").select("created_at").eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId).eq("id", input.messageId).maybeSingle(),
     ])
-    if (membershipError || workspaceError || relationshipError || messageError || !workspace || !message) {
-        console.error("Could not prepare client chat push", membershipError ?? workspaceError ?? relationshipError ?? messageError)
+    if (workspaceError || relationshipError || messageError || !workspace || !message) {
+        console.error("Could not prepare client chat push", workspaceError ?? relationshipError ?? messageError)
         return
     }
     const primaryName = relationship?.primary_person_name?.trim() || input.senderName
     const businessName = relationship?.business_name?.trim()
     const notification = chatNotificationText(businessName ? `${primaryName} – ${businessName}` : primaryName, input.previewBody, input.attachment)
-    await deliverChatPush((memberships ?? []).map((membership) => membership.user_id), {
+    const participants = await clientConversationParticipants(input.workspaceId, input.relationshipId)
+    await deliverChatPush(participants.memberIds, {
         workspaceId: input.workspaceId,
         conversationKind: "client",
         messageId: input.messageId,

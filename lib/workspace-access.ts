@@ -82,7 +82,7 @@ export async function loadWorkspaceAccess(input: {
         }
     }
 
-    const [assignmentResult, capabilityResult] = await Promise.all([
+    const [assignmentResult, capabilityResult, rolesResult, permissionsResult, allocatedServices, responsibilities] = await Promise.all([
         supabaseAdmin
             .from("workspace_member_service_access")
             .select("service_id")
@@ -92,23 +92,23 @@ export async function loadWorkspaceAccess(input: {
             .from("workspace_service_capabilities")
             .select("service_id, capability")
             .eq("workspace_id", input.workspaceId),
+        supabaseAdmin.from("workspace_operational_roles").select("can_sell, can_manage").eq("workspace_id", input.workspaceId).eq("user_id", input.userId).maybeSingle(),
+        supabaseAdmin.from("workspace_operational_permissions").select("position, capability").eq("workspace_id", input.workspaceId),
+        supabaseAdmin.from("relationship_services").select("service_id").eq("workspace_id", input.workspaceId).eq("assignee_user_id", input.userId),
+        supabaseAdmin.from("relationships").select("seller_user_id, fulfilment_manager_user_id").eq("workspace_id", input.workspaceId).or(`seller_user_id.eq.${input.userId},fulfilment_manager_user_id.eq.${input.userId}`),
     ])
     const { data: assignments, error: assignmentError } = assignmentResult
 
-    if (assignmentError) {
+    if (assignmentError || rolesResult.error || permissionsResult.error || allocatedServices.error || responsibilities.error) {
         console.error("Workspace service access could not be loaded", {
             workspaceId: input.workspaceId,
             userId: input.userId,
-            code: assignmentError.code,
+            code: assignmentError?.code,
         })
         return { ...input, capabilities: [], allowedServiceIds: [], serviceAccessSchemaReady: false }
     }
 
-    const allowedServiceIds = [...new Set((assignments ?? []).map((item) => item.service_id).filter(Boolean))]
-    if (!allowedServiceIds.length) {
-        return { ...input, capabilities: [], allowedServiceIds: [], serviceAccessSchemaReady: appointmentSettingServices.ready }
-    }
-
+    const allowedServiceIds = [...new Set([...(assignments ?? []), ...(allocatedServices.data ?? [])].map((item) => item.service_id).filter(Boolean))]
     const { data: allGrants, error: capabilityError } = capabilityResult
 
     if (capabilityError) {
@@ -122,7 +122,8 @@ export async function loadWorkspaceAccess(input: {
 
     const allowedServiceIdSet = new Set(allowedServiceIds)
     const assignedAppointmentSettingService = allowedServiceIds.some((serviceId) => appointmentSettingServices.ids.has(serviceId))
-    const capabilities = combineWorkspaceCapabilities((allGrants ?? []).filter((grant) => allowedServiceIdSet.has(grant.service_id)).map((item) => [item.capability])).filter((capability) => (
+    const operational = (permissionsResult.data ?? []).filter((p) => p.position === "seller" ? rolesResult.data?.can_sell || responsibilities.data?.some((r) => r.seller_user_id === input.userId) : rolesResult.data?.can_manage || responsibilities.data?.some((r) => r.fulfilment_manager_user_id === input.userId)).map((p) => p.capability)
+    const capabilities = combineWorkspaceCapabilities([["communications.manage", ...operational], ...(allGrants ?? []).filter((grant) => allowedServiceIdSet.has(grant.service_id)).map((item) => [item.capability])]).filter((capability) => (
         capability !== APPOINTMENT_SETTING_CAPABILITY || assignedAppointmentSettingService
     ))
 
@@ -163,43 +164,14 @@ export function defaultWorkspaceHref(access: WorkspaceAccess) {
     return panel ? workspacePanelHref(access.workspaceSlug, panel) : `/${access.workspaceSlug}/no-access`
 }
 
-const loadRelationshipScope = cache(async function loadRelationshipScope(access: WorkspaceAccess): Promise<{
-    accessibleIds: Set<string>
-    fullyAccessibleIds: Set<string>
-}> {
-    if (!access.allowedServiceIds.length) return { accessibleIds: new Set(), fullyAccessibleIds: new Set() }
-    const { data, error } = await supabaseAdmin
-        .from("relationship_services")
-        .select("relationship_id, service_id")
-        .eq("workspace_id", access.workspaceId)
-    if (error) {
-        console.error("Relationship service scope could not be loaded", { workspaceId: access.workspaceId, userId: access.userId, code: error.code })
-        return { accessibleIds: new Set(), fullyAccessibleIds: new Set() }
-    }
-    const allowedServiceIds = new Set(access.allowedServiceIds)
-    const servicesByRelationship = new Map<string, Set<string>>()
-    for (const row of data ?? []) {
-        if (!row.relationship_id || !row.service_id) continue
-        const serviceIds = servicesByRelationship.get(row.relationship_id) ?? new Set<string>()
-        serviceIds.add(row.service_id)
-        servicesByRelationship.set(row.relationship_id, serviceIds)
-    }
-    const accessibleIds = new Set<string>()
-    const fullyAccessibleIds = new Set<string>()
-    for (const [relationshipId, serviceIds] of servicesByRelationship) {
-        if ([...serviceIds].some((serviceId) => allowedServiceIds.has(serviceId))) accessibleIds.add(relationshipId)
-        if (serviceIds.size > 0 && [...serviceIds].every((serviceId) => allowedServiceIds.has(serviceId))) fullyAccessibleIds.add(relationshipId)
-    }
-    return { accessibleIds, fullyAccessibleIds }
+const loadDeliveryScope = cache(async (workspaceId: string, userId: string) => {
+    const { data, error } = await supabaseAdmin.rpc("workspace_delivery_access_scope", { p_workspace_id: workspaceId, p_user_id: userId })
+    if (error) throw new Error("Could not verify client delivery access.")
+    return data as { relationships: string[]; full_relationships: string[]; work_items: string[] }
 })
-
-const loadWorkItemAccessRows = cache(async function loadWorkItemAccessRows(workspaceId: string) {
-    return Promise.all([
-        supabaseAdmin.from("work_items").select("id, service_id, native_kind, metadata").eq("workspace_id", workspaceId),
-        supabaseAdmin.from("work_item_relationships").select("work_item_id, relationship_id").eq("workspace_id", workspaceId),
-        supabaseAdmin.from("relationship_onboarding_session_modules").select("id, source_kind").eq("workspace_id", workspaceId),
-        supabaseAdmin.from("relationship_onboarding_session_steps").select("id, session_module_id").eq("workspace_id", workspaceId),
-    ])
+const loadRelationshipScope = cache(async (access: WorkspaceAccess) => {
+    const scope = await loadDeliveryScope(access.workspaceId, access.userId)
+    return { accessibleIds: new Set(scope.relationships), fullyAccessibleIds: new Set(scope.full_relationships) }
 })
 
 export async function accessibleRelationshipIds(access: WorkspaceAccess): Promise<Set<string> | null> {
@@ -224,52 +196,9 @@ export async function requireRelationshipAccess(access: WorkspaceAccess, relatio
 
 export async function accessibleWorkItemIds(access: WorkspaceAccess, relationshipIds?: Set<string> | null): Promise<Set<string> | null> {
     if (isAdminRole(access.role)) return null
-    if (!access.allowedServiceIds.length) return new Set()
-    const relationshipScope = await loadRelationshipScope(access)
-    const scopedRelationshipIds = relationshipIds === undefined
-        ? relationshipScope.accessibleIds
-        : new Set([...relationshipScope.accessibleIds].filter((id) => relationshipIds?.has(id)))
-    const fullyScopedRelationshipIds = new Set([...relationshipScope.fullyAccessibleIds].filter((id) => scopedRelationshipIds.has(id)))
-    const [itemResult, linkResult, moduleResult, stepResult] = await loadWorkItemAccessRows(access.workspaceId)
-    if (itemResult.error || linkResult.error || moduleResult.error || stepResult.error) {
-        console.error("Work-item service scope could not be loaded", {
-            workspaceId: access.workspaceId,
-            userId: access.userId,
-            code: itemResult.error?.code ?? linkResult.error?.code ?? moduleResult.error?.code ?? stepResult.error?.code,
-        })
-        return new Set()
-    }
-    const allowedServiceIds = new Set(access.allowedServiceIds)
-    const mandatoryModuleIds = new Set((moduleResult.data ?? []).filter((row) => row.source_kind === "mandatory").map((row) => row.id))
-    const sharedStepIds = new Set((stepResult.data ?? []).filter((row) => !row.session_module_id || mandatoryModuleIds.has(row.session_module_id)).map((row) => row.id))
-    const relationshipIdsByItem = new Map<string, Set<string>>()
-    for (const link of linkResult.data ?? []) {
-        const ids = relationshipIdsByItem.get(link.work_item_id) ?? new Set<string>()
-        ids.add(link.relationship_id)
-        relationshipIdsByItem.set(link.work_item_id, ids)
-    }
-    const allowedItemIds = new Set<string>()
-    for (const item of itemResult.data ?? []) {
-        const linkedRelationshipIds = relationshipIdsByItem.get(item.id) ?? new Set<string>()
-        if (item.service_id && allowedServiceIds.has(item.service_id)) {
-            if (!linkedRelationshipIds.size || [...linkedRelationshipIds].some((id) => scopedRelationshipIds.has(id))) {
-                allowedItemIds.add(item.id)
-            }
-            continue
-        }
-        if (item.service_id) continue
-        const metadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
-            ? item.metadata as Record<string, unknown>
-            : {}
-        const sessionStepId = typeof metadata.session_step_id === "string" ? metadata.session_step_id : null
-        const isSharedOnboardingStep = item.native_kind === "onboarding_step" && Boolean(sessionStepId && sharedStepIds.has(sessionStepId))
-        if (isSharedOnboardingStep && [...linkedRelationshipIds].some((id) => scopedRelationshipIds.has(id))) {
-            allowedItemIds.add(item.id)
-            continue
-        }
-        if ([...linkedRelationshipIds].some((id) => fullyScopedRelationshipIds.has(id))) allowedItemIds.add(item.id)
-    }
-    return allowedItemIds
+    const scope = await loadDeliveryScope(access.workspaceId, access.userId)
+    void relationshipIds
+    return new Set(scope.work_items)
 }
 
 export async function requireWorkItemAccess(access: WorkspaceAccess, workItemId: string) {

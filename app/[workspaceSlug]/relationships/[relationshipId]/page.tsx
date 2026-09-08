@@ -13,7 +13,7 @@ import {
 } from "@/lib/relationships"
 import { effectiveGanttRanges, getRelationshipGanttPlan, type RelationshipGanttPlan } from "@/lib/relationship-gantt"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
-import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { requireWorkspacePanel, requireRelationshipAccess } from "@/lib/workspace-access"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { loadPublishedOnboardingConfiguration } from "@/lib/onboarding/configuration"
 import { buildRelationshipDealServiceOptions } from "@/lib/onboarding/service-display"
@@ -22,7 +22,7 @@ import { currentRelationshipWork } from "@/lib/relationship-workflow"
 import { archiveRelationship } from "../actions"
 import { ArchiveRelationshipForm } from "./ArchiveRelationshipForm"
 import { RelationshipDealWorkspace } from "./RelationshipDealWorkspace"
-import { loadWorkspaceTeams } from "@/lib/teams/server"
+import { loadWorkspaceOperations } from "@/lib/teams/operations"
 import { loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
 import { loadWorkspacePublicBranding } from "@/lib/client-branding/public-branding"
 import { createPrivateUploadSignedUrl } from "@/lib/onboarding/uploads"
@@ -49,7 +49,7 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
     relationship: RelationshipRecord
     planPromise: Promise<RelationshipGanttPlan>
 }) {
-    const [servicesResult, membershipsResult, onboardingConfiguration, currentSaleResult, teamResult, twilioConnectionResult, publicBranding, brandAssets, currentWork] = await Promise.all([
+    const [servicesResult, membershipsResult, onboardingConfiguration, currentSaleResult, operations, twilioConnectionResult, publicBranding, brandAssets, currentWork] = await Promise.all([
         supabaseAdmin.from("relationship_services").select("service_key, service_id, service_revision_id, upfront_price_cents, recurring_price_cents, currency, assignee_user_id").eq("workspace_id", workspaceId).eq("relationship_id", relationship.id),
         supabaseAdmin.from("workspace_memberships").select("user_id").eq("workspace_id", workspaceId),
         loadPublishedOnboardingConfiguration(workspaceId),
@@ -61,11 +61,11 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle(),
-        loadWorkspaceTeams(workspaceId),
+        loadWorkspaceOperations(workspaceId),
         supabaseAdmin.from("workspace_integrations").select("enabled, connection_status").eq("workspace_id", workspaceId).eq("provider", "twilio_sms").maybeSingle(),
         loadWorkspacePublicBranding(workspaceId, workspaceName),
         loadWorkspaceClientBrandAssets(workspaceId),
-        currentRelationshipWork({ workspaceId, relationshipId: relationship.id, userId, isManager: role === "owner" || role === "admin" }),
+        currentRelationshipWork({ workspaceId, relationshipId: relationship.id, userId, isManager: true }),
     ])
     if (servicesResult.error) throw new Error(servicesResult.error.message)
     const storedServices = servicesResult.data ?? []
@@ -115,7 +115,7 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
             selectedUpfrontPriceCents: Number(service.selected?.upfront_price_cents ?? service.defaultUpfrontPriceCents),
             selectedRecurringPriceCents: Number(service.selected?.recurring_price_cents ?? service.defaultRecurringPriceCents),
             selectedCurrency: String(service.selected?.currency ?? service.currency).toUpperCase(),
-            selectedAssigneeId: service.selected?.assignee_user_id ?? service.defaultAssigneeId,
+            selectedAssigneeId: service.selected?.assignee_user_id ?? null,
             moduleIds: configured?.modules.map((module) => module.moduleId) ?? [],
         }
     })
@@ -138,7 +138,7 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
             communicationPrimaryProvider: relationship.communication_primary_provider,
             communicationDeliveryMode: relationship.communication_delivery_mode,
             primaryEmail: relationship.primary_email ?? "",
-            sellerUserId: relationship.seller_user_id ?? userId,
+            sellerUserId: relationship.seller_user_id ?? "",
             fulfilmentManagerUserId: relationship.fulfilment_manager_user_id ?? "",
             fulfilmentTeamId: relationship.fulfilment_team_id ?? "",
             projectTimeframeDays: relationship.project_timeframe_days,
@@ -146,7 +146,9 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
             lifecyclePhase: relationship.lifecycle_phase,
         }}
         members={members.map((member) => ({ id: member.user_id, name: member.display_name?.trim() || member.username }))}
-        fulfilmentTeams={teamResult.teams.filter((team) => team.kind === "custom" && !team.archivedAt).map((team) => ({ id: team.id, name: team.name, responsibilities: team.responsibilities.map((responsibility) => ({ serviceId: responsibility.serviceId, userId: responsibility.userId })) }))}
+        managers={operations.people.filter((p) => p.canManage).map((p) => ({ id: p.id, name: p.name }))}
+        eligibleUsers={Object.fromEntries(operations.services.map((service) => [service.id, operations.eligible.filter((e) => e.service_id === service.id).map((e) => e.user_id)]))}
+        canSell={Boolean(operations.people.find((p) => p.id === userId)?.canSell) && (!relationship.pos_started_at || relationship.seller_user_id === userId)}
         services={dealServices}
         modules={previewModules}
         payment={onboardingConfiguration.payment}
@@ -155,9 +157,9 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
         schemaReady={onboardingConfiguration.schemaReady}
         whatsappVerified={onboardingConfiguration.help.whatsappVerified}
         twilioVerified={Boolean(twilioConnectionResult.data?.enabled && twilioConnectionResult.data.connection_status === "connected")}
-        commercialLocked={Boolean(currentSaleResult.data)}
+        commercialLocked={Boolean(currentSaleResult.data || relationship.team_locked_at)}
         planPromise={planPromise}
-        canEdit={role === "owner" || role === "admin"}
+        canEdit={role === "owner" || role === "admin" || relationship.seller_user_id === userId || relationship.fulfilment_manager_user_id === userId || (!relationship.pos_started_at && Boolean(operations.people.find((p) => p.id === userId)?.canSell))}
         currentWork={currentWork}
     />
 }
@@ -165,6 +167,7 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
 export default async function RelationshipDetailPage({ params }: PageProps) {
     const { workspaceSlug, relationshipId } = await params
     const { workspace, user, role, access } = await requireWorkspacePanel(workspaceSlug, "relationships")
+    await requireRelationshipAccess(access, relationshipId)
     const relationship = await getRelationship(workspace.id, relationshipId)
     if (!relationship) notFound()
     // Detail reads stay pure. Workflow stages are created and repaired by their

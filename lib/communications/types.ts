@@ -83,6 +83,7 @@ export type CommunicationReadCursor = {
 }
 
 export type ClientConversation = {
+    participants?: { managerId: string | null; memberIds: string[]; optionalIds: string[]; eligibleIds: string[] }
     id: string
     clientId: string | null
     title: string

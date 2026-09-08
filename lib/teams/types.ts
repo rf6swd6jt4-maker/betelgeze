@@ -1,7 +1,7 @@
 import type { ClientConversation, CommunicationAttachment, CommunicationPerson, CommunicationSticker } from "@/lib/communications/types"
 import type { MessageQuote } from "@/lib/communications/message-quotes"
 
-export type WorkspaceTeamKind = "admins" | "maintenance" | "custom"
+export type WorkspaceTeamKind = "admins" | "maintenance" | "custom" | "relationship"
 
 export type WorkspaceTeamResponsibility = {
     serviceId: string

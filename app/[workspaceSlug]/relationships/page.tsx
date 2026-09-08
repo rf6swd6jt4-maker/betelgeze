@@ -23,7 +23,7 @@ import {
     type RelationshipPhase,
     type RelationshipRecord,
 } from "@/lib/relationships"
-import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { accessibleRelationshipIds, requireWorkspacePanel } from "@/lib/workspace-access"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 
@@ -260,11 +260,12 @@ function RelationshipsPanelFallback() {
 export default async function RelationshipsPage({ params, searchParams }: PageProps) {
     const { workspaceSlug } = await params
     const { phase: requestedPhase } = await searchParams
-    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "relationships")
+    const { workspace, user, access } = await requireWorkspacePanel(workspaceSlug, "relationships")
+    const allowedIds = await accessibleRelationshipIds(access)
     const selectedPhase = RELATIONSHIP_PHASES.some((phase) => phase.key === requestedPhase)
         ? requestedPhase as RelationshipPhase
         : null
-    const relationshipsPromise = listRelationshipsForWorkspace(workspace.id)
+    const relationshipsPromise = listRelationshipsForWorkspace(workspace.id).then((rows) => allowedIds === null ? rows : rows.filter((row) => allowedIds.has(row.id)))
     const openWorkCountsPromise = countOpenWorkItemsByRelationship(workspace.id)
 
     return <main className="min-h-screen bg-neutral-950 px-4 pb-7 text-white sm:px-6">

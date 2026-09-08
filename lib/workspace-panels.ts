@@ -15,7 +15,7 @@ export type WorkspacePanelDefinition = {
 }
 
 export const WORKSPACE_PANELS = [
-    { key: "relationships", label: "Relationships", route: "relationships", capability: "relationships.view", minimumRole: "admin", description: "Relationship Hub list", keywords: ["dashboard", "crm", "people", "accounts"] },
+    { key: "relationships", label: "Relationships", route: "relationships", capability: "relationships.view", description: "Relationship Hub list", keywords: ["dashboard", "crm", "people", "accounts"] },
     { key: "onboarding", label: "Onboarding", route: "onboarding", capability: "onboarding.manage", description: "Relationship onboarding status and submissions", keywords: ["forms", "submissions", "portal"] },
     { key: "fulfilment", label: "Fulfilment", route: "work", capability: "fulfilment.manage", description: "Fulfilment relationship work items", keywords: ["tasks", "project management", "queue", "fulfilment"] },
     { key: "appointment-setting", label: "Appointment Setting", route: "appointment-setting", capability: "appointment_setting.manage", requiresService: true, description: "Leads, bookings, setter availability, and appointment outcomes", keywords: ["appointments", "bookings", "setters", "calendar", "leads"] },

@@ -1,4 +1,5 @@
 "use server"
+import { requireWorkspaceAccess, requireRelationshipAccess } from "@/lib/workspace-access"
 
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
@@ -78,6 +79,28 @@ function relationshipRevalidatePaths(slug: string, relationshipId?: string) {
     }
 }
 
+
+async function requireRelationshipSeller(slug: string, relationshipId?: string) {
+    const context = await requireWorkspaceAccess(slug)
+    const { data, error } = await supabaseAdmin.rpc("workspace_user_can_sell", { p_workspace_id: context.workspace.id, p_user_id: context.user.id })
+    if (error || data !== true) throw new Error("Your account is not enabled for selling")
+    if (relationshipId) {
+        await requireRelationshipAccess(context.access, relationshipId)
+        const { data: relationship } = await supabaseAdmin.from("relationships").select("seller_user_id, pos_started_at").eq("workspace_id", context.workspace.id).eq("id", relationshipId).single()
+        if (relationship?.pos_started_at && relationship.seller_user_id !== context.user.id) throw new Error("This POS belongs to another seller")
+    }
+    return context
+}
+export async function beginRelationshipPos(slug: string, relationshipId: string) {
+    try {
+        const { workspace, user } = await requireRelationshipSeller(slug, relationshipId)
+        const { data, error } = await supabaseAdmin.rpc("begin_relationship_pos", { p_workspace_id: workspace.id, p_relationship_id: relationshipId, p_actor_user_id: user.id })
+        if (error) throw new Error(error.message)
+        await ensureSalesStage({ workspaceId: workspace.id, relationshipId, sellerId: user.id })
+        relationshipRevalidatePaths(slug, relationshipId)
+        return { ok: true as const, sellerUserId: data.seller_user_id as string, version: data.updated_at as string }
+    } catch (error) { return { ok: false as const, error: error instanceof Error ? error.message : "Could not begin POS." } }
+}
 export async function createRelationship(slug: string, formData: FormData) {
     const result = await createRelationshipFromModal(slug, formData)
     if (!result.ok) redirect(workspaceHref(slug, `relationships?error=${result.error ?? "create-failed"}`))
@@ -85,7 +108,7 @@ export async function createRelationship(slug: string, formData: FormData) {
 }
 
 export async function createRelationshipFromModal(slug: string, formData: FormData): Promise<WorkspaceCreateActionState> {
-    const { workspace, user } = await requireWorkspace(slug, "admin")
+    const { workspace, user } = await requireRelationshipSeller(slug)
     const primaryPersonName = formString(formData, "primary_person_name")
     const businessName = nullableFormString(formData, "business_name")
     const requestedPhase = formString(formData, "lifecycle_phase")
@@ -225,11 +248,10 @@ function currencyCode(value: string) {
 }
 
 export async function saveRelationshipCommercialDetails(slug: string, relationshipId: string, formData: FormData) {
-    const { workspace, user, role } = await requireWorkspace(slug, "admin")
+    const { workspace, user } = await requireRelationshipSeller(slug, relationshipId)
     const serviceKeys = [...new Set(formData.getAll("service_key").map(String).filter(Boolean))]
-    let sellerId = nullableFormString(formData, "seller_user_id")
+    let sellerId: string | null = null
     const managerId = nullableFormString(formData, "fulfilment_manager_user_id")
-    const submittedTeamId = nullableFormString(formData, "fulfilment_team_id")
     const whatsappPhone = nullableFormString(formData, "whatsapp_phone")
     const requestedPrimaryProvider = formString(formData, "communication_primary_provider") === "twilio_sms" ? "twilio_sms" : "meta_whatsapp"
     const requestedDeliveryMode = formString(formData, "communication_delivery_mode")
@@ -261,12 +283,7 @@ export async function saveRelationshipCommercialDetails(slug: string, relationsh
         loadPublishedOnboardingConfiguration(workspace.id),
     ])
     if (relationshipError || !relationship) throw new Error(relationshipError?.message ?? "Relationship not found")
-    const canManageCommercialDetails = role === "owner" || role === "admin"
-    if (!canManageCommercialDetails && relationship.seller_user_id !== user.id) {
-        throw new Error("Only this relationship's seller or a workspace admin can update its commercial details")
-    }
-    if (!canManageCommercialDetails) sellerId = relationship.seller_user_id
-    const fulfilmentTeamId = formData.has("fulfilment_team_id") ? submittedTeamId : relationship.fulfilment_team_id
+    sellerId = relationship.seller_user_id
     if (existingServicesResult.error) throw new Error(existingServicesResult.error.message)
     const existingServices = existingServicesResult.data ?? []
     const existingByKey = new Map((existingServices ?? []).map((service) => [service.service_key, service]))
@@ -284,7 +301,7 @@ export async function saveRelationshipCommercialDetails(slug: string, relationsh
             existing?.service_id !== current.id || existing?.service_revision_id !== current.revisionId
         )
     })
-    const commercialChanged = fulfilmentTeamId !== relationship.fulfilment_team_id || serviceIdentityChanged || serviceKeys.length !== existingUpfrontPrices.size || serviceKeys.some((serviceKey) => (
+    const commercialChanged = serviceIdentityChanged || serviceKeys.length !== existingUpfrontPrices.size || serviceKeys.some((serviceKey) => (
         existingUpfrontPrices.get(serviceKey) !== submittedUpfrontPrices.get(serviceKey)
         || existingRecurringPrices.get(serviceKey) !== submittedRecurringPrices.get(serviceKey)
         || existingCurrencies.get(serviceKey) !== submittedCurrencies.get(serviceKey)
@@ -307,21 +324,6 @@ export async function saveRelationshipCommercialDetails(slug: string, relationsh
             || (postedRevisionId && postedRevisionId !== expectedRevisionId)
         )) throw new Error(`The selected revision for ${serviceKey} changed. Reload and review the deal before saving`)
     }
-    const teamAssigneeByService = new Map<string, string>()
-    if (fulfilmentTeamId) {
-        const [{ data: team }, { data: responsibilities, error: responsibilityError }] = await Promise.all([
-            supabaseAdmin.from("workspace_teams").select("id").eq("workspace_id", workspace.id).eq("id", fulfilmentTeamId).eq("kind", "custom").is("archived_at", null).maybeSingle(),
-            supabaseAdmin.from("workspace_team_service_responsibilities").select("service_id, responsible_user_id").eq("workspace_id", workspace.id).eq("team_id", fulfilmentTeamId),
-        ])
-        if (!team || responsibilityError) throw new Error("Choose an active fulfilment team")
-        for (const responsibility of responsibilities ?? []) teamAssigneeByService.set(responsibility.service_id, responsibility.responsible_user_id)
-        for (const serviceKey of serviceKeys) {
-            const existing = existingByKey.get(serviceKey)
-            const catalogue = catalogueByCode.get(serviceKey)
-            const serviceId = catalogue?.state === "active" && catalogue.revisionId ? catalogue.id : existing?.service_id ?? catalogue?.id ?? null
-            if (!serviceId || !teamAssigneeByService.has(serviceId)) throw new Error(`${catalogue?.name ?? serviceKey} is not assigned within the selected fulfilment team`)
-        }
-    }
     const versionedRows = serviceKeys.map((serviceKey) => {
         const existing = existingByKey.get(serviceKey)
         const service = catalogueByCode.get(serviceKey)
@@ -336,7 +338,7 @@ export async function saveRelationshipCommercialDetails(slug: string, relationsh
             recurring_price_cents: submittedRecurringPrices.get(serviceKey) ?? 0,
             price_cents: (submittedUpfrontPrices.get(serviceKey) ?? 0) + (submittedRecurringPrices.get(serviceKey) ?? 0),
             currency: submittedCurrencies.get(serviceKey) ?? "USD",
-            assignee_user_id: fulfilmentTeamId && serviceId ? teamAssigneeByService.get(serviceId) ?? null : nullableFormString(formData, `service_assignee_${serviceKey}`) ?? existing?.assignee_user_id ?? service?.defaultAssigneeId ?? null,
+            assignee_user_id: nullableFormString(formData, `service_assignee_${serviceKey}`),
             ...(configuration.schemaReady && serviceId && serviceRevisionId ? { service_id: serviceId, service_revision_id: serviceRevisionId } : {}),
         }
     })
@@ -367,7 +369,6 @@ export async function saveRelationshipCommercialDetails(slug: string, relationsh
             : saveError.message)
     }
     const { error: teamSaveError } = await supabaseAdmin.from("relationships").update({
-        fulfilment_team_id: fulfilmentTeamId,
         communication_primary_provider: communicationPrimaryProvider,
         communication_delivery_mode: communicationDeliveryMode,
         updated_at: new Date().toISOString(),
@@ -420,13 +421,14 @@ export async function saveRelationshipDealDetails(slug: string, relationshipId: 
 }
 
 export async function saveRelationshipBackgroundDetails(slug: string, relationshipId: string, input: RelationshipBackgroundDetailsInput): Promise<{ ok: true; version: string } | { ok: false; error: string; conflict?: boolean; version?: string }> {
-    const { workspace, user, role } = await requireWorkspace(slug, "admin")
+    const { workspace, user, role, access } = await requireWorkspaceAccess(slug)
+    await requireRelationshipAccess(access, relationshipId)
     const primaryPersonName = input.primaryPersonName.trim()
     if (!primaryPersonName) return { ok: false, error: "Add the client's name before saving the relationship" }
     const { data: relationship, error: relationshipError } = await supabaseAdmin.from("relationships")
-        .select("seller_user_id, updated_at").eq("workspace_id", workspace.id).eq("id", relationshipId).maybeSingle()
+        .select("seller_user_id, fulfilment_manager_user_id, pos_started_at, updated_at").eq("workspace_id", workspace.id).eq("id", relationshipId).maybeSingle()
     if (relationshipError || !relationship) return { ok: false, error: relationshipError?.message ?? "The relationship could not be found" }
-    if (role !== "owner" && role !== "admin" && relationship.seller_user_id !== user.id) {
+    if (role !== "owner" && role !== "admin" && relationship.seller_user_id !== user.id && relationship.fulfilment_manager_user_id !== user.id && relationship.pos_started_at) {
         return { ok: false, error: "Only this relationship's seller or a workspace admin can update its details" }
     }
     if (input.expectedUpdatedAt && relationship.updated_at !== input.expectedUpdatedAt) {
@@ -517,7 +519,8 @@ export async function proceedRelationshipCurrentWork(
     let sale: Awaited<ReturnType<typeof prepareRelationshipSale>> | null = null
     let saleResult: { id: string; kind: "sms" | "whatsapp"; sent: boolean } | null = null
     try {
-        const { workspace, user, role } = await requireWorkspace(slug, "admin")
+        const { workspace, user, role, access } = await requireWorkspaceAccess(slug)
+        await requireRelationshipAccess(access, relationshipId)
         const { data: item } = await supabaseAdmin.from("work_items")
             .select("id, workflow_action")
             .eq("workspace_id", workspace.id).eq("id", workItemId).maybeSingle()
@@ -526,7 +529,9 @@ export async function proceedRelationshipCurrentWork(
         const { data: link } = await supabaseAdmin.from("work_item_relationships")
             .select("work_item_id").eq("workspace_id", workspace.id).eq("relationship_id", relationshipId).eq("work_item_id", workItemId).maybeSingle()
         if (!link) throw new Error("Work item does not belong to this relationship")
-        if (role !== "owner" && role !== "admin") {
+        if (workflowAction === "sell_client") {
+            await requireRelationshipSeller(slug, relationshipId)
+        } else if (role !== "owner" && role !== "admin") {
             const { data: assignment } = await supabaseAdmin.from("work_item_assignees")
                 .select("user_id").eq("workspace_id", workspace.id).eq("work_item_id", workItemId).eq("user_id", user.id).maybeSingle()
             if (!assignment) throw new Error("This work item is not assigned to you")
@@ -575,6 +580,9 @@ export async function proceedRelationshipCurrentWork(
             "This relationship has no connected messaging",
             "Verify and enable",
             "Every selected service",
+            "Choose an eligible",
+            "This POS belongs",
+            "Your account is not enabled",
             "Publish the mandatory",
             "Choose a current Active service revision",
             "Publish every onboarding module",

@@ -50,23 +50,20 @@ test("profile lookup preserves workspace authorization and username privacy", as
     assert.match(communications, /onClick=\{\(event\) => \{ event\.preventDefault\(\); event\.stopPropagation\(\); if \(selected\.kind === "direct"\) openWorkspaceMemberProfile/)
 })
 
-test("team editing enforces required teams and complete responsibility maps", async () => {
-    const [route, relationshipActions, workflow, editor] = await Promise.all([
+test("client teams follow saved POS allocations and chat rosters are read-only", async () => {
+    const [route, workflow, editor, migration] = await Promise.all([
         readFile("app/api/workspaces/[workspaceSlug]/teams/route.ts", "utf8"),
-        readFile("app/[workspaceSlug]/relationships/actions.ts", "utf8"),
         readFile("lib/relationship-workflow.ts", "utf8"),
         readFile("components/communications/TeamCommunicationsWorkspace.tsx", "utf8"),
+        readFile("supabase/migrations/20260909100000_client_delivery_teams.sql", "utf8"),
     ])
-    assert.match(route, /Admins membership follows Settings > Users/)
-    assert.match(route, /Only the workspace owner can edit Maintenance/)
-    assert.match(route, /Assign every active service before saving the fulfilment team/)
-    assert.match(route, /Reassign this member's service responsibilities before removing them/)
-    assert.match(route, /Reassign this member's maintenance categories before removing them/)
-    assert.match(relationshipActions, /fulfilment_team_id/)
-    assert.match(relationshipActions, /is not assigned within the selected fulfilment team/)
-    assert.match(workflow, /workspace_team_service_responsibilities/)
-    assert.match(workflow, /assigneeByService\.get\(service\.service_id\) \?\? null/)
-    assert.match(editor, /Map every active service to exactly one selected member/)
+    assert.match(route, /status: 409/)
+    assert.doesNotMatch(route, /\.insert\(|\.update\(|\.delete\(/)
+    assert.doesNotMatch(workflow, /workspace_team_service_responsibilities/)
+    assert.match(workflow, /validate_relationship_delivery_team/)
+    assert.match(migration, /create_relationship_delivery_team/)
+    assert.match(migration, /guard_sold_service_assignment/)
+    assert.doesNotMatch(editor, /Map every active service|Save team|Create team/)
     assert.match(editor, /Archived conversation/)
 })
 

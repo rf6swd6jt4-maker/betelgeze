@@ -1,3 +1,4 @@
+import { clientConversationCanAccess } from "@/lib/communications/access"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspacePanel } from "@/lib/workspace-access"
 
@@ -7,9 +8,10 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 export async function POST(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
-    const { workspace } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
     const input = await request.json().catch(() => null) as { relationshipId?: unknown; messageId?: unknown } | null
     const relationshipId = typeof input?.relationshipId === "string" ? input.relationshipId : ""
+    if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const messageId = input?.messageId === null ? null : typeof input?.messageId === "string" ? input.messageId : ""
     if (!UUID_PATTERN.test(relationshipId) || (messageId !== null && !UUID_PATTERN.test(messageId))) return Response.json({ error: "Invalid pinned message." }, { status: 400 })
 

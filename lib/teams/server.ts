@@ -85,7 +85,7 @@ export async function loadWorkspaceTeams(workspaceId: string): Promise<{ teams: 
     return {
         schemaReady: true,
         services,
-        teams: (teamResult.data ?? []).flatMap((team) => (["admins", "maintenance", "custom"].includes(team.kind) ? [{
+        teams: (teamResult.data ?? []).flatMap((team) => (["admins", "maintenance", "custom", "relationship"].includes(team.kind) ? [{
             id: team.id,
             name: team.name,
             kind: team.kind as WorkspaceTeamKind,
@@ -118,7 +118,7 @@ export async function loadNativeCommunications(input: {
         people: peopleResult.people,
         formerPeople: [] as CommunicationPerson[],
         stickers: stickerResult.stickers,
-        teams,
+        teams: teams.filter((team) => team.memberIds.includes(input.currentUserId)),
         services,
         maintenanceCategories: MAINTENANCE_CATEGORIES.map((key) => ({ key, label: maintenanceCategoryLabel(key) })),
         canManageTeams: input.role === "owner" || input.role === "admin",

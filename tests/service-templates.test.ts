@@ -64,11 +64,12 @@ test("Services uses a compact Settings option list with popup editing", () => {
     assert.doesNotMatch(servicesUi, /<List|<MobileListActionSurface|<ListActionMenu/)
 })
 
-test("Services owns the centred Staff permissions editor", () => {
-    assert.match(servicesUi, />Staff permissions</)
+test("Teams owns the centred service fulfilment permissions editor", () => {
+    const teamUi = readFileSync("components/settings/WorkspaceTeamSettings.tsx", "utf8")
+    assert.match(teamUi, /Service fulfilment permissions/)
     assert.match(servicesUi, /STAFF_SERVICE_PERMISSION_OPTIONS\.map/)
-    assert.match(servicesUi, /Permissions from multiple assigned services add together\./)
+    assert.match(servicesUi, /Fulfilment permissions/)
     assert.match(servicesUi, /saveOnboardingServiceStaffPermissions/)
-    assert.match(servicesUi, /createPortal\(<ServiceStaffPermissionsEditor/)
+    assert.match(teamUi, /createPortal\(<ServiceStaffPermissionsEditor/)
     assert.match(servicesUi, /fixed inset-0[\s\S]*items-center justify-center/)
 })

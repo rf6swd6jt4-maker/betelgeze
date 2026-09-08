@@ -59,17 +59,15 @@ test("invitation failures stay inline instead of crashing Settings", () => {
     assert.match(settings, /<WorkspaceInvitationForm workspaceSlug=\{workspace\.slug\} action=\{inviteWorkspaceUser\.bind\(null, workspace\.slug\)\}/)
 })
 
-test("Staff invitations cannot be submitted without an assigned service", () => {
+test("Staff invitations are independent of service eligibility", () => {
     const form = source("components/admin/WorkspaceInvitationForm.tsx")
     const action = source("app/[workspaceSlug]/users/actions.ts")
-
-    assert.match(
-        form,
-        /const invitationDisabled = pending \|\| \(role === "staff" && selectedServiceIds\.size === 0\)/,
-    )
+    assert.match(form, /const invitationDisabled = pending/)
     assert.match(form, /disabled=\{invitationDisabled\}/)
-    assert.match(action, /requestedRole === "staff" && !serviceIds\.length/)
-    assert.match(action, /Choose at least one service for this Staff member\./)
+    assert.doesNotMatch(form, /selectedServiceIds/)
+    assert.doesNotMatch(action, /requestedRole === "staff" && !serviceIds\.length/)
+    const migration = source("supabase/migrations/20260909100000_client_delivery_teams.sql")
+    assert.match(migration, /drop trigger if exists workspace_memberships_require_staff_service/)
 })
 
 test("Add user is a lookup-first popup with account and pending invitation statuses", () => {

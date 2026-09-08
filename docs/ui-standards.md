@@ -478,3 +478,9 @@ Use `breakBefore` on a trend point when missing observations should interrupt th
 ## Workspace tab gestures
 
 Mobile tab swipes scroll the strip. A stationary 650ms press lifts a tab for reordering; movement before the hold completes cancels drag activation. Desktop reordering starts after a short horizontal drag. Both use the same lifted preview outside the strip's clipping area, with a 140ms upward lift and subtle scale. Reduced motion uses an immediate offset. Drop and cancellation remove the preview immediately; taps, tab closing, and renaming retain their existing behavior.
+
+## Operational responsibility controls
+
+Settings > Teams uses the shared `Assignee` treatment with compact Seller and Manager checkboxes. Service eligibility is secondary text; permission controls and maintenance routing expand on demand. Do not present workspace authority (Owner/Admin/Staff) as interchangeable with these positions.
+
+`DeliveryUserPicker` is the shared compact multi-user selector for service eligibility and optional client-chat participation. It uses `List` and `Assignee`, adds search for larger workspaces, and keeps the list height bounded. POS makes one selection per purchased service using a compact field. The client and internal group rosters use shared assignees; internal membership is read-only, while the client manager controls optional client-chat participants.

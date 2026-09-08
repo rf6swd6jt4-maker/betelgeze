@@ -19,7 +19,6 @@ export const DEFAULT_SERVICE_CAPABILITIES = [
 ] as const satisfies readonly WorkspaceCapability[]
 
 export const STAFF_SERVICE_PERMISSION_OPTIONS = [
-    { capability: "communications.manage", label: "Communications" },
     { capability: "onboarding.manage", label: "Onboarding" },
     { capability: "fulfilment.manage", label: "Fulfilment" },
     { capability: "appointment_setting.manage", label: "Appointment Setting" },

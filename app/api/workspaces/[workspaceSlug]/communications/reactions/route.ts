@@ -1,3 +1,4 @@
+import { clientConversationCanAccess } from "@/lib/communications/access"
 import { NextRequest } from "next/server"
 
 import { sendMetaWhatsAppReaction } from "@/lib/client-messages/meta-whatsapp"
@@ -30,6 +31,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
     const input = await request.json().catch(() => null) as { relationshipId?: unknown; messageId?: unknown; emoji?: unknown } | null
     const relationshipId = typeof input?.relationshipId === "string" ? input.relationshipId : ""
+    if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const messageId = typeof input?.messageId === "string" ? input.messageId : ""
     const emoji = typeof input?.emoji === "string" ? input.emoji.trim() : ""
     if (!UUID_PATTERN.test(relationshipId) || !UUID_PATTERN.test(messageId) || !validReactionEmoji(emoji)) {

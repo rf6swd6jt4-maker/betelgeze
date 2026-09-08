@@ -1,22 +1,74 @@
-import Link from "next/link"
-import { Assignee } from "@/components/ui/Assignee"
-import type { WorkspaceTeam } from "@/lib/teams/types"
+"use client"
+import { useState, useTransition } from "react"
+import { createPortal } from "react-dom"
+import { useRouter } from "next/navigation"
+import { Assignee, Status } from "@/components/ui"
+import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
+import { saveWorkspaceOperations, saveMaintenanceAssignments } from "@/app/[workspaceSlug]/settings/team-actions"
+import { ServiceStaffPermissionsEditor } from "@/components/settings/ServiceCatalogue"
+import type { WorkspaceOperations } from "@/lib/teams/operations"
+import type { WorkspaceCapability } from "@/lib/workspace-capabilities"
 
-export function WorkspaceTeamSettings({ workspaceSlug, teams, people, conversationIds, ownerCanEditMaintenance }: {
-    workspaceSlug: string
-    teams: WorkspaceTeam[]
-    people: Array<{ id: string; name: string; avatarSrc: string | null }>
-    conversationIds: Record<string, string>
-    ownerCanEditMaintenance: boolean
-}) {
-    const peopleById = new Map(people.map((person) => [person.id, person]))
-    const visible = teams.filter((team) => team.kind !== "custom" || !team.archivedAt)
-    return <div className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900">
-        {visible.map((team) => <section key={team.id} className="border-b border-neutral-800 p-4 last:border-0 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><h3 className="font-semibold text-white">{team.name}</h3><span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500">{team.kind === "custom" ? "Fulfilment" : "Required"}</span></div><p className="mt-1 text-sm text-neutral-500">{team.kind === "admins" ? "Membership follows owner and admin roles in Users." : team.kind === "maintenance" ? "Routes platform maintenance categories to responsible team members." : `${team.responsibilities.length} service responsibility${team.responsibilities.length === 1 ? "" : "ies"}.`}</p></div>{conversationIds[team.id] ? <Link href={`/${workspaceSlug}/communications?mode=team&nativeConversation=${conversationIds[team.id]}`} className="inline-flex h-9 items-center rounded-lg border border-neutral-700 px-3 text-xs text-neutral-200 hover:border-neutral-500">{team.kind === "maintenance" && ownerCanEditMaintenance ? "Open and edit" : "Open chat"}</Link> : null}</div>
-            <div className="mt-4 flex flex-wrap gap-2">{team.memberIds.map((userId) => { const person = peopleById.get(userId); return <Assignee key={userId} userId={userId} name={person?.name ?? "Workspace member"} avatarSrc={person?.avatarSrc ?? null} compact compactSize="md" /> })}</div>
-            {team.kind === "maintenance" && team.maintenanceResponsibilities.length ? <div className="mt-4 grid gap-2 sm:grid-cols-2">{team.maintenanceResponsibilities.map((responsibility) => <div key={responsibility.category} className="flex items-center justify-between gap-3 rounded-lg bg-neutral-950 px-3 py-2 text-xs"><span className="capitalize text-neutral-500">{responsibility.category.replace(/_/g, " ")}</span><span className="truncate text-neutral-200">{peopleById.get(responsibility.userId)?.name ?? "Workspace member"}</span></div>)}</div> : null}
-        </section>)}
-        <div className="p-4 text-sm text-neutral-500 sm:p-5">Create and manage fulfilment teams from the <Link href={`/${workspaceSlug}/communications?mode=team`} className="text-neutral-200 underline decoration-neutral-600 underline-offset-4">Communications Team tab</Link>.</div>
+const options: Array<{ capability: WorkspaceCapability; label: string }> = [
+    { capability: "relationships.view", label: "Relationships" }, { capability: "onboarding.manage", label: "Onboarding" }, { capability: "fulfilment.manage", label: "Fulfilment" },
+]
+export function WorkspaceTeamSettings({ workspaceSlug, operations, isOwner }: { workspaceSlug: string; operations: WorkspaceOperations; isOwner: boolean }) {
+    const router = useRouter()
+    const [maintenance, setMaintenance] = useState(Object.fromEntries(operations.maintenance.map((r) => [r.key,r.userId])))
+    const [people, setPeople] = useState(operations.people)
+    const [permissions, setPermissions] = useState(operations.permissions)
+    const [search, setSearch] = useState("")
+    const [serviceId, setServiceId] = useState<string | null>(null)
+    const [error, setError] = useState<string | null>(null)
+    const [saved, setSaved] = useState(false)
+    const [pending, startTransition] = useTransition()
+    const dirty = JSON.stringify(people) !== JSON.stringify(operations.people) || JSON.stringify(permissions) !== JSON.stringify(operations.permissions)
+    const service = operations.services.find((s) => s.id === serviceId)
+    const portalTarget = typeof window !== "undefined" ? window.parent.document.body : null
+    function save() {
+        setError(null); setSaved(false)
+        startTransition(async () => {
+            const result = await saveWorkspaceOperations(workspaceSlug, people.map((p) => ({ userId: p.id, canSell: p.canSell, canManage: p.canManage })), permissions)
+            if (!result.ok) { setError(result.error); return }
+            setSaved(true); router.refresh()
+        })
+    }
+    return <div>
+        <div className="flex flex-wrap items-center gap-3">
+            <p className="min-w-0 flex-1 text-sm text-neutral-500">Choose who can sell and manage clients. Assemble each client’s team during POS.</p>
+            <button type="button" disabled={pending || !dirty} onClick={save} className="h-9 rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-40">{pending ? "Saving…" : "Save roles"}</button>
+        </div>
+        {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error}</p> : saved ? <div className="mt-3" role="status"><Status label="Saved" tone="green" /></div> : null}
+        {people.length > 6 ? <input aria-label="Find workspace member" placeholder="Find a person…" value={search} onChange={(e) => setSearch(e.target.value)} className="mt-4 h-9 w-full max-w-sm rounded-lg border border-neutral-700 bg-black px-3 text-sm" /> : null}
+        <List ariaLabel="Operational roles" className="!mt-3">
+            {people.filter((p) => p.name.toLowerCase().includes(search.toLowerCase())).map((person) => <ListItem key={person.id}>
+                <ListPrimaryRow className="!flex-wrap !whitespace-normal !border-0 !py-2">
+                    <div className="min-w-0 flex-1"><Assignee userId={person.id} name={person.name} avatarSrc={person.avatarSrc} /><p className="mt-1 truncate text-xs text-neutral-500">{operations.eligible.filter((e) => e.user_id === person.id).map((e) => operations.services.find((s) => s.id === e.service_id)?.name).filter(Boolean).join(" · ") || "No service eligibility selected"}</p></div>
+                    {([['canSell', 'Seller'], ['canManage', 'Manager']] as const).map(([key,label]) => <label key={key} className="flex min-h-8 cursor-pointer items-center gap-2 text-sm text-neutral-300"><input aria-label={`${label}: ${person.name}`} type="checkbox" disabled={pending} checked={person[key]} onChange={(e) => { setSaved(false); setPeople((all) => all.map((p) => p.id === person.id ? { ...p, [key]: e.target.checked } : p)) }} className="h-4 w-4 accent-white" />{label}</label>)}
+                </ListPrimaryRow>
+            </ListItem>)}
+        </List>
+        <details className="mt-4 border-t border-neutral-800 pt-3">
+            <summary className="cursor-pointer text-sm text-neutral-300">Position permissions</summary>
+            <p className="mt-2 text-xs leading-5 text-neutral-500">Applies to assigned clients. Team chat is available to every member; client chat requires participation.</p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">{(['seller','manager'] as const).map((position) => <fieldset key={position}>
+                <legend className="mb-2 text-sm font-medium capitalize">{position}</legend>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">{options.map((option) => <label key={option.capability} className="flex items-center gap-2 text-sm text-neutral-400"><input type="checkbox" disabled={pending} checked={(permissions[position] ?? []).includes(option.capability)} onChange={(e) => { setSaved(false); setPermissions((all) => ({ ...all, [position]: e.target.checked ? [...(all[position] ?? []), option.capability] : (all[position] ?? []).filter((c) => c !== option.capability) })) }} className="h-4 w-4 accent-white" />{option.label}</label>)}</div>
+            </fieldset>)}</div>
+        </details>
+        <details className="mt-4 border-t border-neutral-800 pt-3">
+            <summary className="cursor-pointer text-sm text-neutral-300">Service fulfilment permissions</summary>
+            <List ariaLabel="Service permissions" className="!mt-3">{operations.services.map((item) => <ListItem key={item.id}>
+                <ListPrimaryRow><ListTitle className="flex-1">{item.name}</ListTitle><button type="button" onClick={() => setServiceId(item.id)} className="h-8 px-2 text-xs text-neutral-400 hover:text-white">Edit permissions</button></ListPrimaryRow>
+                <ListSecondaryRow><span className="truncate text-xs text-neutral-500">{(operations.servicePermissions[item.id] ?? []).filter((c) => c !== 'communications.manage').map((c) => c.split('.')[0].replaceAll('_',' ')).join(' · ') || 'No delivery panels enabled'}</span></ListSecondaryRow>
+            </ListItem>)}</List>
+        </details>
+        <details className="mt-4 border-t border-neutral-800 pt-3">
+            <summary className="cursor-pointer text-sm text-neutral-300">Maintenance responsibility</summary>
+            <p className="mt-2 text-xs leading-5 text-neutral-500">Route platform issues to the right person. Membership of the Maintenance group follows these assignments.</p>
+            <List ariaLabel="Maintenance responsibility" className="!mt-3">{operations.maintenance.map((route) => <ListItem key={route.key}><ListPrimaryRow className="!flex-wrap !whitespace-normal"><ListTitle className="flex-1">{route.label}</ListTitle><select aria-label={`${route.label} responsible person`} disabled={!isOwner || pending} value={maintenance[route.key]} onChange={(e) => setMaintenance((all) => ({ ...all, [route.key]: e.target.value }))} className="h-8 max-w-48 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-xs text-neutral-300"><option value="">Choose person</option>{people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></ListPrimaryRow></ListItem>)}</List>
+            {isOwner ? <div className="mt-3 flex justify-end"><button type="button" disabled={pending || operations.maintenance.every((r) => maintenance[r.key] === r.userId)} onClick={() => { setError(null); setSaved(false); startTransition(async () => { const result = await saveMaintenanceAssignments(workspaceSlug,maintenance); if (!result.ok) setError(result.error); else { setSaved(true); router.refresh() } }) }} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-40">Save maintenance</button></div> : null}
+        </details>
+        {service && portalTarget ? createPortal(<ServiceStaffPermissionsEditor workspaceSlug={workspaceSlug} service={service} initialPermissions={operations.servicePermissions[service.id] ?? []} onClose={() => setServiceId(null)} />,portalTarget) : null}
     </div>
 }

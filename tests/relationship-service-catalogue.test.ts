@@ -247,7 +247,7 @@ test("commercial save persists exact identities and dual negotiated prices", () 
     assert.doesNotMatch(detail, /Object\.entries\(SERVICES\)/)
 })
 
-test("relationship selling uses the visible details workspace and three-stage review", () => {
+test("relationship selling uses the visible details workspace and four-stage review with client team selection", () => {
     const detail = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/page.tsx", "utf8")
     const workspace = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/RelationshipDealWorkspace.tsx", "utf8")
     const gantt = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/RelationshipGantt.tsx", "utf8")
@@ -263,6 +263,7 @@ test("relationship selling uses the visible details workspace and three-stage re
         "Services",
         "Description",
         "Review Relationship Information",
+        "Assemble Client Team",
         "Review Onboarding",
         "Pricing",
         "Sell client",
@@ -297,7 +298,7 @@ test("relationship selling uses the visible details workspace and three-stage re
     assert.doesNotMatch(workspace, /service_assignee_/)
     assert.match(gantt, /onInvoiceRequest\(\)/)
     assert.match(gantt, /currentWork\.action === "sell_client" \? "Sell client"/)
-    assert.match(readFileSync("app/[workspaceSlug]/relationships/actions.ts", "utf8"), /existing\?\.assignee_user_id \?\? service\?\.defaultAssigneeId/)
+    assert.match(readFileSync("app/[workspaceSlug]/relationships/actions.ts", "utf8"), /assignee_user_id: nullableFormString\(formData, `service_assignee_/)
     assert.doesNotMatch(workflow, /createAndSendStripeInvoice|sendRecurringCheckoutRequest/)
     assert.match(workflow, /kind: "checkout" as const/)
 })

@@ -73,7 +73,6 @@ test("Appointment Setting activates only for a non-archived template service and
 
 test("Staff permissions from multiple assigned services add together", () => {
     assert.deepEqual(STAFF_SERVICE_PERMISSION_OPTIONS.map((option) => option.label), [
-        "Communications",
         "Onboarding",
         "Fulfilment",
         "Appointment Setting",

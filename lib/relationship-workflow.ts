@@ -346,13 +346,7 @@ async function serviceRows(workspaceId: string, relationshipId: string) {
         .eq("workspace_id", workspaceId).eq("relationship_id", relationshipId)
         .order("created_at")
     if (!result.error) {
-        const rows = result.data ?? []
-        const { data: relationship } = await supabaseAdmin.from("relationships").select("fulfilment_team_id").eq("workspace_id", workspaceId).eq("id", relationshipId).maybeSingle()
-        if (!relationship?.fulfilment_team_id) return rows
-        const { data: responsibilities, error } = await supabaseAdmin.from("workspace_team_service_responsibilities").select("service_id, responsible_user_id").eq("workspace_id", workspaceId).eq("team_id", relationship.fulfilment_team_id)
-        if (error) throw new Error(error.message)
-        const assigneeByService = new Map((responsibilities ?? []).map((item) => [item.service_id, item.responsible_user_id]))
-        return rows.map((service) => ({ ...service, assignee_user_id: service.service_id ? assigneeByService.get(service.service_id) ?? null : null }))
+        return result.data ?? []
     }
     if (result.error.code !== "42703" && !result.error.message.toLowerCase().includes("schema cache")) {
         throw new Error(result.error.message)
@@ -646,6 +640,8 @@ export async function prepareRelationshipSale(input: {
     billingInterval?: StripeRecurringInterval
     billingIntervalCount?: number
 }) {
+    const { error: teamError } = await supabaseAdmin.rpc("validate_relationship_delivery_team", { p_workspace_id: input.workspaceId, p_relationship_id: input.relationshipId })
+    if (teamError) throw new Error(teamError.message)
     void input.workItemId
     const { data: relationship, error: relationshipError } = await supabaseAdmin.from("relationships")
         .select("primary_person_name, primary_email, primary_phone, whatsapp_phone, communication_primary_provider, communication_delivery_mode, business_name, project_timeframe_days")

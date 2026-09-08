@@ -274,7 +274,7 @@ test("all configuration Server Actions re-authorize admins and use transactional
     assert.match(builderActions, /publish_onboarding_module/)
     assert.match(builderActions, /record_onboarding_preview_revoked/)
     assert.doesNotMatch(builderActions, /from\("onboarding_preview_tokens"\)\.update/)
-    assert.match(serviceActions, /save_onboarding_service_revision/)
+    assert.match(serviceActions, /save_onboarding_service_with_delivery/)
     assert.match(onboardingActions, /publish_onboarding_configuration/)
     assert.match(onboardingActions, /save_published_onboarding_help/)
     assert.match(brandingActions, /save_onboarding_theme_draft/)

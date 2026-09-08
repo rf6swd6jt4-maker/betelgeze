@@ -1,3 +1,4 @@
+import { clientConversationCanAccess } from "@/lib/communications/access"
 import { getCurrentUser } from "@/lib/workspaces"
 import { assertNativeConversationAccess } from "@/lib/teams/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     const { data: membership } = await supabaseAdmin.from("workspace_memberships").select("user_id").eq("workspace_id", workspaceId).eq("user_id", user.id).maybeSingle()
     if (!membership) return Response.json({ error: "Workspace not found." }, { status: 404 })
     const canRead = conversationKind === "client"
-        ? Boolean((await supabaseAdmin.from("relationships").select("id").eq("workspace_id", workspaceId).eq("id", conversationId).maybeSingle()).data)
+        ? await clientConversationCanAccess(workspaceId, conversationId, user.id)
         : Boolean(await assertNativeConversationAccess(conversationId, user.id, "read"))
     if (!canRead) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const staleBefore = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()

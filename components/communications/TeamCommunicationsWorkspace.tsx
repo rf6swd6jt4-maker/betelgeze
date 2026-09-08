@@ -1,5 +1,6 @@
 "use client"
 
+import { useRosterDialog } from "@/components/communications/useRosterDialog"
 import { chatCheckboxBody } from "@/lib/chat-formatting"
 import { MessageQuoteSelection } from "@/components/communications/MessageQuoteSelection"
 import { messageQuoteFromValue, resolveMessageQuote, type MessageQuote } from "@/lib/communications/message-quotes"
@@ -40,7 +41,8 @@ import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { openWorkspaceMemberProfile } from "@/lib/workspace-member-profile"
 import type { CommunicationAttachment, CommunicationSticker } from "@/lib/communications/types"
 import { nativeConversationUnreadCount } from "@/lib/communications/unread"
-import { activeTeamServiceAssignments } from "@/lib/teams/service-assignments"
+import { Assignee } from "@/components/ui"
+import { List, ListItem } from "@/components/list/List"
 import { nativeMessageCanEdit } from "@/lib/teams/message-editing"
 import type { NativeCommunicationsBootstrap, NativeConversation, NativeMessage, NativeReaction, NativeReadCursor, WorkspaceTeam } from "@/lib/teams/types"
 import { closeWorkspaceComposer } from "@/lib/workspace-composer-viewport"
@@ -98,57 +100,15 @@ function TeamAvatar({ conversation, currentUserId }: { conversation: NativeConve
     return <span role="button" tabIndex={0} aria-label={`Open ${conversation.title} profile`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (profileUserId) openWorkspaceMemberProfile(profileUserId) }} onKeyDown={(event) => { if ((event.key === "Enter" || event.key === " ") && profileUserId) { event.preventDefault(); event.stopPropagation(); openWorkspaceMemberProfile(profileUserId) } }} className="h-11 w-11 shrink-0 overflow-hidden rounded-full outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"><Avatar src={conversation.avatarSrc} name={conversation.title} className="h-full w-full" /></span>
 }
 
-function TeamEditor({ bootstrap, team, onClose, onSaved }: { bootstrap: NativeCommunicationsBootstrap; team: WorkspaceTeam | null | undefined; onClose: () => void; onSaved: () => Promise<void> }) {
-    const creating = team === null
-    const selected = team ?? { id: "", name: "", kind: "custom" as const, archivedAt: null, memberIds: [], responsibilities: [], maintenanceResponsibilities: [] }
-    const editable = creating ? bootstrap.canManageTeams : selected.kind === "custom" ? bootstrap.canManageTeams && !selected.archivedAt : selected.kind === "maintenance" ? bootstrap.isOwner : false
-    const [name, setName] = useState(selected.name)
-    const [memberIds, setMemberIds] = useState(selected.memberIds)
-    const [responsibilities, setResponsibilities] = useState<Record<string, string>>(() => Object.fromEntries(selected.responsibilities.map((item) => [item.serviceId, item.userId])))
-    const [maintenance, setMaintenance] = useState<Record<string, string>>(() => Object.fromEntries(selected.maintenanceResponsibilities.map((item) => [item.category, item.userId])))
-    const [pending, setPending] = useState(false)
-    const [error, setError] = useState<string | null>(null)
-    const peopleById = new Map(bootstrap.people.map((person) => [person.id, person]))
-    const responsibilitiesComplete = selected.kind !== "custom" || bootstrap.services.every((service) => responsibilities[service.id] && memberIds.includes(responsibilities[service.id]))
-    const maintenanceComplete = selected.kind !== "maintenance" || bootstrap.maintenanceCategories.every((category) => maintenance[category.key] && memberIds.includes(maintenance[category.key]))
-
-    function toggleMember(userId: string) {
-        if (!editable) return
-        setMemberIds((current) => current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId])
-    }
-
-    async function save() {
-        if (!editable || pending) return
-        setPending(true); setError(null)
-        const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/teams`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: creating ? "create" : "update", teamId: selected.id, name, memberIds, responsibilities: activeTeamServiceAssignments(bootstrap.services, responsibilities, memberIds), maintenanceResponsibilities: Object.entries(maintenance).filter(([, userId]) => memberIds.includes(userId)).map(([category, userId]) => ({ category, userId })) }) })
-        const result = await response.json().catch(() => null) as { error?: string } | null
-        if (!response.ok) { setError(result?.error ?? "Could not save team."); setPending(false); return }
-        await onSaved(); onClose()
-    }
-
-    async function archive() {
-        if (!team || team.kind !== "custom" || !bootstrap.canManageTeams || pending) return
-        setPending(true); setError(null)
-        const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/teams`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "archive", teamId: team.id, memberIds: team.memberIds }) })
-        const result = await response.json().catch(() => null) as { error?: string } | null
-        if (!response.ok) { setError(result?.error ?? "Could not archive team."); setPending(false); return }
-        await onSaved(); onClose()
-    }
-
-    return <div role="dialog" aria-modal="true" aria-labelledby="team-editor-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }} className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-sm">
-        <div className="betelgeze-popup-enter max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-950 text-white shadow-2xl">
-            <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-neutral-800 bg-neutral-950 px-5 py-4"><div><p className="text-xs uppercase tracking-wide text-neutral-500">{creating ? "New team" : selected.kind === "admins" ? "Required team" : selected.kind === "maintenance" ? "Maintenance routing" : selected.archivedAt ? "Archived team" : "Team settings"}</p><h2 id="team-editor-title" className="mt-1 text-xl font-semibold">{creating ? "Create team" : selected.name}</h2></div><button type="button" onClick={onClose} className="h-9 w-9 rounded-full text-xl text-neutral-500 hover:bg-neutral-900 hover:text-white">×</button></header>
-            <div className="space-y-6 p-5">
-                {selected.kind === "admins" ? <p className="rounded-xl border border-neutral-800 bg-black px-4 py-3 text-sm leading-6 text-neutral-400">Admins membership is synchronized from workspace roles. Add or remove admins in Settings → Users.</p> : null}
-                {selected.archivedAt ? <p className="rounded-xl border border-neutral-800 bg-black px-4 py-3 text-sm text-neutral-400">This archived team and its conversation are read-only.</p> : null}
-                {selected.kind === "custom" ? <label className="block text-sm text-neutral-300">Team name<input value={name} onChange={(event) => setName(event.target.value)} disabled={!editable} maxLength={80} className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white disabled:opacity-60" /></label> : null}
-                <section><h3 className="text-sm font-semibold">Members</h3><div className="mt-3 grid gap-2 sm:grid-cols-2">{bootstrap.people.map((person) => { const checked = memberIds.includes(person.id); return <button key={person.id} type="button" disabled={!editable} onClick={() => toggleMember(person.id)} className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 text-left ${checked ? "border-neutral-600 bg-neutral-900" : "border-neutral-800 bg-black"} disabled:cursor-default`}><span role="button" tabIndex={0} aria-label={`Open ${person.name} profile`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); openWorkspaceMemberProfile(person.id) }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); openWorkspaceMemberProfile(person.id) } }} className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"><Avatar src={person.avatarSrc} name={person.name} className="h-8 w-8" /></span><span className="min-w-0 flex-1 truncate text-sm">{person.name}</span><span className={checked ? "text-emerald-400" : "text-neutral-700"}>{checked ? "✓" : "○"}</span></button> })}</div></section>
-                {selected.kind === "custom" ? <section><h3 className="text-sm font-semibold">Service responsibilities</h3><p className="mt-1 text-xs leading-5 text-neutral-500">Map every active service to exactly one selected member. New work always uses the team’s current map.</p><div className="mt-3 space-y-2">{bootstrap.services.map((service) => <label key={service.id} className="grid items-center gap-2 rounded-xl border border-neutral-800 bg-black px-3 py-2 sm:grid-cols-[minmax(0,1fr)_14rem]"><span className="truncate text-sm text-neutral-300">{service.name}</span><select disabled={!editable} value={responsibilities[service.id] ?? ""} onChange={(event) => setResponsibilities((current) => ({ ...current, [service.id]: event.target.value }))} className="h-9 rounded-lg border border-neutral-700 bg-neutral-950 px-2 text-sm"><option value="">Choose member</option>{memberIds.map((id) => <option key={id} value={id}>{peopleById.get(id)?.name ?? "Member"}</option>)}</select></label>)}</div></section> : null}
-                {selected.kind === "maintenance" ? <section><h3 className="text-sm font-semibold">Category responsibilities</h3><p className="mt-1 text-xs leading-5 text-neutral-500">Every category has one responsible Maintenance member while the whole team retains the shared chat.</p><div className="mt-3 space-y-2">{bootstrap.maintenanceCategories.map((category) => <label key={category.key} className="grid items-center gap-2 rounded-xl border border-neutral-800 bg-black px-3 py-2 sm:grid-cols-[minmax(0,1fr)_14rem]"><span className="truncate text-sm text-neutral-300">{category.label}</span><select disabled={!editable} value={maintenance[category.key] ?? ""} onChange={(event) => setMaintenance((current) => ({ ...current, [category.key]: event.target.value }))} className="h-9 rounded-lg border border-neutral-700 bg-neutral-950 px-2 text-sm"><option value="">Choose member</option>{memberIds.map((id) => <option key={id} value={id}>{peopleById.get(id)?.name ?? "Member"}</option>)}</select></label>)}</div></section> : null}
-                {error ? <p className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-300">{error}</p> : null}
-                {editable ? <div className="flex items-center justify-between gap-3 border-t border-neutral-800 pt-4">{team?.kind === "custom" ? <button type="button" onClick={() => void archive()} disabled={pending} className="h-10 rounded-lg px-3 text-sm text-red-300 hover:bg-red-500/10">Archive team</button> : <span />}<button type="button" onClick={() => void save()} disabled={pending || !name.trim() || !memberIds.length || !responsibilitiesComplete || !maintenanceComplete} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">{pending ? "Saving…" : creating ? "Create team" : "Save team"}</button></div> : null}
-            </div>
-        </div>
+function TeamEditor({ bootstrap, team, onClose }: { bootstrap: NativeCommunicationsBootstrap; team: WorkspaceTeam | null | undefined; onClose: () => void; onSaved: () => Promise<void> }) {
+    const dialogRef = useRosterDialog(Boolean(team), onClose)
+    if (!team) return null
+    return <div role="dialog" aria-modal="true" aria-labelledby="team-roster-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }} className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 p-4">
+        <section ref={dialogRef} className="betelgeze-popup-enter max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-neutral-700 bg-neutral-950 p-4">
+            <header className="flex items-center gap-3"><h2 id="team-roster-title" className="min-w-0 flex-1 truncate text-lg font-semibold">{team.name}</h2><button type="button" onClick={onClose} aria-label="Close team members" className="h-9 w-9 text-xl text-neutral-500">×</button></header>
+            <List ariaLabel="Conversation members" className="!mt-3">{team.memberIds.map((id) => { const person = bootstrap.people.find((p) => p.id === id); return <ListItem key={id} className="px-3 py-2"><Assignee userId={id} name={person?.name ?? "Former member"} avatarSrc={person?.avatarSrc} /></ListItem> })}</List>
+            <p className="mt-3 text-xs leading-5 text-neutral-500">{team.kind === "relationship" ? "This team was assembled during POS. Membership follows the client’s delivery assignments." : team.kind === "custom" ? "This existing group is read-only. New client teams are assembled during POS." : "Group membership is managed through workspace settings."}</p>
+        </section>
     </div>
 }
 
@@ -755,9 +715,9 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         <ResizableConversationColumns listWidth={conversationListWidth} onListWidthChange={onConversationListWidthChange}>
             <aside className={`${selected ? "hidden lg:flex" : "flex"} min-h-0 flex-col border-r border-neutral-800 bg-neutral-950`}>
                 <div className="shrink-0 border-b border-neutral-800 p-3">
-                    <div className="flex items-center gap-1"><div role="tablist" className="flex items-center gap-1"><button type="button" role="tab" aria-selected="false" onClick={onOpenClients} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-medium text-neutral-400 hover:bg-neutral-900 hover:text-white">Clients<UnreadMessageCount count={clientUnreadCount ?? 0} label="unread Client messages" /></button><button type="button" role="tab" aria-selected="true" className="inline-flex h-8 items-center rounded-lg bg-neutral-800 px-3 text-xs font-semibold text-white">Team</button></div><span className="ml-auto"><CommunicationsConnectionStatus state={connection.state} error={connection.error} /></span>{bootstrap.canManageTeams ? <button type="button" onClick={() => setEditingTeam(null)} aria-label="Create team" title="Create team" className="inline-flex h-8 w-8 items-center justify-center rounded-full text-xl text-neutral-400 hover:bg-neutral-900 hover:text-white">+</button> : null}</div>
+                    <div className="flex items-center gap-1"><div role="tablist" className="flex items-center gap-1"><button type="button" role="tab" aria-selected="false" onClick={onOpenClients} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-medium text-neutral-400 hover:bg-neutral-900 hover:text-white">Clients<UnreadMessageCount count={clientUnreadCount ?? 0} label="unread Client messages" /></button><button type="button" role="tab" aria-selected="true" className="inline-flex h-8 items-center rounded-lg bg-neutral-800 px-3 text-xs font-semibold text-white">Team</button></div><span className="ml-auto"><CommunicationsConnectionStatus state={connection.state} error={connection.error} /></span></div>
                     <label className="relative mt-3 block"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"><SearchIcon /></span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search team conversations" className="h-10 w-full rounded-lg border border-neutral-800 bg-black pl-9 pr-3 text-sm outline-none placeholder:text-neutral-600" /></label>
-                    {bootstrap.canManageTeams && teams.some((team) => team.archivedAt) ? <button type="button" onClick={() => { setShowArchived((value) => !value); setSelectedId(null) }} className={`mt-2 text-[11px] ${showArchived ? "text-white" : "text-neutral-500"}`}>{showArchived ? "← Active conversations" : "View archived teams"}</button> : null}
+                    {bootstrap.canManageTeams && teams.some((team) => team.archivedAt) ? <button type="button" onClick={() => { setShowArchived((value) => !value); setSelectedId(null) }} className={`mt-2 text-[11px] ${showArchived ? "text-white" : "text-neutral-500"}`}>{showArchived ? "← Active conversations" : "View archived groups"}</button> : null}
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto">{visible.length ? visible.map((conversation) => {
                     const latest = conversation.messages.at(-1)
@@ -773,7 +733,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 {selected ? <>
                     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-neutral-800 bg-neutral-950 px-3 sm:px-4">
                         <button type="button" onClick={() => selectConversation(null)} aria-label="Back to team conversations" className="inline-flex h-10 w-10 shrink-0 items-center justify-center text-neutral-400 lg:hidden"><BackIcon /></button>
-                        <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (selected.kind === "direct") openWorkspaceMemberProfile(selected.memberIds.find((id) => id !== bootstrap.currentUser.id) ?? bootstrap.currentUser.id); else if (currentTeam) setEditingTeam(currentTeam) }} aria-label={selected.kind === "direct" ? `Open ${selected.title} profile` : `Open ${selected.title} settings`} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-600">
+                        <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (selected.kind === "direct") openWorkspaceMemberProfile(selected.memberIds.find((id) => id !== bootstrap.currentUser.id) ?? bootstrap.currentUser.id); else if (currentTeam) setEditingTeam(currentTeam) }} aria-label={selected.kind === "direct" ? `Open ${selected.title} profile` : `View ${selected.title} members`} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-600">
                             <span className="h-9 w-9 shrink-0 overflow-hidden rounded-full">{selected.kind === "direct" ? <Avatar src={selected.avatarSrc} name={selected.title} className="h-full w-full" /> : <span className="flex h-full w-full items-center justify-center rounded-full bg-neutral-800"><TeamIcon /></span>}</span>
                             <span className="min-w-0"><span className="block truncate text-sm font-semibold">{selected.title}</span><span className="block truncate text-[11px] text-neutral-600">{selected.archived ? "Archived · read-only" : selected.subtitle}</span></span>
                         </button>

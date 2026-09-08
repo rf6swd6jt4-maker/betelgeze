@@ -49,7 +49,7 @@ test("chat push delivery is suppressed only for the exact visible live conversat
     assert.match(delivery, /eq\("connection_live", true\)/)
     assert.match(delivery, /workspace_native_conversation_participants/)
     assert.match(delivery, /userId !== input\.senderUserId/)
-    assert.match(delivery, /workspace_memberships/)
+    assert.match(delivery, /clientConversationParticipants/)
     assert.match(delivery, /workspace_native_messages/)
     assert.match(delivery, /client_messages/)
     assert.match(delivery, /primary_person_name, business_name/)

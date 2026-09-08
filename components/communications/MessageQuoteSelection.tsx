@@ -1,23 +1,25 @@
 "use client"
 
-import { useEffect, useState, type RefObject } from "react"
+import { useEffect, type RefObject } from "react"
 import { selectedMessageQuote, type MessageQuote } from "@/lib/communications/message-quotes"
 
-export function MessageQuoteSelection({ messageId, body, paneRef, onConfirm, onCancel }: {
+export function MessageQuoteSelection({ messageId, body, paneRef, onChange, onCancel }: {
     messageId: string
     body: string
     paneRef: RefObject<HTMLDivElement | null>
-    onConfirm: (quote: MessageQuote) => void
+    onChange: (messageId: string, quote: MessageQuote | null) => void
     onCancel: () => void
 }) {
-    const [quote, setQuote] = useState<MessageQuote | null>(null)
     useEffect(() => {
         const root = paneRef.current?.querySelector<HTMLElement>(`[data-message-interaction="${CSS.escape(messageId)}"] [data-chat-message-text]`)
         if (!root) return
         const doc = root.ownerDocument
-        doc.getSelection()?.removeAllRanges()
-        root.focus({ preventScroll: true })
-        const update = () => setQuote(selectedMessageQuote(root, body))
+        // Selection in the composer must not erase the passage already chosen.
+        const update = () => {
+            const selection = doc.getSelection()
+            if (!selection || (!root.contains(selection.anchorNode) && !root.contains(selection.focusNode))) return
+            onChange(messageId, selectedMessageQuote(root, body))
+        }
         const keydown = (event: KeyboardEvent) => {
             if (event.key === "Escape") { event.preventDefault(); onCancel(); return }
             if (event.target !== root) return
@@ -43,12 +45,9 @@ export function MessageQuoteSelection({ messageId, body, paneRef, onConfirm, onC
         return () => {
             doc.removeEventListener("selectionchange", update)
             doc.removeEventListener("keydown", keydown)
-            doc.getSelection()?.removeAllRanges()
+            const selection = doc.getSelection()
+            if (selection && (root.contains(selection.anchorNode) || root.contains(selection.focusNode))) selection.removeAllRanges()
         }
-    }, [body, messageId, onCancel, paneRef])
-    return <div className="mx-auto flex max-w-3xl items-center gap-3 text-xs" data-message-control>
-        <span className="min-w-0 flex-1" role="status">{quote ? <span className="line-clamp-2 whitespace-pre-wrap">“{quote.text}”</span> : "Highlight the text you want to quote."}</span>
-        <button type="button" onPointerDown={(event) => event.preventDefault()} onClick={onCancel} className="shrink-0 px-2 py-2 text-neutral-400 hover:text-white">Cancel</button>
-        <button type="button" onPointerDown={(event) => event.preventDefault()} disabled={!quote} onClick={() => { if (quote) onConfirm(quote) }} className="shrink-0 rounded-lg bg-white px-3 py-2 font-semibold text-black disabled:opacity-30">Quote selection</button>
-    </div>
+    }, [body, messageId, onCancel, onChange, paneRef])
+    return null
 }

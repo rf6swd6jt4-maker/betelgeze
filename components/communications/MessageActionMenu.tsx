@@ -52,8 +52,8 @@ export async function downloadMessageAttachment(url: string, fileName: string) {
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000)
 }
 
-function ActionButton({ label, onClick, children, danger = false, disabled = false, pressed }: { label: string; onClick: () => void; children: ReactNode; danger?: boolean; disabled?: boolean; pressed?: boolean }) {
-    return <button data-icon-button type="button" onClick={onClick} disabled={disabled} aria-label={label} aria-pressed={pressed} className={`${ACTION_BUTTON_CLASS} disabled:cursor-default disabled:hover:bg-transparent ${danger ? "text-red-500 hover:bg-red-500/10 hover:text-red-400" : ""}`}>{children}</button>
+function ActionButton({ label, onClick, children, tooltip, danger = false, disabled = false, pressed }: { label: string; onClick: () => void; children: ReactNode; tooltip?: string; danger?: boolean; disabled?: boolean; pressed?: boolean }) {
+    return <button data-icon-button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={tooltip} aria-pressed={pressed} className={`${ACTION_BUTTON_CLASS} disabled:cursor-default disabled:hover:bg-transparent ${danger ? "text-red-500 hover:bg-red-500/10 hover:text-red-400" : ""}`}>{children}</button>
 }
 
 export function PrimaryMessageActions({ onDelete, onEdit, onSave, saveLabel = "Save attachment", saveDisabled = false, saveActive = false, onReply, onQuote, onCopy, onPin, onReact, pinned }: {
@@ -74,8 +74,8 @@ export function PrimaryMessageActions({ onDelete, onEdit, onSave, saveLabel = "S
         {onDelete ? <ActionButton label="Delete message" onClick={onDelete} danger><DeleteIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
         {onEdit ? <ActionButton label="Edit message" onClick={onEdit}><EditIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
         {onSave ? <ActionButton label={saveLabel} onClick={onSave} disabled={saveDisabled} pressed={saveActive}><SaveIcon className={`h-5 w-5 lg:h-4 lg:w-4 ${saveActive ? "text-emerald-400" : ""}`} /></ActionButton> : null}
-        {onReply ? <ActionButton label="Reply" onClick={onReply}><ReplyIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
-        {onQuote ? <ActionButton label="Quote" onClick={onQuote}><span aria-hidden="true" className="text-2xl leading-none">“</span></ActionButton> : null}
+        {onReply && !onQuote ? <ActionButton label="Reply" onClick={onReply}><ReplyIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
+        {onQuote ? <ActionButton label="Quote" tooltip="Reply to the whole message, or highlight text to quote a passage" onClick={onQuote}><ReplyIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
         <ActionButton label="Copy message" onClick={onCopy}><CopyIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton>
         {onPin ? <ActionButton label={pinned ? "Unpin message" : "Pin message"} onClick={onPin} pressed={pinned}><PinIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
         {onReact ? <ActionButton label="React to message" onClick={onReact}><ReactIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}

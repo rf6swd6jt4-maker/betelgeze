@@ -123,3 +123,61 @@ test("quotes remain encrypted and native-only across persistence and shared acti
     const clients = readFileSync("components/communications/CommunicationsWorkspace.tsx", "utf8")
     assert.doesNotMatch(clients, /onQuote=|MessageQuoteSelection/)
 })
+
+test("live quoting preserves the selected passage while composing and resets only in the source", () => {
+    const listeners = new Map<string, (event?: unknown) => void>()
+    const sourceNode = {}, composerNode = {}
+    const selection = { anchorNode: composerNode as object | null, focusNode: composerNode as object | null, removeAllRanges() { this.anchorNode = null; this.focusNode = null } }
+    const doc = { getSelection: () => selection, addEventListener: (name: string, callback: () => void) => listeners.set(name, callback), removeEventListener: (name: string) => listeners.delete(name) }
+    const root = { ownerDocument: doc, contains: (node: unknown) => node === sourceNode }
+    let cleanup: (() => void) | undefined
+    let chosen: { text: string; start: number; end: number } | null = { text: "two", start: 4, end: 7 }
+    const previousCSS = Object.getOwnPropertyDescriptor(globalThis, "CSS")
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: { escape: (text: string) => text } })
+    try {
+        const { MessageQuoteSelection } = load("components/communications/MessageQuoteSelection.tsx", {
+            react: { useEffect: (effect: () => () => void) => { cleanup = effect() } },
+            "@/lib/communications/message-quotes": { selectedMessageQuote: () => chosen },
+        })
+        const updates: unknown[] = []
+        let cancelled = false
+        assert.equal(MessageQuoteSelection({ messageId, body: "one two three", paneRef: { current: { querySelector: () => root } }, onChange: (id: string, quote: unknown) => updates.push({ id, quote }), onCancel: () => { cancelled = true } }), null)
+        assert.equal(selection.anchorNode, composerNode, "starting a reply must not disturb the composer caret")
+        selection.anchorNode = sourceNode; selection.focusNode = sourceNode
+        listeners.get("selectionchange")!()
+        assert.deepEqual(updates, [{ id: messageId, quote: chosen }])
+        selection.anchorNode = composerNode; selection.focusNode = composerNode
+        chosen = null
+        listeners.get("selectionchange")!()
+        assert.equal(updates.length, 1, "typing must preserve the chosen passage")
+        selection.anchorNode = sourceNode; selection.focusNode = sourceNode
+        listeners.get("selectionchange")!()
+        assert.deepEqual(updates[1], { id: messageId, quote: null }, "clearing the source selection restores a whole-message reply")
+        listeners.get("keydown")!({ key: "Escape", preventDefault() {} })
+        assert.equal(cancelled, true)
+        selection.anchorNode = composerNode; selection.focusNode = composerNode
+        cleanup!()
+        assert.equal(selection.anchorNode, composerNode, "sending or cancelling must preserve the draft caret")
+        assert.equal(listeners.size, 0)
+    } finally {
+        if (previousCSS) Object.defineProperty(globalThis, "CSS", previousCSS)
+        else Reflect.deleteProperty(globalThis, "CSS")
+    }
+})
+
+test("native actions merge quote and reply into the reply-arrow button while client reply remains", () => {
+    const icons = load("components/communications/MessageInteractionIcons.tsx", {})
+    const { PrimaryMessageActions } = load("components/communications/MessageActionMenu.tsx", {
+        "@/components/communications/MessageInteractionIcons": icons,
+        "@/components/ui/AnchoredPopup": { AnchoredPopup: () => null },
+    })
+    const props = { onDelete: null, onEdit: null, onSave: null, onReply: () => {}, onCopy: () => {}, onPin: null, onReact: null, pinned: false }
+    const native = renderToStaticMarkup(React.createElement(PrimaryMessageActions, { ...props, onQuote: () => {} }))
+    assert.match(native, /aria-label="Quote"/)
+    assert.doesNotMatch(native, /aria-label="Reply"/)
+    assert.match(native, /title="Reply to the whole message, or highlight text to quote a passage"/)
+    assert.match(native, /<svg/)
+    const client = renderToStaticMarkup(React.createElement(PrimaryMessageActions, props))
+    assert.match(client, /aria-label="Reply"/)
+    assert.doesNotMatch(client, /aria-label="Quote"/)
+})

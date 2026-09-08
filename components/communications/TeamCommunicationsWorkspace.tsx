@@ -2,13 +2,12 @@
 
 import { chatCheckboxBody } from "@/lib/chat-formatting"
 import { MessageQuoteSelection } from "@/components/communications/MessageQuoteSelection"
-import { messageQuoteFromValue, messageQuoteMatches, resolveMessageQuote, type MessageQuote } from "@/lib/communications/message-quotes"
+import { messageQuoteFromValue, resolveMessageQuote, type MessageQuote } from "@/lib/communications/message-quotes"
 import { ChatMessageText } from "@/components/communications/ChatMessageText"
 
 import Image from "next/image"
 import { ComposerFooter } from "@/components/communications/ComposerFooter"
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
-import { flushSync } from "react-dom"
 import { Avatar } from "@/components/account/Avatar"
 import { CommunicationsConnectionStatus } from "@/components/communications/CommunicationsConnectionStatus"
 import { ComposerMessagePreview } from "@/components/communications/ComposerMessagePreview"
@@ -203,7 +202,6 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [editingMessage, setEditingMessage] = useState<NativeMessage | null>(null)
     const [editState, setEditState] = useState<"idle" | "saving">("idle")
     const [replyingTo, setReplyingTo] = useState<(NativeMessage & { selectedQuote?: MessageQuote }) | null>(null)
-    const [selectingQuoteId, setSelectingQuoteId] = useState<string | null>(null)
     const [quoteHighlight, setQuoteHighlight] = useState<{ messageId: string; quote: MessageQuote } | null>(null)
     const quoteHighlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const jumpRequestRef = useRef(0)
@@ -245,8 +243,15 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null
     const history = useConversationHistory(selectedId, selected?.messages ?? [])
     const messagePaneInteractions = useMessagePaneInteractions(composerRef)
-    const selectingQuote = selected?.canWrite ? selected.messages.find((message) => message.id === selectingQuoteId) ?? null : null
-    const cancelQuoteSelection = useCallback(() => setSelectingQuoteId(null), [])
+    const selectingQuote = selected?.canWrite ? selected.messages.find((message) => message.id === replyingTo?.id && Boolean(message.body.trim()) && message.id !== message.clientRequestId) ?? null : null
+    const cancelQuoteSelection = useCallback(() => setReplyingTo(null), [])
+    const updateSelectedQuote = useCallback((messageId: string, quote: MessageQuote | null) => {
+        setReplyingTo((current) => {
+            if (!current || current.id !== messageId) return current
+            if (current.selectedQuote?.start === quote?.start && current.selectedQuote?.end === quote?.end && current.selectedQuote?.text === quote?.text) return current
+            return { ...current, selectedQuote: quote ?? undefined }
+        })
+    }, [])
     useEffect(() => () => { if (quoteHighlightTimer.current) clearTimeout(quoteHighlightTimer.current) }, [])
     const focusedMessageId = editingMessage?.id ?? replyingTo?.id ?? null
     const peopleById = useMemo(() => new Map([...bootstrap.people, ...bootstrap.formerPeople].map((person) => [person.id, person])), [bootstrap.formerPeople, bootstrap.people])
@@ -346,7 +351,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         closeWorkspaceComposer(composerRef.current)
         void flushPendingRead().catch(() => undefined)
         followLatestRef.current = true; setAtLatest(true); setShowJumpToLatest(false)
-        jumpRequestRef.current++; setSelectingQuoteId(null); setQuoteHighlight(null);
+        jumpRequestRef.current++; setQuoteHighlight(null);
         setSelectedId(id); setReplyingTo(null); setEditingMessage(null); setEditState("idle"); setActionMessageId(null); setActionView("actions"); setAttachment(null); setError(null)
         setDraft(id ? localStorage.getItem(`betelgeze:native-chat:draft:${bootstrap.workspaceId}:${id}`) ?? "" : "")
     }
@@ -510,7 +515,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     }
 
     async function sendSticker(sticker: CommunicationSticker) {
-        if (!selected?.canWrite || selectingQuote) return
+        if (!selected?.canWrite) return
         const clientRequestId = crypto.randomUUID(); const replyTarget = replyingTo
         const stickerAttachment: CommunicationAttachment = { kind: "sticker", fileName: sticker.fileName, mimeType: "image/webp", size: sticker.size, storagePath: sticker.storagePath, url: sticker.url }
         const optimistic: NativeMessage = { id: clientRequestId, clientRequestId, conversationId: selected.id, senderUserId: bootstrap.currentUser.id, senderWorkspaceRole: bootstrap.currentUserRole, body: "", replyToMessageId: replyTarget?.id ?? null, quote: replyTarget?.selectedQuote ?? null, attachment: stickerAttachment, createdAt: new Date().toISOString(), editedAt: null }
@@ -523,7 +528,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     }
 
     async function sendMessage() {
-        if (!selected?.canWrite || selectingQuote) return
+        if (!selected?.canWrite) return
         const body = draft.trim(); if (!body && !attachment) return
         stopNativeTyping(selected.id)
         const clientRequestId = crypto.randomUUID(); const replyTarget = replyingTo
@@ -652,28 +657,11 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     }
 
     function startQuotingMessage(message: NativeMessage) {
-        if (!selected?.canWrite || !message.body.trim() || message.id === message.clientRequestId) return
-        closeWorkspaceComposer(composerRef.current)
-        stopNativeTyping(selected.id)
+        if (!selected?.canWrite) return
         setActionMessageId(null)
-        setReplyingTo(null)
+        setReplyingTo(message)
         setQuoteHighlight(null)
-        setSelectingQuoteId(message.id)
-        setStickerTrayOpen(false)
         followLatestRef.current = false
-    }
-
-    function confirmQuote(quote: MessageQuote) {
-        if (!selectingQuote || !messageQuoteMatches(selectingQuote.body, quote)) {
-            setError("The message changed. Select the text again.")
-            return
-        }
-        // Reveal the mounted editor before focusing, within the confirming tap's
-        // user activation so iOS can open the keyboard normally.
-        flushSync(() => {
-            setReplyingTo({ ...selectingQuote, selectedQuote: quote })
-            setSelectingQuoteId(null)
-        })
         composerRef.current?.focus({ preventScroll: true })
     }
 
@@ -819,11 +807,11 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         const saveAttachmentLabel = `Download ${message.attachment?.fileName ?? "attachment"}`
                         return <Fragment key={messageAnimationKey(message)}>
                             {showDay ? <div className="my-3 flex justify-center"><time className="rounded-full border border-neutral-800 bg-neutral-950 px-3 py-1 text-[10px] text-neutral-500">{messageDay(message.createdAt)}</time></div> : null}
-                            <div data-message-scroll-anchor={messageAnimationKey(message)} data-message-interaction={message.id} inert={quoteSelectionMuted} className={`relative flex items-end transition-[filter,opacity,transform] duration-150 ${own ? "justify-end origin-right" : "justify-start origin-left"} ${selectingQuote ? quoteSelectionMuted ? "pointer-events-none select-none opacity-30" : "" : focusedMessageId ? focusedMessageId === message.id ? "pointer-events-none z-10 scale-[1.03]" : "pointer-events-none opacity-30 blur-[1px]" : ""} ${!quoteSelectionMuted && enteringMessageIds.has(message.id) ? own ? "betelgeze-message-enter-right" : "betelgeze-message-enter-left" : ""}`}>
+                            <div data-message-scroll-anchor={messageAnimationKey(message)} data-message-interaction={message.id} inert={quoteSelectionMuted} className={`relative flex items-end transition-[filter,opacity,transform] duration-150 ${own ? "justify-end origin-right" : "justify-start origin-left"} ${selectingQuote ? quoteSelectionMuted ? "pointer-events-none select-none opacity-30 blur-[1px]" : "z-10 scale-[1.03]" : focusedMessageId ? focusedMessageId === message.id ? "pointer-events-none z-10 scale-[1.03]" : "pointer-events-none opacity-30 blur-[1px]" : ""} ${!quoteSelectionMuted && enteringMessageIds.has(message.id) ? own ? "betelgeze-message-enter-right" : "betelgeze-message-enter-left" : ""}`}>
                                 <span aria-hidden="true" style={{ opacity: Math.min(1, Math.abs(swipeOffset) / 36) }} className={`pointer-events-none absolute -inset-x-3 inset-y-0 lg:hidden ${swipeOffset < 0 ? "bg-gradient-to-l from-red-600/45 via-red-950/20 to-transparent" : "bg-gradient-to-r from-white/20 via-white/5 to-transparent"}`} />
                                 <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, swipeOffset) / 190)})` }} className="pointer-events-none absolute left-0 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-800 text-white lg:hidden"><ReplyIcon className="h-5 w-5" /></span>
                                 {canDelete ? <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, -swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, -swipeOffset) / 190)})` }} className="pointer-events-none absolute right-0 flex h-9 w-9 items-center justify-center rounded-full bg-red-600 text-white lg:hidden"><DeleteIcon className="h-5 w-5" /></span> : null}
-                                {actionMessageId === message.id ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}>{actionView === "actions" ? <PrimaryMessageActions onDelete={canDelete && selected.canWrite ? () => void deleteMessage(message) : null} onEdit={canEdit ? () => startEditingMessage(message) : null} onSave={canSaveAttachment ? () => void downloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={downloadingMessageId === message.id} onQuote={selected.canWrite && message.body.trim() && message.id !== message.clientRequestId ? () => startQuotingMessage(message) : null} onReply={selected.canWrite ? () => { setReplyingTo(message); setActionMessageId(null); composerRef.current?.focus() } : null} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onReact={selected.canWrite ? () => setActionView("reactions") : null} pinned={selected.pinnedMessageId === message.id} /> : selected.canWrite ? <MessageReactionActions currentEmoji={ownReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} side={own ? "right" : "left"} /> : null}</MessageActionPopup> : null}
+                                {actionMessageId === message.id ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}>{actionView === "actions" ? <PrimaryMessageActions onDelete={canDelete && selected.canWrite ? () => void deleteMessage(message) : null} onEdit={canEdit ? () => startEditingMessage(message) : null} onSave={canSaveAttachment ? () => void downloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={downloadingMessageId === message.id} onQuote={selected.canWrite ? () => startQuotingMessage(message) : null} onReply={null} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onReact={selected.canWrite ? () => setActionView("reactions") : null} pinned={selected.pinnedMessageId === message.id} /> : selected.canWrite ? <MessageReactionActions currentEmoji={ownReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} side={own ? "right" : "left"} /> : null}</MessageActionPopup> : null}
                                 {!own && selected.kind === "team" ? sender?.former
                                     ? <span title={`${sender.name} · former member`} className="mb-1 mr-2 inline-flex h-7 w-7 shrink-0 overflow-hidden rounded-full opacity-70"><Avatar src={sender.avatarSrc} name={sender.name} className="h-full w-full object-center" /></span>
                                     : <button data-icon-button type="button" onClick={() => openWorkspaceMemberProfile(message.senderUserId)} aria-label={`Open ${sender?.name ?? "team member"} profile`} className="mb-1 mr-2 inline-flex h-7 w-7 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full p-0 outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"><Avatar src={sender?.avatarSrc} name={sender?.name ?? "Team member"} className="h-full w-full object-center" /></button> : null}
@@ -851,7 +839,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                                         swipeStartRef.current = null
                                         setSwipePosition({ id: message.id, offset: 0, active: false })
                                         window.setTimeout(() => setSwipePosition((current) => current?.id === message.id && !current.active ? null : current), 220)
-                                        if (action === "reply") { setReplyingTo(message); setActionMessageId(null); composerRef.current?.focus({ preventScroll: true }) }
+                                        if (action === "reply") startQuotingMessage(message)
                                         else if (action === "delete") void deleteMessage(message)
                                     }}
                                     onTouchCancel={() => {
@@ -865,7 +853,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                                     {selected.kind === "team" ? sender?.former
                                         ? <span className={`${isSticker ? "mb-1 w-fit rounded-full bg-neutral-950/80 px-2 py-0.5" : "mb-0.5"} block text-[10px] font-semibold leading-none text-neutral-500`}>{sender.name} · former member</span>
                                         : <button data-icon-button type="button" onClick={(event) => { event.stopPropagation(); openWorkspaceMemberProfile(message.senderUserId) }} className={`${isSticker ? "mb-1 w-fit rounded-full bg-neutral-950/80 px-2 py-0.5" : "mb-0.5"} block text-[10px] font-semibold leading-none text-neutral-500 hover:underline`}>{own ? "You" : sender?.name ?? "Team member"}</button> : null}
-                                    {message.replyToMessageId || message.quote ? <button type="button" disabled={!message.replyToMessageId} aria-label={message.quote ? "Jump to quoted text" : "Jump to replied message"} onPointerDown={(event) => { if (event.button === 0) event.preventDefault() }} onClick={(event) => { event.stopPropagation(); if (message.replyToMessageId) void jumpToMessage(message.replyToMessageId, message.quote) }} className={`block w-full text-left focus-visible:outline focus-visible:outline-2 mb-2 rounded-lg border-l-2 border-neutral-500 px-2.5 py-2 ${own ? "bg-black/10" : "bg-black/35"}`}><p className="truncate text-[10px] font-semibold opacity-70">{reply ? reply.senderUserId === bootstrap.currentUser.id ? "You" : peopleById.get(reply.senderUserId)?.name ?? "Team member" : message.replyToMessageId ? "Original message" : "Message unavailable"}</p><p className={`mt-0.5 text-xs opacity-65 ${message.quote ? "line-clamp-3 whitespace-pre-wrap break-words" : "truncate"}`}>{message.quote ? `“${message.quote.text}”` : reply ? messagePreview(reply) : "View original message"}</p></button> : null}
+                                    {message.replyToMessageId || message.quote ? <button type="button" disabled={!message.replyToMessageId} aria-label={message.quote ? "Jump to quoted text" : "Jump to replied message"} onPointerDown={(event) => { if (event.button === 0) event.preventDefault() }} onClick={(event) => { event.stopPropagation(); if (message.replyToMessageId) void jumpToMessage(message.replyToMessageId, message.quote) }} className={`block w-full text-left focus-visible:outline focus-visible:outline-2 mb-2 rounded-lg border-l-2 border-neutral-500 px-2.5 py-2 ${own ? "bg-black/10" : "bg-black/35"}`}><p className="truncate text-[10px] font-semibold opacity-70">{reply ? reply.senderUserId === bootstrap.currentUser.id ? "You" : peopleById.get(reply.senderUserId)?.name ?? "Team member" : message.replyToMessageId ? "Original message" : "Message unavailable"}</p><p className="mt-0.5 truncate text-xs opacity-65">{message.quote ? `“${message.quote.text}”` : reply ? messagePreview(reply) : "View original message"}</p></button> : null}
                                     {message.attachment ? <NativeAttachment key={message.attachment.storagePath} attachment={message.attachment} onOpenImage={setPreviewMedia} light={own} /> : null}
                                     {message.body ? <ChatMessageText body={message.body} quoteSelection={selectingQuote?.id === message.id} highlight={quoteHighlight?.messageId === message.id ? resolveMessageQuote(message.body, quoteHighlight.quote) : null} onToggleCheckbox={selected.canWrite && message.id !== message.clientRequestId ? (line, checked) => toggleCheckbox(message, line, checked) : undefined} /> : null}
                                     {isSticker && messageReactions.length ? <div className={`absolute bottom-5 z-10 flex gap-0.5 ${own ? "right-0" : "left-0"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.reactorUserId}`} title={`${peopleById.get(reaction.reactorUserId)?.name ?? "Team member"} reacted`} className="rounded-full border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
@@ -880,10 +868,9 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     }) : selectedTypingPeople.length ? null : <div className="flex min-h-64 items-center justify-center text-center"><div><p className="text-sm font-medium text-neutral-300">Start the conversation</p><p className="mt-2 text-xs text-neutral-600">Native Betelgeze messages update instantly.</p></div></div>}
                     {selectedTypingPeople.length ? <NativeTypingDots label={selectedTypingLabel} /> : null}</div></div>{showJumpToLatest ? <JumpToLatestButton onClick={() => { followLatestRef.current = true; setAtLatest(true); messagePaneRef.current?.scrollTo({ top: messagePaneRef.current.scrollHeight, left: 0, behavior: "instant" }) }} /> : null}</div>
                     <ComposerFooter className="relative z-10 shrink-0 touch-manipulation border-t border-neutral-800 bg-neutral-950 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:p-4">
-                        {selectingQuote ? <MessageQuoteSelection key={`${selected.id}:${selectingQuote.id}:${selectingQuote.body}`} messageId={selectingQuote.id} body={selectingQuote.body} paneRef={messagePaneRef} onConfirm={confirmQuote} onCancel={cancelQuoteSelection} /> : null}
-                        <div hidden={Boolean(selectingQuote)}>
+                        {selectingQuote ? <MessageQuoteSelection key={`${selected.id}:${selectingQuote.id}:${selectingQuote.body}`} messageId={selectingQuote.id} body={selectingQuote.body} paneRef={messagePaneRef} onChange={updateSelectedQuote} onCancel={cancelQuoteSelection} /> : null}
                         {editingMessage ? <ComposerMessagePreview label="Editing message" preview={editingMessage.body} /> : null}
-                        {replyingTo ? <ComposerMessagePreview label={selected.kind === "team" ? `${replyingTo.selectedQuote ? "Quoting" : "Replying to"} ${replyingTo.senderUserId === bootstrap.currentUser.id ? "yourself" : peopleById.get(replyingTo.senderUserId)?.name ?? "team member"}` : replyingTo.selectedQuote ? "Quoting message" : "Replying to message"} preview={replyingTo.selectedQuote ? `“${replyingTo.selectedQuote.text}”` : messagePreview(replyingTo)} onCancel={() => { setReplyingTo(null); composerRef.current?.focus({ preventScroll: true }) }} /> : null}
+                        {replyingTo ? <ComposerMessagePreview label={selected.kind === "team" ? `Replying to ${replyingTo.senderUserId === bootstrap.currentUser.id ? "yourself" : peopleById.get(replyingTo.senderUserId)?.name ?? "team member"}` : "Replying to message"} tooltip={selectingQuote ? "Reply to the whole message, or highlight text in it to quote a passage." : undefined} preview={replyingTo.selectedQuote ? `“${replyingTo.selectedQuote.text}”` : messagePreview(replyingTo)} onCancel={() => { setReplyingTo(null); composerRef.current?.focus({ preventScroll: true }) }} /> : null}
                         {attachment || attachmentState === "uploading" ? <div className="mx-auto mb-2 flex max-w-3xl items-center gap-3 rounded-xl border border-neutral-800 bg-black px-3 py-2 text-xs"><span className="min-w-0 flex-1 truncate">{attachmentState === "uploading" ? "Uploading attachment…" : attachment?.fileName}</span>{attachment ? <button type="button" onClick={() => setAttachment(null)} className="h-8 w-8 text-neutral-500">×</button> : null}</div> : null}
                         {stickerTrayOpen ? <div className="mx-auto mb-2 max-w-3xl rounded-2xl border border-neutral-800 bg-black p-3 shadow-2xl"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold text-neutral-200">Stickers</p><p className="mt-0.5 text-[10px] text-neutral-600">Shared across client and team chats.</p></div><button type="button" onClick={() => setStickerTrayOpen(false)} aria-label="Close sticker tray" className="h-8 w-8 text-neutral-500 hover:text-white">×</button></div><div data-composer-scroll className="mt-3 grid max-h-52 grid-cols-4 gap-2 overflow-y-auto overscroll-y-none sm:grid-cols-7">{stickers.map((sticker) => <button key={sticker.id} type="button" onClick={() => void sendSticker(sticker)} disabled={!selected.canWrite} title={sticker.fileName} className="flex aspect-square items-center justify-center rounded-xl bg-neutral-950 p-1.5 hover:bg-neutral-900 disabled:opacity-40"><Image unoptimized src={sticker.url} alt={sticker.fileName} width={512} height={512} className="h-full w-full object-contain" /></button>)}<button type="button" onClick={() => stickerInputRef.current?.click()} disabled={stickerUploadState === "uploading"} className="flex aspect-square flex-col items-center justify-center rounded-xl border border-dashed border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-white disabled:opacity-40"><span className="text-2xl">+</span><span className="mt-1 text-[9px]">{stickerUploadState === "uploading" ? "Converting…" : "Add sticker"}</span></button></div></div> : null}
                         {error ? <div className="mx-auto mb-2 flex max-w-3xl justify-between rounded-lg bg-red-950/60 px-3 py-2 text-xs text-red-300"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
@@ -905,7 +892,6 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                                 <button data-icon-button type="button" onClick={() => { setStickerTrayOpen((current) => !current); setError(null) }} disabled={!selected.canWrite} aria-label="Open sticker tray" className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-neutral-500 hover:text-white disabled:text-neutral-800 lg:h-9 lg:w-9"><StickerIcon /></button>
                             </>}
                         />
-                        </div>
                     </ComposerFooter>
                     </ChatMotionViewport>
                 </> : <div className="flex flex-1 items-center justify-center p-6 text-center"><div><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950"><TeamIcon /></div><h2 className="mt-4 text-sm font-semibold">Select a team conversation</h2><p className="mt-2 text-xs text-neutral-600">Direct messages and team chats update without reloading.</p></div></div>}

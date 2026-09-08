@@ -1,9 +1,10 @@
-export function ComposerMessagePreview({ label, preview, onCancel }: {
+export function ComposerMessagePreview({ label, preview, onCancel, tooltip }: {
     label: string
     preview: string
     onCancel?: () => void
+    tooltip?: string
 }) {
-    return <div className="mx-auto mb-2 flex max-w-3xl items-center gap-3 border-l-2 border-white px-3 py-1 text-xs">
+    return <div title={tooltip} className="mx-auto mb-2 flex max-w-3xl items-center gap-3 border-l-2 border-white px-3 py-1 text-xs">
         <span className="min-w-0 flex-1">
             <span className="block truncate font-semibold text-neutral-200">{label}</span>
             <span className="block truncate text-neutral-500">{preview}</span>

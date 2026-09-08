@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react"
 import type { Ref } from "react"
 import Link from "next/link"
+import { scrollOnboardingRoadmap } from "@/lib/onboarding/roadmap-scroll"
 
 type RoadmapStep = {
     key: string
@@ -20,13 +21,23 @@ type RoadmapProps = {
 
 export function Roadmap({ steps, onSelect, allowAllSteps = false }: RoadmapProps) {
     const currentStepRef = useRef<HTMLElement>(null)
+    const stepsRef = useRef<HTMLDivElement>(null)
+    const currentStepKey = steps.find((step) => step.current)?.key
 
     useEffect(() => {
-        currentStepRef.current?.scrollIntoView({
-            block: "center",
-            behavior: "smooth",
-        })
-    }, [steps])
+        const container = stepsRef.current
+        const step = currentStepRef.current
+        if (!container || !step) return
+
+        // scrollIntoView also scrolls overflow-hidden ancestors, shifting the
+        // whole onboarding shell and clipping its header/form in Safari.
+        const reveal = () => scrollOnboardingRoadmap(container, step)
+        reveal()
+        const observer = new ResizeObserver(reveal)
+        observer.observe(container)
+        observer.observe(step)
+        return () => observer.disconnect()
+    }, [currentStepKey])
 
     return (
         <aside className="flex max-h-full min-h-0 flex-col rounded-2xl border border-black/10 bg-[var(--onboarding-surface,#FFFFFF)] p-5">
@@ -34,7 +45,7 @@ export function Roadmap({ steps, onSelect, allowAllSteps = false }: RoadmapProps
                 Project setup
             </p>
 
-            <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-hidden">
+            <div ref={stepsRef} className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
                 {steps.map((step) => {
                     const className = `flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${
                             step.current

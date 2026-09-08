@@ -105,7 +105,7 @@ export function ClientPortalResources({ token }: { token: string }) {
         void run(queue)
     }
 
-    return <section id="resources" aria-labelledby="resources-title" className="scroll-mt-6 rounded-2xl border border-black/10 bg-[var(--onboarding-surface,#FFFFFF)] p-5 sm:p-6">
+    return <section id="resources" aria-labelledby="resources-title" className="min-w-0 scroll-mt-6 rounded-2xl border border-black/10 bg-[var(--onboarding-surface,#FFFFFF)] p-5 sm:p-6">
         <div className="flex items-start justify-between gap-3">
             <div><h2 id="resources-title" className="text-xl font-semibold tracking-tight">Your resources</h2><p className="mt-1 text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Share files with your team.</p></div>
             <button type="button" disabled={busy} onClick={() => fileInput.current?.click()} className="inline-flex min-h-11 shrink-0 items-center rounded-lg bg-[var(--onboarding-primary,#1E3A5F)] px-4 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Uploading…" : "Upload files"}</button>

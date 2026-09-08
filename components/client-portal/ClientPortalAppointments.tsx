@@ -36,7 +36,7 @@ export function ClientPortalAppointments({ token, onOpen }: { token: string; onO
         return () => { controller.abort(); window.clearInterval(interval); window.removeEventListener("focus", refresh) }
     }, [load])
 
-    return <section aria-labelledby="appointments-title" className="rounded-2xl border border-black/10 bg-[var(--onboarding-surface,#FFFFFF)] p-5 sm:p-6">
+    return <section aria-labelledby="appointments-title" className="min-w-0 rounded-2xl border border-black/10 bg-[var(--onboarding-surface,#FFFFFF)] p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 id="appointments-title" className="text-xl font-semibold tracking-tight">Your appointments</h2><p className="mt-1 text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Bookings shared by your team.</p></div>
             <label className="text-sm"><span className="sr-only">Appointment period</span><select value={view} onChange={(event) => { setView(event.target.value); setAppointments([]); setHasMore(false); setLoading(true) }} className="min-h-11 rounded-lg border border-black/10 bg-transparent px-3 font-medium"><option value="upcoming">Upcoming</option><option value="past">Past appointments</option></select></label>
         </div>

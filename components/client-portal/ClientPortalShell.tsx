@@ -67,7 +67,7 @@ function AppointmentDetail({ appointment }: { appointment: PortalAppointment }) 
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--onboarding-muted,#475569)]">Appointment details</p>
         <h3 className="mt-2 break-words text-2xl font-semibold tracking-tight">{appointment.contactName}</h3>
         <p className="mt-2 text-sm text-[var(--onboarding-muted,#475569)]">{labels.date} · {labels.time}</p>
-        <DetailFields surface="light" className="lg:grid-cols-1">
+        <DetailFields surface="light" columns={1}>
             <DetailField label="Meeting" icon="contact">{labels.medium}</DetailField>
             <DetailField label="Timezone" icon="time">{appointment.timezone.replaceAll("_", " ")}</DetailField>
             {appointment.phone ? <DetailField label="Phone" icon="contact"><a className="break-all underline underline-offset-4" href={`tel:${phone}`}>{appointment.phone}</a></DetailField> : null}
@@ -102,7 +102,7 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
             </header>
             <main data-client-portal-main className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
                 <section aria-labelledby="portal-greeting" className="mb-7 sm:mb-8"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--onboarding-muted,#475569)]">{workspaceName} · Client portal</p><h1 id="portal-greeting" className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-3 text-sm leading-6 text-[var(--onboarding-muted,#475569)] sm:text-base">Your appointments, shared files, and team. All in one place.</p></section>
-                <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"><ClientPortalAppointments token={token} onOpen={setPanel} /><ClientPortalResources token={token} /></div>
+                <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"><ClientPortalAppointments token={token} onOpen={setPanel} /><ClientPortalResources token={token} /></div>
                 <div className="mt-6 flex flex-wrap items-center justify-between gap-3 px-1"><p className="text-sm text-[var(--onboarding-muted,#475569)]">Have a question or an update for us?</p><button type="button" onClick={() => setPanel("chat")} className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[var(--onboarding-primary,#1E3A5F)]"><ChatIcon />Message your team <span aria-hidden="true">↗</span></button></div>
             </main>
             <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 pb-8 text-xs text-[var(--onboarding-muted,#475569)] sm:px-6 lg:px-8"><span>{workspaceName}</span><div className="flex gap-4">{privacyPolicyUrl ? <a href={privacyPolicyUrl} className="underline underline-offset-2">Privacy</a> : null}{termsOfServiceUrl ? <a href={termsOfServiceUrl} className="underline underline-offset-2">Terms</a> : null}</div></footer>

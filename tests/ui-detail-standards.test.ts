@@ -27,7 +27,9 @@ test("detail field implementations use the shared borderless field rows", async 
     const relationshipFields = await readFile("app/[workspaceSlug]/relationships/[relationshipId]/RelationshipDealWorkspace.tsx", "utf8")
     const workItemFields = await readFile("app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields.tsx", "utf8")
 
-    assert.match(sharedFields, /mt-5 grid grid-cols-1 lg:grid-cols-2/)
+    assert.match(sharedFields, /columns = 2/)
+    assert.match(sharedFields, /mt-5 grid grid-cols-1/)
+    assert.match(sharedFields, /columns === 2 \? "lg:grid-cols-2" : ""/)
     assert.match(sharedFields, /border-b border-neutral-900 py-2/)
     assert.doesNotMatch(sharedFields, /rounded-[^\s"]+ border/)
     assert.match(relationshipFields, /<DetailFields>/)

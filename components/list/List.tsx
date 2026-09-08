@@ -2,20 +2,20 @@ import Link from "next/link"
 import type { ReactNode } from "react"
 import { serializeWorkspaceDetailPreview, type WorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 
-export function List({ children, ariaLabel, className = "" }: { children: ReactNode; ariaLabel?: string; className?: string }) {
-    return <section role="list" aria-label={ariaLabel} className={`mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-black ${className}`}>{children}</section>
+export function List({ children, ariaLabel, surface = "dark", className = "" }: { children: ReactNode; ariaLabel?: string; surface?: "dark" | "light"; className?: string }) {
+    return <section role="list" aria-label={ariaLabel} data-surface={surface} className={`group/list mt-5 overflow-hidden rounded-2xl border ${surface === "light" ? "border-black/10 bg-[var(--onboarding-surface,#FFFFFF)]" : "border-neutral-800 bg-black"} ${className}`}>{children}</section>
 }
 
 export function ListItem({ children, className = "", detailPreview }: { children: ReactNode; className?: string; detailPreview?: WorkspaceDetailPreview }) {
     return <article
         role="listitem"
         data-workspace-detail-preview={detailPreview ? serializeWorkspaceDetailPreview(detailPreview) : undefined}
-        className={`border-b border-neutral-800 transition-colors last:border-0 hover:bg-neutral-900/50 [contain-intrinsic-size:auto_88px] [content-visibility:auto] ${className}`}
+        className={`border-b border-neutral-800 transition-colors last:border-0 hover:bg-neutral-900/50 group-data-[surface=light]/list:border-black/10 group-data-[surface=light]/list:hover:bg-black/[0.02] [contain-intrinsic-size:auto_88px] [content-visibility:auto] ${className}`}
     >{children}</article>
 }
 
 export function ListPrimaryRow({ children, className = "" }: { children: ReactNode; className?: string }) {
-    return <div className={`flex min-w-0 flex-nowrap items-center gap-3 overflow-hidden whitespace-nowrap border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2 sm:px-4 sm:py-2.5 ${className}`}>{children}</div>
+    return <div className={`flex min-w-0 flex-nowrap items-center gap-3 overflow-hidden whitespace-nowrap border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2 group-data-[surface=light]/list:border-black/5 group-data-[surface=light]/list:bg-black/[0.015] sm:px-4 sm:py-2.5 ${className}`}>{children}</div>
 }
 
 export function ListSecondaryRow({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -23,7 +23,7 @@ export function ListSecondaryRow({ children, className = "" }: { children: React
 }
 
 export function ListTitle({ children, href, external = false, className = "" }: { children: ReactNode; href?: string | null; external?: boolean; className?: string }) {
-    const classes = `min-w-0 truncate text-base font-medium text-neutral-100 ${href ? "hover:text-white hover:underline hover:decoration-neutral-600 hover:underline-offset-4" : ""} ${className}`
+    const classes = `min-w-0 truncate text-base font-medium text-neutral-100 group-data-[surface=light]/list:text-[var(--onboarding-text,#0F172A)] ${href ? "hover:text-white group-data-[surface=light]/list:hover:text-[var(--onboarding-text,#0F172A)] hover:underline hover:decoration-neutral-600 hover:underline-offset-4" : ""} ${className}`
     if (!href) return <p className={classes}>{children}</p>
     if (external) return <a href={href} target="_blank" rel="noreferrer" className={classes}>{children}</a>
     return <Link href={href} prefetch={false} className={classes}>{children}</Link>

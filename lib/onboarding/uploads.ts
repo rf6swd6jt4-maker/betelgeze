@@ -283,6 +283,16 @@ export async function createSignedAssetUpload(
     }
 }
 
+export async function createSignedClientPortalResourceUpload(workspaceId: string, relationshipId: string, sessionId: string, file: { name: string; size: number; type: string }) {
+    if (file.size <= 0 || file.size > MAX_ONBOARDING_UPLOAD_SIZE) throw new Error("Choose a file up to 500 MB.")
+    const path = `${workspaceId}/client-portal/${relationshipId}/${sessionId}/${randomUUID()}-${sanitizeFileName(file.name) || "resource"}`
+    const uploadUrl = await getSignedUrl(getR2Client(), new PutObjectCommand({
+        Bucket: getR2BucketName(), Key: path, ContentType: file.type, ContentLength: file.size,
+    }), { expiresIn: R2_UPLOAD_URL_TTL_SECONDS })
+    const storedUpload: StoredUpload = { ...file, path, kind: getUploadKind(file.type), provider: "r2" }
+    return { uploadUrl, storedUpload }
+}
+
 export async function createSignedServiceThumbnailUpload(
     workspaceId: string,
     file: {
@@ -494,6 +504,15 @@ export async function createPrivateUploadSignedUrl(
             expiresIn,
         }
     )
+}
+
+export async function createPrivateResourceDownloadUrl(path: string, fileName: string) {
+    const encodedName = encodeURIComponent(fileName).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16)}`)
+    return getSignedUrl(getR2Client(), new GetObjectCommand({
+        Bucket: getR2BucketName(), Key: path,
+        ResponseContentType: "application/octet-stream",
+        ResponseContentDisposition: `attachment; filename="resource"; filename*=UTF-8''${encodedName}`,
+    }), { expiresIn: 60 })
 }
 
 export async function createEncryptedPrivateUploadSignedRequest(path: string, customerKey: string, expiresIn = R2_SIGNED_URL_TTL_SECONDS, method: "GET" | "HEAD" = "GET") {

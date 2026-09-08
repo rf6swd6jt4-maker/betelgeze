@@ -243,6 +243,8 @@ A list tab must not insert a page-specific summary, capacity note, explanatory p
 
 ## List
 
+Client-facing collections use `List surface="light"`. This retains the same two-row structure, borders, and interactions with the onboarding theme's surface and text colours. The surface propagates to its shared row/title primitives. Client-facing detail panels likewise use `DetailFields surface="light"` and `Status surface="light"`; workspace defaults remain dark.
+
 `List` is the canonical presentation for a collection of comparable records that people need to scan, open, and act on. Leads, polls, and relationships are the reference implementations. A list is not a gallery, settings form, navigation rail, timeline, disclosure log, or nested planning structure such as OKRs.
 
 ### Anatomy

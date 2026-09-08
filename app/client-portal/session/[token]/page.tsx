@@ -22,6 +22,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     return {
         ...agencyBrandedMetadata(branding, "client-portal", canonicalUrl),
         robots: { index: false, follow: false },
+        referrer: "no-referrer",
         icons,
     }
 }

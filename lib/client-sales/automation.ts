@@ -820,6 +820,11 @@ export async function handleSaleConsentConfirmation({
             sale.id,
             "Client confirmed the messaging channel for the retention relationship"
         )
+        // Consent atomically provisions a portal and queues its link. Dispatch
+        // immediately; the durable worker retains retry responsibility on failure.
+        await processWorkspaceOnboardingOutbox(sale.workspace_id, 10).catch(async (error) => {
+            await reportSaleAutomationFailure(sale, "deliver_retention_portal_link", error instanceof Error ? error.message : "Portal delivery will retry")
+        })
         return { handled: true, ok: true }
     }
 

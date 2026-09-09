@@ -18,6 +18,7 @@ import {
     stageWorkspaceIntegrationCandidate,
     verifyAndActivateWorkspaceIntegrationCandidate,
     verifyWorkspaceIntegration,
+    updateWhatsAppConsentTemplate,
 } from "@/lib/workspace-integrations"
 import { normalizeOnboardingDomain } from "@/lib/onboarding/custom-domain"
 import { normalizeClientPortalDomain } from "@/lib/client-portal/domain"
@@ -198,6 +199,14 @@ async function connectionAction(run: () => Promise<void>): Promise<WorkspaceConn
     } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : "The connection could not be updated." }
     }
+}
+
+export async function saveWhatsAppConfirmationTemplate(slug: string, name: string, language: string): Promise<WorkspaceConnectionActionResult> {
+    return connectionAction(async () => {
+        const { workspace } = await requireWorkspace(slug, "owner")
+        await updateWhatsAppConsentTemplate(workspace.id, name.trim(), language.trim())
+        refresh(slug)
+    })
 }
 
 export async function stageManualWorkspaceConnection(slug: string, provider: IntegrationProvider, formData: FormData): Promise<WorkspaceConnectionActionResult> {

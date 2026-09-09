@@ -11,6 +11,8 @@ import {
     getMetaWhatsAppMedia,
 } from "@/lib/client-messages/meta-whatsapp"
 import { storeClientMessageMedia } from "@/lib/onboarding/uploads"
+import { consentFailureUpdate } from "@/lib/client-sales/consent-delivery"
+import { formatMetaWhatsAppDeliveryError } from "@/lib/client-messages/meta-whatsapp-errors"
 import { handleSaleConsentConfirmation } from "@/lib/client-sales/automation"
 import { getWorkspaceIdForWhatsAppPhoneNumber, recordWorkspaceConnectionWebhook } from "@/lib/workspace-integrations"
 import { notifyClientChatMessage } from "@/lib/push/chat-notifications"
@@ -394,18 +396,7 @@ function getFirstStatusRecipientAddress(payload: WhatsAppWebhookPayload) {
 }
 
 function getStatusError(status: WhatsAppStatus) {
-    const error = status.errors?.[0]
-
-    if (!error) return null
-
-    return [
-        error.title,
-        error.message,
-        error.error_data?.details,
-        error.code ? `Meta code ${error.code}` : null,
-    ]
-        .filter(Boolean)
-        .join(": ")
+    return formatMetaWhatsAppDeliveryError(status.errors?.[0])
 }
 
 const STATUS_MESSAGE_COLUMNS = "id, client_id, status, sent_at, delivered_at, read_at"
@@ -550,18 +541,31 @@ async function handleStatusUpdate({
     }
 
     if (messageStatus === "failed") {
-        await supabaseAdmin
-            .from("client_sales")
-            .update({
-                status: "paid_consent_template_failed",
-                raw_payload: {
-                    meta_status: status,
-                    meta_status_payload: payload,
-                },
-                updated_at: new Date().toISOString(),
-            })
-            .eq("consent_template_message_id", messageId)
-            .eq("workspace_id", workspaceId)
+        if (!message?.delivered_at && !message?.read_at) {
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const query = supabaseAdmin.from("client_sales")
+                    .select("id, status, raw_payload, consent_template_message_id, updated_at")
+                    .eq("workspace_id", workspaceId)
+                    .eq("consent_template_message_id", messageId)
+                const { data: sale, error: lookupError } = await query.maybeSingle()
+                if (lookupError) throw lookupError
+                if (!sale) break
+                const update = consentFailureUpdate(sale, {
+                    providerMessageId: messageId,
+                    statusPayload: status,
+                    webhookPayload: payload,
+                })
+                if (!update) break
+                const saved = await supabaseAdmin.from("client_sales")
+                    .update({ ...update, updated_at: new Date().toISOString() })
+                    .eq("workspace_id", workspaceId).eq("id", sale.id)
+                    .eq("status", sale.status).eq("updated_at", sale.updated_at)
+                    .select("id").maybeSingle()
+                if (saved.error) throw saved.error
+                if (saved.data) break
+                if (attempt === 2) throw new Error("Consent delivery status changed concurrently; retry webhook")
+            }
+        }
         if (message?.client_id) {
             await reportClientPlatformFailure({
                 clientId: message.client_id,
@@ -1029,7 +1033,12 @@ export async function POST(request: NextRequest) {
                 .flatMap((change) => change.value?.statuses ?? []) ?? []
 
         for (const status of statusUpdates) {
-            await handleStatusUpdate({ workspaceId, status, payload })
+            try {
+                await handleStatusUpdate({ workspaceId, status, payload })
+            } catch {
+                // Ask Meta to retry a status callback that was not durably saved.
+                return Response.json({ ok: false, error: "Could not save delivery status" }, { status: 503 })
+            }
         }
 
         if (inboundMessages.length === 0) {

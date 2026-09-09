@@ -7,14 +7,14 @@ const source = readFileSync(new URL("../lib/client-sales/automation.ts", import.
 const functionSource = source.slice(source.indexOf("export async function sendSaleConsentTemplate"), source.indexOf("export async function handleCompletedStripeCheckout"))
 const compiled = ts.transpileModule(functionSource.replace("export async", "async"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText
 
-async function runSend(finalized: boolean, advanced: boolean, delivered = true) {
+async function runSend(finalized: boolean, advanced: boolean, delivered = true, earlyFailure = false) {
     const databaseTimestamp = "2026-09-07T03:33:00.123456+00:00"
     const responses = [
         { data: { id: "sale", workspace_id: "workspace", relationship_id: "relationship", status: "sale_confirmation_pending", updated_at: "2026-09-07T03:32:00Z" } },
         { data: { id: "sale", updated_at: databaseTimestamp } },
         { data: { id: "message" } },
         { data: { id: "sale" } },
-        ...(delivered ? [{ data: { id: "message" } }, { data: finalized ? { id: "sale" } : null }, ...(!finalized ? [{ data: { status: advanced ? "onboarding_link_sent" : "sold_confirmation_sending" } }] : [])] : [{ data: null }]),
+        ...(delivered ? [{ data: finalized ? { id: "sale", updated_at: databaseTimestamp } : null }, ...(finalized ? [{ data: { id: "message", status: earlyFailure ? "delivery_failed" : "sent", error: earlyFailure ? "Meta 131049" : null } }, ...(earlyFailure ? [{ data: null }] : [])] : [{ data: { status: advanced ? "onboarding_link_sent" : "sold_confirmation_sending" } }])] : [{ data: null }]),
     ]
     const filters: unknown[][] = []
     const reports: unknown[][] = []
@@ -35,6 +35,7 @@ async function runSend(finalized: boolean, advanced: boolean, delivered = true) 
         CONSENT_TEMPLATE_CLAIM_TIMEOUT_MS: 900000,
         resolveCommunicationDestinations: async () => ({ destinations: [{ provider: "meta_whatsapp", channelId: "channel", primary: true }] }),
         getWorkspaceProviderConfig: async () => ({ consent_template_name: "confirmation" }),
+        getWhatsAppConsentTemplate: async () => ({ name: "confirmation", language: "en", body: "Reply CONFIRM" }),
         sendCommunicationDeliveries: async () => ({ results: [{ ok: delivered, provider: "meta_whatsapp", providerMessageId: "accepted-id", primary: true }], error: delivered ? null : "Provider rejected" }),
         reportSaleAutomationFailure: async (...args: unknown[]) => { reports.push(args) },
         recordAdminActivity: async () => true,
@@ -65,6 +66,12 @@ test("provider rejection still reports a send failure", async () => {
     const { result } = await runSend(false, false, false)
     assert.equal(result.ok, false)
     assert.equal(result.error, "Provider rejected")
+})
+
+test("a delivery failure arriving before finalization is not mistaken for acceptance", async () => {
+    const { result } = await runSend(true, false, true, true)
+    assert.equal(result.ok, false)
+    assert.equal(result.error, "Meta 131049")
 })
 
 test("an accepted provider receipt survives a failed aggregate message update", async () => {

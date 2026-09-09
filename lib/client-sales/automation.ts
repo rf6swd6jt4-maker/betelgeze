@@ -13,7 +13,7 @@ import { isConsentConfirmationText } from "@/lib/client-sales/consent"
 import { activateRelationshipOnboardingAfterPayment } from "@/lib/relationship-workflow"
 import { recordAdminActivity } from "@/lib/admin/activity"
 import { platformFailureFingerprint, reportPlatformFailure } from "@/lib/admin/maintenance"
-import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
+import { getWhatsAppConsentTemplate, getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { markSmsConsentConfirmed, smsConsentForConfirmation } from "@/lib/client-sales/sms-consent-state"
 import { loadWorkspacePublicBranding } from "@/lib/client-branding/public-branding"
 
@@ -254,7 +254,7 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
         return { ok: false, error: message }
     }
     if (!channels.destinations.length) return { ok: false, error: "This relationship has no connected messaging destination." }
-    const consentBody = flow === "retention_confirmation"
+    let consentBody = flow === "retention_confirmation"
         ? `Hi ${sale.client_name}. Reply CONFIRM to confirm this messaging channel for your existing relationship.`
         : `Hi ${sale.client_name}. Reply CONFIRM to continue and receive your secure onboarding link.`
     const whatsappDestination = channels.destinations.find((destination) => destination.provider === "meta_whatsapp")
@@ -263,8 +263,10 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
     if (whatsappDestination) {
         try {
             const config = await getWorkspaceProviderConfig(sale.workspace_id, "meta_whatsapp")
-            templateName = config.consent_template_name
-            languageCode = config.consent_template_language || "en_US"
+            const template = await getWhatsAppConsentTemplate(config)
+            templateName = template.name
+            languageCode = template.language
+            if (channels.destinations.length === 1) consentBody = template.body
         } catch (error) {
             const message = error instanceof Error ? error.message : "WhatsApp is not connected for this workspace."
             await reportSaleAutomationFailure(sale, "load_whatsapp_connection", message)
@@ -409,6 +411,7 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
                 template_name: templateName,
                 template_language: languageCode,
                 consent_claimed_at: claimStartedAt,
+                sale_flow: flow,
             },
         })
         .select("id")
@@ -463,9 +466,6 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
     const primaryDelivery = successful.find((result) => result.primary) ?? successful[0]
     const whatsappMessageId = delivery.results.find((result) => result.provider === "meta_whatsapp" && result.ok)?.providerMessageId ?? null
     const sentAt = new Date().toISOString()
-    const messageUpdate = await supabaseAdmin.from("client_messages").select("id").eq("id", messageLog.id).maybeSingle()
-    const messageUpdateError = messageUpdate.error ?? (delivery.persistenceError ? { message: delivery.persistenceError } : null)
-
     const { data: finalizedSale, error: finalizeError } = await supabaseAdmin
         .from("client_sales")
         .update({
@@ -478,7 +478,7 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
         .eq("workspace_id", sale.workspace_id)
         .eq("status", sendingStatus)
         .eq("updated_at", claimStartedAt)
-        .select("id")
+        .select("id, updated_at")
         .maybeSingle()
     if (finalizeError || !finalizedSale) {
         const { data: currentSale } = await supabaseAdmin.from("client_sales")
@@ -491,6 +491,20 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
         // Delivery is already accepted. A webhook can advance the sale before
         // this compare-and-set finishes; never turn that into a resend prompt.
         return { ok: true, whatsappMessageId, providerMessageId: primaryDelivery.providerMessageId, synchronizationPending: true }
+    }
+
+    // Status callbacks can beat the sale update. Read after finalization so
+    // either this check or the webhook observes the matching provider ID.
+    const messageUpdate = await supabaseAdmin.from("client_messages").select("id, status, error").eq("workspace_id", sale.workspace_id).eq("id", messageLog.id).maybeSingle()
+    const messageUpdateError = messageUpdate.error ?? (delivery.persistenceError ? { message: delivery.persistenceError } : null)
+    if (messageUpdate.data?.status === "delivery_failed") {
+        const recovered = await supabaseAdmin.from("client_sales")
+            .update({ status: failedStatus, consent_template_sent_at: null, updated_at: new Date().toISOString() })
+            .eq("workspace_id", sale.workspace_id).eq("id", saleId)
+            .eq("status", awaitingStatus).eq("updated_at", finalizedSale.updated_at)
+            .eq("consent_template_message_id", primaryDelivery.providerMessageId)
+        if (recovered.error) await reportSaleAutomationFailure(sale, "recover_consent_delivery_failure", recovered.error.message)
+        return { ok: false, error: messageUpdate.data.error || "WhatsApp could not deliver the confirmation." }
     }
 
     if (messageUpdateError) {

@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "crypto"
+import { validateWhatsAppConsentTemplate } from "@/lib/client-messages/whatsapp-consent-template"
 import { getRequiredEnv } from "@/lib/env"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { stripeAccountMode } from "@/lib/stripe/mode"
@@ -350,27 +351,36 @@ async function verifyStripeCandidate(config: IntegrationConfig) {
     }
 }
 
+export async function getWhatsAppConsentTemplate(config: IntegrationConfig) {
+    if (!config.waba_id || !config.consent_template_name) throw new Error("Configure a WhatsApp Business Account ID and an approved Utility confirmation template in Settings.")
+    const result = await metaGet(`${encodeURIComponent(config.waba_id)}/message_templates?name=${encodeURIComponent(config.consent_template_name)}&fields=name,status,language,category,components`, config.access_token)
+    return validateWhatsAppConsentTemplate(result.data, config.consent_template_name, config.consent_template_language || "en_US")
+}
+
+export async function updateWhatsAppConsentTemplate(workspaceId: string, name: string, language: string) {
+    if (!/^[a-z0-9_]{1,512}$/.test(name) || !/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(language)) throw new Error("Enter a valid template name and language code.")
+    const { data: connection, error } = await supabaseAdmin.from("workspace_integrations").select("config_encrypted").eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").eq("mode", "connected").eq("enabled", true).single()
+    if (error || !connection?.config_encrypted) throw new Error("Connect WhatsApp before updating its confirmation template.")
+    const config = { ...decryptWorkspaceIntegration(connection.config_encrypted), consent_template_name: name, consent_template_language: language }
+    const hint = await verifyWhatsAppCandidate(config)
+    const saved = await supabaseAdmin.from("workspace_integrations").update({ config_encrypted: encrypt(config), config_hint: hint, capabilities: hint.capabilities, connection_status: "connected", last_verified_at: hint.verified_at, last_error: null }).eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").eq("config_encrypted", connection.config_encrypted).select("workspace_id").maybeSingle()
+    if (saved.error || !saved.data) throw new Error("The connection changed while saving. Refresh and try again.")
+}
+
 async function verifyWhatsAppCandidate(config: IntegrationConfig) {
     if (!config.access_token || !config.phone_number_id) throw new Error("WhatsApp did not provide an access token and phone number ID.")
     const phone = await metaGet(`${encodeURIComponent(config.phone_number_id)}?fields=id,display_phone_number,verified_name`, config.access_token)
     const wabaId = config.waba_id
     const subscriptions = wabaId ? await metaGet(`${encodeURIComponent(wabaId)}/subscribed_apps`, config.access_token) : null
     const subscribed = Array.isArray(subscriptions?.data) && subscriptions.data.length > 0
-    let templateApproved = false
-    if (wabaId && config.consent_template_name) {
-        const templates = await metaGet(`${encodeURIComponent(wabaId)}/message_templates?name=${encodeURIComponent(config.consent_template_name)}&fields=name,status,language`, config.access_token)
-        templateApproved = Array.isArray(templates.data) && templates.data.some((item) => {
-            if (!item || typeof item !== "object") return false
-            const record = item as { name?: unknown; status?: unknown; language?: unknown }
-            return record.name === config.consent_template_name && record.status === "APPROVED" && (!config.consent_template_language || record.language === config.consent_template_language)
-        })
-    }
     if (!subscribed) throw new Error("WhatsApp is connected, but Betelgeze is not subscribed to this business account's webhooks.")
-    if (!templateApproved) throw new Error(`WhatsApp is connected, but the ${config.consent_template_name || "confirmation"} template is not approved for the selected language.`)
+    const template = await getWhatsAppConsentTemplate(config)
     return {
         ...integrationHint("meta_whatsapp", config),
         display_phone_number: typeof phone.display_phone_number === "string" ? phone.display_phone_number : null,
         verified_name: typeof phone.verified_name === "string" ? phone.verified_name : null,
+        template_language: template.language,
+        template_category: template.category,
         verified_at: new Date().toISOString(),
         capabilities: { phone_access: true, outbound_messages: true, webhook_subscribed: true, consent_template_approved: true },
     }

@@ -50,3 +50,14 @@ export function formatMetaWhatsAppApiError({
         .join(": ")
         .concat(authHelp)
 }
+
+export function formatMetaWhatsAppDeliveryError(error?: {
+    title?: string
+    message?: string
+    code?: number
+    error_data?: { details?: string }
+}) {
+    if (!error) return null
+    if (error.code === 131049) return "WhatsApp blocked this template under its marketing delivery restrictions (Meta 131049). Check the confirmation template’s category in Settings; retrying the same template may fail again."
+    return [...new Set([error.title, error.message, error.error_data?.details].filter(Boolean)), error.code ? `Meta code ${error.code}` : null].filter(Boolean).join(": ")
+}

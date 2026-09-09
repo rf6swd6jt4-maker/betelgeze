@@ -32,6 +32,7 @@ import { NativeAttachment } from "@/components/communications/NativeAttachment"
 import { validateNativeAttachmentFile } from "@/lib/communications/native-attachments"
 import { UnreadMessageCount } from "@/components/communications/UnreadMessageCount"
 import { createCoordinatedChat, chatMutationRequest, ChatMutationError, type ChatRead } from "@/lib/communications/coordinated-updates"
+import { requestChatCheckbox } from "@/lib/communications/checklist-updates"
 import { useMessagePaneInteractions } from "@/components/communications/useMessagePaneInteractions"
 import { useReliableCommunicationsRealtime, type CommunicationsConnectionState } from "@/components/communications/useReliableCommunicationsRealtime"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
@@ -544,15 +545,16 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         finally { setEditState("idle"); void refresh().catch(() => undefined) }
     }
 
-    async function toggleCheckbox(message: NativeMessage, line: number, checked: boolean) {
-        const body = chatCheckboxBody(message.body, line, checked)
-        if (body === null) return
+    async function toggleCheckbox(message: NativeMessage, line: number, checked: boolean, expectedBody: string) {
+        const body = chatCheckboxBody(expectedBody, line, checked)
+        if (body === null) throw new ChatMutationError("Checklist item not found.")
+        let savedBody = body
         try {
             await updates.mutateMessage(message.id, { ...message, body }, async () => {
-                const result = await chatMutationRequest<{ message?: NativeMessage }>(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/checklist`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: message.conversationId, messageId: message.id, line, checked, expectedBody: message.body }) })
-                if (!result.message) throw new ChatMutationError("Could not confirm the checkbox change.", true)
-                return result.message
+                savedBody = await requestChatCheckbox(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/checklist`, { conversationId: message.conversationId, messageId: message.id, line, checked, expectedBody })
+                return { ...message, body: savedBody }
             })
+            return savedBody
         } finally { void refresh().catch(() => undefined) }
     }
 
@@ -815,7 +817,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                                         : <button data-icon-button type="button" onClick={(event) => { event.stopPropagation(); openWorkspaceMemberProfile(message.senderUserId) }} className={`${isSticker ? "mb-1 w-fit rounded-full bg-neutral-950/80 px-2 py-0.5" : "mb-0.5"} block text-[10px] font-semibold leading-none text-neutral-500 hover:underline`}>{own ? "You" : sender?.name ?? "Team member"}</button> : null}
                                     {message.replyToMessageId || message.quote ? <button type="button" disabled={!message.replyToMessageId} aria-label={message.quote ? "Jump to quoted text" : "Jump to replied message"} onPointerDown={(event) => { if (event.button === 0) event.preventDefault() }} onClick={(event) => { event.stopPropagation(); if (message.replyToMessageId) void jumpToMessage(message.replyToMessageId, message.quote) }} className={`block w-full text-left focus-visible:outline focus-visible:outline-2 mb-2 rounded-lg border-l-2 border-neutral-500 px-2.5 py-2 ${own ? "bg-black/10" : "bg-black/35"}`}><p className="truncate text-[10px] font-semibold opacity-70">{reply ? reply.senderUserId === bootstrap.currentUser.id ? "You" : peopleById.get(reply.senderUserId)?.name ?? "Team member" : message.replyToMessageId ? "Original message" : "Message unavailable"}</p><p className="mt-0.5 truncate text-xs opacity-65">{message.quote ? `“${message.quote.text}”` : reply ? messagePreview(reply) : "View original message"}</p></button> : null}
                                     {message.attachment ? <NativeAttachment key={message.attachment.storagePath} attachment={message.attachment} onOpenImage={setPreviewMedia} light={own} /> : null}
-                                    {message.body ? <ChatMessageText body={message.body} quoteSelection={selectingQuote?.id === message.id} highlight={quoteHighlight?.messageId === message.id ? resolveMessageQuote(message.body, quoteHighlight.quote) : null} onToggleCheckbox={selected.canWrite && message.id !== message.clientRequestId ? (line, checked) => toggleCheckbox(message, line, checked) : undefined} /> : null}
+                                    {message.body ? <ChatMessageText body={message.body} quoteSelection={selectingQuote?.id === message.id} highlight={quoteHighlight?.messageId === message.id ? resolveMessageQuote(message.body, quoteHighlight.quote) : null} onToggleCheckbox={selected.canWrite && message.id !== message.clientRequestId ? (line, checked, expectedBody) => toggleCheckbox(message, line, checked, expectedBody) : undefined} /> : null}
                                     {isSticker && messageReactions.length ? <div className={`absolute bottom-5 z-10 flex gap-0.5 ${own ? "right-0" : "left-0"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.reactorUserId}`} title={`${peopleById.get(reaction.reactorUserId)?.name ?? "Team member"} reacted`} className="rounded-full border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
                                     <div className={`mt-1.5 flex items-center justify-between gap-3 text-[10px] ${isSticker ? "ml-auto min-w-20 rounded-full bg-neutral-950/80 px-2 py-0.5 text-neutral-400" : own ? "text-neutral-500" : "text-neutral-600"}`}>
                                         {selected.kind === "team" ? <MessageReadAvatars readers={readers} /> : <span />}

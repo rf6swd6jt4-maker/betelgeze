@@ -109,3 +109,35 @@ test("native nonparticipants and invalid portal tokens cannot update checklists"
     assert.equal((await portal.PATCH(new Request("https://example.test/checklist", { method: "PATCH" }), { params: Promise.resolve({ token: "revoked" }) })).status, 404)
     assert.equal(calls, 0)
 })
+
+test("workspace checklist acknowledgements use the saved body without a fallible second reload", async () => {
+    for (const kind of ["native", "client"]) {
+        let reads = 0
+        const body = "[ ] First", savedBody = "[x] First"
+        const message = { id, body, conversationId: id, relationshipId: id, status: "sent" }
+        const loadMessage = async () => {
+            if (++reads > 1) throw new Error("Unrelated message reload failed")
+            return message
+        }
+        const query = { select: () => query, eq: () => query, neq: () => query, maybeSingle: async () => ({ data: { id }, error: null }) }
+        const f = fixture()
+        const route = loadServer(`app/api/workspaces/[workspaceSlug]/communications/${kind === "native" ? "native/" : ""}checklist/route.ts`, {
+            "@/lib/workspace-access": { requireWorkspacePanel: async () => ({ workspace: { id: "workspace" }, user: { id: "actor" } }) },
+            "@/lib/teams/server": { assertNativeConversationAccess: async () => true, loadNativeMessageForCurrentUser: loadMessage },
+            "@/lib/communications/server": { loadCommunicationMessage: loadMessage },
+            "@/lib/communications/access": { clientConversationCanAccess: async () => true },
+            "@/lib/supabase/admin": { supabaseAdmin: { from: () => query } },
+            "@/lib/communications/checklists": { ...f.service, updateChatCheckbox: async (input: { loadBody: () => Promise<string> }) => {
+                assert.equal(await input.loadBody(), body)
+                return { body: savedBody }
+            } },
+        })
+        const response = await route.PATCH(new Request("https://example.test/checklist", { method: "PATCH", body: JSON.stringify({ messageId: id, conversationId: id, relationshipId: id, expectedBody: body, line: 0, checked: true }) }), { params: Promise.resolve({ workspaceSlug: "test" }) })
+        assert.equal(response.status, 200)
+        const result = await response.json()
+        assert.equal(result.body, savedBody)
+        assert.equal(result.message.body, savedBody, "already-open clients retain their message response")
+        assert.equal(result.message.status, "sent")
+        assert.equal(reads, 1)
+    }
+})

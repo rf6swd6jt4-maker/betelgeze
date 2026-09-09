@@ -15,6 +15,7 @@ import { DeleteIcon, ReplyIcon } from "@/components/communications/MessageIntera
 import { MessageMediaLightbox, type MessageMediaPreview } from "@/components/communications/MessageMediaLightbox"
 import { observeMessagePaneResize } from "@/components/communications/JumpToLatestButton"
 import { useClientPortalComposerViewport } from "@/components/client-portal/client-portal-composer-viewport"
+import { requestChatCheckbox } from "@/lib/communications/checklist-updates"
 
 type PortalAttachment = {
     kind: "image" | "video" | "audio" | "document" | "sticker"
@@ -229,6 +230,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
     const textareaRef = useRef<HTMLElement>(null)
     const refreshingRef = useRef(false)
     const checklistRevisionRef = useRef(0)
+    const checklistPendingRef = useRef(0)
     const followingLatestRef = useRef(true)
     const scrollToLatestRef = useRef(true)
     const swipeStartRef = useRef<{ id: string; x: number; y: number; cancelled: boolean; maxDeltaX: number; minDeltaX: number; verticalAtMax: number; verticalAtMin: number } | null>(null)
@@ -244,7 +246,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
             if (!response.ok) throw new Error(typeof result?.error === "string" ? result.error : "Messages are unavailable.")
             const incoming = Array.isArray(result?.messages) ? result.messages.flatMap((value) => messageFromValue(value) ?? []) : []
             if (initial || followingLatestRef.current) scrollToLatestRef.current = true
-            if (checklistRevision === checklistRevisionRef.current) setMessages((current) => initial ? mergeMessages(current, incoming) : mergeLatestSnapshot(current, incoming))
+            if (checklistPendingRef.current === 0 && checklistRevision === checklistRevisionRef.current) setMessages((current) => initial ? mergeMessages(current, incoming) : mergeLatestSnapshot(current, incoming))
             if (initial) setNextBefore(typeof result?.nextBefore === "string" ? result.nextBefore : null)
             setInitialState("ready")
         } catch {
@@ -287,15 +289,17 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
 
 
 
-    async function toggleCheckbox(message: PortalMessage, line: number, checked: boolean) {
-        const response = await fetch(`/api/client-portal/session/${encodeURIComponent(token)}/checklist`, {
-            method: "PATCH", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ messageId: message.id, line, checked, expectedBody: message.body }),
-        })
-        const result = await response.json().catch(() => null)
-        if (!response.ok || typeof result?.body !== "string") throw new Error(result?.error ?? "Could not update checkbox. Try again.")
+    async function toggleCheckbox(message: PortalMessage, line: number, checked: boolean, expectedBody: string) {
         checklistRevisionRef.current++
-        setMessages((current) => current.map((item) => item.id === message.id ? { ...item, body: result.body } : item))
+        checklistPendingRef.current++
+        try {
+            const body = await requestChatCheckbox(`/api/client-portal/session/${encodeURIComponent(token)}/checklist`, { messageId: message.id, line, checked, expectedBody })
+            setMessages((current) => current.map((item) => item.id === message.id ? { ...item, body } : item))
+            return body
+        } finally {
+            checklistPendingRef.current--
+            checklistRevisionRef.current++
+        }
     }
 
     async function loadOlder() {
@@ -566,7 +570,7 @@ export function ClientPortalChat({ token, workspaceName }: { token: string; work
                                 <p className={`${isSticker ? "mb-1 w-fit rounded-full bg-black/70 px-2 py-0.5 text-white/75" : `mb-1 ${own ? "text-white/70" : "text-[var(--onboarding-muted,#475569)]"}`} text-[10px] font-semibold`}>{senderLabel}</p>
                                 {message.replyToMessageId ? <div className={`mb-2 rounded-lg border-l-2 px-2.5 py-2 ${own ? "border-white/50 bg-black/10" : "border-[var(--onboarding-primary,#1E3A5F)]/40 bg-black/[0.03]"}`}><p className="truncate text-[10px] font-semibold opacity-70">{repliedMessage ? (repliedMessage.direction === "inbound" ? "You" : workspaceName) : "Replied message"}</p><p className="mt-0.5 truncate text-xs opacity-70">{repliedMessage ? messagePreview(repliedMessage) : "Message unavailable"}</p></div> : null}
                                 {message.attachment ? <MessageAttachment attachment={message.attachment} url={attachmentUrl} own={own} onOpenImage={setPreviewMedia} /> : null}
-                                {message.body && !(message.attachment && message.body === attachmentPlaceholder(message.attachment)) ? <ChatMessageText body={message.body} className="text-[15px] leading-6" linkClassName={`underline decoration-1 underline-offset-2 ${own ? "decoration-white/60" : "text-[var(--onboarding-primary,#1E3A5F)]"}`} onToggleCheckbox={message.id.startsWith("local:") ? undefined : (line, checked) => toggleCheckbox(message, line, checked)} /> : null}
+                                {message.body && !(message.attachment && message.body === attachmentPlaceholder(message.attachment)) ? <ChatMessageText body={message.body} className="text-[15px] leading-6" linkClassName={`underline decoration-1 underline-offset-2 ${own ? "decoration-white/60" : "text-[var(--onboarding-primary,#1E3A5F)]"}`} onToggleCheckbox={message.id.startsWith("local:") ? undefined : (line, checked, expectedBody) => toggleCheckbox(message, line, checked, expectedBody)} /> : null}
                                 {isSticker && message.reactions.length ? <div className={`absolute bottom-5 z-10 flex gap-0.5 ${own ? "right-0" : "left-0"}`}>{message.reactions.map((reaction) => <span key={reaction.id} title={reaction.direction === "inbound" ? "You reacted" : `${workspaceName} reacted`} className="rounded-full border border-black/15 bg-[var(--onboarding-surface,#FFFFFF)] px-1.5 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
                                 <div className={`mt-1.5 flex items-center justify-end gap-2 text-[10px] ${isSticker ? "ml-auto w-fit rounded-full bg-black/70 px-2 py-0.5 text-white/75" : own ? "text-white/65" : "text-[var(--onboarding-muted,#475569)]"}`}><time dateTime={message.createdAt}>{messageTime(message.createdAt)}</time>{message.sendState === "sending" ? <span>Sending…</span> : null}</div>
                                 {message.sendState === "failed" ? <div className="mt-2 border-t border-white/15 pt-2"><p className="text-xs text-white/85">{message.sendError}</p><button type="button" onClick={() => void sendMessage(message)} className="mt-1 text-xs font-semibold underline underline-offset-2">Try again</button></div> : null}

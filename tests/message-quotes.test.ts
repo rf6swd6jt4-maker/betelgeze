@@ -5,6 +5,7 @@ import { createRequire, Module } from "node:module"
 import { resolve } from "node:path"
 import ts from "typescript"
 import * as formatting from "../lib/chat-formatting.ts"
+import * as coordinated from "../lib/communications/coordinated-updates.ts"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
@@ -17,7 +18,8 @@ function load(path: string, dependencies: Record<string, unknown>) {
     return compiled.exports
 }
 const quotes = load("lib/communications/message-quotes.ts", { "@/lib/chat-formatting": formatting }) as typeof import("../lib/communications/message-quotes")
-const { ChatMessageText } = load("components/communications/ChatMessageText.tsx", { "@/lib/chat-formatting": formatting, "@/lib/communications/message-quotes": quotes })
+const checklists = load("lib/communications/checklist-updates.ts", { "@/lib/chat-formatting": formatting, "@/lib/communications/coordinated-updates": coordinated })
+const { ChatMessageText } = load("components/communications/ChatMessageText.tsx", { "@/lib/chat-formatting": formatting, "@/lib/communications/message-quotes": quotes, "@/lib/communications/checklist-updates": checklists })
 
 test("quote offsets refer to visible formatted text, nested lists and Unicode", () => {
     const body = "##Plan##\n- **First __item__**\n  [x] Done 😀\n\nhttps://example.com/a__b"

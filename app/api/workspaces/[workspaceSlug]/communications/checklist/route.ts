@@ -17,11 +17,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ works
     if (relationship.error) return Response.json({ error: "Could not verify conversation access." }, { status: 503 })
     if (!relationship.data) return Response.json({ error: "Conversation not found." }, { status: 404 })
     try {
-        await updateChatCheckbox({ ...input, workspaceId: workspace.id, scopeId: relationshipId, kind: "client", actorUserId: user.id, loadBody: async () => {
+        const loaded = { message: null as Awaited<ReturnType<typeof loadCommunicationMessage>> }
+        const result = await updateChatCheckbox({ ...input, workspaceId: workspace.id, scopeId: relationshipId, kind: "client", actorUserId: user.id, loadBody: async () => {
             const message = await loadCommunicationMessage({ workspaceId: workspace.id, messageId: input.messageId })
+            loaded.message = message && message.relationshipId === relationshipId ? message : null
             return message && message.relationshipId === relationshipId ? message.body : null
         } })
-        const message = await loadCommunicationMessage({ workspaceId: workspace.id, messageId: input.messageId })
-        return Response.json({ message }, { headers: { "Cache-Control": "private, no-store" } })
+        return Response.json({ ...result, message: loaded.message ? { ...loaded.message, body: result.body } : null }, { headers: { "Cache-Control": "private, no-store" } })
     } catch (error) { return checklistResponseError(error) }
 }

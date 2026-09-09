@@ -12,11 +12,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ works
     const conversationId = raw.conversationId
     if (!await assertNativeConversationAccess(conversationId, user.id, "write")) return Response.json({ error: "Conversation is unavailable or read-only." }, { status: 403 })
     try {
-        await updateChatCheckbox({ ...input, workspaceId: workspace.id, scopeId: conversationId, kind: "native", actorUserId: user.id, loadBody: async () => {
+        const loaded = { message: null as Awaited<ReturnType<typeof loadNativeMessageForCurrentUser>> }
+        const result = await updateChatCheckbox({ ...input, workspaceId: workspace.id, scopeId: conversationId, kind: "native", actorUserId: user.id, loadBody: async () => {
             const message = await loadNativeMessageForCurrentUser({ workspaceId: workspace.id, messageId: input.messageId })
+            loaded.message = message && message.conversationId === conversationId ? message : null
             return message && message.conversationId === conversationId ? message.body : null
         } })
-        const message = await loadNativeMessageForCurrentUser({ workspaceId: workspace.id, messageId: input.messageId })
-        return Response.json({ message }, { headers: { "Cache-Control": "private, no-store" } })
+        // A successful save must not depend on a second message reload. Keep
+        // the message envelope for already-open clients using the older API.
+        return Response.json({ ...result, message: loaded.message ? { ...loaded.message, body: result.body } : null }, { headers: { "Cache-Control": "private, no-store" } })
     } catch (error) { return checklistResponseError(error) }
 }

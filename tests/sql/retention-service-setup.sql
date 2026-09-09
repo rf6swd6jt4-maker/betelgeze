@@ -12,7 +12,7 @@ begin
  insert into public.onboarding_services(id,workspace_id,internal_code) values(service_a,w,'appointment-qa'),(service_b,w,'ads-qa');
  insert into public.onboarding_service_revisions(id,workspace_id,service_id,revision_number,name,default_price_cents,definition)
  values(rev_a,w,service_a,1,'Appointment Setting',0,'{"templateId":"appointment-setting"}'),(rev_b,w,service_b,1,'Advertising',0,'{}');
- insert into public.workspace_service_capabilities(workspace_id,service_id,capability) values(w,service_a,'appointment_setting.manage');
+ insert into public.workspace_service_capabilities(workspace_id,service_id,capability) values(w,service_a,'appointment_setting.manage') on conflict do nothing;
  perform public.set_service_delivery_users(w,owner_id,service_a,array[setter,other_setter]);
  perform public.set_service_delivery_users(w,owner_id,service_b,array[other_setter]);
  details:=jsonb_build_object('primary_person_name','Rollback client','business_name','Rollback company','fulfilment_manager_user_id',owner_id,'communication_primary_provider','meta_whatsapp','whatsapp_phone','+15005550006','confirmation_address','whatsapp:+15005550006','is_test',true);

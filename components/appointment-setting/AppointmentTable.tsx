@@ -1,25 +1,24 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
-import { ListActionMenu } from "@/components/list/ListActionMenu"
-import { appointmentNotificationNotice } from "@/lib/appointment-setting-delivery"
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
+import Link from "next/link"
+import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
+import { ListActionMenu, type ListAction } from "@/components/list/ListActionMenu"
+import { MobileListActionSurface } from "@/components/list/MobileCardActionSurface"
+import { FilterRail, FilterRailButton, FilterRailCount } from "@/components/panel/FilterRail"
 import { Status } from "@/components/ui"
-import {
-    APPOINTMENT_FIELD_OPTIONS,
-    APPOINTMENT_MEDIUM_OPTIONS,
-    type AppointmentFieldKey,
-    type AppointmentSettingAppointment,
-    type AppointmentSettingConfiguration,
-} from "@/lib/appointment-setting"
+import { appointmentNotificationLabel, type AppointmentDeliveryState } from "@/lib/appointment-setting-delivery"
+import { APPOINTMENT_FIELD_OPTIONS, APPOINTMENT_MEDIUM_OPTIONS, appointmentFieldValue, appointmentReadiness, appointmentView, appointmentWithChanges, sortAppointmentWork, type AppointmentSettingAppointment, type AppointmentSettingConfiguration, type AppointmentUpdateField, type AppointmentView } from "@/lib/appointment-setting"
+import { AppointmentDraftQueue } from "@/lib/appointment-draft-queue"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
-import { runWorkspaceMutation, type WorkspaceMutationResult } from "@/lib/workspace-mutations"
-import {
-    createAppointmentSettingDraft,
-    deleteAppointmentSettingAppointment,
-    submitAppointmentSettingAppointment,
-    updateAppointmentSettingAppointment,
-    type AppointmentUpdateField,
-} from "@/app/[workspaceSlug]/appointment-setting/[relationshipId]/actions"
+import { registerWorkspaceAutosaveFlusher, runWorkspaceMutation } from "@/lib/workspace-mutations"
+import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
+import { createAppointmentSettingDraft, deleteAppointmentSettingAppointment, readAppointmentSettingState, saveAppointmentSettingDraft, submitAppointmentSettingAppointment } from "@/app/[workspaceSlug]/appointment-setting/[relationshipId]/actions"
+import { AppointmentDraftEditor, AppointmentTimezoneSelect, appointmentInputClass, appointmentScheduleLabel, type DraftQueue } from "./AppointmentDraftEditor"
+
+const subscribeTimezone = () => () => {}
+const readTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+const serverTimezone = () => ""
 
 type Props = {
     workspaceId: string
@@ -28,305 +27,276 @@ type Props = {
     serviceId: string
     initialAppointments: AppointmentSettingAppointment[]
     configuration: AppointmentSettingConfiguration
+    initialDelivery: AppointmentDeliveryState
+    initialNow: number
 }
 
-const APPOINTMENT_SELECT = "id, workspace_id, relationship_id, service_id, contact_name, phone, appointment_at, appointment_date, appointment_time, appointment_timezone, meeting_medium, meeting_link, details, workflow_status, submitted_at, submitted_by, submission_message_id, created_by, updated_by, created_at, updated_at"
-const inputClass = "h-9 w-full rounded-md border border-neutral-700 bg-black px-2.5 text-sm text-white outline-none transition placeholder:text-neutral-700 focus:border-neutral-400 disabled:opacity-60"
-
-function browserTimezone() {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
-}
-
-function shortTime(value: string | null) {
-    return value?.slice(0, 5) ?? ""
-}
-
-function dateLabel(value: string | null, timeZone: string, fallback: string | null) {
-    if (!value) return fallback ?? "—"
-    try {
-        return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone }).format(new Date(value))
-    } catch {
-        return fallback ?? "—"
-    }
-}
-
-function timeLabel(value: string | null, timeZone: string, fallback: string | null) {
-    if (!value) return fallback ? `${shortTime(fallback)} (${timeZone})` : "—"
-    try {
-        return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone, timeZoneName: "short" }).format(new Date(value))
-    } catch {
-        return fallback ? `${shortTime(fallback)} (${timeZone})` : "—"
-    }
-}
-
-function sortAppointments(rows: AppointmentSettingAppointment[]) {
-    return [...rows].sort((left, right) => {
-        if (left.workflow_status !== right.workflow_status) return left.workflow_status === "draft" ? -1 : 1
-        if (left.workflow_status === "draft") return right.created_at.localeCompare(left.created_at)
-        return (left.appointment_at ?? "").localeCompare(right.appointment_at ?? "") || left.created_at.localeCompare(right.created_at)
-    })
-}
-
-function detailValue(row: AppointmentSettingAppointment, key: AppointmentFieldKey) {
-    return key === "phone" ? row.phone ?? "" : String(row.details?.[key] ?? "")
-}
-
-function EditableCell({ label, value, displayValue, type = "text", pending, initialEditing = false, onSave }: {
-    label: string
-    value: string
-    displayValue: string
-    type?: "text" | "tel" | "email" | "url" | "date" | "time"
-    pending: boolean
-    initialEditing?: boolean
-    onSave: (value: string) => Promise<boolean>
+function AppointmentRow({ appointment, configuration, workspaceSlug, relationshipId, delivery, expanded, visible, autoFocus, localTimezone, queues, onOpen, onSaved, onRemove, onRefresh, onDelivery }: {
+    appointment: AppointmentSettingAppointment
+    configuration: AppointmentSettingConfiguration
+    workspaceSlug: string
+    relationshipId: string
+    delivery: AppointmentDeliveryState
+    expanded: boolean
+    visible: boolean
+    autoFocus: boolean
+    localTimezone: string
+    queues: Map<string, DraftQueue>
+    onOpen: () => void
+    onSaved: (row: AppointmentSettingAppointment) => void
+    onRemove: (id: string) => Promise<void>
+    onRefresh: () => Promise<Awaited<ReturnType<typeof readAppointmentSettingState>> | undefined>
+    onDelivery: (messageId: string, status: AppointmentDeliveryState["notifications"][string]) => void
 }) {
-    const [editing, setEditing] = useState(initialEditing)
-    const [draft, setDraft] = useState(value)
-    const committing = useRef(false)
-    const cancelled = useRef(false)
-
-    async function commit() {
-        if (committing.current || cancelled.current) return
-        const cleaned = draft.trim()
-        if (cleaned === value) {
-            setEditing(false)
-            return
-        }
-        committing.current = true
-        const saved = await onSave(cleaned)
-        committing.current = false
-        if (saved) setEditing(false)
+    const [queue] = useState(() => new AppointmentDraftQueue<AppointmentSettingAppointment, AppointmentUpdateField>(appointment, async (row, changes) => {
+        const result = await runWorkspaceMutation(() => saveAppointmentSettingDraft(workspaceSlug, relationshipId, row.id, changes, row.updated_at), { category: "system" })
+        if (result.ok && result.data) onSaved(result.data)
+        return result
+    }))
+    const snapshot = useSyncExternalStore(queue.subscribe, queue.getSnapshot, queue.getSnapshot)
+    const [submitting, setSubmitting] = useState(false)
+    const [submitError, setSubmitError] = useState<string | null>(null)
+    const submittingRef = useRef(false)
+    useEffect(() => { queue.receive(appointment) }, [appointment, queue])
+    useEffect(() => {
+        queues.set(appointment.id, queue)
+        const unregister = registerWorkspaceAutosaveFlusher(async () => { await queue.flush() })
+        return () => { queues.delete(appointment.id); unregister(); void queue.flush() }
+    }, [appointment.id, queue, queues])
+    useEffect(() => {
+        const retry = () => { if (queue.getSnapshot().error && !queue.getSnapshot().conflict) void queue.retry() }
+        window.addEventListener("online", retry)
+        return () => window.removeEventListener("online", retry)
+    }, [queue])
+    const row = appointmentWithChanges(snapshot.record, snapshot.changes)
+    const draft = snapshot.record.workflow_status === "draft"
+    const dirty = Object.keys(snapshot.changes).length > 0
+    const name = row.contact_name?.trim() || "Untitled lead"
+    const communicationsHref = `/${workspaceSlug}/communications?conversation=${encodeURIComponent(relationshipId)}`
+    const notification = row.submission_message_id ? delivery.notifications[row.submission_message_id] : undefined
+    const editorId = `appointment-editor-${row.id}`
+    const actions: ListAction[] = [
+        { label: expanded ? "Close appointment" : draft ? "Open draft" : "Open appointment", action: onOpen },
+        ...(row.phone ? [{ label: "Copy phone number", copyText: row.phone }] : []),
+        ...(draft ? [{ label: "Remove draft", danger: true, confirmMessage: `Remove the draft for ${name}? Any unsaved changes will also be removed.`, action: remove }] : []),
+    ]
+    async function remove() {
+        if (submittingRef.current) throw new Error("Wait for the current appointment action to finish.")
+        submittingRef.current = true
+        setSubmitting(true)
+        try {
+            await queue.flush()
+            await onRemove(row.id)
+        } finally { submittingRef.current = false; setSubmitting(false) }
     }
 
-    function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-        if (event.key === "Escape") {
-            event.preventDefault()
-            cancelled.current = true
-            setDraft(value)
-            setEditing(false)
-        }
-        if (event.key === "Enter") {
-            event.preventDefault()
-            void commit()
+    async function submit() {
+        if (submittingRef.current) return
+        submittingRef.current = true
+        setSubmitting(true)
+        setSubmitError(null)
+        try {
+            if (!await queue.flush()) return
+            const saved = queue.getSnapshot().record
+            const issues = appointmentReadiness(saved, configuration)
+            if (issues.length) { setSubmitError(issues[0].message); return }
+            const result = await runWorkspaceMutation(() => submitAppointmentSettingAppointment(workspaceSlug, relationshipId, saved.id, saved.updated_at), { category: "system" })
+            if (!result.ok || !result.data) {
+                setSubmitError(result.ok ? "Submission could not be confirmed. Refresh before trying again." : result.error)
+                await onRefresh()
+                return
+            }
+            queue.receive(result.data.appointment)
+            onSaved(result.data.appointment)
+            if (result.data.appointment.submission_message_id) onDelivery(result.data.appointment.submission_message_id, result.data.notificationStatus)
+            void onRefresh()
+        } catch (error) {
+            setSubmitError(error instanceof Error ? error.message : "Submission could not be confirmed. Check the latest appointment before trying again.")
+            // The transaction may have succeeded even if its response was lost.
+            void onRefresh()
+        } finally {
+            submittingRef.current = false
+            setSubmitting(false)
         }
     }
 
-    if (editing) {
-        return <input type={type} aria-label={label} autoFocus disabled={pending} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => void commit()} onKeyDown={handleKeyDown} className={inputClass} />
-    }
-    return <button type="button" aria-label={`Edit ${label}`} disabled={pending} onClick={() => { cancelled.current = false; setDraft(value); setEditing(true) }} className="block max-w-full truncate rounded px-1 py-1 text-left text-sm text-neutral-200 underline decoration-dotted decoration-neutral-700 underline-offset-4 transition hover:bg-neutral-900 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/70 disabled:opacity-60">{displayValue || "—"}</button>
+    return <ListItem className={!visible ? "hidden" : ""}>
+        <MobileListActionSurface actions={actions} label={`Actions for ${name}`}>
+            <ListPrimaryRow>
+                <button type="button" onClick={onOpen} aria-expanded={expanded} aria-controls={editorId} className="min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2">
+                    <ListTitle>{name}</ListTitle>
+                </button>
+                {draft ? <Status label="Draft" tone="yellow" className="ml-auto" /> : <Status label="Submitted" tone="green" className="ml-auto" />}
+            </ListPrimaryRow>
+            <ListSecondaryRow>
+                <span className="min-w-0 truncate text-neutral-300" title={appointmentScheduleLabel(row)}>{appointmentScheduleLabel(row)}</span>
+                <span className="hidden shrink-0 text-neutral-500 xl:inline">{APPOINTMENT_MEDIUM_OPTIONS.find((option) => option.key === row.meeting_medium)?.label}</span>
+                <span className="hidden min-w-0 truncate text-xs text-neutral-400 md:inline">{draft ? snapshot.error ? "Changes not saved" : snapshot.saving || dirty ? "Saving…" : "Saved" : appointmentNotificationLabel(notification)}</span>
+                <ListTrailing>
+                    <span className="font-mono text-xs text-neutral-600">{shortId(row.id)}</span>
+                    <span className="hidden text-xs text-neutral-500 sm:inline">{formatRelativeTime(row.updated_at)}</span>
+                    <ListActionMenu label={`Actions for ${name}`} actions={actions} className="hidden sm:block" />
+                </ListTrailing>
+            </ListSecondaryRow>
+        </MobileListActionSurface>
+        <div id={editorId} hidden={!expanded}>
+            {expanded && (draft || dirty ? <AppointmentDraftEditor queue={queue} snapshot={snapshot} configuration={configuration} messagingError={delivery.messagingError} communicationsHref={communicationsHref} localTimezone={localTimezone} submitting={submitting} autoFocus={autoFocus && expanded} onSubmit={submit} onReview={async () => (await onRefresh())?.appointments.find((candidate) => candidate.id === row.id)} /> : <div className="space-y-4 px-3.5 py-4 sm:px-4">
+                <p className="text-sm text-neutral-200">{appointmentScheduleLabel(row)} <span className="text-neutral-500">({row.appointment_timezone.replaceAll("_", " ")})</span></p>
+                <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                    {configuration.fields.map((field) => {
+                        const value = appointmentFieldValue(row, `detail:${field.key}`)
+                        return value ? <div key={field.key} className={field.key === "notes" ? "sm:col-span-2" : ""}><dt className="text-xs text-neutral-500">{APPOINTMENT_FIELD_OPTIONS.find((option) => option.key === field.key)?.label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-neutral-200">{field.key === "phone" ? <a href={`tel:${value}`} className="underline underline-offset-4">{value}</a> : field.key === "email" ? <a href={`mailto:${value}`} className="underline underline-offset-4">{value}</a> : value}</dd></div> : null
+                    })}
+                    {row.meeting_medium !== "phone" && row.meeting_link ? <div className="sm:col-span-2"><dt className="text-xs text-neutral-500">Meeting link</dt><dd className="mt-1 break-all"><a href={row.meeting_link} target="_blank" rel="noreferrer" className="text-sm underline underline-offset-4">{row.meeting_link}</a></dd></div> : null}
+                </dl>
+                <div className="border-t border-neutral-800 pt-3">
+                    <p role="status" className={`text-sm ${notification === "sent" ? "text-neutral-200" : "text-amber-300"}`}>{appointmentNotificationLabel(notification)}</p>
+                    <Link href={communicationsHref} className="mt-1 inline-flex min-h-9 items-center text-sm text-neutral-300 underline underline-offset-4">Open client conversation</Link>
+                    <p className="text-xs text-neutral-500">Submitted appointments are locked for editing.</p>
+                </div>
+            </div>)}
+            {submitError ? <p role="alert" className="px-4 pb-4 text-sm text-red-300">{submitError}</p> : null}
+        </div>
+    </ListItem>
 }
 
-function EditableSelect({ label, value, options, pending, onSave }: {
-    label: string
-    value: string
-    options: Array<{ value: string; label: string }>
-    pending: boolean
-    onSave: (value: string) => Promise<boolean>
-}) {
-    return <select aria-label={label} value={value} disabled={pending} onChange={(event) => void onSave(event.target.value)} className={`${inputClass} border-transparent bg-transparent px-1 underline decoration-dotted decoration-neutral-700 underline-offset-4 hover:bg-neutral-900 focus:bg-black`}>
-        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-    </select>
-}
-
-function ReadOnlyCell({ children }: { children: string }) {
-    return <span className="block max-w-full truncate px-1 text-sm text-neutral-300">{children || "—"}</span>
-}
-
-export function AppointmentTable({ workspaceId, workspaceSlug, relationshipId, serviceId, initialAppointments, configuration }: Props) {
-    const [appointments, setAppointments] = useState(() => sortAppointments(initialAppointments))
-    const [savingKey, setSavingKey] = useState<string | null>(null)
-    const mutationPending = useRef(false)
-    const refreshVersion = useRef(0)
-    const refreshRef = useRef<() => Promise<void>>(async () => {})
+export function AppointmentTable({ workspaceId, workspaceSlug, relationshipId, serviceId, initialAppointments, configuration, initialDelivery, initialNow }: Props) {
+    const [appointments, setAppointments] = useState(initialAppointments)
+    const [delivery, setDelivery] = useState(initialDelivery)
+    const [view, setView] = useState<AppointmentView>(initialAppointments.some((row) => row.workflow_status === "draft") ? "drafts" : "upcoming")
+    const [search, setSearch] = useState("")
+    const [expandedId, setExpandedId] = useState<string | null>(null)
     const [newDraftId, setNewDraftId] = useState<string | null>(null)
+    const [creating, setCreating] = useState(false)
+    const [chooseTimezone, setChooseTimezone] = useState(false)
+    const [timezone, setTimezone] = useState("")
+    const localTimezone = useSyncExternalStore(subscribeTimezone, readTimezone, serverTimezone)
     const [error, setError] = useState<string | null>(null)
-    const [notice, setNotice] = useState<{ tone: "success" | "warning"; message: string } | null>(null)
-    const hasRemoteMedium = configuration.mediums.some((medium) => medium !== "phone")
-    const columns = useMemo(() => [
-        "minmax(12rem,1fr)",
-        ...configuration.fields.map(() => "minmax(11rem,.8fr)"),
-        "minmax(9.5rem,.65fr)",
-        "minmax(8.5rem,.55fr)",
-        "minmax(9rem,.6fr)",
-        ...(hasRemoteMedium ? ["minmax(14rem,.9fr)"] : []),
-        "minmax(10.5rem,.7fr)",
-        "3rem",
-    ].join(" "), [configuration.fields, hasRemoteMedium])
-    const columnCount = 6 + configuration.fields.length + (hasRemoteMedium ? 1 : 0)
+    const [now, setNow] = useState(initialNow)
+    const [queues] = useState(() => new Map<string, DraftQueue>())
+    const refreshRequest = useRef<Promise<Awaited<ReturnType<typeof readAppointmentSettingState>>> | null>(null)
+    const mutationVersion = useRef(0)
+    const mutationCount = useRef(0)
+    const active = useRef(true)
+    const creatingRef = useRef(false)
+    const onSaved = useCallback((row: AppointmentSettingAppointment) => {
+        mutationVersion.current += 1
+        setAppointments((current) => current.map((candidate) => candidate.id === row.id ? row : candidate))
+    }, [])
+    const refresh = useCallback(async () => {
+        if (mutationCount.current) return undefined
+        if (refreshRequest.current) return refreshRequest.current.catch(() => undefined)
+        const version = mutationVersion.current
+        const request = readAppointmentSettingState(workspaceSlug, relationshipId)
+        refreshRequest.current = request
+        try {
+            const result = await request
+            if (active.current && version === mutationVersion.current && !mutationCount.current) {
+                setAppointments((current) => {
+                    const received = new Set(result.appointments.map((row) => row.id))
+                    const preserved = current.filter((row) => {
+                        const queue = queues.get(row.id)
+                        return !received.has(row.id) && queue && (queue.getSnapshot().saving || Object.keys(queue.getSnapshot().changes).length > 0)
+                    })
+                    return [...result.appointments, ...preserved]
+                })
+                for (const [id, queue] of queues) {
+                    const row = result.appointments.find((candidate) => candidate.id === id)
+                    if (row) queue.receive(row)
+                    else if (Object.keys(queue.getSnapshot().changes).length && !queue.getSnapshot().saving) queue.markUnavailable()
+                }
+                setDelivery(result.delivery)
+                setError(null)
+                setNow(Date.now())
+            }
+            return result
+        } catch {
+            if (active.current) setError("Could not refresh appointments. Your open draft changes are preserved.")
+            return undefined
+        } finally { refreshRequest.current = null }
+    }, [queues, relationshipId, workspaceSlug])
 
     useEffect(() => {
+        active.current = true
         const supabase = createSupabaseBrowserClient()
-        let refreshTimer: number | null = null
-        let active = true
-        const refreshAppointments = async () => {
-            if (mutationPending.current) return
-            const version = ++refreshVersion.current
-            const { data, error: refreshError } = await supabase.from("appointment_setting_appointments").select(APPOINTMENT_SELECT).eq("workspace_id", workspaceId).eq("relationship_id", relationshipId).eq("service_id", serviceId).order("created_at", { ascending: false })
-            if (active && !mutationPending.current && version === refreshVersion.current && !refreshError) setAppointments(sortAppointments((data ?? []) as AppointmentSettingAppointment[]))
-        }
-        refreshRef.current = refreshAppointments
-        window.addEventListener("focus", refreshAppointments)
-        window.addEventListener("online", refreshAppointments)
-        const channel = supabase.channel(`appointment-setting:${workspaceId}:${relationshipId}:${serviceId}`).on("postgres_changes", { event: "*", schema: "public", table: "appointment_setting_appointments", filter: `relationship_id=eq.${relationshipId}` }, () => {
-            if (refreshTimer !== null) window.clearTimeout(refreshTimer)
-            refreshTimer = window.setTimeout(() => void refreshAppointments(), 120)
-        }).subscribe((status) => { if (status === "SUBSCRIBED") void refreshAppointments() })
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const refreshSoon = () => { clearTimeout(timer); timer = setTimeout(() => { void refresh() }, 250) }
+        window.addEventListener("focus", refreshSoon)
+        window.addEventListener("online", refreshSoon)
+        const channel = supabase.channel(`appointment-setting:${workspaceId}:${relationshipId}:${serviceId}`)
+            .on("postgres_changes", { event: "*", schema: "public", table: "appointment_setting_appointments", filter: `relationship_id=eq.${relationshipId}` }, refreshSoon)
+            .on("postgres_changes", { event: "UPDATE", schema: "public", table: "client_messages", filter: `relationship_id=eq.${relationshipId}` }, refreshSoon)
+            .subscribe((status) => { if (status === "SUBSCRIBED") refreshSoon() })
+        const interval = setInterval(() => { setNow(Date.now()); if (document.visibilityState === "visible") void refresh() }, 60_000)
         return () => {
-            active = false
-            window.removeEventListener("focus", refreshAppointments)
-            window.removeEventListener("online", refreshAppointments)
-            if (refreshTimer !== null) window.clearTimeout(refreshTimer)
+            active.current = false
+            clearTimeout(timer)
+            clearInterval(interval)
+            window.removeEventListener("focus", refreshSoon)
+            window.removeEventListener("online", refreshSoon)
             void supabase.removeChannel(channel)
         }
-    }, [relationshipId, serviceId, workspaceId])
-
-    function beginMutation(key: string) {
-        if (mutationPending.current) return false
-        mutationPending.current = true
-        refreshVersion.current += 1
-        setSavingKey(key)
-        setError(null)
-        setNotice(null)
-        return true
-    }
-
-    function finishMutation() {
-        mutationPending.current = false
-        setSavingKey(null)
-        void refreshRef.current()
-    }
-
-    async function saveField(row: AppointmentSettingAppointment, field: AppointmentUpdateField, value: string) {
-        const key = `${row.id}:${field}`
-        if (!beginMutation(key)) return false
-        try {
-            const result = await runWorkspaceMutation(() => updateAppointmentSettingAppointment(workspaceSlug, relationshipId, row.id, field, value, row.updated_at), { category: "system" })
-            if (!result.ok) {
-                setError(result.error)
-                return false
-            }
-            setAppointments((current) => sortAppointments(current.map((candidate) => candidate.id === row.id ? result.data! : candidate)))
-            return true
-        } catch (caught) {
-            setError(caught instanceof Error ? caught.message : "We couldn't save that draft change.")
-            return false
-        } finally {
-            finishMutation()
+    }, [refresh, relationshipId, serviceId, workspaceId])
+    useEffect(() => {
+        const warn = (event: BeforeUnloadEvent) => {
+            if ([...queues.values()].some((queue) => queue.getSnapshot().saving || Object.keys(queue.getSnapshot().changes).length)) { event.preventDefault(); event.returnValue = "" }
         }
-    }
+        window.addEventListener("beforeunload", warn)
+        return () => window.removeEventListener("beforeunload", warn)
+    }, [queues])
 
     async function addDraft() {
-        if (!beginMutation("new")) return
+        if (!timezone) { setChooseTimezone(true); return }
+        if (creatingRef.current) return
+        creatingRef.current = true
+        mutationCount.current += 1
+        mutationVersion.current += 1
+        setCreating(true)
+        setError(null)
         try {
-            const result = await runWorkspaceMutation(() => createAppointmentSettingDraft(workspaceSlug, relationshipId, browserTimezone()), { category: "system" })
-            if (!result.ok) {
-                setError(result.error)
-                return
-            }
-            setNewDraftId(result.data!.id)
-            setAppointments((current) => sortAppointments([...current.filter((row) => row.id !== result.data!.id), result.data!]))
-        } catch (caught) {
-            setError(caught instanceof Error ? caught.message : "We couldn't add an appointment draft.")
-        } finally {
-            finishMutation()
-        }
+            const result = await runWorkspaceMutation(() => createAppointmentSettingDraft(workspaceSlug, relationshipId, timezone), { category: "system" })
+            if (!result.ok || !result.data) { setError(result.ok ? "Could not create a draft." : result.error); return }
+            const row = result.data
+            setAppointments((current) => [...current.filter((candidate) => candidate.id !== row.id), row])
+            setExpandedId(row.id)
+            setNewDraftId(row.id)
+            setView("drafts")
+            setSearch("")
+            setChooseTimezone(false)
+        } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not create a draft.") }
+        finally { creatingRef.current = false; mutationCount.current -= 1; mutationVersion.current += 1; setCreating(false) }
     }
-
-    async function submitDraft(row: AppointmentSettingAppointment) {
-        if (!beginMutation(`${row.id}:submit`)) return
+    async function removeDraft(id: string) {
+        mutationCount.current += 1
+        mutationVersion.current += 1
         try {
-            const result = await runWorkspaceMutation(() => submitAppointmentSettingAppointment(workspaceSlug, relationshipId, row.id, row.updated_at), { category: "communications" })
-            if (!result.ok) {
-                setError(result.error)
-                return
-            }
-            setAppointments((current) => sortAppointments(current.map((candidate) => candidate.id === row.id ? result.data!.appointment : candidate)))
-            setNotice({
-                tone: result.data!.notificationStatus === "sent" ? "success" : "warning",
-                message: appointmentNotificationNotice(result.data!.notificationStatus),
-            })
-        } catch (caught) {
-            setError(caught instanceof Error ? caught.message : "We couldn't submit this appointment.")
-        } finally {
-            finishMutation()
-        }
-    }
-
-    async function removeDraft(appointmentId: string) {
-        if (!beginMutation(`${appointmentId}:delete`)) throw new Error("Wait for the current change to finish.")
-        try {
-            const result: WorkspaceMutationResult = await deleteAppointmentSettingAppointment(workspaceSlug, relationshipId, appointmentId)
+            const result = await deleteAppointmentSettingAppointment(workspaceSlug, relationshipId, id)
             if (!result.ok) throw new Error(result.error)
-            setAppointments((current) => current.filter((row) => row.id !== appointmentId))
-        } finally {
-            finishMutation()
-        }
+            setAppointments((current) => current.filter((row) => row.id !== id))
+            setExpandedId((current) => current === id ? null : current)
+        } finally { mutationCount.current -= 1; mutationVersion.current += 1 }
     }
-
-    const cellClass = "flex min-w-0 items-center border-l border-neutral-900 px-3 first:border-l-0"
-    return <section data-workspace-mutation-scope="local" className="mt-5" aria-labelledby="appointments-heading">
-        <div className="mb-3 flex items-end justify-between gap-3">
-            <div>
-                <h2 id="appointments-heading" className="text-sm font-medium text-neutral-200">Appointments</h2>
-                <p className="mt-1 text-xs text-neutral-600">Add a draft while you work the lead. Fields save when you leave them. Submit once the appointment is confirmed.</p>
-            </div>
-            <button type="button" disabled={savingKey !== null} onClick={() => void addDraft()} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-neutral-700 px-3 text-sm text-neutral-200 transition hover:border-neutral-500 hover:text-white disabled:opacity-50">
-                <span aria-hidden="true" className="text-base leading-none">+</span>{savingKey === "new" ? "Adding…" : "Add draft"}
-            </button>
+    const query = search.trim().toLowerCase()
+    const digits = query.replace(/\D/g, "")
+    const matches = (row: AppointmentSettingAppointment) => appointmentView(row, now) === view && (!query || row.contact_name?.toLowerCase().includes(query) || row.phone?.toLowerCase().includes(query) || (digits.length >= 3 && row.phone?.replace(/\D/g, "").includes(digits)))
+    const visibleCount = appointments.filter((row) => matches(row) || row.id === expandedId).length
+    const communicationsHref = `/${workspaceSlug}/communications?conversation=${encodeURIComponent(relationshipId)}`
+    return <section data-workspace-mutation-scope="local" className="mt-5" aria-label="Appointments">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+            <label className="min-w-0 flex-1 sm:max-w-sm"><span className="sr-only">Search appointments by name or phone</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or phone" className={appointmentInputClass} /></label>
+            <button type="button" disabled={creating} onClick={() => void addDraft()} className="min-h-11 shrink-0 rounded-md border border-neutral-700 px-3 text-sm text-neutral-200 hover:border-neutral-500 disabled:opacity-50">{creating ? "Adding…" : "+ Add draft"}</button>
         </div>
-        {error ? <p role="alert" className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</p> : null}
-        {notice ? <p role="status" className={`mb-3 rounded-lg border px-3 py-2 text-sm ${notice.tone === "success" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-amber-500/30 bg-amber-500/10 text-amber-200"}`}>{notice.message}</p> : null}
-        {/* This is an inline appointment-entry worksheet: fields are the primary
-            controls and there is no appointment detail route. A two-band List
-            would hide the editable columns required by the client configuration. */}
-        <div className="overflow-x-auto rounded-xl border border-neutral-800 bg-black">
-            <div role="table" aria-label="Appointments" aria-rowcount={appointments.length + 1}>
-                <div role="row" className="grid h-10 min-w-max border-b border-neutral-800 bg-neutral-950 text-[11px] font-medium uppercase tracking-wide text-neutral-500" style={{ gridTemplateColumns: columns }}>
-                    <div role="columnheader" className="flex items-center px-4">Name</div>
-                    {configuration.fields.map((field) => <div key={field.key} role="columnheader" className="flex items-center border-l border-neutral-900 px-4">{APPOINTMENT_FIELD_OPTIONS.find((option) => option.key === field.key)?.label}{field.required ? " *" : ""}</div>)}
-                    <div role="columnheader" className="flex items-center border-l border-neutral-900 px-4">Date</div>
-                    <div role="columnheader" className="flex items-center border-l border-neutral-900 px-4">Time</div>
-                    <div role="columnheader" className="flex items-center border-l border-neutral-900 px-4">Medium</div>
-                    {hasRemoteMedium ? <div role="columnheader" className="flex items-center border-l border-neutral-900 px-4">Meeting link</div> : null}
-                    <div role="columnheader" className="flex items-center border-l border-neutral-900 px-4">Status</div>
-                    <div role="columnheader" className="border-l border-neutral-900"><span className="sr-only">Actions</span></div>
-                </div>
-                {appointments.length ? appointments.map((appointment) => {
-                    const name = appointment.contact_name?.trim() || "Untitled lead"
-                    const isDraft = appointment.workflow_status === "draft"
-                    const rowPending = savingKey !== null
-                    return <div key={appointment.id} role="row" className="grid min-h-12 min-w-max border-b border-neutral-900 last:border-b-0 hover:bg-neutral-950" style={{ gridTemplateColumns: columns }}>
-                        <div role="cell" className="flex min-w-0 items-center px-3">{isDraft
-                            ? <EditableCell label={`name for ${name}`} value={appointment.contact_name ?? ""} displayValue={appointment.contact_name ?? "Add name"} pending={rowPending} initialEditing={newDraftId === appointment.id} onSave={(value) => { setNewDraftId(null); return saveField(appointment, "contact_name", value) }} />
-                            : <ReadOnlyCell>{name}</ReadOnlyCell>}</div>
-                        {configuration.fields.map((field) => {
-                            const option = APPOINTMENT_FIELD_OPTIONS.find((candidate) => candidate.key === field.key)!
-                            const value = detailValue(appointment, field.key)
-                            return <div key={field.key} role="cell" className={cellClass}>{isDraft
-                                ? <EditableCell label={`${option.label} for ${name}`} value={value} displayValue={value || `Add ${option.label.toLowerCase()}`} type={option.inputType === "email" ? "email" : option.inputType === "tel" ? "tel" : "text"} pending={rowPending} onSave={(next) => saveField(appointment, `detail:${field.key}`, next)} />
-                                : <ReadOnlyCell>{value}</ReadOnlyCell>}</div>
-                        })}
-                        <div role="cell" className={cellClass}>{isDraft
-                            ? <EditableCell label={`date for ${name}`} value={appointment.appointment_date ?? ""} displayValue={appointment.appointment_date ?? "Add date"} type="date" pending={rowPending} onSave={(value) => saveField(appointment, "appointment_date", value)} />
-                            : <ReadOnlyCell>{dateLabel(appointment.appointment_at, appointment.appointment_timezone, appointment.appointment_date)}</ReadOnlyCell>}</div>
-                        <div role="cell" className={cellClass}>{isDraft
-                            ? <EditableCell label={`time for ${name}`} value={shortTime(appointment.appointment_time)} displayValue={appointment.appointment_time ? `${shortTime(appointment.appointment_time)} (${appointment.appointment_timezone})` : "Add time"} type="time" pending={rowPending} onSave={(value) => saveField(appointment, "appointment_time", value)} />
-                            : <ReadOnlyCell>{timeLabel(appointment.appointment_at, appointment.appointment_timezone, appointment.appointment_time)}</ReadOnlyCell>}</div>
-                        <div role="cell" className={cellClass}>{isDraft
-                            ? <EditableSelect label={`medium for ${name}`} value={appointment.meeting_medium} options={configuration.mediums.map((medium) => ({ value: medium, label: APPOINTMENT_MEDIUM_OPTIONS.find((option) => option.key === medium)?.label ?? medium }))} pending={rowPending} onSave={(value) => saveField(appointment, "meeting_medium", value)} />
-                            : <ReadOnlyCell>{APPOINTMENT_MEDIUM_OPTIONS.find((option) => option.key === appointment.meeting_medium)?.label ?? appointment.meeting_medium}</ReadOnlyCell>}</div>
-                        {hasRemoteMedium ? <div role="cell" className={cellClass}>{isDraft
-                            ? <EditableCell label={`meeting link for ${name}`} value={appointment.meeting_link ?? ""} displayValue={appointment.meeting_link ?? "Add link"} type="url" pending={rowPending} onSave={(value) => saveField(appointment, "meeting_link", value)} />
-                            : <ReadOnlyCell>{appointment.meeting_link ?? "—"}</ReadOnlyCell>}</div> : null}
-                        <div role="cell" className="flex items-center gap-3 border-l border-neutral-900 px-3">{isDraft
-                            ? <><Status label="Draft" tone="yellow" compact /><button type="button" disabled={rowPending} onClick={() => void submitDraft(appointment)} className="inline-flex h-8 items-center rounded-md bg-white px-3 text-xs font-medium text-black transition hover:bg-neutral-200 disabled:opacity-50">{savingKey === `${appointment.id}:submit` ? "Submitting…" : "Submit"}</button></>
-                            : <Status label="Submitted" tone="green" />}</div>
-                        <div role="cell" className="flex items-center justify-center border-l border-neutral-900">{isDraft ? <ListActionMenu label={`Actions for ${name}`} actions={[{ label: "Remove draft", action: () => removeDraft(appointment.id), danger: true, confirmMessage: `Remove the draft for ${name}?` }]} /> : null}</div>
-                    </div>
-                }) : <div role="row" className="grid h-16 min-w-max" style={{ gridTemplateColumns: columns }}><div role="cell" className="flex items-center justify-center px-4 text-sm text-neutral-600" style={{ gridColumn: `span ${columnCount}` }}>No appointment drafts or submitted appointments yet.</div></div>}
-            </div>
-        </div>
-        <p aria-live="polite" className="mt-2 min-h-4 text-right text-xs text-neutral-600">{savingKey && savingKey !== "new" ? "Saving…" : ""}</p>
+        {chooseTimezone ? <form onSubmit={(event) => { event.preventDefault(); void addDraft() }} className="mt-4 space-y-3 border-y border-neutral-800 py-4">
+            <div className="sm:max-w-md"><label htmlFor="new-appointment-timezone" className="mb-2 block text-sm text-neutral-200">Which timezone is this appointment in?</label><AppointmentTimezoneSelect id="new-appointment-timezone" value={timezone} onChange={setTimezone} disabled={creating} /><p className="mt-1 text-xs text-neutral-400">Use the client’s appointment timezone. You can change it in the draft.</p></div>
+            <div className="flex gap-3"><button type="submit" disabled={!timezone || creating} className="min-h-11 rounded-md bg-white px-3 text-sm text-black disabled:opacity-50">{creating ? "Adding…" : "Create draft"}</button><button type="button" onClick={() => setChooseTimezone(false)} className="min-h-11 px-2 text-sm text-neutral-400">Cancel</button></div>
+        </form> : null}
+        {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error} <button type="button" onClick={() => void refresh()} className="underline underline-offset-4">Refresh</button></p> : null}
+        {delivery.messagingError || delivery.notificationError ? <p role="status" className="mt-3 text-sm text-amber-300">{delivery.messagingError || delivery.notificationError} <Link href={communicationsHref} className="underline underline-offset-4">Open Communications</Link></p> : null}
+        <FilterRail ariaLabel="Appointment view">{(["drafts", "upcoming", "past"] as const).map((category) => <FilterRailButton key={category} selected={view === category} onClick={() => { setView(category); setExpandedId(null) }}>{category === "drafts" ? "Drafts" : category === "upcoming" ? "Upcoming" : "Past"}<FilterRailCount>{appointments.filter((row) => appointmentView(row, now) === category).length}</FilterRailCount></FilterRailButton>)}</FilterRail>
+        {expandedId && appointments.some((row) => row.id === expandedId && !matches(row)) ? <p className="mt-3 text-xs text-neutral-400">Your selected appointment stays visible until you close it or change views.</p> : null}
+        <List ariaLabel="Appointments">
+            {sortAppointmentWork(appointments, now).map((row) => <AppointmentRow key={row.id} appointment={row} configuration={configuration} workspaceSlug={workspaceSlug} relationshipId={relationshipId} delivery={delivery} expanded={expandedId === row.id} visible={matches(row) || expandedId === row.id} autoFocus={newDraftId === row.id} localTimezone={localTimezone} queues={queues} onOpen={() => { setExpandedId((current) => current === row.id ? null : row.id); setNewDraftId(null) }} onSaved={onSaved} onRemove={removeDraft} onRefresh={refresh} onDelivery={(messageId, status) => { mutationVersion.current += 1; setDelivery((current) => ({ ...current, notifications: { ...current.notifications, [messageId]: status } })) }} />)}
+            {!visibleCount ? <p className="px-4 py-8 text-center text-sm text-neutral-500">{query ? "No appointments match your search." : view === "drafts" ? "No drafts. Add one when you start working a lead." : view === "upcoming" ? "No upcoming appointments." : "No past appointments."}</p> : null}
+        </List>
     </section>
 }

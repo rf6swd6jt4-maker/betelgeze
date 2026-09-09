@@ -8,7 +8,33 @@ import {
     type AppointmentSettingConfiguration,
 } from "@/lib/appointment-setting"
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import { appointmentNotificationStatus, type AppointmentDeliveryState } from "@/lib/appointment-setting-delivery"
+import { resolveCommunicationDestinations } from "@/lib/client-messages/omnichannel"
 import { loadAppointmentSettingServiceIds, type WorkspaceAccess } from "@/lib/workspace-access"
+
+// Call only after verifying the viewer's Appointment Setting service assignment.
+// Return delivery states only, never message bodies or channel credentials.
+export async function loadAppointmentSettingDeliveryState(input: {
+    workspaceId: string
+    relationshipId: string
+    appointments: AppointmentSettingAppointment[]
+}): Promise<AppointmentDeliveryState> {
+    const messageIds = input.appointments.flatMap((row) => row.submission_message_id ? [row.submission_message_id] : [])
+    const [messaging, messages] = await Promise.all([
+        resolveCommunicationDestinations({ workspaceId: input.workspaceId, relationshipId: input.relationshipId })
+            .then((result) => result.destinations.length ? null : "Connect a client SMS or WhatsApp destination before submitting. You can continue saving drafts.")
+            .catch(() => "Client messaging could not be verified. Check Communications before submitting."),
+        messageIds.length
+            ? supabaseAdmin.from("client_messages").select("id, status").eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId).in("id", messageIds)
+            : Promise.resolve({ data: [], error: null }),
+    ])
+    return {
+        checkedAt: Date.now(),
+        messagingError: messaging,
+        notificationError: messages.error ? "Notification status could not be loaded. Check Communications for delivery progress." : null,
+        notifications: Object.fromEntries((messages.data ?? []).map((message) => [message.id, appointmentNotificationStatus(message.status)])),
+    }
+}
 
 export async function loadAppointmentSettingRelationshipServices(access: WorkspaceAccess) {
     const appointmentSettingServices = await loadAppointmentSettingServiceIds(access.workspaceId)

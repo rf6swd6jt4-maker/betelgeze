@@ -7,12 +7,15 @@ import {
     APPOINTMENT_FIELD_OPTIONS,
     formatAppointmentNotification,
     formatUsPhone,
+    appointmentReadiness,
+    type AppointmentDraftChanges,
+    type AppointmentUpdateField,
     type AppointmentFieldKey,
     type AppointmentMedium,
     type AppointmentSettingAppointment,
     type AppointmentSettingConfiguration,
 } from "@/lib/appointment-setting"
-import { loadAppointmentSettingConfiguration, loadAppointmentSettingRelationshipService } from "@/lib/appointment-setting-server"
+import { loadAppointmentSettingConfiguration, loadAppointmentSettingRelationshipService, listAppointmentSettingAppointments, loadAppointmentSettingDeliveryState } from "@/lib/appointment-setting-server"
 import { resolveCommunicationDestinations, sendCommunicationDeliveries } from "@/lib/client-messages/omnichannel"
 import { getRelationship } from "@/lib/relationships"
 import { getClientPortalUrlForOnboardingSession } from "@/lib/client-portal/session"
@@ -20,7 +23,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireRelationshipAccess, requireWorkspacePanel } from "@/lib/workspace-access"
 import type { WorkspaceMutationResult } from "@/lib/workspace-mutations"
 
-export type AppointmentUpdateField = "contact_name" | "appointment_date" | "appointment_time" | "meeting_medium" | "meeting_link" | `detail:${AppointmentFieldKey}`
+export type { AppointmentUpdateField } from "@/lib/appointment-setting"
 
 export type AppointmentSubmission = {
     appointment: AppointmentSettingAppointment
@@ -93,13 +96,15 @@ async function requireAppointmentSettingContext(workspaceSlug: string, relations
 function normalizeDetail(key: AppointmentFieldKey, value: string) {
     if (key === "phone") return value.trim() ? formatUsPhone(value) : ""
     const maximum = key === "notes" ? 1_000 : key === "address" ? 300 : 200
-    const cleaned = cleanOptionalText(value, maximum)
+    const cleaned = key === "notes" ? (value.trim().length <= maximum ? value.trim() : null) : cleanOptionalText(value, maximum)
     if (cleaned === null) return null
     if (key === "email" && cleaned && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned)) return null
     return cleaned
 }
 
 function validateSubmission(row: AppointmentSettingAppointment, configuration: AppointmentSettingConfiguration) {
+    const issues = appointmentReadiness(row, configuration)
+    if (issues.length) return { ok: false as const, error: issues[0].message, fieldErrors: Object.fromEntries(issues.map((issue) => [issue.field, issue.message])) }
     const contactName = cleanOptionalText(row.contact_name ?? "", 160)
     const appointmentDate = cleanAppointmentDate(row.appointment_date ?? "")
     const appointmentTime = cleanAppointmentTime(row.appointment_time ?? "")
@@ -107,7 +112,7 @@ function validateSubmission(row: AppointmentSettingAppointment, configuration: A
     if (!contactName) return { ok: false as const, error: "Add the lead's name before submitting." }
     if (!appointmentDate || !appointmentTime || !appointmentTimezone) return { ok: false as const, error: "Add a valid appointment date and time before submitting." }
     if (!configuration.mediums.includes(row.meeting_medium)) return { ok: false as const, error: "Choose an available appointment option." }
-    const meetingLink = cleanMeetingLink(row.meeting_link ?? "")
+    const meetingLink = row.meeting_medium === "phone" ? "" : cleanMeetingLink(row.meeting_link ?? "")
     if (meetingLink === null || (row.meeting_medium !== "phone" && !meetingLink)) return { ok: false as const, error: "Add a valid HTTPS meeting link before submitting." }
     for (const requested of configuration.fields) {
         const value = requested.key === "phone" ? row.phone ?? "" : String(row.details?.[requested.key] ?? "")
@@ -119,9 +124,10 @@ function validateSubmission(row: AppointmentSettingAppointment, configuration: A
     return { ok: true as const, value: { contactName, appointmentDate, appointmentTime, appointmentTimezone, meetingLink: meetingLink || null } }
 }
 
-export async function createAppointmentSettingDraft(workspaceSlug: string, relationshipId: string, appointmentTimezone = "UTC"): Promise<WorkspaceMutationResult<AppointmentSettingAppointment>> {
+export async function createAppointmentSettingDraft(workspaceSlug: string, relationshipId: string, appointmentTimezone: string): Promise<WorkspaceMutationResult<AppointmentSettingAppointment>> {
     const { workspace, user, serviceId, configuration } = await requireAppointmentSettingContext(workspaceSlug, relationshipId)
-    const timezone = cleanTimezone(appointmentTimezone) ?? "UTC"
+    const timezone = cleanTimezone(appointmentTimezone)
+    if (!timezone) return { ok: false, error: "Choose the appointment timezone before creating a draft." }
     const { data, error } = await supabaseAdmin.from("appointment_setting_appointments").insert({
         workspace_id: workspace.id,
         relationship_id: relationshipId,
@@ -148,53 +154,70 @@ export async function createAppointmentSettingDraft(workspaceSlug: string, relat
 }
 
 export async function updateAppointmentSettingAppointment(workspaceSlug: string, relationshipId: string, appointmentId: string, field: AppointmentUpdateField, value: string, expectedUpdatedAt: string): Promise<WorkspaceMutationResult<AppointmentSettingAppointment>> {
+    return saveAppointmentSettingDraft(workspaceSlug, relationshipId, appointmentId, { [field]: value }, expectedUpdatedAt)
+}
+
+export async function saveAppointmentSettingDraft(workspaceSlug: string, relationshipId: string, appointmentId: string, changes: AppointmentDraftChanges, expectedUpdatedAt: string): Promise<WorkspaceMutationResult<AppointmentSettingAppointment>> {
     const { workspace, user, serviceId, configuration } = await requireAppointmentSettingContext(workspaceSlug, relationshipId)
     const { data: current } = await supabaseAdmin.from("appointment_setting_appointments").select(APPOINTMENT_SELECT).eq("workspace_id", workspace.id).eq("relationship_id", relationshipId).eq("service_id", serviceId).eq("id", appointmentId).maybeSingle()
     if (!current) return { ok: false, error: "That appointment draft is no longer available." }
     if (current.workflow_status !== "draft") return { ok: false, error: "Submitted appointments can no longer be edited here." }
     if (current.updated_at !== expectedUpdatedAt) return { ok: false, conflict: true, error: "This draft changed. Review its latest details and try again." }
     const update: Record<string, unknown> = { updated_by: user.id }
-    if (field === "contact_name") {
-        const cleaned = cleanOptionalText(value, 160)
-        if (cleaned === null) return { ok: false, error: "Use a name of 160 characters or fewer." }
-        update.contact_name = cleaned || null
-    } else if (field === "appointment_date") {
-        const cleaned = cleanAppointmentDate(value)
-        if (cleaned === null) return { ok: false, error: "Add a valid appointment date." }
-        update.appointment_date = cleaned || null
-    } else if (field === "appointment_time") {
-        const cleaned = cleanAppointmentTime(value)
-        if (cleaned === null) return { ok: false, error: "Add a valid appointment time." }
-        update.appointment_time = cleaned || null
-    } else if (field === "meeting_medium") {
-        if (!configuration.mediums.includes(value as AppointmentMedium)) return { ok: false, error: "Choose an available appointment option." }
-        update.meeting_medium = value
-    } else if (field === "meeting_link") {
-        const cleaned = cleanMeetingLink(value)
-        if (cleaned === null) return { ok: false, error: "Add a valid HTTPS meeting link." }
-        update.meeting_link = cleaned || null
-    } else {
-        const key = field.slice("detail:".length) as AppointmentFieldKey
-        const requested = configuration.fields.find((candidate) => candidate.key === key)
-        if (!requested) return { ok: false, error: "That field is not configured for this client." }
-        const cleaned = normalizeDetail(key, value)
-        const label = APPOINTMENT_FIELD_OPTIONS.find((option) => option.key === key)?.label ?? "This field"
-        if (cleaned === null) return { ok: false, error: key === "phone" ? "Add a valid 10-digit US phone number." : `Add a valid ${label.toLowerCase()}.` }
-        if (key === "phone") update.phone = cleaned || null
-        else {
-            const details = { ...(current.details && typeof current.details === "object" ? current.details : {}) }
-            if (cleaned) details[key] = cleaned
-            else delete details[key]
-            update.details = details
-        }
+    if (!changes || typeof changes !== "object" || Array.isArray(changes) || Object.keys(changes).length > 12) return { ok: false, error: "Invalid draft changes." }
+    for (const [field, value] of Object.entries(changes)) {
+        if (typeof value !== "string") return { ok: false, error: "Invalid draft value." }
+        const result = ((): WorkspaceMutationResult => {
+            if (field === "contact_name") {
+                const cleaned = cleanOptionalText(value, 160)
+                if (cleaned === null) return { ok: false, error: "Use a name of 160 characters or fewer." }
+                update.contact_name = cleaned || null
+            } else if (field === "appointment_date") {
+                const cleaned = cleanAppointmentDate(value)
+                if (cleaned === null) return { ok: false, error: "Add a valid appointment date." }
+                update.appointment_date = cleaned || null
+            } else if (field === "appointment_time") {
+                const cleaned = cleanAppointmentTime(value)
+                if (cleaned === null) return { ok: false, error: "Add a valid appointment time." }
+                update.appointment_time = cleaned || null
+            } else if (field === "appointment_timezone") {
+                const cleaned = cleanTimezone(value)
+                if (!cleaned) return { ok: false, error: "Choose a valid appointment timezone." }
+                update.appointment_timezone = cleaned
+            } else if (field === "meeting_medium") {
+                if (!configuration.mediums.includes(value as AppointmentMedium)) return { ok: false, error: "Choose an available appointment option." }
+                update.meeting_medium = value
+                if (value === "phone") update.meeting_link = null
+            } else if (field === "meeting_link") {
+                const cleaned = cleanMeetingLink(value)
+                if (cleaned === null) return { ok: false, error: "Add a valid HTTPS meeting link." }
+                update.meeting_link = cleaned || null
+            } else if (field.startsWith("detail:")) {
+                const key = field.slice("detail:".length) as AppointmentFieldKey
+                const requested = configuration.fields.find((candidate) => candidate.key === key)
+                if (!requested) return { ok: false, error: "That field is not configured for this client." }
+                const cleaned = normalizeDetail(key, value)
+                const label = APPOINTMENT_FIELD_OPTIONS.find((option) => option.key === key)?.label ?? "This field"
+                if (cleaned === null) return { ok: false, error: key === "phone" ? "Add a valid 10-digit US phone number." : `Add a valid ${label.toLowerCase()}.` }
+                if (key === "phone") update.phone = cleaned || null
+                else {
+                    const details = { ...((update.details ?? current.details ?? {}) as Record<string, string>) }
+                    if (cleaned) details[key] = cleaned
+                    else delete details[key]
+                    update.details = details
+                }
+            } else return { ok: false, error: "That appointment field cannot be edited." }
+            return { ok: true }
+        })()
+        if (!result.ok) return { ...result, fieldErrors: { [field]: result.error } }
     }
+    if (update.meeting_medium === "phone") update.meeting_link = null
 
     const { data, error } = await supabaseAdmin.from("appointment_setting_appointments").update(update).eq("updated_at", expectedUpdatedAt).eq("workspace_id", workspace.id).eq("relationship_id", relationshipId).eq("service_id", serviceId).eq("id", appointmentId).eq("workflow_status", "draft").select(APPOINTMENT_SELECT).maybeSingle()
     if (error || !data) {
         console.error("Appointment Setting draft could not be updated", { workspaceId: workspace.id, relationshipId, appointmentId, code: error?.code })
-        return { ok: false, error: "We couldn't save that draft change. Try again." }
+        return { ok: false, conflict: !error, error: !error ? "This draft changed. Review its latest details and try again." : "We couldn't save that draft change. Try again." }
     }
-    revalidatePath(detailPath(workspaceSlug, relationshipId))
     return { ok: true, data: data as AppointmentSettingAppointment }
 }
 
@@ -301,4 +324,11 @@ export async function deleteAppointmentSettingAppointment(workspaceSlug: string,
     }
     revalidatePath(detailPath(workspaceSlug, relationshipId))
     return { ok: true }
+}
+
+export async function readAppointmentSettingState(workspaceSlug: string, relationshipId: string) {
+    const { workspace, serviceId } = await requireAppointmentSettingContext(workspaceSlug, relationshipId)
+    const appointments = await listAppointmentSettingAppointments({ workspaceId: workspace.id, relationshipId, serviceId })
+    const delivery = await loadAppointmentSettingDeliveryState({ workspaceId: workspace.id, relationshipId, appointments })
+    return { appointments, delivery }
 }

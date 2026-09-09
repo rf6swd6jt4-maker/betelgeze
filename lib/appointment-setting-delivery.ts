@@ -1,5 +1,23 @@
 export type AppointmentNotificationStatus = "sent" | "partial" | "failed" | "uncertain" | "pending"
 
+export type AppointmentDeliveryState = {
+    checkedAt: number
+    messagingError: string | null
+    notificationError: string | null
+    notifications: Record<string, AppointmentNotificationStatus>
+}
+
+export function appointmentNotificationLabel(status: AppointmentNotificationStatus | undefined) {
+    switch (status) {
+        case "sent": return "Client notified"
+        case "partial": return "Some channels need attention"
+        case "failed": return "Notification failed"
+        case "uncertain": return "Delivery unconfirmed"
+        case "pending": return "Notification pending"
+        default: return "Notification status unavailable"
+    }
+}
+
 export function appointmentNotificationStatus(status: string | null | undefined): AppointmentNotificationStatus {
     if (status === "sent" || status === "delivered" || status === "read") return "sent"
     if (status === "partial_sent") return "partial"

@@ -4,7 +4,7 @@ import { DetailPageHeader } from "@/components/detail"
 import { RelationshipStage, SquarePill } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
-import { loadAppointmentSettingConfiguration, loadAppointmentSettingRelationshipService, listAppointmentSettingAppointments } from "@/lib/appointment-setting-server"
+import { loadAppointmentSettingConfiguration, loadAppointmentSettingRelationshipService, listAppointmentSettingAppointments, loadAppointmentSettingDeliveryState } from "@/lib/appointment-setting-server"
 import { getRelationship } from "@/lib/relationships"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireRelationshipAccess, requireWorkspacePanel } from "@/lib/workspace-access"
@@ -34,8 +34,7 @@ export default async function AppointmentSettingRelationshipPage({ params }: Pag
         listAppointmentSettingAppointments({ workspaceId: workspace.id, relationshipId: relationship.id, serviceId }),
         loadAppointmentSettingConfiguration({ workspaceId: workspace.id, relationshipId: relationship.id, serviceId }),
     ])
-    const submittedCount = appointments.filter((appointment) => appointment.workflow_status === "submitted").length
-    const draftCount = appointments.length - submittedCount
+    const delivery = await loadAppointmentSettingDeliveryState({ workspaceId: workspace.id, relationshipId, appointments })
     const latestUpdatedAt = appointments.reduce((latest, appointment) => (
         appointment.updated_at > latest ? appointment.updated_at : latest
     ), relationship.updated_at)
@@ -51,10 +50,6 @@ export default async function AppointmentSettingRelationshipPage({ params }: Pag
                         title={relationship.primary_person_name}
                         subtitle={relationship.business_name ?? "No company saved"}
                         labels={<>{relationship.source_metadata.is_test === true ? <SquarePill tone="yellow">Test</SquarePill> : null}<RelationshipStage phase="retention" /></>}
-                        facts={[
-                            { label: "submitted", value: submittedCount },
-                            { label: "drafts", value: draftCount },
-                        ]}
                         updated={formatRelativeTime(latestUpdatedAt)}
                     />
 
@@ -66,16 +61,14 @@ export default async function AppointmentSettingRelationshipPage({ params }: Pag
                         serviceId={serviceId}
                         initialAppointments={appointments}
                         configuration={configuration}
+                        initialDelivery={delivery}
+                        initialNow={delivery.checkedAt}
                     />
                 </div>
 
                 <ClientContextPanel access={access}
                     workspaceSlug={workspace.slug}
                     relationship={relationship}
-                    metrics={[
-                        { label: "Submitted", value: submittedCount },
-                        { label: "Drafts", value: draftCount },
-                    ]}
                 />
             </div>
         </div>

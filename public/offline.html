@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="robots" content="noindex">
+  <title>Betelgeze · Offline</title>
+  <link rel="icon" href="/icons/betelgeze-icon-192.png">
+  <link rel="stylesheet" href="/offline.css">
+  <script type="module" src="/offline.js"></script>
+</head>
+<body>
+  <header><img src="/brand/betelgeze-logo-inverted-no-background.svg" alt="Betelgeze" width="112" height="28"><span id="connection" role="status">Offline</span><a id="return" href="/" hidden>Open workspace</a></header>
+  <nav aria-label="Workspace panels"><span aria-current="page">Communications</span><button disabled title="Connect to open this panel">Relationships</button><button disabled title="Connect to open this panel">Appointment Setting</button><button disabled title="Connect to open this panel">Settings</button></nav>
+  <main>
+    <div class="chat-picker"><label for="conversations">Saved chats</label><select id="conversations"><option value="">Loading saved chats…</option></select><p id="freshness">Recent messages saved on this device.</p></div>
+    <div id="messages" role="log" aria-label="Saved messages" tabindex="0"></div>
+    <p id="notice" role="status">You can read saved chats and queue messages while offline. Other panels need a connection.</p>
+    <form id="composer"><label class="sr-only" for="draft">Message</label><textarea id="draft" rows="2" maxlength="8000" placeholder="Write a message…" disabled></textarea><button id="send" type="submit" disabled>Send</button></form>
+    <div class="actions"><button id="reconnect" type="button">Check connection</button><button id="clear" type="button">Clear saved data</button></div>
+  </main>
+</body>
+</html>

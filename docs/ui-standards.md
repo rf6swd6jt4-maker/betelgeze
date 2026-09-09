@@ -8,6 +8,14 @@ Keep the shell stacking order explicit: tab content `30`, relationship context `
 
 Top-bar mutation feedback uses short, bounded labels (`Saving…`, `Saved`, `Action failed`). Full error details stay in the originating form and the status tooltip/accessibility label; they must never expand the header or displace search, navigation, presence, or account controls.
 
+## Offline recovery
+
+The online workspace retains its existing layout and network loading paths. `WorkspaceOfflineStatus` uses the shared compact `Status` mark and appears only when offline or messages need recovery; it links to saved chats. Sidebar destinations requiring a server are dimmed while offline, while loaded screens and chat composition remain available. Reconnection never reloads the active screen or interrupts typing.
+
+`ChatOutboxStatus` identifies locally saved messages separately from server-confirmed delivery. Cancel is available before a request is dispatched, and after a definite rejection. An uncertain send retains its original request ID until reconciled. Failure must never clear a draft before either durable device storage or server confirmation succeeds.
+
+The service worker's recovery document (`public/offline.html`) is deliberately independent of React, authenticated documents, and Next.js chunks so it can open after a cold offline launch. It uses native navigation and a native chat selector rather than a record list, and a simple message timeline. Other panel destinations are disabled. Its static styling follows the same neutral surfaces and restrained status colours; it does not define alternative application primitives. Cache only a bounded recent message history, identify when it was saved, and render messages as text. Attachments require connectivity. Clear saved chats, pending sends, and staff drafts on account change or logout.
+
 ## Popup motion
 
 Every custom popup uses the shared opening motion on both mobile and desktop. Apply `betelgeze-popup-enter` to the visible menu, tooltip, field editor, or dialog surface: a `140ms ease-out` opacity fade with `4px` of upward travel into its final position. `AnchoredPopup` applies this automatically once its initial position is measured; do not animate its children a second time.

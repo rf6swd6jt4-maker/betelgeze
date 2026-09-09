@@ -67,6 +67,7 @@ export function AppointmentDraftEditor({ queue, snapshot, configuration, messagi
     const localTime = localTimezone && localTimezone !== row.appointment_timezone && candidates.length === 1
         ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: localTimezone, timeZoneName: "short" }).format(candidates[0]) : null
     return <form noValidate onSubmit={(event) => void submit(event)} className="space-y-5 px-3.5 py-4 sm:px-4" aria-label={`Appointment draft for ${row.contact_name || "new lead"}`}>
+        {snapshot.storageError ? <p role="alert" className="text-xs text-amber-300">{snapshot.storageError}</p> : null}
         <fieldset disabled={disabled}>
             <legend className="mb-3 text-sm font-medium text-neutral-200">Contact details</legend>
             <div className="grid gap-3 sm:grid-cols-2">

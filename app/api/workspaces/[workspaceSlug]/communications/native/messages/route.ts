@@ -38,6 +38,8 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     const { workspaceSlug } = await context.params
     const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
     const input = await request.json().catch(() => null) as Record<string, unknown> | null
+    if (input?.offlineWorkspaceId && input.offlineWorkspaceId !== workspace.id) return Response.json({ error: "This workspace is no longer available at this address." }, { status: 409 })
+    if (input?.offlineUserId && input.offlineUserId !== user.id) return Response.json({ error: "Sign in with the account that wrote this message." }, { status: 409 })
     const conversationId = typeof input?.conversationId === "string" ? input.conversationId : ""
     const clientRequestId = typeof input?.clientRequestId === "string" ? input.clientRequestId : ""
     const replyToMessageId = typeof input?.replyToMessageId === "string" ? input.replyToMessageId : ""

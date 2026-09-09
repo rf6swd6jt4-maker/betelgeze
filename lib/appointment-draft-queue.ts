@@ -1,5 +1,7 @@
 type RecordVersion = { updated_at: string; workflow_status: "draft" | "submitted" }
 type SaveResult<T> = { ok: true; data?: T } | { ok: false; error: string; conflict?: boolean; fieldErrors?: Record<string, string> }
+export type PersistedAppointmentDraft<F extends string> = { version: string; changes: Partial<Record<F, string>>; conflict: boolean }
+type DraftStorage<F extends string> = { read: () => PersistedAppointmentDraft<F> | null; write: (draft: PersistedAppointmentDraft<F> | null) => void }
 
 export type DraftSnapshot<T, F extends string> = {
     record: T
@@ -9,6 +11,7 @@ export type DraftSnapshot<T, F extends string> = {
     error: string | null
     fieldErrors: Record<string, string>
     conflict: boolean
+    storageError?: string | null
 }
 
 // One serial queue per appointment. Edits made during a request remain buffered;
@@ -21,6 +24,7 @@ export class AppointmentDraftQueue<T extends RecordVersion, F extends string> {
     private save: (record: T, changes: Partial<Record<F, string>>) => Promise<SaveResult<T>>
     private delay: number
     private focusedField: F | null = null
+    private storage: DraftStorage<F> | null = null
 
     constructor(record: T, save: (record: T, changes: Partial<Record<F, string>>) => Promise<SaveResult<T>>, delay = 500) {
         this.snapshot = { record, changes: {}, inputValues: {}, saving: false, error: null, fieldErrors: {}, conflict: false }
@@ -36,7 +40,25 @@ export class AppointmentDraftQueue<T extends RecordVersion, F extends string> {
 
     private publish(patch: Partial<DraftSnapshot<T, F>>) {
         this.snapshot = { ...this.snapshot, ...patch }
+        if (this.storage) {
+            try {
+                this.storage.write(Object.keys(this.snapshot.changes).length ? { version: this.snapshot.record.updated_at, changes: this.snapshot.changes, conflict: this.snapshot.conflict } : null)
+                this.snapshot.storageError = null
+            } catch { this.snapshot.storageError = "Device storage is unavailable. Keep this page open until your changes save." }
+        }
         for (const listener of this.listeners) listener()
+    }
+
+    attachStorage(storage: DraftStorage<F>) {
+        this.storage = storage
+        try {
+            const saved = storage.read()
+            if (!saved || !Object.keys(saved.changes).length) return
+            const conflict = saved.conflict || saved.version !== this.snapshot.record.updated_at || this.snapshot.record.workflow_status !== "draft"
+            this.publish({ changes: { ...saved.changes, ...this.snapshot.changes }, conflict,
+                error: conflict ? "This draft changed while you were away. Review the saved values before sending your recovered changes." : null })
+            if (!conflict) void this.flush()
+        } catch { this.publish({ storageError: "Could not restore the saved draft from this device." }) }
     }
 
     edit(field: F, value: string) {

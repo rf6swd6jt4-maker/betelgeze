@@ -43,7 +43,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
 export async function POST(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
     const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
-    const input = await request.json().catch(() => null) as { relationshipId?: unknown; body?: unknown; clientRequestId?: unknown; retry?: unknown; attachment?: unknown; replyToMessageId?: unknown; stickerId?: unknown } | null
+    const input = await request.json().catch(() => null) as { offlineUserId?: unknown; offlineWorkspaceId?: unknown; relationshipId?: unknown; body?: unknown; clientRequestId?: unknown; retry?: unknown; attachment?: unknown; replyToMessageId?: unknown; stickerId?: unknown } | null
+    if (input?.offlineWorkspaceId && input.offlineWorkspaceId !== workspace.id) return Response.json({ error: "This workspace is no longer available at this address." }, { status: 409 })
+    if (input?.offlineUserId && input.offlineUserId !== user.id) return Response.json({ error: "Sign in with the account that wrote this message." }, { status: 409 })
     const relationshipId = typeof input?.relationshipId === "string" ? input.relationshipId : ""
     if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const clientRequestId = typeof input?.clientRequestId === "string" ? input.clientRequestId : ""

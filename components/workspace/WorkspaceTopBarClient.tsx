@@ -1,5 +1,8 @@
 "use client"
 
+import { useOnline } from "@/components/pwa/useOnline"
+import { WorkspaceOfflineStatus } from "@/components/pwa/WorkspaceOfflineStatus"
+
 import { requestChatViewportMotion } from "@/lib/chat-viewport-motion"
 import { COMPOSER_KEYBOARD_MOTION_MS, createComposerViewportController } from "@/lib/composer-viewport-controller"
 import { readChatLayoutBottom, readChatViewportBottom, recordChatViewportDiagnostic } from "@/lib/chat-viewport-state"
@@ -319,6 +322,7 @@ export function WorkspaceTopBarClient(props: Props) {
 }
 
 function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createOkrAction }: Props) {
+    const online = useOnline()
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const searchMenuId = useId()
@@ -2330,6 +2334,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
                             <OkrIcon />
                         </button>}
                     </div>
+                    <WorkspaceOfflineStatus userId={currentUserId} />
                     <div className="flex h-9 items-center -space-x-2 md:space-x-0">
                         <div className="flex h-9 items-center md:hidden"><WorkspacePresenceAvatars members={workspacePresenceMembers} state={presenceState} error={presenceError} onOpenProfile={setProfileUserId} /></div>
                         <AccountMenu username={username} email={email} avatarSrc={avatarSrc} workspaceId={workspace.id} workspaceName={workspace.name} leaveAction={leaveAction} buttonClassName="relative z-20 h-9 w-9" />
@@ -2510,6 +2515,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
                     </button>
                 </div>
                 {sidebarItems.map((item) => {
+                    const offlineBlocked = !online && !item.href.includes("/communications")
                     const active = item.activeHrefs?.some((href) => activePathname === href || activePathname.startsWith(`${href}/`))
                         ?? (item.href === defaultWorkspaceUrl
                         ? activePathname === defaultWorkspaceUrl
@@ -2517,7 +2523,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
                     const itemClassName = `flex min-h-12 items-center gap-3 rounded-lg px-4 text-base transition md:min-h-10 md:px-3 md:text-sm ${active ? "bg-neutral-900 text-white" : "text-neutral-400 hover:bg-neutral-900/70 hover:text-white"}`
 
                     return (
-                        <Link key={item.key} href={item.href} target={item.standalone ? "_blank" : undefined} rel={item.standalone ? "noopener noreferrer" : undefined} data-global-loading="false" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateWorkspaceDestination(item.href); closeSidebarAfterNavigation() }} className={itemClassName}>
+                        <Link key={item.key} aria-disabled={offlineBlocked} title={offlineBlocked ? "Connect to open this panel" : undefined} href={item.href} target={item.standalone ? "_blank" : undefined} rel={item.standalone ? "noopener noreferrer" : undefined} data-global-loading="false" onClick={(event) => { if (offlineBlocked) { event.preventDefault(); return }; if (!online) { event.preventDefault(); if (!activePathname.includes("/communications")) window.location.assign("/offline.html"); closeSidebarAfterNavigation(); return }; if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateWorkspaceDestination(item.href); closeSidebarAfterNavigation() }} className={`${itemClassName} ${offlineBlocked ? "opacity-40 cursor-not-allowed" : ""}`}>
                             <span className="shrink-0">{item.icon}</span>
                             <span className="min-w-0 flex-1 truncate">{item.label}</span>
                             {item.meta && <span className="shrink-0 font-mono text-[11px] text-neutral-500">{item.meta}</span>}

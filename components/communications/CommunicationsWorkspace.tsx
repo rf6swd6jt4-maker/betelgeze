@@ -1,4 +1,8 @@
 "use client"
+
+import { readChatDraft, writeChatDraft } from "@/lib/communications/offline-drafts"
+import { useOfflineChat } from "@/components/communications/useOfflineChat"
+import { ChatOutboxStatus } from "@/components/communications/ChatOutboxStatus"
 import { ClientChatParticipants } from "@/components/communications/ClientChatParticipants"
 import { resourceUploadAssetId } from "@/lib/communications/resource-upload"
 
@@ -237,6 +241,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const [selectedId, setSelectedId] = useState(bootstrap.selectedConversationId)
     const [search, setSearch] = useState("")
     const [draft, setDraft] = useState("")
+    const restoredDraftKey = useRef<string | null>(null)
     const [attachment, setAttachment] = useState<CommunicationAttachment | null>(null)
     const [attachmentState, setAttachmentState] = useState<"idle" | "uploading">("idle")
     const [attachmentError, setAttachmentError] = useState<string | null>(null)
@@ -332,6 +337,14 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
             : conversation).sort((left, right) => (right.messages.at(-1)?.createdAt ?? "").localeCompare(left.messages.at(-1)?.createdAt ?? "") || left.title.localeCompare(right.title)))
     }, [setConversations, updates])
 
+    const offline = useOfflineChat({
+        userId: bootstrap.currentUser.id, workspaceId: bootstrap.workspaceId, workspaceSlug: bootstrap.workspaceSlug,
+        kind: "client", conversations, people: bootstrap.people,
+        onMessage: (conversationId, message) => updateConversationMessages(conversationId, [message as unknown as CommunicationMessage]),
+        onRemove: (id) => updates.removeMessage(id),
+    })
+    const enqueueingRef = useRef(false)
+
     const persistReadCursor = useCallback(async (cursor: CommunicationReadCursor) => {
         pendingReadRef.current = cursor
         setReadCursors((current) => mergeCursor(current, cursor))
@@ -382,8 +395,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         setStickerTrayOpen(false)
         setInteractionError(null)
         setSwipePosition(null)
-        setDraft(conversationId ? localStorage.getItem(`betelgeze:communications:draft:${bootstrap.workspaceId}:${conversationId}`) ?? "" : "")
-    }, [bootstrap.workspaceId, bootstrap.workspaceSlug, flushPendingRead])
+        setDraft(conversationId ? readChatDraft(`betelgeze:communications:draft:${bootstrap.currentUser.id}:${bootstrap.workspaceId}:${conversationId}`) : "")
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, flushPendingRead])
 
     function beginReply(message: CommunicationMessage) {
         setReplyingTo(message)
@@ -581,23 +594,14 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
             readAt: null,
             failedAt: null,
         }
-        updateConversationMessages(selected.id, [optimistic], true)
-        setStickerTrayOpen(false)
-        setReplyingTo(null)
-        setInteractionError(null)
-        const acknowledgementRead = updates.beginRead()
-        const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/messages`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ relationshipId: selected.id, stickerId: sticker.id, replyToMessageId: replyTarget?.id, clientRequestId }),
-        }).catch(() => null)
-        if (!response) {
-            updateConversationMessages(selected.id, [{ ...optimistic, status: "send_uncertain", error: "Delivery is being confirmed." }])
-            return
-        }
-        const result = await response.json().catch(() => null) as { message?: CommunicationMessage; error?: string; retryable?: boolean } | null
-        if (result?.message) updateConversationMessages(selected.id, [result.message], false, acknowledgementRead, true)
-        else updateConversationMessages(selected.id, [{ ...optimistic, status: result?.retryable ? "send_failed" : "send_uncertain", error: result?.error ?? "Could not send sticker", failedAt: result?.retryable ? new Date().toISOString() : null }])
+        if (enqueueingRef.current) return
+        enqueueingRef.current = true
+        try {
+            await offline.queue(selected.id, selected.title, { relationshipId: selected.id, stickerId: sticker.id, replyToMessageId: replyTarget?.id, clientRequestId }, { ...optimistic })
+            updateConversationMessages(selected.id, [optimistic], true)
+            if (selectedRef.current === selected.id) { setStickerTrayOpen(false); setReplyingTo(null); setInteractionError(null) }
+        } catch { setInteractionError("Could not save this message on your device. Your draft is still here; try again.") }
+        finally { enqueueingRef.current = false }
     }
 
     async function toggleCheckbox(message: CommunicationMessage, line: number, checked: boolean, expectedBody: string) {
@@ -630,15 +634,17 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     }
 
     useEffect(() => {
-        const key = selectedId ? `betelgeze:communications:draft:${bootstrap.workspaceId}:${selectedId}` : null
-        const timer = window.setTimeout(() => setDraft(key ? localStorage.getItem(key) ?? "" : ""), 0)
+        const key = selectedId ? `betelgeze:communications:draft:${bootstrap.currentUser.id}:${bootstrap.workspaceId}:${selectedId}` : null
+        // Read before effects can write the empty initial composer over a draft.
+        const saved = key ? readChatDraft(key) : ""
+        const timer = window.setTimeout(() => { restoredDraftKey.current = key; setDraft(saved) }, 0)
         return () => window.clearTimeout(timer)
-    }, [bootstrap.workspaceId, selectedId])
-
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId, selectedId])
     useEffect(() => {
-        if (!selectedId) return
-        localStorage.setItem(`betelgeze:communications:draft:${bootstrap.workspaceId}:${selectedId}`, draft)
-    }, [bootstrap.workspaceId, draft, selectedId])
+        const key = selectedId ? `betelgeze:communications:draft:${bootstrap.currentUser.id}:${bootstrap.workspaceId}:${selectedId}` : null
+        if (!key || restoredDraftKey.current !== key) return
+        writeChatDraft(key, draft)
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId, draft, selectedId])
 
     useEffect(() => {
         if (!selectedId) return
@@ -869,23 +875,19 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
             readAt: null,
             failedAt: null,
         }
-        updateConversationMessages(selected.id, [optimistic], true)
-        if (!messageToRetry) {
-            draftRef.current = ""
-            setDraft("")
-            setAttachment(null)
-            setReplyingTo(null)
-            localStorage.removeItem(`betelgeze:communications:draft:${bootstrap.workspaceId}:${selected.id}`)
-        }
-        const acknowledgementRead = updates.beginRead()
-        const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ relationshipId: selected.id, body: typedBody, attachment: messageAttachment, replyToMessageId: replyMessageId, clientRequestId, retry: Boolean(messageToRetry) }) }).catch(() => null)
-        if (!response) {
-            updateConversationMessages(selected.id, [{ ...optimistic, status: "send_uncertain", error: "Delivery is being confirmed." }])
-            return
-        }
-        const result = await response.json().catch(() => null) as { message?: CommunicationMessage; error?: string; retryable?: boolean } | null
-        if (result?.message) updateConversationMessages(selected.id, [result.message], false, acknowledgementRead, true)
-        else if (!response.ok) updateConversationMessages(selected.id, [{ ...optimistic, status: result?.retryable ? "send_failed" : "send_uncertain", error: result?.error ?? "Could not send message", failedAt: result?.retryable ? new Date().toISOString() : null }])
+        if (enqueueingRef.current) return
+        enqueueingRef.current = true
+        try {
+            await offline.queue(selected.id, selected.title, { relationshipId: selected.id, body: typedBody, attachment: messageAttachment, replyToMessageId: replyMessageId, clientRequestId, retry: Boolean(messageToRetry) }, { ...optimistic })
+            updateConversationMessages(selected.id, [optimistic], true)
+            if (!messageToRetry && selectedRef.current === selected.id) {
+                setDraft((current) => current.trim() === typedBody ? "" : current)
+                setAttachment((current) => current === messageAttachment ? null : current)
+                setReplyingTo((current) => current === replyTarget ? null : current)
+                setInteractionError(null)
+            }
+        } catch { setInteractionError("Could not save this message on your device. Your draft is still here; try again.") }
+        finally { enqueueingRef.current = false }
     }
 
     const normalizedSearch = search.trim().toLowerCase()
@@ -1059,6 +1061,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                         {interactionError ? <div className="mx-auto mb-2 flex max-w-3xl items-center justify-between gap-3 rounded-lg bg-red-950/60 px-3 py-2 text-xs text-red-300"><span>{interactionError}</span><button type="button" onClick={() => setInteractionError(null)} aria-label="Dismiss interaction error">×</button></div> : null}
                         <input ref={attachmentInputRef} type="file" accept="image/jpeg,image/png,video/mp4,video/3gpp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadAttachment(file) }} />
                         <input ref={stickerInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadSticker(file) }} />
+                        <ChatOutboxStatus entries={offline.entries} conversationId={selected.id} />
                         <MessageComposer
                             textareaRef={composerRef}
                             draft={draft}

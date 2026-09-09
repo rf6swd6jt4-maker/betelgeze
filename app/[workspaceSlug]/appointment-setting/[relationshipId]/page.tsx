@@ -55,6 +55,7 @@ export default async function AppointmentSettingRelationshipPage({ params }: Pag
 
                     <AppointmentTable
                         key={relationship.id}
+                        currentUserId={user.id}
                         workspaceId={workspace.id}
                         workspaceSlug={workspace.slug}
                         relationshipId={relationship.id}

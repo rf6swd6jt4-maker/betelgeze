@@ -1,5 +1,9 @@
 "use client"
 
+import { readChatDraft, writeChatDraft } from "@/lib/communications/offline-drafts"
+import { useOfflineChat } from "@/components/communications/useOfflineChat"
+import { ChatOutboxStatus } from "@/components/communications/ChatOutboxStatus"
+
 import { useRosterDialog } from "@/components/communications/useRosterDialog"
 import { chatCheckboxBody } from "@/lib/chat-formatting"
 import { MessageQuoteSelection } from "@/components/communications/MessageQuoteSelection"
@@ -115,7 +119,13 @@ function TeamEditor({ bootstrap, team, onClose }: { bootstrap: NativeCommunicati
 
 function mergeMessages(current: NativeMessage[], incoming: NativeMessage[]) {
     const keyed = new Map<string, NativeMessage>()
-    for (const message of [...current, ...incoming]) keyed.set(message.clientRequestId ? `request:${message.clientRequestId}` : `id:${message.id}`, { ...(keyed.get(message.clientRequestId ? `request:${message.clientRequestId}` : `id:${message.id}`) ?? {}), ...message } as NativeMessage)
+    for (const message of [...current, ...incoming]) {
+        const key = message.clientRequestId ? `request:${message.clientRequestId}` : `id:${message.id}`
+        const existing = keyed.get(key)
+        if (existing && existing.id !== existing.clientRequestId && message.id === message.clientRequestId) continue
+        if (existing?.editedAt && existing.editedAt > (message.editedAt ?? "")) continue
+        keyed.set(key, { ...existing, ...message })
+    }
     return [...keyed.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt))
 }
 
@@ -160,6 +170,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [search, setSearch] = useState("")
     const [showArchived, setShowArchived] = useState(false)
     const [draft, setDraft] = useState("")
+    const restoredDraftKey = useRef<string | null>(null)
     const [editingMessage, setEditingMessage] = useState<NativeMessage | null>(null)
     const [editState, setEditState] = useState<"idle" | "saving">("idle")
     const [replyingTo, setReplyingTo] = useState<(NativeMessage & { selectedQuote?: MessageQuote }) | null>(null)
@@ -260,6 +271,14 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         if (!read) setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: mergeMessages(conversation.messages, incoming), updatedAt: incoming.at(-1)?.createdAt ?? conversation.updatedAt } : conversation).sort((left, right) => (right.messages.at(-1)?.createdAt ?? right.updatedAt).localeCompare(left.messages.at(-1)?.createdAt ?? left.updatedAt)))
     }, [setConversations, updates])
 
+    const offline = useOfflineChat({
+        userId: bootstrap.currentUser.id, workspaceId: bootstrap.workspaceId, workspaceSlug: bootstrap.workspaceSlug,
+        kind: "native", conversations, people: bootstrap.people,
+        onMessage: (conversationId, message) => updateConversationMessages(conversationId, [message as unknown as NativeMessage]),
+        onRemove: (id) => updates.removeMessage(id),
+    })
+    const enqueueingRef = useRef(false)
+
     const persistReadCursor = useCallback(async (cursor: NativeReadCursor) => {
         pendingReadRef.current = cursor
         setReadCursors((current) => mergeCursor(current, cursor))
@@ -314,10 +333,21 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         followLatestRef.current = true; setAtLatest(true); setShowJumpToLatest(false)
         jumpRequestRef.current++; setQuoteHighlight(null);
         setSelectedId(id); setReplyingTo(null); setEditingMessage(null); setEditState("idle"); setActionMessageId(null); setActionView("actions"); setAttachment(null); setError(null)
-        setDraft(id ? localStorage.getItem(`betelgeze:native-chat:draft:${bootstrap.workspaceId}:${id}`) ?? "" : "")
+        setDraft(id ? readChatDraft(`betelgeze:native-chat:draft:${bootstrap.currentUser.id}:${bootstrap.workspaceId}:${id}`) : "")
     }
 
-    useEffect(() => { if (selectedId && !editingMessage) localStorage.setItem(`betelgeze:native-chat:draft:${bootstrap.workspaceId}:${selectedId}`, draft) }, [bootstrap.workspaceId, draft, editingMessage, selectedId])
+    useEffect(() => {
+        const key = selectedId ? `betelgeze:native-chat:draft:${bootstrap.currentUser.id}:${bootstrap.workspaceId}:${selectedId}` : null
+        // Read before effects can write the empty initial composer over a draft.
+        const saved = key ? readChatDraft(key) : ""
+        const timer = window.setTimeout(() => { restoredDraftKey.current = key; setDraft(saved) }, 0)
+        return () => window.clearTimeout(timer)
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId, selectedId])
+    useEffect(() => {
+        const key = selectedId ? `betelgeze:native-chat:draft:${bootstrap.currentUser.id}:${bootstrap.workspaceId}:${selectedId}` : null
+        if (!key || restoredDraftKey.current !== key || editingMessage) return
+        writeChatDraft(key, draft)
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId, draft, selectedId, editingMessage])
 
     useEffect(() => {
         if (!selectedId) return
@@ -480,12 +510,14 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         const clientRequestId = crypto.randomUUID(); const replyTarget = replyingTo
         const stickerAttachment: CommunicationAttachment = { kind: "sticker", fileName: sticker.fileName, mimeType: "image/webp", size: sticker.size, storagePath: sticker.storagePath, url: sticker.url }
         const optimistic: NativeMessage = { id: clientRequestId, clientRequestId, conversationId: selected.id, senderUserId: bootstrap.currentUser.id, senderWorkspaceRole: bootstrap.currentUserRole, body: "", replyToMessageId: replyTarget?.id ?? null, quote: replyTarget?.selectedQuote ?? null, attachment: stickerAttachment, createdAt: new Date().toISOString(), editedAt: null }
-        updateConversationMessages(selected.id, [optimistic], true); setReplyingTo(null); setStickerTrayOpen(false); setError(null)
-        const acknowledgementRead = updates.beginRead()
-        const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: selected.id, clientRequestId, body: "", replyToMessageId: replyTarget?.id, quote: replyTarget?.selectedQuote ?? null, attachment: stickerAttachment }) }).catch(() => null)
-        const result = response ? await response.json().catch(() => null) as { message?: NativeMessage; error?: string } | null : null
-        if (result?.message) updateConversationMessages(selected.id, [result.message], false, acknowledgementRead, true)
-        else { setConversations((current) => current.map((conversation) => conversation.id === selected.id ? { ...conversation, messages: conversation.messages.filter((message) => message.id !== clientRequestId) } : conversation)); if (selectedRef.current === selected.id) { setReplyingTo((current) => current ?? replyTarget); setStickerTrayOpen(true); setError(result?.error ?? "Could not send sticker.") } }
+        if (enqueueingRef.current) return
+        enqueueingRef.current = true
+        try {
+            await offline.queue(selected.id, selected.title, { conversationId: selected.id, clientRequestId, body: "", replyToMessageId: replyTarget?.id, quote: replyTarget?.selectedQuote ?? null, attachment: stickerAttachment }, { ...optimistic })
+            updateConversationMessages(selected.id, [optimistic], true)
+            if (selectedRef.current === selected.id) { setStickerTrayOpen(false); setReplyingTo(null); setError(null) }
+        } catch { setError("Could not save this message on your device. Your draft is still here; try again.") }
+        finally { enqueueingRef.current = false }
     }
 
     async function sendMessage() {
@@ -494,12 +526,19 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         stopNativeTyping(selected.id)
         const clientRequestId = crypto.randomUUID(); const replyTarget = replyingTo
         const optimistic: NativeMessage = { id: clientRequestId, clientRequestId, conversationId: selected.id, senderUserId: bootstrap.currentUser.id, senderWorkspaceRole: bootstrap.currentUserRole, body, replyToMessageId: replyTarget?.id ?? null, quote: replyTarget?.selectedQuote ?? null, attachment, createdAt: new Date().toISOString(), editedAt: null }
-        updateConversationMessages(selected.id, [optimistic], true); setDraft(""); setReplyingTo(null); setAttachment(null); setError(null); localStorage.removeItem(`betelgeze:native-chat:draft:${bootstrap.workspaceId}:${selected.id}`)
-        const acknowledgementRead = updates.beginRead()
-        const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: selected.id, clientRequestId, body, replyToMessageId: replyTarget?.id, quote: replyTarget?.selectedQuote ?? null, attachment: optimistic.attachment }) }).catch(() => null)
-        const result = response ? await response.json().catch(() => null) as { message?: NativeMessage; error?: string } | null : null
-        if (result?.message) updateConversationMessages(selected.id, [result.message], false, acknowledgementRead, true)
-        else { setConversations((current) => current.map((conversation) => conversation.id === selected.id ? { ...conversation, messages: conversation.messages.filter((message) => message.id !== clientRequestId) } : conversation)); if (selectedRef.current === selected.id) { setDraft((current) => current || body); setReplyingTo((current) => current ?? replyTarget); setAttachment((current) => current ?? optimistic.attachment); setError(result?.error ?? "Could not send message.") } }
+        if (enqueueingRef.current) return
+        enqueueingRef.current = true
+        try {
+            await offline.queue(selected.id, selected.title, { conversationId: selected.id, clientRequestId, body, replyToMessageId: replyTarget?.id, quote: replyTarget?.selectedQuote ?? null, attachment: optimistic.attachment }, { ...optimistic })
+            updateConversationMessages(selected.id, [optimistic], true)
+            if (selectedRef.current === selected.id) {
+                setDraft((current) => current.trim() === body ? "" : current)
+                setReplyingTo((current) => current === replyTarget ? null : current)
+                setAttachment((current) => current === optimistic.attachment ? null : current)
+                setError(null)
+            }
+        } catch { setError("Could not save this message on your device. Your draft is still here; try again.") }
+        finally { enqueueingRef.current = false }
     }
 
     function startEditingMessage(message: NativeMessage) {
@@ -838,6 +877,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         {error ? <div className="mx-auto mb-2 flex max-w-3xl justify-between rounded-lg bg-red-950/60 px-3 py-2 text-xs text-red-300"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
                         <input ref={attachmentInputRef} type="file" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadAttachment(file) }} />
                         <input ref={stickerInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadSticker(file) }} />
+                        <ChatOutboxStatus entries={offline.entries} conversationId={selected.id} />
                         <MessageComposer
                             textareaRef={composerRef}
                             draft={draft}

@@ -1,8 +1,12 @@
-const CACHE_NAME = "betelgeze-pwa-v1";
+const CACHE_NAME = "betelgeze-pwa-v2";
 const STATIC_ASSETS = [
   "/icons/betelgeze-icon-192.png",
   "/icons/betelgeze-icon-512.png",
   "/brand/betelgeze-logo-inverted-no-background.svg",
+  "/offline.html",
+  "/offline.css",
+  "/offline.js",
+  "/offline-store.js",
 ];
 
 self.addEventListener("install", (event) => {
@@ -25,7 +29,11 @@ self.addEventListener("activate", (event) => {
             .map((key) => caches.delete(key))
         )
       )
-      .then(() => self.clients.claim())
+      .then(async () => {
+        // Start online document requests alongside worker startup when supported.
+        if (self.registration.navigationPreload) await self.registration.navigationPreload.enable().catch(() => undefined);
+        await self.clients.claim();
+      })
   );
 });
 
@@ -33,6 +41,18 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+  if (event.request.mode === "navigate") {
+    // Network-first documents retain the ordinary online response and auth
+    // redirects. Only a failed connection opens the static recovery document.
+    event.respondWith((async () => {
+      const preloaded = await event.preloadResponse;
+      return preloaded || fetch(event.request);
+    })().catch(async () => {
+      const fallback = await caches.match("/offline.html");
+      return fallback || Response.error();
+    }));
+    return;
+  }
   if (!STATIC_ASSETS.includes(url.pathname)) return;
 
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));

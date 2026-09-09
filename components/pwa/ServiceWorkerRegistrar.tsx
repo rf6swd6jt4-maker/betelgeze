@@ -1,8 +1,20 @@
 "use client";
 
 import { useEffect } from "react";
+import { clearOfflineData } from "@/public/offline-store.js";
 
 export function ServiceWorkerRegistrar() {
+  useEffect(() => {
+    const submit = (event: SubmitEvent) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement) || new URL(form.action).pathname !== "/logout") return;
+      event.preventDefault();
+      void clearOfflineData().catch(() => undefined).finally(() => HTMLFormElement.prototype.submit.call(form));
+    };
+    document.addEventListener("submit", submit, true);
+    return () => document.removeEventListener("submit", submit, true);
+  }, []);
+
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") return;
     if (!("serviceWorker" in navigator)) return;

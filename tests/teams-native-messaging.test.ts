@@ -47,7 +47,7 @@ test("profile lookup preserves workspace authorization and username privacy", as
     assert.match(shell, /initialProfile=\{profilePreviewMember/)
     assert.match(shell, /state: "heartbeat"/)
     assert.match(assignee, /openWorkspaceMemberProfile\(userId\)/)
-    assert.match(communications, /onClick=\{\(event\) => \{ event\.preventDefault\(\); event\.stopPropagation\(\); if \(selected\.kind === "direct"\) openWorkspaceMemberProfile/)
+    assert.match(communications, /onClick=\{\(event\) => \{ event\.preventDefault\(\); event\.stopPropagation\(\); if \(selected\.system\) return; if \(selected\.kind === "direct"\) openWorkspaceMemberProfile/)
 })
 
 test("client teams follow saved POS allocations and chat rosters are read-only", async () => {

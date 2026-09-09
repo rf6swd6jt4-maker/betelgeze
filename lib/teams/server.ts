@@ -22,7 +22,7 @@ export function nativeMessageFromRow(value: unknown): NativeMessage | null {
     const row = record(value)
     const id = text(row.id)
     const conversationId = text(row.conversation_id)
-    const senderUserId = text(row.sender_user_id)
+    const senderUserId = text(row.sender_user_id) ?? (row.sender_user_id === null ? "be" : null)
     const createdAt = text(row.created_at)
     if (!id || !conversationId || !senderUserId || !createdAt) return null
     return {
@@ -131,7 +131,7 @@ export async function loadNativeCommunications(input: {
 
     const supabase = await createSupabaseServerClient()
     const [conversationResult, participantResult, messageResult, reactionResult, cursorResult, membershipResult, selectedMessages] = await Promise.all([
-        supabaseAdmin.from("workspace_native_conversations").select("id, kind, team_id, direct_user_one, direct_user_two, archived_at, pinned_message_id, updated_at").eq("workspace_id", input.workspaceId).order("updated_at", { ascending: false }),
+        supabaseAdmin.from("workspace_native_conversations").select("id, kind, is_system, team_id, direct_user_one, direct_user_two, archived_at, pinned_message_id, updated_at").eq("workspace_id", input.workspaceId).order("updated_at", { ascending: false }),
         supabaseAdmin.from("workspace_native_conversation_participants").select("conversation_id, user_id").eq("workspace_id", input.workspaceId),
         supabase.rpc("communication_native_messages", { p_workspace_id: input.workspaceId, p_conversation_id: null, p_limit: 4000 }),
         supabaseAdmin.from("workspace_native_reactions").select("id, conversation_id, message_id, reactor_user_id, emoji, updated_at").eq("workspace_id", input.workspaceId),
@@ -177,6 +177,7 @@ export async function loadNativeCommunications(input: {
         if (conversation.kind === "direct") {
             const memberIds = participants.get(conversation.id) ?? []
             if (!memberIds.includes(input.currentUserId)) return []
+            if (conversation.is_system) return [{ id: conversation.id, kind: "direct" as const, system: true, teamId: null, title: "BE", subtitle: "Private updates from Betelgeze", avatarSrc: "/brand/betelgeze-logo.svg", memberIds, archived: false, canWrite: false, pinnedMessageId: null, updatedAt: conversation.updated_at, messages: conversationMessages(conversation.id), messageWindowStart: conversationWindowStart(conversation.id) }]
             const otherId = [conversation.direct_user_one, conversation.direct_user_two].find((id) => id && id !== input.currentUserId)
                 ?? memberIds.find((id) => id !== input.currentUserId)
                 ?? input.currentUserId

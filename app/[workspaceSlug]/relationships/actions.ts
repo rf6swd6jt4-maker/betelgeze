@@ -121,11 +121,13 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
     const primaryPhone = nullableFormString(formData, "primary_phone")
     const whatsappPhone = nullableFormString(formData, "whatsapp_phone")
     const requestedPrimaryProvider = formString(formData, "communication_primary_provider")
+    const retentionHandoff = formString(formData, "retention_handoff")
 
     if (!primaryPersonName || !phase) {
         return { ok: false, error: "missing-fields" }
     }
     if (phase === "retention") {
+        if (!["portal_only", "request_confirmation"].includes(retentionHandoff)) return { ok: false, error: "Choose how to set up communications." }
         if (requestedPrimaryProvider !== "twilio_sms" && requestedPrimaryProvider !== "meta_whatsapp") {
             return { ok: false, error: "Choose the client's preferred communication channel." }
         }
@@ -175,6 +177,7 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
             p_request_id: requestId,
             p_details: {
                 ...details, is_test: isTest,
+                portal_base_url: process.env.NEXT_PUBLIC_SITE_URL,
                 fulfilment_manager_user_id: nullableFormString(formData, "fulfilment_manager_user_id"),
                 communication_primary_provider: communicationPrimaryProvider,
                 confirmation_address: normalizeProviderAddress(communicationPrimaryProvider, (retentionRequiresSmsConsent ? primaryPhone : whatsappPhone) ?? ""),
@@ -203,7 +206,7 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
     }
 
     let retentionConfirmationSent = false
-    if (retentionConfirmationSaleId) {
+    if (retentionConfirmationSaleId && retentionHandoff === "request_confirmation") {
         const confirmation = retentionRequiresSmsConsent
             ? await sendSaleSmsConfirmationIfOptedIn({ workspaceId: workspace.id, saleId: retentionConfirmationSaleId }).catch(() => ({ ok: false as const }))
             : await sendSaleConsentTemplate(retentionConfirmationSaleId, workspace.id).catch(() => ({ ok: false as const }))
@@ -212,7 +215,7 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
             return {
                 ok: true,
                 href: relationshipHubHref(slug, relationship.id),
-                notice: "Relationship added, but the confirmation could not be sent. Check the messaging connection and contact details.",
+                notice: "Relationship added. BE sent your portal link in Comms → Team. Messaging confirmation could not be sent; the portal is ready to use.",
             }
         }
         retentionConfirmationSent = "sent" in confirmation ? confirmation.sent : !("inProgress" in confirmation && confirmation.inProgress)
@@ -223,7 +226,30 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
     return {
         ok: true,
         href: relationshipHubHref(slug, relationship.id),
-        ...(phase === "retention" ? { notice: retentionRequiresSmsConsent && !retentionConfirmationSent ? "Relationship added and waiting for SMS opt-in" : "Relationship added and confirmation sent" } : {}),
+        ...(phase === "retention" ? { notice: `Relationship added. BE sent your portal link in Comms → Team.${retentionHandoff === "portal_only" ? " Messaging can be connected later." : retentionRequiresSmsConsent && !retentionConfirmationSent ? " Waiting for SMS opt-in." : " Messaging confirmation requested."}` } : {}),
+    }
+}
+
+export async function requestRetentionMessagingConfirmation(slug: string, relationshipId: string) {
+    try {
+        const { workspace, user, access, role } = await requireWorkspaceAccess(slug)
+        await requireRelationshipAccess(access, relationshipId)
+        const relationship = await supabaseAdmin.from("relationships").select("seller_user_id, lifecycle_phase, status, communication_primary_provider")
+            .eq("workspace_id", workspace.id).eq("id", relationshipId).single()
+        if (relationship.error || !relationship.data || relationship.data.status === "archived" || relationship.data.lifecycle_phase !== "retention") throw new Error("Active retention client not found.")
+        if (role !== "owner" && role !== "admin" && relationship.data.seller_user_id !== user.id) throw new Error("Only the seller or a workspace admin can request confirmation.")
+        const sale = await supabaseAdmin.from("client_sales").select("id, raw_payload")
+            .eq("workspace_id", workspace.id).eq("relationship_id", relationshipId)
+            .contains("raw_payload", { flow: "retention_confirmation" }).order("created_at", { ascending: false }).limit(1).maybeSingle()
+        if (sale.error || !sale.data) throw new Error("Retention confirmation record not found.")
+        const outcome = relationship.data.communication_primary_provider === "twilio_sms"
+            ? await sendSaleSmsConfirmationIfOptedIn({ workspaceId: workspace.id, saleId: sale.data.id })
+            : await sendSaleConsentTemplate(sale.data.id, workspace.id)
+        if (!outcome.ok) throw new Error("error" in outcome && typeof outcome.error === "string" ? outcome.error : "Confirmation could not be sent. Check the messaging connection.")
+        relationshipRevalidatePaths(slug, relationshipId)
+        return { ok: true, notice: "sent" in outcome && !outcome.sent ? "Waiting for the client’s SMS opt-in." : "Confirmation requested. Messaging activates after the client confirms." }
+    } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : "Could not request confirmation." }
     }
 }
 

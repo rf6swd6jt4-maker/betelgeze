@@ -17,17 +17,17 @@ export type ClientMessageProvider = "meta_whatsapp" | "twilio_sms"
 export type CommunicationDeliveryMode = "primary_only" | "primary_with_fallback" | "mirror"
 
 export type ResolvedCommunicationDestination = {
-    provider: ClientMessageProvider
+    provider: ClientMessageProvider | "client_portal"
     address: string
     channelId: string | null
     primary: boolean
 }
 
-function providerLabel(provider: ClientMessageProvider) {
-    return provider === "meta_whatsapp" ? "WhatsApp" : "SMS"
+function providerLabel(provider: ClientMessageProvider | "client_portal") {
+    return provider === "client_portal" ? "Client portal" : provider === "meta_whatsapp" ? "WhatsApp" : "SMS"
 }
 
-function providerMessageId(provider: ClientMessageProvider, value: unknown) {
+function providerMessageId(provider: ClientMessageProvider | "client_portal", value: unknown) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null
     if (provider === "twilio_sms") {
         const sid = (value as { sid?: unknown }).sid
@@ -82,10 +82,11 @@ async function ensureChannel(input: {
 export async function resolveCommunicationDestinations(input: {
     workspaceId: string
     relationshipId: string
+    purpose?: "confirmation"
 }) {
     const { data: relationship, error } = await supabaseAdmin
         .from("relationships")
-        .select("id, client_id, primary_phone, whatsapp_phone, communication_primary_provider, communication_delivery_mode, status")
+        .select("id, client_id, primary_phone, whatsapp_phone, communication_primary_provider, communication_delivery_mode, status, source_metadata")
         .eq("workspace_id", input.workspaceId)
         .eq("id", input.relationshipId)
         .maybeSingle()
@@ -100,6 +101,14 @@ export async function resolveCommunicationDestinations(input: {
     const deliveryMode = (["primary_only", "primary_with_fallback", "mirror"] as const).includes(relationship.communication_delivery_mode as CommunicationDeliveryMode)
         ? relationship.communication_delivery_mode as CommunicationDeliveryMode
         : "mirror"
+    const metadata = relationship.source_metadata as Record<string, unknown> | null
+    if (input.purpose !== "confirmation" && metadata?.portal_handoff === "creator_dm" && metadata.external_messaging_pending === true) {
+        const portal = await supabaseAdmin.from("client_portal_sessions").select("id, status, token_revoked_at")
+            .eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId).maybeSingle()
+        if (portal.error) throw new Error("Could not verify client portal access.")
+        if (!portal.data || portal.data.status !== "active" || portal.data.token_revoked_at) throw new Error("Client portal access is unavailable.")
+        return { relationship, primaryProvider, deliveryMode, availableProviders: [] as ClientMessageProvider[], destinations: [{ provider: "client_portal", address: `portal:${portal.data.id}`, channelId: null, primary: true }] as ResolvedCommunicationDestination[] }
+    }
     const connected = await activeMessagingProviders(input.workspaceId)
     const addresses: Record<ClientMessageProvider, string> = {
         meta_whatsapp: normalizeProviderAddress("meta_whatsapp", relationship.whatsapp_phone ?? ""),
@@ -173,6 +182,7 @@ async function sendProvider(input: {
     whatsappTemplate?: { name: string; language: string } | null
     smsConsentContext?: "web_opt_in"
 }) {
+    if (input.destination.provider === "client_portal") return null
     const replyTo = await replyProviderId({
         workspaceId: input.workspaceId,
         relationshipId: input.relationshipId,
@@ -263,7 +273,7 @@ export async function sendCommunicationDeliveries(input: {
     const destinations = input.destinations ?? resolved?.destinations ?? []
     if (!destinations.length) throw new Error("This relationship has no connected SMS or WhatsApp destination.")
     const results: Array<{
-        provider: ClientMessageProvider
+        provider: ClientMessageProvider | "client_portal"
         ok: boolean
         providerMessageId: string | null
         error: string | null
@@ -271,6 +281,12 @@ export async function sendCommunicationDeliveries(input: {
         primary: boolean
     }> = []
     for (const destination of destinations) {
+        if (destination.provider === "client_portal") {
+            // The encrypted client_messages row is the portal's durable message.
+            // It is published through the existing portal reads and Realtime.
+            results.push({ provider: "client_portal", ok: true, providerMessageId: null, error: null, safeToRetry: false, primary: true })
+            continue
+        }
         const existing = await supabaseAdmin.from("communication_message_deliveries")
             .select("id, provider_message_id, status, error")
             .eq("workspace_id", input.workspaceId)
@@ -350,6 +366,7 @@ export async function sendCommunicationDeliveries(input: {
     }).eq("workspace_id", input.workspaceId).eq("id", input.messageId)
     // Provider outcomes are authoritative. The delivery rows retain the receipt
     // even if updating the aggregate message fails; do not invite a duplicate send.
+    if (update.error && results.some((result) => result.provider === "client_portal")) throw new Error("Could not confirm portal message delivery. Please retry.")
     if (update.error) console.error("Could not record communication delivery summary", { messageId: input.messageId, error: update.error.message })
     return { results, status: aggregateStatus, error: aggregateError, persistenceError: update.error?.message ?? null }
 }

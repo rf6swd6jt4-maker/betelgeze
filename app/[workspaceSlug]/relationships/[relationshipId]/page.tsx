@@ -21,6 +21,7 @@ import { loadOnboardingServiceRevisionDisplays } from "@/lib/onboarding/service-
 import { currentRelationshipWork } from "@/lib/relationship-workflow"
 import { archiveRelationship } from "../actions"
 import { ArchiveRelationshipForm } from "./ArchiveRelationshipForm"
+import { RetentionCommunicationsSetup } from "@/components/relationships/RetentionCommunicationsSetup"
 import { RelationshipDealWorkspace } from "./RelationshipDealWorkspace"
 import { loadWorkspaceOperations } from "@/lib/teams/operations"
 import { loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
@@ -120,7 +121,9 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
         }
     })
 
-    return <RelationshipDealWorkspace
+    return <>
+        {relationship.lifecycle_phase === "retention" && relationship.source_metadata.portal_handoff === "creator_dm" ? <RetentionCommunicationsSetup workspaceSlug={workspaceSlug} relationshipId={relationship.id} pending={relationship.source_metadata.external_messaging_pending === true} canRequest={role === "owner" || role === "admin" || relationship.seller_user_id === userId} provider={relationship.communication_primary_provider} /> : null}
+        <RelationshipDealWorkspace
         workspaceSlug={workspaceSlug}
         workspaceName={publicBranding.displayName}
         logoSrc={agencyLogoSrc}
@@ -161,7 +164,7 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
         planPromise={planPromise}
         canEdit={role === "owner" || role === "admin" || relationship.seller_user_id === userId || relationship.fulfilment_manager_user_id === userId || (!relationship.pos_started_at && Boolean(operations.people.find((p) => p.id === userId)?.canSell))}
         currentWork={currentWork}
-    />
+    /></>
 }
 
 export default async function RelationshipDetailPage({ params }: PageProps) {

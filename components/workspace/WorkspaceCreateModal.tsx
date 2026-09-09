@@ -38,11 +38,13 @@ function defaultOkrPeriod() {
 
 export function WorkspaceCreateModal({ target, workspace, currentUserId, username, currentUserRole, createRelationshipAction, createWorkItemAction, createAssetAction, createOkrAction, onClose, onCreated }: Props) {
     const retentionRequestId = useRef<string | null>(null)
+    const [retentionStep, setRetentionStep] = useState<1 | 2>(1)
+    const [retentionHandoff, setRetentionHandoff] = useState("portal_only")
     const [retentionReady, setRetentionReady] = useState(false)
     const [relationshipStartPhase, setRelationshipStartPhase] = useState<"potential_client" | "retention">("potential_client")
     const [relationshipPhone, setRelationshipPhone] = useState("")
     const [relationshipWhatsappPhone, setRelationshipWhatsappPhone] = useState("")
-    const [relationshipCommunicationPreference, setRelationshipCommunicationPreference] = useState<"" | "twilio_sms" | "meta_whatsapp">("")
+    const [relationshipCommunicationPreference, setRelationshipCommunicationPreference] = useState<"" | "twilio_sms" | "meta_whatsapp">("meta_whatsapp")
     const [options, setOptions] = useState<CreateOptions>(EMPTY_OPTIONS)
     const [optionsLoading, setOptionsLoading] = useState(target !== "relationship")
     const [optionsError, setOptionsError] = useState<string | null>(null)
@@ -73,6 +75,12 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
         event.preventDefault()
         setCreateError(null)
         const form = event.currentTarget
+        if (target === "relationship" && relationshipStartPhase === "retention" && retentionStep === 1) {
+            if (!retentionReady) { setCreateError("Complete the service and appointment setup first."); return }
+            setRetentionStep(2)
+            form.scrollTop = 0
+            return
+        }
         const formData = new FormData(form)
         if (target === "relationship" && relationshipStartPhase === "retention") {
             if (!retentionReady) { setCreateError("Complete the service and appointment setup first."); return }
@@ -130,7 +138,7 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
 
     const title = target === "relationship" ? "Add relationship" : target === "work-item" ? "Add work item" : target === "asset" ? "Add asset" : "Create OKR"
     const submitLabel = target === "relationship"
-        ? relationshipStartPhase === "retention" ? "Add and send confirmation" : "Create relationship"
+        ? relationshipStartPhase === "retention" ? retentionStep === 1 ? "Continue to Comms" : "Add retention client" : "Create relationship"
         : target === "work-item" ? "Create work item"
             : target === "asset" ? "Create asset"
                 : "Create OKR"
@@ -144,22 +152,35 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
             </div>
             <form onSubmit={submitCreate} className="max-h-[min(70vh,42rem)] overflow-y-auto px-4 py-4 sm:px-5">
                 {target === "relationship" ? <div className="space-y-5">
+                    <label className="block text-sm text-neutral-300">Stage<select name="lifecycle_phase" value={relationshipStartPhase} disabled={isCreating || retentionStep === 2} onChange={(event) => { setRelationshipStartPhase(event.target.value as "potential_client" | "retention"); setRetentionStep(1) }} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="potential_client">Potential client</option><option value="retention">Retention · Existing client</option></select></label>
+                    {retentionStep === 2 ? <input type="hidden" name="lifecycle_phase" value={relationshipStartPhase} /> : null}
+                    {relationshipStartPhase === "retention" ? <p className="text-sm text-neutral-400" aria-live="polite">Step {retentionStep} of 2 · {retentionStep === 1 ? "Client details and services" : "Comms"}</p> : null}
+                    <div hidden={relationshipStartPhase === "retention" && retentionStep === 2} className="space-y-5">
                     <section className="grid gap-3 sm:grid-cols-2">
                         <label className="block text-sm text-neutral-300 sm:col-span-2">Name<input name="primary_person_name" required autoFocus placeholder="Person or primary contact" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label>
                         <label className="block text-sm text-neutral-300">Company<input name="business_name" placeholder="Optional" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label>
-                        <label className="block text-sm text-neutral-300">Stage<select name="lifecycle_phase" value={relationshipStartPhase} onChange={(event) => setRelationshipStartPhase(event.target.value as "potential_client" | "retention")} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="potential_client">Potential client</option><option value="retention">Retention</option></select></label>
+
                     </section>
                     <section className="border-t border-neutral-900 pt-4"><p className="mb-3 text-xs font-medium text-neutral-500">Contact details</p><div className="grid gap-3 sm:grid-cols-2">
                         <label className="block text-sm text-neutral-300">Email<input name="primary_email" type="email" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label>
                         <label className="block text-sm text-neutral-300">Phone number<input name="primary_phone" type="tel" value={relationshipPhone} onChange={(event) => { const value = event.target.value; setRelationshipPhone(value); if (!value.trim() && relationshipCommunicationPreference === "twilio_sms") setRelationshipCommunicationPreference("") }} required={relationshipStartPhase === "retention" && !relationshipWhatsappPhone.trim()} aria-describedby={relationshipStartPhase === "retention" ? "retention-phone-help" : undefined} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label>
                         <label className="block text-sm text-neutral-300">WhatsApp number<input name="whatsapp_phone" type="tel" value={relationshipWhatsappPhone} onChange={(event) => { const value = event.target.value; setRelationshipWhatsappPhone(value); if (!value.trim() && relationshipCommunicationPreference === "meta_whatsapp") setRelationshipCommunicationPreference("") }} required={relationshipStartPhase === "retention" && !relationshipPhone.trim()} aria-describedby={relationshipStartPhase === "retention" ? "retention-phone-help" : undefined} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label>
-                        {relationshipStartPhase === "retention" ? <label className="block text-sm text-neutral-300">Communication preference<select name="communication_primary_provider" value={relationshipCommunicationPreference} onChange={(event) => setRelationshipCommunicationPreference(event.target.value as "twilio_sms" | "meta_whatsapp")} required className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="" disabled>Choose a channel</option><option value="twilio_sms" disabled={!relationshipPhone.trim()}>Phone (SMS)</option><option value="meta_whatsapp" disabled={!relationshipWhatsappPhone.trim()}>WhatsApp</option></select></label> : null}
+
                         <label className="block text-sm text-neutral-300">Role<input name="primary_contact_role" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label>
                         <label className="block text-sm text-neutral-300">Website<input name="website_url" type="url" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label>
                         <label className="flex h-10 items-center gap-2 self-end text-sm text-neutral-300"><input name="is_test" type="checkbox" className="h-4 w-4 rounded border-neutral-700 bg-black" />Test client?</label>
-                    </div>{relationshipStartPhase === "retention" ? <p id="retention-phone-help" className="mt-2 text-xs text-neutral-500">Add at least one number and choose where the confirmation should be sent.</p> : null}</section>
+                    </div>{relationshipStartPhase === "retention" ? <p id="retention-phone-help" className="mt-2 text-xs text-neutral-500">Add at least one number. Choose how to set up communications in the next step.</p> : null}</section>
                     {relationshipStartPhase === "retention" ? <RetentionRelationshipFields workspaceSlug={workspace.slug} currentUserId={currentUserId} onReady={setRetentionReady} /> : null}
                     <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Industry<input name="industry_value" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Location<input name="location_value" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Source<input name="source_label" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300 sm:col-span-2">Notes<textarea name="notes_summary" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label></section>
+                    </div>
+                    {relationshipStartPhase === "retention" ? <section hidden={retentionStep !== 2} className="space-y-4" aria-label="Retention communications">
+                        <div className="space-y-2"><h3 className="text-sm font-medium">Client portal handoff</h3><p className="text-sm text-neutral-400">BE will send you a private DM in Comms → Team with this client’s portal link. Share it directly with the client using your existing contact with them.</p><p className="text-xs text-neutral-500">The link grants access to their portal. Only you receive this handoff; share it only with the intended client.</p></div>
+                        {relationshipStartPhase === "retention" ? <label className="block text-sm text-neutral-300">Preferred messaging channel<select name="communication_primary_provider" value={relationshipCommunicationPreference} onChange={(event) => setRelationshipCommunicationPreference(event.target.value as "twilio_sms" | "meta_whatsapp")} required={retentionStep === 2} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="" disabled>Choose a channel</option><option value="twilio_sms" disabled={!relationshipPhone.trim()}>Phone (SMS)</option><option value="meta_whatsapp" disabled={!relationshipWhatsappPhone.trim()}>WhatsApp</option></select></label> : null}
+                        <fieldset className="space-y-3"><legend className="mb-2 text-sm font-medium">Messaging setup</legend>
+                            <label className="flex items-start gap-2 text-sm"><input type="radio" name="retention_handoff" value="portal_only" checked={retentionHandoff === "portal_only"} onChange={() => setRetentionHandoff("portal_only")} className="mt-1" /><span>Use the portal now, connect messaging later<span className="mt-1 block text-xs text-neutral-500">Messages stay in the portal until the client confirms their messaging channel. No confirmation is sent now.</span></span></label>
+                            <label className="flex items-start gap-2 text-sm"><input type="radio" name="retention_handoff" value="request_confirmation" checked={retentionHandoff === "request_confirmation"} onChange={() => setRetentionHandoff("request_confirmation")} className="mt-1" /><span>Also request messaging confirmation now<span className="mt-1 block text-xs text-neutral-500">WhatsApp requires an approved utility template. SMS requires the client’s recorded opt-in. The portal remains available if confirmation fails.</span></span></label>
+                        </fieldset>
+                    </section> : null}
                 </div> : null}
 
                 {target === "work-item" ? <div className="space-y-5">
@@ -176,7 +197,7 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
                 {optionsError ? <p className="mt-4 text-xs text-amber-300">{optionsError} You can still create this item without an optional link.</p> : null}
                 {createError ? <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{createError}</p> : null}
                 {uploadLabel ? <p className="mt-4 text-sm text-neutral-400">{uploadLabel}</p> : null}
-                <div className="mt-5 flex justify-end"><button disabled={isCreating || Boolean(uploadLabel) || (target === "relationship" && relationshipStartPhase === "retention" && !retentionReady)} className="inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating..." : submitLabel}</button></div>
+                <div className="mt-5 flex justify-end gap-3">{target === "relationship" && relationshipStartPhase === "retention" && retentionStep === 2 ? <button type="button" disabled={isCreating} onClick={() => { setRetentionStep(1); setCreateError(null) }} className="min-h-10 px-3 text-sm text-neutral-300">Back</button> : null}<button disabled={isCreating || Boolean(uploadLabel) || (target === "relationship" && relationshipStartPhase === "retention" && !retentionReady)} className="inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating..." : submitLabel}</button></div>
             </form>
         </div>
     </div>

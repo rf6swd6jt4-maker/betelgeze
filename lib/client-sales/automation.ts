@@ -247,7 +247,7 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
     if (!sale.relationship_id) return { ok: false, error: "Sale relationship is missing" }
     let channels: Awaited<ReturnType<typeof resolveCommunicationDestinations>>
     try {
-        channels = await resolveCommunicationDestinations({ workspaceId: sale.workspace_id, relationshipId: sale.relationship_id })
+        channels = await resolveCommunicationDestinations({ workspaceId: sale.workspace_id, relationshipId: sale.relationship_id, purpose: "confirmation" })
     } catch (error) {
         const message = error instanceof Error ? error.message : "No messaging connection is available for this workspace."
         await reportSaleAutomationFailure(sale, "load_messaging_connections", message)

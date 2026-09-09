@@ -156,7 +156,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     if (!messageId) return Response.json({ error: "Could not resolve the message log." }, { status: 503 })
 
     try {
-        const mediaGrant = attachment && attachment.kind !== "sticker" ? await createCommunicationMediaGrant(attachment.storagePath) : null
+        const mediaGrant = attachment && attachment.kind !== "sticker" && resolved.destinations.some((destination) => destination.provider !== "client_portal") ? await createCommunicationMediaGrant(attachment.storagePath) : null
         const mediaBaseUrl = mediaGrant ? process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/g, "") : null
         const attachmentAccessUrl = mediaGrant && mediaBaseUrl && attachment
             ? `${mediaBaseUrl}/api/client-messages/media/${attachment.storagePath.split("/").map(encodeURIComponent).join("/")}?grant=${encodeURIComponent(mediaGrant)}`

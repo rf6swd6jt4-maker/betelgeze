@@ -53,15 +53,15 @@ test("sale confirmation prepares the immutable session and payment reuses it bef
     assert.match(saleAutomation, /activateRelationshipOnboardingAfterPayment/u)
 })
 
-test("manual relationships start only at Potential Client or Retention and Retention sends confirmation", () => {
+test("manual relationships start only at Potential Client or Retention and Retention offers a private portal handoff", () => {
     const relationshipForm = workspaceCreateModal.slice(
         workspaceCreateModal.indexOf('{target === "relationship"'),
         workspaceCreateModal.indexOf('{target === "work-item"')
     )
-    assert.match(relationshipForm, /<option value="potential_client">Potential client<\/option><option value="retention">Retention<\/option>/u)
+    assert.match(relationshipForm, /<option value="potential_client">Potential client<\/option><option value="retention">Retention · Existing client<\/option>/u)
     assert.doesNotMatch(relationshipForm, /<option value="(?:lead|sold|onboarding|fulfilment|completed_lost)"/u)
-    assert.match(relationshipForm, /relationshipStartPhase === "retention"[\s\S]+Communication preference/u)
-    assert.match(relationshipForm, /Add at least one number and choose where the confirmation should be sent\./u)
+    assert.match(relationshipForm, /relationshipStartPhase === "retention"[\s\S]+Preferred messaging channel/u)
+    assert.match(relationshipForm, /Choose how to set up communications in the next step\./u)
     assert.match(relationshipActions, /creatableRelationshipPhases = new Set\(\["potential_client", "retention"\]/u)
     assert.match(relationshipActions, /!isUsablePhoneNumber\(primaryPhone\) && !isUsablePhoneNumber\(whatsappPhone\)/u)
     assert.match(relationshipActions, /rpc\("create_retention_relationship"/u)

@@ -52,6 +52,7 @@ export type NativeReadCursor = {
 export type NativeConversation = {
     id: string
     kind: "direct" | "team"
+    system?: boolean
     teamId: string | null
     title: string
     subtitle: string

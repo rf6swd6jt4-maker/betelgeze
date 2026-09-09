@@ -100,6 +100,7 @@ function TeamIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true" classNa
 
 
 function TeamAvatar({ conversation, currentUserId }: { conversation: NativeConversation; currentUserId: string }) {
+    if (conversation.system) return <span className="h-11 w-11 shrink-0 overflow-hidden rounded-full"><Avatar src={conversation.avatarSrc} name="BE" className="h-full w-full" /></span>
     if (conversation.kind === "team") return <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-800 text-neutral-300"><TeamIcon /></span>
     const profileUserId = conversation.memberIds.find((id) => id !== currentUserId)
     return <span role="button" tabIndex={0} aria-label={`Open ${conversation.title} profile`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (profileUserId) openWorkspaceMemberProfile(profileUserId) }} onKeyDown={(event) => { if ((event.key === "Enter" || event.key === " ") && profileUserId) { event.preventDefault(); event.stopPropagation(); openWorkspaceMemberProfile(profileUserId) } }} className="h-11 w-11 shrink-0 overflow-hidden rounded-full outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"><Avatar src={conversation.avatarSrc} name={conversation.title} className="h-full w-full" /></span>
@@ -141,7 +142,7 @@ function mergeCursor(current: NativeReadCursor[], incoming: NativeReadCursor) {
 }
 
 function realtimeMessage(value: unknown): NativeMessage | null {
-    const row = record(value); const id = text(row.id); const conversationId = text(row.conversation_id); const senderUserId = text(row.sender_user_id); const createdAt = text(row.created_at)
+    const row = record(value); const id = text(row.id); const conversationId = text(row.conversation_id); const senderUserId = text(row.sender_user_id) ?? (row.sender_user_id === null ? "be" : null); const createdAt = text(row.created_at)
     if (row.body_encryption_version !== null && row.body_encryption_version !== undefined) return null
     if (!id || !conversationId || !senderUserId || !createdAt) return null
     const attachment = row.attachment && typeof row.attachment === "object" && !Array.isArray(row.attachment) ? row.attachment as CommunicationAttachment : null
@@ -226,7 +227,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     }, [])
     useEffect(() => () => { if (quoteHighlightTimer.current) clearTimeout(quoteHighlightTimer.current) }, [])
     const focusedMessageId = editingMessage?.id ?? replyingTo?.id ?? null
-    const peopleById = useMemo(() => new Map([...bootstrap.people, ...bootstrap.formerPeople].map((person) => [person.id, person])), [bootstrap.formerPeople, bootstrap.people])
+    const peopleById = useMemo(() => new Map([...bootstrap.people, ...bootstrap.formerPeople, { id: "be", name: "BE", avatarSrc: "/brand/betelgeze-logo.svg" }].map((person) => [person.id, person])), [bootstrap.formerPeople, bootstrap.people])
 
     useEffect(() => { selectedRef.current = selectedId; onSelectedConversationChange?.(selectedId) }, [onSelectedConversationChange, selectedId])
     useEffect(() => { conversationsRef.current = conversations }, [conversations])
@@ -774,7 +775,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 {selected ? <>
                     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-neutral-800 bg-neutral-950 px-3 sm:px-4">
                         <button type="button" onClick={() => selectConversation(null)} aria-label="Back to team conversations" className="inline-flex h-10 w-10 shrink-0 items-center justify-center text-neutral-400 lg:hidden"><BackIcon /></button>
-                        <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (selected.kind === "direct") openWorkspaceMemberProfile(selected.memberIds.find((id) => id !== bootstrap.currentUser.id) ?? bootstrap.currentUser.id); else if (currentTeam) setEditingTeam(currentTeam) }} aria-label={selected.kind === "direct" ? `Open ${selected.title} profile` : `View ${selected.title} members`} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-600">
+                        <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (selected.system) return; if (selected.kind === "direct") openWorkspaceMemberProfile(selected.memberIds.find((id) => id !== bootstrap.currentUser.id) ?? bootstrap.currentUser.id); else if (currentTeam) setEditingTeam(currentTeam) }} disabled={selected.system} aria-label={selected.system ? "BE · Private updates" : selected.kind === "direct" ? `Open ${selected.title} profile` : `View ${selected.title} members`} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-600">
                             <span className="h-9 w-9 shrink-0 overflow-hidden rounded-full">{selected.kind === "direct" ? <Avatar src={selected.avatarSrc} name={selected.title} className="h-full w-full" /> : <span className="flex h-full w-full items-center justify-center rounded-full bg-neutral-800"><TeamIcon /></span>}</span>
                             <span className="min-w-0"><span className="block truncate text-sm font-semibold">{selected.title}</span><span className="block truncate text-[11px] text-neutral-600">{selected.archived ? "Archived · read-only" : selected.subtitle}</span></span>
                         </button>
@@ -790,7 +791,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                             const index = history.startIndex + visibleIndex
                         const own = message.senderUserId === bootstrap.currentUser.id
                         const quoteSelectionMuted = Boolean(selectingQuote && selectingQuote.id !== message.id)
-                        const sender = peopleById.get(message.senderUserId)
+                        const sender = message.senderUserId === "be" ? { name: "BE", avatarSrc: "/brand/betelgeze-logo.svg", former: false } : peopleById.get(message.senderUserId)
                         const reply = message.replyToMessageId ? selected.messages.find((candidate) => candidate.id === message.replyToMessageId) ?? null : null
                         const messageReactions = reactions.filter((reaction) => reaction.messageId === message.id)
                         const ownReaction = messageReactions.find((reaction) => reaction.reactorUserId === bootstrap.currentUser.id)
@@ -881,7 +882,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         <MessageComposer
                             textareaRef={composerRef}
                             draft={draft}
-                            placeholder={selected.canWrite ? `Message ${selected.title}` : "Archived conversation"}
+                            placeholder={selected.system ? "Private updates from BE" : selected.canWrite ? `Message ${selected.title}` : "Archived conversation"}
                             disabled={!selected.canWrite}
                             sendDisabled={!selected.canWrite || (editingMessage ? !draft.trim() || draft.trim() === editingMessage.body.trim() || editState === "saving" : (!draft.trim() && !attachment) || attachmentState === "uploading")}
                             onDraftChange={handleDraftChange}

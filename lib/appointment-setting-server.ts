@@ -36,7 +36,7 @@ export async function loadAppointmentSettingDeliveryState(input: {
     }
 }
 
-export async function loadAppointmentSettingRelationshipServices(access: WorkspaceAccess) {
+export async function loadAppointmentSettingRelationshipServices(access: WorkspaceAccess, relationshipId?: string) {
     const appointmentSettingServices = await loadAppointmentSettingServiceIds(access.workspaceId)
     const grants = access.role === "staff"
         ? await supabaseAdmin.from("workspace_service_capabilities").select("service_id").eq("workspace_id", access.workspaceId).eq("capability", "appointment_setting.manage")
@@ -59,6 +59,7 @@ export async function loadAppointmentSettingRelationshipServices(access: Workspa
         .order("created_at", { ascending: true })
     // Eligibility opens the panel; only a client's actual assignee can book for it.
     if (access.role === "staff") query = query.eq("assignee_user_id", access.userId)
+    if (relationshipId) query = query.eq("relationship_id", relationshipId)
     const { data, error } = await query
     if (error) throw new Error(error.message)
 
@@ -71,7 +72,7 @@ export async function loadAppointmentSettingRelationshipServices(access: Workspa
 }
 
 export async function loadAppointmentSettingRelationshipService(access: WorkspaceAccess, relationshipId: string) {
-    return (await loadAppointmentSettingRelationshipServices(access)).get(relationshipId) ?? null
+    return (await loadAppointmentSettingRelationshipServices(access, relationshipId)).get(relationshipId) ?? null
 }
 
 export async function listAppointmentSettingAppointments(input: {

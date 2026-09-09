@@ -9,11 +9,13 @@ import { FilterRail, FilterRailButton, FilterRailCount } from "@/components/pane
 import { Status } from "@/components/ui"
 import { appointmentNotificationLabel, type AppointmentDeliveryState } from "@/lib/appointment-setting-delivery"
 import { APPOINTMENT_FIELD_OPTIONS, APPOINTMENT_MEDIUM_OPTIONS, appointmentFieldValue, appointmentReadiness, appointmentView, appointmentWithChanges, sortAppointmentWork, type AppointmentSettingAppointment, type AppointmentSettingConfiguration, type AppointmentUpdateField, type AppointmentView } from "@/lib/appointment-setting"
+import { fetchAppointmentSettingSnapshot, AppointmentRefreshPolicy, type AppointmentSettingSnapshot } from "@/lib/appointment-setting-refresh"
+import { useWorkspaceTabActive, WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
 import { AppointmentDraftQueue } from "@/lib/appointment-draft-queue"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
 import { registerWorkspaceAutosaveFlusher, runWorkspaceMutation } from "@/lib/workspace-mutations"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
-import { createAppointmentSettingDraft, deleteAppointmentSettingAppointment, readAppointmentSettingState, saveAppointmentSettingDraft, submitAppointmentSettingAppointment } from "@/app/[workspaceSlug]/appointment-setting/[relationshipId]/actions"
+import { createAppointmentSettingDraft, deleteAppointmentSettingAppointment, saveAppointmentSettingDraft, submitAppointmentSettingAppointment } from "@/app/[workspaceSlug]/appointment-setting/[relationshipId]/actions"
 import { AppointmentDraftEditor, AppointmentTimezoneSelect, appointmentInputClass, appointmentScheduleLabel, type DraftQueue } from "./AppointmentDraftEditor"
 
 const subscribeTimezone = () => () => {}
@@ -45,7 +47,7 @@ function AppointmentRow({ appointment, configuration, workspaceSlug, relationshi
     onOpen: () => void
     onSaved: (row: AppointmentSettingAppointment) => void
     onRemove: (id: string) => Promise<void>
-    onRefresh: () => Promise<Awaited<ReturnType<typeof readAppointmentSettingState>> | undefined>
+    onRefresh: () => Promise<AppointmentSettingSnapshot | undefined>
     onDelivery: (messageId: string, status: AppointmentDeliveryState["notifications"][string]) => void
 }) {
     const [queue] = useState(() => new AppointmentDraftQueue<AppointmentSettingAppointment, AppointmentUpdateField>(appointment, async (row, changes) => {
@@ -161,6 +163,11 @@ function AppointmentRow({ appointment, configuration, workspaceSlug, relationshi
 }
 
 export function AppointmentTable({ workspaceId, workspaceSlug, relationshipId, serviceId, initialAppointments, configuration, initialDelivery, initialNow }: Props) {
+    const tabActive = useWorkspaceTabActive()
+    const tabActiveRef = useRef(tabActive)
+    useEffect(() => { tabActiveRef.current = tabActive }, [tabActive])
+    const [refreshPolicy] = useState(() => new AppointmentRefreshPolicy(initialNow))
+    const refreshAbort = useRef<AbortController | null>(null)
     const [appointments, setAppointments] = useState(initialAppointments)
     const [delivery, setDelivery] = useState(initialDelivery)
     const [view, setView] = useState<AppointmentView>(initialAppointments.some((row) => row.workflow_status === "draft") ? "drafts" : "upcoming")
@@ -174,7 +181,7 @@ export function AppointmentTable({ workspaceId, workspaceSlug, relationshipId, s
     const [error, setError] = useState<string | null>(null)
     const [now, setNow] = useState(initialNow)
     const [queues] = useState(() => new Map<string, DraftQueue>())
-    const refreshRequest = useRef<Promise<Awaited<ReturnType<typeof readAppointmentSettingState>>> | null>(null)
+    const refreshRequest = useRef<Promise<AppointmentSettingSnapshot> | null>(null)
     const mutationVersion = useRef(0)
     const mutationCount = useRef(0)
     const active = useRef(true)
@@ -187,7 +194,11 @@ export function AppointmentTable({ workspaceId, workspaceSlug, relationshipId, s
         if (mutationCount.current) return undefined
         if (refreshRequest.current) return refreshRequest.current.catch(() => undefined)
         const version = mutationVersion.current
-        const request = readAppointmentSettingState(workspaceSlug, relationshipId)
+        const revision = refreshPolicy.capture()
+        const controller = new AbortController()
+        refreshAbort.current = controller
+        const timeout = setTimeout(() => controller.abort("timeout"), 15_000)
+        const request = fetchAppointmentSettingSnapshot(workspaceSlug, relationshipId, controller.signal)
         refreshRequest.current = request
         try {
             const result = await request
@@ -205,38 +216,64 @@ export function AppointmentTable({ workspaceId, workspaceSlug, relationshipId, s
                     if (row) queue.receive(row)
                     else if (Object.keys(queue.getSnapshot().changes).length && !queue.getSnapshot().saving) queue.markUnavailable()
                 }
+                refreshPolicy.completed(revision, Date.now())
                 setDelivery(result.delivery)
                 setError(null)
                 setNow(Date.now())
             }
             return result
         } catch {
-            if (active.current) setError("Could not refresh appointments. Your open draft changes are preserved.")
+            if (active.current && (!controller.signal.aborted || controller.signal.reason === "timeout")) setError("Could not refresh appointments. Your open draft changes are preserved.")
             return undefined
-        } finally { refreshRequest.current = null }
-    }, [queues, relationshipId, workspaceSlug])
+        } finally {
+            clearTimeout(timeout)
+            if (refreshRequest.current === request) refreshRequest.current = null
+            if (refreshAbort.current === controller) refreshAbort.current = null
+        }
+    }, [queues, refreshPolicy, relationshipId, workspaceSlug])
 
     useEffect(() => {
         active.current = true
         const supabase = createSupabaseBrowserClient()
         let timer: ReturnType<typeof setTimeout> | undefined
-        const refreshSoon = () => { clearTimeout(timer); timer = setTimeout(() => { void refresh() }, 250) }
-        window.addEventListener("focus", refreshSoon)
-        window.addEventListener("online", refreshSoon)
+        let navigating = false
+        const visible = () => !navigating && tabActiveRef.current && document.visibilityState === "visible"
+        const schedule = () => {
+            clearTimeout(timer)
+            timer = setTimeout(async () => {
+                if (!refreshPolicy.needsRefresh(Date.now(), visible())) return
+                const revision = refreshPolicy.capture()
+                const result = await refresh()
+                // An event received during the request must get its own snapshot.
+                if (result && revision !== refreshPolicy.capture()) schedule()
+            }, 250)
+        }
+        const invalidate = () => { refreshPolicy.invalidate(); schedule() }
+        const pauseForNavigation = () => { navigating = true; clearTimeout(timer); refreshAbort.current?.abort() }
+        window.addEventListener("focus", schedule)
+        window.addEventListener("online", invalidate)
+        window.addEventListener(WORKSPACE_TAB_VISIBILITY_EVENT, schedule)
+        document.addEventListener("visibilitychange", schedule)
+        window.addEventListener("betelgeze:workspace-navigation-start", pauseForNavigation)
         const channel = supabase.channel(`appointment-setting:${workspaceId}:${relationshipId}:${serviceId}`)
-            .on("postgres_changes", { event: "*", schema: "public", table: "appointment_setting_appointments", filter: `relationship_id=eq.${relationshipId}` }, refreshSoon)
-            .on("postgres_changes", { event: "UPDATE", schema: "public", table: "client_messages", filter: `relationship_id=eq.${relationshipId}` }, refreshSoon)
-            .subscribe((status) => { if (status === "SUBSCRIBED") refreshSoon() })
-        const interval = setInterval(() => { setNow(Date.now()); if (document.visibilityState === "visible") void refresh() }, 60_000)
+            .on("postgres_changes", { event: "*", schema: "public", table: "appointment_setting_appointments", filter: `relationship_id=eq.${relationshipId}` }, invalidate)
+            .on("postgres_changes", { event: "UPDATE", schema: "public", table: "client_messages", filter: `relationship_id=eq.${relationshipId}` }, invalidate)
+            .subscribe((status) => { if (status === "SUBSCRIBED") invalidate() })
+        const interval = setInterval(() => { if (visible()) { setNow(Date.now()); schedule() } }, 60_000)
         return () => {
             active.current = false
+            navigating = true
             clearTimeout(timer)
             clearInterval(interval)
-            window.removeEventListener("focus", refreshSoon)
-            window.removeEventListener("online", refreshSoon)
+            refreshAbort.current?.abort()
+            window.removeEventListener("focus", schedule)
+            window.removeEventListener("online", invalidate)
+            window.removeEventListener(WORKSPACE_TAB_VISIBILITY_EVENT, schedule)
+            document.removeEventListener("visibilitychange", schedule)
+            window.removeEventListener("betelgeze:workspace-navigation-start", pauseForNavigation)
             void supabase.removeChannel(channel)
         }
-    }, [refresh, relationshipId, serviceId, workspaceId])
+    }, [refresh, refreshPolicy, relationshipId, serviceId, workspaceId])
     useEffect(() => {
         const warn = (event: BeforeUnloadEvent) => {
             if ([...queues.values()].some((queue) => queue.getSnapshot().saving || Object.keys(queue.getSnapshot().changes).length)) { event.preventDefault(); event.returnValue = "" }

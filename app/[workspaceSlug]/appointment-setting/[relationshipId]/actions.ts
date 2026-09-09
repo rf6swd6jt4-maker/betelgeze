@@ -15,7 +15,7 @@ import {
     type AppointmentSettingAppointment,
     type AppointmentSettingConfiguration,
 } from "@/lib/appointment-setting"
-import { loadAppointmentSettingConfiguration, loadAppointmentSettingRelationshipService, listAppointmentSettingAppointments, loadAppointmentSettingDeliveryState } from "@/lib/appointment-setting-server"
+import { loadAppointmentSettingConfiguration, loadAppointmentSettingRelationshipService } from "@/lib/appointment-setting-server"
 import { resolveCommunicationDestinations, sendCommunicationDeliveries } from "@/lib/client-messages/omnichannel"
 import { getRelationship } from "@/lib/relationships"
 import { getClientPortalUrlForOnboardingSession } from "@/lib/client-portal/session"
@@ -324,11 +324,4 @@ export async function deleteAppointmentSettingAppointment(workspaceSlug: string,
     }
     revalidatePath(detailPath(workspaceSlug, relationshipId))
     return { ok: true }
-}
-
-export async function readAppointmentSettingState(workspaceSlug: string, relationshipId: string) {
-    const { workspace, serviceId } = await requireAppointmentSettingContext(workspaceSlug, relationshipId)
-    const appointments = await listAppointmentSettingAppointments({ workspaceId: workspace.id, relationshipId, serviceId })
-    const delivery = await loadAppointmentSettingDeliveryState({ workspaceId: workspace.id, relationshipId, appointments })
-    return { appointments, delivery }
 }

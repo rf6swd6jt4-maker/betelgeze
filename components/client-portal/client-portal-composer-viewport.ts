@@ -3,6 +3,7 @@
 import { type RefObject, useEffect } from "react"
 import { requestChatViewportMotion } from "@/lib/chat-viewport-motion"
 import { COMPOSER_KEYBOARD_MOTION_MS, createComposerViewportController } from "@/lib/composer-viewport-controller"
+import { readChatLayoutBottom, readChatViewportBottom, recordChatViewportDiagnostic } from "@/lib/chat-viewport-state"
 
 export function useClientPortalComposerViewport(composerRef: RefObject<HTMLElement | null>) {
     useEffect(() => {
@@ -12,17 +13,16 @@ export function useClientPortalComposerViewport(composerRef: RefObject<HTMLEleme
 
         const mobile = window.matchMedia("(max-width: 1023px)")
         const originalViewportBottom = panel.style.getPropertyValue("--client-portal-viewport-bottom")
-        const readViewportBottom = () => {
-            const visualViewport = window.visualViewport
-            return Math.round((visualViewport?.offsetTop ?? 0) + (visualViewport?.height ?? window.innerHeight))
-        }
-        let appliedViewportBottom = readViewportBottom()
+        const readViewportBottom = () => readChatViewportBottom(window)
+        let appliedViewportBottom = readChatLayoutBottom(window)
         const applyViewportBottom = (viewportBottom: number) => {
             appliedViewportBottom = viewportBottom
             panel.style.setProperty("--client-portal-viewport-bottom", `${viewportBottom}px`)
         }
         const viewport = createComposerViewportController({
             readBottom: readViewportBottom,
+            readLayoutBottom: () => readChatLayoutBottom(window),
+            diagnose: (sample) => recordChatViewportDiagnostic(window, "portal", panel, sample),
             animateKeyboard: () => mobile.matches,
             schedule: (callback, delay) => window.setTimeout(callback, delay),
             cancel: (timer) => window.clearTimeout(timer),
@@ -30,7 +30,10 @@ export function useClientPortalComposerViewport(composerRef: RefObject<HTMLEleme
                 animate ? COMPOSER_KEYBOARD_MOTION_MS : 0, applyViewportBottom),
         })
         const holdPortalViewport = () => {
-            if (document.visibilityState !== "hidden") viewport.update()
+            if (document.visibilityState === "hidden") return
+            if (document.activeElement === composer) viewport.focus()
+            else viewport.blur()
+            viewport.update()
         }
         const handleComposerFocus = () => {
             if (document.visibilityState !== "hidden") viewport.focus()
@@ -43,7 +46,9 @@ export function useClientPortalComposerViewport(composerRef: RefObject<HTMLEleme
             viewport.suspend()
         }
         const resumePortalViewport = () => {
-            if (document.visibilityState === "visible") viewport.resume()
+            if (document.visibilityState !== "visible") return
+            viewport.resume()
+            if (document.activeElement === composer) viewport.focus()
         }
         const handleVisibility = () => {
             if (document.visibilityState === "hidden") suspendPortalViewport()

@@ -2,6 +2,7 @@
 
 import { requestChatViewportMotion } from "@/lib/chat-viewport-motion"
 import { COMPOSER_KEYBOARD_MOTION_MS, createComposerViewportController } from "@/lib/composer-viewport-controller"
+import { readChatLayoutBottom, readChatViewportBottom, recordChatViewportDiagnostic } from "@/lib/chat-viewport-state"
 import { createViewportOriginRecovery } from "@/lib/viewport-origin-recovery"
 
 /* eslint-disable @next/next/no-img-element */
@@ -29,7 +30,7 @@ import type { WorkspaceCapability } from "@/lib/workspace-capabilities"
 import type { WorkspaceRole } from "@/lib/workspaces"
 import { WORKSPACE_MEMBER_PROFILE_EVENT, WORKSPACE_MEMBER_PROFILE_MESSAGE_SOURCE } from "@/lib/workspace-member-profile"
 import { parseWorkspaceDetailPreview, storeWorkspaceDetailPreview, type WorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
-import { WORKSPACE_COMPOSER_FOCUS_EVENT, type WorkspaceComposerFocusEventDetail } from "@/lib/workspace-composer-viewport"
+import { focusedChatComposer, WORKSPACE_COMPOSER_FOCUS_EVENT, type WorkspaceComposerFocusEventDetail } from "@/lib/workspace-composer-viewport"
 import { visibleWorkspacePresence, workspacePresenceRoster, workspacePresenceTopic, type WorkspacePresenceMember, type WorkspacePresencePayload, type WorkspacePresenceRosterMember, type WorkspacePresenceState } from "@/lib/workspace-presence"
 import {
     WORKSPACE_MUTATION_END,
@@ -330,6 +331,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
     const tabsRef = useRef<WorkspaceTab[]>([initialTab])
     const tabsBootstrappedRef = useRef(false)
     const shellRootRef = useRef<HTMLDivElement>(null)
+    const syncComposerViewportRef = useRef<(() => void) | null>(null)
     const tabStripRef = useRef<HTMLDivElement>(null)
     const tabFrameOrderRef = useRef<string[]>([initialTab.id])
     const iframeRefs = useRef(new Map<string, HTMLIFrameElement>())
@@ -1245,19 +1247,18 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         const hiddenSiblings = Array.from(host.children).filter((element): element is HTMLElement => element instanceof HTMLElement && element !== shellRoot)
         const previousOverflow = document.body.style.overflow
         const root = document.documentElement
-        const readViewportBottom = () => {
-            const visualViewport = window.visualViewport
-            return Math.round((visualViewport?.offsetTop ?? 0) + (visualViewport?.height ?? window.innerHeight))
-        }
+        const readViewportBottom = () => readChatViewportBottom(window)
         const panel = shellRoot.querySelector<HTMLElement>("[data-workspace-tab-panels]")
         const mobile = window.matchMedia("(max-width: 1023px)")
-        let appliedViewportBottom = readViewportBottom()
+        let appliedViewportBottom = readChatLayoutBottom(window)
         const applyViewportBottom = (viewportBottom: number) => {
             appliedViewportBottom = viewportBottom
             root.style.setProperty("--workspace-visual-viewport-bottom", `${viewportBottom}px`)
         }
         const viewport = createComposerViewportController({
             readBottom: readViewportBottom,
+            readLayoutBottom: () => readChatLayoutBottom(window),
+            diagnose: (sample) => recordChatViewportDiagnostic(window, "workspace", panel, sample),
             animateKeyboard: () => mobile.matches,
             schedule: (callback, delay) => window.setTimeout(callback, delay),
             cancel: (timer) => window.clearTimeout(timer),
@@ -1283,27 +1284,48 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
             requestFrame: (callback) => window.requestAnimationFrame(callback),
             cancelFrame: (frame) => window.cancelAnimationFrame(frame),
         })
+        let composerFocused = false
+        const activeComposer = () => {
+            const frame = iframeRefs.current.get(activeTabIdRef.current)
+            if (frame && document.activeElement === frame && frame.getBoundingClientRect().height > 0) {
+                try { return frame.contentDocument ? focusedChatComposer(frame.contentDocument) : null } catch { return null }
+            }
+            return focusedChatComposer(document)
+        }
+        const syncComposerFocus = () => {
+            const focused = !!activeComposer()
+            if (focused === composerFocused) return
+            composerFocused = focused
+            if (focused) { origin.focus(); viewport.focus() }
+            else { origin.blur(); viewport.blur() }
+        }
         const holdWorkspaceViewport = () => {
             if (document.visibilityState === "hidden") return
+            syncComposerFocus()
             origin.update()
             viewport.update()
         }
         const handleComposerFocus = (event: Event) => {
-            const focused = (event as CustomEvent<WorkspaceComposerFocusEventDetail>).detail?.focused
+            const { focused, sourceWindow } = (event as CustomEvent<WorkspaceComposerFocusEventDetail>).detail ?? {}
             if (typeof focused !== "boolean" || document.visibilityState === "hidden") return
+            if (sourceWindow !== window && sourceWindow !== iframeRefs.current.get(activeTabIdRef.current)?.contentWindow) return
+            composerFocused = focused
             if (focused) { origin.focus(); viewport.focus() }
             else { origin.blur(); viewport.blur() }
         }
         const suspendWorkspaceViewport = () => {
             origin.suspend()
+            activeComposer()?.blur()
             const activeElement = document.activeElement
             if (activeElement instanceof HTMLElement) activeElement.blur()
+            composerFocused = false
             viewport.suspend()
         }
         const resumeWorkspaceViewport = () => {
             if (document.visibilityState !== "visible") return
             origin.resume()
             viewport.resume()
+            syncComposerFocus()
         }
         const handleWorkspaceVisibility = () => {
             if (document.visibilityState === "hidden") suspendWorkspaceViewport()
@@ -1313,6 +1335,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         document.body.style.overflow = "hidden"
         document.body.dataset.workspaceTabsHosted = "true"
         root.dataset.workspaceViewportLocked = "true"
+        syncComposerViewportRef.current = holdWorkspaceViewport
         window.addEventListener("resize", holdWorkspaceViewport)
         window.visualViewport?.addEventListener("resize", holdWorkspaceViewport)
         window.visualViewport?.addEventListener("scroll", holdWorkspaceViewport)
@@ -1338,6 +1361,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
             window.removeEventListener("pageshow", resumeWorkspaceViewport)
             origin.dispose()
             viewport.dispose()
+            syncComposerViewportRef.current = null
             document.body.style.overflow = previousOverflow
             delete document.body.dataset.workspaceTabsHosted
             delete root.dataset.workspaceViewportLocked
@@ -1351,6 +1375,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
             })
         }
     }, [tabsHydrated])
+
+    useEffect(() => {
+        syncComposerViewportRef.current?.()
+    }, [activeTabId])
 
     useEffect(() => {
         const close = (event: MouseEvent) => {

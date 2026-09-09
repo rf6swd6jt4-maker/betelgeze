@@ -50,7 +50,7 @@ function fixture(inFrame = false) {
         Object.defineProperty(event, "touches", { value: type === "touchstart" ? [{}] : [] })
         clip.dispatchEvent(event)
     }
-    return { move, advance, touch, cleanup, animations, writes, layer, clip, doc, reduced, mobile, applied: () => applied, commits: () => commits, hide: () => { visible = false }, bottom: () => layer.getBoundingClientRect().bottom, settle: () => { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()) } }
+    return { move, advance, touch, cleanup, animations, writes, layer, clip, doc, reduced, mobile, host: view.parent, applied: () => applied, commits: () => commits, hide: () => { visible = false }, bottom: () => layer.getBoundingClientRect().bottom, settle: () => { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()) } }
 }
 
 test("keyboard opening moves one layer without resizing the host between endpoints", () => {
@@ -163,5 +163,39 @@ test("a hidden resident iframe cannot animate or finish a request for the active
         assert.equal(f.layer.style.willChange, "")
         f.animations[0].onfinish?.()
         assert.equal(f.applied(), 800)
+    } finally { f.cleanup() }
+})
+
+test("a missing animation finish event recovers to real layout without a stuck transform", () => {
+    const f = fixture()
+    try {
+        f.move(500); f.advance(0.5); f.settle()
+        assert.equal(f.applied(), 500)
+        assert.equal(f.bottom(), 500)
+        assert.equal(f.layer.style.height, "")
+        assert.equal(f.layer.style.willChange, "")
+    } finally { f.cleanup() }
+})
+
+test("animation recovery waits for active touch scrolling to finish", () => {
+    const f = fixture()
+    try {
+        f.move(500); f.touch("touchstart"); f.settle()
+        assert.equal(f.applied(), 800)
+        f.touch("touchend"); f.settle()
+        assert.equal(f.applied(), 500)
+    } finally { f.cleanup() }
+})
+
+test("backgrounding clears an interrupted touch so future keyboard animations can finish", () => {
+    const f = fixture(true)
+    try {
+        f.move(500); f.touch("touchstart"); f.advance(0.5)
+        f.host.dispatchEvent(new Event("pagehide"))
+        assert.equal(f.layer.style.height, "")
+        f.host.dispatchEvent(new Event("pageshow"))
+        f.move(800); f.advance(1)
+        assert.equal(f.bottom(), 800)
+        assert.equal(f.layer.style.willChange, "")
     } finally { f.cleanup() }
 })

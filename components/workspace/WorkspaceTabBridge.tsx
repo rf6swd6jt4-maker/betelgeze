@@ -16,6 +16,7 @@ import {
 } from "@/lib/workspace-tabs"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
 import { openOnboardingBuilderWindow } from "@/lib/onboarding-builder-window"
+import { focusedChatComposer } from "@/lib/workspace-composer-viewport"
 import { parseWorkspaceDetailPreview, storeWorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 import {
     flushWorkspaceAutosaves,
@@ -239,6 +240,7 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
                     router.replace(target)
                 }
             } else if (message.type === "activate") {
+                if (!message.active) focusedChatComposer(document)?.blur()
                 document.body.dataset.workspaceTabActive = message.active ? "true" : "false"
                 window.dispatchEvent(new Event(WORKSPACE_TAB_VISIBILITY_EVENT))
                 if (!message.active) await flushWorkspaceAutosaves()

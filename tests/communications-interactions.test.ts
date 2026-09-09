@@ -172,7 +172,7 @@ test("message interactions keep the approved mobile and profile parity", async (
     assert.match(shell, /element\.hidden = true/)
     assert.match(shell, /element\.hidden = hidden/)
     assert.match(shell, /--workspace-visual-viewport-bottom/)
-    assert.match(shell, /return Math\.round\(\(visualViewport\?\.offsetTop \?\? 0\) \+ \(visualViewport\?\.height \?\? window\.innerHeight\)\)/)
+    assert.match(shell, /readChatViewportBottom\(window\)/)
     assert.match(shell, /visualViewport\?\.addEventListener\("scroll", holdWorkspaceViewport\)/)
     assert.match(shell, /createComposerViewportController/)
     assert.match(shell, /animate \? COMPOSER_KEYBOARD_MOTION_MS : 0/)

@@ -30,6 +30,8 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
     let touching = false
     let interacting = false
     let settleTimer = 0
+    let finishTimer = 0
+    let finishOverdue = false
 
     const captureLayout = () => {
         layer.querySelector("[data-message-pane]")?.dispatchEvent(new Event(CHAT_LAYOUT_WILL_CHANGE_EVENT))
@@ -40,6 +42,9 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
     const surface = host === view ? clip : view.frameElement
     const visible = () => surface && surface.getBoundingClientRect().height > 0 && clip.getBoundingClientRect().height > 0
     function release() {
+        view.clearTimeout(finishTimer)
+        finishTimer = 0
+        finishOverdue = false
         pending = null
         layer.style.height = ""
         animation?.cancel()
@@ -64,7 +69,7 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
         if (touching) return
         settleTimer = view.setTimeout(() => {
             interacting = false
-            if (animation?.playState === "finished") finish()
+            if (animation?.playState === "finished" || finishOverdue) finish()
         }, 220)
     }
     function onTouchStart(event: TouchEvent) {
@@ -96,6 +101,8 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
         // The stationary clip keeps messages underneath the chat header hidden.
         const previousBottom = layer.getBoundingClientRect().bottom
         captureLayout()
+        view.clearTimeout(finishTimer)
+        finishOverdue = false
         animation?.cancel()
         const layoutBottom = Math.max(request.from, request.bottom)
         request.apply(layoutBottom)
@@ -117,8 +124,22 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
             // Retain the endpoint transform until that gesture has settled.
             if (animation === currentAnimation && !interacting) finish()
         }
+        // WebKit may suspend an animation without delivering its finish event.
+        // Resolve to real layout once movement has had time to finish, while
+        // still allowing an active message scroll to reach its normal end.
+        finishTimer = view.setTimeout(() => {
+            if (animation !== currentAnimation || pending !== request) return
+            finishTimer = 0
+            finishOverdue = true
+            if (!interacting) finish()
+        }, request.duration + 400)
     }
-    function onVisibility() { if (clip.ownerDocument.visibilityState === "hidden") finish() }
+    function resetInteraction() {
+        touching = interacting = false
+        view.clearTimeout(settleTimer)
+        finish()
+    }
+    function onVisibility() { resetInteraction() }
     function onReducedMotion() { if (reducedMotion.matches) finish() }
     host.addEventListener(CHAT_VIEWPORT_MOTION_EVENT, onMotion)
     clip.addEventListener("touchstart", onTouchStart, { passive: true })
@@ -127,6 +148,8 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
     clip.addEventListener("wheel", onWheel, { passive: true })
     clip.addEventListener("scroll", onScroll, true)
     clip.ownerDocument.addEventListener("visibilitychange", onVisibility)
+    host.addEventListener("pagehide", resetInteraction)
+    host.addEventListener("pageshow", resetInteraction)
     reducedMotion.addEventListener("change", onReducedMotion)
     return () => {
         finish()
@@ -138,6 +161,8 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
         clip.removeEventListener("wheel", onWheel)
         clip.removeEventListener("scroll", onScroll, true)
         clip.ownerDocument.removeEventListener("visibilitychange", onVisibility)
+        host.removeEventListener("pagehide", resetInteraction)
+        host.removeEventListener("pageshow", resetInteraction)
         reducedMotion.removeEventListener("change", onReducedMotion)
     }
 }

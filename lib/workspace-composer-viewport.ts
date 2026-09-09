@@ -2,13 +2,19 @@ export const WORKSPACE_COMPOSER_FOCUS_EVENT = "betelgeze:workspace-composer-focu
 
 export type WorkspaceComposerFocusEventDetail = {
     focused: boolean
+    sourceWindow: Window
+}
+
+export function focusedChatComposer(doc: Document): HTMLElement | null {
+    const active = doc.activeElement
+    return active?.matches("[data-chat-composer], textarea[data-chat-composer]") ? active as HTMLElement : null
 }
 
 export function reportWorkspaceComposerFocus(focused: boolean) {
     if (typeof window === "undefined") return
     const hostWindow = window.parent === window ? window : window.parent
     hostWindow.dispatchEvent(new CustomEvent<WorkspaceComposerFocusEventDetail>(WORKSPACE_COMPOSER_FOCUS_EVENT, {
-        detail: { focused },
+        detail: { focused, sourceWindow: window },
     }))
 }
 

@@ -6,7 +6,7 @@ function setup(draft?: { scrollHeight: number; clientHeight: number; scrollTop: 
     const listeners = new Map<string, (event: unknown) => void>()
     const text = {}
     const selection = { isCollapsed: true, anchorNode: text, focusNode: text }
-    const editor = { matches: () => true, tagName: "DIV", contains: (node: unknown) => node === text }
+    const editor = { matches: () => true, tagName: "DIV", contains: (node: unknown) => node === text || node === editor, getBoundingClientRect: () => ({ left: 100, right: 300, top: 100, bottom: 144 }) }
     const doc = { activeElement: editor as typeof editor | null, getSelection: () => selection }
     const surface = {
         ownerDocument: doc,
@@ -18,9 +18,14 @@ function setup(draft?: { scrollHeight: number; clientHeight: number; scrollTop: 
         removeEventListener(name: string) { listeners.delete(name) },
     }
     const cleanup = containComposerTouch(surface as unknown as HTMLElement)
-    const emit = (name: string, y: number, count = 1) => {
+    const emit = (name: string, y: number, count = 1, area: "editor" | "button" | "padding" | "handle" | "tray" = "editor") => {
         let prevented = false
-        listeners.get(name)?.({ touches: Array.from({ length: count }, () => ({ clientY: y })), target: { closest: () => draft ?? null }, cancelable: true, preventDefault: () => { prevented = true } })
+        const target = { closest: (selector: string) => {
+            if (selector.includes("button")) return area === "button" ? target : null
+            if (selector.includes("data-chat-composer")) return area === "editor" ? editor : null
+            return area === "editor" || area === "tray" ? draft ?? null : null
+        } }
+        listeners.get(name)?.({ touches: Array.from({ length: count }, () => ({ clientX: area === "padding" ? 20 : 200, clientY: y })), target, cancelable: true, preventDefault: () => { prevented = true } })
         return prevented
     }
     return { emit, cleanup, listeners, selection, doc }
@@ -98,4 +103,30 @@ test("selection at either long-draft boundary is not mistaken for outward scroll
         assert.equal(emit("touchmove", 70), false)
         assert.equal(emit("touchmove", 110), false)
     }
+})
+
+test("selected text does not release page panning on composer buttons or distant footer padding", () => {
+    for (const area of ["button", "padding"] as const) {
+        const { emit, selection } = setup()
+        selection.isCollapsed = false
+        emit("touchstart", 100, 1, area)
+        assert.equal(emit("touchmove", 70, 1, area), true)
+    }
+})
+
+test("a native handle retargeted just outside the editor keeps its complete gesture", () => {
+    const { emit, selection } = setup()
+    selection.isCollapsed = false
+    emit("touchstart", 160, 1, "handle")
+    assert.equal(emit("touchmove", 220, 1, "handle"), false)
+    selection.isCollapsed = true
+    assert.equal(emit("touchmove", 250, 1, "handle"), false)
+})
+
+test("selected text does not release boundary containment for a separate sticker tray", () => {
+    const { emit, selection } = setup({ scrollHeight: 300, clientHeight: 100, scrollTop: 200 })
+    selection.isCollapsed = false
+    emit("touchstart", 100, 1, "tray")
+    assert.equal(emit("touchmove", 70, 1, "tray"), true)
+    assert.equal(emit("touchmove", 110, 1, "tray"), false)
 })

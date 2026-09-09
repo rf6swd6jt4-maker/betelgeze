@@ -21,8 +21,9 @@ export function NativeChatViewport(props: ComponentProps<"div">) {
             }
         }
         const onComposerFocus = (event: Event) => {
-            const focused = (event as CustomEvent<WorkspaceComposerFocusEventDetail>).detail?.focused
+            const { focused, sourceWindow } = (event as CustomEvent<WorkspaceComposerFocusEventDetail>).detail ?? {}
             if (typeof focused !== "boolean") return
+            if (sourceWindow !== window) return
             window.clearTimeout(settleTimer)
             if (focused) {
                 measure()

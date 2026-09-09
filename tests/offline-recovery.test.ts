@@ -61,6 +61,12 @@ test("offline queue writes are constrained to the original account and workspace
         assert.match(route, /input\.offlineUserId !== user\.id/)
         assert.match(route, /input\.offlineWorkspaceId !== workspace\.id/)
         assert.match(route, /clientRequestId/)
+        if (relative === "messages") {
+            const send = route.slice(route.indexOf("export async function POST"))
+            assert.match(send, /\.eq\("client_request_id", clientRequestId\)/)
+            assert.doesNotMatch(send, /limit: 500|existingMessages\.messages\.find/)
+            assert.ok(send.indexOf("reused: true") < send.indexOf("resolved = await resolveCommunicationDestinations"))
+        }
     }
     const worker = readFileSync("public/sw.js", "utf8")
     assert.match(worker, /event\.request\.mode === "navigate"/)

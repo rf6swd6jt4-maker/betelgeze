@@ -57,6 +57,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     if (!UUID_PATTERN.test(relationshipId) || !UUID_PATTERN.test(clientRequestId) || (replyToMessageId && !UUID_PATTERN.test(replyToMessageId)) || (stickerId && !UUID_PATTERN.test(stickerId)) || (!body && !inputAttachment && !stickerId) || body.length > 4_000) return Response.json({ error: "A valid conversation, request ID, and message, attachment, or sticker are required." }, { status: 400 })
     const relationship = await scopedRelationship(workspace.id, relationshipId)
     if (!relationship) return Response.json({ error: "Conversation not found" }, { status: 404 })
+    // Reconnection may retry a message long after it left the visible history.
+    // Resolve the durable request directly before evaluating new-send channels.
+    const prior = await supabaseAdmin.from("client_messages").select("id")
+        .eq("workspace_id", workspace.id).eq("relationship_id", relationship.id).eq("client_request_id", clientRequestId).maybeSingle()
+    if (prior.error) return Response.json({ error: "Could not confirm the previous send." }, { status: 503 })
+    const existing = prior.data ? await loadCommunicationMessage({ workspaceId: workspace.id, messageId: prior.data.id }) : null
+    if (prior.data && !existing) return Response.json({ error: "The saved message could not be confirmed yet." }, { status: 503 })
+    if (existing && !(input?.retry === true && ["send_failed", "partial_sent"].includes(existing.status))) return Response.json({ message: existing, reused: true })
     let resolved: Awaited<ReturnType<typeof resolveCommunicationDestinations>>
     try {
         resolved = await resolveCommunicationDestinations({ workspaceId: workspace.id, relationshipId: relationship.id })
@@ -71,9 +79,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
         .maybeSingle()
     if (profileError) return Response.json({ error: "Could not load your chat display name." }, { status: 503 })
 
-    const existingMessages = await loadCommunicationMessages({ workspaceId: workspace.id, relationshipId: relationship.id, limit: 500 })
-    const existing = existingMessages.messages.find((message) => message.clientRequestId === clientRequestId) ?? null
-    if (existing && !(input?.retry === true && ["send_failed", "partial_sent"].includes(existing.status))) return Response.json({ message: existing, reused: true })
     if (replyToMessageId) {
         const replyTarget = await supabaseAdmin
             .from("client_messages")
@@ -167,15 +172,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
             replyToMessageId: replyToMessageId || null,
             destinations: resolved.destinations,
         })
-        const loaded = await loadCommunicationMessages({ workspaceId: workspace.id, relationshipId: relationship.id, limit: 500 })
-        const message = loaded.messages.find((candidate) => candidate.id === messageId) ?? null
+        const message = await loadCommunicationMessage({ workspaceId: workspace.id, messageId })
         if (relationship.client_id) await recordClientAdminActivity({ clientId: relationship.client_id, category: "communications", eventKey: "client.message.sent_by_staff", summary: "Client message sent by staff", entityType: "client_message", entityId: messageId, actorUserId: user.id, actorKind: "staff", direction: "outbound", metadata: { deliveries: delivery.results.map((result) => ({ provider: result.provider, ok: result.ok, provider_message_id: result.providerMessageId })) } })
         const success = delivery.results.some((result) => result.ok)
         return Response.json({ message, deliveries: delivery.results }, { status: success ? 200 : 502 })
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Message send failed"
         await supabaseAdmin.from("client_messages").update({ status: "send_failed", error: errorMessage, failed_at: new Date().toISOString() }).eq("workspace_id", workspace.id).eq("id", messageId).in("status", ["sending", "send_uncertain", "send_failed"])
-        const current = await loadCommunicationMessages({ workspaceId: workspace.id, relationshipId: relationship.id, limit: 500 }).catch(() => null)
-        return Response.json({ error: errorMessage, message: current?.messages.find((message) => message.id === messageId) ?? null, retryable: true }, { status: 502 })
+        const message = await loadCommunicationMessage({ workspaceId: workspace.id, messageId }).catch(() => null)
+        return Response.json({ error: errorMessage, message, retryable: true }, { status: 502 })
     }
 }

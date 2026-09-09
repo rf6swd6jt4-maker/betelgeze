@@ -110,6 +110,10 @@ do $$ begin
  assert (select count(*) from public.communication_native_messages(current_setting('test.retention_workspace')::uuid,current_setting('test.retention_inbox')::uuid))=1,'Creator cannot read BE handoff';
  assert (select body like '%https://example.invalid/client-portal/session/%' from public.communication_native_message(current_setting('test.retention_workspace')::uuid,current_setting('test.retention_message')::uuid)),'Handoff did not decrypt to the portal link';
  assert not public.native_conversation_can_write(current_setting('test.retention_inbox')::uuid,auth.uid()),'User can impersonate BE or reply into its system inbox';
+ declare rejected boolean:=false; begin
+   begin perform public.delete_native_message_for_me(current_setting('test.retention_inbox')::uuid,current_setting('test.retention_message')::uuid); exception when others then rejected:=true; end;
+   assert rejected,'Recipient deleted an immutable BE message';
+ end;
 end $$;
 reset role;
 rollback;

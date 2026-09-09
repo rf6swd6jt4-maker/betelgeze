@@ -17,7 +17,7 @@ import { resolveCommunicationDestinations, sendCommunicationDeliveries } from "@
 import { getRelationship } from "@/lib/relationships"
 import { getClientPortalUrlForOnboardingSession } from "@/lib/client-portal/session"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { requireRelationshipAccess, requireWorkspacePanel } from "@/lib/workspace-access"
 import type { WorkspaceMutationResult } from "@/lib/workspace-mutations"
 
 export type AppointmentUpdateField = "contact_name" | "appointment_date" | "appointment_time" | "meeting_medium" | "meeting_link" | `detail:${AppointmentFieldKey}`
@@ -79,6 +79,7 @@ function cleanMeetingLink(value: string) {
 
 async function requireAppointmentSettingContext(workspaceSlug: string, relationshipId: string) {
     const context = await requireWorkspacePanel(workspaceSlug, "appointment-setting")
+    await requireRelationshipAccess(context.access, relationshipId)
     const relationship = await getRelationship(context.workspace.id, relationshipId)
     if (!relationship || relationship.status === "archived" || relationship.lifecycle_phase !== "retention") {
         throw new Error("This relationship is not available for Appointment Setting.")

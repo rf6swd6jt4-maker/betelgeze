@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState, useTransition, type FormEvent } from "react"
+import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import type { WorkspaceCreateActionState } from "@/app/[workspaceSlug]/relationships/actions"
+import { RetentionRelationshipFields } from "@/components/workspace/RetentionRelationshipFields"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 
 export type WorkspaceCreateTarget = "relationship" | "work-item" | "asset" | "okr"
@@ -36,6 +37,8 @@ function defaultOkrPeriod() {
 }
 
 export function WorkspaceCreateModal({ target, workspace, currentUserId, username, currentUserRole, createRelationshipAction, createWorkItemAction, createAssetAction, createOkrAction, onClose, onCreated }: Props) {
+    const retentionRequestId = useRef<string | null>(null)
+    const [retentionReady, setRetentionReady] = useState(false)
     const [relationshipStartPhase, setRelationshipStartPhase] = useState<"potential_client" | "retention">("potential_client")
     const [relationshipPhone, setRelationshipPhone] = useState("")
     const [relationshipWhatsappPhone, setRelationshipWhatsappPhone] = useState("")
@@ -71,6 +74,11 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
         setCreateError(null)
         const form = event.currentTarget
         const formData = new FormData(form)
+        if (target === "relationship" && relationshipStartPhase === "retention") {
+            if (!retentionReady) { setCreateError("Complete the service and appointment setup first."); return }
+            retentionRequestId.current ??= crypto.randomUUID()
+            formData.set("retention_request_id", retentionRequestId.current)
+        }
 
         if (target === "asset") {
             const file = formData.get("asset_file")
@@ -150,6 +158,7 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
                         <label className="block text-sm text-neutral-300">Website<input name="website_url" type="url" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label>
                         <label className="flex h-10 items-center gap-2 self-end text-sm text-neutral-300"><input name="is_test" type="checkbox" className="h-4 w-4 rounded border-neutral-700 bg-black" />Test client?</label>
                     </div>{relationshipStartPhase === "retention" ? <p id="retention-phone-help" className="mt-2 text-xs text-neutral-500">Add at least one number and choose where the confirmation should be sent.</p> : null}</section>
+                    {relationshipStartPhase === "retention" ? <RetentionRelationshipFields workspaceSlug={workspace.slug} currentUserId={currentUserId} onReady={setRetentionReady} /> : null}
                     <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Industry<input name="industry_value" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Location<input name="location_value" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Source<input name="source_label" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300 sm:col-span-2">Notes<textarea name="notes_summary" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label></section>
                 </div> : null}
 
@@ -167,7 +176,7 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
                 {optionsError ? <p className="mt-4 text-xs text-amber-300">{optionsError} You can still create this item without an optional link.</p> : null}
                 {createError ? <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{createError}</p> : null}
                 {uploadLabel ? <p className="mt-4 text-sm text-neutral-400">{uploadLabel}</p> : null}
-                <div className="mt-5 flex justify-end"><button disabled={isCreating || Boolean(uploadLabel)} className="inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating..." : submitLabel}</button></div>
+                <div className="mt-5 flex justify-end"><button disabled={isCreating || Boolean(uploadLabel) || (target === "relationship" && relationshipStartPhase === "retention" && !retentionReady)} className="inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating..." : submitLabel}</button></div>
             </form>
         </div>
     </div>

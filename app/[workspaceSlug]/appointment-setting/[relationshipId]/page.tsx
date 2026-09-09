@@ -7,7 +7,7 @@ import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
 import { loadAppointmentSettingConfiguration, loadAppointmentSettingRelationshipService, listAppointmentSettingAppointments } from "@/lib/appointment-setting-server"
 import { getRelationship } from "@/lib/relationships"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
-import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { requireRelationshipAccess, requireWorkspacePanel } from "@/lib/workspace-access"
 
 export const dynamic = "force-dynamic"
 
@@ -18,6 +18,7 @@ type PageProps = {
 export default async function AppointmentSettingRelationshipPage({ params }: PageProps) {
     const { workspaceSlug, relationshipId } = await params
     const { workspace, user, access } = await requireWorkspacePanel(workspaceSlug, "appointment-setting")
+    await requireRelationshipAccess(access, relationshipId)
     const [relationship, serviceId] = await Promise.all([
         getRelationship(workspace.id, relationshipId),
         loadAppointmentSettingRelationshipService(access, relationshipId),

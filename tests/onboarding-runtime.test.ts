@@ -64,7 +64,7 @@ test("manual relationships start only at Potential Client or Retention and Reten
     assert.match(relationshipForm, /Add at least one number and choose where the confirmation should be sent\./u)
     assert.match(relationshipActions, /creatableRelationshipPhases = new Set\(\["potential_client", "retention"\]/u)
     assert.match(relationshipActions, /!isUsablePhoneNumber\(primaryPhone\) && !isUsablePhoneNumber\(whatsappPhone\)/u)
-    assert.match(relationshipActions, /flow: "retention_confirmation"/u)
+    assert.match(relationshipActions, /rpc\("create_retention_relationship"/u)
     assert.match(relationshipActions, /sendSaleConsentTemplate\(retentionConfirmationSaleId, workspace\.id\)/u)
 })
 

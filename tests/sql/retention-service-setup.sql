@@ -1,0 +1,91 @@
+-- All fixtures, internal groups and confirmation records roll back. No provider calls.
+begin;
+select set_config('request.jwt.claim.role','service_role',true);
+do $$
+declare w uuid:=gen_random_uuid(); owner_id uuid:=gen_random_uuid(); setter uuid:=gen_random_uuid(); other_setter uuid:=gen_random_uuid();
+ service_a uuid:=gen_random_uuid(); service_b uuid:=gen_random_uuid(); rev_a uuid:=gen_random_uuid(); rev_b uuid:=gen_random_uuid();
+ rel uuid:=gen_random_uuid(); bad_rel uuid:=gen_random_uuid(); details jsonb; selection jsonb; result jsonb; rejected boolean; team uuid; sale_snapshot jsonb;
+begin
+ insert into auth.users(id,email) values(owner_id,'retention-owner-'||owner_id||'@example.invalid'),(setter,'retention-setter-'||setter||'@example.invalid'),(other_setter,'retention-other-'||other_setter||'@example.invalid');
+ insert into public.workspaces(id,name,slug) values(w,'Retention rollback QA','retention-'||w);
+ insert into public.workspace_memberships(workspace_id,user_id,role) values(w,owner_id,'owner'),(w,setter,'staff'),(w,other_setter,'staff');
+ insert into public.onboarding_services(id,workspace_id,internal_code) values(service_a,w,'appointment-qa'),(service_b,w,'ads-qa');
+ insert into public.onboarding_service_revisions(id,workspace_id,service_id,revision_number,name,default_price_cents,definition)
+ values(rev_a,w,service_a,1,'Appointment Setting',0,'{"templateId":"appointment-setting"}'),(rev_b,w,service_b,1,'Advertising',0,'{}');
+ insert into public.workspace_service_capabilities(workspace_id,service_id,capability) values(w,service_a,'appointment_setting.manage');
+ perform public.set_service_delivery_users(w,owner_id,service_a,array[setter,other_setter]);
+ perform public.set_service_delivery_users(w,owner_id,service_b,array[other_setter]);
+ details:=jsonb_build_object('primary_person_name','Rollback client','business_name','Rollback company','fulfilment_manager_user_id',owner_id,'communication_primary_provider','meta_whatsapp','whatsapp_phone','+15005550006','confirmation_address','whatsapp:+15005550006','is_test',true);
+ selection:=jsonb_build_object('service_id',service_a,'revision_id',rev_a,'assignee_user_id',setter,'appointment_configuration',jsonb_build_object('mediums',jsonb_build_array('phone','zoom'),'fields',jsonb_build_array(jsonb_build_object('key','phone','required',true),jsonb_build_object('key','notes','required',false))));
+ rejected:=false;
+ begin perform public.create_retention_relationship(w,setter,bad_rel,details,jsonb_build_array(selection)); exception when others then rejected:=true; end;
+ assert rejected,'A non-seller created a retention relationship';
+ rejected:=false;
+ begin perform public.create_retention_relationship(w,owner_id,bad_rel,details,jsonb_build_array(selection-'appointment_configuration')); exception when others then rejected:=true; end;
+ assert rejected and not exists(select 1 from public.relationships where id=bad_rel),'Missing configuration left a partial relationship';
+ rejected:=false;
+ begin perform public.create_retention_relationship(w,owner_id,bad_rel,details,jsonb_build_array(selection || jsonb_build_object('assignee_user_id',owner_id))); exception when others then rejected:=true; end;
+ assert rejected and not exists(select 1 from public.relationships where id=bad_rel),'Ineligible assignee was accepted';
+ rejected:=false;
+ begin perform public.create_retention_relationship(w,owner_id,bad_rel,details,jsonb_build_array(selection,selection)); exception when others then rejected:=true; end;
+ assert rejected and not exists(select 1 from public.relationships where id=bad_rel),'Duplicate services left a partial relationship';
+ result:=public.create_retention_relationship(w,owner_id,rel,details,jsonb_build_array(selection));
+ assert (result->>'relationship_id')::uuid=rel,'Creation returned the wrong relationship';
+ assert public.create_retention_relationship(w,owner_id,rel,details,jsonb_build_array(selection))=result,'Creation replay changed the receipt';
+ assert (select count(*) from public.client_sales where relationship_id=rel)=1,'Creation replay duplicated confirmation';
+ assert exists(select 1 from public.relationships where id=rel and lifecycle_phase='retention' and team_locked_at is not null and fulfilment_manager_user_id=owner_id),'Retention team was not initialized';
+ assert exists(select 1 from public.relationship_appointment_setting_configs where relationship_id=rel and mediums=array['phone','zoom']::text[] and jsonb_array_length(requested_fields)=2),'Appointment configuration was not persisted';
+ select id into team from public.workspace_teams where relationship_id=rel;
+ assert team is not null and (select count(*) from public.workspace_team_members where team_id=team)=2,'Internal team was not created';
+ assert exists(select 1 from public.workspace_native_conversations where team_id=team),'Internal Comms conversation was not created';
+ assert public.client_conversation_can_access(w,rel,owner_id) and not public.client_conversation_can_access(w,rel,setter),'Client-facing chat participation was not isolated';
+ assert public.workspace_user_can_manage_appointment_setting(w,rel,owner_id, setter)=false,'Unknown service was accepted';
+ assert public.workspace_user_can_manage_appointment_setting(w,rel,service_a,setter),'Assigned setter was denied';
+ assert not public.workspace_user_can_manage_appointment_setting(w,rel,service_a,other_setter),'Service eligibility leaked another client';
+ -- Eligibility removal must not break an already agreed client allocation.
+ perform public.set_service_delivery_users(w,owner_id,service_a,array[other_setter]);
+ assert public.workspace_user_can_manage_appointment_setting(w,rel,service_a,setter),'Pool change revoked a current allocation';
+ insert into public.appointment_setting_appointments(workspace_id,relationship_id,service_id,workflow_status,appointment_timezone,meeting_medium,created_by)
+ values(w,rel,service_a,'draft','Europe/Dublin','phone',setter);
+ select to_jsonb(s) into sale_snapshot from public.client_sales s where id=(result->>'sale_id')::uuid;
+ selection:=jsonb_build_object('service_id',service_b,'revision_id',rev_b,'assignee_user_id',other_setter);
+ rejected:=false;
+ begin perform public.add_retention_relationship_service(w,rel,setter,selection,'Try unauthorized upgrade'); exception when others then rejected:=true; end;
+ assert rejected,'Staff appended a service';
+ rejected:=false;
+ begin insert into public.relationship_services(workspace_id,relationship_id,service_key,service_id,service_revision_id,assignee_user_id) values(w,rel,'ads-qa',service_b,rev_b,other_setter); exception when others then rejected:=true; end;
+ assert rejected,'Direct insertion bypassed the sold-service guard';
+ perform public.add_retention_relationship_service(w,rel,owner_id,selection,'Start advertising results');
+ assert (select count(*) from public.relationship_services where relationship_id=rel)=2,'Future service was not appended';
+ assert exists(select 1 from public.workspace_team_members where team_id=team and user_id=other_setter),'New delivery person missing from internal team';
+ assert not public.client_conversation_can_access(w,rel,other_setter),'Service append added client chat access';
+ assert exists(select 1 from public.appointment_setting_appointments where relationship_id=rel),'Service append changed appointment history';
+ assert (select to_jsonb(s) from public.client_sales s where id=(result->>'sale_id')::uuid)=sale_snapshot,'Service append rewrote the confirmation/sales snapshot';
+ assert exists(select 1 from public.relationship_team_events where relationship_id=rel and event_type='retention_service_added'),'Missing service-change audit';
+ rejected:=false;
+ begin perform public.add_retention_relationship_service(w,rel,owner_id,selection,'Duplicate'); exception when others then rejected:=true; end;
+ assert rejected and (select count(*) from public.relationship_services where relationship_id=rel)=2,'Duplicate append changed services';
+ assert not exists(select 1 from public.retention_service_insert_permits),'An insert permit escaped its operation';
+ assert not has_function_privilege('authenticated','public.create_retention_relationship(uuid,uuid,uuid,jsonb,jsonb)','EXECUTE'),'Authenticated caller can impersonate a creator';
+ assert not has_function_privilege('authenticated','public.add_retention_relationship_service(uuid,uuid,uuid,jsonb,text)','EXECUTE'),'Authenticated caller can impersonate an admin';
+ assert not has_function_privilege('service_role','public.insert_retention_service(uuid,uuid,jsonb)','EXECUTE'),'Internal primitive is exposed';
+ perform set_config('test.retention_workspace',w::text,true);
+ perform set_config('test.retention_setter',setter::text,true);
+ perform set_config('test.retention_other',other_setter::text,true);
+end $$;
+-- Exercise the actual table RLS policy with a staff JWT, not only its helper.
+select set_config('request.jwt.claim.role','authenticated',true);
+select set_config('request.jwt.claims',jsonb_build_object('sub',current_setting('test.retention_other'),'role','authenticated','aal','aal2')::text,true);
+set local role authenticated;
+do $$ begin
+ assert (select count(*) from public.appointment_setting_appointments where workspace_id=current_setting('test.retention_workspace')::uuid)=0,'Unassigned staff read appointments via RLS';
+end $$;
+reset role;
+select set_config('request.jwt.claims',jsonb_build_object('sub',current_setting('test.retention_setter'),'role','authenticated','aal','aal2')::text,true);
+set local role authenticated;
+do $$ begin
+ assert (select count(*) from public.appointment_setting_appointments where workspace_id=current_setting('test.retention_workspace')::uuid)=1,'Assigned staff cannot read their appointment via RLS';
+end $$;
+reset role;
+rollback;
+select true as retention_setup_access_and_upgrade_checks_passed;

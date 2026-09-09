@@ -12,20 +12,28 @@ import { loadAppointmentSettingServiceIds, type WorkspaceAccess } from "@/lib/wo
 
 export async function loadAppointmentSettingRelationshipServices(access: WorkspaceAccess) {
     const appointmentSettingServices = await loadAppointmentSettingServiceIds(access.workspaceId)
+    const grants = access.role === "staff"
+        ? await supabaseAdmin.from("workspace_service_capabilities").select("service_id").eq("workspace_id", access.workspaceId).eq("capability", "appointment_setting.manage")
+        : { data: null, error: null }
+    if (grants.error) throw new Error("Could not verify Appointment Setting permissions.")
+    const enabledServiceIds = new Set((grants.data ?? []).map((grant) => grant.service_id))
     const allowedServiceIds = access.role === "staff"
         ? new Set(access.allowedServiceIds)
         : null
     const serviceIds = [...appointmentSettingServices.ids].filter((serviceId) => (
-        !allowedServiceIds || allowedServiceIds.has(serviceId)
+        !allowedServiceIds || (allowedServiceIds.has(serviceId) && enabledServiceIds.has(serviceId))
     ))
     if (!serviceIds.length) return new Map<string, string>()
 
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
         .from("relationship_services")
         .select("relationship_id, service_id, created_at")
         .eq("workspace_id", access.workspaceId)
         .in("service_id", serviceIds)
         .order("created_at", { ascending: true })
+    // Eligibility opens the panel; only a client's actual assignee can book for it.
+    if (access.role === "staff") query = query.eq("assignee_user_id", access.userId)
+    const { data, error } = await query
     if (error) throw new Error(error.message)
 
     const servicesByRelationship = new Map<string, string>()

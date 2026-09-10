@@ -178,6 +178,7 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
             p_details: {
                 ...details, is_test: isTest,
                 portal_base_url: process.env.NEXT_PUBLIC_SITE_URL,
+                retention_handoff: retentionHandoff,
                 fulfilment_manager_user_id: nullableFormString(formData, "fulfilment_manager_user_id"),
                 communication_primary_provider: communicationPrimaryProvider,
                 confirmation_address: normalizeProviderAddress(communicationPrimaryProvider, (retentionRequiresSmsConsent ? primaryPhone : whatsappPhone) ?? ""),
@@ -215,7 +216,7 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
             return {
                 ok: true,
                 href: relationshipHubHref(slug, relationship.id),
-                notice: "Relationship added. BE sent your portal link in Comms → Team. Messaging confirmation could not be sent; the portal is ready to use.",
+                notice: "Relationship added, but messaging confirmation could not be sent. Retry from the relationship’s communications setup. The portal link will be sent after confirmation.",
             }
         }
         retentionConfirmationSent = "sent" in confirmation ? confirmation.sent : !("inProgress" in confirmation && confirmation.inProgress)
@@ -226,7 +227,7 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
     return {
         ok: true,
         href: relationshipHubHref(slug, relationship.id),
-        ...(phase === "retention" ? { notice: `Relationship added. BE sent your portal link in Comms → Team.${retentionHandoff === "portal_only" ? " Messaging can be connected later." : retentionRequiresSmsConsent && !retentionConfirmationSent ? " Waiting for SMS opt-in." : " Messaging confirmation requested."}` } : {}),
+        ...(phase === "retention" ? { notice: retentionHandoff === "portal_only" ? "Relationship added. BE sent your portal link in Comms → Team. Messaging can be connected later." : `Relationship added.${retentionRequiresSmsConsent && !retentionConfirmationSent ? " Waiting for SMS opt-in." : " Messaging confirmation requested."} The portal link will be sent automatically after the client confirms.` } : {}),
     }
 }
 

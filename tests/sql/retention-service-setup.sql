@@ -4,7 +4,7 @@ select set_config('request.jwt.claim.role','service_role',true);
 do $$
 declare w uuid:=gen_random_uuid(); owner_id uuid:=gen_random_uuid(); setter uuid:=gen_random_uuid(); other_setter uuid:=gen_random_uuid();
  service_a uuid:=gen_random_uuid(); service_b uuid:=gen_random_uuid(); rev_a uuid:=gen_random_uuid(); rev_b uuid:=gen_random_uuid();
- rel uuid:=gen_random_uuid(); bad_rel uuid:=gen_random_uuid(); details jsonb; selection jsonb; result jsonb; rejected boolean; team uuid; sale_snapshot jsonb;
+ rel uuid:=gen_random_uuid(); bad_rel uuid:=gen_random_uuid(); auto_rel uuid:=gen_random_uuid(); auto_result jsonb; details jsonb; selection jsonb; result jsonb; rejected boolean; team uuid; sale_snapshot jsonb;
 begin
  insert into auth.users(id,email) values(owner_id,'retention-owner-'||owner_id||'@example.invalid'),(setter,'retention-setter-'||setter||'@example.invalid'),(other_setter,'retention-other-'||other_setter||'@example.invalid');
  insert into public.workspaces(id,name,slug) values(w,'Retention rollback QA','retention-'||w);
@@ -53,6 +53,19 @@ begin
  assert public.workspace_user_can_manage_appointment_setting(w,rel,owner_id, setter)=false,'Unknown service was accepted';
  assert public.workspace_user_can_manage_appointment_setting(w,rel,service_a,setter),'Assigned setter was denied';
  assert not public.workspace_user_can_manage_appointment_setting(w,rel,service_a,other_setter),'Service eligibility leaked another client';
+ -- Automatic handoff does not expose a portal or DM before the client confirms.
+ auto_result:=public.create_retention_relationship(w,owner_id,auto_rel,details||'{"retention_handoff":"request_confirmation"}'::jsonb,jsonb_build_array(selection));
+ assert not exists(select 1 from public.client_portal_sessions where relationship_id=auto_rel),'Automatic flow issued a portal before confirmation';
+ assert not exists(select 1 from public.workspace_native_messages where client_request_id=(auto_result->>'sale_id')::uuid),'Automatic flow also sent a manual DM';
+ assert not exists(select 1 from public.onboarding_delivery_outbox where relationship_id=auto_rel),'Automatic flow sent a link before confirmation';
+ assert public.create_retention_relationship(w,owner_id,auto_rel,details,jsonb_build_array(selection))=auto_result,'Retry changed the automatic handoff choice';
+ update public.client_sales set status='retention_confirmed',consent_confirmed_at=now() where id=(auto_result->>'sale_id')::uuid;
+ update public.client_sales set status='retention_confirmed' where id=(auto_result->>'sale_id')::uuid;
+ assert (select count(*) from public.client_portal_sessions where relationship_id=auto_rel)=1,'Confirmation did not create exactly one portal';
+ assert (select count(*) from public.onboarding_delivery_outbox where relationship_id=auto_rel and kind='client_portal_link')=1,'Confirmation did not queue exactly one portal link';
+ assert (select source_metadata->>'external_messaging_pending' from public.relationships where id=auto_rel)='false','Automatic confirmation did not activate messaging';
+ assert public.create_retention_relationship(w,owner_id,auto_rel,details,jsonb_build_array(selection))=auto_result,'Confirmed retry changed the receipt';
+ assert (select source_metadata->>'external_messaging_pending' from public.relationships where id=auto_rel)='false','Retry reset confirmed messaging';
  -- Eligibility removal must not break an already agreed client allocation.
  perform public.set_service_delivery_users(w,owner_id,service_a,array[other_setter]);
  assert public.workspace_user_can_manage_appointment_setting(w,rel,service_a,setter),'Pool change revoked a current allocation';

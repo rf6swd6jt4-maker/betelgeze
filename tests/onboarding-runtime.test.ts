@@ -53,7 +53,7 @@ test("sale confirmation prepares the immutable session and payment reuses it bef
     assert.match(saleAutomation, /activateRelationshipOnboardingAfterPayment/u)
 })
 
-test("manual relationships start only at Potential Client or Retention and Retention offers a private portal handoff", () => {
+test("manual relationships start only at Potential Client or Retention and Retention defaults to messaging with an optional private portal handoff", () => {
     const relationshipForm = workspaceCreateModal.slice(
         workspaceCreateModal.indexOf('{target === "relationship"'),
         workspaceCreateModal.indexOf('{target === "work-item"')
@@ -64,6 +64,9 @@ test("manual relationships start only at Potential Client or Retention and Reten
     assert.match(relationshipForm, /Choose how to set up communications in the next step\./u)
     assert.match(relationshipActions, /creatableRelationshipPhases = new Set\(\["potential_client", "retention"\]/u)
     assert.match(relationshipActions, /!isUsablePhoneNumber\(primaryPhone\) && !isUsablePhoneNumber\(whatsappPhone\)/u)
+    assert.match(workspaceCreateModal, /\[retentionHandoff, setRetentionHandoff\] = useState\("request_confirmation"\)/u)
+    assert.match(relationshipForm, /Share the portal link manually/u)
+    assert.match(relationshipActions, /retention_handoff: retentionHandoff/u)
     assert.match(relationshipActions, /rpc\("create_retention_relationship"/u)
     assert.match(relationshipActions, /sendSaleConsentTemplate\(retentionConfirmationSaleId, workspace\.id\)/u)
 })

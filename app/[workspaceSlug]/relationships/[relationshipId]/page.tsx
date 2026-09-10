@@ -122,7 +122,7 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
     })
 
     return <>
-        {relationship.lifecycle_phase === "retention" && relationship.source_metadata.portal_handoff === "creator_dm" ? <RetentionCommunicationsSetup workspaceSlug={workspaceSlug} relationshipId={relationship.id} pending={relationship.source_metadata.external_messaging_pending === true} canRequest={role === "owner" || role === "admin" || relationship.seller_user_id === userId} provider={relationship.communication_primary_provider} /> : null}
+        {relationship.lifecycle_phase === "retention" && ["creator_dm", "messaging_confirmation"].includes(String(relationship.source_metadata.portal_handoff)) ? <RetentionCommunicationsSetup manualHandoff={relationship.source_metadata.portal_handoff === "creator_dm"} workspaceSlug={workspaceSlug} relationshipId={relationship.id} pending={relationship.source_metadata.external_messaging_pending === true} canRequest={role === "owner" || role === "admin" || relationship.seller_user_id === userId} provider={relationship.communication_primary_provider} /> : null}
         <RelationshipDealWorkspace
         workspaceSlug={workspaceSlug}
         workspaceName={publicBranding.displayName}

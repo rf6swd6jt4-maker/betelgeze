@@ -2,7 +2,7 @@ import "server-only"
 
 import { after } from "next/server"
 import { processAppointmentNotificationOutbox } from "@/lib/appointment-notification-worker"
-import { workspaceNativePanelsEnabled } from "@/lib/workspace-native"
+import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 import { revalidatePath } from "next/cache"
 import { createHash } from "node:crypto"
 import type { AppointmentDraftCommandIdentity } from "@/lib/appointment-draft-command"
@@ -287,7 +287,7 @@ export async function submitAppointmentSettingAppointment(workspaceSlug: string,
         meetingLink: validated.value.meetingLink,
     })
     const provider = resolved.destinations.length > 1 ? "omnichannel" : primaryDestination.provider
-    const queuedDelivery = process.env.WORKSPACE_APPOINTMENT_OUTBOX_READY === "1" && workspaceNativePanelsEnabled(workspace.id, process.env.WORKSPACE_NATIVE_PANELS)
+    const queuedDelivery = process.env.WORKSPACE_APPOINTMENT_OUTBOX_READY === "1" && workspacePerformanceEnabled(workspace.id, user.id, process.env.WORKSPACE_NATIVE_PANELS, process.env.WORKSPACE_PERFORMANCE_USERS)
     const { data: submission, error: submissionError } = await supabaseAdmin.rpc(queuedDelivery ? "submit_appointment_setting_appointment_queued" : "submit_appointment_setting_appointment", {
         p_workspace_id: workspace.id,
         p_relationship_id: relationshipId,

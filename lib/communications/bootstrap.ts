@@ -18,7 +18,7 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
     const conversationIds = new Set(relationships.map((r) => r.id))
     const clientIds = relationships.flatMap((relationship) => relationship.client_id ? [relationship.client_id] : [])
     const [messageResult, cursorResult, reactionResult, stickerResult, peopleResult, channelResult, integrationResult, selectedMessages] = await Promise.all([
-        loadCommunicationMessages({ workspaceId }),
+        loadCommunicationMessages({ workspaceId, currentUserId }),
         loadCommunicationReadCursors(workspaceId),
         loadCommunicationReactions(workspaceId),
         loadCommunicationStickers(workspaceId),
@@ -28,7 +28,7 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
             : Promise.resolve({ data: [], error: null }),
         supabaseAdmin.from("workspace_integrations").select("provider").eq("workspace_id", workspaceId).eq("enabled", true).in("provider", ["meta_whatsapp", "twilio_sms"]),
         requestedConversationId && relationships.some((relationship) => relationship.id === requestedConversationId)
-            ? loadCommunicationMessages({ workspaceId, relationshipId: requestedConversationId, limit: 500 })
+            ? loadCommunicationMessages({ workspaceId, relationshipId: requestedConversationId, currentUserId, limit: 500 })
             : Promise.resolve(null),
     ])
     const channelsByClient = new Map<string, Set<string>>()

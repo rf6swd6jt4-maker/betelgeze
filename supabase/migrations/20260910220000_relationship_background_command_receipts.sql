@@ -32,7 +32,8 @@ declare
     v_role text; v_values jsonb; v_version timestamptz;
 begin
     if current_user <> 'service_role' then raise exception using errcode = '42501', message = 'Trusted relationship runtime required'; end if;
-    if public.workspace_user_can_access_relationship(p_workspace_id, p_relationship_id, p_user_id) is not true then
+    if public.workspace_user_can_access_relationship(p_workspace_id, p_relationship_id, p_user_id) is not true
+       or not exists(select 1 from public.workspaces where id = p_workspace_id and status = 'active') then
         raise exception using errcode = '42501', message = 'Relationship access is required.';
     end if;
     if p_request_id is null or p_request_hash is null or p_request_hash !~ '^[0-9a-f]{64}$' or p_expected_updated_at is null then

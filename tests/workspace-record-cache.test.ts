@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { WorkspaceRecordCache } from "../lib/workspace-record-cache.ts"
-import { nativeWorkspaceRoute, workspaceNativePanelsEnabled } from "../lib/workspace-native.ts"
+import { nativeWorkspaceRoute, workspaceNativePanelsEnabled, workspacePerformanceEnabled } from "../lib/workspace-native.ts"
 
 function deferred<T>() {
     let resolve!: (value: T) => void
@@ -116,4 +116,14 @@ test("React-style subscribed snapshot reads cannot repeat live Map invalidation 
     assert.deepEqual(visits, { a: 2, b: 2 })
     assert.equal(cache.getSnapshot("a").data, null)
     assert.equal(cache.getSnapshot("b").data, null)
+})
+
+
+test("performance rollout can be limited to an authorized operator without widening workspace selection", () => {
+    assert.equal(workspacePerformanceEnabled("workspace", "operator", undefined, "operator"), false)
+    assert.equal(workspacePerformanceEnabled("workspace", "operator", "workspace", "operator"), true)
+    assert.equal(workspacePerformanceEnabled("workspace", "staff", "workspace", "operator"), false)
+    assert.equal(workspacePerformanceEnabled("workspace", undefined, "workspace", "operator"), false)
+    assert.equal(workspacePerformanceEnabled("workspace", "operator", "another", "operator"), false)
+    assert.equal(workspacePerformanceEnabled("workspace", "staff", "workspace", undefined), true)
 })

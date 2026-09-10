@@ -43,10 +43,7 @@ async function processJob(job: Job) {
             contactName: row.contact_name!, appointmentDate: row.appointment_date!, appointmentTime: row.appointment_time!,
             appointmentTimezone: row.appointment_timezone, meetingMedium: row.meeting_medium, meetingLink: row.meeting_link,
         })
-        const prepared = await supabaseAdmin.from("client_messages").update({ body })
-            .eq("workspace_id", job.workspace_id).eq("relationship_id", job.relationship_id).eq("id", job.message_id).eq("status", "sending").select("id").maybeSingle()
-        if (prepared.error || !prepared.data) throw new Error("Could not prepare the appointment notification.")
-        const dispatch = await supabaseAdmin.rpc("begin_appointment_notification_dispatch", { p_outbox_id: job.id, p_lease_token: job.lease_token })
+        const dispatch = await supabaseAdmin.rpc("prepare_appointment_notification_dispatch", { p_outbox_id: job.id, p_lease_token: job.lease_token, p_body: body })
         if (dispatch.error) throw new Error("The delivery dispatch acknowledgement could not be confirmed.")
         if (dispatch.data !== true) return "superseded" as const
         const outcome = await sendCommunicationDeliveries({ workspaceId: job.workspace_id, relationshipId: job.relationship_id, messageId: job.message_id, body, destinations: channels.destinations })

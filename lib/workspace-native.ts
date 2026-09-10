@@ -34,3 +34,10 @@ export function nativeWorkspaceRoute(value: string, workspaceSlug: string): Nati
 export function workspaceNativePanelsEnabled(workspaceId: string, setting: string | undefined) {
     return setting === "all" || Boolean(setting?.split(",").map((value) => value.trim()).includes(workspaceId))
 }
+
+/** Rollout selection only. Every read and command still performs its usual authorization. */
+export function workspacePerformanceEnabled(workspaceId: string, userId: string | undefined, workspaceSetting: string | undefined, userSetting: string | undefined) {
+    if (!workspaceNativePanelsEnabled(workspaceId, workspaceSetting)) return false
+    if (!userSetting?.trim()) return true
+    return Boolean(userId && workspaceNativePanelsEnabled(userId, userSetting))
+}

@@ -298,7 +298,7 @@ export async function sendCommunicationDeliveries(input: {
             results.push({ provider: destination.provider, ok: true, providerMessageId: existing.data.provider_message_id, error: null, safeToRetry: false, primary: destination.primary })
             continue
         }
-        if (existing.data?.status === "send_uncertain") {
+        if (existing.data && ["sending", "send_uncertain"].includes(existing.data.status)) {
             results.push({ provider: destination.provider, ok: false, providerMessageId: existing.data.provider_message_id, error: existing.data.error ?? `${providerLabel(destination.provider)} delivery is still being confirmed.`, safeToRetry: false, primary: destination.primary })
             continue
         }
@@ -315,11 +315,15 @@ export async function sendCommunicationDeliveries(input: {
             updated_at: new Date().toISOString(),
         }, { onConflict: "client_message_id,provider" }).select("id").single()
         if (delivery.error) throw new Error(delivery.error.message)
+        let accepted = false
+        let acceptedProviderMessageId: string | null = null
         try {
             const response = await sendProvider({ ...input, destination })
+            accepted = true
             const externalId = providerMessageId(destination.provider, response)
+            acceptedProviderMessageId = externalId
             const sentAt = new Date().toISOString()
-            await supabaseAdmin.from("communication_message_deliveries").update({
+            const receipt = await supabaseAdmin.from("communication_message_deliveries").update({
                 provider_message_id: externalId,
                 status: "sent",
                 sent_at: sentAt,
@@ -327,20 +331,22 @@ export async function sendCommunicationDeliveries(input: {
                 raw_payload: { provider_response: response },
                 updated_at: sentAt,
             }).eq("id", delivery.data.id)
+            if (receipt.error) throw new Error("The provider accepted this message, but its delivery receipt could not be saved. Review delivery before retrying.")
             results.push({ provider: destination.provider, ok: true, providerMessageId: externalId, error: null, safeToRetry: false, primary: destination.primary })
         } catch (error) {
-            const safeToRetry = destination.provider === "meta_whatsapp"
+            const safeToRetry = !accepted && (destination.provider === "meta_whatsapp"
                 ? metaWhatsAppFailureIsSafeToRetry(error)
-                : twilioFailureIsSafeToRetry(error)
+                : twilioFailureIsSafeToRetry(error))
             const message = error instanceof Error ? error.message : `${providerLabel(destination.provider)} send failed.`
             const failedAt = new Date().toISOString()
             await supabaseAdmin.from("communication_message_deliveries").update({
+                ...(accepted ? { provider_message_id: acceptedProviderMessageId } : {}),
                 status: safeToRetry ? "send_failed" : "send_uncertain",
                 error: message,
                 failed_at: safeToRetry ? failedAt : null,
                 updated_at: failedAt,
             }).eq("id", delivery.data.id)
-            results.push({ provider: destination.provider, ok: false, providerMessageId: null, error: message, safeToRetry, primary: destination.primary })
+            results.push({ provider: destination.provider, ok: false, providerMessageId: acceptedProviderMessageId, error: message, safeToRetry, primary: destination.primary })
         }
     }
     const succeeded = results.filter((result) => result.ok)
@@ -348,11 +354,9 @@ export async function sendCommunicationDeliveries(input: {
     const whatsapp = results.find((result) => result.provider === "meta_whatsapp" && result.ok)
     const aggregateStatus = succeeded.length === results.length
         ? "sent"
-        : succeeded.length
-            ? "partial_sent"
-            : results.some((result) => !result.safeToRetry)
-                ? "send_uncertain"
-                : "send_failed"
+        : results.some((result) => !result.ok && !result.safeToRetry)
+            ? "send_uncertain"
+            : succeeded.length ? "partial_sent" : "send_failed"
     const aggregateError = results.filter((result) => result.error).map((result) => `${providerLabel(result.provider)}: ${result.error}`).join(" · ") || null
     const now = new Date().toISOString()
     const update = await supabaseAdmin.from("client_messages").update({

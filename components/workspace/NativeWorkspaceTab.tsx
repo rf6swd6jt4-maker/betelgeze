@@ -59,9 +59,10 @@ function NativePanel({ data }: { data: NativePanelSnapshot }) {
     }
 }
 
-class PanelBoundary extends Component<{ children: ReactNode; onRetry: () => void }, { failed: boolean }> {
+class PanelBoundary extends Component<{ children: ReactNode; onRetry: () => void; onFailure: () => void }, { failed: boolean }> {
     state = { failed: false }
     static getDerivedStateFromError() { return { failed: true } }
+    componentDidCatch() { this.props.onFailure() }
     render() {
         return this.state.failed ? <div role="alert" className="p-6 text-sm text-red-200">This panel could not open. <button type="button" onClick={() => { this.setState({ failed: false }); this.props.onRetry() }} className="underline">Retry</button></div> : this.props.children
     }
@@ -142,10 +143,14 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
         if (!active || blockedByAccess) return
         const interaction = beginWorkspaceInteraction({ workspaceSlug, operation: "panel_load", routeSection: route.kind, renderer: "native", cacheState: cache.getSnapshot(key).data ? "memory" : "network", background: false })
         measurement.current = interaction
-        void read().catch(() => interaction.finish("failed"))
+        void read().catch((error: unknown) => {
+            if (error instanceof Error && error.name === "AbortError") return
+            interaction.finish("failed")
+            if (!cache.getSnapshot(key).data) post({ type: "navigation-failed", url: tab.url })
+        })
         return () => { interaction.finish("aborted") }
         // Invalidation increments revision once; settling a read does not.
-    }, [cache, key, read, workspaceSlug, route.kind, active, blockedByAccess, snapshot.revision])
+    }, [cache, key, read, workspaceSlug, route.kind, active, blockedByAccess, snapshot.revision, post, tab.url])
 
     useEffect(() => {
         const resume = () => {
@@ -167,6 +172,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     const onReady = useCallback(() => {
         if (!active || blockedByAccess) return
         reportLocation()
+        post({ type: "meaningful-ready", url: tab.url })
         measurement.current?.mark("meaningful_ready")
         measurement.current?.finish("completed", "meaningful_ready")
         const title = root.current?.querySelector<HTMLElement>("[data-workspace-record-title]")?.dataset.workspaceRecordTitle
@@ -196,15 +202,25 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     }, [active])
 
     const navigate = useCallback(async (href: string, replace = false) => {
+        if (!current.current.active || current.current.accountCleared) return
         const sequence = ++navigationSequence.current
         const sourceUrl = current.current.tab.url
         const destination = new URL(href, new URL(sourceUrl, window.location.origin))
+        const url = `${destination.pathname}${destination.search}${destination.hash}`
+        if (destination.origin === window.location.origin && url === sourceUrl) return
+        post({ type: "navigation-intent", url, replace, intentSequence: sequence })
         const safe = await flushWorkspaceAutosaves(1500, { navigation: true })
-        if (sequence !== navigationSequence.current || !current.current.active || current.current.tab.url !== sourceUrl) return
-        if (!safe) { setNavigationError("Your changes are not safely saved yet. Retry saving before leaving this panel."); return }
+        if (sequence !== navigationSequence.current || !current.current.active || current.current.tab.url !== sourceUrl || current.current.accountCleared) {
+            post({ type: "navigation-intent-end", intentSequence: sequence, interactionOutcome: "aborted" })
+            return
+        }
+        if (!safe) {
+            post({ type: "navigation-intent-end", intentSequence: sequence, interactionOutcome: "failed" })
+            setNavigationError("Your changes are not safely saved yet. Retry saving before leaving this panel.")
+            return
+        }
         setNavigationError(null)
         if (destination.origin !== window.location.origin || !destination.pathname.startsWith(`/${workspaceSlug}/`)) { window.location.assign(destination.href); return }
-        const url = `${destination.pathname}${destination.search}${destination.hash}`
         post({ type: replace ? "location-replace" : "navigation-start", url })
     }, [post, workspaceSlug])
     const navigation = useMemo<WorkspaceNavigation>(() => ({
@@ -247,7 +263,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
         {navigationError ? <div role="alert" className="px-4 py-2 text-sm text-red-200">{navigationError}</div> : null}
         {blockedByAccess ? <div role="alert" className="px-4 py-2 text-sm text-red-200">{accountCleared ? "Your workspace session changed. Reload to continue." : accessError?.message} <button type="button" onClick={() => window.location.reload()} className="underline">Reload workspace</button></div> : null}
         {snapshot.error ? <div role="alert" className="border-b border-red-900/50 px-4 py-2 text-sm text-red-200">{snapshot.error} <button type="button" onClick={refresh} className="underline">Retry</button></div> : null}
-        <WorkspacePanelChrome banner={banner}><PanelBoundary key={key} onRetry={refresh}><Suspense fallback={<WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />}>
+        <WorkspacePanelChrome banner={banner}><PanelBoundary key={key} onRetry={refresh} onFailure={() => { measurement.current?.finish("failed"); post({ type: "navigation-failed", url: tab.url }) }}><Suspense fallback={<WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />}>
             {!blockedByAccess && (snapshot.data ? <><NativePanel data={snapshot.data} /><RestoreScroll onRestore={restoreScroll} /><Ready key={snapshot.updatedAt} onReady={onReady} /></> : <WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />)}
         </Suspense></PanelBoundary></WorkspacePanelChrome>
     </div></WorkspaceNavigationProvider>

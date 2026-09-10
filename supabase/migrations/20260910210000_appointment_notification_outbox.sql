@@ -56,6 +56,7 @@ begin
         update public.appointment_notification_outbox set status = 'uncertain', lease_token = null, lease_expires_at = null,
             error_summary = 'Delivery worker ended after dispatch began. Review the provider before retrying.', updated_at = clock_timestamp()
         where status = 'dispatched' and lease_expires_at < now()
+          and (p_outbox_id is null or id = p_outbox_id)
         returning workspace_id, message_id, error_summary
     ) update public.client_messages m set status = 'send_uncertain', error = expired.error_summary
       from expired where m.workspace_id = expired.workspace_id and m.id = expired.message_id and m.status = 'sending';
@@ -79,6 +80,27 @@ begin
     where id = p_outbox_id and lease_token = p_lease_token and status = 'processing' and lease_expires_at > now()
     returning id into v_id;
     return v_id is not null;
+end;
+$$;
+
+-- Fence preparation and encrypted message replacement with the same lease as
+-- dispatch. An expired preparation worker cannot overwrite a newer job's text.
+create or replace function public.prepare_appointment_notification_dispatch(p_outbox_id uuid, p_lease_token uuid, p_body text)
+returns boolean language plpgsql security invoker set search_path = public as $$
+declare v_job public.appointment_notification_outbox%rowtype;
+begin
+    if current_user <> 'service_role' then raise exception using errcode = '42501', message = 'Trusted delivery runtime required'; end if;
+    select * into v_job from public.appointment_notification_outbox
+    where id = p_outbox_id and lease_token = p_lease_token and status = 'processing' and lease_expires_at > now()
+    for update;
+    if not found then return false; end if;
+    if nullif(btrim(p_body), '') is null then raise exception using errcode = '22023', message = 'Notification text is required'; end if;
+    update public.client_messages set body = p_body
+    where workspace_id = v_job.workspace_id and relationship_id = v_job.relationship_id and id = v_job.message_id and status = 'sending';
+    if not found then return false; end if;
+    update public.appointment_notification_outbox set status = 'dispatched', lease_expires_at = now() + interval '5 minutes', updated_at = clock_timestamp()
+    where id = v_job.id;
+    return true;
 end;
 $$;
 
@@ -107,8 +129,10 @@ $$;
 revoke all on function public.submit_appointment_setting_appointment_queued(uuid,uuid,uuid,uuid,uuid,timestamptz,uuid,text,text,text) from public,anon,authenticated;
 revoke all on function public.claim_appointment_notification_outbox(integer,uuid) from public,anon,authenticated;
 revoke all on function public.begin_appointment_notification_dispatch(uuid,uuid) from public,anon,authenticated;
+revoke all on function public.prepare_appointment_notification_dispatch(uuid,uuid,text) from public,anon,authenticated;
 revoke all on function public.finish_appointment_notification_outbox(uuid,uuid,text,text) from public,anon,authenticated;
 grant execute on function public.submit_appointment_setting_appointment_queued(uuid,uuid,uuid,uuid,uuid,timestamptz,uuid,text,text,text) to service_role;
 grant execute on function public.claim_appointment_notification_outbox(integer,uuid) to service_role;
 grant execute on function public.begin_appointment_notification_dispatch(uuid,uuid) to service_role;
+grant execute on function public.prepare_appointment_notification_dispatch(uuid,uuid,text) to service_role;
 grant execute on function public.finish_appointment_notification_outbox(uuid,uuid,text,text) to service_role;

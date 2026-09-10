@@ -8,7 +8,7 @@ create role authenticated;
 create role anon;
 create schema auth;
 create table auth.users(id uuid primary key);
-create table workspaces(id uuid primary key);
+create table workspaces(id uuid primary key,status text default 'active');
 create table workspace_memberships(workspace_id uuid, user_id uuid, role text);
 create table relationships(workspace_id uuid, id uuid, status text, lifecycle_phase text, primary key(workspace_id,id));
 create table relationship_services(workspace_id uuid, relationship_id uuid, service_id uuid);
@@ -25,7 +25,7 @@ create table appointment_setting_appointments (
 );
 grant usage on schema public,auth to service_role;
 grant all on all tables in schema public,auth to service_role;
-insert into workspaces values('00000000-0000-0000-0000-000000000001');
+insert into workspaces(id) values('00000000-0000-0000-0000-000000000001');
 insert into auth.users values('00000000-0000-0000-0000-000000000002');
 insert into workspace_memberships values('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002','owner');
 insert into relationships values('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000003','active','retention');

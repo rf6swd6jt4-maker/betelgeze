@@ -41,9 +41,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
     if (request.nextUrl.searchParams.has("beforeId") || request.nextUrl.searchParams.has("beforeCreatedAt")) {
         const cursor = communicationHistoryCursor({ id: request.nextUrl.searchParams.get("beforeId"), createdAt: request.nextUrl.searchParams.get("beforeCreatedAt") })
         if (!cursor) return Response.json({ error: "Invalid history cursor." }, { status: 400 })
-        return Response.json(await loadCommunicationMessagePage(workspace.id, relationshipId, cursor), { headers: { "Cache-Control": "no-store" } })
+        return Response.json(await loadCommunicationMessagePage(workspace.id, relationshipId, cursor, user.id), { headers: { "Cache-Control": "no-store" } })
     }
-    return Response.json(await loadCommunicationMessages({ workspaceId: workspace.id, relationshipId, limit: 500 }), { headers: { "Cache-Control": "no-store" } })
+    return Response.json(await loadCommunicationMessages({ workspaceId: workspace.id, relationshipId, currentUserId: user.id, limit: 500 }), { headers: { "Cache-Control": "no-store" } })
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {

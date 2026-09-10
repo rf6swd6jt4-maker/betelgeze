@@ -138,3 +138,57 @@ export function createWorkspacePerformanceMeasurement(input: WorkspacePerformanc
         },
     }
 }
+
+type NavigationMeasurementHandle = {
+    mark: (boundary: WorkspacePerformanceBoundary) => void
+    finish: (outcome: WorkspacePerformanceOutcome, boundary?: WorkspacePerformanceBoundary) => void
+}
+type NavigationMeasurementIntent = {
+    handle: NavigationMeasurementHandle
+    url: string
+    tabId: string | null
+    source?: { tabId: string; sequence: number }
+}
+
+/** URL/tab identity stays in memory solely to correlate actual readiness.
+ * Only the content-free handle can publish a performance sample. */
+export class WorkspaceNavigationPerformanceTracker {
+    private active: NavigationMeasurementIntent | null = null
+    begin(handle: NavigationMeasurementHandle, url: string, tabId: string | null, source?: NavigationMeasurementIntent["source"]) {
+        this.cancel()
+        const intent = { handle, url, tabId, source }
+        this.active = intent
+        return intent
+    }
+    bind(intent: NavigationMeasurementIntent | null, tabId: string) {
+        if (intent && this.active === intent) intent.tabId = tabId
+    }
+    retarget(tabId: string, url: string, source?: NavigationMeasurementIntent["source"]) {
+        if (this.active?.tabId !== tabId) return null
+        this.active.url = url
+        this.active.source = source
+        return this.active
+    }
+    finish(intent: NavigationMeasurementIntent | null, outcome: Exclude<WorkspacePerformanceOutcome, "completed">) {
+        if (!intent || this.active !== intent) return
+        this.active = null
+        intent.handle.finish(outcome)
+    }
+    finishSource(tabId: string, sequence: number, outcome: "failed" | "aborted") {
+        if (this.active?.source?.tabId === tabId && this.active.source.sequence === sequence) this.finish(this.active, outcome)
+    }
+    finishTarget(tabId: string, url: string, outcome: Exclude<WorkspacePerformanceOutcome, "completed">) {
+        if (this.active?.tabId === tabId && this.active.url === url) this.finish(this.active, outcome)
+    }
+    ready(tabId: string, url: string) {
+        if (this.active?.tabId !== tabId || this.active.url !== url) return
+        const intent = this.active
+        this.active = null
+        intent.handle.mark("meaningful_ready")
+        intent.handle.finish("completed", "meaningful_ready")
+    }
+    activate(tabId: string) {
+        if (this.active?.tabId && this.active.tabId !== tabId) this.cancel()
+    }
+    cancel() { if (this.active) this.finish(this.active, "aborted") }
+}

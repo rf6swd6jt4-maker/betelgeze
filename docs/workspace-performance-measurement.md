@@ -6,6 +6,8 @@
 
 Start `navigation` in the initiating interaction handler, before autosave/navigation work. If measurement begins only after a destination component mounts, use `panel_load`; it excludes the earlier input and shell delay. The browser harness supplies the complete click-to-ready interval. Deferred activity charts have their own loading state and are not included in the first useful activity-list boundary.
 
+The native shell now records `navigation` and `tab_switch` from the initiating handler, including the time awaiting safe autosave. It completes only on the exact destination tab's `meaningful-ready` message after content and two animation frames; the legacy `location` bridge handshake cannot complete these samples. Canonical redirects retain the original clock. Superseded, failed, timed-out and account-cleared operations retain those outcomes rather than becoming successful timings. These labels cover native destinations; no measured old/new comparison is inferred for legacy frames. Correlation URLs and tab IDs remain in memory and are excluded from published samples.
+
 ```ts
 const measurement = beginWorkspaceInteraction({
     workspaceSlug,

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "@/components/workspace/WorkspaceLink"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ActivityTrends, ActivityTrendsLoading } from "@/components/admin/ActivityTrends"
 import { AdminPanelNav } from "@/components/admin/AdminPanelNav"
 import { AdminWorkQueue } from "@/components/admin/AdminWorkQueue"
@@ -57,10 +57,11 @@ function DeferredActivityTrends({ data }: { data: Extract<NativeAdminSnapshot, {
     const navigation = useWorkspaceNavigation()
     const active = navigation?.active !== false
     const [metrics, setMetrics] = useState<AdminActivityMetricBundle | null>(null)
+    const loadedFor = useRef<typeof data | null>(null)
     const [error, setError] = useState(false)
     const [retry, setRetry] = useState(0)
     useEffect(() => {
-        if (!active || metrics) return
+        if (!active || loadedFor.current === data) return
         const controller = new AbortController()
         let cancelled = false
         const run = async () => {
@@ -69,14 +70,15 @@ function DeferredActivityTrends({ data }: { data: Extract<NativeAdminSnapshot, {
                 if (!response.ok) throw new Error("Activity charts unavailable")
                 const result = await response.json() as Awaited<ReturnType<typeof loadNativeAdminTrends>>
                 if (result.userId !== data.userId || result.workspaceId !== data.workspaceId) throw new Error("Session changed")
-                if (!cancelled) { setError(false); setMetrics(result.metrics) }
+                if (!cancelled) { loadedFor.current = data; setError(false); setMetrics(result.metrics) }
             } catch { if (!cancelled) setError(true) }
         }
         void run()
         return () => { cancelled = true; controller.abort() }
-    }, [active, data.userId, data.workspaceId, data.workspaceSlug, metrics, retry])
-    if (metrics) return <ActivityTrends initialRange={data.range} metrics={metrics} />
-    if (error) return <p role="alert" className="mt-5 text-sm text-red-400">Activity charts could not load. <button type="button" className="underline" onClick={() => { setError(false); setRetry((value) => value + 1) }}>Retry</button></p>
+    }, [active, data, retry])
+    const errorNotice = error ? <p role="alert" className="mt-5 text-sm text-red-400">Activity charts could not {metrics ? "refresh. Showing the previous data." : "load."} <button type="button" className="underline" onClick={() => { setError(false); setRetry((value) => value + 1) }}>Retry</button></p> : null
+    if (metrics) return <>{errorNotice}<ActivityTrends initialRange={data.range} metrics={metrics} /></>
+    if (error) return errorNotice
     return <ActivityTrendsLoading />
 }
 

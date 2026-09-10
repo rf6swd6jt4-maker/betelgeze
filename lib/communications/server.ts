@@ -13,6 +13,8 @@ import { communicationAttachmentFromRawPayload } from "@/lib/communications/atta
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { loadMessageMetadata } from "@/lib/communications/message-batches"
 import { communicationHistoryPage, communicationHistoryRpcMissing, legacyCommunicationHistoryPage, type CommunicationHistoryCursor } from "@/lib/communications/history-page"
+import { loadBoundedCommunicationRows } from "@/lib/communications/bounded-read"
+import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 
 export const COMMUNICATION_MESSAGE_COLUMNS = "id, client_request_id, relationship_id, body, direction, provider, provider_message_id, whatsapp_message_id, reply_to_whatsapp_message_id, reply_to_message_id, status, error, sender_kind, sender_user_id, automation_kind, automation_label, created_at, sent_at, delivered_at, read_at, failed_at, raw_payload"
 
@@ -96,17 +98,22 @@ function missingCommunicationsSchema(error: { code?: string; message?: string } 
 export async function loadCommunicationMessages({
     workspaceId,
     relationshipId,
+    currentUserId,
     limit = 2_000,
 }: {
     workspaceId: string
     relationshipId?: string
+    currentUserId?: string
     limit?: number
 }): Promise<{ messages: CommunicationMessage[]; schemaReady: boolean }> {
     const supabase = await createSupabaseServerClient()
-    const current = await supabase.rpc("communication_client_messages", {
-        p_workspace_id: workspaceId,
-        p_relationship_id: relationshipId ?? null,
-        p_limit: limit,
+    const current = await loadBoundedCommunicationRows<unknown[]>({
+        enabled: workspacePerformanceEnabled(workspaceId, currentUserId ?? "", process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS), kind: "client",
+        read: (name) => supabase.rpc(name, {
+            p_workspace_id: workspaceId,
+            p_relationship_id: relationshipId ?? null,
+            p_limit: limit,
+        }),
     })
     if (!current.error) {
         const messages: CommunicationMessage[] = (current.data ?? []).flatMap((row: unknown) => communicationMessageFromRow(row) ?? []).reverse()
@@ -182,14 +189,14 @@ export async function loadCommunicationMessage({
     }
 }
 
-export async function loadCommunicationMessagePage(workspaceId: string, conversationId: string, before: CommunicationHistoryCursor) {
+export async function loadCommunicationMessagePage(workspaceId: string, conversationId: string, before: CommunicationHistoryCursor, currentUserId?: string) {
     const supabase = await createSupabaseServerClient()
     const { data, error } = await supabase.rpc("communication_client_message_page", {
         p_workspace_id: workspaceId, p_conversation_id: conversationId,
         p_before_created_at: before.createdAt, p_before_id: before.id, p_limit: 60,
     })
     if (communicationHistoryRpcMissing(error)) {
-        const legacy = await loadCommunicationMessages({ workspaceId, relationshipId: conversationId, limit: 500 })
+        const legacy = await loadCommunicationMessages({ workspaceId, relationshipId: conversationId, currentUserId, limit: 500 })
         return legacyCommunicationHistoryPage(legacy.messages, before)
     }
     if (error) throw new Error("Earlier conversation history is unavailable. Please retry.")

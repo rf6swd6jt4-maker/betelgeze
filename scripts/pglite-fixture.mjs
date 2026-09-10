@@ -12,3 +12,10 @@ try {
     throw new Error("Install optional @electric-sql/pglite@0.5.8 in a temporary directory, then set BE_PGLITE_ROOT to that directory. See docs/workspace-performance-command-operations.md.")
 }
 export const { PGlite } = require(modulePath)
+
+export function loadPGliteExtension(name) {
+    const extensionPath = require.resolve(`@electric-sql/pglite/contrib/${name}`, {
+        paths: process.env.BE_PGLITE_ROOT ? [process.env.BE_PGLITE_ROOT] : [repositoryRoot],
+    })
+    return require(extensionPath)[name]
+}

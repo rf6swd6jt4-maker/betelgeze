@@ -1,5 +1,5 @@
 import 'server-only'
-import { workspaceNativePanelsEnabled } from "@/lib/workspace-native"
+import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 import type { RelationshipRecord } from '@/lib/relationships'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { loadPublishedOnboardingConfiguration } from '@/lib/onboarding/configuration'
@@ -92,7 +92,7 @@ export async function loadNativeRelationshipDeal({ workspaceId, workspaceSlug, w
 
 
     return {
-        backgroundCommandsEnabled: workspaceNativePanelsEnabled(workspaceId, process.env.WORKSPACE_RELATIONSHIP_DRAFT_COMMANDS),
+        backgroundCommandsEnabled: workspacePerformanceEnabled(workspaceId, userId, process.env.WORKSPACE_RELATIONSHIP_DRAFT_COMMANDS, process.env.WORKSPACE_PERFORMANCE_USERS),
         workspaceSlug: workspaceSlug,
         workspaceName: publicBranding.displayName,
         logoSrc: agencyLogoSrc,

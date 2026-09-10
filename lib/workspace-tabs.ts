@@ -30,7 +30,7 @@ export type WorkspaceTabFrameMessage = {
     source: typeof WORKSPACE_TAB_MESSAGE_SOURCE
     target: "host"
     tabId: string
-    type: "history-step" | "record-title" | "location" | "location-replace" | "mutation" | "action-start" | "action-end" | "mutation-start" | "mutation-end" | "refresh-start" | "refresh-end" | "context-status" | "context-obstruction" | "navigation-start" | "open-tab" | "poll-started" | "reopen-closed-tab" | "communications-unread"
+    type: "navigation-intent" | "navigation-intent-end" | "meaningful-ready" | "navigation-failed" | "history-step" | "record-title" | "location" | "location-replace" | "mutation" | "action-start" | "action-end" | "mutation-start" | "mutation-end" | "refresh-start" | "refresh-end" | "context-status" | "context-obstruction" | "navigation-start" | "open-tab" | "poll-started" | "reopen-closed-tab" | "communications-unread"
     url?: string
     relationshipId?: string | null
     contextSupported?: boolean
@@ -44,6 +44,9 @@ export type WorkspaceTabFrameMessage = {
     mutationId?: string
     mutationFailed?: boolean
     mutationError?: string
+    intentSequence?: number
+    replace?: boolean
+    interactionOutcome?: "failed" | "aborted"
 }
 
 export function workspaceTabIsCommunications(value: string, workspaceSlug: string, origin: string) {

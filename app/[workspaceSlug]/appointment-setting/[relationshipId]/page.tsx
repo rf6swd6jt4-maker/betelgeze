@@ -7,7 +7,7 @@ import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
 import { loadAppointmentSettingConfiguration, loadAppointmentSettingRelationshipService, listAppointmentSettingAppointments, loadAppointmentSettingDeliveryState } from "@/lib/appointment-setting-server"
 import { getRelationship } from "@/lib/relationships"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
-import { workspaceNativePanelsEnabled } from "@/lib/workspace-native"
+import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 import { requireRelationshipAccess, requireWorkspacePanel } from "@/lib/workspace-access"
 
 export const dynamic = "force-dynamic"
@@ -65,7 +65,7 @@ export default async function AppointmentSettingRelationshipPage({ params }: Pag
                         configuration={configuration}
                         initialDelivery={delivery}
                         initialNow={delivery.checkedAt}
-                        draftCommandsEnabled={workspaceNativePanelsEnabled(workspace.id, process.env.WORKSPACE_NATIVE_PANELS)}
+                        draftCommandsEnabled={workspacePerformanceEnabled(workspace.id, user.id, process.env.WORKSPACE_NATIVE_PANELS, process.env.WORKSPACE_PERFORMANCE_USERS)}
                     />
                 </div>
 

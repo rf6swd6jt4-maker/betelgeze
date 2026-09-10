@@ -29,7 +29,8 @@ begin
     update public.appointment_notification_outbox set lease_expires_at=now()-interval '1 second' where id=job.id;
     select * into strict reclaimed from public.claim_appointment_notification_outbox(1,job.id);
     if reclaimed.lease_token=prior_token or public.begin_appointment_notification_dispatch(job.id,prior_token) then raise exception 'An expired preparation lease still owns dispatch'; end if;
-    if not public.begin_appointment_notification_dispatch(job.id,reclaimed.lease_token) then raise exception 'Current lease could not begin dispatch'; end if;
+    if public.prepare_appointment_notification_dispatch(job.id,prior_token,'Stale worker text') then raise exception 'Expired worker changed notification text'; end if;
+    if not public.prepare_appointment_notification_dispatch(job.id,reclaimed.lease_token,'Fixture only') then raise exception 'Current lease could not prepare dispatch'; end if;
     if public.begin_appointment_notification_dispatch(job.id,reclaimed.lease_token) then raise exception 'The same lease began dispatch twice'; end if;
     -- A lost dispatch response must become uncertain based on durable state.
     if not public.finish_appointment_notification_outbox(job.id,reclaimed.lease_token,null,'Fixture lost acknowledgement') then raise exception 'Unknown outcome could not be recorded'; end if;

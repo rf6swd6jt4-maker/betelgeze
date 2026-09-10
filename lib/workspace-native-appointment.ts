@@ -6,7 +6,7 @@ import { filterAppointmentSettingRelationships } from "@/lib/appointment-setting
 import { listAppointmentSettingAppointments, loadAppointmentSettingConfiguration, loadAppointmentSettingDeliveryState, loadAppointmentSettingRelationshipService, loadAppointmentSettingRelationshipServices } from "@/lib/appointment-setting-server"
 import { getRelationship, listRelationshipsForWorkspace, relationshipLocationLabel } from "@/lib/relationships"
 import { accessibleRelationshipIds, requireRelationshipAccess, requireWorkspacePanel } from "@/lib/workspace-access"
-import { workspaceNativePanelsEnabled } from "@/lib/workspace-native"
+import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 
 export async function loadNativeAppointment(workspaceSlug: string, relationshipId?: string) {
     const { workspace, user, role, access } = await requireWorkspacePanel(workspaceSlug, "appointment-setting")
@@ -26,7 +26,7 @@ export async function loadNativeAppointment(workspaceSlug: string, relationshipI
             relationship: { id: relationship.id, primary_person_name: relationship.primary_person_name, business_name: relationship.business_name, isTest: relationship.source_metadata.is_test === true },
             latestUpdatedAt: appointments.reduce((latest, appointment) => appointment.updated_at > latest ? appointment.updated_at : latest, relationship.updated_at),
             appointments, configuration, delivery, serviceId,
-            draftCommandsEnabled: workspaceNativePanelsEnabled(workspace.id, process.env.WORKSPACE_NATIVE_PANELS),
+            draftCommandsEnabled: workspacePerformanceEnabled(workspace.id, user.id, process.env.WORKSPACE_NATIVE_PANELS, process.env.WORKSPACE_PERFORMANCE_USERS),
         }
     }
     const [relationships, allowedRelationshipIds, services] = await Promise.all([

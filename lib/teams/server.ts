@@ -1,6 +1,8 @@
 import { communicationAttachmentFromValue } from "@/lib/communications/attachments"
 import { loadMessageMetadata } from "@/lib/communications/message-batches"
 import { communicationHistoryPage, communicationHistoryRpcMissing, legacyCommunicationHistoryPage, type CommunicationHistoryCursor } from "@/lib/communications/history-page"
+import { loadBoundedCommunicationRows } from "@/lib/communications/bounded-read"
+import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 import { messageQuoteFromValue } from "@/lib/communications/message-quotes"
 import { loadCommunicationPeople, loadCommunicationStickers } from "@/lib/communications/server"
 import { maintenanceCategoryLabel, MAINTENANCE_CATEGORIES } from "@/lib/admin/maintenance"
@@ -133,11 +135,14 @@ export async function loadNativeCommunications(input: {
     const [conversationResult, participantResult, messageResult, reactionResult, cursorResult, membershipResult, selectedMessages] = await Promise.all([
         supabaseAdmin.from("workspace_native_conversations").select("id, kind, is_system, team_id, direct_user_one, direct_user_two, archived_at, pinned_message_id, updated_at").eq("workspace_id", input.workspaceId).order("updated_at", { ascending: false }),
         supabaseAdmin.from("workspace_native_conversation_participants").select("conversation_id, user_id").eq("workspace_id", input.workspaceId),
-        supabase.rpc("communication_native_messages", { p_workspace_id: input.workspaceId, p_conversation_id: null, p_limit: 4000 }),
+        loadBoundedCommunicationRows<Array<{ sender_user_id?: string | null }>>({
+            enabled: workspacePerformanceEnabled(input.workspaceId, input.currentUserId, process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS), kind: "native",
+            read: (name) => supabase.rpc(name, { p_workspace_id: input.workspaceId, p_conversation_id: null, p_limit: 4000 }),
+        }),
         supabaseAdmin.from("workspace_native_reactions").select("id, conversation_id, message_id, reactor_user_id, emoji, updated_at").eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("workspace_native_read_cursors").select("conversation_id, user_id, last_read_message_id, last_read_at").eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("workspace_memberships").select("user_id, role").eq("workspace_id", input.workspaceId),
-        base.requestedConversationId ? loadNativeMessagesForCurrentUser({ workspaceId: input.workspaceId, conversationId: base.requestedConversationId }) : Promise.resolve(null),
+        base.requestedConversationId ? loadNativeMessagesForCurrentUser({ workspaceId: input.workspaceId, conversationId: base.requestedConversationId, currentUserId: input.currentUserId }) : Promise.resolve(null),
     ])
     const fatal = [conversationResult.error, participantResult.error, messageResult.error, reactionResult.error, cursorResult.error, membershipResult.error].find(Boolean)
     if (fatal) throw new Error(fatal!.message)
@@ -200,13 +205,17 @@ export async function loadNativeCommunications(input: {
 export async function loadNativeMessagesForCurrentUser(input: {
     workspaceId: string
     conversationId: string
+    currentUserId?: string
     limit?: number
 }) {
     const supabase = await createSupabaseServerClient()
-    const { data, error } = await supabase.rpc("communication_native_messages", {
-        p_workspace_id: input.workspaceId,
-        p_conversation_id: input.conversationId,
-        p_limit: input.limit ?? 1000,
+    const { data, error } = await loadBoundedCommunicationRows<unknown[]>({
+        enabled: workspacePerformanceEnabled(input.workspaceId, input.currentUserId ?? "", process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS), kind: "native",
+        read: (name) => supabase.rpc(name, {
+            p_workspace_id: input.workspaceId,
+            p_conversation_id: input.conversationId,
+            p_limit: input.limit ?? 1000,
+        }),
     })
     if (error) throw new Error(error.message)
     const editedAtByMessageId = await loadNativeEditTimes(input.workspaceId, (data ?? []).flatMap((row: unknown) => text(record(row).id) ?? []))
@@ -234,14 +243,14 @@ export async function loadNativeMessageForCurrentUser(input: {
     return nativeMessageFromRow({ ...source, edited_at: editResult.data?.edited_at ?? null })
 }
 
-export async function loadNativeMessagePage(workspaceId: string, conversationId: string, before: CommunicationHistoryCursor) {
+export async function loadNativeMessagePage(workspaceId: string, conversationId: string, before: CommunicationHistoryCursor, currentUserId?: string) {
     const supabase = await createSupabaseServerClient()
     const { data, error } = await supabase.rpc("communication_native_message_page", {
         p_workspace_id: workspaceId, p_conversation_id: conversationId,
         p_before_created_at: before.createdAt, p_before_id: before.id, p_limit: 60,
     })
     if (communicationHistoryRpcMissing(error)) {
-        const legacy = await loadNativeMessagesForCurrentUser({ workspaceId, conversationId, limit: 1000 })
+        const legacy = await loadNativeMessagesForCurrentUser({ workspaceId, conversationId, currentUserId, limit: 1000 })
         return legacyCommunicationHistoryPage(legacy, before)
     }
     if (error) throw new Error("Earlier conversation history is unavailable. Please retry.")

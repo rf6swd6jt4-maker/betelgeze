@@ -32,9 +32,9 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
         if (searchParams.has("beforeId") || searchParams.has("beforeCreatedAt")) {
             const cursor = communicationHistoryCursor({ id: searchParams.get("beforeId"), createdAt: searchParams.get("beforeCreatedAt") })
             if (!cursor) return Response.json({ error: "Invalid history cursor." }, { status: 400 })
-            return Response.json(await loadNativeMessagePage(workspace.id, conversationId, cursor), { headers: { "Cache-Control": "no-store" } })
+            return Response.json(await loadNativeMessagePage(workspace.id, conversationId, cursor, user.id), { headers: { "Cache-Control": "no-store" } })
         }
-        return Response.json({ messages: await loadNativeMessagesForCurrentUser({ workspaceId: workspace.id, conversationId, limit: 1000 }) }, { headers: { "Cache-Control": "no-store" } })
+        return Response.json({ messages: await loadNativeMessagesForCurrentUser({ workspaceId: workspace.id, conversationId, currentUserId: user.id, limit: 1000 }) }, { headers: { "Cache-Control": "no-store" } })
     } catch (error) {
         return Response.json({ error: error instanceof Error ? error.message : "Could not load messages." }, { status: 503 })
     }

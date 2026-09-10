@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { requireWorkspace } from "@/lib/workspaces"
+import { requireGantt, loadAuthorizedGanttPlan } from "@/lib/relationship-gantt-server"
 import { getRelationshipGanttPlan, persistedScheduleMatchesChange, previewScheduleCascade, type RelationshipGanttDependency, type RelationshipGanttItem, type RelationshipGanttPlan, type ScheduleChange } from "@/lib/relationship-gantt"
 import { getRelationship } from "@/lib/relationships"
 import type { RelationshipPhase } from "@/lib/relationship-phases"
@@ -14,15 +14,6 @@ export type GanttMutationResult =
     | { status: "cascade_required"; changes: ScheduleChange[] }
     | { status: "stale"; message: string }
     | { status: "invalid"; message: string }
-
-async function requireGantt(slug: string, relationshipId: string) {
-    const context = await requireWorkspace(slug, "admin")
-    const { data: relationship } = await supabaseAdmin.from("relationships")
-        .select("id, lifecycle_phase")
-        .eq("workspace_id", context.workspace.id).eq("id", relationshipId).maybeSingle()
-    if (!relationship) throw new Error("Relationship not found")
-    return { ...context, relationship }
-}
 
 async function revalidateAffected(slug: string, workspaceId: string, workItemIds: string[]) {
     const { data: links, error } = await supabaseAdmin.from("work_item_relationships")
@@ -49,10 +40,7 @@ async function reportGanttFailure(workspaceId: string, slug: string, relationshi
 }
 
 export async function loadGanttPlan(slug: string, relationshipId: string): Promise<RelationshipGanttPlan | null> {
-    const { workspace } = await requireGantt(slug, relationshipId)
-    const relationship = await getRelationship(workspace.id, relationshipId)
-    if (!relationship) return null
-    return getRelationshipGanttPlan(workspace.slug, relationship)
+    return loadAuthorizedGanttPlan(await requireGantt(slug, relationshipId), relationshipId)
 }
 
 export async function previewGanttScheduleChange(

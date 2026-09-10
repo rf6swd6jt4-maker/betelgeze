@@ -90,18 +90,20 @@ html[data-workspace-viewport-locked="true"] [data-workspace-tab-panels] {
     width: 100%;
   }
 
-  body[data-workspace-sidebar-open="true"] main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]) {
+  /* Native panels already sit inside the inset tab container. Only legacy
+     document pages need a separate main-content sidebar inset. */
+  body[data-workspace-sidebar-open="true"] main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]):not([data-native-workspace-tab] main) {
     margin-left: var(--workspace-sidebar-width);
     width: calc(100% - var(--workspace-sidebar-width));
   }
 
-  body[data-workspace-sidebar-open="false"] main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]),
-  body:not([data-workspace-sidebar-open]) main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]) {
+  body[data-workspace-sidebar-open="false"] main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]):not([data-native-workspace-tab] main),
+  body:not([data-workspace-sidebar-open]) main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]):not([data-native-workspace-tab] main) {
     margin-left: 0;
     width: 100%;
   }
 
-  body[data-workspace-sidebar-transition="true"] main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]) {
+  body[data-workspace-sidebar-transition="true"] main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]):not([data-native-workspace-tab] main) {
     transition: margin-left 200ms ease, width 200ms ease;
   }
 

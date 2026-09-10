@@ -190,7 +190,7 @@ function RelationshipGanttContent({ workspaceSlug, relationshipId, planPromise, 
         blocked: false,
     } : null)
 
-    return <RelationshipGantt workspaceSlug={workspaceSlug} relationshipId={relationshipId} plan={plan} canEdit={canEdit} currentWork={resolvedCurrentWork} onInvoiceRequest={onInvoiceRequest} />
+    return <RelationshipGantt workspaceSlug={workspaceSlug} relationshipId={relationshipId} userId={userId} plan={plan} canEdit={canEdit} currentWork={resolvedCurrentWork} onInvoiceRequest={onInvoiceRequest} />
 }
 
 export function RelationshipDealWorkspace({

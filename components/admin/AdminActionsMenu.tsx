@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useId, useRef, useState } from "react"
-import Link from "next/link"
+import Link from "@/components/workspace/WorkspaceLink"
 
 export function AdminActionsMenu({ workspaceSlug }: { workspaceSlug?: string }) {
     const [open, setOpen] = useState(false)

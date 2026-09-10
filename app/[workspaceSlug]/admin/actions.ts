@@ -159,12 +159,21 @@ export async function commitOkr(slug: string, okrId: string) {
     revalidateAdminOkrPaths(slug, okrId)
 }
 
-export async function deleteOkr(slug: string, okrId: string) {
+async function deleteDraftOkr(slug: string, okrId: string) {
     const { workspace } = await requireWorkspace(slug, "admin")
     await requireDraftOkr(workspace.id, okrId)
-    const { error } = await supabaseAdmin.from("workspace_okrs").delete().eq("workspace_id", workspace.id).eq("id", okrId)
+    const { data, error } = await supabaseAdmin.from("workspace_okrs").delete().eq("workspace_id", workspace.id).eq("id", okrId).eq("status", "draft").select("id").maybeSingle()
     if (error) throw new Error(error.message)
+    if (!data) throw new Error("Only draft Objectives can be deleted. Reload to see the latest state.")
     revalidateAdminOkrPaths(slug)
+}
+
+export async function deleteOkrInline(slug: string, okrId: string) {
+    await deleteDraftOkr(slug, okrId)
+}
+
+export async function deleteOkr(slug: string, okrId: string) {
+    await deleteDraftOkr(slug, okrId)
     redirect(okrsHref(slug))
 }
 

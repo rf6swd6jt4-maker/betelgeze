@@ -15,6 +15,7 @@ import { convertCommunicationStickerImage } from "@/lib/communications/stickers"
 import { validateClientLogoSvg } from "@/lib/client-branding/svg"
 import { getRequiredEnv } from "@/lib/env"
 import { createCommunicationFileKey, createInboundCommunicationFileKey } from "@/lib/communications/encryption"
+import { prepareStoredCommunicationImage } from "@/lib/communications/image-preview"
 import {
     getUploadKind,
     MAX_ONBOARDING_UPLOAD_SIZE,
@@ -629,10 +630,24 @@ export async function storeClientMessageMedia({
         })
     )
 
-    if (workspaceId) await recordAdminActivity({ workspaceId, category: "communications", eventKey: "r2.media.stored", summary: "Client message media stored in R2", entityType: "client_message_media", entityId: mediaId, direction: "outbound", metadata: { client_id: clientId, relationship_id: relationshipId ?? null, content_type: contentType } })
+    // Reuse the already downloaded bytes: new inbound images should not make
+    // their first viewer download and resize the original on the server.
+    const prepared = await prepareStoredCommunicationImage(body, contentType)
+    let hasPreview = false
+    if (prepared?.preview) {
+        try {
+            await getR2Client().send(new PutObjectCommand({
+                Bucket: getR2BucketName(), Key: `${path}${COMMUNICATION_PREVIEW_SUFFIX}`,
+                Body: prepared.preview, ContentType: "image/webp",
+                ...(customerKey ? customerEncryptionInput(customerKey) : {}),
+            }))
+            hasPreview = true
+        } catch { /* The durable original remains usable; legacy lazy repair retries the derivative. */ }
+    }
+    if (workspaceId) await recordAdminActivity({ workspaceId, category: "communications", eventKey: "r2.media.stored", summary: "Client message media stored in R2", entityType: "client_message_media", entityId: mediaId, direction: "outbound", metadata: { client_id: clientId, relationship_id: relationshipId ?? null, content_type: contentType, preview_ready: hasPreview } })
 
     return {
-        mediaMetadata: await communicationImageDimensions(body, contentType),
+        mediaMetadata: { ...communicationMediaMetadata(prepared), hasPreview },
         path,
         url:
             createClientMessageMediaUrl(path, appBaseUrl) ??
@@ -690,15 +705,6 @@ async function createCommunicationPreviewUpload(path: string, customerKey: strin
     }), { expiresIn: R2_UPLOAD_URL_TTL_SECONDS }) }
 }
 
-async function communicationImageDimensions(bytes: Uint8Array, contentType: string) {
-    if (!/^image\/(jpeg|png|webp|gif|avif|bmp)$/.test(contentType)) return {}
-    try {
-        const metadata = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata()
-        const rotated = metadata.orientation && metadata.orientation >= 5
-        return communicationMediaMetadata({ width: rotated ? metadata.height : metadata.width, height: rotated ? metadata.width : metadata.height })
-    } catch { return {} }
-}
-
 const pendingCommunicationPreviews = new Map<string, Promise<boolean>>()
 
 /** Derivatives remain private and use the original's SSE-C key and authorization. */
@@ -718,11 +724,9 @@ export async function ensureCommunicationImagePreview(path: string, customerKey:
         if (!/^image\/(jpeg|png|webp|gif|avif|bmp)$/.test(metadata.ContentType ?? "") || !metadata.ContentLength || metadata.ContentLength > 20 * 1024 * 1024) return false
         const original = await client.send(new GetObjectCommand({ ...input, Key: path }))
         if (!original.Body) return false
-        const image = sharp(await original.Body.transformToByteArray(), { limitInputPixels: 40_000_000 })
-        const dimensions = await image.metadata()
-        if ((dimensions.pages ?? 1) > 1) return false // Do not turn an animation into a still.
-        const bytes = await image.rotate().resize({ width: 960, height: 960, fit: "inside", withoutEnlargement: true }).webp({ quality: 78 }).timeout({ seconds: 5 }).toBuffer()
-        await client.send(new PutObjectCommand({ ...input, Key: `${path}${COMMUNICATION_PREVIEW_SUFFIX}`, Body: bytes, ContentType: "image/webp" }))
+        const prepared = await prepareStoredCommunicationImage(await original.Body.transformToByteArray(), metadata.ContentType ?? "")
+        if (!prepared?.preview) return false
+        await client.send(new PutObjectCommand({ ...input, Key: `${path}${COMMUNICATION_PREVIEW_SUFFIX}`, Body: prepared.preview, ContentType: "image/webp" }))
         return true
     })()
     pendingCommunicationPreviews.set(path, pending)

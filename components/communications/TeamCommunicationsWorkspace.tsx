@@ -25,6 +25,7 @@ import { MessageReadAvatars } from "@/components/communications/MessageReadAvata
 import { PinnedMessageBar } from "@/components/communications/PinnedMessageBar"
 import { ResizableConversationColumns } from "@/components/communications/ResizableConversationColumns"
 import { useConversationHistory } from "@/components/communications/useConversationHistory"
+import type { CommunicationHistoryPage } from "@/lib/communications/history-page"
 import { useConversationLayout } from "@/components/communications/useConversationLayout"
 import { prepareCommunicationMedia } from "@/lib/communications/prepare-media"
 import { ConversationMedia } from "@/components/communications/ConversationMedia"
@@ -168,6 +169,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [teams, setTeams] = useState(bootstrap.teams)
     const [readCursors, setReadCursors] = useState(bootstrap.readCursors)
     const [selectedId, setSelectedId] = useState(bootstrap.requestedConversationId)
+    const bootstrappedSelection = useRef(bootstrap.requestedConversationId)
     const [search, setSearch] = useState("")
     const [showArchived, setShowArchived] = useState(false)
     const [draft, setDraft] = useState("")
@@ -214,7 +216,19 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const readRequestRef = useRef<string | null>(null)
     const workspaceTabActive = useWorkspaceTabActive()
     const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null
-    const history = useConversationHistory(selectedId, selected?.messages ?? [])
+    const history = useConversationHistory(selectedId, selected?.messages ?? [], {
+        hasMore: Boolean(selected?.messageWindowStart),
+        load: async (before, signal) => {
+            const conversationId = selectedId!
+            const read = updates.beginRead()
+            const query = new URLSearchParams({ conversationId, beforeId: before.id, beforeCreatedAt: before.createdAt })
+            const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/messages?${query}`, { cache: "no-store", signal })
+            const result = await response.json() as CommunicationHistoryPage<NativeMessage> & { error?: string }
+            if (!response.ok || !Array.isArray(result.messages)) throw new Error(result.error ?? "Could not load earlier messages.")
+            if (!signal.aborted) updates.mergeReadMessages(read, conversationId, result.messages)
+            return result
+        },
+    })
     const messagePaneInteractions = useMessagePaneInteractions(composerRef)
     const selectingQuote = selected?.canWrite ? selected.messages.find((message) => message.id === replyingTo?.id && Boolean(message.body.trim()) && message.id !== message.clientRequestId) ?? null : null
     const cancelQuoteSelection = useCallback(() => setReplyingTo(null), [])
@@ -352,6 +366,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 
     useEffect(() => {
         if (!selectedId) return
+        if (bootstrappedSelection.current === selectedId) { bootstrappedSelection.current = null; return }
         const controller = new AbortController()
         const read = updates.beginRead()
         void fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/messages?conversationId=${encodeURIComponent(selectedId)}`, { signal: controller.signal })
@@ -786,7 +801,8 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     <ChatMotionViewport key={selectedId}>
                     <div className="relative min-h-0 flex-1"><div key={selectedId} data-message-pane tabIndex={0} ref={messagePaneRef} {...messagePaneInteractions} style={{ overflowAnchor: "none" }} className="invisible data-[positioned=true]:visible h-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-contain bg-[radial-gradient(circle_at_top,_rgba(38,38,38,0.5),_transparent_38%)] px-3 py-5 sm:px-6"><div className="mx-auto flex min-h-full w-full min-w-0 max-w-3xl flex-col gap-2 lg:max-w-none">
                         {selected.messages.length ? <div aria-hidden="true" className="mt-auto" /> : null}
-                            {history.startIndex > 0 ? <button type="button" onClick={() => { followLatestRef.current = false; history.reveal() }} className="mx-auto shrink-0 px-3 py-2 text-xs text-neutral-500 hover:text-white">Load earlier messages</button> : null}
+                            {history.hasEarlier ? <button type="button" disabled={history.loadingEarlier} onClick={() => { followLatestRef.current = false; void history.loadEarlier() }} className="mx-auto shrink-0 px-3 py-2 text-xs text-neutral-500 hover:text-white">{history.loadingEarlier ? "Loading earlier messages…" : "Load earlier messages"}</button> : null}
+                            {history.historyError ? <p role="alert" className="px-3 py-2 text-center text-xs text-red-400">{history.historyError}</p> : null}
                         {selected.messages.length ? selected.messages.slice(history.startIndex).map((message, visibleIndex) => {
                             const index = history.startIndex + visibleIndex
                         const own = message.senderUserId === bootstrap.currentUser.id

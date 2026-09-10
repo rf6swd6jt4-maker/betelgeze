@@ -1,0 +1,54 @@
+# Workspace performance implementation status
+
+September 10, 2026. Branch: `codex/workspace-performance-revamp`, based on `e781507a`. This is a staged implementation of the [revamp plan](workspace-performance-revamp-plan.md), not completion of every phase. No production migration, service purchase, flag enablement, merge or deployment was performed while preparing this PR.
+
+## Included
+
+- A native panel host inside the existing workspace shell, with independent tab URLs, filters and history; existing frame routes remain available. Relationships, Library assets/work items, Fulfilment Work, Appointment Setting and Admin have authenticated JSON loaders and native views. The route inventory gives the exact coverage.
+- An account/workspace-scoped, bounded memory cache with shared reads, request coalescing, freshness checks, invalidation, late-response fencing and account clearing. Auth/session changes clear protected snapshots and present recovery. Intent prefetch is bounded; native links do not also prefetch Next.js page responses.
+- Durable appointment and relationship background edits, ordered per record, with stable request IDs, optimistic versions, atomic command receipts and conflict recovery. Navigation can proceed when a draft is safely stored; storage failure cannot silently discard an unconfirmed edit. Newer typing survives an older acknowledgement. Draft workers outlive the originating editor, and account changes stop its work.
+- A JSON appointment submission path and a gated transactional notification outbox. Appointment acceptance and external notification delivery have distinct states. Worker leases recover pre-dispatch failures; uncertain external sends are preserved for reconciliation instead of blindly retried.
+- Communications initially loads the selected mode, then defers the other mode. Historical pages use stable timestamp/ID cursors, decrypt bounded candidate pages, and scope delivery metadata reads. A separately gated decoder resolves authorized conversations once and decrypts batches only until the existing valid-message limit is met, preserving corrupt-row filtering. Image ingestion prepares previews; prepared preview reads avoid redundant object inspection and transformation work.
+- Content-free interaction measurements, route/action inventory, browser benchmark and summary scripts, recovery tests, migration tests, and rollout instructions.
+
+Existing UI primitives, authorisation guards and business transitions are retained. Native and legacy views temporarily coexist; changes to their common data or presentation must cover both until the legacy extraction is removed.
+
+## Enablement and rollback
+
+Native rendering, new command transports and the bounded decoder are off by default. For the first staged exercise, use an explicit workspace UUID and an explicit operator user UUID instead of widening either allowlist:
+
+| Setting | Effect |
+| --- | --- |
+| `WORKSPACE_NATIVE_PANELS` | Enables registered native panels and appointment command clients for the selected workspace UUIDs |
+| `WORKSPACE_RELATIONSHIP_DRAFT_COMMANDS` | Independently enables durable relationship background commands for selected workspace UUIDs |
+| `WORKSPACE_COMMUNICATIONS_BOUNDED_READS` | Independently selects the additive bounded encrypted list RPCs for selected workspace UUIDs |
+| `WORKSPACE_PERFORMANCE_USERS` | Optional shared authenticated-user UUID allowlist restricting the native, relationship-command and bounded-read workspace gates; blank adds no actor restriction |
+| `WORKSPACE_APPOINTMENT_OUTBOX_READY=1` | Enables queued appointment notifications only when the native workspace gate and optional actor gate also apply; requires a configured, verified worker schedule |
+
+UUID settings accept comma-separated values or `all`; use user UUIDs only for `WORKSPACE_PERFORMANCE_USERS`. These flags select a rollout path and grant no data access. Clear the relevant workspace gates to stop the pilot. Clearing the optional actor list would remove that restriction and could widen an enabled workspace to other users.
+
+The [command operations guide](workspace-performance-command-operations.md) specifies migrations, scheduler authentication, drain/recovery and rollback. Turning off the UI must leave accepted commands/jobs recoverable. Keep their endpoints, receipts and worker available while queues drain; do not drop the new schema as a quick rollback.
+
+Communications mode deferral, cursor history and media improvements are not controlled by the native flag. Bounded list decoding uses its own workspace gate and the shared optional actor gate. Unflagged list reads make only the original RPC call; flagged reads fall back to it only if the additive function is missing. Cursor reads retain a compatibility path when their new RPC has not been installed. Review these changes independently when deploying the branch.
+
+The exact history limits are unchanged: initial client summary history requests up to **2,000 messages across authorized conversations**, and native/team history requests up to **4,000**. A requested selected conversation separately loads up to **500 client** or **1,000 native** messages. The UI initially renders **60** messages and expands by 60; remote history pages request 60 with a database maximum of 100. The bounded list decoder's **128-candidate batch** is an internal processing limit, not a smaller visible history or unread window. See [bounded read validation](communications-bounded-read-validation.md).
+
+## Validation and its limits
+
+The latest full `npm test` suite passes **829 tests**, with none skipped or cancelled. Focused changed-code lint and source TypeScript checks pass. The final clean `next build --webpack` passes compilation, TypeScript and all 32 static pages with no build errors or warnings; the retry required network access to fetch Google Fonts. Tests exercise request deduplication, stale responses, account clearing, storage failure, lost acknowledgements, concurrent versions, navigation checkpointing and queue recovery.
+
+Local SQL validation now replays **all 183 repository migrations**, then executes the combined synthetic rollback suite against the resulting complete application schema with real `pgcrypto`. Actual application permission helpers, constraints, delivery-team/configuration logic, encryption and quote triggers execute. Checks include command receipts, stale writes, leases, notification encryption, and exact legacy/bounded Communications body/payload/quote parity with corrupt rows, timestamp ties and cleared history. The final rollback left zero fixture users. Only platform Auth/JWT and Vault sources use local adapters; hosted Auth, Vault root-key protection, provider sends and simultaneous independent sessions are not reproduced. The earlier smaller stubbed fixtures remain useful focused checks. Portable runners and their precise limits are in the operations guide. No live database validation or deployment is claimed here.
+
+An isolated fixture rendered the real shell/native components with synthetic, intercepted JSON responses. In Chrome and WebKit at a 390 × 844 viewport, Relationships filtering reused its loaded snapshot; Relationships → Work Items → Assets → workspace back → browser back completed with three panel reads and no child frame. Chrome had no browser errors; WebKit emitted the existing unsupported `interactive-widget` viewport warning. Additional Chrome checks verified a late save restarts an interrupted cold read and renders the destination, a 409 session response shows an uncovered recovery action, same-user account preservation retains content, and account clearing prevents private data from refilling even on focus. The expected 409 browser resource warning is not an application exception. This is functional evidence, not an authenticated latency benchmark. Development compilation, mock data and the local machine do not establish a production p95. The temporary route and development proxy exception were removed before committing.
+
+Release gates remain: full-schema staged migration and permission checks, authenticated desktop and mobile comparisons, concurrent browser windows, account/MFA changes, provider delivery and crash recovery, physical iPhone/PWA checks, and controlled end-to-end timings on representative data and networks. The old audit measurements are preserved in [the baseline report](performance-baseline/assessment.md); they must not be compared directly with mock-browser timings as a measured speedup.
+
+## Remaining plan work
+
+- PowerSync feasibility and provider configuration have not been completed. No PowerSync SDK, replication rules or subscription is installed. The current adapter is HTTP plus memory caching; record snapshots do not survive a cold browser restart. Durable edits are separate from read persistence.
+- Onboarding, Settings and Lead Gen still use existing frame routes. Builder, token-based portal and account flows retain their established boundaries. Native read extraction does not mean that every mutation in a migrated module has become an independent JSON command: appointment create/delete and several work/relationship business actions remain Server Actions.
+- Communications still returns the broad 2,000-client/4,000-native initial history windows to preserve summary, search and unread semantics. The bounded decoder avoids decrypting older rows beyond the requested valid-result limit, but does not remove that response payload. Exact conversation summaries plus selected-conversation-only bootstrap remain necessary before claiming the complete startup redesign or consistently subsecond Team entry.
+- Mutation invalidation is conservative across native snapshots. Narrow record-level reconciliation, full cross-session subscriptions, persistent record restoration, complete server span correlation, and production query plans/compute-region decisions remain work.
+- No near-instant navigation, sub-second server acknowledgement or repeat-launch target has been certified. Measure those against the real release candidate before widening rollout.
+
+This PR makes the initial structural changes reviewable and reversible. It must not be reported as the finished platform-wide revamp or as a production performance result.

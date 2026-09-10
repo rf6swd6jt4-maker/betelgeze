@@ -1,4 +1,7 @@
+import { Suspense } from "react"
+import { WorkspaceNativeBanner } from "./WorkspaceNativeBanner"
 import { randomUUID } from "node:crypto"
+import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 import { WorkspaceTopBarClient } from "@/components/workspace/WorkspaceTopBarClient"
 import { WorkspaceTabBridge } from "@/components/workspace/WorkspaceTabBridge"
 import { createAssetFromModal, createRelationshipFromModal, createWorkItemFromModal } from "@/app/[workspaceSlug]/relationships/actions"
@@ -52,8 +55,11 @@ export async function WorkspaceTopBar({ userId, workspace, workspaceAccess, shel
         seenRevision: 0,
     }
 
+    const nativePanelsEnabled = workspacePerformanceEnabled(workspace.id, userId, process.env.WORKSPACE_NATIVE_PANELS, process.env.WORKSPACE_PERFORMANCE_USERS)
     return <WorkspaceTopBarClient
         workspace={workspace}
+        nativePanelsEnabled={nativePanelsEnabled}
+        nativeBanner={nativePanelsEnabled ? <Suspense fallback={null}><WorkspaceNativeBanner workspaceSlug={workspace.slug} /></Suspense> : null}
         initialWorkspaceUrl={initialWorkspaceUrl}
         initialTab={launchTab}
         launchServerTiming={launchServerTiming}

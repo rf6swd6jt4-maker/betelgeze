@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import { AnchoredPopup, Assignee, RoundPill, Status } from "@/components/ui"
 import { Avatar } from "@/components/account/Avatar"
 import { openWorkspaceMemberProfile } from "@/lib/workspace-member-profile"
@@ -9,6 +9,7 @@ import { DetailField, DetailFields } from "@/components/detail"
 import { postGanttSync } from "@/lib/ui/gantt-sync"
 import { workItemPrioritySelectionLabel, workItemPrioritySelectionOptions } from "@/lib/work-item-priority"
 import { registerWorkspaceAutosaveFlusher, runWorkspaceMutation } from "@/lib/workspace-mutations"
+import { recordVersionAfter, reconcileRecordTextDraft } from "@/lib/record-version"
 import {
     updateWorkItemAssignees,
     updateWorkItemDependencies,
@@ -183,6 +184,7 @@ export function InlineWorkItemFields(props: Props) {
     const [descriptionBaseline, setDescriptionBaseline] = useState(props.description ?? "")
     const [descriptionSaveState, setDescriptionSaveState] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle")
     const [descriptionError, setDescriptionError] = useState<string | null>(null)
+    const [descriptionConflict, setDescriptionConflict] = useState<{ value: string; version: string } | null>(null)
     const [editorOptions, setEditorOptions] = useState<EditorOptions>({
         workOptions: props.workOptions,
         relationshipOptions: props.relationshipOptions,
@@ -196,6 +198,8 @@ export function InlineWorkItemFields(props: Props) {
     const descriptionVersionRef = useRef(props.updatedAt)
     const latestDescriptionRef = useRef(description)
     const descriptionBaselineRef = useRef(descriptionBaseline)
+    const descriptionConflictRef = useRef(descriptionConflict)
+    const incomingDescriptionRef = useRef({ value: props.description ?? "", version: props.updatedAt })
     const editorOptionsPromiseRef = useRef<Promise<void> | null>(null)
 
     const loadEditorOptions = useCallback(async () => {
@@ -250,13 +254,28 @@ export function InlineWorkItemFields(props: Props) {
         textarea.style.height = `${Math.max(80, textarea.scrollHeight)}px`
     }, [description])
 
-    useEffect(() => {
-        descriptionVersionRef.current = props.updatedAt
-    }, [props.updatedAt])
+    const reconcileDescription = useCallback(() => {
+        const previous = { value: latestDescriptionRef.current, baseline: descriptionBaselineRef.current, version: descriptionVersionRef.current, conflict: descriptionConflictRef.current }
+        const next = reconcileRecordTextDraft(previous, incomingDescriptionRef.current)
+        if (next === previous) return
+        latestDescriptionRef.current = next.value
+        descriptionBaselineRef.current = next.baseline
+        descriptionVersionRef.current = next.version
+        descriptionConflictRef.current = next.conflict
+        setDescription(next.value)
+        setDescriptionBaseline(next.baseline)
+        setDescriptionConflict(next.conflict)
+        setDescriptionSaveState(next.conflict ? "error" : next.value === next.baseline ? "idle" : "dirty")
+        setDescriptionError(next.conflict ? "This description changed elsewhere. Your draft is preserved; use the latest version before editing again." : null)
+    }, [])
 
     useEffect(() => {
-        latestDescriptionRef.current = description
-    }, [description])
+        const incoming = { value: props.description ?? "", version: props.updatedAt }
+        if (recordVersionAfter(incoming.version, incomingDescriptionRef.current.version)) incomingDescriptionRef.current = incoming
+        // A snapshot can arrive before the acknowledgement of our own write.
+        // Reconcile it against the acknowledged baseline when that write ends.
+        if (!descriptionPromiseRef.current) reconcileDescription()
+    }, [props.description, props.updatedAt, reconcileDescription])
 
     const saveDescription = useCallback(async (): Promise<boolean> => {
         if (descriptionTimerRef.current) {
@@ -264,8 +283,10 @@ export function InlineWorkItemFields(props: Props) {
             descriptionTimerRef.current = null
         }
         if (descriptionPromiseRef.current) return descriptionPromiseRef.current
+        if (descriptionConflictRef.current) return false
         const drain = async () => {
             while (latestDescriptionRef.current !== descriptionBaselineRef.current) {
+                if (descriptionConflictRef.current) return false
                 const submitted = latestDescriptionRef.current
                 setDescriptionSaveState("saving")
                 setDescriptionError(null)
@@ -273,12 +294,22 @@ export function InlineWorkItemFields(props: Props) {
                 if (!outcome.ok) {
                     setDescriptionSaveState("error")
                     setDescriptionError(outcome.error)
+                    if (outcome.conflict) router.refresh()
                     return false
                 }
                 descriptionVersionRef.current = outcome.version
-                descriptionBaselineRef.current = submitted
-                setDescriptionBaseline(submitted)
+                // The command stores trimmed text. Keep the acknowledged
+                // baseline identical to the next server snapshot.
+                const saved = submitted.trim()
+                descriptionBaselineRef.current = saved
+                setDescriptionBaseline(saved)
                 if (latestDescriptionRef.current === submitted) {
+                    latestDescriptionRef.current = saved
+                    setDescription(saved)
+                }
+                reconcileDescription()
+                if (descriptionConflictRef.current) return false
+                if (latestDescriptionRef.current === saved) {
                     setDescriptionSaveState("saved")
                     postGanttSync(props.workspaceSlug)
                     return true
@@ -286,14 +317,19 @@ export function InlineWorkItemFields(props: Props) {
             }
             return true
         }
-        descriptionPromiseRef.current = drain().finally(() => {
+        descriptionPromiseRef.current = drain().catch((error: unknown) => {
+            setDescriptionSaveState("error")
+            setDescriptionError(error instanceof Error ? error.message : "Description could not be saved")
+            return false
+        }).finally(() => {
             descriptionPromiseRef.current = null
+            reconcileDescription()
         })
         return descriptionPromiseRef.current
-    }, [props.workItemId, props.workspaceSlug])
+    }, [props.workItemId, props.workspaceSlug, reconcileDescription, router])
 
     useEffect(() => {
-        const unregister = registerWorkspaceAutosaveFlusher(async () => { await saveDescription() })
+        const unregister = registerWorkspaceAutosaveFlusher(saveDescription)
         return () => {
             unregister()
             if (descriptionTimerRef.current) window.clearTimeout(descriptionTimerRef.current)
@@ -301,13 +337,13 @@ export function InlineWorkItemFields(props: Props) {
     }, [saveDescription])
 
     useEffect(() => {
-        if (description === descriptionBaseline) return
+        if (description === descriptionBaseline || descriptionConflictRef.current) return
         if (descriptionTimerRef.current) window.clearTimeout(descriptionTimerRef.current)
         descriptionTimerRef.current = window.setTimeout(() => void saveDescription(), 800)
         return () => {
             if (descriptionTimerRef.current) window.clearTimeout(descriptionTimerRef.current)
         }
-    }, [description, descriptionBaseline, saveDescription])
+    }, [description, descriptionBaseline, props.updatedAt, saveDescription])
 
     function toggle(name: string, trigger?: HTMLElement) {
         if (trigger) setPopupTrigger(trigger)
@@ -462,11 +498,27 @@ export function InlineWorkItemFields(props: Props) {
                     <DetailField label="Description" icon="description" className="lg:col-span-2 lg:col-start-1 lg:row-start-5">
                         <div>
                             <textarea ref={descriptionRef} value={description} onChange={(event) => {
+                                latestDescriptionRef.current = event.target.value
                                 setDescription(event.target.value)
-                                setDescriptionSaveState("dirty")
-                                setDescriptionError(null)
+                                if (!descriptionConflictRef.current) {
+                                    setDescriptionSaveState("dirty")
+                                    setDescriptionError(null)
+                                }
                             }} onBlur={() => void saveDescription()} rows={3} placeholder="Add a description…" className="min-h-20 w-full resize-none overflow-hidden bg-transparent py-0 text-sm leading-6 text-neutral-200 caret-neutral-300 outline-none placeholder:text-neutral-600 selection:bg-neutral-600 selection:text-white" />
-                            <div className="mt-1 flex items-center justify-end gap-2"><p aria-live="polite" title={descriptionError ?? undefined} className={`text-xs ${descriptionSaveState === "error" ? "text-red-300" : "text-neutral-500"}`}>{descriptionSaveState === "saving" ? "Saving description…" : descriptionSaveState === "error" ? descriptionError || "Description could not save automatically" : description !== descriptionBaseline ? "Description will save automatically" : descriptionSaveState === "saved" ? "Description saved" : "Description saves automatically"}</p>{descriptionSaveState === "error" ? <button type="button" onClick={() => void saveDescription()} className="text-xs text-red-200 underline decoration-red-500/50 underline-offset-2 hover:text-white">Retry</button> : null}</div>
+                            <div className="mt-1 flex items-center justify-end gap-2"><p aria-live="polite" title={descriptionError ?? undefined} className={`text-xs ${descriptionSaveState === "error" ? "text-red-300" : "text-neutral-500"}`}>{descriptionSaveState === "saving" ? "Saving description…" : descriptionSaveState === "error" ? descriptionError || "Description could not save automatically" : description !== descriptionBaseline ? "Description will save automatically" : descriptionSaveState === "saved" ? "Description saved" : "Description saves automatically"}</p>{descriptionConflict ? <button type="button" onClick={() => {
+                                const incoming = descriptionConflictRef.current
+                                if (!incoming) return
+                                latestDescriptionRef.current = incoming.value
+                                descriptionBaselineRef.current = incoming.value
+                                descriptionVersionRef.current = incoming.version
+                                descriptionConflictRef.current = null
+                                setDescription(incoming.value)
+                                setDescriptionBaseline(incoming.value)
+                                setDescriptionConflict(null)
+                                setDescriptionSaveState("idle")
+                                setDescriptionError(null)
+                                descriptionRef.current?.focus()
+                            }} className="shrink-0 text-xs text-red-200 underline decoration-red-500/50 underline-offset-2 hover:text-white">Use latest version</button> : descriptionSaveState === "error" ? <button type="button" onClick={() => void saveDescription()} className="text-xs text-red-200 underline decoration-red-500/50 underline-offset-2 hover:text-white">Retry</button> : null}</div>
                         </div>
                     </DetailField>
             </DetailFields>

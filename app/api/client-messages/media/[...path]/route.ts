@@ -1,12 +1,11 @@
 import { clientConversationCanAccess } from "@/lib/communications/access"
 import { createEncryptedPrivateUploadSignedRequest, createPrivateUploadSignedUrl, ensureCommunicationImagePreview } from "@/lib/onboarding/uploads"
 import { COMMUNICATION_PREVIEW_SUFFIX } from "@/lib/communications/attachments"
-import { communicationMediaRequestHeaders, communicationMediaStatusIsValid } from "@/lib/communications/media-http"
+import { communicationMediaRequestHeaders, communicationMediaStatusIsValid, loadCommunicationMediaRepresentation } from "@/lib/communications/media-http"
 import { assertNativeConversationAccess } from "@/lib/teams/server"
 import { getCurrentUser } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { communicationFileKeyForCurrentUser, redeemCommunicationMediaGrant } from "@/lib/communications/encryption"
-import { normalizeWorkspaceRole } from "@/lib/workspace-roles"
 import { nativeAttachmentDeliveryHeaders } from "@/lib/communications/native-attachments"
 
 export const runtime = "nodejs"
@@ -63,15 +62,18 @@ async function loadMediaResponse(request: Request, context: RouteContext) {
         const method = request.method === "HEAD" ? "HEAD" : "GET"
         const preview = new URL(request.url).searchParams.get("preview") === "1"
         // Always authorize the original path. Never expose keys or public URLs.
-        const hasPreview = preview && (method === "HEAD" || await ensureCommunicationImagePreview(storagePath, customerKey).catch(() => false))
-        const deliveryPath = hasPreview ? `${storagePath}${COMMUNICATION_PREVIEW_SUFFIX}` : storagePath
-        const signed = customerKey
-            ? await createEncryptedPrivateUploadSignedRequest(deliveryPath, customerKey, undefined, method)
-            : { url: await createPrivateUploadSignedUrl(deliveryPath, undefined, method), headers: {} as Record<string, string> }
-        const mediaResponse = await fetch(signed.url, {
-            method,
-            cache: "no-store",
-            headers: { ...signed.headers, ...communicationMediaRequestHeaders(request, preview) },
+        const { response: mediaResponse, deliveryPath } = await loadCommunicationMediaRepresentation({
+            originalPath: storagePath, previewPath: `${storagePath}${COMMUNICATION_PREVIEW_SUFFIX}`, preview, method,
+            prepare: () => ensureCommunicationImagePreview(storagePath, customerKey),
+            load: async (deliveryPath) => {
+                const signed = customerKey
+                    ? await createEncryptedPrivateUploadSignedRequest(deliveryPath, customerKey, undefined, method)
+                    : { url: await createPrivateUploadSignedUrl(deliveryPath, undefined, method), headers: {} as Record<string, string> }
+                return fetch(signed.url, {
+                    method, cache: "no-store",
+                    headers: { ...signed.headers, ...communicationMediaRequestHeaders(request, preview) },
+                })
+            },
         })
 
         if (!communicationMediaStatusIsValid(mediaResponse.status)) {

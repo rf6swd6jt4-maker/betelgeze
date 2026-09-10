@@ -79,6 +79,7 @@ export function useReliableCommunicationsRealtime({
         let retryAttempt = 0
         let syncPromise: Promise<void> | null = null
         let subscribed = false
+        let attemptedConnection = false
 
         function visibleAndActive() {
             return activeRef.current && workspaceTabActiveRef.current && document.visibilityState === "visible"
@@ -144,11 +145,13 @@ export function useReliableCommunicationsRealtime({
                     if (channelRef.current === previous) channelRef.current = null
                     await supabase.removeChannel(previous)
                 }
-                // Refresh through the authenticated HTTP path before opening a
-                // socket. This lets Proxy rotate an expired shared cookie after
-                // a suspended PWA or a long-lived workspace tab. A second sync
-                // after SUBSCRIBED closes the small sync-to-subscribe race.
-                await synchronizeRef.current()
+                // The initial bootstrap just passed the authenticated HTTP path.
+                // Reconnects need it again to refresh a suspended/expired shared
+                // cookie. Always sync after SUBSCRIBED to close the bootstrap-
+                // to-subscribe race, without fetching all history twice at entry.
+                const refreshBeforeConnect = attemptedConnection
+                attemptedConnection = true
+                if (refreshBeforeConnect) await synchronizeRef.current()
                 await refreshRealtimeAuth()
                 if (disposed) return
                 const candidate = registerRef.current(supabase.channel(topic, { config: { private: privateChannel, broadcast: { self: false, ack: true } } }))

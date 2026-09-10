@@ -1,0 +1,41 @@
+{
+  "measuredAt": "2026-09-10T02:29:06.009Z",
+  "note": "Read-only HTTP samples from this Mac to Supabase. Includes network, API and SQL; not SQL execution time, Vercel timings, or authenticated action latency. Maximum concurrency three. No write benchmark.",
+  "thinReadMs": {
+    "n": 8,
+    "p50": 106.4,
+    "p75": 159.3,
+    "p95": 229.4,
+    "min": 89,
+    "max": 229.4
+  },
+  "shellBootstrapRpcMs": {
+    "n": 8,
+    "p50": 91.1,
+    "p75": 167.6,
+    "p95": 334.2,
+    "min": 89.2,
+    "max": 334.2
+  },
+  "threeSequentialReadsMs": {
+    "n": 6,
+    "p50": 280.6,
+    "p75": 330.2,
+    "p95": 350.6,
+    "min": 259.4,
+    "max": 350.6
+  },
+  "threeParallelReadsMs": {
+    "n": 6,
+    "p50": 129.6,
+    "p75": 228.7,
+    "p95": 260.6,
+    "min": 90.1,
+    "max": 260.6
+  },
+  "databaseSize": [
+    {
+      "database_bytes": 106515603
+    }
+  ]
+}

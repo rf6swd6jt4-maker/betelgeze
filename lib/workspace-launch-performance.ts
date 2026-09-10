@@ -1,6 +1,6 @@
 import type { WorkspaceShellBootstrapTiming } from "@/lib/workspace-launch"
 
-type LaunchMark = "client_bootstrap_ms" | "shell_hydrated_ms" | "initial_frame_mounted_ms" | "initial_frame_loaded_ms" | "panel_ready_ms" | "presence_ready_ms"
+type LaunchMark = "client_bootstrap_ms" | "shell_hydrated_ms" | "initial_frame_mounted_ms" | "initial_frame_loaded_ms" | "panel_ready_ms" | "presence_ready_ms" | "meaningful_ready_ms" | "data_ready_ms" | "code_ready_ms"
 
 type LaunchPerformanceState = {
     id: string
@@ -8,6 +8,11 @@ type LaunchPerformanceState = {
     reportedStages: string[]
     lcpMs?: number
     lcpObserver?: PerformanceObserver
+    startedVisible: boolean
+    visibilityChanges: number
+    hiddenDurationMs: number
+    hiddenAt: number | null
+    lifecycleFrozen: boolean
 }
 
 declare global {
@@ -28,7 +33,19 @@ export function initializeWorkspaceLaunchPerformance() {
         id: crypto.randomUUID(),
         marks: { client_bootstrap_ms: Math.max(0, performance.now()) },
         reportedStages: [],
+        startedVisible: document.visibilityState === "visible",
+        visibilityChanges: 0,
+        hiddenDurationMs: 0,
+        hiddenAt: document.visibilityState === "visible" ? null : performance.now(),
+        lifecycleFrozen: false,
     }
+    document.addEventListener("visibilitychange", () => {
+        const now = performance.now()
+        if (state.hiddenAt !== null) state.hiddenDurationMs += Math.max(0, now - state.hiddenAt)
+        state.hiddenAt = document.visibilityState === "visible" ? null : now
+        state.visibilityChanges += 1
+    })
+    document.addEventListener("freeze", () => { state.lifecycleFrozen = true })
     if (typeof PerformanceObserver !== "undefined") {
         try {
             state.lcpObserver = new PerformanceObserver((list) => {
@@ -95,6 +112,11 @@ export function reportWorkspaceLaunch(input: {
     const navigation = navigationTiming()
     const proxyTiming = navigation?.serverTiming?.find((entry) => entry.name === "proxy-session")?.duration
     const timings: Record<string, number> = { ...state.marks }
+    timings.foreground_at_bootstrap = state.startedVisible ? 1 : 0
+    timings.foreground_at_report = document.visibilityState === "visible" ? 1 : 0
+    timings.visibility_changes = state.visibilityChanges
+    timings.hidden_duration_ms = state.hiddenDurationMs + (state.hiddenAt === null ? 0 : Math.max(0, performance.now() - state.hiddenAt))
+    timings.lifecycle_frozen = state.lifecycleFrozen ? 1 : 0
     if (navigation?.responseStart !== undefined) timings.ttfb_ms = navigation.responseStart
     const fcp = paintTiming("first-contentful-paint")
     const lcp = state.lcpMs

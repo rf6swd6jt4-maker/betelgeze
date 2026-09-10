@@ -1,0 +1,150 @@
+{
+  "note": "Union of JS chunks referenced by route client manifest. Includes possible lazy references; not measured initial transfer or runtime execution time. Gzip sizes computed locally.",
+  "routes": [
+    {
+      "route": "~workspace-shell/[workspaceSlug]",
+      "moduleCount": 97,
+      "referencedChunks": 13,
+      "rawBytes": 452937,
+      "gzipBytes": 132546,
+      "largest": [
+        {
+          "file": "static/chunks/6449-a0abf3f5b0383ffb.js",
+          "raw": 185576,
+          "gzip": 52139
+        },
+        {
+          "file": "static/chunks/2261-f930dd7ba41b80ad.js",
+          "raw": 98932,
+          "gzip": 28728
+        },
+        {
+          "file": "static/chunks/2a818c4d-a02fd1312558fe09.js",
+          "raw": 59046,
+          "gzip": 12636
+        },
+        {
+          "file": "static/chunks/app/layout-95a8b7c9f3b50f0d.js",
+          "raw": 25065,
+          "gzip": 8804
+        }
+      ]
+    },
+    {
+      "route": "[workspaceSlug]/relationships",
+      "moduleCount": 97,
+      "referencedChunks": 14,
+      "rawBytes": 462466,
+      "gzipBytes": 135479,
+      "largest": [
+        {
+          "file": "static/chunks/6449-a0abf3f5b0383ffb.js",
+          "raw": 185576,
+          "gzip": 52139
+        },
+        {
+          "file": "static/chunks/2261-f930dd7ba41b80ad.js",
+          "raw": 98932,
+          "gzip": 28728
+        },
+        {
+          "file": "static/chunks/2a818c4d-a02fd1312558fe09.js",
+          "raw": 59046,
+          "gzip": 12636
+        },
+        {
+          "file": "static/chunks/app/layout-95a8b7c9f3b50f0d.js",
+          "raw": 25065,
+          "gzip": 8804
+        }
+      ]
+    },
+    {
+      "route": "[workspaceSlug]/communications",
+      "moduleCount": 97,
+      "referencedChunks": 16,
+      "rawBytes": 781464,
+      "gzipBytes": 239431,
+      "largest": [
+        {
+          "file": "static/chunks/6449-a0abf3f5b0383ffb.js",
+          "raw": 185576,
+          "gzip": 52139
+        },
+        {
+          "file": "static/chunks/6e7bc0ad-54754e40b6a1d85f.js",
+          "raw": 169104,
+          "gzip": 53865
+        },
+        {
+          "file": "static/chunks/669-f3b64c9420f68266.js",
+          "raw": 118202,
+          "gzip": 39096
+        },
+        {
+          "file": "static/chunks/2261-f930dd7ba41b80ad.js",
+          "raw": 98932,
+          "gzip": 28728
+        }
+      ]
+    },
+    {
+      "route": "[workspaceSlug]/work-items",
+      "moduleCount": 97,
+      "referencedChunks": 14,
+      "rawBytes": 462466,
+      "gzipBytes": 135479,
+      "largest": [
+        {
+          "file": "static/chunks/6449-a0abf3f5b0383ffb.js",
+          "raw": 185576,
+          "gzip": 52139
+        },
+        {
+          "file": "static/chunks/2261-f930dd7ba41b80ad.js",
+          "raw": 98932,
+          "gzip": 28728
+        },
+        {
+          "file": "static/chunks/2a818c4d-a02fd1312558fe09.js",
+          "raw": 59046,
+          "gzip": 12636
+        },
+        {
+          "file": "static/chunks/app/layout-95a8b7c9f3b50f0d.js",
+          "raw": 25065,
+          "gzip": 8804
+        }
+      ]
+    },
+    {
+      "route": "[workspaceSlug]/appointment-setting/[relationshipId]",
+      "moduleCount": 97,
+      "referencedChunks": 14,
+      "rawBytes": 462317,
+      "gzipBytes": 135848,
+      "largest": [
+        {
+          "file": "static/chunks/6449-a0abf3f5b0383ffb.js",
+          "raw": 185576,
+          "gzip": 52139
+        },
+        {
+          "file": "static/chunks/2261-f930dd7ba41b80ad.js",
+          "raw": 98932,
+          "gzip": 28728
+        },
+        {
+          "file": "static/chunks/2a818c4d-a02fd1312558fe09.js",
+          "raw": 59046,
+          "gzip": 12636
+        },
+        {
+          "file": "static/chunks/app/layout-95a8b7c9f3b50f0d.js",
+          "raw": 25065,
+          "gzip": 8804
+        }
+      ]
+    }
+  ]
+}

@@ -39,6 +39,7 @@ function shouldIgnoreClick(event: MouseEvent) {
     const link = target?.closest("a[href]") as HTMLAnchorElement | null
 
     if (!link) return true
+    if (link.closest("[data-native-workspace-tab]")) return true
     if (link.target && link.target !== "_self") return true
     if (link.dataset.globalLoading === "false") return true
 
@@ -126,6 +127,7 @@ export function GlobalLoadingOverlay() {
                 && sameOrigin
                 && ["POST", "PUT", "PATCH", "DELETE"].includes(method)
                 && !url.pathname.includes("/activity/")
+                && !url.pathname.includes("/performance/")
             const wrappedMutation = workspaceMutation && backgroundIntentCountRef.current > 0
             const backgroundFormMutation = workspaceMutation && !wrappedMutation && backgroundFormIntentCountRef.current > 0
             const backgroundMutation = wrappedMutation || backgroundFormMutation

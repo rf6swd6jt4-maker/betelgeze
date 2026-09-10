@@ -11,6 +11,10 @@ import type {
 } from "@/lib/communications/types"
 import { communicationAttachmentFromRawPayload } from "@/lib/communications/attachments"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { loadMessageMetadata } from "@/lib/communications/message-batches"
+import { communicationHistoryPage, communicationHistoryRpcMissing, legacyCommunicationHistoryPage, type CommunicationHistoryCursor } from "@/lib/communications/history-page"
+import { loadBoundedCommunicationRows } from "@/lib/communications/bounded-read"
+import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 
 export const COMMUNICATION_MESSAGE_COLUMNS = "id, client_request_id, relationship_id, body, direction, provider, provider_message_id, whatsapp_message_id, reply_to_whatsapp_message_id, reply_to_message_id, status, error, sender_kind, sender_user_id, automation_kind, automation_label, created_at, sent_at, delivered_at, read_at, failed_at, raw_payload"
 
@@ -94,29 +98,37 @@ function missingCommunicationsSchema(error: { code?: string; message?: string } 
 export async function loadCommunicationMessages({
     workspaceId,
     relationshipId,
+    currentUserId,
     limit = 2_000,
 }: {
     workspaceId: string
     relationshipId?: string
+    currentUserId?: string
     limit?: number
 }): Promise<{ messages: CommunicationMessage[]; schemaReady: boolean }> {
     const supabase = await createSupabaseServerClient()
-    const current = await supabase.rpc("communication_client_messages", {
-        p_workspace_id: workspaceId,
-        p_relationship_id: relationshipId ?? null,
-        p_limit: limit,
+    const current = await loadBoundedCommunicationRows<unknown[]>({
+        enabled: workspacePerformanceEnabled(workspaceId, currentUserId ?? "", process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS), kind: "client",
+        read: (name) => supabase.rpc(name, {
+            p_workspace_id: workspaceId,
+            p_relationship_id: relationshipId ?? null,
+            p_limit: limit,
+        }),
     })
     if (!current.error) {
         const messages: CommunicationMessage[] = (current.data ?? []).flatMap((row: unknown) => communicationMessageFromRow(row) ?? []).reverse()
-        let deliveryQuery = supabaseAdmin
-            .from("communication_message_deliveries")
-            .select("client_message_id, provider, provider_message_id, status, error, sent_at, delivered_at, read_at, failed_at")
-            .eq("workspace_id", workspaceId)
-        if (relationshipId) deliveryQuery = deliveryQuery.eq("relationship_id", relationshipId)
-        const deliveries = await deliveryQuery.order("created_at", { ascending: true }).limit(Math.max(limit * 2, 500))
-        if (deliveries.error && deliveries.error.code !== "42P01") throw new Error(`Could not load communication deliveries: ${deliveries.error.message}`)
+        let deliveriesReady = true
+        const deliveries = await loadMessageMetadata(messages.map((message) => message.id), async (ids) => {
+            const result = await supabaseAdmin.from("communication_message_deliveries")
+                .select("client_message_id, provider, provider_message_id, status, error, sent_at, delivered_at, read_at, failed_at")
+                .eq("workspace_id", workspaceId).in("client_message_id", ids)
+                .order("created_at", { ascending: true })
+            if (result.error && result.error.code !== "42P01") throw new Error(`Could not load communication deliveries: ${result.error.message}`)
+            if (result.error) deliveriesReady = false
+            return result.data ?? []
+        })
         const byMessage = new Map<string, NonNullable<CommunicationMessage["deliveries"]>>()
-        for (const delivery of deliveries.data ?? []) {
+        for (const delivery of deliveries) {
             const values = byMessage.get(delivery.client_message_id) ?? []
             if (delivery.provider === "meta_whatsapp" || delivery.provider === "twilio_sms") values.push({
                 provider: delivery.provider,
@@ -132,7 +144,7 @@ export async function loadCommunicationMessages({
         }
         return {
             messages: messages.map((message) => ({ ...message, deliveries: byMessage.get(message.id) ?? [] })),
-            schemaReady: !deliveries.error,
+            schemaReady: deliveriesReady,
         }
     }
     if (!missingCommunicationsSchema(current.error) && current.error.code !== "PGRST202") throw new Error(`Could not load communications: ${current.error.message}`)
@@ -175,6 +187,32 @@ export async function loadCommunicationMessage({
             failedAt: delivery.failed_at,
         }] : []),
     }
+}
+
+export async function loadCommunicationMessagePage(workspaceId: string, conversationId: string, before: CommunicationHistoryCursor, currentUserId?: string) {
+    const supabase = await createSupabaseServerClient()
+    const { data, error } = await supabase.rpc("communication_client_message_page", {
+        p_workspace_id: workspaceId, p_conversation_id: conversationId,
+        p_before_created_at: before.createdAt, p_before_id: before.id, p_limit: 60,
+    })
+    if (communicationHistoryRpcMissing(error)) {
+        const legacy = await loadCommunicationMessages({ workspaceId, relationshipId: conversationId, currentUserId, limit: 500 })
+        return legacyCommunicationHistoryPage(legacy.messages, before)
+    }
+    if (error) throw new Error("Earlier conversation history is unavailable. Please retry.")
+    const page = communicationHistoryPage(data, communicationMessageFromRow)
+    // Attach complete provider delivery states only for this authorised page.
+    const deliveries = await loadMessageMetadata(page.messages.map((message) => message.id), async (ids) => {
+        const result = await supabaseAdmin.from("communication_message_deliveries")
+            .select("client_message_id, provider, provider_message_id, status, error, sent_at, delivered_at, read_at, failed_at")
+            .eq("workspace_id", workspaceId).in("client_message_id", ids).order("created_at", { ascending: true })
+        if (result.error && result.error.code !== "42P01") throw new Error(result.error.message)
+        return result.data ?? []
+    })
+    return { ...page, messages: page.messages.map((message) => ({ ...message, deliveries: deliveries.flatMap((delivery) => delivery.client_message_id === message.id && (delivery.provider === "meta_whatsapp" || delivery.provider === "twilio_sms") ? [{
+        provider: delivery.provider, providerMessageId: delivery.provider_message_id, status: delivery.status, error: delivery.error,
+        sentAt: delivery.sent_at, deliveredAt: delivery.delivered_at, readAt: delivery.read_at, failedAt: delivery.failed_at,
+    }] : []) })) }
 }
 
 export async function loadCommunicationPeople(workspaceId: string, currentUserId: string): Promise<{ currentUser: CommunicationPerson; people: CommunicationPerson[] }> {

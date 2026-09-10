@@ -275,3 +275,6 @@ details:not([open]) > .betelgeze-popup-enter {
     transform: translateY(-3px);
   }
 }
+
+/* Native panels retain the existing relationship context column. */
+[data-native-context-open="false"] [data-native-context-spacer] { width: 0; }

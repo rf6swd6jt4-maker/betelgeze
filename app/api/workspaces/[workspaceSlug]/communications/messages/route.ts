@@ -3,7 +3,8 @@ import { NextRequest } from "next/server"
 
 import { recordClientAdminActivity } from "@/lib/admin/activity"
 import { resolveCommunicationDestinations, sendCommunicationDeliveries } from "@/lib/client-messages/omnichannel"
-import { loadCommunicationMessage, loadCommunicationMessages } from "@/lib/communications/server"
+import { loadCommunicationMessage, loadCommunicationMessages, loadCommunicationMessagePage } from "@/lib/communications/server"
+import { communicationHistoryCursor } from "@/lib/communications/history-page"
 import { communicationFileKeyForCurrentUser, createCommunicationMediaGrant } from "@/lib/communications/encryption"
 import { communicationAttachmentFromValue, MAX_COMMUNICATION_MEDIA_CAPTION_LENGTH } from "@/lib/communications/attachments"
 import { verifyClientMessageUpload } from "@/lib/onboarding/uploads"
@@ -37,7 +38,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
             ? Response.json({ message, schemaReady: true })
             : Response.json({ error: "Message not found" }, { status: 404 })
     }
-    return Response.json(await loadCommunicationMessages({ workspaceId: workspace.id, relationshipId, limit: 500 }))
+    if (request.nextUrl.searchParams.has("beforeId") || request.nextUrl.searchParams.has("beforeCreatedAt")) {
+        const cursor = communicationHistoryCursor({ id: request.nextUrl.searchParams.get("beforeId"), createdAt: request.nextUrl.searchParams.get("beforeCreatedAt") })
+        if (!cursor) return Response.json({ error: "Invalid history cursor." }, { status: 400 })
+        return Response.json(await loadCommunicationMessagePage(workspace.id, relationshipId, cursor, user.id), { headers: { "Cache-Control": "no-store" } })
+    }
+    return Response.json(await loadCommunicationMessages({ workspaceId: workspace.id, relationshipId, currentUserId: user.id, limit: 500 }), { headers: { "Cache-Control": "no-store" } })
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {

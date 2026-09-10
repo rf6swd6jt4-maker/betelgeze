@@ -1,9 +1,11 @@
 "use client"
 
-import Link from "next/link"
+import Link from "@/components/workspace/WorkspaceLink"
 import { createPortal } from "react-dom"
 import { useEffect, useMemo, useRef, useState, useTransition, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter } from "@/components/workspace/WorkspaceNavigation"
+import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
+import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { RoundPill, SquarePill, Status, TrendChart } from "@/components/ui"
 import { formatOkrMetricValue, okrGap, okrTrendScale } from "@/lib/admin/okr-metrics"
@@ -19,7 +21,7 @@ import {
     commitOkr,
     createOkrAction,
     createOkrFromModal,
-    deleteOkr,
+    deleteOkrInline as deleteOkr,
     deleteOkrKeyResult,
     linkOkrAction,
     setOkrKeyResultCadence,
@@ -97,15 +99,20 @@ function ProgressRing({ progress, compact = false }: { progress: number; compact
 }
 
 function MetricEditor({ label, context, value, displayValue, pending, onSubmit, hiddenInputs, className = "" }: { label: string; context: string; value: number; displayValue: string; pending: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void; hiddenInputs?: ReactNode; className?: string }) {
+    const navigation = useWorkspaceNavigation()
+    const active = useWorkspaceTabActive()
     const [open, setOpen] = useState(false)
     const [draft, setDraft] = useState(String(value))
     const rootRef = useRef<HTMLDivElement>(null)
     const formRef = useRef<HTMLFormElement>(null)
 
     useEffect(() => {
-        if (!open) return
+        if (!open || !active) return
         const closeOutside = (event: PointerEvent) => {
             if (rootRef.current?.contains(event.target as Node)) return
+            // A native tab shares its document with the shell and other panels.
+            // Preserve this editor's draft when a user activates another tab.
+            if (navigation && !(event.target instanceof Element && event.target.closest("[data-native-workspace-tab]") === rootRef.current?.closest("[data-native-workspace-tab]"))) return
             const consumeClick = (clickEvent: globalThis.MouseEvent) => {
                 clickEvent.preventDefault()
                 clickEvent.stopPropagation()
@@ -124,7 +131,7 @@ function MetricEditor({ label, context, value, displayValue, pending, onSubmit, 
         document.addEventListener("pointerdown", closeOutside)
         document.addEventListener("keydown", closeOnEscape)
         return () => { document.removeEventListener("pointerdown", closeOutside); document.removeEventListener("keydown", closeOnEscape) }
-    }, [draft, open, value])
+    }, [active, draft, navigation, open, value])
 
     const inputWidth = `${Math.max(7, Math.min(18, draft.length + 2))}ch`
     return <div ref={rootRef} className={`relative inline-flex justify-end ${className}`} onClick={(event) => event.stopPropagation()}>
@@ -138,10 +145,11 @@ function MetricEditor({ label, context, value, displayValue, pending, onSubmit, 
 }
 
 function Modal({ title, description, error, size = "default", onClose, children }: { title: string; description?: string; error?: string | null; size?: "compact" | "default" | "medium" | "wide"; onClose: () => void; children: ReactNode }) {
+    const active = useWorkspaceTabActive()
     const parentDocument = typeof window !== "undefined" && window.parent !== window ? window.parent.document : typeof document !== "undefined" ? document : null
     if (!parentDocument) return null
     const widthClass = size === "wide" ? "max-w-5xl" : size === "medium" ? "max-w-3xl" : size === "compact" ? "max-w-sm" : "max-w-2xl"
-    return createPortal(<div role="dialog" aria-modal="true" aria-label={title} data-work-item-popup className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden overscroll-none bg-black/75 p-3 backdrop-blur-sm sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    return createPortal(<div role="dialog" aria-modal="true" aria-label={title} aria-hidden={!active} style={active ? undefined : { display: "none" }} data-work-item-popup className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden overscroll-none bg-black/75 p-3 backdrop-blur-sm sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
         <div className={`betelgeze-popup-enter max-h-[calc(100vh-1.5rem)] min-w-0 w-full ${widthClass} touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70 sm:max-h-[calc(100vh-2rem)]`}>
             <div className="sticky top-0 z-20 flex items-start gap-4 border-b border-neutral-800 bg-neutral-950/95 px-4 py-3 backdrop-blur sm:px-5 sm:py-4">
                 <div className="min-w-0 flex-1"><h2 className="truncate text-lg font-semibold text-white">{title}</h2>{description ? <p className="mt-1 text-sm leading-5 text-neutral-500">{description}</p> : null}</div>

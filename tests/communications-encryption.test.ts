@@ -43,9 +43,12 @@ test("new Communications content is encrypted with non-database root keys", asyn
     assert.match(vaultKeyMigration, /missing_communication_key_function/)
     assert.match(vaultKeyMigration, /native_communication_key_repair_incomplete/)
     assert.doesNotMatch(metaWebhook, /STATUS_MESSAGE_COLUMNS = [^\n]*raw_payload/)
-    assert.match(clientServer, /rpc\("communication_client_messages"/)
+    // Flag selection changes the RPC name, but both paths must still use the
+    // caller's authenticated client. Runtime dispatch/fallback is tested in
+    // communications-bounded-read.test.ts and real decoder parity in SQL.
+    assert.match(clientServer, /loadBoundedCommunicationRows<unknown\[\]>\(\{[\s\S]*?kind: "client",[\s\S]*?read: \(name\) => supabase\.rpc\(name/)
     assert.match(clientServer, /rpc\("communication_client_message"/)
-    assert.match(nativeServer, /rpc\("communication_native_messages"/)
+    assert.match(nativeServer, /loadBoundedCommunicationRows<[\s\S]*?kind: "native",[\s\S]*?read: \(name\) => supabase\.rpc\(name/)
     assert.match(nativeServer, /rpc\("communication_native_message"/)
     assert.match(clientWorkspace, /messageId=\$\{encodeURIComponent\(messageId\)\}/)
     assert.match(nativeWorkspace, /native\/messages\?conversationId=.*&messageId=/)

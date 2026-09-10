@@ -59,7 +59,7 @@ export type RelationshipDealDetailsInput = {
 
 export type RelationshipBackgroundDetailsInput = Pick<RelationshipDealDetailsInput,
     "primaryPersonName" | "businessName" | "primaryContactRole" | "primaryPhone" | "whatsappPhone" | "communicationPrimaryProvider" | "communicationDeliveryMode" | "primaryEmail" | "description"
-> & { expectedUpdatedAt: string }
+> & { expectedUpdatedAt: string; expectedUserId?: string }
 
 function formString(formData: FormData, key: string) {
     return String(formData.get(key) ?? "").trim()
@@ -440,6 +440,7 @@ export async function saveRelationshipDealDetails(slug: string, relationshipId: 
 
 export async function saveRelationshipBackgroundDetails(slug: string, relationshipId: string, input: RelationshipBackgroundDetailsInput): Promise<{ ok: true; version: string } | { ok: false; error: string; conflict?: boolean; version?: string }> {
     const { workspace, user, role, access } = await requireWorkspaceAccess(slug)
+    if (input.expectedUserId && input.expectedUserId !== user.id) return { ok: false, conflict: true, error: "Your session changed. Sign in to the original account before retrying this draft." }
     await requireRelationshipAccess(access, relationshipId)
     const primaryPersonName = input.primaryPersonName.trim()
     if (!primaryPersonName) return { ok: false, error: "Add the client's name before saving the relationship" }
@@ -482,16 +483,9 @@ export async function saveRelationshipBackgroundDetails(slug: string, relationsh
     return { ok: true, version: saved.updated_at }
 }
 
-type ArchiveRelationshipState = { error?: string }
+type ArchiveRelationshipState = { error?: string; href?: string }
 
-export async function archiveRelationship(
-    slug: string,
-    relationshipId: string,
-    _state: ArchiveRelationshipState,
-    _formData: FormData,
-): Promise<ArchiveRelationshipState> {
-    void _state
-    void _formData
+async function archiveRelationshipTransaction(slug: string, relationshipId: string): Promise<ArchiveRelationshipState> {
     const { workspace, user } = await requireWorkspace(slug, "admin")
     const { data, error } = await supabaseAdmin.rpc("archive_workspace_relationship", {
         p_workspace_id: workspace.id,
@@ -522,9 +516,32 @@ export async function archiveRelationship(
     if (!data) return { error: "This relationship no longer exists." }
 
     relationshipRevalidatePaths(slug, relationshipId)
-    const relationshipsHref = workspaceHref(slug, "relationships")
+    return { href: workspaceHref(slug, "relationships") }
+}
+
+export async function archiveRelationship(
+    slug: string,
+    relationshipId: string,
+    _state: ArchiveRelationshipState,
+    _formData: FormData,
+): Promise<ArchiveRelationshipState> {
+    void _state
+    const result = await archiveRelationshipTransaction(slug, relationshipId)
+    if (result.error || !result.href) return result
+    const relationshipsHref = result.href
     const tabId = formString(_formData, WORKSPACE_TAB_FRAME_PARAM)
     redirect(tabId ? workspaceTabFrameUrl(relationshipsHref, tabId, "http://localhost") : relationshipsHref)
+}
+
+export async function archiveRelationshipForNativePanel(
+    slug: string,
+    relationshipId: string,
+    _state: ArchiveRelationshipState,
+    _formData: FormData,
+): Promise<ArchiveRelationshipState> {
+    void _state
+    void _formData
+    return archiveRelationshipTransaction(slug, relationshipId)
 }
 
 export async function proceedRelationshipCurrentWork(

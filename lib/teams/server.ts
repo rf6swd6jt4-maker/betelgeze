@@ -1,4 +1,8 @@
 import { communicationAttachmentFromValue } from "@/lib/communications/attachments"
+import { loadMessageMetadata } from "@/lib/communications/message-batches"
+import { communicationHistoryPage, communicationHistoryRpcMissing, legacyCommunicationHistoryPage, type CommunicationHistoryCursor } from "@/lib/communications/history-page"
+import { loadBoundedCommunicationRows } from "@/lib/communications/bounded-read"
+import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 import { messageQuoteFromValue } from "@/lib/communications/message-quotes"
 import { loadCommunicationPeople, loadCommunicationStickers } from "@/lib/communications/server"
 import { maintenanceCategoryLabel, MAINTENANCE_CATEGORIES } from "@/lib/admin/maintenance"
@@ -40,16 +44,14 @@ export function nativeMessageFromRow(value: unknown): NativeMessage | null {
     }
 }
 
-async function loadNativeEditTimes(workspaceId: string, conversationId?: string) {
-    let query = supabaseAdmin
-        .from("workspace_native_messages")
-        .select("id, edited_at")
-        .eq("workspace_id", workspaceId)
-        .not("edited_at", "is", null)
-    if (conversationId) query = query.eq("conversation_id", conversationId)
-    const { data, error } = await query
-    if (error) throw new Error(error.message)
-    return new Map((data ?? []).map((row) => [row.id, row.edited_at as string]))
+async function loadNativeEditTimes(workspaceId: string, messageIds: string[]) {
+    const data = await loadMessageMetadata(messageIds, async (ids) => {
+        const result = await supabaseAdmin.from("workspace_native_messages").select("id, edited_at")
+            .eq("workspace_id", workspaceId).in("id", ids).not("edited_at", "is", null)
+        if (result.error) throw new Error(result.error.message)
+        return result.data ?? []
+    })
+    return new Map(data.map((row) => [row.id, row.edited_at as string]))
 }
 
 export async function assertNativeConversationAccess(conversationId: string, userId: string, mode: "read" | "write") {
@@ -133,11 +135,14 @@ export async function loadNativeCommunications(input: {
     const [conversationResult, participantResult, messageResult, reactionResult, cursorResult, membershipResult, selectedMessages] = await Promise.all([
         supabaseAdmin.from("workspace_native_conversations").select("id, kind, is_system, team_id, direct_user_one, direct_user_two, archived_at, pinned_message_id, updated_at").eq("workspace_id", input.workspaceId).order("updated_at", { ascending: false }),
         supabaseAdmin.from("workspace_native_conversation_participants").select("conversation_id, user_id").eq("workspace_id", input.workspaceId),
-        supabase.rpc("communication_native_messages", { p_workspace_id: input.workspaceId, p_conversation_id: null, p_limit: 4000 }),
+        loadBoundedCommunicationRows<Array<{ sender_user_id?: string | null }>>({
+            enabled: workspacePerformanceEnabled(input.workspaceId, input.currentUserId, process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS), kind: "native",
+            read: (name) => supabase.rpc(name, { p_workspace_id: input.workspaceId, p_conversation_id: null, p_limit: 4000 }),
+        }),
         supabaseAdmin.from("workspace_native_reactions").select("id, conversation_id, message_id, reactor_user_id, emoji, updated_at").eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("workspace_native_read_cursors").select("conversation_id, user_id, last_read_message_id, last_read_at").eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("workspace_memberships").select("user_id, role").eq("workspace_id", input.workspaceId),
-        base.requestedConversationId ? loadNativeMessagesForCurrentUser({ workspaceId: input.workspaceId, conversationId: base.requestedConversationId }) : Promise.resolve(null),
+        base.requestedConversationId ? loadNativeMessagesForCurrentUser({ workspaceId: input.workspaceId, conversationId: base.requestedConversationId, currentUserId: input.currentUserId }) : Promise.resolve(null),
     ])
     const fatal = [conversationResult.error, participantResult.error, messageResult.error, reactionResult.error, cursorResult.error, membershipResult.error].find(Boolean)
     if (fatal) throw new Error(fatal!.message)
@@ -161,7 +166,7 @@ export async function loadNativeCommunications(input: {
     const teamById = new Map(teams.map((team) => [team.id, team]))
     const participants = new Map<string, string[]>()
     for (const participant of participantResult.data ?? []) participants.set(participant.conversation_id, [...(participants.get(participant.conversation_id) ?? []), participant.user_id])
-    const editedAtByMessageId = await loadNativeEditTimes(input.workspaceId)
+    const editedAtByMessageId = await loadNativeEditTimes(input.workspaceId, (messageResult.data ?? []).flatMap((row: unknown) => text(record(row).id) ?? []))
     const messages = new Map<string, NativeMessage[]>()
     for (const row of [...(messageResult.data ?? [])].reverse()) {
         const source = record(row)
@@ -200,16 +205,20 @@ export async function loadNativeCommunications(input: {
 export async function loadNativeMessagesForCurrentUser(input: {
     workspaceId: string
     conversationId: string
+    currentUserId?: string
     limit?: number
 }) {
     const supabase = await createSupabaseServerClient()
-    const { data, error } = await supabase.rpc("communication_native_messages", {
-        p_workspace_id: input.workspaceId,
-        p_conversation_id: input.conversationId,
-        p_limit: input.limit ?? 1000,
+    const { data, error } = await loadBoundedCommunicationRows<unknown[]>({
+        enabled: workspacePerformanceEnabled(input.workspaceId, input.currentUserId ?? "", process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS), kind: "native",
+        read: (name) => supabase.rpc(name, {
+            p_workspace_id: input.workspaceId,
+            p_conversation_id: input.conversationId,
+            p_limit: input.limit ?? 1000,
+        }),
     })
     if (error) throw new Error(error.message)
-    const editedAtByMessageId = await loadNativeEditTimes(input.workspaceId, input.conversationId)
+    const editedAtByMessageId = await loadNativeEditTimes(input.workspaceId, (data ?? []).flatMap((row: unknown) => text(record(row).id) ?? []))
     return [...(data ?? [])].reverse().flatMap((row: unknown) => {
         const source = record(row)
         return nativeMessageFromRow({ ...source, edited_at: editedAtByMessageId.get(text(source.id) ?? "") ?? null }) ?? []
@@ -232,6 +241,22 @@ export async function loadNativeMessageForCurrentUser(input: {
     const editResult = await supabaseAdmin.from("workspace_native_messages").select("edited_at").eq("workspace_id", input.workspaceId).eq("id", id).maybeSingle()
     if (editResult.error) throw new Error(editResult.error.message)
     return nativeMessageFromRow({ ...source, edited_at: editResult.data?.edited_at ?? null })
+}
+
+export async function loadNativeMessagePage(workspaceId: string, conversationId: string, before: CommunicationHistoryCursor, currentUserId?: string) {
+    const supabase = await createSupabaseServerClient()
+    const { data, error } = await supabase.rpc("communication_native_message_page", {
+        p_workspace_id: workspaceId, p_conversation_id: conversationId,
+        p_before_created_at: before.createdAt, p_before_id: before.id, p_limit: 60,
+    })
+    if (communicationHistoryRpcMissing(error)) {
+        const legacy = await loadNativeMessagesForCurrentUser({ workspaceId, conversationId, currentUserId, limit: 1000 })
+        return legacyCommunicationHistoryPage(legacy, before)
+    }
+    if (error) throw new Error("Earlier conversation history is unavailable. Please retry.")
+    const page = communicationHistoryPage(data, nativeMessageFromRow)
+    const editedAt = await loadNativeEditTimes(workspaceId, page.messages.map((message) => message.id))
+    return { ...page, messages: page.messages.map((message) => ({ ...message, editedAt: editedAt.get(message.id) ?? null })) }
 }
 
 export function nativeAttachmentFromInput(value: unknown): CommunicationAttachment | null {

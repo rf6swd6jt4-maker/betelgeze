@@ -1,7 +1,7 @@
 "use client"
 
-import Link from "next/link"
-import { useRouter } from "next/navigation"
+import Link from "@/components/workspace/WorkspaceLink"
+import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal, flushSync } from "react-dom"
 import { Assignee, Status, relationshipPhaseColours } from "@/components/ui"

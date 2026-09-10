@@ -1,13 +1,14 @@
 "use client"
 
-import { Suspense, use, useCallback, useEffect, useRef, useState, useTransition } from "react"
+import { Suspense, use, useCallback, useEffect, useState, useSyncExternalStore, useTransition } from "react"
 import { createPortal } from "react-dom"
-import { useRouter } from "next/navigation"
+import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import Image from "next/image"
 import { OnboardingPreviewOverlay } from "@/components/onboarding-builder/OnboardingPreviewOverlay"
 import { BuilderPreview } from "@/components/onboarding-builder/BuilderPreview"
 import { DetailContentLoading, DetailField, DetailFields } from "@/components/detail"
 import { Assignee, RoundPill, SquarePill } from "@/components/ui"
+import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import { WorkspaceSuccessNotice } from "@/components/workspace/WorkspaceSuccessNotice"
 import type { OnboardingPaymentDefinitionV2 } from "@/lib/onboarding/block-definition"
 import type { OnboardingHelpSettings, OnboardingModuleDefinition, OnboardingThemeDefinition } from "@/lib/onboarding/configuration-types"
@@ -17,6 +18,9 @@ import { postGanttSync } from "@/lib/ui/gantt-sync"
 import { registerWorkspaceAutosaveFlusher, runWorkspaceMutation } from "@/lib/workspace-mutations"
 import { isUsablePhoneNumber, resolvePrimaryMessagingProvider } from "@/lib/client-messages/addresses"
 import { beginRelationshipPos, proceedRelationshipCurrentWork, saveRelationshipBackgroundDetails, saveRelationshipDealDetails, type RelationshipDealDetailsInput } from "../actions"
+import { RelationshipDraftQueue } from "@/lib/relationship-draft-queue"
+import { getRelationshipDraftQueue, retainRelationshipDraftQueue } from "@/lib/relationship-draft-runtime"
+import { createRelationshipDraftStorage, sendRelationshipBackgroundCommand, type RelationshipDraft as Draft } from "@/lib/relationship-draft-command"
 import { RelationshipGantt } from "./RelationshipGantt"
 
 type Member = { id: string; name: string }
@@ -61,15 +65,6 @@ type RelationshipDetails = {
     lifecyclePhase: RelationshipPhase
 }
 type CurrentWork = { id: string; title: string; action: string | null; role: string; status: string; unassignedCount: number; blocked: boolean }
-type Draft = Omit<RelationshipDetails, "lifecyclePhase"> & {
-    serviceAssignees: Record<string, string>
-    selectedCodes: string[]
-    upfrontPrices: Record<string, number>
-    recurringPrices: Record<string, number>
-    currency: string
-    billingInterval: "week" | "month" | "year"
-    billingIntervalCount: number
-}
 
 const inputClass = "min-h-7 w-full min-w-0 bg-transparent text-sm text-neutral-200 outline-none placeholder:text-neutral-700 focus:text-white"
 
@@ -200,6 +195,7 @@ function RelationshipGanttContent({ workspaceSlug, relationshipId, planPromise, 
 
 export function RelationshipDealWorkspace({
     workspaceSlug,
+    backgroundCommandsEnabled = false,
     workspaceName,
     logoSrc,
     privacyPolicyUrl,
@@ -226,6 +222,7 @@ export function RelationshipDealWorkspace({
     currentWork,
 }: {
     workspaceSlug: string
+    backgroundCommandsEnabled?: boolean
     workspaceName: string
     logoSrc?: string | null
     privacyPolicyUrl?: string | null
@@ -252,23 +249,29 @@ export function RelationshipDealWorkspace({
     currentWork: CurrentWork | null
 }) {
     const router = useRouter()
-    const [draft, setDraft] = useState(() => buildInitialDraft(details, services))
-    const [baseline, setBaseline] = useState(() => buildInitialDraft(details, services))
+    const workspaceTabActive = useWorkspaceTabActive()
+    const runtimeKey = `${userId}:${workspaceSlug}:${relationshipId}`
+    const [queue] = useState(() => getRelationshipDraftQueue(runtimeKey, () => new RelationshipDraftQueue(buildInitialDraft(details, services), updatedAt, async (command) => {
+        if (!canEdit) return { ok: false, error: "You no longer have permission to save this relationship. Your draft is preserved." }
+        if (!navigator.onLine) throw new Error("Saved on this device. Relationship details will retry when connected.")
+        if (command.transport === "action") {
+            const result = await runWorkspaceMutation(() => saveRelationshipBackgroundDetails(workspaceSlug, relationshipId, { ...command.values, expectedUpdatedAt: command.version, expectedUserId: userId }), { category: "services" })
+            return result.ok ? { ...result, values: command.values } : result
+        }
+        return runWorkspaceMutation(() => sendRelationshipBackgroundCommand(workspaceSlug, relationshipId, { requestId: command.requestId, expectedUserId: userId, expectedUpdatedAt: command.version, values: command.values }), { category: "services" })
+    }, backgroundCommandsEnabled ? "command" : "action")))
+    const snapshot = useSyncExternalStore(queue.subscribe, queue.getSnapshot, queue.getSnapshot)
+    const { draft, baseline } = snapshot
+    const setDraft = queue.edit
     const [servicesOpen, setServicesOpen] = useState(false)
     const [invoiceOpen, setInvoiceOpen] = useState(false)
     const [invoiceStep, setInvoiceStep] = useState(0)
     const [onboardingPreviewOpen, setOnboardingPreviewOpen] = useState(false)
-    const [error, setError] = useState<string | null>(null)
+    const [actionError, setError] = useState<string | null>(null)
+    const error = actionError ?? snapshot.error ?? snapshot.storageError
     const [notice, setNotice] = useState<{ label: string } | null>(null)
-    const [autosaveState, setAutosaveState] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle")
+    const autosaveState = snapshot.error || snapshot.storageError ? "error" : snapshot.saving ? "saving" : "saved"
     const [pending, startTransition] = useTransition()
-    const latestDraftRef = useRef(draft)
-    const initialBackgroundKey = backgroundDetailsKey(buildInitialDraft(details, services))
-    const [savedBackgroundKey, setSavedBackgroundKey] = useState(initialBackgroundKey)
-    const savedBackgroundKeyRef = useRef(initialBackgroundKey)
-    const backgroundVersionRef = useRef(updatedAt)
-    const autosaveTimerRef = useRef<number | null>(null)
-    const autosavePromiseRef = useRef<Promise<boolean> | null>(null)
     const parentDocument = typeof window !== "undefined" && window.parent !== window ? window.parent.document : typeof document !== "undefined" ? document : null
     const selectedServices = services.filter((service) => draft.selectedCodes.includes(service.code))
     const selectedModuleIds = new Set([
@@ -290,7 +293,7 @@ export function RelationshipDealWorkspace({
     )
     const sendConfirmationLabel = `Send ${primaryMessagingProvider === "twilio_sms" ? "SMS" : "WhatsApp"} confirmation`
     const invoiced = ["sold", "invoiced", "onboarding", "onboarding_review", "fulfilment", "retention", "completed_lost"].includes(details.lifecyclePhase)
-    const backgroundDirty = backgroundDetailsKey(draft) !== savedBackgroundKey
+    const backgroundDirty = backgroundDetailsKey(draft) !== backgroundDetailsKey(baseline)
     const commercialDirty = commercialDetailsKey(draft) !== commercialDetailsKey(baseline)
     const relationshipIssues = [
         missingText(draft.primaryPersonName, "Client name required"),
@@ -327,96 +330,27 @@ export function RelationshipDealWorkspace({
         return () => window.clearTimeout(timeout)
     }, [notice])
 
-    useEffect(() => {
-        latestDraftRef.current = draft
-    }, [draft])
+    const saveBackground = useCallback(() => queue.flush(), [queue])
 
-    const saveBackground = useCallback(async (): Promise<boolean> => {
-        if (!canEdit) return true
-        if (autosaveTimerRef.current) {
-            window.clearTimeout(autosaveTimerRef.current)
-            autosaveTimerRef.current = null
-        }
-        if (autosavePromiseRef.current) return autosavePromiseRef.current
-        const drain = async () => {
-            while (true) {
-                const source = latestDraftRef.current
-                const sourceKey = backgroundDetailsKey(source)
-                if (sourceKey === savedBackgroundKeyRef.current) {
-                    setAutosaveState("saved")
-                    return true
-                }
-                if (!source.primaryPersonName.trim()) {
-                    setAutosaveState("error")
-                    setError("Add the client's name before saving the relationship")
-                    return false
-                }
-                setAutosaveState("saving")
-                setError(null)
-                const outcome = await runWorkspaceMutation(() => saveRelationshipBackgroundDetails(workspaceSlug, relationshipId, {
-                    primaryPersonName: source.primaryPersonName,
-                    businessName: source.businessName,
-                    primaryContactRole: source.primaryContactRole,
-                    primaryPhone: source.primaryPhone,
-                    whatsappPhone: source.whatsappPhone,
-                    communicationPrimaryProvider: source.communicationPrimaryProvider,
-                    communicationDeliveryMode: source.communicationDeliveryMode,
-                    primaryEmail: source.primaryEmail,
-                    description: source.description,
-                    expectedUpdatedAt: backgroundVersionRef.current,
-                }), { category: "services" })
-                if (!outcome.ok) {
-                    setAutosaveState("error")
-                    setError(outcome.error)
-                    return false
-                }
-                backgroundVersionRef.current = outcome.version
-                savedBackgroundKeyRef.current = sourceKey
-                setSavedBackgroundKey(sourceKey)
-                setBaseline((current) => ({
-                    ...current,
-                    primaryPersonName: source.primaryPersonName,
-                    businessName: source.businessName,
-                    primaryContactRole: source.primaryContactRole,
-                    primaryPhone: source.primaryPhone,
-                    whatsappPhone: source.whatsappPhone,
-                    communicationPrimaryProvider: source.communicationPrimaryProvider,
-                    communicationDeliveryMode: source.communicationDeliveryMode,
-                    primaryEmail: source.primaryEmail,
-                    description: source.description,
-                }))
-                if (backgroundDetailsKey(latestDraftRef.current) === sourceKey) {
-                    setAutosaveState("saved")
-                    return true
-                }
-            }
-        }
-        autosavePromiseRef.current = drain().finally(() => {
-            autosavePromiseRef.current = null
-        })
-        return autosavePromiseRef.current
-    }, [canEdit, relationshipId, workspaceSlug])
-
+    useEffect(() => { queue.setTransport(backgroundCommandsEnabled ? "command" : "action") }, [backgroundCommandsEnabled, queue])
     useEffect(() => {
-        const unregister = registerWorkspaceAutosaveFlusher(async () => { await saveBackground() })
-        return () => {
-            unregister()
-            if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current)
+        const key = `betelgeze:relationship-draft:${runtimeKey}`
+        // Storage construction can itself fail in private/denied-storage modes.
+        // Let the queue retain edits and block unsafe navigation in that case.
+        try { queue.attachStorage(createRelationshipDraftStorage(localStorage, sessionStorage, key)) }
+        catch { queue.attachStorage({ read: () => { throw new Error("Device storage unavailable") }, write: () => { throw new Error("Device storage unavailable") } }) }
+        const release = retainRelationshipDraftQueue(runtimeKey, queue)
+        const unregister = registerWorkspaceAutosaveFlusher(() => queue.flush(), { checkpoint: queue.checkpoint })
+        const beforeUnload = (event: BeforeUnloadEvent) => {
+            if (!queue.checkpoint()) { event.preventDefault(); event.returnValue = "" }
         }
-    }, [saveBackground])
-
-    useEffect(() => {
-        if (!canEdit || !backgroundDirty) return
-        if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current)
-        autosaveTimerRef.current = window.setTimeout(() => void saveBackground(), 800)
-        return () => {
-            if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current)
-        }
-    }, [backgroundDirty, canEdit, draft.primaryPersonName, draft.businessName, draft.primaryContactRole, draft.primaryPhone, draft.whatsappPhone, draft.communicationPrimaryProvider, draft.communicationDeliveryMode, draft.primaryEmail, draft.description, saveBackground])
+        window.addEventListener("beforeunload", beforeUnload)
+        return () => { unregister(); window.removeEventListener("beforeunload", beforeUnload); void queue.flush(); release() }
+    }, [queue, runtimeKey])
+    useEffect(() => { queue.receive(buildInitialDraft(details, services), updatedAt) }, [details, queue, services, updatedAt])
 
     function update<K extends keyof Draft>(key: K, value: Draft[K]) {
         if (["primaryPersonName", "businessName", "primaryContactRole", "primaryPhone", "whatsappPhone", "communicationPrimaryProvider", "communicationDeliveryMode", "primaryEmail", "description"].includes(key)) {
-            setAutosaveState("dirty")
             setError(null)
         }
         setDraft((current) => {
@@ -484,28 +418,34 @@ export function RelationshipDealWorkspace({
 
     async function saveDetails() {
         if (!await saveBackground()) return false
-        const source = latestDraftRef.current
+        const release = queue.hold()
+        if (!release) { setError("Wait for the current relationship save to finish."); return false }
+        try {
+        const source = queue.getSnapshot().draft
         const outcome = await runWorkspaceMutation(() => saveRelationshipDealDetails(workspaceSlug, relationshipId, dealInput(source)), { category: "services" })
         if (!outcome.ok) {
             setError(outcome.error)
             return false
         }
-        backgroundVersionRef.current = outcome.version
-        savedBackgroundKeyRef.current = backgroundDetailsKey(source)
-        setBaseline(source)
+        queue.acknowledgeCommercial(source, outcome.version)
         setError(null)
         router.refresh()
         postGanttSync(workspaceSlug)
         return true
+        } finally { release() }
     }
 
     function openInvoiceReview() {
         if (!canSell || pending) return
         setError(null)
         startTransition(async () => {
+            if (!await saveBackground()) return
+            const release = queue.hold()
+            if (!release) { setError("Wait for the current relationship save to finish."); return }
+            try {
             const result = await beginRelationshipPos(workspaceSlug, relationshipId)
             if (!result.ok) { setError(result.error); return }
-            backgroundVersionRef.current = result.version
+            queue.advanceVersion(result.version)
             setDraft((current) => ({ ...current, sellerUserId: result.sellerUserId,
                 fulfilmentManagerUserId: current.fulfilmentManagerUserId || (managers.length === 1 ? managers[0].id : ""),
                 serviceAssignees: Object.fromEntries(services.map((service) => {
@@ -514,6 +454,7 @@ export function RelationshipDealWorkspace({
                 })),
             }))
             setInvoiceStep(0); setInvoiceOpen(true)
+            } finally { release() }
         })
     }
 
@@ -582,10 +523,18 @@ export function RelationshipDealWorkspace({
         <DetailField label="Description" icon="description" className="lg:col-span-2"><textarea disabled={!canEdit} value={draft.description} onChange={(event) => update("description", event.target.value)} onBlur={() => void saveBackground()} rows={3} placeholder="Add relationship context…" className={`${inputClass} min-h-20 resize-none leading-6`} /></DetailField>
         </DetailFields>
         {error && !invoiceOpen ? <p className="border-t border-red-500/20 py-2 text-sm text-red-300">{error}</p> : null}
-        {canEdit ? <div className="flex items-center justify-between gap-3 border-t border-neutral-900 py-2.5"><span aria-live="polite" className={`text-xs ${autosaveState === "error" ? "text-red-300" : "text-neutral-500"}`}>{autosaveState === "saving" ? "Saving relationship details…" : autosaveState === "error" ? "Relationship details could not save automatically" : backgroundDirty ? "Relationship details will save automatically" : autosaveState === "saved" ? "Relationship details saved" : "Relationship details save automatically"}</span>{autosaveState === "error" ? <button type="button" onClick={() => void saveBackground()} className="text-xs text-red-200 underline decoration-red-500/50 underline-offset-2 hover:text-white">Retry</button> : commercialDirty && canSell && !commercialLocked ? <div className="flex justify-end gap-2"><button type="button" disabled={pending} onClick={() => { setDraft((current) => ({ ...baseline, primaryPersonName: current.primaryPersonName, businessName: current.businessName, primaryContactRole: current.primaryContactRole, primaryPhone: current.primaryPhone, whatsappPhone: current.whatsappPhone, primaryEmail: current.primaryEmail, description: current.description })); setServicesOpen(false); setError(null) }} className="h-8 px-2 text-xs text-neutral-400 hover:text-white disabled:opacity-50">Cancel</button><button type="button" disabled={pending} onClick={() => startTransition(() => { void saveDetails() })} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-50">{pending ? "Saving…" : "Save commercial changes"}</button></div> : null}</div> : null}
+        {snapshot.conflict ? <div role="alert" className="flex flex-wrap items-center gap-3 border-t border-neutral-900 py-3 text-xs text-amber-200">
+            <span>Your draft is preserved. Review the latest relationship before saving.</span>
+            <button type="button" onClick={() => router.refresh()} className="underline underline-offset-4">Refresh latest values</button>
+            {snapshot.latest ? <>
+                <button type="button" onClick={() => queue.resolveConflict(false)} className="underline underline-offset-4">Use latest saved values</button>
+                <button type="button" onClick={() => queue.resolveConflict(true)} className="underline underline-offset-4">Keep my edits and retry</button>
+            </> : null}
+        </div> : null}
+        {canEdit ? <div className="flex items-center justify-between gap-3 border-t border-neutral-900 py-2.5"><span aria-live="polite" className={`text-xs ${autosaveState === "error" ? "text-red-300" : "text-neutral-500"}`}>{autosaveState === "saving" ? "Saving relationship details…" : autosaveState === "error" ? "Relationship details could not save automatically" : backgroundDirty ? "Relationship details will save automatically" : autosaveState === "saved" ? "Relationship details saved" : "Relationship details save automatically"}</span>{autosaveState === "error" ? <button type="button" onClick={() => void saveBackground()} className="text-xs text-red-200 underline decoration-red-500/50 underline-offset-2 hover:text-white">Retry</button> : commercialDirty && canSell && !commercialLocked ? <div className="flex justify-end gap-2"><button type="button" disabled={pending} onClick={() => { setDraft((current) => ({ ...baseline, primaryPersonName: current.primaryPersonName, businessName: current.businessName, primaryContactRole: current.primaryContactRole, primaryPhone: current.primaryPhone, whatsappPhone: current.whatsappPhone, communicationPrimaryProvider: current.communicationPrimaryProvider, communicationDeliveryMode: current.communicationDeliveryMode, primaryEmail: current.primaryEmail, description: current.description })); setServicesOpen(false); setError(null) }} className="h-8 px-2 text-xs text-neutral-400 hover:text-white disabled:opacity-50">Cancel</button><button type="button" disabled={pending} onClick={() => startTransition(() => { void saveDetails() })} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-50">{pending ? "Saving…" : "Save commercial changes"}</button></div> : null}</div> : null}
     </div>
 
-    const modal = invoiceOpen && parentDocument ? createPortal(<div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-3 text-white backdrop-blur-sm">
+    const modal = invoiceOpen && workspaceTabActive && parentDocument ? createPortal(<div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-3 text-white backdrop-blur-sm">
         <section role="dialog" aria-modal="true" aria-labelledby="invoice-review-title" className="betelgeze-popup-enter flex max-h-[min(92dvh,56rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70">
             <header className="shrink-0 border-b border-neutral-800 px-4 py-4 sm:px-6">
                 <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-medium uppercase tracking-[0.16em] text-neutral-500">Sell client</p><h2 id="invoice-review-title" className="mt-1 text-xl font-semibold">{invoiceStep === 0 ? "Review Relationship Information" : invoiceStep === 1 ? "Assemble Client Team" : invoiceStep === 2 ? "Review Onboarding" : "Pricing"}</h2><p className="mt-1 text-sm text-neutral-500">{invoiceStep === 0 ? "Double-check the client's details and the services they are buying." : invoiceStep === 1 ? "Choose the manager and the person delivering each service." : invoiceStep === 2 ? "Confirm the published onboarding this client will receive." : "Review each service's upfront and ongoing charges."}</p></div><button type="button" aria-label="Close sale review" onClick={() => { setInvoiceOpen(false); setError(null) }} className="text-neutral-500 hover:text-white">✕</button></div>
@@ -648,7 +597,7 @@ export function RelationshipDealWorkspace({
         </section>
     </div>, parentDocument.body) : null
 
-    const preview = <OnboardingPreviewOverlay open={onboardingPreviewOpen} onClose={() => setOnboardingPreviewOpen(false)}>
+    const preview = <OnboardingPreviewOverlay open={onboardingPreviewOpen && workspaceTabActive} onClose={() => setOnboardingPreviewOpen(false)}>
         <BuilderPreview fullWindow modules={assignedModules} payment={payment} theme={theme} help={help} workspaceName={workspaceName} logoSrc={logoSrc} client={{ name: draft.primaryPersonName || "Preview client", email: draft.primaryEmail || null, phone: draft.primaryPhone || draft.whatsappPhone || null, isTest: false }} privacyPolicyUrl={privacyPolicyUrl} termsOfServiceUrl={termsOfServiceUrl} />
     </OnboardingPreviewOverlay>
 
@@ -659,6 +608,6 @@ export function RelationshipDealWorkspace({
         </Suspense>
         {modal}
         {preview}
-        {notice ? <WorkspaceSuccessNotice label={notice.label} /> : null}
+        {notice && workspaceTabActive ? <WorkspaceSuccessNotice label={notice.label} /> : null}
     </>
 }

@@ -32,7 +32,7 @@ async function savedSticker(workspaceId: string, storagePath: string) {
 }
 
 async function saveStickerFromMessage(workspaceId: string, userId: string, messageId: string) {
-    const message = (await loadCommunicationMessages({ workspaceId, limit: 4000 })).messages.find((candidate) => candidate.id === messageId)
+    const message = (await loadCommunicationMessages({ workspaceId, currentUserId: userId, limit: 4000 })).messages.find((candidate) => candidate.id === messageId)
     if (!message) return Response.json({ error: "Message not found." }, { status: 404 })
 
     const attachment = message.attachment

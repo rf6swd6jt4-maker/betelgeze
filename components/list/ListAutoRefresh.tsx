@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 
 export function ListAutoRefresh({ intervalMs = 8000 }: { intervalMs?: number }) {

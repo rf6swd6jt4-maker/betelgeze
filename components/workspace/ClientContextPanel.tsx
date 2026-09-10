@@ -16,7 +16,7 @@ type Props = {
     metrics?: WorkspaceTabRelationshipContext["metrics"]
 }
 
-async function LoadedContext({ workspaceSlug, relationship, access, metrics = [] }: Props) {
+export async function loadRelationshipContext({ relationship, access, metrics = [] }: Props) {
     if (!relationship || relationship.workspace_id !== access.workspaceId) return null
     await requireRelationshipAccess(access, relationship.id)
     // Send only the staff reference fields across the frame boundary.
@@ -59,7 +59,12 @@ async function LoadedContext({ workspaceSlug, relationship, access, metrics = []
     } catch {
         context.teamUnavailable = true
     }
-    return <RelationshipContextBridge workspaceSlug={workspaceSlug} contextPayload={context} workspaceCapabilities={access.capabilities} />
+    return context
+}
+
+async function LoadedContext(props: Props) {
+    const context = await loadRelationshipContext(props)
+    return context ? <RelationshipContextBridge workspaceSlug={props.workspaceSlug} contextPayload={context} workspaceCapabilities={props.access.capabilities} /> : null
 }
 
 export function ClientContextPanel(props: Props) {

@@ -319,6 +319,7 @@ function WorkspaceTabFrame({ tab, active, assignRef, onLoad }: {
         hidden={!active}
         aria-hidden={!active}
         onLoad={onLoad}
+        style={{ backgroundColor: "#0a0a0a", colorScheme: "dark" }}
         className="absolute inset-0 h-full w-full border-0 bg-neutral-950"
     />
 }

@@ -2,6 +2,7 @@
 
 import { Component, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { nativeWorkspaceRoute } from "@/lib/workspace-native"
+import { afterVisibleWorkspacePaint } from "@/lib/workspace-navigation-lifecycle"
 import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 import type { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
 import type { NativeRelationshipsSnapshot } from "@/lib/workspace-native-relationships"
@@ -68,12 +69,34 @@ class PanelBoundary extends Component<{ children: ReactNode; onRetry: () => void
     }
 }
 
-function Ready({ onReady }: { onReady: () => void }) {
+function Ready({ onMounted, onReady }: { onMounted: () => void; onReady: () => void }) {
     useEffect(() => {
-        let second = 0
-        const first = requestAnimationFrame(() => { second = requestAnimationFrame(onReady) })
-        return () => { cancelAnimationFrame(first); cancelAnimationFrame(second) }
-    }, [onReady])
+        // React committed the real panel even if the browser has suspended
+        // painting. Release functional loading separately from paint metrics.
+        onMounted()
+        let frozen = false
+        return afterVisibleWorkspacePaint(onReady, {
+            visible: () => !frozen && document.visibilityState === "visible",
+            requestFrame: (callback) => requestAnimationFrame(callback),
+            cancelFrame: (frame) => cancelAnimationFrame(frame),
+            subscribe: (update) => {
+                const freeze = () => { frozen = true; update() }
+                const resume = () => { frozen = false; update() }
+                document.addEventListener("visibilitychange", update)
+                document.addEventListener("freeze", freeze)
+                document.addEventListener("resume", resume)
+                window.addEventListener("pagehide", freeze)
+                window.addEventListener("pageshow", resume)
+                return () => {
+                    document.removeEventListener("visibilitychange", update)
+                    document.removeEventListener("freeze", freeze)
+                    document.removeEventListener("resume", resume)
+                    window.removeEventListener("pagehide", freeze)
+                    window.removeEventListener("pageshow", resume)
+                }
+            },
+        })
+    }, [onMounted, onReady])
     return null
 }
 
@@ -107,7 +130,9 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     const [accessError, setAccessError] = useState<{ key: string; message: string } | null>(null)
     const navigationSequence = useRef(0)
     const current = useRef({ tab, active, accountCleared })
+    const committedUrl = useRef<string | null>(null)
     useLayoutEffect(() => { current.current = { tab, active, accountCleared } }, [tab, active, accountCleared])
+    useLayoutEffect(() => { committedUrl.current = null }, [tab.url, accountCleared])
     const route = nativeWorkspaceRoute(tab.url, workspaceSlug)!
     const key = nativePanelCacheKey(userId, workspaceId, route.key)
     const scrollKey = `${tab.id}:${tab.url}`
@@ -135,9 +160,19 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
         }
         void read(true).catch(() => undefined)
     }, [read, cache, key, tab.url, accessError])
-    const reportLocation = useCallback(() => post({ type: "location", url: current.current.tab.url }), [post])
     const measurement = useRef<ReturnType<typeof beginWorkspaceInteraction> | null>(null)
     const blockedByAccess = accountCleared || accessError?.key === key
+    const reportLocation = useCallback(() => {
+        if (blockedByAccess || current.current.accountCleared || !current.current.active || current.current.tab.url !== tab.url) return
+        // Capture this render's URL. Reading the latest URL would mislabel a
+        // queued callback from the previous panel as the new panel's commit.
+        post({ type: "location", url: tab.url })
+    }, [post, tab.url, blockedByAccess])
+    const onMounted = useCallback(() => {
+        if (blockedByAccess || current.current.accountCleared || current.current.tab.url !== tab.url) return
+        committedUrl.current = tab.url
+        reportLocation()
+    }, [reportLocation, tab.url, blockedByAccess])
 
     useEffect(() => {
         if (!active || blockedByAccess) return
@@ -170,7 +205,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     }, [read, blockedByAccess])
 
     const onReady = useCallback(() => {
-        if (!active || blockedByAccess) return
+        if (!active || blockedByAccess || !current.current.active || current.current.accountCleared || current.current.tab.url !== tab.url || document.visibilityState !== "visible") return
         reportLocation()
         post({ type: "meaningful-ready", url: tab.url })
         measurement.current?.mark("meaningful_ready")
@@ -183,11 +218,11 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     useEffect(() => {
         assignRef(tab.id, { post(message) {
             if (message.type === "activate" && message.active && message.refresh) refresh()
-            if (message.type === "probe" && !blockedByAccess && cache.getSnapshot(key).data) reportLocation()
+            if (message.type === "probe" && !blockedByAccess && committedUrl.current === tab.url) reportLocation()
             // Shell navigation changes tab.url; the data key effect owns loading.
         } })
         return () => assignRef(tab.id, null)
-    }, [assignRef, tab.id, refresh, reportLocation, cache, key, blockedByAccess])
+    }, [assignRef, tab.id, tab.url, refresh, reportLocation, blockedByAccess])
 
     useEffect(() => {
         const context = snapshot.data?.context ?? null
@@ -264,7 +299,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
         {blockedByAccess ? <div role="alert" className="px-4 py-2 text-sm text-red-200">{accountCleared ? "Your workspace session changed. Reload to continue." : accessError?.message} <button type="button" onClick={() => window.location.reload()} className="underline">Reload workspace</button></div> : null}
         {snapshot.error ? <div role="alert" className="border-b border-red-900/50 px-4 py-2 text-sm text-red-200">{snapshot.error} <button type="button" onClick={refresh} className="underline">Retry</button></div> : null}
         <WorkspacePanelChrome banner={banner}><PanelBoundary key={key} onRetry={refresh} onFailure={() => { measurement.current?.finish("failed"); post({ type: "navigation-failed", url: tab.url }) }}><Suspense fallback={<WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />}>
-            {!blockedByAccess && (snapshot.data ? <><NativePanel data={snapshot.data} /><RestoreScroll onRestore={restoreScroll} /><Ready key={snapshot.updatedAt} onReady={onReady} /></> : <WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />)}
+            {!blockedByAccess && (snapshot.data ? <><NativePanel data={snapshot.data} /><RestoreScroll onRestore={restoreScroll} /><Ready key={snapshot.updatedAt} onMounted={onMounted} onReady={onReady} /></> : <WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />)}
         </Suspense></PanelBoundary></WorkspacePanelChrome>
     </div></WorkspaceNavigationProvider>
 }

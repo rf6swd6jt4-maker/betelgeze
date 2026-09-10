@@ -13,11 +13,12 @@ import { createViewportOriginRecovery } from "@/lib/viewport-origin-recovery"
 import Link from "next/link"
 import { beginWorkspaceTabGesture } from "@/lib/workspace-tab-gesture"
 import dynamic from "next/dynamic"
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { NativeWorkspaceTab, nativePanelCacheKey, type NativePanelSnapshot, type NativeTabHandle } from "@/components/workspace/NativeWorkspaceTab"
 import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
 import { WorkspaceNavigationPerformanceTracker } from "@/lib/workspace-performance-contract"
+import { createWorkspaceNavigationDeadline, workspaceNavigationReadyMatches } from "@/lib/workspace-navigation-lifecycle"
 import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 import { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
 import { nativeWorkspaceRoute } from "@/lib/workspace-native"
@@ -371,9 +372,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
     const readyTabIdsRef = useRef(new Set<string>())
     const pendingNavigationRef = useRef(new Map<string, string>())
     const navigationFallbackRef = useRef(new Map<string, WorkspaceTab>())
-    const navigationTimeoutRef = useRef(new Map<string, number>())
+    const navigationTimeoutRef = useRef(new Map<string, ReturnType<typeof createWorkspaceNavigationDeadline>>())
+    const documentFrozenRef = useRef(false)
     const softNavigationFallbackRef = useRef(new Map<string, number>())
-    const navigationErrorRef = useRef(new Set<string>())
+    const navigationErrorRef = useRef(new Map<string, string>())
     const closedTabsRef = useRef<ClosedWorkspaceTab[]>([])
     const canAddTabRef = useRef(true)
     const mutationRevisionRef = useRef(0)
@@ -464,6 +466,8 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
     const capabilitySet = new Set(workspaceCapabilities)
     const canOpenWorkspaceUrl = useCallback((value: string) => canAccessWorkspaceUrl(value, workspace.slug, workspaceRole, workspaceCapabilities), [workspace.slug, workspaceRole, workspaceCapabilities])
     const activateWorkspaceTab = useCallback((tabId: string) => {
+        activeTabIdRef.current = tabId
+        for (const timeout of navigationTimeoutRef.current.values()) timeout.update()
         nativeNavigationPerformance.activate(tabId)
         setMobileContextKey(null)
         setResidentTabIds((current) => {
@@ -668,15 +672,17 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
         })
     }, [saveTabsState, titleForUrl])
 
-    const completeTabNavigation = useCallback((tabId: string) => {
+    const completeTabNavigation = useCallback((tabId: string, confirmedUrl?: string) => {
+        const failedUrl = navigationErrorRef.current.get(tabId)
+        if (failedUrl && (!confirmedUrl || !workspaceNavigationReadyMatches(confirmedUrl, tabsRef.current.find((tab) => tab.id === tabId)?.url, pendingNavigationRef.current.get(tabId), failedUrl))) return
         const softFallback = softNavigationFallbackRef.current.get(tabId)
         if (softFallback) window.clearTimeout(softFallback)
         softNavigationFallbackRef.current.delete(tabId)
         const timeout = navigationTimeoutRef.current.get(tabId)
-        if (timeout) window.clearTimeout(timeout)
+        timeout?.cancel()
         navigationTimeoutRef.current.delete(tabId)
         navigationFallbackRef.current.delete(tabId)
-        if (navigationErrorRef.current.has(tabId)) return
+        navigationErrorRef.current.delete(tabId)
         setNavigationStateByTab((current) => {
             if (!(tabId in current)) return current
             const next = { ...current }
@@ -693,16 +699,18 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
             navigationFallbackRef.current.set(tabId, { ...currentTab, history: [...currentTab.history] })
         }
         const existingTimeout = navigationTimeoutRef.current.get(tabId)
-        if (existingTimeout) window.clearTimeout(existingTimeout)
+        existingTimeout?.cancel()
         setNavigationStateByTab((current) => ({ ...current, [tabId]: { status: "loading", requestedUrl: url } }))
-        const timeout = window.setTimeout(() => {
+        const timeout = createWorkspaceNavigationDeadline(() => {
             if (pendingNavigationRef.current.get(tabId) !== url) return
             nativeNavigationPerformance.finishTarget(tabId, url, "timeout")
             pendingNavigationRef.current.delete(tabId)
             readyTabIdsRef.current.delete(tabId)
             const fallback = navigationFallbackRef.current.get(tabId)
             navigationFallbackRef.current.delete(tabId)
-            if (fallback) {
+            // Keep a native destination mounted so a slow successful read can
+            // recover. Legacy frames still restore their last working page.
+            if (fallback && !nativeRefs.current.has(tabId)) {
                 setTabs((existingTabs) => {
                     const restored = existingTabs.map((tab) => tab.id === tabId ? fallback : tab)
                     tabsRef.current = restored
@@ -719,20 +727,42 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
                 }
             }
             navigationTimeoutRef.current.delete(tabId)
-            navigationErrorRef.current.add(tabId)
+            navigationErrorRef.current.set(tabId, url)
             setNavigationStateByTab((current) => ({
                 ...current,
                 [tabId]: { status: "error", requestedUrl: url, error: "This page took too long to load." },
             }))
-        }, 12_000)
+        }, {
+            isForeground: () => !documentFrozenRef.current && document.visibilityState === "visible" && activeTabIdRef.current === tabId,
+            now: () => performance.now(),
+            schedule: (callback, delay) => window.setTimeout(callback, delay),
+            cancel: (timer) => window.clearTimeout(timer),
+        })
         navigationTimeoutRef.current.set(tabId, timeout)
     }, [saveTabsState, nativeNavigationPerformance])
 
-    useEffect(() => () => {
-        for (const timeout of navigationTimeoutRef.current.values()) window.clearTimeout(timeout)
-        navigationTimeoutRef.current.clear()
-        for (const timeout of softNavigationFallbackRef.current.values()) window.clearTimeout(timeout)
-        softNavigationFallbackRef.current.clear()
+    useEffect(() => {
+        const navigationTimeouts = navigationTimeoutRef.current
+        const softFallbacks = softNavigationFallbackRef.current
+        const update = () => { for (const timeout of navigationTimeouts.values()) timeout.update() }
+        const freeze = () => { documentFrozenRef.current = true; update() }
+        const resume = () => { documentFrozenRef.current = false; update() }
+        document.addEventListener("visibilitychange", update)
+        document.addEventListener("freeze", freeze)
+        document.addEventListener("resume", resume)
+        window.addEventListener("pagehide", freeze)
+        window.addEventListener("pageshow", resume)
+        return () => {
+            document.removeEventListener("visibilitychange", update)
+            document.removeEventListener("freeze", freeze)
+            document.removeEventListener("resume", resume)
+            window.removeEventListener("pagehide", freeze)
+            window.removeEventListener("pageshow", resume)
+            for (const timeout of navigationTimeouts.values()) timeout.cancel()
+            navigationTimeouts.clear()
+            for (const timeout of softFallbacks.values()) window.clearTimeout(timeout)
+            softFallbacks.clear()
+        }
     }, [])
 
     const readTabsState = useCallback((currentUrl: string): WorkspaceTabsState => {
@@ -793,6 +823,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
         const clear = (event: Event) => {
             const preserved = (event as CustomEvent<{ preservedUserId?: string }>).detail?.preservedUserId
             if (preserved !== currentUserId) {
+                for (const timeout of navigationTimeoutRef.current.values()) timeout.cancel()
+                navigationTimeoutRef.current.clear()
+                pendingNavigationRef.current.clear()
+                navigationErrorRef.current.clear()
                 setClearedNativeAccount(nativeAccountScope)
                 nativeNavigationPerformance.cancel()
                 nativeCache.clear()
@@ -809,9 +843,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
 
     useEffect(() => {
         activeTabIdRef.current = activeTabId
+        for (const timeout of navigationTimeoutRef.current.values()) timeout.update()
     }, [activeTabId])
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         tabsRef.current = tabs
     }, [tabs])
 
@@ -1150,7 +1185,14 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
                 return
             }
             if (native && message.type === "meaningful-ready" && message.url) {
-                if (message.tabId === activeTabIdRef.current) nativeNavigationPerformance.ready(message.tabId, normalizeWorkspaceUrl(message.url))
+                const url = normalizeWorkspaceUrl(message.url)
+                if (!workspaceNavigationReadyMatches(url, tabsRef.current.find((tab) => tab.id === message.tabId)?.url, pendingNavigationRef.current.get(message.tabId), navigationErrorRef.current.get(message.tabId))) return
+                if (pendingNavigationRef.current.get(message.tabId) === url) pendingNavigationRef.current.delete(message.tabId)
+                completeTabNavigation(message.tabId, url)
+                if (message.tabId === activeTabIdRef.current) {
+                    setRouteLoadingTabId(null)
+                    if (document.visibilityState === "visible") nativeNavigationPerformance.ready(message.tabId, url)
+                }
                 return
             }
             if (native && message.type === "navigation-failed" && message.url) {
@@ -1210,6 +1252,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
             if (message.type === "location" && message.url) {
                 const url = normalizeWorkspaceUrl(message.url)
                 const pendingUrl = pendingNavigationRef.current.get(message.tabId)
+                // A native commit from an older render is not the legacy
+                // iframe boot handshake and must never replay or change URLs.
+                if (native && !workspaceNavigationReadyMatches(url, tabsRef.current.find((tab) => tab.id === message.tabId)?.url, pendingUrl, navigationErrorRef.current.get(message.tabId))) return
                 markTabFrameReady(message.tabId)
                 readyTabIdsRef.current.add(message.tabId)
                 postToTab(message.tabId, { type: "activate", active: message.tabId === activeTabIdRef.current, refresh: false })
@@ -1226,7 +1271,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
                 }
                 if (pendingUrl === url) pendingNavigationRef.current.delete(message.tabId)
                 reportInitialPanelReady(message.tabId)
-                completeTabNavigation(message.tabId)
+                completeTabNavigation(message.tabId, url)
                 if (message.tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
                 setTabs((existingTabs) => {
                     const updatedTabs = existingTabs.map((tab) => {
@@ -2134,7 +2179,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
         readyTabIdsRef.current.delete(tabId)
         pendingNavigationRef.current.delete(tabId)
         const navigationTimeout = navigationTimeoutRef.current.get(tabId)
-        if (navigationTimeout) window.clearTimeout(navigationTimeout)
+        navigationTimeout?.cancel()
         navigationTimeoutRef.current.delete(tabId)
         const softFallback = softNavigationFallbackRef.current.get(tabId)
         if (softFallback) window.clearTimeout(softFallback)
@@ -2386,6 +2431,13 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
         beginTabNavigation(activeTabId, activeNavigation.requestedUrl)
         updateTabForShellNavigation(activeTabId, activeNavigation.requestedUrl)
         pendingNavigationRef.current.set(activeTabId, activeNavigation.requestedUrl)
+        if (nativeRefs.current.has(activeTabId)) {
+            // A timed-out native route remains mounted; repeating its URL
+            // alone would not rerun the read effect. Refresh coalesces an
+            // existing request and retries a settled failure.
+            postToTab(activeTabId, { type: "activate", active: true, refresh: true })
+            return
+        }
         requestTabFrameNavigation(activeTabId, activeNavigation.requestedUrl)
     }
 

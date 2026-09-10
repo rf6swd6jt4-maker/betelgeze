@@ -1162,7 +1162,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
         setCreateTarget(target)
     }, [workspaceRole, workspaceCapabilities])
 
-    useEffect(() => {
+    useLayoutEffect(() => {
+        // Install the receiver before child passive commit acknowledgements;
+        // a hidden document may never reach their later paint acknowledgement.
         function receiveFrameMessage(event: MessageEvent<WorkspaceTabFrameMessage>, native = false) {
             if (event.origin !== window.location.origin) return
             const message = event.data

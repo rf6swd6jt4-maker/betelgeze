@@ -46,6 +46,12 @@ Before widening the pilot, verify that layout correction and exercise live saves
 
 All [remaining implementation limits](../workspace-performance-implementation.md#remaining-plan-work), including legacy panels, incomplete command extraction, broad Communications bootstrap windows and absent persistent read sync, still apply.
 
+## Subsequent production verification
+
+PR #39 merged as `a224ee9ac095a491feca8f619845135ec000c71d`. Deployment `dpl_9qvtiNKtHfXHm4FZnRwnMK2cjoP9` is Ready on `app.betelgeze.com`. The live Relationships screenshot verified the corrected width; the test detail and repeated 160/10-record Library/Relationships switches showed no global loading overlay. The new Gantt GET returned 401, private/no-store and no plan to an unauthenticated request. No business records were edited or messages sent.
+
+The later timing window became hidden again: 15 samples contained 3 completions and 12 aborts, with no valid foreground navigation/tab measurement. These do not replace the foreground table above. A further hidden-page check found the functional tab label could remain `Loading` despite committed content. A child passive effect could acknowledge readiness before either receiver had registered. The subsequent correction registers both native handles and the host message receiver in layout effects, retaining the existing URL/account checks and paint measurement boundary. It passes **849 tests**, the production build, lint/source TypeScript and independent review. Three new regression cases execute production hooks with child-before-parent phase scheduling, independently reproduce each old passive-registration failure, and verify hidden cached mount, route change, cleanup/replay and stale-callback handling without painting. Its live verification is separate from the PR #39 layout checks.
+
 ## Rollback
 
 Disable the workspace gates and outbox flag, then redeploy compatible code that retains command endpoints and receipts. Keep `WORKSPACE_PERFORMANCE_USERS`: clearing it would broaden enabled workspace gates. From an authenticated Vercel CLI linked to BE, only if rollback is needed:
@@ -55,7 +61,7 @@ vercel env rm WORKSPACE_NATIVE_PANELS production --yes
 vercel env rm WORKSPACE_RELATIONSHIP_DRAFT_COMMANDS production --yes
 vercel env rm WORKSPACE_COMMUNICATIONS_BOUNDED_READS production --yes
 vercel env rm WORKSPACE_APPOINTMENT_OUTBOX_READY production --yes
-vercel redeploy dpl_HMCerPFfYnqoz8xvC2SFEKgxw3nf --target=production
+vercel redeploy dpl_9qvtiNKtHfXHm4FZnRwnMK2cjoP9 --target=production
 ```
 
 Leave an already absent flag absent; a later verified compatible deployment may replace the listed ID. These use Vercel's [environment commands](https://vercel.com/docs/cli/env) and [redeploy command](https://vercel.com/docs/cli/redeploy). After Ready, refresh affected pages and confirm legacy navigation/save paths return. Do not drop tables, discard drafts or blindly retry uncertain deliveries. Keep accepted commands/jobs recoverable; follow the [operations guide](../workspace-performance-command-operations.md) for draining and reconciliation. No rollback command above was executed for this report.

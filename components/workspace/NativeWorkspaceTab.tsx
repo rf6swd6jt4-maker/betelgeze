@@ -215,7 +215,9 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
         window.dispatchEvent(new Event("betelgeze:clear-loading"))
     }, [post, reportLocation, tab.url, active, blockedByAccess])
 
-    useEffect(() => {
+    useLayoutEffect(() => {
+        // Cached children acknowledge their commit in a passive effect. Their
+        // receiver must already be registered, even when painting is paused.
         assignRef(tab.id, { post(message) {
             if (message.type === "activate" && message.active && message.refresh) refresh()
             if (message.type === "probe" && !blockedByAccess && committedUrl.current === tab.url) reportLocation()

@@ -1,0 +1,63 @@
+{
+  "note": "Existing client-reported mutation durations. Mixed operations; timing boundaries differ between fetch instrumentation and explicit mutation wrappers. Not a controlled write benchmark. Up to 1000 latest entries since Sep 6. No mutation bodies or user identities collected.",
+  "oldest": "2026-09-09T20:28:51.684183+00:00",
+  "newest": "2026-09-10T02:18:41.951866+00:00",
+  "all": {
+    "n": 1000,
+    "withDuration": 1000,
+    "p50_ms": 847,
+    "p75_ms": 1275,
+    "p95_ms": 2501,
+    "under1sec": 614,
+    "failed": 23
+  },
+  "success": {
+    "n": 977,
+    "withDuration": 977,
+    "p50_ms": 840,
+    "p75_ms": 1247,
+    "p95_ms": 2537,
+    "under1sec": 606,
+    "failed": 0
+  },
+  "byCategory": {
+    "communications": {
+      "n": 955,
+      "withDuration": 955,
+      "p50_ms": 830,
+      "p75_ms": 1189,
+      "p95_ms": 2484,
+      "under1sec": 605,
+      "failed": 0
+    },
+    "services": {
+      "n": 22,
+      "withDuration": 22,
+      "p50_ms": 1944,
+      "p75_ms": 2445,
+      "p95_ms": 3143,
+      "under1sec": 1,
+      "failed": 0
+    }
+  },
+  "byBackground": {
+    "true": {
+      "n": 5,
+      "withDuration": 5,
+      "p50_ms": 1390,
+      "p75_ms": 1407,
+      "p95_ms": 3143,
+      "under1sec": 0,
+      "failed": 0
+    },
+    "false": {
+      "n": 972,
+      "withDuration": 972,
+      "p50_ms": 837,
+      "p75_ms": 1221,
+      "p95_ms": 2528,
+      "under1sec": 606,
+      "failed": 0
+    }
+  }
+}

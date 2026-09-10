@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, type FormEvent, type ChangeEvent } from "react"
-import Link from "next/link"
+import Link from "@/components/workspace/WorkspaceLink"
 import { APPOINTMENT_FIELD_OPTIONS, APPOINTMENT_MEDIUM_OPTIONS, appointmentFieldValue, appointmentReadiness, appointmentTimeCandidates, appointmentWithChanges, type AppointmentSettingAppointment, type AppointmentSettingConfiguration, type AppointmentUpdateField } from "@/lib/appointment-setting"
 import { AppointmentDraftQueue, type DraftSnapshot } from "@/lib/appointment-draft-queue"
 

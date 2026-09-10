@@ -1,8 +1,8 @@
 "use client"
 
-import Link from "next/link"
+import Link from "@/components/workspace/WorkspaceLink"
 import type { ButtonHTMLAttributes, ReactNode } from "react"
-import { usePathname, useSearchParams } from "next/navigation"
+import { usePathname, useSearchParams, useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 
 export type InstantFilterTarget = {
     param: string
@@ -23,6 +23,7 @@ export function FilterRail({ ariaLabel, children, spacing = "default", surface =
 }
 
 export function FilterRailLink({ href, selected, instant, children }: { href: string; selected: boolean; instant?: InstantFilterTarget | false; children: ReactNode }) {
+    const navigation = useWorkspaceNavigation()
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const currentValue = instant ? searchParams.get(instant.param) ?? instant.defaultValue ?? null : null
@@ -45,6 +46,7 @@ export function FilterRailLink({ href, selected, instant, children }: { href: st
             if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
             event.preventDefault()
             const nextUrl = navigationHref
+            if (navigation) { navigation.push(nextUrl); return }
             if (`${window.location.pathname}${window.location.search}` !== nextUrl) window.history.pushState(null, "", nextUrl)
         } : undefined}
     >{children}</Link>

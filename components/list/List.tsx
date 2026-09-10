@@ -1,4 +1,4 @@
-import Link from "next/link"
+import Link from "@/components/workspace/WorkspaceLink"
 import type { ReactNode } from "react"
 import { serializeWorkspaceDetailPreview, type WorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 

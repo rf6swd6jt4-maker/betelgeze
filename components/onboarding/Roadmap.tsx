@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import type { Ref } from "react"
-import Link from "next/link"
+import Link from "@/components/workspace/WorkspaceLink"
 import { scrollOnboardingRoadmap } from "@/lib/onboarding/roadmap-scroll"
 
 type RoadmapStep = {

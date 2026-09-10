@@ -14,15 +14,20 @@ type PageProps = {
 export default async function CommunicationsPage({ params, searchParams }: PageProps) {
     const [{ workspaceSlug }, query] = await Promise.all([params, searchParams])
     const { workspace, user, role } = await requireWorkspacePanel(workspaceSlug, "communications")
-    const [bootstrap, nativeBootstrap] = await Promise.all([
-        loadClientCommunicationsBootstrap({ currentUserId: user.id, requestedConversationId: query.conversation, workspaceId: workspace.id, workspaceSlug: workspace.slug }),
-        loadNativeCommunications({ workspaceId: workspace.id, workspaceSlug: workspace.slug, currentUserId: user.id, role, requestedConversationId: query.nativeConversation, requestedDmUserId: query.dm }),
-    ])
+    const initialMode = query.mode === "team" || (query.mode !== "clients" && (Boolean(query.dm) || Boolean(query.nativeConversation))) ? "team" : "clients"
+    // The inactive mode is loaded after the visible view paints. Do not make a
+    // client conversation wait for team history (or the reverse).
+    const bootstrap = initialMode === "clients"
+        ? await loadClientCommunicationsBootstrap({ currentUserId: user.id, requestedConversationId: query.conversation, workspaceId: workspace.id, workspaceSlug: workspace.slug })
+        : null
+    const nativeBootstrap = initialMode === "team"
+        ? await loadNativeCommunications({ workspaceId: workspace.id, workspaceSlug: workspace.slug, currentUserId: user.id, role, requestedConversationId: query.nativeConversation, requestedDmUserId: query.dm })
+        : null
 
     return (
         <main className="fixed inset-0 overflow-hidden bg-black text-white">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
-            <CommunicationsPanel clientBootstrap={bootstrap} nativeBootstrap={nativeBootstrap} initialMode={query.mode === "team" || (query.mode !== "clients" && (Boolean(query.dm) || Boolean(query.nativeConversation))) ? "team" : "clients"} />
+            <CommunicationsPanel key={`${workspace.id}:${user.id}`} clientBootstrap={bootstrap} nativeBootstrap={nativeBootstrap} initialMode={initialMode} initialConversationId={query.conversation} initialNativeConversationId={query.nativeConversation} initialDmUserId={query.dm} />
         </main>
     )
 }

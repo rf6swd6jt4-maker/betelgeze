@@ -3,7 +3,7 @@
 import { useOnline } from "@/components/pwa/useOnline"
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
-import Link from "next/link"
+import Link from "@/components/workspace/WorkspaceLink"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
 import { ListActionMenu, type ListAction } from "@/components/list/ListActionMenu"
 import { MobileListActionSurface } from "@/components/list/MobileCardActionSurface"
@@ -13,7 +13,9 @@ import { appointmentNotificationLabel, type AppointmentDeliveryState } from "@/l
 import { APPOINTMENT_FIELD_OPTIONS, APPOINTMENT_MEDIUM_OPTIONS, appointmentFieldValue, appointmentReadiness, appointmentView, appointmentWithChanges, sortAppointmentWork, type AppointmentSettingAppointment, type AppointmentSettingConfiguration, type AppointmentUpdateField, type AppointmentView } from "@/lib/appointment-setting"
 import { fetchAppointmentSettingSnapshot, AppointmentRefreshPolicy, type AppointmentSettingSnapshot } from "@/lib/appointment-setting-refresh"
 import { useWorkspaceTabActive, WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
-import { AppointmentDraftQueue, type PersistedAppointmentDraft } from "@/lib/appointment-draft-queue"
+import { AppointmentDraftQueue } from "@/lib/appointment-draft-queue"
+import { parsePersistedAppointmentDraft, sendAppointmentDraftCommand, sendAppointmentSubmissionCommand } from "@/lib/appointment-draft-command"
+import { appointmentDraftRuntimeKey, getAppointmentDraftQueue, retainAppointmentDraftQueue } from "@/lib/appointment-draft-runtime"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
 import { registerWorkspaceAutosaveFlusher, runWorkspaceMutation } from "@/lib/workspace-mutations"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
@@ -34,10 +36,13 @@ type Props = {
     configuration: AppointmentSettingConfiguration
     initialDelivery: AppointmentDeliveryState
     initialNow: number
+    draftCommandsEnabled?: boolean
 }
 
-function AppointmentRow({ currentUserId, appointment, configuration, workspaceSlug, relationshipId, delivery, expanded, visible, autoFocus, localTimezone, queues, onOpen, onSaved, onRemove, onRefresh, onDelivery }: {
+function AppointmentRow({ currentUserId, workspaceId, draftCommandsEnabled, appointment, configuration, workspaceSlug, relationshipId, delivery, expanded, visible, autoFocus, localTimezone, queues, onOpen, onSaved, onRemove, onRefresh, onDelivery }: {
     currentUserId: string
+    workspaceId: string
+    draftCommandsEnabled: boolean
     appointment: AppointmentSettingAppointment
     configuration: AppointmentSettingConfiguration
     workspaceSlug: string
@@ -54,21 +59,21 @@ function AppointmentRow({ currentUserId, appointment, configuration, workspaceSl
     onRefresh: () => Promise<AppointmentSettingSnapshot | undefined>
     onDelivery: (messageId: string, status: AppointmentDeliveryState["notifications"][string]) => void
 }) {
-    const [queue] = useState(() => new AppointmentDraftQueue<AppointmentSettingAppointment, AppointmentUpdateField>(appointment, async (row, changes) => {
-        if (!navigator.onLine) return { ok: false, error: "Saved on this device. Changes will retry when connected." }
-        const result = await runWorkspaceMutation(() => saveAppointmentSettingDraft(workspaceSlug, relationshipId, row.id, changes, row.updated_at), { category: "system" })
-        if (result.ok && result.data) onSaved(result.data)
-        return result
-    }))
+    const runtimeKey = appointmentDraftRuntimeKey(currentUserId, workspaceId, relationshipId, appointment.id)
+    const [queue] = useState(() => getAppointmentDraftQueue(runtimeKey, () => new AppointmentDraftQueue<AppointmentSettingAppointment, AppointmentUpdateField>(appointment, async (row, changes, command) => {
+        if (!navigator.onLine) throw new Error("Saved on this device. Changes will retry when connected.")
+        if (command.transport === "action") return runWorkspaceMutation(() => saveAppointmentSettingDraft(workspaceSlug, relationshipId, row.id, changes, command.version, undefined, currentUserId), { category: "system" })
+        return runWorkspaceMutation(() => sendAppointmentDraftCommand(workspaceSlug, relationshipId, {
+            appointmentId: row.id, expectedUserId: currentUserId,
+            requestId: command.requestId, expectedUpdatedAt: command.version, changes,
+        }), { category: "system" })
+    }, 500, draftCommandsEnabled ? "command" : "action")))
     const online = useOnline()
     useEffect(() => {
         const key = `betelgeze:appointment-draft:${currentUserId}:${workspaceSlug}:${relationshipId}:${appointment.id}`
         queue.attachStorage({
             read: () => {
-                const value = JSON.parse(localStorage.getItem(key) ?? "null") as PersistedAppointmentDraft<AppointmentUpdateField> | null
-                if (!value || typeof value.version !== "string" || !value.changes || typeof value.changes !== "object") return null
-                value.changes = Object.fromEntries(Object.entries(value.changes).filter(([, entry]) => typeof entry === "string"))
-                return value
+                return parsePersistedAppointmentDraft(JSON.parse(localStorage.getItem(key) ?? "null"))
             },
             write: (value) => { if (value) localStorage.setItem(key, JSON.stringify(value)); else localStorage.removeItem(key) },
         })
@@ -80,9 +85,11 @@ function AppointmentRow({ currentUserId, appointment, configuration, workspaceSl
     useEffect(() => { queue.receive(appointment) }, [appointment, queue])
     useEffect(() => {
         queues.set(appointment.id, queue)
-        const unregister = registerWorkspaceAutosaveFlusher(async () => { await queue.flush() })
-        return () => { queues.delete(appointment.id); unregister(); void queue.flush() }
-    }, [appointment.id, queue, queues])
+        const release = retainAppointmentDraftQueue(runtimeKey, queue)
+        const unregister = registerWorkspaceAutosaveFlusher(() => queue.flush(), { checkpoint: draftCommandsEnabled ? queue.checkpoint : undefined })
+        return () => { queues.delete(appointment.id); unregister(); queue.blur(); void queue.flush(); release() }
+    }, [appointment.id, queue, queues, runtimeKey, draftCommandsEnabled])
+    useEffect(() => { onSaved(snapshot.record) }, [snapshot.record, onSaved])
     useEffect(() => {
         const retry = () => { if (queue.getSnapshot().error && !queue.getSnapshot().conflict) void queue.retry() }
         const recover = () => { if (navigator.onLine && document.visibilityState === "visible") retry() }
@@ -125,7 +132,9 @@ function AppointmentRow({ currentUserId, appointment, configuration, workspaceSl
             const saved = queue.getSnapshot().record
             const issues = appointmentReadiness(saved, configuration)
             if (issues.length) { setSubmitError(issues[0].message); return }
-            const result = await runWorkspaceMutation(() => submitAppointmentSettingAppointment(workspaceSlug, relationshipId, saved.id, saved.updated_at), { category: "system" })
+            const result = await runWorkspaceMutation(() => draftCommandsEnabled
+                ? sendAppointmentSubmissionCommand(workspaceSlug, relationshipId, { appointmentId: saved.id, expectedUserId: currentUserId, expectedUpdatedAt: saved.updated_at })
+                : submitAppointmentSettingAppointment(workspaceSlug, relationshipId, saved.id, saved.updated_at), { category: "system" })
             if (!result.ok || !result.data) {
                 setSubmitError(result.ok ? "Submission could not be confirmed. Refresh before trying again." : result.error)
                 await onRefresh()
@@ -185,7 +194,7 @@ function AppointmentRow({ currentUserId, appointment, configuration, workspaceSl
     </ListItem>
 }
 
-export function AppointmentTable({ currentUserId, workspaceId, workspaceSlug, relationshipId, serviceId, initialAppointments, configuration, initialDelivery, initialNow }: Props) {
+export function AppointmentTable({ currentUserId, workspaceId, workspaceSlug, relationshipId, serviceId, initialAppointments, configuration, initialDelivery, initialNow, draftCommandsEnabled = false }: Props) {
     const online = useOnline()
     const tabActive = useWorkspaceTabActive()
     const tabActiveRef = useRef(tabActive)
@@ -356,7 +365,7 @@ export function AppointmentTable({ currentUserId, workspaceId, workspaceSlug, re
         <FilterRail ariaLabel="Appointment view">{(["drafts", "upcoming", "past"] as const).map((category) => <FilterRailButton key={category} selected={view === category} onClick={() => { setView(category); setExpandedId(null) }}>{category === "drafts" ? "Drafts" : category === "upcoming" ? "Upcoming" : "Past"}<FilterRailCount>{appointments.filter((row) => appointmentView(row, now) === category).length}</FilterRailCount></FilterRailButton>)}</FilterRail>
         {expandedId && appointments.some((row) => row.id === expandedId && !matches(row)) ? <p className="mt-3 text-xs text-neutral-400">Your selected appointment stays visible until you close it or change views.</p> : null}
         <List ariaLabel="Appointments">
-            {sortAppointmentWork(appointments, now).map((row) => <AppointmentRow currentUserId={currentUserId} key={row.id} appointment={row} configuration={configuration} workspaceSlug={workspaceSlug} relationshipId={relationshipId} delivery={delivery} expanded={expandedId === row.id} visible={matches(row) || expandedId === row.id} autoFocus={newDraftId === row.id} localTimezone={localTimezone} queues={queues} onOpen={() => { setExpandedId((current) => current === row.id ? null : row.id); setNewDraftId(null) }} onSaved={onSaved} onRemove={removeDraft} onRefresh={refresh} onDelivery={(messageId, status) => { mutationVersion.current += 1; setDelivery((current) => ({ ...current, notifications: { ...current.notifications, [messageId]: status } })) }} />)}
+            {sortAppointmentWork(appointments, now).map((row) => <AppointmentRow currentUserId={currentUserId} workspaceId={workspaceId} draftCommandsEnabled={draftCommandsEnabled} key={row.id} appointment={row} configuration={configuration} workspaceSlug={workspaceSlug} relationshipId={relationshipId} delivery={delivery} expanded={expandedId === row.id} visible={matches(row) || expandedId === row.id} autoFocus={newDraftId === row.id} localTimezone={localTimezone} queues={queues} onOpen={() => { setExpandedId((current) => current === row.id ? null : row.id); setNewDraftId(null) }} onSaved={onSaved} onRemove={removeDraft} onRefresh={refresh} onDelivery={(messageId, status) => { mutationVersion.current += 1; setDelivery((current) => ({ ...current, notifications: { ...current.notifications, [messageId]: status } })) }} />)}
             {!visibleCount ? <p className="px-4 py-8 text-center text-sm text-neutral-500">{query ? "No appointments match your search." : view === "drafts" ? "No drafts. Add one when you start working a lead." : view === "upcoming" ? "No upcoming appointments." : "No past appointments."}</p> : null}
         </List>
     </section>

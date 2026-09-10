@@ -54,7 +54,7 @@ test("Appointment Setting opens the relationship's dedicated appointment table",
 
 test("Appointment Setting appointments are relationship and service scoped with secure realtime reads", () => {
     const migration = readFileSync("supabase/migrations/20260903220000_appointment_setting_appointments.sql", "utf8")
-    const actions = readFileSync("app/[workspaceSlug]/appointment-setting/[relationshipId]/actions.ts", "utf8")
+    const actions = readFileSync("lib/appointment-setting-commands.ts", "utf8")
     const table = readFileSync("components/appointment-setting/AppointmentTable.tsx", "utf8")
 
     assert.match(migration, /create table if not exists public\.appointment_setting_appointments/)
@@ -75,7 +75,7 @@ test("Appointment Setting appointments are relationship and service scoped with 
 test("Appointment Setting onboarding config drives table fields and remote links", () => {
     const migration = readFileSync("supabase/migrations/20260904090000_appointment_setting_onboarding_configuration.sql", "utf8")
     const table = readFileSync("components/appointment-setting/AppointmentTable.tsx", "utf8")
-    const actions = readFileSync("app/[workspaceSlug]/appointment-setting/[relationshipId]/actions.ts", "utf8")
+    const actions = readFileSync("lib/appointment-setting-commands.ts", "utf8")
 
     assert.deepEqual(normalizeAppointmentMediums(["phone", "zoom", "invalid", "zoom"]), ["phone", "zoom"])
     assert.deepEqual(normalizeAppointmentRequestedFields([{ key: "email", required: true }, { key: "notes", required: false }]), [{ key: "email", required: true }, { key: "notes", required: false }])
@@ -96,7 +96,7 @@ test("Appointment Setting onboarding config drives table fields and remote links
 test("Appointment Setting drafts submit once and create an automated Communications message", () => {
     const migration = readFileSync("supabase/migrations/20260907140000_appointment_setting_drafts_and_submission.sql", "utf8")
     const table = readFileSync("components/appointment-setting/AppointmentTable.tsx", "utf8")
-    const actions = readFileSync("app/[workspaceSlug]/appointment-setting/[relationshipId]/actions.ts", "utf8")
+    const actions = readFileSync("lib/appointment-setting-commands.ts", "utf8")
 
     assert.match(migration, /workflow_status text not null default 'draft'/)
     assert.match(migration, /alter column contact_name drop not null/)

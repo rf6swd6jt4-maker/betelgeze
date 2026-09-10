@@ -1,7 +1,7 @@
 "use client"
 
 import { Fragment, type ReactNode } from "react"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams } from "@/components/workspace/WorkspaceNavigation"
 
 export type InstantFilterDefinition = {
     param: string

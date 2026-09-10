@@ -59,11 +59,15 @@ export async function offlineAccount() {
   return (await offlineRecords("account"))[0] || null;
 }
 
-function clearDraftStorage() {
+function clearDraftStorage(preservedUserId = null) {
+  // Stop live queues before removing their storage so an in-flight response
+  // cannot recreate another account's local drafts after logout.
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("betelgeze:offline-account-clearing", { detail: { preservedUserId } }));
   try {
     if (typeof localStorage === "undefined") return;
     for (const key of Object.keys(localStorage)) {
-      if (/^betelgeze:(?:native-chat:draft:|communications:draft:|appointment-draft:|offline-draft:)/.test(key)) localStorage.removeItem(key);
+      if (preservedUserId && key.startsWith(`betelgeze:appointment-draft:${preservedUserId}:`)) continue;
+      if (/^betelgeze:(?:native-chat:draft:|communications:draft:|appointment-draft:|relationship-draft:|offline-draft:)/.test(key)) localStorage.removeItem(key);
     }
   } catch { /* A denied localStorage must not prevent clearing IndexedDB. */ }
 }
@@ -79,7 +83,7 @@ export async function activateOfflineAccount(userId) {
   await transaction("readwrite", (store) => {
     const request = store.get("account");
     request.onsuccess = () => {
-      if (request.result && request.result.userId !== userId) { store.clear(); clearDraftStorage(); }
+      if (request.result && request.result.userId !== userId) { store.clear(); clearDraftStorage(userId); }
       store.put({ key: "account", userId, checkedAt: Date.now() });
       const old = store.getAll(IDBKeyRange.bound("outbox:", "outbox:\uffff"));
       old.onsuccess = () => { for (const item of old.result) if (item.state === "sent" && item.completedAt < Date.now() - ACK_TTL) store.delete(item.key); };

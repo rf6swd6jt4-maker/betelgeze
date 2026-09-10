@@ -13,8 +13,12 @@ import { createViewportOriginRecovery } from "@/lib/viewport-origin-recovery"
 import Link from "next/link"
 import { beginWorkspaceTabGesture } from "@/lib/workspace-tab-gesture"
 import dynamic from "next/dynamic"
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
+import { NativeWorkspaceTab, type NativePanelSnapshot, type NativeTabHandle } from "@/components/workspace/NativeWorkspaceTab"
+import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
+import { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
+import { nativeWorkspaceRoute } from "@/lib/workspace-native"
 import { AccountMenu } from "@/components/account/AccountMenu"
 import { Avatar } from "@/components/account/Avatar"
 import { LoadingOverlay } from "@/components/LoadingOverlay"
@@ -36,6 +40,7 @@ import { parseWorkspaceDetailPreview, storeWorkspaceDetailPreview, type Workspac
 import { focusedChatComposer, WORKSPACE_COMPOSER_FOCUS_EVENT, type WorkspaceComposerFocusEventDetail } from "@/lib/workspace-composer-viewport"
 import { visibleWorkspacePresence, workspacePresenceRoster, workspacePresenceTopic, type WorkspacePresenceMember, type WorkspacePresencePayload, type WorkspacePresenceRosterMember, type WorkspacePresenceState } from "@/lib/workspace-presence"
 import {
+    flushWorkspaceAutosaves,
     WORKSPACE_MUTATION_END,
     WORKSPACE_MUTATION_START,
     type WorkspaceMutationEventDetail,
@@ -126,6 +131,8 @@ type Props = {
     workspace: { id: string; name: string; slug: string }
     initialWorkspaceUrl?: string
     initialTab: WorkspaceInitialTab
+    nativePanelsEnabled?: boolean
+    nativeBanner?: ReactNode
     launchServerTiming?: WorkspaceShellBootstrapTiming
     currentUserId: string
     username: string
@@ -321,7 +328,7 @@ export function WorkspaceTopBarClient(props: Props) {
     return <WorkspaceTabsShell {...props} />
 }
 
-function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createOkrAction }: Props) {
+function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, nativePanelsEnabled = false, nativeBanner, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createOkrAction }: Props) {
     const online = useOnline()
     const pathname = usePathname()
     const searchParams = useSearchParams()
@@ -339,6 +346,19 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
     const tabStripRef = useRef<HTMLDivElement>(null)
     const tabFrameOrderRef = useRef<string[]>([initialTab.id])
     const iframeRefs = useRef(new Map<string, HTMLIFrameElement>())
+    const nativeRefs = useRef(new Map<string, NativeTabHandle>())
+    const nativeNavigationSequence = useRef(0)
+    const nativeMessageRef = useRef<(message: WorkspaceTabFrameMessage) => void>(() => {})
+    const nativeState = useMemo(() => ({
+        scope: `${currentUserId}:${workspace.id}`,
+        cache: new WorkspaceRecordCache<NativePanelSnapshot>(),
+        scroll: new WorkspaceTabScrollStore(),
+    }), [currentUserId, workspace.id])
+    const nativeCache = nativeState.cache
+    const nativeScrollPositions = nativeState.scroll
+    const nativeAccountScope = nativeState.scope
+    const [clearedNativeAccount, setClearedNativeAccount] = useState<string | null>(null)
+    const receiveNativeMessage = useCallback((message: WorkspaceTabFrameMessage) => nativeMessageRef.current(message), [])
     const loadedTabIdsRef = useRef(new Set<string>())
     // An iframe's load event fires before its React effects have necessarily
     // installed WorkspaceTabBridge's message listener. Keep that distinction:
@@ -418,6 +438,16 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         { id: currentUserId, name: username, avatarSrc: avatarSrc ?? null },
     ])
     const [initialPanelReady, setInitialPanelReady] = useState(false)
+    const prepareNativeLeave = useCallback(async () => {
+        const sequence = ++nativeNavigationSequence.current
+        if (!nativeRefs.current.has(activeTabIdRef.current)) return true
+        const safe = await flushWorkspaceAutosaves(1500, { navigation: true })
+        if (sequence !== nativeNavigationSequence.current) return false
+        if (safe) return true
+        setBackgroundMutationState("error")
+        setBackgroundMutationError("Your changes are not safely saved yet. Keep this panel open and retry saving.")
+        return false
+    }, [])
     const defaultWorkspaceUrl = `/${workspace.slug}`
     const tabsStorageKey = `betelgeze:workspace-tabs:${workspace.slug}`
     const capabilitySet = new Set(workspaceCapabilities)
@@ -555,11 +585,43 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         sessionStorage.setItem(tabsStorageKey, JSON.stringify({ mode: "live", tabs: nextTabs, activeId: nextActiveId }))
         const active = nextTabs.find((tab) => tab.id === nextActiveId)
         if (active) {
+            if (nativePanelsEnabled && `${window.location.pathname}${window.location.search}${window.location.hash}` !== active.url) {
+                window.history.pushState({ ...window.history.state, betelgezeWorkspace: { tabId: active.id, url: active.url } }, "", active.url)
+            }
             const restoreUrl = workspaceLaunchUrlForRestore(active.url, workspace.slug) ?? active.url
             const restoreTab = nextTabs.find((tab) => tab.url === restoreUrl) ?? active
             persistWorkspaceLaunchHint({ workspaceSlug: workspace.slug, tabId: restoreTab.id, url: restoreUrl })
         }
-    }, [tabsStorageKey, workspace.slug])
+    }, [tabsStorageKey, workspace.slug, nativePanelsEnabled])
+
+    useEffect(() => {
+        if (!nativePanelsEnabled) return
+        const restore = async () => {
+            const url = normalizeWorkspaceUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`)
+            if (!canOpenWorkspaceUrl(url)) return
+            const previous = tabsRef.current.find((tab) => tab.id === activeTabIdRef.current)
+            if (!await prepareNativeLeave()) {
+                if (previous) window.history.replaceState(window.history.state, "", previous.url)
+                return
+            }
+            const storedId = window.history.state?.betelgezeWorkspace?.tabId
+            const target = tabsRef.current.find((tab) => tab.id === storedId) ?? tabsRef.current.find((tab) => tab.url === url) ?? previous
+            if (!target) return
+            const knownIndex = target.history.lastIndexOf(url)
+            const nextTabs = tabsRef.current.map((tab) => tab.id === target.id ? {
+                ...tab, url, title: titleForUrl(url),
+                ...(knownIndex >= 0 ? { historyIndex: knownIndex } : appendWorkspaceTabHistory(tab.history, tab.historyIndex, url)),
+            } : tab)
+            tabsRef.current = nextTabs
+            activeTabIdRef.current = target.id
+            setTabs(nextTabs)
+            activateWorkspaceTab(target.id)
+            saveTabsState(nextTabs, target.id)
+        }
+        const receive = () => { void restore() }
+        window.addEventListener("popstate", receive)
+        return () => window.removeEventListener("popstate", receive)
+    }, [nativePanelsEnabled, normalizeWorkspaceUrl, canOpenWorkspaceUrl, prepareNativeLeave, titleForUrl, activateWorkspaceTab, saveTabsState])
 
     const showCreationNotice = useCallback((notice: CreationNotice) => {
         if (creationNoticeTimeoutRef.current) window.clearTimeout(creationNoticeTimeoutRef.current)
@@ -712,6 +774,19 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
     }, [canOpenWorkspaceUrl, normalizeWorkspaceUrl, tabsStorageKey, titleForUrl])
 
     useEffect(() => {
+        const clear = (event: Event) => {
+            const preserved = (event as CustomEvent<{ preservedUserId?: string }>).detail?.preservedUserId
+            if (preserved !== currentUserId) {
+                setClearedNativeAccount(nativeAccountScope)
+                nativeCache.clear()
+                nativeScrollPositions.clear()
+            }
+        }
+        window.addEventListener("betelgeze:offline-account-clearing", clear)
+        return () => { window.removeEventListener("betelgeze:offline-account-clearing", clear); nativeCache.clear(); nativeScrollPositions.clear() }
+    }, [nativeCache, nativeScrollPositions, nativeAccountScope, currentUserId])
+
+    useEffect(() => {
         markWorkspaceLaunch("shell_hydrated_ms")
     }, [])
 
@@ -735,6 +810,8 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
     }, [editingTabId])
 
     const postToTab = useCallback((tabId: string, message: Omit<WorkspaceTabParentMessage, "source" | "target" | "tabId">) => {
+        const native = nativeRefs.current.get(tabId)
+        if (native) { native.post(message); return true }
         const frame = iframeRefs.current.get(tabId)
         if (!frame?.contentWindow) return false
         const payload: WorkspaceTabParentMessage = {
@@ -770,6 +847,11 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         })
     }, [initialTab.id])
 
+    const assignNativeTabRef = useCallback((tabId: string, handle: NativeTabHandle | null) => {
+        if (handle) nativeRefs.current.set(tabId, handle)
+        else nativeRefs.current.delete(tabId)
+    }, [])
+
     const markTabFrameReady = useCallback((tabId: string) => {
         loadedTabIdsRef.current.add(tabId)
         setLoadedTabIds((current) => {
@@ -794,6 +876,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
     }, [initialTab.id, initialTab.url, launchServerTiming, workspace.slug])
 
     const ensureTabFrameLocation = useCallback((tabId: string, url: string, mode: "assign" | "replace" = "assign") => {
+        if (nativeRefs.current.has(tabId)) return false
         const frame = iframeRefs.current.get(tabId)
         if (!frame?.contentWindow) return false
         const target = workspaceTabFrameUrl(url, tabId, window.location.origin)
@@ -915,7 +998,8 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         return true
     }, [activateWorkspaceTab, postToTab, saveTabsState])
 
-    const openWorkspaceTab = useCallback((href: string, detailPreview?: WorkspaceDetailPreview, sourceTabId?: string) => {
+    const openWorkspaceTab = useCallback(async (href: string, detailPreview?: WorkspaceDetailPreview, sourceTabId?: string) => {
+        if (!await prepareNativeLeave()) return
         const url = normalizeWorkspaceUrl(href)
         if (detailPreview) storeWorkspaceDetailPreview(url, detailPreview)
         const currentTabs = tabsRef.current
@@ -972,7 +1056,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         setContextOpenByTab((current) => ({ ...current, [tab.id]: true }))
         saveTabsState(nextTabs, tab.id)
         window.requestAnimationFrame(() => postToTab(previousTabId, { type: "activate", active: false, refresh: false }))
-    }, [activateWorkspaceTab, beginTabNavigation, ensureTabFrameLocation, normalizeWorkspaceUrl, postToTab, requestTabFrameNavigation, saveTabsState, titleForUrl, updateTabForShellNavigation, workspace.slug])
+    }, [activateWorkspaceTab, beginTabNavigation, ensureTabFrameLocation, normalizeWorkspaceUrl, postToTab, requestTabFrameNavigation, saveTabsState, titleForUrl, updateTabForShellNavigation, workspace.slug, prepareNativeLeave])
 
     useEffect(() => {
         function openPortalledDetail(event: MouseEvent) {
@@ -994,14 +1078,45 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         return () => document.removeEventListener("click", openPortalledDetail, true)
     }, [openWorkspaceTab, workspace.slug])
 
+    const traverseHistory = useCallback(async (step: -1 | 1) => {
+        if (!await prepareNativeLeave()) return
+        const tabId = activeTabIdRef.current
+        const currentTabs = tabsRef.current
+        const tab = currentTabs.find((candidate) => candidate.id === tabId)
+        if (!tab) return
+        const destination = workspaceTabHistoryStep(tab.history, tab.historyIndex, step)
+        if (!destination) return
+
+        beginTabNavigation(tabId, destination.url)
+        const nextTabs = currentTabs.map((candidate) => candidate.id === tabId
+            ? { ...candidate, url: destination.url, title: titleForUrl(destination.url), historyIndex: destination.historyIndex }
+            : candidate)
+        setTabs(nextTabs)
+        saveTabsState(nextTabs, tabId)
+        pendingNavigationRef.current.set(tabId, destination.url)
+        requestTabFrameNavigation(tabId, destination.url, "replace")
+    }, [prepareNativeLeave, beginTabNavigation, titleForUrl, saveTabsState, requestTabFrameNavigation])
+
+    const openCreate = useCallback((target: "relationship" | "work-item" | "asset" | "okr") => {
+        if (target === "relationship" && !canAccessWorkspacePanel(WORKSPACE_PANELS[0], workspaceRole, workspaceCapabilities)) return
+        if ((target === "work-item" || target === "asset") && !canAccessWorkspacePanel(WORKSPACE_PANELS[5], workspaceRole, workspaceCapabilities)) return
+        if (target === "okr" && !canAccessPrivateWorkspacePanels(workspaceRole)) return
+        window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: "workspace-create" }))
+        setCreateTarget(target)
+    }, [workspaceRole, workspaceCapabilities])
+
     useEffect(() => {
-        function receiveFrameMessage(event: MessageEvent<WorkspaceTabFrameMessage>) {
+        function receiveFrameMessage(event: MessageEvent<WorkspaceTabFrameMessage>, native = false) {
             if (event.origin !== window.location.origin) return
             const message = event.data
             if (message?.source !== WORKSPACE_TAB_MESSAGE_SOURCE || message.target !== "host") return
             const frame = iframeRefs.current.get(message.tabId)
-            if (!frame || event.source !== frame.contentWindow) return
+            if (native ? !nativeRefs.current.has(message.tabId) : !frame || event.source !== frame.contentWindow) return
 
+            if (native && message.type === "history-step") {
+                void traverseHistory(message.historyDelta === -1 ? -1 : 1)
+                return
+            }
             if (message.type === "record-title" && message.url && typeof message.title === "string") {
                 const recordTitle = { url: normalizeWorkspaceUrl(message.url), title: message.title.slice(0, 200) }
                 setTabs((existingTabs) => {
@@ -1015,6 +1130,12 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
 
             if (message.type === "location-replace" && message.url) {
                 const url = normalizeWorkspaceUrl(message.url)
+                if (native) {
+                    // A native replace requests navigation; readiness arrives
+                    // separately after the destination has actually rendered.
+                    pendingNavigationRef.current.set(message.tabId, url)
+                    beginTabNavigation(message.tabId, url)
+                } else {
                 markTabFrameReady(message.tabId)
                 reportInitialPanelReady(message.tabId)
                 readyTabIdsRef.current.add(message.tabId)
@@ -1027,6 +1148,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
                 pendingNavigationRef.current.delete(message.tabId)
                 completeTabNavigation(message.tabId)
                 if (message.tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
+                }
                 setTabs((existingTabs) => {
                     const updatedTabs = existingTabs.map((tab) => {
                         if (tab.id !== message.tabId) return tab
@@ -1149,6 +1271,14 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
             }
 
             if (message.type === "navigation-start") {
+                if (native && message.url) {
+                    const destination = new URL(message.url, window.location.origin)
+                    const creation = destination.searchParams.get("create")
+                    if (creation === "relationship" || creation === "work-item" || creation === "asset" || creation === "okr") {
+                        openCreate(creation)
+                        return
+                    }
+                }
                 if (message.url) {
                     const url = normalizeWorkspaceUrl(message.url)
                     beginTabNavigation(message.tabId, url)
@@ -1193,9 +1323,11 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
             }
         }
 
-        window.addEventListener("message", receiveFrameMessage)
-        return () => window.removeEventListener("message", receiveFrameMessage)
-    }, [beginTabNavigation, completeTabNavigation, markTabFrameReady, normalizeWorkspaceUrl, openWorkspaceTab, postToTab, reopenClosedTab, reportInitialPanelReady, requestTabFrameNavigation, routeCanShowRelationshipContext, saveTabsState, scheduleSoftNavigationFallback, setTabContextOpen, setTabContextStatus, showCreationNotice, titleForUrl, updateTabForShellNavigation, workspace.slug])
+        nativeMessageRef.current = (message) => receiveFrameMessage({ origin: window.location.origin, data: message } as MessageEvent<WorkspaceTabFrameMessage>, true)
+        const receive = (event: MessageEvent<WorkspaceTabFrameMessage>) => receiveFrameMessage(event)
+        window.addEventListener("message", receive)
+        return () => { nativeMessageRef.current = () => {}; window.removeEventListener("message", receive) }
+    }, [openCreate, traverseHistory, beginTabNavigation, completeTabNavigation, markTabFrameReady, normalizeWorkspaceUrl, openWorkspaceTab, postToTab, reopenClosedTab, reportInitialPanelReady, requestTabFrameNavigation, routeCanShowRelationshipContext, saveTabsState, scheduleSoftNavigationFallback, setTabContextOpen, setTabContextStatus, showCreationNotice, titleForUrl, updateTabForShellNavigation, workspace.slug])
 
     useEffect(() => {
         if (!tabsHydrated || readyTabIdsRef.current.has(initialTab.id)) return
@@ -1220,8 +1352,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         }
         function end(event: Event) {
             const detail = (event as CustomEvent<WorkspaceMutationEventDetail>).detail
-            const tabId = activeTabIdRef.current
+            const tabId = [...mutationIdsByTabRef.current].find(([, ids]) => ids.has(detail?.mutationId))?.[0] ?? activeTabIdRef.current
             if (!tabId || !detail?.mutationId) return
+            if (!detail.failed) { nativeCache.invalidate(); mutationRevisionRef.current += 1 }
             const active = mutationIdsByTabRef.current.get(tabId) ?? new Set<string>()
             active.delete(detail.mutationId)
             mutationIdsByTabRef.current.set(tabId, active)
@@ -1235,7 +1368,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
             window.removeEventListener(WORKSPACE_MUTATION_START, start)
             window.removeEventListener(WORKSPACE_MUTATION_END, end)
         }
-    }, [])
+    }, [nativeCache])
 
     useEffect(() => {
         if (backgroundMutationState !== "saved") return
@@ -1572,22 +1705,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         })
     }, [tabs, tabsHydrated, workspace.slug])
 
-    function traverseHistory(step: -1 | 1) {
-        const tabId = activeTabIdRef.current
-        const tab = tabs.find((candidate) => candidate.id === tabId)
-        if (!tab) return
-        const destination = workspaceTabHistoryStep(tab.history, tab.historyIndex, step)
-        if (!destination) return
-
-        beginTabNavigation(tabId, destination.url)
-        const nextTabs = tabs.map((candidate) => candidate.id === tabId
-            ? { ...candidate, url: destination.url, title: titleForUrl(destination.url), historyIndex: destination.historyIndex }
-            : candidate)
-        setTabs(nextTabs)
-        saveTabsState(nextTabs, tabId)
-        pendingNavigationRef.current.set(tabId, destination.url)
-        requestTabFrameNavigation(tabId, destination.url, "replace")
-    }
 
     function goBack() {
         traverseHistory(-1)
@@ -1616,13 +1733,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         window.requestAnimationFrame(() => mobileSearchInputRef.current?.focus())
     }
 
-    function openCreate(target: "relationship" | "work-item" | "asset" | "okr") {
-        if (target === "relationship" && !canAccessWorkspacePanel(WORKSPACE_PANELS[0], workspaceRole, workspaceCapabilities)) return
-        if ((target === "work-item" || target === "asset") && !canAccessWorkspacePanel(WORKSPACE_PANELS[5], workspaceRole, workspaceCapabilities)) return
-        if (target === "okr" && !canAccessPrivateWorkspacePanels(workspaceRole)) return
-        window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: "workspace-create" }))
-        setCreateTarget(target)
-    }
 
     function directSearchHref(value: string) {
         const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ")
@@ -1685,7 +1795,8 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         if (window.matchMedia("(max-width: 767px)").matches) setSidebarOpen(false)
     }
 
-    function navigateActiveTab(href: string) {
+    async function navigateActiveTab(href: string) {
+        if (!await prepareNativeLeave()) return
         setMobileContextKey(null)
         const tabId = activeTabIdRef.current
         if (!tabId) return
@@ -1746,7 +1857,8 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         window.requestAnimationFrame(() => postToTab(tabId, { type: "activate", active, refresh: false }))
     }
 
-    const switchTab = useCallback((tab: WorkspaceTab) => {
+    const switchTab = useCallback(async (tab: WorkspaceTab) => {
+        if (!await prepareNativeLeave()) return
         if (tab.id === activeTabIdRef.current) return
         const previousTabId = activeTabIdRef.current
         const refresh = tab.seenRevision < mutationRevisionRef.current
@@ -1765,7 +1877,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
                 beginTabNavigation(tab.id, desiredUrl)
             }
         })
-    }, [activateWorkspaceTab, beginTabNavigation, ensureTabFrameLocation, postToTab, saveTabsState, tabs])
+    }, [activateWorkspaceTab, beginTabNavigation, ensureTabFrameLocation, postToTab, saveTabsState, tabs, prepareNativeLeave])
 
     useEffect(() => {
         function receiveBuilderReturn(event: MessageEvent<OnboardingBuilderWindowSignal>) {
@@ -1923,7 +2035,8 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         lastTouchTabTapRef.current = { tabId: tab.id, time: now }
     }
 
-    function addTab() {
+    async function addTab() {
+        if (!await prepareNativeLeave()) return
         if (!canAddTab || tabs.length >= 8) return
         const currentTab = tabs.find((candidate) => candidate.id === activeTabIdRef.current)
         const url = currentTab?.url ?? defaultWorkspaceUrl
@@ -1962,7 +2075,8 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         setTabContextOpen(tabId, nextOpen)
     }
 
-    function closeTab(tabId: string) {
+    async function closeTab(tabId: string) {
+        if (!await prepareNativeLeave()) return
         if (tabs.length <= 1) return
         const tabIndex = tabs.findIndex((tab) => tab.id === tabId)
         const closedTab = tabs[tabIndex]
@@ -2047,6 +2161,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
     const frameTabs = orderWorkspaceTabsByStableIds(tabs, tabFrameOrder)
         .filter((tab) => tab.id === activeTabId || residentTabIdSet.has(tab.id))
     const activeTab = visibleTabs.find((tab) => tab.id === activeTabId) ?? visibleTabs[0]
+    const activeNativePanel = nativePanelsEnabled && Boolean(nativeWorkspaceRoute(activeTab.url, workspace.slug))
     const activeTabLoaded = loadedTabIds.has(activeTab.id)
     const canGoBack = activeTabLoaded && activeTab.historyIndex > 0
     const canGoForward = activeTabLoaded && activeTab.historyIndex < activeTab.history.length - 1
@@ -2459,7 +2574,11 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
         </div>
 
         <div data-workspace-tab-panels className={`fixed bottom-0 top-[6.25rem] z-30 overflow-hidden bg-neutral-950 ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
-            {frameTabs.map((tab) => (
+            {frameTabs.map((tab) => nativePanelsEnabled && nativeWorkspaceRoute(tab.url, workspace.slug) ? (
+                <NativeWorkspaceTab key={tab.id} tab={tab} active={tab.id === activeTabId}
+                    contextOpen={contextOpenByTab[tab.id] ?? true} workspaceId={workspace.id} workspaceSlug={workspace.slug}
+                    userId={currentUserId} cache={nativeCache} accountCleared={clearedNativeAccount === nativeAccountScope} scrollPositions={nativeScrollPositions} banner={nativeBanner} assignRef={assignNativeTabRef} onMessage={receiveNativeMessage} />
+            ) : (
                 <WorkspaceTabFrame
                     key={tab.id}
                     tab={tab}
@@ -2468,10 +2587,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
                     onLoad={() => handleFrameLoad(tab.id, tab.url)}
                 />
             ))}
-            {tabsHydrated && activeRouteLoading && (
+            {tabsHydrated && activeRouteLoading && !activeNativePanel && (
                 <div className="absolute inset-0 z-20 bg-neutral-950" aria-hidden="true" />
             )}
-            {!loadedTabIds.has(activeTabId) && !activeRouteLoading && (
+            {!loadedTabIds.has(activeTabId) && !activeRouteLoading && !activeNativePanel && (
                 <div className="absolute inset-0 z-10 overflow-y-auto bg-neutral-950">
                     <WorkspaceTabOpeningState url={activeTab.url} workspaceSlug={workspace.slug} detailPreview={activeTab.detailPreview} />
                 </div>
@@ -2492,7 +2611,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, launch
             />
         )}
 
-        {activeRouteLoading && <LoadingOverlay />}
+        {activeRouteLoading && !activeNativePanel && <LoadingOverlay />}
 
         {creationNotice ? <WorkspaceSuccessNotice label={creationNotice.label} actionLabel="View" onAction={viewCreatedRecord} /> : null}
 

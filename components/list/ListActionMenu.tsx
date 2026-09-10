@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useId, useState } from "react"
-import Link from "next/link"
+import Link from "@/components/workspace/WorkspaceLink"
 import { AnchoredPopup } from "@/components/ui"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 

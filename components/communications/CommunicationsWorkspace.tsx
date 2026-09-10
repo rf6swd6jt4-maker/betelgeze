@@ -26,6 +26,7 @@ import { PinnedMessageBar } from "@/components/communications/PinnedMessageBar"
 import { ResizableConversationColumns } from "@/components/communications/ResizableConversationColumns"
 import { NativeAttachment } from "@/components/communications/NativeAttachment"
 import { useConversationHistory } from "@/components/communications/useConversationHistory"
+import type { CommunicationHistoryPage } from "@/lib/communications/history-page"
 import { useConversationLayout } from "@/components/communications/useConversationLayout"
 import { prepareCommunicationMedia } from "@/lib/communications/prepare-media"
 import { ConversationMedia } from "@/components/communications/ConversationMedia"
@@ -239,6 +240,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const { setConversations } = updates
     const [schemaReady, setSchemaReady] = useState(bootstrap.schemaReady)
     const [selectedId, setSelectedId] = useState(bootstrap.selectedConversationId)
+    const bootstrappedSelection = useRef(bootstrap.selectedConversationId)
     const [search, setSearch] = useState("")
     const [draft, setDraft] = useState("")
     const restoredDraftKey = useRef<string | null>(null)
@@ -282,7 +284,19 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const readRequestRef = useRef<string | null>(null)
     const workspaceTabActive = useWorkspaceTabActive()
     const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null
-    const history = useConversationHistory(selectedId, selected?.messages ?? [])
+    const history = useConversationHistory(selectedId, selected?.messages ?? [], {
+        hasMore: Boolean(selected?.messageWindowStart),
+        load: async (before, signal) => {
+            const conversationId = selectedId!
+            const read = updates.beginRead()
+            const query = new URLSearchParams({ relationshipId: conversationId, beforeId: before.id, beforeCreatedAt: before.createdAt })
+            const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/messages?${query}`, { cache: "no-store", signal })
+            const result = await response.json() as CommunicationHistoryPage<CommunicationMessage> & { error?: string }
+            if (!response.ok || !Array.isArray(result.messages)) throw new Error(result.error ?? "Could not load earlier messages.")
+            if (!signal.aborted) updates.mergeReadMessages(read, conversationId, result.messages)
+            return result
+        },
+    })
     const messagePaneInteractions = useMessagePaneInteractions(composerRef)
 
     useEffect(() => {
@@ -648,6 +662,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
 
     useEffect(() => {
         if (!selectedId) return
+        if (bootstrappedSelection.current === selectedId) { bootstrappedSelection.current = null; return }
         const controller = new AbortController()
         const read = updates.beginRead()
         void fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/messages?relationshipId=${encodeURIComponent(selectedId)}`, { signal: controller.signal })
@@ -944,7 +959,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                     <div key={selectedId} data-message-pane tabIndex={0} ref={messagePaneRef} {...messagePaneInteractions} style={{ overflowAnchor: "none" }} className="invisible data-[positioned=true]:visible h-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-contain bg-[radial-gradient(circle_at_top,_rgba(38,38,38,0.5),_transparent_38%)] px-3 py-5 sm:px-6">
                         <div className="mx-auto flex min-h-full w-full min-w-0 max-w-3xl flex-col gap-2 lg:max-w-none">
                             {selected.messages.length ? <div aria-hidden="true" className="mt-auto" /> : null}
-                            {history.startIndex > 0 ? <button type="button" onClick={() => { followLatestRef.current = false; history.reveal() }} className="mx-auto shrink-0 px-3 py-2 text-xs text-neutral-500 hover:text-white">Load earlier messages</button> : null}
+                            {history.hasEarlier ? <button type="button" disabled={history.loadingEarlier} onClick={() => { followLatestRef.current = false; void history.loadEarlier() }} className="mx-auto shrink-0 px-3 py-2 text-xs text-neutral-500 hover:text-white">{history.loadingEarlier ? "Loading earlier messages…" : "Load earlier messages"}</button> : null}
+                            {history.historyError ? <p role="alert" className="px-3 py-2 text-center text-xs text-red-400">{history.historyError}</p> : null}
                             {selected.messages.length ? selected.messages.slice(history.startIndex).map((message, visibleIndex) => {
                             const index = history.startIndex + visibleIndex
                             const showDay = index === 0 || !sameDay(selected.messages[index - 1].createdAt, message.createdAt)

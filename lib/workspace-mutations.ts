@@ -33,9 +33,10 @@ export type WorkspaceMutationOptions = {
     category?: "onboarding" | "services" | "leadgen" | "billing" | "communications" | "gantt" | "integrations" | "maintenance" | "system"
 }
 
-type AutosaveFlusher = () => Promise<void>
+type AutosaveFlusher = () => Promise<void | boolean>
+type AutosaveOptions = { checkpoint?: () => boolean }
 
-const autosaveFlushers = new Set<AutosaveFlusher>()
+const autosaveFlushers = new Map<AutosaveFlusher, AutosaveOptions>()
 
 function newMutationId() {
     return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -58,21 +59,33 @@ function categoryForPath(pathname: string): WorkspaceMutationOptions["category"]
     return "system"
 }
 
-export function registerWorkspaceAutosaveFlusher(flusher: AutosaveFlusher) {
-    autosaveFlushers.add(flusher)
+export function registerWorkspaceAutosaveFlusher(flusher: AutosaveFlusher, options: AutosaveOptions = {}) {
+    autosaveFlushers.set(flusher, options)
     return () => autosaveFlushers.delete(flusher)
 }
 
-export async function flushWorkspaceAutosaves(timeoutMs = 1500) {
-    if (!autosaveFlushers.size) return
+export async function flushWorkspaceAutosaves(timeoutMs = 1500, options: { navigation?: boolean } = {}) {
+    if (!autosaveFlushers.size) return true
     let timeoutId: number | null = null
-    await Promise.race([
-        Promise.allSettled([...autosaveFlushers].map((flush) => flush())),
-        new Promise<void>((resolve) => {
-            timeoutId = window.setTimeout(resolve, timeoutMs)
+    const saved = await Promise.race([
+        Promise.all([...autosaveFlushers].map(async ([flush, registration]) => {
+            if (options.navigation && registration.checkpoint) {
+                try {
+                    if (registration.checkpoint()) { void flush().catch(() => undefined); return true }
+                } catch { /* Storage must succeed before skipping the network wait. */ }
+            }
+            try {
+                const result = await flush()
+                if (result === false) return false
+                return !options.navigation || !registration.checkpoint || registration.checkpoint()
+            } catch { return false }
+        })).then((results) => results.every(Boolean)),
+        new Promise<boolean>((resolve) => {
+            timeoutId = window.setTimeout(() => resolve(false), timeoutMs)
         }),
     ])
     if (timeoutId !== null) window.clearTimeout(timeoutId)
+    return saved
 }
 
 export async function reportWorkspaceMutation(input: {

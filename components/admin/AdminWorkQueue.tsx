@@ -7,7 +7,7 @@ import { MobileListActionSurface } from "@/components/list/MobileCardActionSurfa
 import { FilterRail, FilterRailButton, FilterRailCount } from "@/components/panel/FilterRail"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { Assignee, SquarePill, Status, type StatusTone } from "@/components/ui"
-import type { AdminWorkItem } from "@/lib/admin/work-items"
+import type { AdminWorkItemDisplay as AdminWorkItem } from "@/lib/admin/work-item-display"
 import { formatOkrMetricValue } from "@/lib/admin/okr-metrics"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { workItemPriorityLabel } from "@/lib/work-item-priority"

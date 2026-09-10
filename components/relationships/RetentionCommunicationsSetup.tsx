@@ -1,8 +1,8 @@
 "use client"
 
-import Link from "next/link"
+import Link from "@/components/workspace/WorkspaceLink"
 import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import { Status } from "@/components/ui"
 import { requestRetentionMessagingConfirmation } from "@/app/[workspaceSlug]/relationships/actions"
 

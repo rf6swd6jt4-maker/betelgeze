@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { usePathname } from "next/navigation"
+import { usePathname } from "./WorkspaceNavigation"
 
 import { workspaceRouteUsesSharedBanner } from "@/lib/workspace-panel-chrome"
 

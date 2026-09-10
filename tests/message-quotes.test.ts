@@ -6,6 +6,7 @@ import { resolve } from "node:path"
 import ts from "typescript"
 import * as formatting from "../lib/chat-formatting.ts"
 import * as coordinated from "../lib/communications/coordinated-updates.ts"
+import * as historyPage from "../lib/communications/history-page.ts"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
@@ -84,6 +85,7 @@ function fixture(options: { access?: boolean; original?: boolean; originalBody?:
         "next/server": { after: () => undefined },
         "@/lib/push/chat-notifications": {}, "@/lib/onboarding/uploads": {}, "@/lib/supabase/server": {},
         "@/lib/communications/encryption": {}, "@/lib/teams/message-editing": {}, "@/lib/communications/message-quotes": quotes,
+        "@/lib/communications/history-page": historyPage,
     })
     return { writes, send: (patch: Record<string, unknown> = {}) => route.POST(new Request("http://localhost/api", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId, clientRequestId, replyToMessageId: messageId, body: "reply", quote: { text: "two", start: 4, end: 7 }, ...patch }) }), { params: Promise.resolve({ workspaceSlug: "test" }) }) as Promise<Response> }
 }

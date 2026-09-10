@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { workspaceNativePanelsEnabled } from "@/lib/workspace-native"
 import { Suspense } from "react"
 import { notFound } from "next/navigation"
 import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailFieldsLoading, DetailPageHeader } from "@/components/detail"
@@ -124,6 +125,7 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
     return <>
         {relationship.lifecycle_phase === "retention" && ["creator_dm", "messaging_confirmation"].includes(String(relationship.source_metadata.portal_handoff)) ? <RetentionCommunicationsSetup manualHandoff={relationship.source_metadata.portal_handoff === "creator_dm"} workspaceSlug={workspaceSlug} relationshipId={relationship.id} pending={relationship.source_metadata.external_messaging_pending === true} canRequest={role === "owner" || role === "admin" || relationship.seller_user_id === userId} provider={relationship.communication_primary_provider} /> : null}
         <RelationshipDealWorkspace
+        backgroundCommandsEnabled={workspaceNativePanelsEnabled(workspaceId, process.env.WORKSPACE_RELATIONSHIP_DRAFT_COMMANDS)}
         workspaceSlug={workspaceSlug}
         workspaceName={publicBranding.displayName}
         logoSrc={agencyLogoSrc}

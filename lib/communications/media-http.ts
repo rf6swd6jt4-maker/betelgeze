@@ -11,3 +11,25 @@ export function communicationMediaRequestHeaders(request: Request, preview: bool
 export function communicationMediaStatusIsValid(status: number) {
     return (status >= 200 && status < 300) || status === 304 || status === 416
 }
+
+/** Authorize before calling. A prepared preview needs only one storage request. */
+export async function loadCommunicationMediaRepresentation(input: {
+    originalPath: string
+    previewPath: string
+    preview: boolean
+    method: "HEAD" | "GET"
+    load: (path: string) => Promise<Response>
+    prepare: () => Promise<boolean>
+}) {
+    let deliveryPath = input.preview ? input.previewPath : input.originalPath
+    let response = await input.load(deliveryPath)
+    if (input.preview && response.status === 404) {
+        await response.body?.cancel()
+        // A HEAD never creates an object. A legacy GET can repair a missing
+        // derivative, but preparation failure must not hide the stored original.
+        const prepared = input.method === "GET" && await input.prepare().catch(() => false)
+        deliveryPath = prepared ? input.previewPath : input.originalPath
+        response = await input.load(deliveryPath)
+    }
+    return { response, deliveryPath }
+}

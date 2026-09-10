@@ -1,8 +1,8 @@
 "use client"
 
-import Link from "next/link"
+import Link from "@/components/workspace/WorkspaceLink"
 import { useEffect, useMemo, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "@/components/workspace/WorkspaceNavigation"
 
 import { WORKSPACE_TAB_FRAME_PARAM, workspaceTabFrameUrl } from "@/lib/workspace-tabs"
 

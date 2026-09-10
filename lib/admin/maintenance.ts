@@ -1,8 +1,9 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { maintenanceBugTitle, resolveMaintenanceError } from "@/lib/admin/error-catalogue"
 import { sanitizeAdminActivityPayload } from "@/lib/admin/activity-sanitizer"
+import { MAINTENANCE_CATEGORIES } from "@/lib/admin/presentation"
 
-export const MAINTENANCE_CATEGORIES = ["services", "leadgen", "onboarding", "billing", "communications", "integrations", "system_health"] as const
+export { MAINTENANCE_CATEGORIES, maintenanceCategoryLabel } from "@/lib/admin/presentation"
 export type MaintenanceCategory = (typeof MAINTENANCE_CATEGORIES)[number]
 export const MAINTENANCE_ROUTE_KEYS = ["global", ...MAINTENANCE_CATEGORIES] as const
 export type MaintenanceRouteKey = (typeof MAINTENANCE_ROUTE_KEYS)[number]
@@ -39,12 +40,6 @@ export type MaintenanceWorkItem = {
     native_href: string | null
     metadata: Record<string, unknown>
     assignee_ids: string[]
-}
-
-export function maintenanceCategoryLabel(category: MaintenanceCategory) {
-    if (category === "leadgen") return "Lead Gen"
-    if (category === "system_health") return "System Health"
-    return category.slice(0, 1).toUpperCase() + category.slice(1)
 }
 
 export function platformFailureFingerprint(parts: Array<string | number | null | undefined>) {

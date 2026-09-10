@@ -1,8 +1,9 @@
 import type { AdminActivityMetricEvent } from "@/lib/admin/activity-metrics"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { sanitizeAdminActivityPayload } from "@/lib/admin/activity-sanitizer"
+import { ADMIN_ACTIVITY_CATEGORIES } from "@/lib/admin/presentation"
 
-export const ADMIN_ACTIVITY_CATEGORIES = ["onboarding", "services", "leadgen", "billing", "communications", "gantt", "integrations", "maintenance", "system"] as const
+export { ADMIN_ACTIVITY_CATEGORIES, adminActivityCategoryLabel } from "@/lib/admin/presentation"
 export type AdminActivityCategory = (typeof ADMIN_ACTIVITY_CATEGORIES)[number]
 export type AdminActivityLevel = "info" | "warning" | "error"
 export type AdminActivityDirection = "outbound" | "inbound"
@@ -84,11 +85,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 function numberValue(value: unknown) {
     const number = Number(value)
     return Number.isFinite(number) ? number : 0
-}
-
-export function adminActivityCategoryLabel(category: AdminActivityCategory) {
-    if (category === "leadgen") return "Lead Gen"
-    return category.slice(0, 1).toUpperCase() + category.slice(1)
 }
 
 export function encodeAdminActivityCursor(cursor: AdminActivityCursor) {

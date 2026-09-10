@@ -3,6 +3,7 @@
 import { createPortal } from "react-dom"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/lib/workspace-tabs"
+import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 import { anchoredPopupPosition } from "./anchored-popup-position"
 
 type PopupPosition = {
@@ -52,13 +53,15 @@ export function AnchoredPopup({
     onDismiss?: () => void
     workItemPopup?: boolean
 }) {
+    const navigation = useWorkspaceNavigation()
+    const active = navigation?.active !== false
     const popupRef = useRef<HTMLDivElement>(null)
     const [position, setPosition] = useState<PopupPosition | null>(null)
     const host = useMemo(() => anchor ? popupHost(anchor) : null, [anchor])
 
     const updatePosition = useCallback(() => {
         const popup = popupRef.current
-        if (!anchor || !popup) return
+        if (!active || !anchor || !popup) return
         const currentHost = popupHost(anchor)
         const rect = anchorRectInHost(anchor, currentHost.frameRect)
         const triggerRect = anchorPoint ? { left: rect.left + anchorPoint.x, right: rect.left + anchorPoint.x, top: rect.top + anchorPoint.y } : rect
@@ -75,20 +78,20 @@ export function AnchoredPopup({
             align,
             fallbackBelow: Boolean(anchorPoint),
         }))
-    }, [align, anchor, anchorPoint])
+    }, [active, align, anchor, anchorPoint])
 
     useLayoutEffect(() => {
         updatePosition()
         const popup = popupRef.current
-        if (!anchor || !popup) return
+        if (!active || !anchor || !popup) return
         const resizeObserver = new ResizeObserver(updatePosition)
         resizeObserver.observe(anchor)
         resizeObserver.observe(popup)
         return () => resizeObserver.disconnect()
-    }, [anchor, updatePosition])
+    }, [active, anchor, updatePosition])
 
     useEffect(() => {
-        if (!anchor || !host) return
+        if (!active || !anchor || !host) return
         const sourceDocument = anchor.ownerDocument
         const documents = sourceDocument === host.document ? [sourceDocument] : [sourceDocument, host.document]
         const sourceWindow = sourceDocument.defaultView
@@ -138,9 +141,9 @@ export function AnchoredPopup({
             visualViewport?.removeEventListener("resize", updatePosition)
             visualViewport?.removeEventListener("scroll", updatePosition)
         }
-    }, [anchor, anchorPoint, host, onDismiss, updatePosition])
+    }, [active, anchor, anchorPoint, host, onDismiss, updatePosition])
 
-    if (!anchor || !host) return null
+    if (!active || !anchor || !host) return null
     return createPortal(<div
         ref={popupRef}
         role={role}

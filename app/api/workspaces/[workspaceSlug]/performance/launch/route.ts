@@ -9,6 +9,8 @@ const TIMING_KEYS = new Set([
     "initial_frame_mounted_ms", "initial_frame_loaded_ms", "panel_ready_ms", "presence_ready_ms",
     "proxy_session_ms", "server_auth_ms", "server_bootstrap_ms", "server_total_ms",
     "server_bootstrap_fallback",
+    "meaningful_ready_ms", "data_ready_ms", "code_ready_ms",
+    "foreground_at_bootstrap", "foreground_at_report", "visibility_changes", "hidden_duration_ms", "lifecycle_frozen",
 ])
 
 function shortText(value: unknown, maximum: number, fallback = "unknown") {

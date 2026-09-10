@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import Link from "@/components/workspace/WorkspaceLink"
 import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useId, useState } from "react"
 import { AnchoredPopup } from "@/components/ui"
 import type { ListAction } from "./ListActionMenu"

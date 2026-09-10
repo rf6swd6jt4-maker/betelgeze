@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import { AnchoredPopup, Assignee, RoundPill, Status } from "@/components/ui"
 import { Avatar } from "@/components/account/Avatar"
 import { openWorkspaceMemberProfile } from "@/lib/workspace-member-profile"
@@ -286,14 +286,18 @@ export function InlineWorkItemFields(props: Props) {
             }
             return true
         }
-        descriptionPromiseRef.current = drain().finally(() => {
+        descriptionPromiseRef.current = drain().catch((error: unknown) => {
+            setDescriptionSaveState("error")
+            setDescriptionError(error instanceof Error ? error.message : "Description could not be saved")
+            return false
+        }).finally(() => {
             descriptionPromiseRef.current = null
         })
         return descriptionPromiseRef.current
     }, [props.workItemId, props.workspaceSlug])
 
     useEffect(() => {
-        const unregister = registerWorkspaceAutosaveFlusher(async () => { await saveDescription() })
+        const unregister = registerWorkspaceAutosaveFlusher(saveDescription)
         return () => {
             unregister()
             if (descriptionTimerRef.current) window.clearTimeout(descriptionTimerRef.current)

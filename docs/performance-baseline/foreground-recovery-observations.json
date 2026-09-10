@@ -1,0 +1,749 @@
+{
+  "deploymentSha": "e0772eef2ecc1ed7b71ca296e5583b2454cc730a",
+  "generatedAt": "2026-09-10T23:11:52.238Z",
+  "since": "2026-09-10T23:09:30.000Z",
+  "scope": "One authenticated Mac session in the operator-account pilot; content-free timing observations.",
+  "limitations": [
+    "No controlled legacy comparison or platform-wide performance certificate.",
+    "Readiness marker is distinct from absence of a later blocking overlay.",
+    "Cold detail and legacy-to-native transitions showed transient loading overlays during visual QA.",
+    "No save, media, provider, mobile-device or repeat-launch timing proof."
+  ],
+  "summary": {
+    "sampleCount": 34,
+    "outcomes": {
+      "completed": 34,
+      "failed": 0,
+      "aborted": 0,
+      "timeout": 0,
+      "unknown": 0
+    },
+    "foregroundThroughoutCount": 34,
+    "otherOrUnconfirmedVisibilityCount": 0,
+    "foregroundOutcomes": {
+      "completed": 34,
+      "failed": 0,
+      "aborted": 0,
+      "timeout": 0,
+      "unknown": 0
+    },
+    "nativeForeground": {
+      "navigation": {
+        "count": 13,
+        "outcomes": {
+          "completed": 13,
+          "failed": 0,
+          "aborted": 0,
+          "timeout": 0,
+          "unknown": 0
+        },
+        "completedMeaningfulReadyMs": {
+          "count": 13,
+          "p50": 53,
+          "p95": 3353,
+          "min": 33,
+          "max": 3353
+        }
+      },
+      "tab_switch": {
+        "count": 3,
+        "outcomes": {
+          "completed": 3,
+          "failed": 0,
+          "aborted": 0,
+          "timeout": 0,
+          "unknown": 0
+        },
+        "completedMeaningfulReadyMs": {
+          "count": 3,
+          "p50": 105,
+          "p95": 110,
+          "min": 101,
+          "max": 110
+        }
+      }
+    }
+  },
+  "samples": [
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 20,
+      "boundaries": {
+        "meaningful_ready": 20
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 40,
+      "boundaries": {
+        "meaningful_ready": 40
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 16,
+      "boundaries": {
+        "meaningful_ready": 16
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 63,
+      "boundaries": {
+        "meaningful_ready": 63
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 26,
+      "boundaries": {
+        "meaningful_ready": 26
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 47,
+      "boundaries": {
+        "meaningful_ready": 47
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 14,
+      "boundaries": {
+        "meaningful_ready": 14
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 62,
+      "boundaries": {
+        "meaningful_ready": 62
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 21,
+      "boundaries": {
+        "meaningful_ready": 21
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 46,
+      "boundaries": {
+        "meaningful_ready": 45
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 27,
+      "boundaries": {
+        "meaningful_ready": 27
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 78,
+      "boundaries": {
+        "meaningful_ready": 78
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 77,
+      "boundaries": {
+        "meaningful_ready": 77
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:48.376Z",
+      "operation": "tab_switch",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 101,
+      "boundaries": {
+        "meaningful_ready": 101
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:23.162Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "network",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 3344,
+      "boundaries": {
+        "meaningful_ready": 3344
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:23.162Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "network",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 3353,
+      "boundaries": {
+        "meaningful_ready": 3353
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:12.499Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 21,
+      "boundaries": {
+        "meaningful_ready": 21
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:12.499Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 33,
+      "boundaries": {
+        "meaningful_ready": 33
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:12.499Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 38,
+      "boundaries": {
+        "meaningful_ready": 38
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:11:12.499Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 46,
+      "boundaries": {
+        "meaningful_ready": 46
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:55.728Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 26,
+      "boundaries": {
+        "meaningful_ready": 26
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:55.728Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 53,
+      "boundaries": {
+        "meaningful_ready": 53
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:39.462Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 29,
+      "boundaries": {
+        "meaningful_ready": 29
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:39.462Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 78,
+      "boundaries": {
+        "meaningful_ready": 78
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:39.462Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 17,
+      "boundaries": {
+        "meaningful_ready": 17
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:39.462Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 53,
+      "boundaries": {
+        "meaningful_ready": 53
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:21.189Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 63,
+      "boundaries": {
+        "meaningful_ready": 63
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:21.189Z",
+      "operation": "tab_switch",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 110,
+      "boundaries": {
+        "meaningful_ready": 110
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:21.189Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 50,
+      "boundaries": {
+        "meaningful_ready": 50
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:21.189Z",
+      "operation": "tab_switch",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "memory",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 105,
+      "boundaries": {
+        "meaningful_ready": 105
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:04.907Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "network",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 3158,
+      "boundaries": {
+        "meaningful_ready": 3158
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:04.907Z",
+      "operation": "navigation",
+      "command": "unknown",
+      "routeSection": "work-items",
+      "renderer": "native",
+      "cacheState": "network",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 3164,
+      "boundaries": {
+        "meaningful_ready": 3164
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:10:04.907Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "network",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 2667,
+      "boundaries": {
+        "meaningful_ready": 2667
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    },
+    {
+      "createdAt": "2026-09-10T23:09:51.858Z",
+      "operation": "panel_load",
+      "command": "unknown",
+      "routeSection": "relationships",
+      "renderer": "native",
+      "cacheState": "network",
+      "outcome": "completed",
+      "completionBoundary": "meaningful_ready",
+      "durationMs": 3153,
+      "boundaries": {
+        "meaningful_ready": 3153
+      },
+      "background": false,
+      "startedVisible": true,
+      "endedVisible": true,
+      "visibilityChanges": 0,
+      "hiddenDurationMs": 0,
+      "suspended": false
+    }
+  ]
+}

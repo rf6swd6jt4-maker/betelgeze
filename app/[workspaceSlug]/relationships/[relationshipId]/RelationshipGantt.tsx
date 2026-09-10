@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "@/components/workspace/WorkspaceLink"
-import { useRouter } from "@/components/workspace/WorkspaceNavigation"
+import { useRouter, useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
+import { createRelationshipGanttReader, readRelationshipGanttPlan } from "@/lib/relationship-gantt-reader"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal, flushSync } from "react-dom"
 import { Assignee, Status, relationshipPhaseColours } from "@/components/ui"
@@ -32,7 +33,6 @@ import { addCalendarDays, dateDay, effectiveGanttRanges, ganttTimelineRange, ran
 import type { RelationshipGanttItem, RelationshipGanttPlan } from "@/lib/relationship-gantt"
 import {
     applyGanttScheduleChanges,
-    loadGanttPlan,
     previewGanttScheduleChange,
     type GanttMutationResult,
 } from "./gantt-actions"
@@ -181,15 +181,20 @@ function Icon({ kind }: { kind: "fit" | "minus" | "plus" | "labels" }) {
     return <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">{path}</svg>
 }
 
-export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initialPlan, canEdit, currentWork, onInvoiceRequest }: {
+export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan: initialPlan, canEdit, currentWork, onInvoiceRequest }: {
     workspaceSlug: string
     relationshipId: string
+    userId: string
     plan: RelationshipGanttPlan
     canEdit: boolean
     currentWork?: { id: string; title: string; action: string | null; role: string; status: string; unassignedCount: number; blocked: boolean } | null
     onInvoiceRequest?: () => void
 }) {
     const router = useRouter()
+    const navigation = useWorkspaceNavigation()
+    const native = Boolean(navigation)
+    const active = navigation?.active ?? true
+    const accountCleared = useRef(false)
     const scrollRef = useRef<HTMLDivElement>(null)
     const initiallyCenteredRef = useRef(false)
     const mobileZoomInitialisedRef = useRef(false)
@@ -223,10 +228,38 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     const [result, setResult] = useState<GanttMutationResult | null>(null)
     const [pending, startTransition] = useTransition()
     const [confirmBeforeProceeding, setConfirmBeforeProceeding] = useState(true)
+    const [readError, setReadError] = useState<string | null>(null)
+    const readBlocked = useRef(false)
+    const localPlanEditing = useRef(false)
+    const planReader = useMemo(() => createRelationshipGanttReader(
+        (signal) => readRelationshipGanttPlan({ workspaceSlug, relationshipId, userId, signal }),
+        (next) => { setPlan(next); setReadError(null) },
+        (error) => setReadError(error instanceof Error ? error.message : "Could not refresh the plan. Please retry."),
+    ), [workspaceSlug, relationshipId, userId])
+
+    useLayoutEffect(() => {
+        localPlanEditing.current = pending || Boolean(cascade) || Boolean(dragPreview)
+        readBlocked.current = accountCleared.current || !active || localPlanEditing.current
+        planReader.setBlocked(readBlocked.current)
+    }, [active, pending, cascade, dragPreview, planReader])
+
+    useEffect(() => {
+        const clear = (event: Event) => {
+            if ((event as CustomEvent<{ preservedUserId?: string }>).detail?.preservedUserId === userId) return
+            accountCleared.current = true
+            planReader.dispose()
+        }
+        window.addEventListener("betelgeze:offline-account-clearing", clear)
+        return () => { window.removeEventListener("betelgeze:offline-account-clearing", clear); planReader.dispose() }
+    }, [planReader, userId])
 
     // The server can stream a refreshed plan into this long-lived client view.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { setPlan(initialPlan) }, [initialPlan])
+    useEffect(() => {
+        if (accountCleared.current) return
+        if (localPlanEditing.current) { void planReader.refresh(); return }
+        planReader.invalidate()
+        setPlan(initialPlan)
+    }, [initialPlan, planReader])
 
     useEffect(() => {
         const media = window.matchMedia("(max-width: 767px)")
@@ -457,22 +490,21 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         if (pinchReleaseFrameRef.current !== null) cancelAnimationFrame(pinchReleaseFrameRef.current)
     }, [])
 
-    const reload = useCallback(async () => {
-        const next = await loadGanttPlan(workspaceSlug, relationshipId)
-        if (next) setPlan(next)
-    }, [workspaceSlug, relationshipId])
+    const reload = useCallback(() => planReader.refresh(), [planReader])
 
     // Back/forward navigation can restore an older App Router payload. Always
     // reconcile a newly mounted chart with the database before trusting it.
     useEffect(() => {
-        const frame = requestAnimationFrame(() => { void reload() })
+        // Native snapshots already include this plan and own cache freshness.
+        // Retain legacy restore reconciliation through a quiet authenticated GET.
+        const frame = native ? null : requestAnimationFrame(() => { void reload() })
         const reconcileRestoredPage = (event: PageTransitionEvent) => { if (event.persisted) void reload() }
         window.addEventListener("pageshow", reconcileRestoredPage)
         return () => {
-            cancelAnimationFrame(frame)
+            if (frame !== null) cancelAnimationFrame(frame)
             window.removeEventListener("pageshow", reconcileRestoredPage)
         }
-    }, [reload])
+    }, [reload, native])
 
     useEffect(() => {
         if (!cascade) return
@@ -497,6 +529,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     }, [workspaceSlug, reload])
 
     function refreshAfter(next: GanttMutationResult) {
+        planReader.invalidate()
         setResult(next)
         if (next.status === "saved") {
             if (next.plan) setPlan(next.plan)
@@ -506,8 +539,12 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     }
 
     function mutate(action: () => Promise<GanttMutationResult>) {
+        planReader.setBlocked(true)
         setResult(null)
-        startTransition(async () => refreshAfter(await action()))
+        startTransition(async () => {
+            try { refreshAfter(await action()) }
+            finally { planReader.setBlocked(readBlocked.current) }
+        })
     }
 
     function flashInvalid(itemId: string, message: string) {
@@ -555,6 +592,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
     }
 
     function applyOptimisticDates(changes: Array<{ id: string; plannedStartDate: string; plannedStartTime: string | null; dueDate: string; dueTime: string | null }>, frozenParent?: { id: string; start: string; end: string }) {
+        planReader.setBlocked(true)
         const changesById = new Map(changes.map((change) => [change.id, change]))
         setPlan((current) => ({ ...current, items: current.items.map((item) => {
             const change = changesById.get(item.id)
@@ -587,6 +625,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
         // the server confirms; reload reconciles (or reverts) against the truth.
         applyOptimisticDates([{ id: item.id, plannedStartDate: start, plannedStartTime, dueDate: due, dueTime }, ...descendantChanges.map((change) => ({ id: change.id, plannedStartDate: change.plannedStartDate!, plannedStartTime: change.plannedStartTime, dueDate: change.dueDate!, dueTime: change.dueTime }))], frozenParent)
         startTransition(async () => {
+            try {
             const preview = await previewGanttScheduleChange(workspaceSlug, relationshipId, { id: item.id, plannedStartDate: start, plannedStartTime, dueDate: due, dueTime })
             if (preview.status !== "cascade_required") { setResult(preview); void reload(); return }
             const merged = new Map(preview.changes.map((change) => [change.id, change]))
@@ -597,6 +636,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
             if (!changes.length) { void reload(); return }
             if (changes.length > 1) { setCascade(changes); return }
             refreshAfter(await applyGanttScheduleChanges(workspaceSlug, relationshipId, changes))
+            } finally { planReader.setBlocked(readBlocked.current) }
         })
     }
 
@@ -1146,7 +1186,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, plan: initial
                 }).catch(() => setResult({ status: "invalid", message: "Could not proceed with this work item" })) })
             }} className="h-8 rounded bg-white px-3 text-xs font-semibold text-neutral-950 disabled:opacity-45">{currentWork.action === "sell_client" ? "Sell client" : currentWork.action === "await_payment" ? "Payment pending" : currentWork.action === "await_onboarding" ? "Onboarding in progress" : "Mark complete"}</button>
         </div> : null}
-        <MutationError result={result} />
+        <MutationError result={result && result.status !== "saved" && result.status !== "cascade_required" ? result : readError ? { status: "invalid", message: readError } : null} />
         {cascade && parentDocument ? createPortal(<div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-3"><div role="dialog" aria-modal="true" aria-labelledby="gantt-cascade-title" className="betelgeze-popup-enter w-full max-w-lg rounded-xl border border-neutral-700 bg-neutral-950 p-3 shadow-2xl"><h3 id="gantt-cascade-title" className="text-sm font-semibold text-white">Move dependent work?</h3><p className="mt-1 text-xs text-neutral-400">This will update {cascade.length} work item{cascade.length === 1 ? "" : "s"}.</p><div className="mt-2 max-h-64 divide-y divide-neutral-900 overflow-y-auto rounded-lg border border-neutral-800">{cascade.map((change) => { const original = committedRanges.get(change.id); return <div key={change.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 px-2.5 py-2 text-xs"><span className="truncate text-neutral-200">{change.title}</span><span className="shrink-0 font-mono text-[10px] text-neutral-500">{original ? `${original.start}–${original.end} → ` : ""}{change.plannedStartDate}–{change.dueDate}</span></div> })}</div><div className="mt-3 flex justify-end gap-1.5"><button type="button" onClick={() => { setCascade(null); void reload() }} className="h-8 px-2.5 text-xs text-neutral-400 hover:text-white">Cancel</button><button type="button" autoFocus disabled={pending} onClick={() => { const changes = cascade; setCascade(null); mutate(() => applyGanttScheduleChanges(workspaceSlug, relationshipId, changes)) }} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-50">Confirm</button></div></div></div>, parentDocument.body) : null}
     </section>
 }

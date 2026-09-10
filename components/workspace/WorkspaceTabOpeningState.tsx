@@ -1,7 +1,5 @@
-import { WorkspaceBannerPending } from "@/components/admin/WorkspaceBannerPending"
 import { PanelRouteLoading, type PanelLoadingVariant } from "@/components/workspace/PanelRouteLoading"
 import { DetailRouteLoading } from "@/components/workspace/DetailRouteLoading"
-import { workspaceRouteUsesSharedBanner } from "@/lib/workspace-panel-chrome"
 import { workspaceRouteIsRecordDetail } from "@/lib/workspace-tabs"
 import type { WorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 
@@ -37,9 +35,7 @@ export function WorkspaceTabOpeningState({ url, workspaceSlug, detailPreview }: 
     const loading = panelLoadingForUrl(url, workspaceSlug)
     if (loading.variant === "detail") return <DetailRouteLoading title={loading.title ?? "record"} preview={detailPreview} />
 
-    const pathname = new URL(url, "http://localhost").pathname
     return <div className="min-h-full bg-neutral-950">
-        {workspaceRouteUsesSharedBanner(pathname) ? <div className="bg-neutral-950 px-4 text-white sm:px-6"><div className="mx-auto max-w-7xl pt-5"><WorkspaceBannerPending /></div></div> : null}
         <PanelRouteLoading variant={loading.variant} title={loading.title} />
     </div>
 }

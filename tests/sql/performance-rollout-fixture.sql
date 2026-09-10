@@ -4,7 +4,7 @@ create temporary table performance_rollout_fixture (
  workspace_id uuid, owner_id uuid, setter_id uuid, outsider_id uuid,
  relationship_id uuid, service_id uuid, revision_id uuid
 ) on commit drop;
-alter table pg_temp.performance_rollout_fixture enable row level security;
+alter table performance_rollout_fixture enable row level security;
 revoke all on pg_temp.performance_rollout_fixture from public,anon,authenticated,service_role;
 -- This session-local table contains only generated fixture IDs. Readers need
 -- those IDs after SET LOCAL ROLE; no row is visible through an application API.

@@ -222,3 +222,15 @@ test("guarded incoming messages still move their conversation to the top", () =>
     chat.mergeReadMessages(chat.beginRead(), "c2", [{ ...message, id: "m2", clientRequestId: "request2", createdAt: "2026-09-06T13:00:00Z" }])
     assert.deepEqual(chat.getSnapshot().conversations.map((c) => c.id), ["c2", "c1"])
 })
+
+test("compact inbox unread metadata respects deleted messages through stale snapshots", () => {
+    const initial = { conversations: [{ ...snapshot().conversations[0], unreadMessages: [{ id: "unloaded" }, { id: "m1" }] }], reactions: [] as Reaction[] }
+    const chat = createCoordinatedChat(initial, reactionKey)
+    const read = chat.beginRead()
+    chat.removeMessage("unloaded")
+    assert.deepEqual(chat.getSnapshot().conversations[0].unreadMessages, [{ id: "m1" }])
+    chat.applySnapshot(read, initial)
+    assert.deepEqual(chat.getSnapshot().conversations[0].unreadMessages, [{ id: "m1" }])
+    chat.removeMessage("m1")
+    assert.deepEqual(chat.getSnapshot().conversations[0].unreadMessages, [])
+})

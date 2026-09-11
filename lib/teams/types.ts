@@ -64,6 +64,7 @@ export type NativeConversation = {
     updatedAt: string
     messages: NativeMessage[]
     messageWindowStart?: string | null
+    unreadMessages?: Array<{ id: string; senderUserId: string; createdAt: string }>
 }
 
 export type WorkspaceCommunicationConversation =

@@ -8,6 +8,7 @@ import { notifyNativeChatMessage } from "@/lib/push/chat-notifications"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { communicationFileKeyForCurrentUser } from "@/lib/communications/encryption"
 import { NATIVE_MESSAGE_EDIT_WINDOW_MS } from "@/lib/teams/message-editing"
+import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 import { messageQuoteFromValue, messageQuoteMatches } from "@/lib/communications/message-quotes"
 
 export const runtime = "nodejs"
@@ -34,7 +35,8 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
             if (!cursor) return Response.json({ error: "Invalid history cursor." }, { status: 400 })
             return Response.json(await loadNativeMessagePage(workspace.id, conversationId, cursor, user.id), { headers: { "Cache-Control": "no-store" } })
         }
-        return Response.json({ messages: await loadNativeMessagesForCurrentUser({ workspaceId: workspace.id, conversationId, currentUserId: user.id, limit: 1000 }) }, { headers: { "Cache-Control": "no-store" } })
+        const compact = workspacePerformanceEnabled(workspace.id, user.id, process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS)
+        return Response.json({ messages: await loadNativeMessagesForCurrentUser({ workspaceId: workspace.id, conversationId, currentUserId: user.id, limit: compact ? 60 : 1000 }) }, { headers: { "Cache-Control": "no-store" } })
     } catch (error) {
         return Response.json({ error: error instanceof Error ? error.message : "Could not load messages." }, { status: 503 })
     }

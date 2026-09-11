@@ -169,6 +169,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [teams, setTeams] = useState(bootstrap.teams)
     const [readCursors, setReadCursors] = useState(bootstrap.readCursors)
     const [selectedId, setSelectedId] = useState(bootstrap.requestedConversationId)
+    const [loadedHistoryIds, setLoadedHistoryIds] = useState(() => new Set(bootstrap.requestedConversationId ? [bootstrap.requestedConversationId] : []))
     const bootstrappedSelection = useRef(bootstrap.requestedConversationId)
     const [search, setSearch] = useState("")
     const [showArchived, setShowArchived] = useState(false)
@@ -216,7 +217,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const readRequestRef = useRef<string | null>(null)
     const workspaceTabActive = useWorkspaceTabActive()
     const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null
-    const history = useConversationHistory(selectedId, selected?.messages ?? [], {
+    const history = useConversationHistory(selectedId, selectedId && loadedHistoryIds.has(selectedId) ? selected?.messages ?? [] : [], {
         hasMore: Boolean(selected?.messageWindowStart),
         load: async (before, signal) => {
             const conversationId = selectedId!
@@ -371,8 +372,13 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         const read = updates.beginRead()
         void fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/messages?conversationId=${encodeURIComponent(selectedId)}`, { signal: controller.signal })
             .then(async (response) => response.ok ? response.json() as Promise<{ messages?: NativeMessage[] }> : null)
-            .then((result) => { if (result?.messages) updateConversationMessages(selectedId, result.messages, false, read) })
-            .catch(() => undefined)
+            .then((result) => {
+                if (controller.signal.aborted) return
+                if (!result?.messages) throw new Error("Could not load this conversation. Reopen it to retry.")
+                updateConversationMessages(selectedId, result.messages, false, read)
+                setLoadedHistoryIds((current) => current.has(selectedId) ? current : new Set([...current, selectedId]))
+            })
+            .catch((error) => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Could not load this conversation.") })
         return () => controller.abort()
     }, [bootstrap.workspaceSlug, selectedId, updateConversationMessages, updates])
 

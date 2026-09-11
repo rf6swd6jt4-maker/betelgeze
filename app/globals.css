@@ -19,6 +19,11 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* A streamed route may still suspend after its persistent shell is visible. */
+body:has([data-workspace-shell-root]) [data-app-startup-screen] {
+  display: none !important;
+}
+
 html[data-workspace-viewport-locked="true"] {
   height: 100%;
   overflow: hidden;

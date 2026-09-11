@@ -132,29 +132,50 @@ export async function loadNativeCommunications(input: {
     if (!schemaReady) return { ...base, conversations: [], reactions: [], readCursors: [], schemaReady: false }
 
     const supabase = await createSupabaseServerClient()
+    const compactEnabled = workspacePerformanceEnabled(input.workspaceId, input.currentUserId, process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS)
+    const inboxPromise = (async () => {
+        if (compactEnabled) {
+            const result = await supabase.rpc("communication_native_inbox", { p_workspace_id: input.workspaceId })
+            if (!communicationHistoryRpcMissing(result.error)) {
+                if (result.error) throw new Error(result.error.message)
+                const data = record(result.data)
+                if (!Array.isArray(data.messages) || !Array.isArray(data.unread)) throw new Error("Invalid team inbox response.")
+                return { data: data.messages, error: null, unread: data.unread, compact: true }
+            }
+        }
+        const result = await loadBoundedCommunicationRows<Array<{ sender_user_id?: string | null }>>({
+            enabled: workspacePerformanceEnabled(input.workspaceId, input.currentUserId, process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS), kind: "native",
+            read: (name) => supabase.rpc(name, { p_workspace_id: input.workspaceId, p_conversation_id: null, p_limit: 4000 }),
+        })
+        return { ...result, unread: [] as unknown[], compact: false }
+    })()
+
     const [conversationResult, participantResult, messageResult, reactionResult, cursorResult, membershipResult, selectedMessages] = await Promise.all([
         supabaseAdmin.from("workspace_native_conversations").select("id, kind, is_system, team_id, direct_user_one, direct_user_two, archived_at, pinned_message_id, updated_at").eq("workspace_id", input.workspaceId).order("updated_at", { ascending: false }),
         supabaseAdmin.from("workspace_native_conversation_participants").select("conversation_id, user_id").eq("workspace_id", input.workspaceId),
-        loadBoundedCommunicationRows<Array<{ sender_user_id?: string | null }>>({
-            enabled: workspacePerformanceEnabled(input.workspaceId, input.currentUserId, process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS), kind: "native",
-            read: (name) => supabase.rpc(name, { p_workspace_id: input.workspaceId, p_conversation_id: null, p_limit: 4000 }),
-        }),
+        inboxPromise,
         supabaseAdmin.from("workspace_native_reactions").select("id, conversation_id, message_id, reactor_user_id, emoji, updated_at").eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("workspace_native_read_cursors").select("conversation_id, user_id, last_read_message_id, last_read_at").eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("workspace_memberships").select("user_id, role").eq("workspace_id", input.workspaceId),
-        base.requestedConversationId ? loadNativeMessagesForCurrentUser({ workspaceId: input.workspaceId, conversationId: base.requestedConversationId, currentUserId: input.currentUserId }) : Promise.resolve(null),
+        base.requestedConversationId ? loadNativeMessagesForCurrentUser({ workspaceId: input.workspaceId, conversationId: base.requestedConversationId, currentUserId: input.currentUserId, limit: compactEnabled ? 60 : 1000 }) : Promise.resolve(null),
     ])
+    const inbox = messageResult
     const fatal = [conversationResult.error, participantResult.error, messageResult.error, reactionResult.error, cursorResult.error, membershipResult.error].find(Boolean)
     if (fatal) throw new Error(fatal!.message)
     const activePeopleById = new Map(peopleResult.people.map((person) => [person.id, person]))
     const historicalIds = [...new Set([
         ...(messageResult.data ?? []).map((message: { sender_user_id?: string | null }) => message.sender_user_id),
+        ...(selectedMessages ?? []).map((message) => message.senderUserId),
         ...(reactionResult.data ?? []).map((reaction) => reaction.reactor_user_id),
         ...(conversationResult.data ?? []).flatMap((conversation) => [conversation.direct_user_one, conversation.direct_user_two]),
     ].filter((id): id is string => Boolean(id) && !activePeopleById.has(id)))]
-    const attributionResult = historicalIds.length
-        ? await supabaseAdmin.from("account_user_attributions").select("user_id, username, display_name, avatar_path, removed_at").in("user_id", historicalIds)
+    const attributionPromise = historicalIds.length
+        ? supabaseAdmin.from("account_user_attributions").select("user_id, username, display_name, avatar_path, removed_at").in("user_id", historicalIds)
         : { data: [], error: null }
+    const [attributionResult, editedAtByMessageId] = await Promise.all([
+        attributionPromise,
+        loadNativeEditTimes(input.workspaceId, (messageResult.data ?? []).flatMap((row: unknown) => text(record(row).id) ?? [])),
+    ])
     if (attributionResult.error && attributionResult.error.code !== "42P01") throw new Error(attributionResult.error.message)
     const formerPeople: CommunicationPerson[] = (attributionResult.data ?? []).map((profile) => ({
         id: profile.user_id,
@@ -166,7 +187,6 @@ export async function loadNativeCommunications(input: {
     const teamById = new Map(teams.map((team) => [team.id, team]))
     const participants = new Map<string, string[]>()
     for (const participant of participantResult.data ?? []) participants.set(participant.conversation_id, [...(participants.get(participant.conversation_id) ?? []), participant.user_id])
-    const editedAtByMessageId = await loadNativeEditTimes(input.workspaceId, (messageResult.data ?? []).flatMap((row: unknown) => text(record(row).id) ?? []))
     const messages = new Map<string, NativeMessage[]>()
     for (const row of [...(messageResult.data ?? [])].reverse()) {
         const source = record(row)
@@ -176,8 +196,12 @@ export async function loadNativeCommunications(input: {
     const messageWindowStart = [...messages.values()].flat().reduce<string | null>((start, message) => !start || message.createdAt < start ? message.createdAt : start, null)
     const conversationMessages = (id: string) => id === base.requestedConversationId && selectedMessages ? selectedMessages : messages.get(id) ?? []
     const conversationWindowStart = (id: string) => id === base.requestedConversationId && selectedMessages
-        ? selectedMessages.length >= 1000 ? selectedMessages[0]?.createdAt ?? null : null
-        : messageWindowStart
+        ? selectedMessages.length >= (compactEnabled ? 60 : 1000) ? selectedMessages[0]?.createdAt ?? null : null
+        : inbox.compact ? messages.get(id)?.[0]?.createdAt ?? null : messageWindowStart
+    const unreadByConversation = new Map(inbox.unread.map((value: unknown) => {
+        const row = record(value)
+        return [text(row.conversation_id), Array.isArray(row.messages) ? row.messages as NonNullable<NativeConversation["unreadMessages"]> : []] as const
+    }))
     const conversations = (conversationResult.data ?? []).flatMap<NativeConversation>((conversation) => {
         if (conversation.kind === "direct") {
             const memberIds = participants.get(conversation.id) ?? []
@@ -195,7 +219,7 @@ export async function loadNativeCommunications(input: {
         const archived = Boolean(team.archivedAt)
         if (!team.memberIds.includes(input.currentUserId)) return []
         return [{ id: conversation.id, kind: "team" as const, teamId: team.id, title: team.name, subtitle: `${team.memberIds.length} member${team.memberIds.length === 1 ? "" : "s"}`, avatarSrc: null, memberIds: team.memberIds, archived, canWrite: !archived && team.memberIds.includes(input.currentUserId), pinnedMessageId: conversation.pinned_message_id, updatedAt: conversation.updated_at, messages: conversationMessages(conversation.id), messageWindowStart: conversationWindowStart(conversation.id) }]
-    }).sort((left, right) => (right.messages.at(-1)?.createdAt ?? right.updatedAt).localeCompare(left.messages.at(-1)?.createdAt ?? left.updatedAt) || left.title.localeCompare(right.title))
+    }).map((conversation) => ({ ...conversation, ...(inbox.compact ? { unreadMessages: unreadByConversation.get(conversation.id) ?? [] } : {}) })).sort((left, right) => (right.messages.at(-1)?.createdAt ?? right.updatedAt).localeCompare(left.messages.at(-1)?.createdAt ?? left.updatedAt) || left.title.localeCompare(right.title))
     const conversationIds = new Set(conversations.map((conversation) => conversation.id))
     const reactions: NativeReaction[] = (reactionResult.data ?? []).flatMap((reaction) => conversationIds.has(reaction.conversation_id) ? [{ id: reaction.id, conversationId: reaction.conversation_id, messageId: reaction.message_id, reactorUserId: reaction.reactor_user_id, emoji: reaction.emoji, updatedAt: reaction.updated_at }] : [])
     const readCursors: NativeReadCursor[] = (cursorResult.data ?? []).flatMap((cursor) => conversationIds.has(cursor.conversation_id) ? [{ conversationId: cursor.conversation_id, userId: cursor.user_id, lastReadMessageId: cursor.last_read_message_id, lastReadAt: cursor.last_read_at }] : [])

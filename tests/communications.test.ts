@@ -290,3 +290,15 @@ test("automated onboarding messages are attributed and reuse their durable messa
     assert.match(migration, /add column if not exists display_name text/)
     assert.doesNotMatch(migration, /display_name text unique/)
 })
+
+test("compact native inbox keeps full unread counts, deduplicates loaded history and accepts newer read cursors", () => {
+    const messages = Array.from({ length: 100 }, (_, i) => ({ id: String(i).padStart(3, "0"), senderUserId: "other", createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString() }))
+    const conversation = { messages: messages.slice(-1), unreadMessages: messages }
+    assert.equal(nativeConversationUnreadCount(conversation, undefined, "current", false), 100)
+    const cursor = { lastReadMessageId: messages[50].id, lastReadAt: messages[50].createdAt }
+    assert.equal(nativeConversationUnreadCount(conversation, cursor, "current", false), 49)
+    assert.equal(nativeConversationUnreadCount({ ...conversation, messages: messages.slice(-60) }, cursor, "current", false), 49)
+    assert.equal(nativeConversationUnreadCount(conversation, cursor, "current", true), 0)
+    const incoming = { id: "new", senderUserId: "other", createdAt: "2026-02-01T00:00:00.000Z" }
+    assert.equal(nativeConversationUnreadCount({ ...conversation, messages: [...conversation.messages, incoming] }, cursor, "current", false), 50)
+})

@@ -1,19 +1,75 @@
+export type MentionPerson = { id: string; name: string; avatarSrc?: string | null }
+export const CHAT_MENTION_PATTERN = String.raw`@\[[^\]\n]+\]\(mention:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\)`
+
+export function readChatMention(source: string) {
+    if (!new RegExp(`^${CHAT_MENTION_PATTERN}$`, "i").test(source)) return null
+    const split = source.toLowerCase().lastIndexOf("](mention:")
+    try {
+        const name = decodeURIComponent(source.slice(2, split))
+        if (!name.trim() || /[\r\n]/.test(name) || name.length > 160) return null
+        return { text: `@${name}`, userId: source.slice(split + 10, -1).toLowerCase(), source }
+    } catch { return null }
+}
+
+export function chatMentionSource(person: MentionPerson) {
+    const name = encodeURIComponent(person.name.replace(/[\r\n]/g, " ").trim().slice(0, 160)).replace(/[!'()*_~]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+    return `@[${name}](mention:${person.id.toLowerCase()})`
+}
+
+export function chatMentions(body: string) {
+    return [...body.matchAll(new RegExp(CHAT_MENTION_PATTERN, "gi"))].flatMap((match) => {
+        const mention = readChatMention(match[0])
+        return mention ? [{ ...mention, from: match.index, to: match.index + match[0].length }] : []
+    })
+}
+
+export function mentionPreview(body: string) {
+    return body.replace(new RegExp(CHAT_MENTION_PATTERN, "gi"), (source) => readChatMention(source)?.text ?? source)
+}
+
+export function mentionQuery(body: string, from: number, to = from) {
+    if (from !== to || chatMentions(body).some((mention) => from > mention.from && from <= mention.to)) return null
+    const match = /(?:^|[\s(])@([^@\n\r]{0,80})$/.exec(body.slice(0, from))
+    if (!match) return null
+    const start = from - match[1].length - 1
+    if (chatMentions(body).some((mention) => start >= mention.from && start < mention.to)) return null
+    return { from: start, to: from, query: match[1] }
+}
+
+export function matchingMentionPeople(people: MentionPerson[], query: string) {
+    const words = query.toLocaleLowerCase().trim().split(/\s+/)
+    return people.filter((person) => words.every((word) => person.name.toLocaleLowerCase().includes(word)))
+}
+
+export function mentionedRecipients(body: string, participantIds: string[], senderId: string) {
+    const participants = new Set(participantIds)
+    return [...new Set(chatMentions(body).map((mention) => mention.userId))].filter((id) => id !== senderId && participants.has(id))
+}
+
 export function chatListLine(line: string) {
     const match = /^( *)(-|\d{1,9}\.|\[[ xX]\]) +(.*)$/.exec(line)
     return match ? { indent: match[1].length, marker: match[2], text: match[3], prefixLength: line.length - match[3].length } : null
 }
 
-export type ChatInline = { kind: "text"; text: string } | { kind: "link"; text: string } | { kind: "bold" | "italic" | "strike" | "header"; children: ChatInline[] }
+export type ChatInline = { kind: "mention"; text: string; userId: string; source: string } | { kind: "text"; text: string } | { kind: "link"; text: string } | { kind: "bold" | "italic" | "strike" | "header"; children: ChatInline[] }
 
 export function parseChatInline(text: string, depth = 0): ChatInline[] {
     if (depth > 12) return [{ kind: "text", text }]
     const tokens: ChatInline[] = []
-    const pattern = /https?:\/\/[^\s<>)]+|\*\*|__|~~|##/g
+    const pattern = new RegExp(`${CHAT_MENTION_PATTERN}|https?:\\/\\/[^\\s<>)]+|\\*\\*|__|~~|##`, "gi")
     let offset = 0
     let match: RegExpExecArray | null
     while ((match = pattern.exec(text))) {
         const token = match[0]
-        if (token.startsWith("http")) {
+        if (token.startsWith("@[")) {
+            const mention = readChatMention(token)
+            if (!mention) continue
+            if (match.index > offset) tokens.push({ kind: "text", text: text.slice(offset, match.index) })
+            tokens.push({ kind: "mention", ...mention })
+            offset = pattern.lastIndex
+            continue
+        }
+        if (token.toLowerCase().startsWith("http")) {
             if (match.index > offset) tokens.push({ kind: "text", text: text.slice(offset, match.index) })
             tokens.push({ kind: "link", text: token })
             offset = pattern.lastIndex
@@ -77,6 +133,7 @@ export function chatComposerDecorations(body: string): ChatDecoration[] {
         }
         function walk(tokens: ChatInline[], offset: number) {
             for (const token of tokens) {
+                if (token.kind === "mention") { offset += token.source.length; continue }
                 if (token.kind === "text" || token.kind === "link") { offset += token.text.length; continue }
                 const start = offset
                 decorations.push({ from: start, to: start + 2, className: "chat-syntax" })

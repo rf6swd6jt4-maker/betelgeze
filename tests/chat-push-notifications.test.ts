@@ -98,7 +98,7 @@ test("chat notifications aggregate per conversation, quiet rapid replacements, a
         readFile("lib/push/browser-notifications.ts", "utf8"),
         readFile("supabase/migrations/20260817190000_ios_chat_notification_gate.sql", "utf8"),
     ])
-    assert.match(delivery, /chatNotificationBody\(push\.body, unreadCount\)/)
+    assert.match(delivery, /chatNotificationBody\(push\.mentionUserIds\?\.includes\(subscription\.user_id\).*unreadCount\)/)
     assert.match(delivery, /communication_read_cursors/)
     assert.match(delivery, /workspace_native_read_cursors/)
     assert.match(delivery, /new messages/)

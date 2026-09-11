@@ -1,5 +1,6 @@
 "use client"
 
+import type { MentionPerson } from "@/lib/chat-formatting"
 import { ChatComposerInput } from "@/components/communications/ChatComposerInput"
 
 import { useEffect, type ReactNode, type RefObject } from "react"
@@ -7,6 +8,7 @@ import { reportWorkspaceComposerFocus } from "@/lib/workspace-composer-viewport"
 
 export function MessageComposer({
     textareaRef,
+    mentionPeople,
     draft,
     placeholder,
     disabled,
@@ -19,6 +21,7 @@ export function MessageComposer({
     onSend,
 }: {
     textareaRef: RefObject<HTMLElement | null>
+    mentionPeople?: MentionPerson[]
     draft: string
     placeholder: string
     disabled: boolean
@@ -56,6 +59,7 @@ export function MessageComposer({
             <div className="flex shrink-0 items-center -space-x-1">{leadingActions}</div>
             <ChatComposerInput
                 inputRef={textareaRef}
+                mentionPeople={mentionPeople}
                 value={draft}
                 onChange={onDraftChange}
                 onSend={onSend}

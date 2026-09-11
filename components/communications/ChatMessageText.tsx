@@ -16,7 +16,7 @@ export function ChatMessageText({ body, className = "leading-5", linkClassName =
                 const to = Math.min(token.text.length, (highlight?.end ?? start) - start)
                 const content = from < to ? <>{token.text.slice(0, from)}<mark data-chat-quote-highlight className="rounded-sm bg-yellow-300 text-neutral-950">{token.text.slice(from, to)}</mark>{token.text.slice(to)}</> : token.text
                 const run = <span data-chat-text-start={start}>{content}</span>
-                return token.kind === "link" && !quoteSelection ? <a key={index} href={token.text} target="_blank" rel="noreferrer" className={linkClassName}>{run}</a> : <span key={index}>{run}</span>
+                return token.kind === "mention" ? <strong key={index}>{run}</strong> : token.kind === "link" && !quoteSelection ? <a key={index} href={token.text} target="_blank" rel="noreferrer" className={linkClassName}>{run}</a> : <span key={index}>{run}</span>
             }
             const Tag = token.kind === "bold" ? "strong" : token.kind === "italic" ? "em" : token.kind === "header" ? "span" : "s"
             return <Tag key={index} className={token.kind === "header" ? "text-[1.15em] font-bold" : undefined}>{inline(token.children, position)}</Tag>

@@ -42,6 +42,7 @@ import { useMessagePaneInteractions } from "@/components/communications/useMessa
 import { useReliableCommunicationsRealtime, type CommunicationsConnectionState } from "@/components/communications/useReliableCommunicationsRealtime"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
+import { mentionPreview } from "@/lib/chat-formatting"
 import { dismissReadChatNotification } from "@/lib/push/browser-notifications"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { openWorkspaceMemberProfile } from "@/lib/workspace-member-profile"
@@ -59,7 +60,7 @@ function messageTime(value: string) { return new Intl.DateTimeFormat("en-IE", { 
 function messageDay(value: string) { return new Intl.DateTimeFormat("en-IE", { day: "numeric", month: "short", year: "numeric" }).format(new Date(value)) }
 function sameDay(left: string, right: string) { return new Date(left).toDateString() === new Date(right).toDateString() }
 function attachmentPreview(attachment: CommunicationAttachment | null) { return attachment ? `${attachment.kind === "image" ? "Image" : attachment.kind === "video" ? "Video" : attachment.kind === "audio" ? "Audio" : attachment.kind === "sticker" ? "Sticker" : "File"}: ${attachment.fileName}` : "" }
-function messagePreview(message: NativeMessage) { return message.body || attachmentPreview(message.attachment) || "Message" }
+function messagePreview(message: NativeMessage) { return mentionPreview(message.body) || attachmentPreview(message.attachment) || "Message" }
 
 const NATIVE_TYPING_EVENT = "native_typing"
 const NATIVE_TYPING_EXPIRY_MS = 6_000
@@ -893,7 +894,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     {selectedTypingPeople.length ? <NativeTypingDots label={selectedTypingLabel} /> : null}</div></div>{showJumpToLatest ? <JumpToLatestButton onClick={() => { followLatestRef.current = true; setAtLatest(true); messagePaneRef.current?.scrollTo({ top: messagePaneRef.current.scrollHeight, left: 0, behavior: "instant" }) }} /> : null}</div>
                     <ComposerFooter className="relative z-10 shrink-0 touch-manipulation border-t border-neutral-800 bg-neutral-950 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:p-4">
                         {selectingQuote ? <MessageQuoteSelection key={`${selected.id}:${selectingQuote.id}:${selectingQuote.body}`} messageId={selectingQuote.id} body={selectingQuote.body} paneRef={messagePaneRef} onChange={updateSelectedQuote} onCancel={cancelQuoteSelection} /> : null}
-                        {editingMessage ? <ComposerMessagePreview label="Editing message" preview={editingMessage.body} /> : null}
+                        {editingMessage ? <ComposerMessagePreview label="Editing message" preview={mentionPreview(editingMessage.body)} /> : null}
                         {replyingTo ? <ComposerMessagePreview label={selected.kind === "team" ? `Replying to ${replyingTo.senderUserId === bootstrap.currentUser.id ? "yourself" : peopleById.get(replyingTo.senderUserId)?.name ?? "team member"}` : "Replying to message"} tooltip={selectingQuote ? "Reply to the whole message, or highlight text in it to quote a passage." : undefined} preview={replyingTo.selectedQuote ? `“${replyingTo.selectedQuote.text}”` : messagePreview(replyingTo)} onCancel={() => { setReplyingTo(null); composerRef.current?.focus({ preventScroll: true }) }} /> : null}
                         {attachment || attachmentState === "uploading" ? <div className="mx-auto mb-2 flex max-w-3xl items-center gap-3 rounded-xl border border-neutral-800 bg-black px-3 py-2 text-xs"><span className="min-w-0 flex-1 truncate">{attachmentState === "uploading" ? "Uploading attachment…" : attachment?.fileName}</span>{attachment ? <button type="button" onClick={() => setAttachment(null)} className="h-8 w-8 text-neutral-500">×</button> : null}</div> : null}
                         {stickerTrayOpen ? <div className="mx-auto mb-2 max-w-3xl rounded-2xl border border-neutral-800 bg-black p-3 shadow-2xl"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold text-neutral-200">Stickers</p><p className="mt-0.5 text-[10px] text-neutral-600">Shared across client and team chats.</p></div><button type="button" onClick={() => setStickerTrayOpen(false)} aria-label="Close sticker tray" className="h-8 w-8 text-neutral-500 hover:text-white">×</button></div><div data-composer-scroll className="mt-3 grid max-h-52 grid-cols-4 gap-2 overflow-y-auto overscroll-y-none sm:grid-cols-7">{stickers.map((sticker) => <button key={sticker.id} type="button" onClick={() => void sendSticker(sticker)} disabled={!selected.canWrite} title={sticker.fileName} className="flex aspect-square items-center justify-center rounded-xl bg-neutral-950 p-1.5 hover:bg-neutral-900 disabled:opacity-40"><Image unoptimized src={sticker.url} alt={sticker.fileName} width={512} height={512} className="h-full w-full object-contain" /></button>)}<button type="button" onClick={() => stickerInputRef.current?.click()} disabled={stickerUploadState === "uploading"} className="flex aspect-square flex-col items-center justify-center rounded-xl border border-dashed border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-white disabled:opacity-40"><span className="text-2xl">+</span><span className="mt-1 text-[9px]">{stickerUploadState === "uploading" ? "Converting…" : "Add sticker"}</span></button></div></div> : null}
@@ -903,6 +904,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         <ChatOutboxStatus entries={offline.entries} conversationId={selected.id} />
                         <MessageComposer
                             textareaRef={composerRef}
+                            mentionPeople={selected.kind === "team" ? bootstrap.people.filter((person) => selected.memberIds.includes(person.id)) : undefined}
                             draft={draft}
                             placeholder={selected.system ? "Private updates from BE" : selected.canWrite ? `Message ${selected.title}` : "Archived conversation"}
                             disabled={!selected.canWrite}

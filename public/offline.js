@@ -54,7 +54,7 @@ function renderMessages() {
   }))].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   for (const message of rows) {
     const bubble = node("div", "", `message${message.own ? " own" : ""}`);
-    bubble.append(node("div", String(message.body), "body"));
+    bubble.append(node("div", String(message.body).replace(/@\[([^\]\n]+)\]\(mention:[0-9a-f-]{36}\)/gi, (source, name) => { try { return "@" + decodeURIComponent(name); } catch { return source; } }), "body"));
     if (message.attachmentName) bubble.append(node("div", `Attachment: ${message.attachmentName} · connect to open`, "attachment"));
     const meta = node("div", "", "meta");
     meta.append(node("span", `${message.sender} · ${new Date(message.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`));

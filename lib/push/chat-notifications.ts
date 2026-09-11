@@ -1,4 +1,5 @@
 import "server-only"
+import { mentionedRecipients, mentionPreview } from "@/lib/chat-formatting"
 import { clientConversationParticipants } from "@/lib/communications/access"
 
 import { createHash } from "node:crypto"
@@ -17,6 +18,8 @@ type StoredSubscription = {
 }
 
 type ChatPush = {
+    mentionUserIds?: string[]
+    mentionBody?: string
     workspaceId: string
     conversationKind: "client" | "native"
     messageId: string
@@ -177,7 +180,7 @@ async function deliverChatPush(recipientUserIds: string[], push: ChatPush) {
         const payload = JSON.stringify({
             category: "chat",
             title: push.title,
-            body: chatNotificationBody(push.body, unreadCount),
+            body: chatNotificationBody(push.mentionUserIds?.includes(subscription.user_id) ? push.mentionBody ?? push.body : push.body, unreadCount),
             url: push.url,
             tag: `chat:${push.conversationId}`,
             messageId: push.messageId,
@@ -246,7 +249,8 @@ export async function notifyNativeChatMessage(input: {
         }
         chatName = team?.name?.trim() || "Team chat"
     }
-    const notification = chatNotificationText(chatName, input.previewBody, input.attachment)
+    const notification = chatNotificationText(chatName, mentionPreview(input.previewBody), input.attachment)
+    const mentionUserIds = conversation.kind === "team" ? mentionedRecipients(input.previewBody, (participants ?? []).map((participant) => participant.user_id), input.senderUserId) : []
     await deliverChatPush(
         (participants ?? []).map((participant) => participant.user_id).filter((userId) => userId !== input.senderUserId),
         {
@@ -255,6 +259,8 @@ export async function notifyNativeChatMessage(input: {
             messageId: input.messageId,
             messageCreatedAt: message.created_at,
             conversationId: input.conversationId,
+            mentionUserIds,
+            mentionBody: `${notificationLine(senderName, 80)} mentioned you in ${notificationLine(chatName, 80)} group chat`,
             title: notification.title,
             body: notification.body,
             url: `/${encodeURIComponent(input.workspaceSlug)}/communications?mode=team&nativeConversation=${encodeURIComponent(input.conversationId)}`,

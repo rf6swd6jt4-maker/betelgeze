@@ -38,18 +38,17 @@ async function loadMediaResponse(request: Request, context: RouteContext) {
     } else {
         const user = await getCurrentUser()
         if (!user) return { error: new Response("Unauthorized", { status: 401 }) }
-        const { data: membership } = await supabaseAdmin
-            .from("workspace_memberships")
-            .select("user_id, role")
-            .eq("workspace_id", workspaceId)
-            .eq("user_id", user.id)
-            .maybeSingle()
-        if (!membership) return { error: new Response("Media not found", { status: 404 }) }
-        if (path[1] === "communications" && path[2] === "native") {
-            const conversationId = path[3] ?? ""
-            if (!await assertNativeConversationAccess(conversationId, user.id, "read")) return { error: new Response("Media not found", { status: 404 }) }
-        }
-        customerKey = await communicationFileKeyForCurrentUser(storagePath)
+        // These checks are independent, but all must settle before storage access.
+        const conversationId = path[3] ?? ""
+        const native = path[1] === "communications" && path[2] === "native"
+        const [{ data: membership }, conversationAccess, key] = await Promise.all([
+            supabaseAdmin.from("workspace_memberships").select("user_id, role")
+                .eq("workspace_id", workspaceId).eq("user_id", user.id).maybeSingle(),
+            native ? assertNativeConversationAccess(conversationId, user.id, "read") : Promise.resolve(true),
+            communicationFileKeyForCurrentUser(storagePath),
+        ])
+        if (!membership || !conversationAccess) return { error: new Response("Media not found", { status: 404 }) }
+        customerKey = key
         if (!customerKey) {
             // Public workspace stickers are the only files without a conversation key.
             const sticker = await supabaseAdmin.from("communication_stickers").select("id").eq("workspace_id", workspaceId).eq("storage_path", storagePath).maybeSingle()
@@ -64,7 +63,12 @@ async function loadMediaResponse(request: Request, context: RouteContext) {
         // Always authorize the original path. Never expose keys or public URLs.
         const { response: mediaResponse, deliveryPath } = await loadCommunicationMediaRepresentation({
             originalPath: storagePath, previewPath: `${storagePath}${COMMUNICATION_PREVIEW_SUFFIX}`, preview, method,
-            prepare: () => ensureCommunicationImagePreview(storagePath, customerKey),
+            prepare: async () => {
+                const bytes = await ensureCommunicationImagePreview(storagePath, customerKey)
+                return bytes ? new Response(new Uint8Array(bytes), { headers: {
+                    "Content-Type": "image/webp", "Content-Length": String(bytes.byteLength),
+                } }) : false
+            },
             load: async (deliveryPath) => {
                 const signed = customerKey
                     ? await createEncryptedPrivateUploadSignedRequest(deliveryPath, customerKey, undefined, method)

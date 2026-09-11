@@ -163,6 +163,14 @@ Never use this exception to relax a threshold after a failed feature benchmark, 
 - **Evidence:** see `docs/tab-loading-recovery.md` for reproduction, regression checks, and verification limits. Probes exchange local messages and add no data requests; warm ready tabs skip recovery work.
 - **Rollout/rollback:** client changes only, preserving existing authorization, caches, chat data, and draft ownership. Revert the recovery change to restore the previous behavior; no schema or provider changes. Record release validation in the linked report before promotion.
 
+### 2026-09-11 — Chat image request waterfall
+
+- **Authorized scope:** improve slow Comms image loading across Team and client conversations.
+- **New mandatory rule:** independent per-image membership, conversation, and key checks may overlap, but every check must pass before storage access. After an authorized preview 404, use the original GET metadata to validate conversion eligibility without repeating HEAD requests. Persist and serve generated preview bytes directly; do not download them again. Retain original size/pixel limits, SSE-C encryption, private cache policy, bounded visible-first admission, and original fallback.
+- **Evidence:** existing-preview storage stays at one request. Successful legacy conversion falls from six storage operations (preview GET, preview HEAD, original HEAD, original GET, preview PUT, preview GET) to three (preview GET, original GET, preview PUT). Permission checks change from serial to concurrent with the same decisions. These are source/control-flow counts, not measured production latency. Runtime regression covers generated-byte delivery, cached previews, HEAD, conversion failure, validators, and storage denial.
+- **Limitations:** first legacy preview still downloads/converts the original and persists the derivative; image-heavy chats still have a four-slot admission queue. No sub-second guarantee or authenticated-device latency result is established.
+- **Rollout/rollback:** application-only change, no schema, backfill, provider purchase, or public caching. Revert this change to restore the former waterfall and corresponding standard.
+
 ### Required format for future speed updates
 
 - **Date / change / PR or commit:**

@@ -705,29 +705,29 @@ async function createCommunicationPreviewUpload(path: string, customerKey: strin
     }), { expiresIn: R2_UPLOAD_URL_TTL_SECONDS }) }
 }
 
-const pendingCommunicationPreviews = new Map<string, Promise<boolean>>()
+const pendingCommunicationPreviews = new Map<string, Promise<Uint8Array | null>>()
 
-/** Derivatives remain private and use the original's SSE-C key and authorization. */
+/** Call only after an authorized preview 404. Derivatives retain the original SSE-C key. */
 export async function ensureCommunicationImagePreview(path: string, customerKey: string | null) {
     const existing = pendingCommunicationPreviews.get(path)
     if (existing) return existing
     const pending = (async () => {
         const client = getR2Client()
         const input = { Bucket: getR2BucketName(), ...(customerKey ? customerEncryptionInput(customerKey) : {}) }
-        try {
-            await client.send(new HeadObjectCommand({ ...input, Key: `${path}${COMMUNICATION_PREVIEW_SUFFIX}` }))
-            return true
-        } catch (error) {
-            if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode !== 404) throw error
-        }
-        const metadata = await client.send(new HeadObjectCommand({ ...input, Key: path }))
-        if (!/^image\/(jpeg|png|webp|gif|avif|bmp)$/.test(metadata.ContentType ?? "") || !metadata.ContentLength || metadata.ContentLength > 20 * 1024 * 1024) return false
+        // The authorized proxy already received a preview 404. GET supplies the
+        // original's metadata as well as its stream; separate HEADs add latency.
         const original = await client.send(new GetObjectCommand({ ...input, Key: path }))
-        if (!original.Body) return false
-        const prepared = await prepareStoredCommunicationImage(await original.Body.transformToByteArray(), metadata.ContentType ?? "")
-        if (!prepared?.preview) return false
+        if (!original.Body) return null
+        if (!/^image\/(jpeg|png|webp|gif|avif|bmp)$/.test(original.ContentType ?? "") || !original.ContentLength || original.ContentLength > 20 * 1024 * 1024) {
+            // Do not consume a large/non-image object merely to make a preview.
+            const body = original.Body as typeof original.Body & { destroy?: () => void }
+            body.destroy?.()
+            return null
+        }
+        const prepared = await prepareStoredCommunicationImage(await original.Body.transformToByteArray(), original.ContentType ?? "")
+        if (!prepared?.preview) return null
         await client.send(new PutObjectCommand({ ...input, Key: `${path}${COMMUNICATION_PREVIEW_SUFFIX}`, Body: prepared.preview, ContentType: "image/webp" }))
-        return true
+        return prepared.preview
     })()
     pendingCommunicationPreviews.set(path, pending)
     try { return await pending } finally { pendingCommunicationPreviews.delete(path) }

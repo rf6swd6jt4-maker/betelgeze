@@ -131,3 +131,17 @@ test("history cursors retain microseconds and require a valid complete pair", ()
     assert.deepEqual(communicationHistoryPage({ messages: [{ id: "new" }, { id: "old" }], nextBefore: cursor, hasMore: true }, (value) => value), { messages: [{ id: "old" }, { id: "new" }], nextBefore: cursor, hasMore: true })
     assert.throws(() => communicationHistoryPage({ messages: [], hasMore: true, nextBefore: null }, (value) => value), /cursor/)
 })
+
+test("new legacy preview bytes are delivered without downloading the stored derivative again", async () => {
+    const paths: string[] = []
+    const bytes = new Uint8Array([82, 73, 70, 70])
+    const result = await loadCommunicationMediaRepresentation({
+        originalPath: "original", previewPath: "preview", preview: true, method: "GET",
+        load: async (path) => { paths.push(path); return new Response(null, { status: 404 }) },
+        prepare: async () => new Response(bytes, { headers: { "Content-Type": "image/webp", "Content-Length": "4" } }),
+    })
+    assert.deepEqual(paths, ["preview"])
+    assert.equal(result.deliveryPath, "preview")
+    assert.equal(result.response.headers.get("content-type"), "image/webp")
+    assert.deepEqual(new Uint8Array(await result.response.arrayBuffer()), bytes)
+})

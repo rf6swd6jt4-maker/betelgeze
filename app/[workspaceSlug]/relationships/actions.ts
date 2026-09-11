@@ -194,6 +194,7 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
     } else {
         const { data, error } = await supabaseAdmin.from("relationships").insert({
             ...details, workspace_id: workspace.id, source_type: "manual", lifecycle_phase: phase, status: "active",
+            communication_primary_provider: communicationPrimaryProvider,
             source_metadata: { created_from: "manual_relationship_form", created_by: user.id, is_test: isTest },
         }).select("id").single()
         if (error || !data) return { ok: false, error: "create-failed" }

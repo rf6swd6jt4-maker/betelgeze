@@ -51,9 +51,8 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
     relationship: RelationshipRecord
     planPromise: Promise<RelationshipGanttPlan>
 }) {
-    const [servicesResult, membershipsResult, onboardingConfiguration, currentSaleResult, operations, twilioConnectionResult, publicBranding, brandAssets, currentWork] = await Promise.all([
+    const [servicesResult, onboardingConfiguration, currentSaleResult, operations, twilioConnectionResult, publicBranding, brandAssets, currentWork] = await Promise.all([
         supabaseAdmin.from("relationship_services").select("service_key, service_id, service_revision_id, upfront_price_cents, recurring_price_cents, currency, assignee_user_id").eq("workspace_id", workspaceId).eq("relationship_id", relationship.id),
-        supabaseAdmin.from("workspace_memberships").select("user_id").eq("workspace_id", workspaceId),
         loadPublishedOnboardingConfiguration(workspaceId),
         supabaseAdmin.from("client_sales")
             .select("id, status, stripe_checkout_session_id, stripe_checkout_status, stripe_checkout_url, created_at")
@@ -71,8 +70,7 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
     ])
     if (servicesResult.error) throw new Error(servicesResult.error.message)
     const storedServices = servicesResult.data ?? []
-    const memberIds = (membershipsResult.data ?? []).map((member) => member.user_id)
-    const [agencyLogoSrc, previewModules, profilesResult, serviceRevisions] = await Promise.all([
+    const [agencyLogoSrc, previewModules, serviceRevisions] = await Promise.all([
         brandAssets.logoPath ? createPrivateUploadSignedUrl(brandAssets.logoPath) : null,
         Promise.all(onboardingConfiguration.modules.map(async (module) => ({
             ...module,
@@ -84,10 +82,9 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
                     : block)) : undefined,
             }))),
         }))),
-        memberIds.length ? supabaseAdmin.from("user_profiles").select("user_id, username, display_name").in("user_id", memberIds).order("username") : Promise.resolve({ data: [] }),
         loadOnboardingServiceRevisionDisplays(workspaceId, storedServices.map((service) => service.service_revision_id)),
     ])
-    const members = profilesResult.data ?? []
+    const members = [...operations.people].sort((left, right) => left.name.localeCompare(right.name))
     const serviceOptions = buildRelationshipDealServiceOptions({
         schemaReady: onboardingConfiguration.schemaReady,
         services: onboardingConfiguration.services,
@@ -150,8 +147,8 @@ async function RelationshipWorkspace({ workspaceId, workspaceSlug, workspaceName
             description: relationship.notes_summary ?? "",
             lifecyclePhase: relationship.lifecycle_phase,
         }}
-        members={members.map((member) => ({ id: member.user_id, name: member.display_name?.trim() || member.username }))}
-        managers={operations.people.filter((p) => p.canManage).map((p) => ({ id: p.id, name: p.name }))}
+        members={members.map((member) => ({ id: member.id, name: member.name, avatarSrc: member.avatarSrc }))}
+        managers={members.filter((person) => person.canManage).map((person) => ({ id: person.id, name: person.name, avatarSrc: person.avatarSrc }))}
         eligibleUsers={Object.fromEntries(operations.services.map((service) => [service.id, operations.eligible.filter((e) => e.service_id === service.id).map((e) => e.user_id)]))}
         canSell={Boolean(operations.people.find((p) => p.id === userId)?.canSell) && (!relationship.pos_started_at || relationship.seller_user_id === userId)}
         services={dealServices}

@@ -10,6 +10,11 @@ export async function adminPeople(workspaceId: string) {
     return {
         names: new Map((memberships ?? []).map((membership) => [membership.user_id, names.get(membership.user_id) ?? membership.role])),
         avatarUrls,
-        ownerOptions: (memberships ?? []).filter((membership) => membership.role === "owner" || membership.role === "admin").map((membership) => ({ user_id: membership.user_id, role: membership.role, name: names.get(membership.user_id) ?? membership.role })),
+        ownerOptions: (memberships ?? []).filter((membership) => membership.role === "owner" || membership.role === "admin").map((membership) => ({
+            user_id: membership.user_id,
+            role: membership.role,
+            name: names.get(membership.user_id) ?? membership.role,
+            avatarSrc: avatarUrls.get(membership.user_id) ?? null,
+        })),
     }
 }

@@ -1,4 +1,5 @@
 import { accessibleRelationshipIds, accessibleWorkItemIds, requireWorkspaceAccess } from "@/lib/workspace-access"
+import { profileAvatarUrl } from "@/lib/profile-avatar"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
@@ -21,13 +22,14 @@ export async function GET(_request: Request, context: { params: Promise<{ worksp
     ])
     const adminIds = (adminMemberships ?? []).map((item) => item.user_id)
     const { data: adminProfiles } = adminIds.length
-        ? await supabaseAdmin.from("user_profiles").select("user_id, username").in("user_id", adminIds)
+        ? await supabaseAdmin.from("user_profiles").select("user_id, username, avatar_path").in("user_id", adminIds)
         : { data: [] }
     const adminNames = new Map((adminProfiles ?? []).map((item) => [item.user_id, item.username]))
+    const adminAvatars = new Map((adminProfiles ?? []).map((item) => [item.user_id, item.avatar_path ? profileAvatarUrl(item.username, item.avatar_path) : null]))
 
     return Response.json({
         workItemOptions: (workItems ?? []).map((item) => ({ id: item.id, title: item.title, status: item.status })),
         relationshipOptions: (relationships ?? []).map((relationship) => ({ id: relationship.id, label: relationship.business_name ?? relationship.primary_person_name ?? "Relationship" })),
-        okrOwnerOptions: (adminMemberships ?? []).map((item) => ({ id: item.user_id, label: adminNames.get(item.user_id) ?? (item.user_id === user.id ? "Account" : item.role), role: item.role })),
+        okrOwnerOptions: (adminMemberships ?? []).map((item) => ({ id: item.user_id, label: adminNames.get(item.user_id) ?? (item.user_id === user.id ? "Account" : item.role), role: item.role, avatarSrc: adminAvatars.get(item.user_id) ?? null })),
     }, { headers: { "Cache-Control": "private, no-store" } })
 }

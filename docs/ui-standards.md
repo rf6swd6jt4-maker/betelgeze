@@ -44,7 +44,7 @@ Quotes use the reply preview and composer preview with the selected passage in q
 
 ## Team chat mentions
 
-Typing `@` at the start of a word in a team composer opens `ComposerMentionPicker`, using `AnchoredPopup`, `List`, and `Assignee`. Filter only current group members by display name. Keep rows at least 44px tall, retain composer focus on selection, and scroll the menu independently within the visible keyboard viewport. Arrow keys move the selection; Enter or Tab inserts it; Escape dismisses it. Mentions display a bold `@Display Name` and retain a stable user ID inside the encrypted message body, including saved drafts and queued sends. Only mentioned current participants other than the sender receive mention-specific push wording, subject to existing notification permissions and active-chat suppression.
+Typing `@` at the start of a word in a team composer opens `ComposerMentionPicker`, using `SelectorDrawer`, `SelectorOption`, and `Assignee`. Filter only current group members by display name. Keep rows at least 44px tall, retain composer focus on selection, and scroll the menu independently within the visible keyboard viewport. Arrow keys move the selection; Enter or Tab inserts it; Escape dismisses it. Mentions display a bold `@Display Name` and retain a stable user ID inside the encrypted message body, including saved drafts and queued sends. Only mentioned current participants other than the sender receive mention-specific push wording, subject to existing notification permissions and active-chat suppression.
 
 ## Chat layout motion
 
@@ -181,6 +181,57 @@ Do not use this shape for statuses, tests, warnings, services, modules, or arbit
 - Extend a shared primitive when a new stable variant is required. Do not invent a one-off treatment in a page.
 - When the design changes, update `components/ui`, this document, and existing uses together.
 - A local exception must include a code comment explaining why the shared primitive cannot represent it.
+
+## Selectors and compact choice drawers
+
+`Selector` is the standard control for choosing one item from a compact list behind a chevron. `SelectorTrigger`, `SelectorDrawer`, and `SelectorOption` are its composable parts for multi-select or specialised editors. Use these instead of page-local dropdowns whenever the choices are records, people, providers, modes, or other named items that benefit from recognisable visual content. Native selects remain appropriate for dense numeric or browser-native choices such as date parts, billing intervals, and small configuration enums with no meaningful visual identity.
+
+The trigger always shows the current value at the left and one small downward chevron at the right. It has three canonical surfaces: `field` is quiet and borderless inside `DetailField`; `input` is a 40px bordered form control; `compact` is the smaller bordered control used in list rows and settings. Do not add a second disclosure icon, an ellipsis, or a permanently visible list of choices beside it. Missing optional values use restrained neutral text such as `Choose person`; a valid selected value uses its canonical UI element.
+
+`SelectorDrawer` is an anchored popup, not a screen-edge modal drawer. It has a near-black face, `border-neutral-700`, a 12px radius, a strong shadow, a default width of 288px, and a bounded internally scrolling list. It opens directly above the pressed trigger through `AnchoredPopup`, keeping the standard 6px trigger gap and 8px visible-viewport margin. It portals above the shell and same-origin panel frames, recalculates while either element or the visual viewport moves, and dismisses on outside press, Escape, navigation, inactive tab, or selection. Never implement a selector as a page-local absolutely positioned menu.
+
+Each option is one compact row: leading identity, one truncating label, an optional short secondary line, and a trailing check for the selected value. Rows are 40px minimum on desktop and inherit the platform 44px touch target on mobile. Hover, keyboard focus, and current selection use the neutral row highlight; colour is reserved for the identity element rather than a full bright row. Arrow keys wrap through choices, Home and End jump to the bounds, and Enter or Space chooses the focused row. Search appears when there are seven or more choices, filters existing in-memory data, and must not introduce a fetch for each keystroke. Keep titles and descriptions short; explanations that apply to the entire choice set belong in the drawer header.
+
+```tsx
+<Selector
+    value={deliveryMode}
+    options={deliveryOptions}
+    onChange={setDeliveryMode}
+    ariaLabel="Outbound delivery mode"
+/>
+```
+
+### AssignmentSelector
+
+`AssignmentSelector` is the only single-person assignment control. Its selected value and every person row use `Assignee`, including the standard circular avatar and RoundPill geometry. Use it for project managers, fulfilment people, owners, sellers when seller reassignment is supported, and operational responsibility. A read-only or system-fixed assignment is still rendered as `Assignee`, but has no chevron and does not imply that it can be changed. Do not render an editable person as plain text, a native select, initials in a square, or a locally assembled avatar row.
+
+Assignment choice data comes from the page's already-authorised roster. Opening the drawer is instant and local; it must not trigger another member or avatar fetch. Larger rosters gain the standard in-drawer person search. Multi-person editors compose `SelectorDrawer` and `SelectorOption`: selected people receive checks, and any specialised role action such as `Make owner` is a separate trailing action rather than a nested control inside the person button.
+
+```tsx
+<AssignmentSelector
+    value={managerId}
+    people={eligibleManagers}
+    onChange={setManagerId}
+    ariaLabel="Client project manager"
+    appearance="input"
+/>
+```
+
+### CommunicationMethodSelector
+
+`CommunicationMethodSelector` is the standard visually identified communication-method choice. It uses `CommunicationMethodLabel` and the shared circular marks: WhatsApp green with the WhatsApp handset, Twilio red with its four-dot mark, and neutral phone with a handset. The generic phone mark is for a direct call/contact action; it is not a message-delivery provider. Relationship messaging currently offers only the providers actually supported by delivery code: `meta_whatsapp` and `twilio_sms`.
+
+Provider availability is expressed by disabling the unavailable option and a concise description such as `Use the saved WhatsApp number`. Do not silently invent a delivery channel, use text-only `WA` or `SMS` abbreviations, substitute unrelated brand marks, or copy provider SVGs into page files. The same selector and marks must be used in relationship details, POS, new-relationship creation, and future contact-method assignment flows.
+
+```tsx
+<CommunicationMethodSelector
+    name="communication_primary_provider"
+    value={provider}
+    choices={communicationChoices}
+    onChange={setProvider}
+    appearance="input"
+/>
+```
 
 ## PanelTabHeader
 
@@ -442,7 +493,7 @@ The record-specific middle remains flexible. The header, fields, and destructive
 - Every `DetailField` is a restrained row with a muted icon and label, a readable value, `min-h-10`, `py-2`, and a `border-neutral-900` bottom divider.
 - Desktop rows use a fixed `9rem` label track; mobile uses `8rem`. Values take the remaining width and may contain text, inputs, selectors, shared pills, `Status`, `Assignee`, or a popup trigger.
 - The second desktop column adds `border-l border-neutral-900 pl-8`. A full-width field uses `lg:col-span-2`. The page supplies only these placement classes; it must not restyle the row.
-- Editable values remain visually quiet on the page surface. Popups may use their own bordered floating surface. Use established shared primitives inside values instead of local imitations.
+- Editable values remain visually quiet on the page surface. Single-choice field values use the borderless `Selector` field appearance; people use `AssignmentSelector`; communication providers use `CommunicationMethodSelector`. Popups may use their own bordered floating surface. Use established shared primitives inside values instead of local imitations.
 - Every field popup uses `AnchoredPopup`, anchored to the exact pressed field value. It opens directly above that trigger, is clamped within the visible viewport, scrolls internally when space is constrained, and portals in front of page, shell, and same-origin iframe content. This placement is recalculated while the page, visual viewport, trigger, or popup changes size or position.
 - Omit fields that do not apply. Do not render decorative empty rows to balance the columns.
 - Long descriptions may span both columns. Record-specific analytical summaries such as poll funnel statistics remain content, not fields.
@@ -509,9 +560,9 @@ Mobile tab swipes scroll the strip. A stationary 650ms press lifts a tab for reo
 
 ## Operational responsibility controls
 
-Settings > Teams uses the shared `Assignee` treatment with compact Seller and Manager checkboxes. Service eligibility is secondary text; permission controls and maintenance routing expand on demand. Do not present workspace authority (Owner/Admin/Staff) as interchangeable with these positions.
+Settings > Teams uses the shared `Assignee` treatment with compact Seller and Manager checkboxes. Service eligibility is secondary text; permission controls and maintenance routing expand on demand. Maintenance responsibility uses the compact `AssignmentSelector`. Do not present workspace authority (Owner/Admin/Staff) as interchangeable with these positions.
 
-`DeliveryUserPicker` is the shared compact multi-user selector for service eligibility and optional client-chat participation. It uses `List` and `Assignee`, adds search for larger workspaces, and keeps the list height bounded. POS makes one selection per purchased service using a compact field. The client and internal group rosters use shared assignees; internal membership is read-only, while the client manager controls optional client-chat participants.
+`DeliveryUserPicker` is the shared compact multi-user selector for service eligibility and optional client-chat participation. It uses `List` and `Assignee`, adds search for larger workspaces, and keeps the list height bounded. POS makes one selection per purchased service using `AssignmentSelector`. The client and internal group rosters use shared assignees; internal membership is read-only, while the client manager controls optional client-chat participants.
 
 ## Relationship context
 

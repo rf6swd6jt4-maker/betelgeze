@@ -17,14 +17,14 @@ export async function GET(_request: Request, context: { params: Promise<{ worksp
         ])
         if (services.error || revisions.error) throw new Error("Service choices could not be loaded.")
         return Response.json({
-            managers: operations.people.filter((person) => person.canManage).map((person) => ({ id: person.id, name: person.name })),
+            managers: operations.people.filter((person) => person.canManage).map((person) => ({ id: person.id, name: person.name, avatarSrc: person.avatarSrc })),
             services: (services.data ?? []).flatMap((service) => {
                 const revision = revisions.data?.find((item) => item.service_id === service.id)
                 if (!revision) return []
                 const definition = revision.definition as Record<string, unknown> | null
                 return [{ id: service.id, revisionId: revision.id, name: revision.name,
                     appointmentSetting: (definition?.templateId ?? definition?.template_id) === "appointment-setting",
-                    people: operations.people.filter((person) => operations.eligible.some((item) => item.service_id === service.id && item.user_id === person.id)).map((person) => ({ id: person.id, name: person.name })),
+                    people: operations.people.filter((person) => operations.eligible.some((item) => item.service_id === service.id && item.user_id === person.id)).map((person) => ({ id: person.id, name: person.name, avatarSrc: person.avatarSrc })),
                 }]
             }).sort((a, b) => a.name.localeCompare(b.name)),
         }, { headers: { "Cache-Control": "private, no-store" } })

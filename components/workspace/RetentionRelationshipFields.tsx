@@ -2,14 +2,13 @@
 
 import { useEffect, useState } from "react"
 import { List, ListItem } from "@/components/list/List"
+import { AssignmentSelector } from "@/components/ui"
 import { APPOINTMENT_FIELD_OPTIONS, APPOINTMENT_MEDIUM_OPTIONS, type AppointmentSettingConfiguration } from "@/lib/appointment-setting"
 
-type Person = { id: string; name: string }
+type Person = { id: string; name: string; avatarSrc?: string | null }
 type Service = { id: string; revisionId: string; name: string; appointmentSetting: boolean; people: Person[] }
 type Choices = { managers: Person[]; services: Service[] }
 type Selection = { service_id: string; revision_id: string; assignee_user_id: string; appointment_configuration?: AppointmentSettingConfiguration }
-const inputClass = "mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"
-
 export function RetentionRelationshipFields({ workspaceSlug, currentUserId, onReady }: { workspaceSlug: string; currentUserId: string; onReady: (ready: boolean) => void }) {
     const [choices, setChoices] = useState<Choices | null>(null)
     const [error, setError] = useState<string | null>(null)
@@ -42,7 +41,7 @@ export function RetentionRelationshipFields({ workspaceSlug, currentUserId, onRe
         {!choices && !error ? <p role="status" className="text-sm text-neutral-400">Loading services and team…</p> : null}
         {error ? <p role="alert" className="text-sm text-red-300">{error} <button type="button" onClick={() => { setError(null); setAttempt((value) => value + 1) }} className="underline">Retry</button></p> : null}
         {choices ? <>
-            <label className="block text-sm text-neutral-300">Client manager<select name="fulfilment_manager_user_id" value={manager} required onChange={(event) => setManager(event.target.value)} className={inputClass}><option value="">Choose manager</option>{choices.managers.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+            <label className="block text-sm text-neutral-300">Client manager<span className="mt-1.5 block"><AssignmentSelector name="fulfilment_manager_user_id" value={manager} people={choices.managers} required onChange={setManager} ariaLabel="Client project manager" placeholder="Choose manager" clearLabel="Choose manager" appearance="input" title="Assign project manager" /></span></label>
             {!choices.managers.length ? <p className="text-xs text-amber-300">Enable a manager in Settings → Teams first.</p> : null}
             <fieldset><legend className="mb-2 text-sm text-neutral-300">Services</legend>
                 <List ariaLabel="Available retention services">{choices.services.map((service) => {
@@ -51,7 +50,7 @@ export function RetentionRelationshipFields({ workspaceSlug, currentUserId, onRe
                     return <ListItem key={service.id}><div className="space-y-3 px-3 py-3">
                         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(selection)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, { service_id: service.id, revision_id: service.revisionId, assignee_user_id: "", ...(service.appointmentSetting ? { appointment_configuration: { mediums: [], fields: [] } } : {}) }] : current.filter((item) => item.service_id !== service.id))} />{service.name}</label>
                         {selection ? <>
-                            <label className="block text-sm text-neutral-300">Delivery person for {service.name}<select required value={selection.assignee_user_id} onChange={(event) => updateService(service.id, { assignee_user_id: event.target.value })} className={inputClass}><option value="">Choose delivery person</option>{service.people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+                            <label className="block text-sm text-neutral-300">Delivery person for {service.name}<span className="mt-1.5 block"><AssignmentSelector value={selection.assignee_user_id} people={service.people} required onChange={(value) => updateService(service.id, { assignee_user_id: value })} ariaLabel={`Delivery person for ${service.name}`} placeholder="Choose delivery person" clearLabel="Choose delivery person" appearance="input" title="Assign delivery person" /></span></label>
                             {!service.people.length ? <p className="text-xs text-amber-300">Choose eligible people for this service in Settings → Services first.</p> : null}
                             {config ? <div className="space-y-3">
                                 <fieldset><legend className="text-sm text-neutral-300">How can appointments take place?</legend><div className="mt-2 flex flex-wrap gap-3">{APPOINTMENT_MEDIUM_OPTIONS.map((medium) => <label key={medium.key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.mediums.includes(medium.key)} onChange={(event) => configure(selection, { mediums: event.target.checked ? [...config.mediums, medium.key] : config.mediums.filter((key) => key !== medium.key) })} />{medium.label}</label>)}</div></fieldset>

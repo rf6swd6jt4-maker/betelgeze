@@ -2,7 +2,7 @@
 import { useState, useTransition } from "react"
 import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
-import { Assignee, Status } from "@/components/ui"
+import { Assignee, AssignmentSelector, Status } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
 import { saveWorkspaceOperations, saveMaintenanceAssignments } from "@/app/[workspaceSlug]/settings/team-actions"
 import { ServiceStaffPermissionsEditor } from "@/components/settings/ServiceCatalogue"
@@ -66,7 +66,7 @@ export function WorkspaceTeamSettings({ workspaceSlug, operations, isOwner }: { 
         <details className="mt-4 border-t border-neutral-800 pt-3">
             <summary className="cursor-pointer text-sm text-neutral-300">Maintenance responsibility</summary>
             <p className="mt-2 text-xs leading-5 text-neutral-500">Route platform issues to the right person. Membership of the Maintenance group follows these assignments.</p>
-            <List ariaLabel="Maintenance responsibility" className="!mt-3">{operations.maintenance.map((route) => <ListItem key={route.key}><ListPrimaryRow className="!flex-wrap !whitespace-normal"><ListTitle className="flex-1">{route.label}</ListTitle><select aria-label={`${route.label} responsible person`} disabled={!isOwner || pending} value={maintenance[route.key]} onChange={(e) => setMaintenance((all) => ({ ...all, [route.key]: e.target.value }))} className="h-8 max-w-48 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-xs text-neutral-300"><option value="">Choose person</option>{people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></ListPrimaryRow></ListItem>)}</List>
+            <List ariaLabel="Maintenance responsibility" className="!mt-3">{operations.maintenance.map((route) => <ListItem key={route.key}><ListPrimaryRow className="!flex-wrap !whitespace-normal"><ListTitle className="flex-1">{route.label}</ListTitle><AssignmentSelector ariaLabel={`${route.label} responsible person`} disabled={!isOwner || pending} value={maintenance[route.key]} onChange={(value) => setMaintenance((all) => ({ ...all, [route.key]: value }))} people={people} placeholder="Choose person" clearLabel="Workspace owner" appearance="compact" className="w-56" title="Assign responsibility" /></ListPrimaryRow></ListItem>)}</List>
             {isOwner ? <div className="mt-3 flex justify-end"><button type="button" disabled={pending || operations.maintenance.every((r) => maintenance[r.key] === r.userId)} onClick={() => { setError(null); setSaved(false); startTransition(async () => { const result = await saveMaintenanceAssignments(workspaceSlug,maintenance); if (!result.ok) setError(result.error); else { setSaved(true); router.refresh() } }) }} className="h-8 rounded-md bg-white px-3 text-xs font-medium text-black disabled:opacity-40">Save maintenance</button></div> : null}
         </details>
         {service && portalTarget ? createPortal(<ServiceStaffPermissionsEditor workspaceSlug={workspaceSlug} service={service} initialPermissions={operations.servicePermissions[service.id] ?? []} onClose={() => setServiceId(null)} />,portalTarget) : null}

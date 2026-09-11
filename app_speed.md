@@ -47,6 +47,7 @@ Apply judgment: this gate concerns a concrete mechanism or unresolved material r
 - Keep the mounted shell's bootstrap tab identity stable across server revalidation. Readiness belongs to the mounted document: recover missed acknowledgements with bounded local probes for initial, new, and restored tabs. A timer, tab activation, or iframe `load` event must not automatically restart a pending document; retain slow destinations with an explicit retry and matching late recovery.
 - Bound native panel reads (currently 30 seconds including response parsing), release failed request deduplication slots, and surface errors without discarding usable cached content. Never turn a request timeout into automatic repeated fetches.
 - Preserve mounted/ready/paint distinctions, exact destination matching, cancellation, and late recovery. An iframe `load` event, resolved request, or bridge location message must not be reported as usable painted content.
+- A committed in-frame URL replacement must clear the preceding load's timeout; distinguish it from an old probe reply during a still-pending navigation.
 - Pause unnecessary hidden-tab rendering, polling, prefetch, and media work. Bound resident resources and clean up listeners/timers; retain the recovery and subscriptions needed for correctness.
 
 ### Database, API, and caching

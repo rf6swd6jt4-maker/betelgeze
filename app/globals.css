@@ -24,6 +24,14 @@ body:has([data-workspace-shell-root]) [data-app-startup-screen] {
   display: none !important;
 }
 
+/* Paint the brand before streamed content or styles arrive, then let the
+   rendered route own its canvas (including public forms and iframe panels). */
+html:has(:is(main, form, [data-workspace-shell-root])),
+html:has(:is(main, form, [data-workspace-shell-root])) body {
+  background-image: none !important;
+  background-color: var(--background) !important;
+}
+
 html[data-workspace-viewport-locked="true"] {
   height: 100%;
   overflow: hidden;

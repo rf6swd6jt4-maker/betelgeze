@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import { GlobalLoadingOverlay } from "@/components/GlobalLoadingOverlay";
+import { appStartupCanvas } from "@/components/AppStartupScreen";
 import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import { WorkspaceTabFrameGuard } from "@/components/workspace/WorkspaceTabFrameGuard";
 import { WORKSPACE_TAB_FRAME_NAME_PREFIX, WORKSPACE_TAB_FRAME_PARAM } from "@/lib/workspace-tabs";
@@ -62,10 +63,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      style={{ backgroundColor: "#0a0a0a", colorScheme: "dark" }}
+      style={{ ...appStartupCanvas, height: "100%", colorScheme: "dark" }}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body style={appStartupCanvas} className="min-h-full flex flex-col">
         <Script id="workspace-frame-bootstrap" strategy="beforeInteractive">{workspaceFrameBootstrap}</Script>
         <Suspense fallback={null}>
           <WorkspaceTabFrameGuard />

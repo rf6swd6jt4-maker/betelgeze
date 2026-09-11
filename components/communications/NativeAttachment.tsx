@@ -135,6 +135,7 @@ function SingleNativeAttachment({ attachment, onOpenImage, light = false, whiteO
         <div className="relative mb-2 w-full overflow-hidden rounded-xl bg-black" style={{ aspectRatio: ratio, maxHeight: 480 }}>
             {failed ? fallback : admitted ? <video key={attempt} src={attachment.url} poster={attachment.hasPreview ? previewUrl : undefined} controls playsInline preload="none" aria-label={attachment.fileName} onError={() => setFailed(true)} className="absolute inset-0 h-full w-full object-contain" /> : null}
         </div>
+        <button type="button" data-message-control onClick={() => onOpenImage({ url: attachment.url, alt: attachment.fileName, kind: "video" })} className="mb-2 flex items-center gap-1.5 text-xs opacity-70 hover:opacity-100" aria-label={`Expand ${attachment.fileName}`}><OpenWithIcon className="h-3.5 w-3.5" />Expand video</button>
         <AttachmentFileCard attachment={attachment} />
     </div>
     if (attachment.kind === "audio") return <div ref={ref} data-message-media onClick={(event) => event.stopPropagation()}>
@@ -146,8 +147,15 @@ function SingleNativeAttachment({ attachment, onOpenImage, light = false, whiteO
 
 export function NativeAttachment(props: { attachment: CommunicationAttachment; onOpenImage: (media: MessageMediaPreview) => void; light?: boolean; whiteOnColor?: boolean }) {
     const files = attachmentBatch(props.attachment)
-    if (files.length === 1) return <SingleNativeAttachment {...props} attachment={files[0]} />
+    const onOpenImage = (selected: MessageMediaPreview) => props.onOpenImage({
+        ...selected,
+        items: files.filter((file) => ["image", "sticker", "video"].includes(file.kind)).map((file) => ({
+            url: file.url, alt: file.fileName, kind: file.kind === "video" ? "video" as const : "image" as const,
+            thumbnailUrl: file.kind === "sticker" ? file.url : file.kind === "image" || file.hasPreview ? communicationPreviewUrl(file.url) : undefined,
+        })),
+    })
+    if (files.length === 1) return <SingleNativeAttachment {...props} attachment={files[0]} onOpenImage={onOpenImage} />
     return <div className="grid grid-cols-2 items-start gap-2" aria-label={`${files.length} attachments`}>
-        {files.map((attachment) => <div key={attachment.storagePath} className={attachment.kind === "image" || attachment.kind === "video" ? "min-w-0" : "col-span-2 min-w-0"}><SingleNativeAttachment {...props} attachment={attachment} /></div>)}
+        {files.map((attachment) => <div key={attachment.storagePath} className={attachment.kind === "image" || attachment.kind === "video" ? "min-w-0" : "col-span-2 min-w-0"}><SingleNativeAttachment {...props} attachment={attachment} onOpenImage={onOpenImage} /></div>)}
     </div>
 }

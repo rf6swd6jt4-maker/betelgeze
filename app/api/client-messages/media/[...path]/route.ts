@@ -63,18 +63,18 @@ async function loadMediaResponse(request: Request, context: RouteContext) {
         // Always authorize the original path. Never expose keys or public URLs.
         const { response: mediaResponse, deliveryPath } = await loadCommunicationMediaRepresentation({
             originalPath: storagePath, previewPath: `${storagePath}${COMMUNICATION_PREVIEW_SUFFIX}`, preview, method,
-            prepare: async () => {
-                const bytes = await ensureCommunicationImagePreview(storagePath, customerKey)
+            prepare: async (signal) => {
+                const bytes = await ensureCommunicationImagePreview(storagePath, customerKey, signal)
                 return bytes ? new Response(new Uint8Array(bytes), { headers: {
                     "Content-Type": "image/webp", "Content-Length": String(bytes.byteLength),
                 } }) : false
             },
-            load: async (deliveryPath) => {
+            load: async (deliveryPath, signal) => {
                 const signed = customerKey
                     ? await createEncryptedPrivateUploadSignedRequest(deliveryPath, customerKey, undefined, method)
                     : { url: await createPrivateUploadSignedUrl(deliveryPath, undefined, method), headers: {} as Record<string, string> }
                 return fetch(signed.url, {
-                    method, cache: "no-store",
+                    method, cache: "no-store", signal,
                     headers: { ...signed.headers, ...communicationMediaRequestHeaders(request, preview) },
                 })
             },

@@ -67,6 +67,7 @@ Apply judgment: this gate concerns a concrete mechanism or unresolved material r
 - Keep older messages accessible through cursor history and targeted reply/pin reads. Preserve timestamp precision, tie-breaking, scroll anchors, and previously loaded history. A capped snapshot is authoritative only within its own conversation/window; omission outside that window is not deletion.
 - Preserve coordinated updates, read cursors, tombstones, pending mutations, acknowledgement reconciliation, and reliable reconnect behavior. Unread metadata must remain correct even for messages whose bodies are not loaded.
 - Request visible previews first with bounded concurrency. Preserve stable media dimensions; load originals/playback on demand. Do not bulk download, sign, or decode offscreen attachments, or restart already displayed media when it briefly leaves the viewport.
+- Missing-preview cleanup must not await cancellation of a cloned fetch stream. Bound preview lookup/preparation and abort its upstream work before falling back to the authorized original; an expired preview deadline must not abort the original stream. Cover nonempty cloned storage errors in regression tests.
 - Keep staff, Team/direct, client, and portal authorization boundaries distinct. Their endpoints and data volumes are not interchangeable.
 
 ### Writes, drafts, and offline behavior

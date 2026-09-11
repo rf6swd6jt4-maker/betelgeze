@@ -137,6 +137,8 @@ These values are the palette definition. Do not substitute nearby framework colo
 
 Use `Assignee` when the attached thing is a person assigned to something. Its default is the canonical avatar-and-name form of `RoundPill`; do not assemble a separate profile-picture treatment for assignees. In space-constrained visualisations such as Gantt bars, use its `compact` avatar-only mode.
 
+Assignee avatars and their profile buttons share explicit square dimensions: 16px in a name pill, 18px in compact mode, and 24px in medium compact mode. Profile buttons use `data-icon-button` to opt out of the ordinary mobile button minimum height. Keep the avatar centered beside the single-line, truncating name; interactive and read-only assignees must retain the same geometry on mobile and desktop.
+
 ```tsx
 <RoundPill tone="emerald">Paid Social</RoundPill>
 <RoundPill tone="sky">Reporting</RoundPill>

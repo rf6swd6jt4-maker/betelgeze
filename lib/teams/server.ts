@@ -165,7 +165,7 @@ export async function loadNativeCommunications(input: {
     const activePeopleById = new Map(peopleResult.people.map((person) => [person.id, person]))
     const historicalIds = [...new Set([
         ...(messageResult.data ?? []).map((message: { sender_user_id?: string | null }) => message.sender_user_id),
-        ...(selectedMessages ?? []).map((message) => message.senderUserId),
+        ...(selectedMessages ?? []).map((message) => message.senderUserId === "be" ? null : message.senderUserId),
         ...(reactionResult.data ?? []).map((reaction) => reaction.reactor_user_id),
         ...(conversationResult.data ?? []).flatMap((conversation) => [conversation.direct_user_one, conversation.direct_user_two]),
     ].filter((id): id is string => Boolean(id) && !activePeopleById.has(id)))]

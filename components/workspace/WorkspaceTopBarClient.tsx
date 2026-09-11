@@ -85,7 +85,7 @@ const ShellRelationshipContextPanel = dynamic(() => import("@/components/workspa
 
 const sidebarStorageKey = "betelgeze:workspace-sidebar-open"
 const MAX_RESIDENT_WORKSPACE_FRAMES = 3
-const WORKSPACE_SOFT_NAVIGATION_FALLBACK_MS = 8_000
+const WORKSPACE_NAVIGATION_PROBE_MS = 8_000
 type WorkspacePresenceChannel = ReturnType<ReturnType<typeof createSupabaseBrowserClient>["channel"]>
 
 type WorkspaceTab = {
@@ -333,7 +333,10 @@ export function WorkspaceTopBarClient(props: Props) {
     return <WorkspaceTabsShell {...props} />
 }
 
-function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, nativePanelsEnabled = false, nativeBanner, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createOkrAction }: Props) {
+function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootstrapTab, nativePanelsEnabled = false, nativeBanner, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createOkrAction }: Props) {
+    // Revalidation may supply a new launch ID. The mounted shell already owns
+    // its tabs: changing this ID detaches frame refs and erases their readiness.
+    const [initialTab] = useState(() => bootstrapTab)
     const online = useOnline()
     const pathname = usePathname()
     const searchParams = useSearchParams()
@@ -708,26 +711,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
             nativeNavigationPerformance.finishTarget(tabId, url, "timeout")
             pendingNavigationRef.current.delete(tabId)
             readyTabIdsRef.current.delete(tabId)
-            const fallback = navigationFallbackRef.current.get(tabId)
             navigationFallbackRef.current.delete(tabId)
-            // Keep a native destination mounted so a slow successful read can
-            // recover. Legacy frames still restore their last working page.
-            if (fallback && !nativeRefs.current.has(tabId)) {
-                setTabs((existingTabs) => {
-                    const restored = existingTabs.map((tab) => tab.id === tabId ? fallback : tab)
-                    tabsRef.current = restored
-                    saveTabsState(restored, activeTabIdRef.current)
-                    return restored
-                })
-                const frame = iframeRefs.current.get(tabId)
-                if (frame?.contentWindow) {
-                    try {
-                        frame.contentWindow.location.replace(workspaceTabFrameUrl(fallback.url, tabId, window.location.origin))
-                    } catch {
-                        frame.src = workspaceTabFrameUrl(fallback.url, tabId, window.location.origin)
-                    }
-                }
-            }
+            // A slow native read or frame transition can still finish. Never
+            // restart the document or navigate back merely because time elapsed.
+            if (tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
             navigationTimeoutRef.current.delete(tabId)
             navigationErrorRef.current.set(tabId, url)
             setNavigationStateByTab((current) => ({
@@ -741,7 +728,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
             cancel: (timer) => window.clearTimeout(timer),
         })
         navigationTimeoutRef.current.set(tabId, timeout)
-    }, [saveTabsState, nativeNavigationPerformance])
+    }, [nativeNavigationPerformance])
 
     useEffect(() => {
         const navigationTimeouts = navigationTimeoutRef.current
@@ -881,6 +868,16 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
     const assignTabFrameRef = useCallback((tabId: string, node: HTMLIFrameElement | null) => {
         if (node) {
             iframeRefs.current.set(tabId, node)
+            // Native -> frame changes can retain the tab ID. Readiness belongs
+            // to the document, not to the previous renderer at that ID.
+            loadedTabIdsRef.current.delete(tabId)
+            readyTabIdsRef.current.delete(tabId)
+            setLoadedTabIds((current) => {
+                if (!current.has(tabId)) return current
+                const next = new Set(current)
+                next.delete(tabId)
+                return next
+            })
             if (tabId === initialTab.id) markWorkspaceLaunch("initial_frame_mounted_ms")
             return
         }
@@ -929,14 +926,14 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
         })
     }, [initialTab.id, initialTab.url, launchServerTiming, workspace.slug])
 
-    const ensureTabFrameLocation = useCallback((tabId: string, url: string, mode: "assign" | "replace" = "assign") => {
+    const ensureTabFrameLocation = useCallback((tabId: string, url: string, mode: "assign" | "replace" = "assign", force = false) => {
         if (nativeRefs.current.has(tabId)) return false
         const frame = iframeRefs.current.get(tabId)
         if (!frame?.contentWindow) return false
         const target = workspaceTabFrameUrl(url, tabId, window.location.origin)
 
         try {
-            if (workspaceTabFrameMatchesUrl(frame.contentWindow.location.href, url, tabId, window.location.origin)) return false
+            if (!force && workspaceTabFrameMatchesUrl(frame.contentWindow.location.href, url, tabId, window.location.origin)) return false
             readyTabIdsRef.current.delete(tabId)
             if (mode === "replace") frame.contentWindow.location.replace(target)
             else frame.contentWindow.location.assign(target)
@@ -949,24 +946,22 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
         return true
     }, [])
 
-    const scheduleSoftNavigationFallback = useCallback((tabId: string, url: string, mode: "assign" | "replace" = "assign") => {
+    const scheduleSoftNavigationFallback = useCallback((tabId: string, url: string) => {
         const existing = softNavigationFallbackRef.current.get(tabId)
         if (existing) window.clearTimeout(existing)
         const timeout = window.setTimeout(() => {
             softNavigationFallbackRef.current.delete(tabId)
-            if (pendingNavigationRef.current.get(tabId) === url) ensureTabFrameLocation(tabId, url, mode)
-        }, WORKSPACE_SOFT_NAVIGATION_FALLBACK_MS)
+            if (pendingNavigationRef.current.get(tabId) === url) postToTab(tabId, { type: "probe" })
+        }, WORKSPACE_NAVIGATION_PROBE_MS)
         softNavigationFallbackRef.current.set(tabId, timeout)
-    }, [ensureTabFrameLocation])
+    }, [postToTab])
 
     const requestTabFrameNavigation = useCallback((tabId: string, url: string, mode: "assign" | "replace" = "assign") => {
         const messageType = mode === "replace" ? "traverse" : "navigate"
         if (readyTabIdsRef.current.has(tabId) && postToTab(tabId, { type: messageType, url })) {
             readyTabIdsRef.current.delete(tabId)
-            // Let the frame keep its current UI while the App Router streams
-            // the next route. A delayed direct navigation remains as a safety
-            // net for a transition that never acknowledges its destination.
-            scheduleSoftNavigationFallback(tabId, url, mode)
+            // Recover a missed acknowledgement without aborting the stream.
+            scheduleSoftNavigationFallback(tabId, url)
             return
         }
 
@@ -1077,8 +1072,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
             window.requestAnimationFrame(() => {
                 postToTab(previousTabId, { type: "activate", active: false, refresh: false })
                 postToTab(existingTab.id, { type: "activate", active: true, refresh })
-                const desiredUrl = pendingNavigationRef.current.get(existingTab.id) ?? existingTab.url
-                if (ensureTabFrameLocation(existingTab.id, desiredUrl)) beginTabNavigation(existingTab.id, desiredUrl)
+                postToTab(existingTab.id, { type: "probe" })
             })
             return
         }
@@ -1115,7 +1109,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
         setContextOpenByTab((current) => ({ ...current, [tab.id]: true }))
         saveTabsState(nextTabs, tab.id)
         window.requestAnimationFrame(() => postToTab(previousTabId, { type: "activate", active: false, refresh: false }))
-    }, [activateWorkspaceTab, beginTabNavigation, ensureTabFrameLocation, normalizeWorkspaceUrl, postToTab, requestTabFrameNavigation, saveTabsState, titleForUrl, updateTabForShellNavigation, workspace.slug, prepareNativeLeave, startNativeNavigation, nativeNavigationPerformance])
+    }, [activateWorkspaceTab, beginTabNavigation, normalizeWorkspaceUrl, postToTab, requestTabFrameNavigation, saveTabsState, titleForUrl, updateTabForShellNavigation, workspace.slug, prepareNativeLeave, startNativeNavigation, nativeNavigationPerformance])
 
     useEffect(() => {
         function openPortalledDetail(event: MouseEvent) {
@@ -1201,7 +1195,14 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
                 return
             }
             if (native && message.type === "navigation-failed" && message.url) {
-                nativeNavigationPerformance.finishTarget(message.tabId, normalizeWorkspaceUrl(message.url), "failed")
+                const url = normalizeWorkspaceUrl(message.url)
+                if (!workspaceNavigationReadyMatches(url, tabsRef.current.find((tab) => tab.id === message.tabId)?.url, pendingNavigationRef.current.get(message.tabId))) return
+                nativeNavigationPerformance.finishTarget(message.tabId, url, "failed")
+                completeTabNavigation(message.tabId, url)
+                pendingNavigationRef.current.delete(message.tabId)
+                navigationErrorRef.current.set(message.tabId, url)
+                if (message.tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
+                setNavigationStateByTab((current) => ({ ...current, [message.tabId]: { status: "error", requestedUrl: url, error: "This page could not load. Please retry." } }))
                 return
             }
             if (native && message.type === "history-step") {
@@ -1260,20 +1261,13 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
                 // A native commit from an older render is not the legacy
                 // iframe boot handshake and must never replay or change URLs.
                 if (native && !workspaceNavigationReadyMatches(url, tabsRef.current.find((tab) => tab.id === message.tabId)?.url, pendingUrl, navigationErrorRef.current.get(message.tabId))) return
+                // A probe can report the old committed route while a transition
+                // is still streaming. Replaying it restarts valid navigation.
+                if (!native && pendingUrl && pendingUrl !== url) return
+                if (!native && navigationErrorRef.current.has(message.tabId) && !workspaceNavigationReadyMatches(url, tabsRef.current.find((tab) => tab.id === message.tabId)?.url, undefined, navigationErrorRef.current.get(message.tabId))) return
                 markTabFrameReady(message.tabId)
                 readyTabIdsRef.current.add(message.tabId)
                 postToTab(message.tabId, { type: "activate", active: message.tabId === activeTabIdRef.current, refresh: false })
-                if (pendingUrl && pendingUrl !== url) {
-                    // This is the initial location handshake for a frame that
-                    // was still booting when navigation was requested. The
-                    // bridge is listening now, so safely replay the request.
-                    window.requestAnimationFrame(() => {
-                        if (pendingNavigationRef.current.get(message.tabId) === pendingUrl) {
-                            requestTabFrameNavigation(message.tabId, pendingUrl)
-                        }
-                    })
-                    return
-                }
                 if (pendingUrl === url) pendingNavigationRef.current.delete(message.tabId)
                 reportInitialPanelReady(message.tabId)
                 completeTabNavigation(message.tabId, url)
@@ -1424,13 +1418,27 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
     }, [openCreate, traverseHistory, beginTabNavigation, completeTabNavigation, markTabFrameReady, normalizeWorkspaceUrl, openWorkspaceTab, postToTab, reopenClosedTab, reportInitialPanelReady, requestTabFrameNavigation, routeCanShowRelationshipContext, saveTabsState, scheduleSoftNavigationFallback, setTabContextOpen, setTabContextStatus, showCreationNotice, titleForUrl, updateTabForShellNavigation, workspace.slug, nativeNavigationPerformance, startNativeNavigation])
 
     useEffect(() => {
-        if (!tabsHydrated || readyTabIdsRef.current.has(initialTab.id)) return
-        const delays = [0, 120, 360, 900]
-        const timeouts = delays.map((delay) => window.setTimeout(() => {
-            if (!readyTabIdsRef.current.has(initialTab.id)) postToTab(initialTab.id, { type: "probe" })
-        }, delay))
-        return () => timeouts.forEach((timeout) => window.clearTimeout(timeout))
-    }, [initialTab.id, postToTab, tabsHydrated])
+        if (!tabsHydrated || loadedTabIdsRef.current.has(activeTabId)) return
+        const tab = tabsRef.current.find((candidate) => candidate.id === activeTabId)
+        if (!tab || navigationErrorRef.current.has(tab.id)) return
+        if (!pendingNavigationRef.current.has(tab.id)) {
+            pendingNavigationRef.current.set(tab.id, tab.url)
+            beginTabNavigation(tab.id, tab.url)
+        }
+        // Initial, new and evicted/restored tabs all need recovery. These
+        // bounded probes do not fetch data or restart a document.
+        const probe = () => {
+            if (!loadedTabIdsRef.current.has(tab.id)) postToTab(tab.id, { type: "probe" })
+        }
+        const timeouts = [0, 250, 1_000, 3_000, 8_000].map((delay) => window.setTimeout(probe, delay))
+        window.addEventListener("focus", probe)
+        document.addEventListener("visibilitychange", probe)
+        return () => {
+            timeouts.forEach((timeout) => window.clearTimeout(timeout))
+            window.removeEventListener("focus", probe)
+            document.removeEventListener("visibilitychange", probe)
+        }
+    }, [activeTabId, loadedTabIds, postToTab, tabsHydrated, beginTabNavigation])
 
     useEffect(() => {
         function start(event: Event) {
@@ -1938,17 +1946,12 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
         navigateActiveTab(href)
     }
 
-    function handleFrameLoad(tabId: string, expectedUrl: string) {
-        // A document load can precede the app's first paint in WebKit. The
-        // bridge's location handshake reveals the frame, not this event.
+    function handleFrameLoad(tabId: string) {
+        // load may arrive after a redirect or before bridge effects. Probe the
+        // document instead of navigating it back to a stale expected URL.
         if (tabId === initialTab.id) markWorkspaceLaunch("initial_frame_loaded_ms")
-        const pendingUrl = pendingNavigationRef.current.get(tabId)
-        const desiredUrl = pendingUrl ?? expectedUrl
-        const repaired = ensureTabFrameLocation(tabId, desiredUrl)
-        if (!pendingUrl && !repaired) completeTabNavigation(tabId)
-        if (repaired) beginTabNavigation(tabId, desiredUrl)
-        const active = tabId === activeTabIdRef.current
-        window.requestAnimationFrame(() => postToTab(tabId, { type: "activate", active, refresh: false }))
+        postToTab(tabId, { type: "probe" })
+        postToTab(tabId, { type: "activate", active: tabId === activeTabIdRef.current, refresh: false })
     }
 
     const switchTab = useCallback(async (tab: WorkspaceTab) => {
@@ -1967,12 +1970,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
         window.requestAnimationFrame(() => {
             postToTab(previousTabId, { type: "activate", active: false, refresh: false })
             postToTab(tab.id, { type: "activate", active: true, refresh })
-            const desiredUrl = pendingNavigationRef.current.get(tab.id) ?? tab.url
-            if (ensureTabFrameLocation(tab.id, desiredUrl) && tab.id === activeTabIdRef.current) {
-                beginTabNavigation(tab.id, desiredUrl)
-            }
+            // about:blank during initial loading is not a stale document.
+            postToTab(tab.id, { type: "probe" })
         })
-    }, [activateWorkspaceTab, beginTabNavigation, ensureTabFrameLocation, postToTab, saveTabsState, tabs, prepareNativeLeave, startNativeNavigation, nativeNavigationPerformance])
+    }, [activateWorkspaceTab, postToTab, saveTabsState, tabs, prepareNativeLeave, startNativeNavigation, nativeNavigationPerformance])
 
     useEffect(() => {
         function receiveBuilderReturn(event: MessageEvent<OnboardingBuilderWindowSignal>) {
@@ -2442,7 +2443,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
             postToTab(activeTabId, { type: "activate", active: true, refresh: true })
             return
         }
-        requestTabFrameNavigation(activeTabId, activeNavigation.requestedUrl)
+        ensureTabFrameLocation(activeTabId, activeNavigation.requestedUrl, "replace", true)
     }
 
     function viewCreatedRecord() {
@@ -2686,7 +2687,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
                     tab={tab}
                     active={tab.id === activeTabId}
                     assignRef={assignTabFrameRef}
-                    onLoad={() => handleFrameLoad(tab.id, tab.url)}
+                    onLoad={() => handleFrameLoad(tab.id)}
                     ready={loadedTabIds.has(tab.id)}
                 />
             ))}

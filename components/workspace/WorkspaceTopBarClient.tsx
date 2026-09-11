@@ -1238,6 +1238,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 // listener.
                 postToTab(message.tabId, { type: "activate", active: message.tabId === activeTabIdRef.current, refresh: false })
                 pendingNavigationRef.current.delete(message.tabId)
+                // Unlike a probe, this reports a committed in-frame URL
+                // replacement (for example an auto-selected conversation).
+                // Its old requested URL must not keep a timeout alive.
+                navigationErrorRef.current.delete(message.tabId)
                 completeTabNavigation(message.tabId)
                 if (message.tabId === activeTabIdRef.current) setRouteLoadingTabId(null)
                 }

@@ -25,10 +25,10 @@ Existing authentication, account-scoped caching, mutations, autosave checkpoints
 
 ## Validation
 
-- `npm test`: 865 passed, zero failures, skips, or cancellations.
+- `npm test`: 866 passed, zero failures, skips, or cancellations (including the late URL-replacement follow-up).
 - Changed-file ESLint and `git diff --check`: passed.
 - Production `next build --webpack`: passed compilation, TypeScript, and page generation.
-- Seven production-callback regression tests cover bootstrap/ref identity, renderer changes, timer probes, late load events, stale replies, immediate native failure, and cold/restored versus warm recovery. They pass on the fix. Against the original source, the suite fails; some baseline failures are missing revised bindings, while the load/replay/failure cases directly exercise the old behavior.
+- Eight production-callback regression tests cover bootstrap/ref identity, renderer changes, timer probes, late load events, stale replies, immediate native failure, cold/restored versus warm recovery, and a committed URL replacement after timeout. They pass on the fix. Against the original source, the initial suite fails; some baseline failures are missing revised bindings, while the load/replay/failure cases directly exercise the old behavior. The URL-replacement case independently failed before its follow-up correction.
 - Three additional deterministic cache tests cover hung-request expiry/retry, retained data after background timeout, and invalidated generation isolation. Existing lifecycle tests now verify late legacy completion without rollback as well as native/hidden-tab recovery.
 
 These are deterministic regression checks, not end-to-end latency percentiles. Warm navigation adds no data request through the recovery path; local probe messages do not call the server. The existing performance targets have not been relaxed. Physical-device mobile testing and representative latency measurements remain distinct from these checks.

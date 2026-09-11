@@ -154,6 +154,17 @@ test("native failure immediately ends loading; only the matching retry can clear
     assert.deepEqual(fixture.state().navigation, {})
 })
 
+test("a late committed frame URL replacement clears the previous timeout", () => {
+    const fixture = receiverFixture()
+    fixture.errors.current.set("tab", "/target")
+    fixture.pending.current.clear()
+    fixture.send("location-replace", "/target?conversation=selected")
+    assert.equal(fixture.state().tabs[0].url, "/target?conversation=selected")
+    assert.equal(fixture.state().loaded, 1)
+    assert.equal(fixture.errors.current.size, 0)
+    assert.deepEqual(fixture.state().navigation, {})
+})
+
 test("first/new/restored tabs get a deadline and bounded probes; warm tabs do no recovery work", () => {
     const effect = find((node) => ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && Boolean(node.arguments[0]?.getText(source).includes('const timeouts = [0, 250,'))) as ts.CallExpression
     for (const warm of [false, true]) {

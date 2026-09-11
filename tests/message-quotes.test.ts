@@ -7,6 +7,7 @@ import ts from "typescript"
 import * as formatting from "../lib/chat-formatting.ts"
 import * as coordinated from "../lib/communications/coordinated-updates.ts"
 import * as historyPage from "../lib/communications/history-page.ts"
+import * as workspaceNative from "../lib/workspace-native.ts"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
@@ -81,6 +82,7 @@ function fixture(options: { access?: boolean; original?: boolean; originalBody?:
             }
             return query
         } } },
+        "@/lib/workspace-native": workspaceNative,
         "@/lib/workspace-access": { requireWorkspacePanel: async () => ({ workspace: { id: "workspace", slug: "test" }, user: { id: "user" } }) },
         "next/server": { after: () => undefined },
         "@/lib/push/chat-notifications": {}, "@/lib/onboarding/uploads": {}, "@/lib/supabase/server": {},

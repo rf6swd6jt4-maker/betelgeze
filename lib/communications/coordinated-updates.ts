@@ -6,7 +6,7 @@ export class ChatMutationError extends Error {
 }
 
 type Message = { id: string; clientRequestId: string | null; createdAt: string; replyToMessageId?: string | null }
-type Conversation<M> = { id: string; messages: M[]; pinnedMessageId: string | null; updatedAt?: string; title?: string; messageWindowStart?: string | null }
+type Conversation<M> = { id: string; messages: M[]; pinnedMessageId: string | null; updatedAt?: string; title?: string; messageWindowStart?: string | null; unreadMessages?: Array<{ id: string }> }
 type Reaction = { id: string; messageId: string; updatedAt: string }
 type Cell<T> = { value: T | null; revision: number; pending?: { value: T | null }; version: string; readSequence?: number }
 type Setter<T> = T | ((current: T) => T)
@@ -132,7 +132,7 @@ export function createCoordinatedChat<M extends Message, C extends Conversation<
         const conversations = metadata.map((conversation) => {
             const rows = [...(grouped.get(conversation.id)?.values() ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
             const pinnedMessageId = pins.get(conversation.id)?.messageId ?? null
-            return { ...conversation, messages: rows, pinnedMessageId: pinnedMessageId && messages.has(pinnedMessageId) && !messages.get(pinnedMessageId) ? null : pinnedMessageId }
+            return { ...conversation, ...(conversation.unreadMessages ? { unreadMessages: conversation.unreadMessages.filter((message) => !messages.has(message.id) || messages.get(message.id)) } : {}), messages: rows, pinnedMessageId: pinnedMessageId && messages.has(pinnedMessageId) && !messages.get(pinnedMessageId) ? null : pinnedMessageId }
         })
         conversations.sort((left, right) => (right.messages.at(-1)?.createdAt ?? right.updatedAt ?? "").localeCompare(left.messages.at(-1)?.createdAt ?? left.updatedAt ?? "") || (left.title ?? "").localeCompare(right.title ?? ""))
         const visibleReactions = reactions.values().filter((reaction) => allowed.has(owners.get(reaction.messageId) ?? "") && (!messages.has(reaction.messageId) || messages.get(reaction.messageId)))

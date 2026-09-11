@@ -302,9 +302,10 @@ function deferNavigationStateUpdate(update: () => void) {
     queueMicrotask(update)
 }
 
-function WorkspaceTabFrame({ tab, active, assignRef, onLoad }: {
+function WorkspaceTabFrame({ tab, active, ready, assignRef, onLoad }: {
     tab: WorkspaceTab
     active: boolean
+    ready: boolean
     assignRef: (tabId: string, node: HTMLIFrameElement | null) => void
     onLoad: () => void
 }) {
@@ -319,7 +320,7 @@ function WorkspaceTabFrame({ tab, active, assignRef, onLoad }: {
         hidden={!active}
         aria-hidden={!active}
         onLoad={onLoad}
-        style={{ backgroundColor: "#0a0a0a", colorScheme: "dark" }}
+        style={{ backgroundColor: "#0a0a0a", colorScheme: "dark", opacity: ready ? 1 : 0 }}
         className="absolute inset-0 h-full w-full border-0 bg-neutral-950"
     />
 }
@@ -936,6 +937,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
 
         try {
             if (workspaceTabFrameMatchesUrl(frame.contentWindow.location.href, url, tabId, window.location.origin)) return false
+            readyTabIdsRef.current.delete(tabId)
             if (mode === "replace") frame.contentWindow.location.replace(target)
             else frame.contentWindow.location.assign(target)
         } catch {
@@ -1937,10 +1939,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
     }
 
     function handleFrameLoad(tabId: string, expectedUrl: string) {
-        markTabFrameReady(tabId)
+        // A document load can precede the app's first paint in WebKit. The
+        // bridge's location handshake reveals the frame, not this event.
         if (tabId === initialTab.id) markWorkspaceLaunch("initial_frame_loaded_ms")
-        readyTabIdsRef.current.delete(tabId)
-        setRouteLoadingTabId((current) => current === tabId ? null : current)
         const pendingUrl = pendingNavigationRef.current.get(tabId)
         const desiredUrl = pendingUrl ?? expectedUrl
         const repaired = ensureTabFrameLocation(tabId, desiredUrl)
@@ -2686,6 +2687,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab, native
                     active={tab.id === activeTabId}
                     assignRef={assignTabFrameRef}
                     onLoad={() => handleFrameLoad(tab.id, tab.url)}
+                    ready={loadedTabIds.has(tab.id)}
                 />
             ))}
             {tabsHydrated && activeRouteLoading && !activeNativePanel && (

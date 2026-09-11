@@ -4,6 +4,8 @@ Repeated interface elements use the primitives exported from `components/ui`, `c
 
 ## Workspace shell layers
 
+Before the shell arrives, `AppStartupScreen` shows a centred white Betelgeze diamond on `#171717`, using inline SVG and styles so it does not wait for assets. It disappears as soon as the shell is present. Tab loading stays inside the shell on a dark canvas; an iframe's document-load event alone must not reveal it before its app bridge is mounted.
+
 Keep the shell stacking order explicit: tab content `30`, relationship context `35`, tab bar `40`, mobile sidebar dismiss surface `45`, sidebar `50`, top bar and its dropdowns `55`, notices `60`, and dialogs `90` or higher. The top bar creates a stacking context, so increasing a dropdown's own z-index cannot lift it above a sibling sidebar. Keep the entire top bar above the sidebar so account and desktop/mobile search popups stay visible and clickable. Use `AnchoredPopup` for editors that must escape an iframe or clipping ancestor; loading overlays remain above all interactive surfaces.
 
 Top-bar mutation feedback uses short, bounded labels (`Saving…`, `Saved`, `Action failed`). Full error details stay in the originating form and the status tooltip/accessibility label; they must never expand the header or displace search, navigation, presence, or account controls.

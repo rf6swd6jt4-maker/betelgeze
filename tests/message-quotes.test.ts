@@ -8,6 +8,7 @@ import * as formatting from "../lib/chat-formatting.ts"
 import * as coordinated from "../lib/communications/coordinated-updates.ts"
 import * as historyPage from "../lib/communications/history-page.ts"
 import * as workspaceNative from "../lib/workspace-native.ts"
+import * as attachmentValues from "../lib/communications/attachments.ts"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
@@ -19,6 +20,7 @@ function load(path: string, dependencies: Record<string, unknown>) {
     compiled._compile(source, path)
     return compiled.exports
 }
+const attachmentBatches = load("lib/communications/attachment-batch.ts", { "@/lib/communications/attachments": attachmentValues })
 const quotes = load("lib/communications/message-quotes.ts", { "@/lib/chat-formatting": formatting }) as typeof import("../lib/communications/message-quotes")
 const checklists = load("lib/communications/checklist-updates.ts", { "@/lib/chat-formatting": formatting, "@/lib/communications/coordinated-updates": coordinated })
 const { ChatMessageText } = load("components/communications/ChatMessageText.tsx", { "@/lib/chat-formatting": formatting, "@/lib/communications/message-quotes": quotes, "@/lib/communications/checklist-updates": checklists })
@@ -65,11 +67,13 @@ test("rendered highlights mark only the requested passage across nested formatti
 const conversationId = "00000000-0000-4000-8000-000000000001"
 const messageId = "00000000-0000-4000-8000-000000000002"
 const clientRequestId = "00000000-0000-4000-8000-000000000003"
-function fixture(options: { access?: boolean; original?: boolean; originalBody?: string; originalConversation?: string; existing?: boolean } = {}) {
+function fixture(options: { access?: boolean; original?: boolean; originalBody?: string; originalConversation?: string; existing?: boolean; failFile?: string } = {}) {
     const writes: Record<string, unknown>[] = []
+    const verified: string[] = []
     const route = load("app/api/workspaces/[workspaceSlug]/communications/native/messages/route.ts", {
+        "@/lib/communications/attachment-batch": attachmentBatches,
         "@/lib/teams/server": {
-            nativeAttachmentFromInput: () => null,
+            nativeAttachmentFromInput: attachmentBatches.nativeAttachmentBatchFromValue,
             assertNativeConversationAccess: async () => options.access === false ? null : conversationId,
             loadNativeMessageForCurrentUser: async ({ messageId: id }: { messageId: string }) => id === messageId ? options.original === false ? null : { id, conversationId: options.originalConversation ?? conversationId, body: options.originalBody ?? "one **two** three" } : { id, conversationId, quote: writes.at(-1)?.quote ?? { text: "two", start: 4, end: 7 } },
         },
@@ -85,11 +89,17 @@ function fixture(options: { access?: boolean; original?: boolean; originalBody?:
         "@/lib/workspace-native": workspaceNative,
         "@/lib/workspace-access": { requireWorkspacePanel: async () => ({ workspace: { id: "workspace", slug: "test" }, user: { id: "user" } }) },
         "next/server": { after: () => undefined },
-        "@/lib/push/chat-notifications": {}, "@/lib/onboarding/uploads": {}, "@/lib/supabase/server": {},
-        "@/lib/communications/encryption": {}, "@/lib/teams/message-editing": {}, "@/lib/communications/message-quotes": quotes,
+        "@/lib/push/chat-notifications": {}, "@/lib/onboarding/uploads": {
+            verifyNativeMessageUpload: async ({ storagePath }: { storagePath: string }) => {
+                verified.push(storagePath)
+                if (storagePath === options.failFile) throw new Error("File belongs to another conversation")
+                return { kind: "image", contentType: "image/png", size: 42 }
+            },
+        }, "@/lib/supabase/server": {},
+        "@/lib/communications/encryption": { communicationFileKeyForCurrentUser: async () => "private-key" }, "@/lib/teams/message-editing": {}, "@/lib/communications/message-quotes": quotes,
         "@/lib/communications/history-page": historyPage,
     })
-    return { writes, send: (patch: Record<string, unknown> = {}) => route.POST(new Request("http://localhost/api", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId, clientRequestId, replyToMessageId: messageId, body: "reply", quote: { text: "two", start: 4, end: 7 }, ...patch }) }), { params: Promise.resolve({ workspaceSlug: "test" }) }) as Promise<Response> }
+    return { writes, verified, send: (patch: Record<string, unknown> = {}) => route.POST(new Request("http://localhost/api", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId, clientRequestId, replyToMessageId: messageId, body: "reply", quote: { text: "two", start: 4, end: 7 }, ...patch }) }), { params: Promise.resolve({ workspaceSlug: "test" }) }) as Promise<Response> }
 }
 
 test("native sends persist a verified quote alongside its reply and reuse request acknowledgements", async () => {
@@ -186,4 +196,32 @@ test("native actions merge quote and reply into the reply-arrow button while cli
     const client = renderToStaticMarkup(React.createElement(PrimaryMessageActions, props))
     assert.match(client, /aria-label="Reply"/)
     assert.doesNotMatch(client, /aria-label="Quote"/)
+})
+
+const imageAttachment = (name: string) => ({ kind: "image", fileName: name, mimeType: "image/png", storagePath: name, size: 1 })
+test("native multi-file sends verify every file before one insert and preserve order", async () => {
+    const state = fixture()
+    const attachment = { ...imageAttachment("one"), additionalAttachments: [imageAttachment("two"), imageAttachment("three")] }
+    assert.equal((await state.send({ attachment })).status, 200)
+    assert.deepEqual(state.verified, ["one", "two", "three"])
+    assert.equal(state.writes.length, 1)
+    assert.deepEqual(attachmentBatches.attachmentBatch(state.writes[0].attachment).map((file: { storagePath: string; size: number }) => [file.storagePath, file.size]), [["one", 42], ["two", 42], ["three", 42]])
+    const denied = fixture({ failFile: "two" })
+    assert.equal((await denied.send({ attachment })).status, 400)
+    assert.equal(denied.writes.length, 0)
+    const replay = fixture({ existing: true })
+    assert.equal((await replay.send({ attachment })).status, 200)
+    assert.equal(replay.verified.length, 0)
+    assert.equal(replay.writes.length, 0)
+})
+
+test("attachment batches reject oversized, duplicate, nested, invalid and mixed-sticker payloads", async () => {
+    const first = imageAttachment("one")
+    for (const additionalAttachments of [[first], [{}], [{ ...imageAttachment("two"), additionalAttachments: [] }], [{ ...imageAttachment("two"), kind: "sticker" }], Array.from({ length: 10 }, (_, i) => imageAttachment(String(i)))]) {
+        const state = fixture()
+        assert.equal((await state.send({ attachment: { ...first, additionalAttachments } })).status, 400)
+        assert.equal(state.writes.length, 0)
+    }
+    const packed = attachmentBatches.nativeAttachmentBatchFromValue({ ...first, additionalAttachments: [imageAttachment("two")] })
+    assert.equal(packed.additionalAttachments[0].url, "/api/client-messages/media/two")
 })

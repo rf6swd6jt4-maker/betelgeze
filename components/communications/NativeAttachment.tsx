@@ -1,6 +1,7 @@
 "use client"
 
 import Image from "next/image"
+import { attachmentBatch } from "@/lib/communications/attachment-batch"
 import { useEffect, useRef, useState } from "react"
 import { AnchoredPopup } from "@/components/ui"
 import type { MessageMediaPreview } from "@/components/communications/MessageMediaLightbox"
@@ -109,7 +110,7 @@ function AttachmentFileCard({ attachment, previewFailed = false }: { attachment:
     </div>
 }
 
-export function NativeAttachment({ attachment, onOpenImage, light = false, whiteOnColor = false }: { attachment: CommunicationAttachment; onOpenImage: (media: MessageMediaPreview) => void; light?: boolean; whiteOnColor?: boolean }) {
+function SingleNativeAttachment({ attachment, onOpenImage, light = false, whiteOnColor = false }: { attachment: CommunicationAttachment; onOpenImage: (media: MessageMediaPreview) => void; light?: boolean; whiteOnColor?: boolean }) {
     const { ref, admitted, complete } = useConversationMedia(attachment.kind === "image" || attachment.kind === "sticker")
     // Freeze the fallback for old messages too. Later metadata/refreshes must not
     // change an already visible frame's shape.
@@ -141,4 +142,12 @@ export function NativeAttachment({ attachment, onOpenImage, light = false, white
         <AttachmentFileCard attachment={attachment} />
     </div>
     return <AttachmentFileCard attachment={attachment} />
+}
+
+export function NativeAttachment(props: { attachment: CommunicationAttachment; onOpenImage: (media: MessageMediaPreview) => void; light?: boolean; whiteOnColor?: boolean }) {
+    const files = attachmentBatch(props.attachment)
+    if (files.length === 1) return <SingleNativeAttachment {...props} attachment={files[0]} />
+    return <div className="grid grid-cols-2 items-start gap-2" aria-label={`${files.length} attachments`}>
+        {files.map((attachment) => <div key={attachment.storagePath} className={attachment.kind === "image" || attachment.kind === "video" ? "min-w-0" : "col-span-2 min-w-0"}><SingleNativeAttachment {...props} attachment={attachment} /></div>)}
+    </div>
 }

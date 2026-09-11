@@ -28,7 +28,8 @@ import { NativeAttachment } from "@/components/communications/NativeAttachment"
 import { useConversationHistory } from "@/components/communications/useConversationHistory"
 import type { CommunicationHistoryPage } from "@/lib/communications/history-page"
 import { useConversationLayout } from "@/components/communications/useConversationLayout"
-import { prepareCommunicationMedia } from "@/lib/communications/prepare-media"
+import { useAttachmentUploads } from "@/components/communications/useAttachmentUploads"
+import { ComposerAttachments } from "@/components/communications/ComposerAttachments"
 import { ConversationMedia } from "@/components/communications/ConversationMedia"
 import { ChatMotionViewport } from "@/components/communications/ChatMotionViewport"
 import { NativeChatViewport } from "@/components/communications/NativeChatViewport"
@@ -173,12 +174,6 @@ function StickerIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2"><path d="M5 3h10a4 4 0 0 1 4 4v7l-7 7H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" /><path d="M12 21v-5a2 2 0 0 1 2-2h5" /><path d="M7 9h.01M15 9h.01M8 13c1.5 1.2 6.5 1.2 8 0" /></svg>
 }
 
-function formatFileSize(size: number | null) {
-    if (!size) return "Attachment"
-    if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))}KB`
-    return `${(size / 1024 / 1024).toFixed(size < 10 * 1024 * 1024 ? 1 : 0)}MB`
-}
-
 function attachmentPlaceholder(attachment: CommunicationAttachment) {
     return `[${attachment.kind[0].toUpperCase()}${attachment.kind.slice(1)}] ${attachment.fileName}`
 }
@@ -244,8 +239,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const [search, setSearch] = useState("")
     const [draft, setDraft] = useState("")
     const restoredDraftKey = useRef<string | null>(null)
-    const [attachment, setAttachment] = useState<CommunicationAttachment | null>(null)
-    const [attachmentState, setAttachmentState] = useState<"idle" | "uploading">("idle")
+    const uploads = useAttachmentUploads(bootstrap.workspaceSlug, selectedId, false)
+    const attachment = uploads.attachments[0] ?? null
     const [attachmentError, setAttachmentError] = useState<string | null>(null)
     const [replyingTo, setReplyingTo] = useState<CommunicationMessage | null>(null)
     const [actionMessageId, setActionMessageId] = useState<string | null>(null)
@@ -274,7 +269,6 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const attachmentInputRef = useRef<HTMLInputElement | null>(null)
     const stickerInputRef = useRef<HTMLInputElement | null>(null)
     const composerRef = useRef<HTMLElement | null>(null)
-    const attachmentRef = useRef<CommunicationAttachment | null>(null)
     const swipeStartRef = useRef<{ id: string; x: number; y: number; cancelled: boolean; maxDeltaX: number; verticalAtMax: number } | null>(null)
     const selectedRef = useRef(selectedId)
     const draftRef = useRef(draft)
@@ -327,9 +321,6 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         Object.values(whatsAppTypingCooldownTimersRef.current).forEach((timer) => window.clearTimeout(timer))
     }, [])
 
-    useEffect(() => {
-        attachmentRef.current = attachment
-    }, [attachment])
 
 
 
@@ -388,20 +379,10 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const selectConversation = useCallback((conversationId: string | null) => {
         closeWorkspaceComposer(composerRef.current)
         void flushPendingRead().catch(() => undefined)
-        const pendingAttachment = attachmentRef.current
-        const previousRelationshipId = selectedRef.current
-        if (pendingAttachment && previousRelationshipId) {
-            void fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/attachments`, {
-                method: "DELETE",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ relationshipId: previousRelationshipId, storagePath: pendingAttachment.storagePath }),
-            }).catch(() => undefined)
-        }
         followLatestRef.current = true
         setAtLatest(true)
         setShowJumpToLatest(false)
         setSelectedId(conversationId)
-        setAttachment(null)
         setAttachmentError(null)
         setReplyingTo(null)
         setActionMessageId(null)
@@ -410,7 +391,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         setInteractionError(null)
         setSwipePosition(null)
         setDraft(conversationId ? readChatDraft(`betelgeze:communications:draft:${bootstrap.currentUser.id}:${bootstrap.workspaceId}:${conversationId}`) : "")
-    }, [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, flushPendingRead])
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId, flushPendingRead])
 
     function beginReply(message: CommunicationMessage) {
         setReplyingTo(message)
@@ -469,55 +450,6 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         const targetBounds = target.getBoundingClientRect()
         pane.scrollTo({ top: pane.scrollTop + targetBounds.top - paneBounds.top - (pane.clientHeight - targetBounds.height) / 2, behavior: "instant" })
         target.animate([{ filter: "brightness(1.5)" }, { filter: "brightness(1)" }], { duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 900 })
-    }
-
-    async function removeAttachment(target = attachment, relationshipId = selectedId) {
-        setAttachment(null)
-        setAttachmentError(null)
-        if (!target || !relationshipId) return
-        await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/attachments`, {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ relationshipId, storagePath: target.storagePath }),
-        }).catch(() => undefined)
-    }
-
-    async function uploadAttachment(file: File) {
-        if (!selected || attachmentState === "uploading") return
-        const relationshipId = selected.id
-        if (attachment) await removeAttachment(attachment, relationshipId)
-        setAttachmentState("uploading")
-        setAttachmentError(null)
-        try {
-            const { preview, ...media } = await prepareCommunicationMedia(file)
-            const prepareResponse = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/attachments`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ relationshipId, name: file.name, size: file.size, type: file.type, media, previewSize: preview?.size }),
-            })
-            const prepared = await prepareResponse.json().catch(() => null) as { uploadUrl?: string; previewUploadUrl?: string; uploadHeaders?: Record<string, string>; attachment?: CommunicationAttachment; error?: string } | null
-            if (!prepareResponse.ok || !prepared?.uploadUrl || !prepared.attachment) throw new Error(prepared?.error ?? "Could not prepare attachment.")
-            const uploadResponse = await fetch(prepared.uploadUrl, {
-                method: "PUT",
-                headers: { "Content-Type": prepared.attachment.mimeType, ...(prepared.uploadHeaders ?? {}) },
-                body: file,
-            })
-            if (!uploadResponse.ok) throw new Error("Could not upload attachment.")
-            if (preview && prepared.previewUploadUrl) {
-                const previewResponse = await fetch(prepared.previewUploadUrl, { method: "PUT", headers: { "Content-Type": "image/webp", ...(prepared.uploadHeaders ?? {}) }, body: preview }).catch(() => null)
-                prepared.attachment.hasPreview = Boolean(previewResponse?.ok)
-            }
-            if (selectedRef.current !== relationshipId) {
-                await removeAttachment(prepared.attachment, relationshipId)
-                return
-            }
-            setAttachment(prepared.attachment)
-        } catch (error) {
-            setAttachmentError(error instanceof Error ? error.message : "Could not upload attachment.")
-        } finally {
-            setAttachmentState("idle")
-            if (attachmentInputRef.current) attachmentInputRef.current.value = ""
-        }
     }
 
     async function uploadSticker(file: File) {
@@ -858,6 +790,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     }, [active, atLatest, bootstrap.currentUser.id, documentVisible, persistReadCursor, readCursors, schemaReady, selected?.messages, selectedId, workspaceTabActive])
 
     async function sendMessage(messageToRetry?: CommunicationMessage) {
+        if (!messageToRetry && uploads.blocked) return
         if (!selected || !schemaReady || !selected.canSend) return
         const messageAttachment = messageToRetry?.attachment ?? attachment
         const replyTarget = messageToRetry ? null : replyingTo
@@ -892,17 +825,18 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         }
         if (enqueueingRef.current) return
         enqueueingRef.current = true
+        const releaseAttachments = uploads.queue.hold(messageAttachment ? [messageAttachment] : [])
         try {
             await offline.queue(selected.id, selected.title, { relationshipId: selected.id, body: typedBody, attachment: messageAttachment, replyToMessageId: replyMessageId, clientRequestId, retry: Boolean(messageToRetry) }, { ...optimistic })
             updateConversationMessages(selected.id, [optimistic], true)
+            if (!messageToRetry) uploads.queue.consume(selected.id, messageAttachment ? [messageAttachment] : [])
             if (!messageToRetry && selectedRef.current === selected.id) {
                 setDraft((current) => current.trim() === typedBody ? "" : current)
-                setAttachment((current) => current === messageAttachment ? null : current)
                 setReplyingTo((current) => current === replyTarget ? null : current)
                 setInteractionError(null)
             }
         } catch { setInteractionError("Could not save this message on your device. Your draft is still here; try again.") }
-        finally { enqueueingRef.current = false }
+        finally { releaseAttachments(); enqueueingRef.current = false }
     }
 
     const normalizedSearch = search.trim().toLowerCase()
@@ -1066,7 +1000,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
 
                     <ComposerFooter className="relative z-10 shrink-0 touch-manipulation border-t border-neutral-800 bg-neutral-950 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:p-4">
                         {replyingTo ? <ComposerMessagePreview label={`Replying to ${senderName(replyingTo)}`} preview={messagePreview(replyingTo)} onCancel={() => { setReplyingTo(null); composerRef.current?.focus({ preventScroll: true }) }} /> : null}
-                        {attachment || attachmentState === "uploading" || attachmentError ? <div className="mx-auto mb-2 flex max-w-3xl items-center gap-3 rounded-xl border border-neutral-800 bg-black px-3 py-2 text-xs"><span className="text-lg">{attachment?.kind === "image" ? "▧" : attachment?.kind === "video" ? "▶" : "↗"}</span><span className="min-w-0 flex-1"><span className="block truncate font-medium text-neutral-200">{attachmentState === "uploading" ? "Uploading attachment…" : attachment?.fileName ?? "Attachment failed"}</span><span className={`mt-0.5 block text-[10px] ${attachmentError ? "text-red-400" : "text-neutral-600"}`}>{attachmentError ?? formatFileSize(attachment?.size ?? null)}</span></span>{attachment ? <button type="button" onClick={() => void removeAttachment()} aria-label="Remove attachment" className="h-8 w-8 text-neutral-500 hover:text-white">×</button> : null}</div> : null}
+                        <ComposerAttachments queue={uploads.queue} conversationId={selected.id} />
+                        {attachmentError ? <p role="alert" className="mx-auto mb-2 max-w-3xl text-xs text-red-300">{attachmentError}</p> : null}
                         {stickerTrayOpen ? <div className="mx-auto mb-2 max-w-3xl rounded-2xl border border-neutral-800 bg-black p-3 shadow-2xl">
                             <div className="flex items-center justify-between"><div><p className="text-xs font-semibold text-neutral-200">Stickers</p><p className="mt-0.5 text-[10px] text-neutral-600">JPEG and PNG images are converted automatically.</p></div><button type="button" onClick={() => setStickerTrayOpen(false)} aria-label="Close sticker tray" className="h-8 w-8 text-neutral-500 hover:text-white">×</button></div>
                             <div data-composer-scroll className="mt-3 grid max-h-52 grid-cols-4 gap-2 overflow-y-auto overscroll-y-none sm:grid-cols-7">
@@ -1075,7 +1010,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                             </div>
                         </div> : null}
                         {interactionError ? <div className="mx-auto mb-2 flex max-w-3xl items-center justify-between gap-3 rounded-lg bg-red-950/60 px-3 py-2 text-xs text-red-300"><span>{interactionError}</span><button type="button" onClick={() => setInteractionError(null)} aria-label="Dismiss interaction error">×</button></div> : null}
-                        <input ref={attachmentInputRef} type="file" accept="image/jpeg,image/png,video/mp4,video/3gpp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadAttachment(file) }} />
+                        <input ref={attachmentInputRef} type="file" accept="image/jpeg,image/png,video/mp4,video/3gpp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) setAttachmentError(uploads.queue.add(selected.id, files)) }} />
                         <input ref={stickerInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadSticker(file) }} />
                         <ChatOutboxStatus entries={offline.entries} conversationId={selected.id} />
                         <MessageComposer
@@ -1083,12 +1018,12 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                             draft={draft}
                             placeholder={selected.canSend ? `Message ${selected.title}` : "Add a phone number and connect SMS or WhatsApp"}
                             disabled={!schemaReady || !selected.canSend}
-                            sendDisabled={(!draft.trim() && !attachment) || attachmentState === "uploading" || !schemaReady || !selected.canSend}
+                            sendDisabled={(!draft.trim() && !attachment) || uploads.blocked || !schemaReady || !selected.canSend}
                             onDraftChange={handleClientDraftChange}
                             onBlur={clearPendingWhatsAppTyping}
                             onSend={() => void sendMessage()}
                             leadingActions={<>
-                                <button data-icon-button type="button" onClick={() => attachmentInputRef.current?.click()} disabled={!schemaReady || !selected.canSend || attachmentState === "uploading"} aria-label="Attach image or file" className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-neutral-500 hover:text-white disabled:text-neutral-800 lg:h-9 lg:w-9"><AttachmentIcon /></button>
+                                <button data-icon-button type="button" onClick={() => attachmentInputRef.current?.click()} disabled={!schemaReady || !selected.canSend || uploads.blocked} aria-label="Attach image or file" className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-neutral-500 hover:text-white disabled:text-neutral-800 lg:h-9 lg:w-9"><AttachmentIcon /></button>
                                 <button data-icon-button type="button" onClick={() => { setStickerTrayOpen((current) => !current); setInteractionError(null) }} disabled={!schemaReady || !selected.canSend} aria-label="Open sticker tray" className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-neutral-500 hover:text-white disabled:text-neutral-800 lg:h-9 lg:w-9"><StickerIcon /></button>
                             </>}
                         />

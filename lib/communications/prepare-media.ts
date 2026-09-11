@@ -3,7 +3,7 @@
 import { nativeAttachmentMimeType } from "@/lib/communications/native-attachments"
 import type { CommunicationAttachment } from "@/lib/communications/types"
 
-export type PreparedMedia = Pick<CommunicationAttachment, "width" | "height" | "duration"> & { preview?: Blob }
+export type PreparedMedia = Pick<CommunicationAttachment, "width" | "height" | "duration"> & { preview?: Blob; localPreview?: Blob }
 
 /** Read local metadata while uploading. Unsupported files still send normally. */
 export async function prepareCommunicationMedia(file: File): Promise<PreparedMedia> {
@@ -25,7 +25,12 @@ export async function prepareCommunicationMedia(file: File): Promise<PreparedMed
                     canvas.height = Math.max(1, Math.round(height * scale))
                     canvas.getContext("2d")?.drawImage(source, 0, 0, canvas.width, canvas.height)
                     const preview = await new Promise<Blob | null>((done) => canvas.toBlob(done, "image/webp", 0.78))
-                    if (preview && preview.type === "image/webp" && preview.size <= 300_000) result.preview = preview
+                    if (preview && preview.size <= 300_000) {
+                        // Safari may return PNG when WebP encoding is unavailable.
+                        // Reuse those small bytes locally without another decode.
+                        result.localPreview = preview
+                        if (preview.type === "image/webp") result.preview = preview
+                    }
                 } catch { /* Metadata remains useful when this format cannot be drawn. */ }
                 finish(result)
             }

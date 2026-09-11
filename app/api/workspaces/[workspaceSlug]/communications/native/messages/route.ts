@@ -1,3 +1,4 @@
+import { attachmentBatch, packAttachments } from "@/lib/communications/attachment-batch"
 import { nativeAttachmentFromInput, assertNativeConversationAccess, loadNativeMessageForCurrentUser, loadNativeMessagesForCurrentUser, loadNativeMessagePage } from "@/lib/teams/server"
 import { communicationHistoryCursor } from "@/lib/communications/history-page"
 import { deleteOnboardingUploads, inspectStoredCommunicationSticker, verifyNativeMessageUpload } from "@/lib/onboarding/uploads"
@@ -87,8 +88,8 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
             return Response.json({ error: "Could not verify the quoted text. Try again." }, { status: 503 })
         }
     }
-    let storedAttachment = attachment
-    if (storedAttachment) {
+    const verifiedAttachments = []
+    for (let storedAttachment of attachmentBatch(attachment)) {
         try {
             if (storedAttachment.kind === "sticker") {
                 const { data: savedSticker } = await supabaseAdmin.from("communication_stickers").select("id").eq("workspace_id", workspace.id).eq("storage_path", storedAttachment.storagePath).maybeSingle()
@@ -102,7 +103,9 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
         } catch (error) {
             return Response.json({ error: error instanceof Error ? error.message : "Could not verify attachment." }, { status: 400 })
         }
+        verifiedAttachments.push(storedAttachment)
     }
+    const storedAttachment = packAttachments(verifiedAttachments)
     const { data, error } = await supabaseAdmin.from("workspace_native_messages").insert({ workspace_id: workspace.id, conversation_id: conversationId, sender_user_id: user.id, client_request_id: clientRequestId, body: body || null, reply_to_message_id: replyToMessageId || null, quote, attachment: storedAttachment }).select("id").single()
     if (error || !data) return Response.json({ error: error?.message ?? "Could not create message." }, { status: 503 })
     let message: Awaited<ReturnType<typeof loadNativeMessageForCurrentUser>> = null
@@ -185,6 +188,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ work
     }
     const result = deletion.data && typeof deletion.data === "object" && !Array.isArray(deletion.data) ? deletion.data as Record<string, unknown> : {}
     const attachment = nativeAttachmentFromInput(result.attachment)
-    if (attachment?.storagePath && attachment.kind !== "sticker") await deleteOnboardingUploads([attachment.storagePath]).catch(() => undefined)
+    const paths = attachmentBatch(attachment).filter((file) => file.kind !== "sticker").map((file) => file.storagePath)
+    if (paths.length) await deleteOnboardingUploads(paths).catch(() => undefined)
     return Response.json({ deleted: true, conversationId, messageId })
 }

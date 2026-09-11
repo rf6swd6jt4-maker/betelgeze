@@ -27,14 +27,15 @@ import { ResizableConversationColumns } from "@/components/communications/Resiza
 import { useConversationHistory } from "@/components/communications/useConversationHistory"
 import type { CommunicationHistoryPage } from "@/lib/communications/history-page"
 import { useConversationLayout } from "@/components/communications/useConversationLayout"
-import { prepareCommunicationMedia } from "@/lib/communications/prepare-media"
 import { ConversationMedia } from "@/components/communications/ConversationMedia"
 import { ChatMotionViewport } from "@/components/communications/ChatMotionViewport"
 import { NativeChatViewport } from "@/components/communications/NativeChatViewport"
 import { beginMessageSwipe, moveMessageSwipe, finishMessageSwipe, type MessageSwipe } from "@/lib/communications/message-swipe"
 import { NativeMessageBubble, type MessageActionAnchor } from "@/components/communications/NativeMessageBubble"
 import { NativeAttachment } from "@/components/communications/NativeAttachment"
-import { validateNativeAttachmentFile } from "@/lib/communications/native-attachments"
+import { attachmentBatch, packAttachments, nativeAttachmentBatchFromValue } from "@/lib/communications/attachment-batch"
+import { useAttachmentUploads } from "@/components/communications/useAttachmentUploads"
+import { ComposerAttachments } from "@/components/communications/ComposerAttachments"
 import { UnreadMessageCount } from "@/components/communications/UnreadMessageCount"
 import { createCoordinatedChat, chatMutationRequest, ChatMutationError, type ChatRead } from "@/lib/communications/coordinated-updates"
 import { requestChatCheckbox } from "@/lib/communications/checklist-updates"
@@ -60,7 +61,7 @@ function messageTime(value: string) { return new Intl.DateTimeFormat("en-IE", { 
 function messageDay(value: string) { return new Intl.DateTimeFormat("en-IE", { day: "numeric", month: "short", year: "numeric" }).format(new Date(value)) }
 function sameDay(left: string, right: string) { return new Date(left).toDateString() === new Date(right).toDateString() }
 function attachmentPreview(attachment: CommunicationAttachment | null) { return attachment ? `${attachment.kind === "image" ? "Image" : attachment.kind === "video" ? "Video" : attachment.kind === "audio" ? "Audio" : attachment.kind === "sticker" ? "Sticker" : "File"}: ${attachment.fileName}` : "" }
-function messagePreview(message: NativeMessage) { return mentionPreview(message.body) || attachmentPreview(message.attachment) || "Message" }
+function messagePreview(message: NativeMessage) { return mentionPreview(message.body) || (attachmentBatch(message.attachment).length > 1 ? `${attachmentBatch(message.attachment).length} attachments` : attachmentPreview(message.attachment)) || "Message" }
 
 const NATIVE_TYPING_EVENT = "native_typing"
 const NATIVE_TYPING_EXPIRY_MS = 6_000
@@ -147,7 +148,7 @@ function realtimeMessage(value: unknown): NativeMessage | null {
     const row = record(value); const id = text(row.id); const conversationId = text(row.conversation_id); const senderUserId = text(row.sender_user_id) ?? (row.sender_user_id === null ? "be" : null); const createdAt = text(row.created_at)
     if (row.body_encryption_version !== null && row.body_encryption_version !== undefined) return null
     if (!id || !conversationId || !senderUserId || !createdAt) return null
-    const attachment = row.attachment && typeof row.attachment === "object" && !Array.isArray(row.attachment) ? row.attachment as CommunicationAttachment : null
+    const attachment = nativeAttachmentBatchFromValue(row.attachment)
     return { id, clientRequestId: text(row.client_request_id), conversationId, senderUserId, senderWorkspaceRole: row.sender_workspace_role === "owner" || row.sender_workspace_role === "admin" || row.sender_workspace_role === "staff" ? row.sender_workspace_role : null, body: typeof row.body === "string" ? row.body : "", replyToMessageId: text(row.reply_to_message_id), quote: messageQuoteFromValue(row.quote), attachment, createdAt, editedAt: text(row.edited_at) }
 }
 
@@ -182,8 +183,8 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [quoteHighlight, setQuoteHighlight] = useState<{ messageId: string; quote: MessageQuote } | null>(null)
     const quoteHighlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const jumpRequestRef = useRef(0)
-    const [attachment, setAttachment] = useState<CommunicationAttachment | null>(null)
-    const [attachmentState, setAttachmentState] = useState<"idle" | "uploading">("idle")
+    const uploads = useAttachmentUploads(bootstrap.workspaceSlug, selectedId, true)
+    const attachment = packAttachments(uploads.attachments)
     const [stickers, setStickers] = useState(bootstrap.stickers)
     const [stickerTrayOpen, setStickerTrayOpen] = useState(false)
     const [stickerUploadState, setStickerUploadState] = useState<"idle" | "uploading">("idle")
@@ -349,7 +350,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         void flushPendingRead().catch(() => undefined)
         followLatestRef.current = true; setAtLatest(true); setShowJumpToLatest(false)
         jumpRequestRef.current++; setQuoteHighlight(null);
-        setSelectedId(id); setReplyingTo(null); setEditingMessage(null); setEditState("idle"); setActionMessageId(null); setActionView("actions"); setAttachment(null); setError(null)
+        setSelectedId(id); setReplyingTo(null); setEditingMessage(null); setEditState("idle"); setActionMessageId(null); setActionView("actions"); setError(null)
         setDraft(id ? readChatDraft(`betelgeze:native-chat:draft:${bootstrap.currentUser.id}:${bootstrap.workspaceId}:${id}`) : "")
     }
 
@@ -494,27 +495,6 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         return () => window.clearTimeout(timer)
     }, [active, atLatest, bootstrap.currentUser.id, documentVisible, persistReadCursor, readCursors, schemaReady, selected?.messages, selectedId, workspaceTabActive])
 
-    async function uploadAttachment(file: File) {
-        if (!selected || attachmentState === "uploading") return
-        const validation = validateNativeAttachmentFile(file)
-        if (validation.error) { setError(validation.error); if (attachmentInputRef.current) attachmentInputRef.current.value = ""; return }
-        setAttachmentState("uploading"); setError(null)
-        try {
-            const { preview, ...media } = await prepareCommunicationMedia(file)
-            const preparedResponse = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/attachments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: selected.id, name: file.name, size: file.size, type: file.type, media, previewSize: preview?.size }) })
-            const prepared = await preparedResponse.json().catch(() => null) as { uploadUrl?: string; previewUploadUrl?: string; uploadHeaders?: Record<string, string>; attachment?: CommunicationAttachment; error?: string } | null
-            if (!preparedResponse.ok || !prepared?.uploadUrl || !prepared.attachment) throw new Error(prepared?.error ?? "Could not prepare attachment.")
-            const uploaded = await fetch(prepared.uploadUrl, { method: "PUT", headers: { "Content-Type": prepared.attachment.mimeType, ...(prepared.uploadHeaders ?? {}) }, body: file })
-            if (!uploaded.ok) throw new Error("Could not upload attachment.")
-            if (preview && prepared.previewUploadUrl) {
-                const previewResponse = await fetch(prepared.previewUploadUrl, { method: "PUT", headers: { "Content-Type": "image/webp", ...(prepared.uploadHeaders ?? {}) }, body: preview }).catch(() => null)
-                prepared.attachment.hasPreview = Boolean(previewResponse?.ok)
-            }
-            if (selectedRef.current === selected.id) setAttachment(prepared.attachment)
-        } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : "Could not upload attachment.") }
-        finally { setAttachmentState("idle"); if (attachmentInputRef.current) attachmentInputRef.current.value = "" }
-    }
-
     async function uploadSticker(file: File) {
         if (stickerUploadState === "uploading") return
         setStickerUploadState("uploading"); setError(null)
@@ -544,24 +524,25 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     }
 
     async function sendMessage() {
-        if (!selected?.canWrite) return
+        if (!selected?.canWrite || uploads.blocked) return
         const body = draft.trim(); if (!body && !attachment) return
         stopNativeTyping(selected.id)
         const clientRequestId = crypto.randomUUID(); const replyTarget = replyingTo
         const optimistic: NativeMessage = { id: clientRequestId, clientRequestId, conversationId: selected.id, senderUserId: bootstrap.currentUser.id, senderWorkspaceRole: bootstrap.currentUserRole, body, replyToMessageId: replyTarget?.id ?? null, quote: replyTarget?.selectedQuote ?? null, attachment, createdAt: new Date().toISOString(), editedAt: null }
         if (enqueueingRef.current) return
         enqueueingRef.current = true
+        const releaseAttachments = uploads.queue.hold(attachmentBatch(optimistic.attachment))
         try {
             await offline.queue(selected.id, selected.title, { conversationId: selected.id, clientRequestId, body, replyToMessageId: replyTarget?.id, quote: replyTarget?.selectedQuote ?? null, attachment: optimistic.attachment }, { ...optimistic })
             updateConversationMessages(selected.id, [optimistic], true)
+            uploads.queue.consume(selected.id, attachmentBatch(optimistic.attachment))
             if (selectedRef.current === selected.id) {
                 setDraft((current) => current.trim() === body ? "" : current)
                 setReplyingTo((current) => current === replyTarget ? null : current)
-                setAttachment((current) => current === optimistic.attachment ? null : current)
                 setError(null)
             }
         } catch { setError("Could not save this message on your device. Your draft is still here; try again.") }
-        finally { enqueueingRef.current = false }
+        finally { releaseAttachments(); enqueueingRef.current = false }
     }
 
     function startEditingMessage(message: NativeMessage) {
@@ -572,7 +553,6 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         setEditState("idle")
         setDraft(message.body)
         setReplyingTo(null)
-        setAttachment(null)
         setStickerTrayOpen(false)
         setActionMessageId(null)
         setError(null)
@@ -657,7 +637,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         setDownloadingMessageId(message.id)
         setError(null)
         try {
-            await downloadMessageAttachment(message.attachment.url, message.attachment.fileName)
+            for (const file of attachmentBatch(message.attachment)) await downloadMessageAttachment(file.url, file.fileName)
         } catch (downloadError) {
             setError(downloadError instanceof Error ? downloadError.message : "Could not download this attachment.")
         } finally {
@@ -829,7 +809,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         const canEdit = selected.canWrite && nativeMessageCanEdit(message, bootstrap.currentUser.id)
                         const isSticker = message.attachment?.kind === "sticker"
                         const canSaveAttachment = Boolean(message.attachment && !isSticker && !own)
-                        const saveAttachmentLabel = `Download ${message.attachment?.fileName ?? "attachment"}`
+                        const saveAttachmentLabel = message.attachment?.additionalAttachments?.length ? "Download attachments" : `Download ${message.attachment?.fileName ?? "attachment"}`
                         return <Fragment key={messageAnimationKey(message)}>
                             {showDay ? <div className="my-3 flex justify-center"><time className="rounded-full border border-neutral-800 bg-neutral-950 px-3 py-1 text-[10px] text-neutral-500">{messageDay(message.createdAt)}</time></div> : null}
                             <div data-message-scroll-anchor={messageAnimationKey(message)} data-message-interaction={message.id} inert={quoteSelectionMuted} className={`relative flex items-end transition-[filter,opacity,transform] duration-150 ${own ? "justify-end origin-right" : "justify-start origin-left"} ${selectingQuote ? quoteSelectionMuted ? "pointer-events-none select-none opacity-30 blur-[1px]" : "z-10 scale-[1.03]" : focusedMessageId ? focusedMessageId === message.id ? "pointer-events-none z-10 scale-[1.03]" : "pointer-events-none opacity-30 blur-[1px]" : ""} ${!quoteSelectionMuted && enteringMessageIds.has(message.id) ? own ? "betelgeze-message-enter-right" : "betelgeze-message-enter-left" : ""}`}>
@@ -896,10 +876,10 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         {selectingQuote ? <MessageQuoteSelection key={`${selected.id}:${selectingQuote.id}:${selectingQuote.body}`} messageId={selectingQuote.id} body={selectingQuote.body} paneRef={messagePaneRef} onChange={updateSelectedQuote} onCancel={cancelQuoteSelection} /> : null}
                         {editingMessage ? <ComposerMessagePreview label="Editing message" preview={mentionPreview(editingMessage.body)} /> : null}
                         {replyingTo ? <ComposerMessagePreview label={selected.kind === "team" ? `Replying to ${replyingTo.senderUserId === bootstrap.currentUser.id ? "yourself" : peopleById.get(replyingTo.senderUserId)?.name ?? "team member"}` : "Replying to message"} tooltip={selectingQuote ? "Reply to the whole message, or highlight text in it to quote a passage." : undefined} preview={replyingTo.selectedQuote ? `“${replyingTo.selectedQuote.text}”` : messagePreview(replyingTo)} onCancel={() => { setReplyingTo(null); composerRef.current?.focus({ preventScroll: true }) }} /> : null}
-                        {attachment || attachmentState === "uploading" ? <div className="mx-auto mb-2 flex max-w-3xl items-center gap-3 rounded-xl border border-neutral-800 bg-black px-3 py-2 text-xs"><span className="min-w-0 flex-1 truncate">{attachmentState === "uploading" ? "Uploading attachment…" : attachment?.fileName}</span>{attachment ? <button type="button" onClick={() => setAttachment(null)} className="h-8 w-8 text-neutral-500">×</button> : null}</div> : null}
+                        {!editingMessage ? <ComposerAttachments queue={uploads.queue} conversationId={selected.id} /> : null}
                         {stickerTrayOpen ? <div className="mx-auto mb-2 max-w-3xl rounded-2xl border border-neutral-800 bg-black p-3 shadow-2xl"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold text-neutral-200">Stickers</p><p className="mt-0.5 text-[10px] text-neutral-600">Shared across client and team chats.</p></div><button type="button" onClick={() => setStickerTrayOpen(false)} aria-label="Close sticker tray" className="h-8 w-8 text-neutral-500 hover:text-white">×</button></div><div data-composer-scroll className="mt-3 grid max-h-52 grid-cols-4 gap-2 overflow-y-auto overscroll-y-none sm:grid-cols-7">{stickers.map((sticker) => <button key={sticker.id} type="button" onClick={() => void sendSticker(sticker)} disabled={!selected.canWrite} title={sticker.fileName} className="flex aspect-square items-center justify-center rounded-xl bg-neutral-950 p-1.5 hover:bg-neutral-900 disabled:opacity-40"><Image unoptimized src={sticker.url} alt={sticker.fileName} width={512} height={512} className="h-full w-full object-contain" /></button>)}<button type="button" onClick={() => stickerInputRef.current?.click()} disabled={stickerUploadState === "uploading"} className="flex aspect-square flex-col items-center justify-center rounded-xl border border-dashed border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-white disabled:opacity-40"><span className="text-2xl">+</span><span className="mt-1 text-[9px]">{stickerUploadState === "uploading" ? "Converting…" : "Add sticker"}</span></button></div></div> : null}
                         {error ? <div className="mx-auto mb-2 flex max-w-3xl justify-between rounded-lg bg-red-950/60 px-3 py-2 text-xs text-red-300"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
-                        <input ref={attachmentInputRef} type="file" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadAttachment(file) }} />
+                        <input ref={attachmentInputRef} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) setError(uploads.queue.add(selected.id, files)) }} />
                         <input ref={stickerInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadSticker(file) }} />
                         <ChatOutboxStatus entries={offline.entries} conversationId={selected.id} />
                         <MessageComposer
@@ -908,14 +888,14 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                             draft={draft}
                             placeholder={selected.system ? "Private updates from BE" : selected.canWrite ? `Message ${selected.title}` : "Archived conversation"}
                             disabled={!selected.canWrite}
-                            sendDisabled={!selected.canWrite || (editingMessage ? !draft.trim() || draft.trim() === editingMessage.body.trim() || editState === "saving" : (!draft.trim() && !attachment) || attachmentState === "uploading")}
+                            sendDisabled={!selected.canWrite || (editingMessage ? !draft.trim() || draft.trim() === editingMessage.body.trim() || editState === "saving" : (!draft.trim() && !attachment) || uploads.blocked)}
                             onDraftChange={handleDraftChange}
                             onBlur={() => stopNativeTyping(selected.id)}
                             onSend={() => editingMessage ? void saveEditedMessage() : void sendMessage()}
                             submitLabel={editingMessage ? "Save edit" : "Send message"}
                             submitIcon={editingMessage ? <CheckIcon className="h-5 w-5" /> : undefined}
                             leadingActions={editingMessage ? <button data-icon-button type="button" onPointerDown={(event) => event.preventDefault()} onClick={cancelEditingMessage} aria-label="Cancel editing" className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-neutral-500 hover:text-white lg:h-9 lg:w-9"><CancelIcon className="h-5 w-5" /></button> : <>
-                                <button data-icon-button type="button" onClick={() => attachmentInputRef.current?.click()} disabled={!selected.canWrite || attachmentState === "uploading"} aria-label="Attach image or file" className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-neutral-500 hover:text-white disabled:text-neutral-800 lg:h-9 lg:w-9"><AttachmentIcon /></button>
+                                <button data-icon-button type="button" onClick={() => attachmentInputRef.current?.click()} disabled={!selected.canWrite || uploads.count >= 10} aria-label="Attach image or file" className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-neutral-500 hover:text-white disabled:text-neutral-800 lg:h-9 lg:w-9"><AttachmentIcon /></button>
                                 <button data-icon-button type="button" onClick={() => { setStickerTrayOpen((current) => !current); setError(null) }} disabled={!selected.canWrite} aria-label="Open sticker tray" className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-neutral-500 hover:text-white disabled:text-neutral-800 lg:h-9 lg:w-9"><StickerIcon /></button>
                             </>}
                         />

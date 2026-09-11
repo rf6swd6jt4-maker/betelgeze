@@ -10,6 +10,7 @@ export type CommunicationAttachment = {
     width?: number
     height?: number
     duration?: number
+    additionalAttachments?: CommunicationAttachment[]
     hasPreview?: boolean
 }
 

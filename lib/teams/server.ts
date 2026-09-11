@@ -1,4 +1,4 @@
-import { communicationAttachmentFromValue } from "@/lib/communications/attachments"
+import { nativeAttachmentBatchFromValue } from "@/lib/communications/attachment-batch"
 import { loadMessageMetadata } from "@/lib/communications/message-batches"
 import { communicationHistoryPage, communicationHistoryRpcMissing, legacyCommunicationHistoryPage, type CommunicationHistoryCursor } from "@/lib/communications/history-page"
 import { loadBoundedCommunicationRows } from "@/lib/communications/bounded-read"
@@ -38,7 +38,7 @@ export function nativeMessageFromRow(value: unknown): NativeMessage | null {
         body: typeof row.body === "string" ? row.body : "",
         replyToMessageId: text(row.reply_to_message_id),
         quote: messageQuoteFromValue(row.quote),
-        attachment: communicationAttachmentFromValue(row.attachment),
+        attachment: nativeAttachmentBatchFromValue(row.attachment),
         createdAt,
         editedAt: text(row.edited_at),
     }
@@ -284,7 +284,7 @@ export async function loadNativeMessagePage(workspaceId: string, conversationId:
 }
 
 export function nativeAttachmentFromInput(value: unknown): CommunicationAttachment | null {
-    return communicationAttachmentFromValue(value)
+    return nativeAttachmentBatchFromValue(value)
 }
 
 export async function loadWorkspaceMemberProfiles(workspaceId: string): Promise<Array<CommunicationPerson & { username: string }>> {

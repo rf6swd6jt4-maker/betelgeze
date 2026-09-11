@@ -10,6 +10,56 @@ function deferred<T>() {
     return { promise, resolve, reject }
 }
 
+test("a hung shared read expires, releases retry, and cannot overwrite its replacement", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    const cache = new WorkspaceRecordCache<string>()
+    const hung = deferred<string>()
+    let signal: AbortSignal | undefined
+    let reads = 0
+    const read = (value: AbortSignal) => { signal = value; reads++; return hung.promise }
+    const first = cache.load("record", read)
+    const duplicate = cache.load("record", read, { force: true })
+    const rejected = Promise.all([assert.rejects(first, /too long/), assert.rejects(duplicate, /too long/)])
+    await Promise.resolve()
+    t.mock.timers.tick(29_999)
+    assert.equal(cache.getSnapshot("record").loading, true)
+    t.mock.timers.tick(1)
+    await rejected
+    assert.equal(reads, 1)
+    assert.equal(signal?.aborted, true)
+    assert.equal(cache.getSnapshot("record").loading, false)
+    assert.match(cache.getSnapshot("record").error!, /retry/)
+    await cache.load("record", async () => "replacement", { force: true })
+    hung.resolve("too late")
+    await Promise.resolve()
+    assert.equal(cache.getSnapshot("record").data, "replacement")
+})
+
+test("timed-out background refresh keeps the usable cached panel", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    const cache = new WorkspaceRecordCache<string>()
+    cache.seed("record", "usable")
+    const pending = cache.load("record", () => new Promise<string>(() => {}), { force: true })
+    const rejected = assert.rejects(pending, /too long/)
+    t.mock.timers.tick(30_000)
+    await rejected
+    assert.equal(cache.getSnapshot("record").data, "usable")
+    assert.equal(cache.getSnapshot("record").loading, false)
+})
+
+test("expiration of an invalidated read cannot fail the newer generation", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    const cache = new WorkspaceRecordCache<string>()
+    const pending = cache.load("record", () => new Promise<string>(() => {}))
+    const rejected = assert.rejects(pending, /too long/)
+    cache.invalidate()
+    await cache.load("record", async () => "new")
+    t.mock.timers.tick(30_000)
+    await rejected
+    assert.equal(cache.getSnapshot("record").data, "new")
+    assert.equal(cache.getSnapshot("record").error, null)
+})
+
 test("shared panel reads deduplicate in-flight requests and retain a stable cached snapshot", async () => {
     const cache = new WorkspaceRecordCache<number>()
     const gate = deferred<number>()

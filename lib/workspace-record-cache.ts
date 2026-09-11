@@ -57,7 +57,7 @@ export class WorkspaceRecordCache<T> {
         if (entry.snapshot.data !== null || entry.request) return
         this.publish(entry, { data, loading: false, error: null, updatedAt: this.now(), revision: entry.generation })
     }
-    async load(key: string, read: (signal: AbortSignal) => Promise<T>, options: { force?: boolean; maxAge?: number } = {}): Promise<T> {
+    async load(key: string, read: (signal: AbortSignal) => Promise<T>, options: { force?: boolean; maxAge?: number; timeoutMs?: number } = {}): Promise<T> {
         const entry = this.entry(key)
         if (entry.request) return entry.request
         if (!options.force && entry.snapshot.data !== null && this.now() - entry.snapshot.updatedAt < (options.maxAge ?? 30_000)) return entry.snapshot.data
@@ -65,17 +65,29 @@ export class WorkspaceRecordCache<T> {
         const controller = new AbortController()
         entry.controller = controller
         this.publish(entry, { ...entry.snapshot, loading: true, error: null })
-        const request = Promise.resolve().then(() => read(controller.signal)).then((data) => {
+        let timedOut = false
+        let timeout: ReturnType<typeof setTimeout>
+        const deadline = new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => {
+                timedOut = true
+                reject(new Error("This panel took too long to respond. Please retry."))
+                controller.abort()
+            }, options.timeoutMs ?? 30_000)
+        })
+        // Race the whole read, including body parsing. An unresponsive read
+        // must release the deduplicated slot so an explicit retry can work.
+        const request = Promise.race([Promise.resolve().then(() => read(controller.signal)), deadline]).then((data) => {
             if (entry.generation === generation && !controller.signal.aborted) {
                 this.publish(entry, { data, loading: false, error: null, updatedAt: this.now(), revision: entry.generation })
             }
             return data
         }).catch((error: unknown) => {
-            if (entry.generation === generation && !controller.signal.aborted) {
+            if (entry.generation === generation && (!controller.signal.aborted || timedOut)) {
                 this.publish(entry, { ...entry.snapshot, loading: false, error: error instanceof Error ? error.message : "Could not load this panel" })
             }
             throw error
         }).finally(() => {
+            clearTimeout(timeout)
             if (entry.request === request) { entry.request = undefined; entry.controller = undefined; this.trim() }
         })
         entry.request = request

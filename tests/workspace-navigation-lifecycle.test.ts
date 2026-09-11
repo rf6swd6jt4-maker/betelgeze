@@ -185,7 +185,7 @@ function shellFixture(native: boolean) {
         softNavigationFallbackRef: ref(new Map()), navigationTimeoutRef: timers,
         navigationErrorRef: failures, navigationFallbackRef: ref(new Map()), pendingNavigationRef: pending,
         readyTabIdsRef: ref(new Set()), nativeRefs: ref(new Map(native ? [["tab", {}]] : [])), iframeRefs: ref(new Map()),
-        nativeNavigationPerformance: { finishTarget() {} }, setMobileContextKey() {}, saveTabsState() {},
+        nativeNavigationPerformance: { finishTarget() {} }, setMobileContextKey() {}, setRouteLoadingTabId() {}, saveTabsState() {},
         setTabs: (update: (tabs: Tab[]) => Tab[]) => { tabsRef.current = update(tabsRef.current) },
         setNavigationStateByTab: (update: (state: Record<string, unknown>) => Record<string, unknown>) => {
             const next = update(Object.fromEntries(navigationState)); navigationState.clear()
@@ -228,7 +228,7 @@ test("actual native shell retains a timed-out destination and clears only its ma
     assert.equal(shell.navigationState.size, 0)
 })
 
-test("actual shell ignores a superseded late result and preserves genuine legacy rollback errors", () => {
+test("actual shell ignores superseded results and lets a slow legacy destination recover without rollback", () => {
     const shell = shellFixture(true)
     shell.begin("/b")
     shell.advance(12_000)
@@ -244,10 +244,12 @@ test("actual shell ignores a superseded late result and preserves genuine legacy
     const legacy = shellFixture(false)
     legacy.begin("/b")
     legacy.advance(12_000)
-    assert.equal(legacy.tabsRef.current[0].url, "/a")
+    assert.equal(legacy.tabsRef.current[0].url, "/b")
     legacy.ready("/a")
     assert.equal(legacy.failures.current.get("tab"), "/b")
     assert.ok(legacy.navigationState.has("tab"))
+    legacy.ready("/b")
+    assert.equal(legacy.navigationState.size, 0)
 })
 
 test("actual shell content readiness while hidden cancels the remaining deadline", () => {

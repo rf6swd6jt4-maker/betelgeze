@@ -1,5 +1,11 @@
 # Workspace performance implementation status
 
+## Tab recovery update — 2026-09-11
+
+The [tab loading recovery report](tab-loading-recovery.md) and root `app_speed.md` supersede the historical automatic iframe fallback/rollback and missing transport-deadline notes below. The mounted shell now preserves bootstrap identity, probes unready tabs without restarting documents, retains timed-out destinations for late completion with explicit retry, and bounds native reads to 30 seconds. Earlier release results below remain historical evidence, not the current recovery contract.
+
+## Earlier rollout evidence
+
 September 11, 2026. PR #37 (`1f9716d`) and recovery PR #38 (`e0772eef`) are merged and live in the operator-account pilot; the six database migrations are installed. This is a staged implementation of the [revamp plan](workspace-performance-revamp-plan.md), not completion of every phase. Authenticated foreground checks observed warm Relationships/Work Items navigation in **33–78 ms** and tab switches in **101–110 ms**, while two network-backed navigations took **3,164 ms and 3,353 ms**. This small one-Mac/account/network observation does not establish a platform-wide target or a baseline percentage improvement. See the [pilot rollout evidence](performance-baseline/pilot-rollout.md).
 
 ## Included

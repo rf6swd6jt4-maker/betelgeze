@@ -11,7 +11,7 @@ test("Gantt saves are database-verified before the optimistic plan is accepted",
     assert.match(ganttActions, /persistedScheduleMatchesChange/)
     assert.match(ganttActions, /getRelationshipGanttPlan/)
     assert.match(ganttActions, /return \{ status: "saved", plan \}/)
-    assert.match(ganttClient, /if \(next\.plan\) setPlan\(next\.plan\)/)
+    assert.match(ganttClient, /if \(next\.plan && !serviceMode\) setPlan\(next\.plan\)/)
 })
 
 test("restored charts and work-item schedule edits refresh linked relationships", () => {

@@ -11,8 +11,6 @@ const sale = uuid(30), line = uuid(31), session = uuid(32), sharedModule = uuid(
 const q = async (sql, args = []) => (await db.query(sql, args)).rows
 const one = async (sql, args = []) => (await q(sql, args))[0]
 const rejects = async (sql, args, re) => assert.rejects(q(sql, args), re)
-const create = (req, stage = 'setup', origin = 'already_onboarded', actor = owner, assignee = staff) =>
-    one('select create_service_instance($1,$2,$3,$4,$5,$6,$7,$8) id', [w, r, actor, req, service, origin, stage, assignee])
 let checks = 0
 const pass = label => { checks++; console.log(`PASS ${checks}: ${label}`) }
 try {
@@ -120,7 +118,7 @@ try {
     await q('select change_service_instance($1,$2,$3,$4,1,$5,$6,$7,$8)',[w,pinned,seller,uuid(714),'declined','cancelled',staff,'Fixture completed'])
     pass('reviewed revision pinned and lost acknowledgement recovered after catalogue publication')
     const setup = await add(uuid(703),'setup','already_onboarded')
-    const website = await add(uuid(704),'completed','already_onboarded',owner,serviceB,null)
+    await add(uuid(704),'completed','already_onboarded',owner,serviceB,null)
     const read = async (actor=owner, offset=0) => (await one('select read_relationship_services($1,$2,$3,$4) result',[w,relationship,actor,offset])).result
     assert.deepEqual((await read()).items.map(x=>x.stage).sort(),['completed','negotiating','setup'])
     assert.deepEqual((await read(staff)).items.map(x=>x.id).sort(),[negotiating,setup].sort())
@@ -162,5 +160,60 @@ try {
     assert.equal((await read(owner,30)).items.length,8)
     assert.equal((await one('select summarize_relationship_services($1,$2,$3) result',[w,owner,[relationship]])).result[0].services.length,4)
     pass('bounded service pages and first-four summary labels with repeated purchases preserved')
+    await db.exec(`
+        alter table work_items add column lifecycle_phase text default 'fulfilment',add column workflow_role text default 'task',add column workflow_action text,
+            add column parent_work_item_id uuid,add column planned_start_date date,add column planned_start_time time,add column due_date date,add column due_time time,
+            add column actual_start_at timestamptz,add column actual_start_has_time boolean default false,add column actual_completed_has_time boolean default false,
+            add column sort_order integer default 0,add column created_at timestamptz default now(),add column priority integer default 3;
+        alter table work_item_dependencies add column source text default 'manual';
+        create table work_item_assignees(workspace_id uuid,work_item_id uuid,user_id uuid);
+        create index fixture_work_dependencies_idx on work_item_dependencies(workspace_id,work_item_id);
+        create index fixture_work_assignees_idx on work_item_assignees(workspace_id,work_item_id);
+    `)
+    await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20260912150000_relationship_service_timeline.sql`,'utf8'))
+    const timeline=async(actor=owner,offset=0)=>(await one('select read_relationship_service_plan($1,$2,$3,$4) result',[w,relationship,actor,offset])).result
+    const chart=await timeline()
+    assert.equal(chart.services.length,31)
+    assert.equal(new Set(chart.services.map(s=>s.id)).size,31)
+    assert.equal(chart.events.filter(e=>e.instance_id===setup).length,1)
+    assert.equal(chart.work.length,0)
+    assert.equal((await timeline(owner,30)).services.length,8)
+    await rejects('select read_relationship_service_plan($1,$2,$3,0)',[other,relationship,owner],/access required/)
+    pass('timeline reads distinct service instances and actual audit visits in bounded pages; cross-workspace read denied')
+    await q('insert into work_item_relationships values($1,$2,$3)',[w,relationship,work])
+    await q('insert into work_item_relationships values($1,$2,$3)',[w,relationship,uuid(35)])
+    await q('update work_items set title=$2,status=$3 where id=$1',[work,'Ready task','todo'])
+    await q('update work_items set title=$2,status=$3 where id=$1',[uuid(35),'Dependent task','todo'])
+    const queue=async()=>(await one('select read_relationship_work_queue($1,$2,$3,0) result',[w,relationship,owner])).result
+    assert.equal((await queue()).items[0].queue_state,'Ready')
+    assert.equal((await queue()).items[1].queue_state,'Blocked')
+    await q("update work_items set workflow_action='await_payment' where id=$1",[work])
+    assert.equal((await queue()).items[0].queue_state,'Waiting')
+    await q("update work_items set status='done' where id=$1",[work])
+    assert.equal((await queue()).items.length,1)
+    assert.equal((await queue()).items[0].queue_state,'Ready')
+    await q("update work_items set planned_start_date=current_date+2 where id=$1",[uuid(35)])
+    assert.equal((await queue()).items[0].queue_state,'Scheduled')
+    assert.equal((await timeline()).work.length,2)
+    assert.equal((await timeline()).work.every(w=>w.shared),true)
+    await db.exec('set role authenticated')
+    await rejects('select read_relationship_service_plan($1,$2,$3,0)',[w,relationship,owner],/permission denied/)
+    await rejects('select read_relationship_work_queue($1,$2,$3,0)',[w,relationship,owner],/permission denied/)
+    await db.exec('reset role')
+    pass('queue checks dependencies before ordering, preserves waiting and scheduled work, returns shared tasks once and rejects direct client RPC access')
+    await q(`insert into work_items(id,workspace_id,title,status)
+        select ('10000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,$1,'Growth task '||n,'todo' from generate_series(1,1200) n`,[w])
+    await q(`insert into work_item_relationships(workspace_id,relationship_id,work_item_id)
+        select $1,$2,id from work_items where id::text like '10000000-%'`,[w,relationship])
+    const grown=await timeline()
+    assert.equal(grown.work.length,500)
+    assert.equal(grown.workTruncated,true)
+    const firstQueue=await queue()
+    const secondQueue=(await one('select read_relationship_work_queue($1,$2,$3,30) result',[w,relationship,owner])).result
+    assert.equal(firstQueue.items.length,31)
+    assert.equal(firstQueue.hasMore,true)
+    assert.equal(secondQueue.items.length,31)
+    assert.equal(new Set([...firstQueue.items.slice(0,30),...secondQueue.items.slice(0,30)].map(x=>x.id)).size,60)
+    pass('1,200 additional work items keep graph payload bounded and queue pages ordered without duplicated rows')
     console.log(`SS-02 PostgreSQL fixture passed ${checks} behavior groups`)
 } finally { await db.close() }

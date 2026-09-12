@@ -49,7 +49,7 @@ Local repository inspection, not a live database audit:
 
 ### SS-01 — Data foundation and migration rehearsal
 
-Status: implemented, rehearsed and installed with SS-02. New tables and commands coexist with the authoritative legacy flow; replacement of legacy readers/guards occurs with their consuming packages. See `service-instance-foundation.md`. The next package is SS-02.
+Status: implemented, rehearsed and installed with SS-02. New tables and commands coexist with the authoritative legacy flow; replacement of legacy readers/guards occurs with their consuming packages. See `service-instance-foundation.md`. SS-02 consumes this foundation.
 
 - Give assigned services durable instance IDs, service/revision references, stage, entry origin, responsibility and stage-event history.
 - Link existing sale lines to instances; retain immutable commercial snapshots and sale/session identities.
@@ -66,12 +66,12 @@ Status: implemented, rehearsed and installed with SS-02. New tables and commands
 Status: implemented and validated; see `relationship-services-release.md`.
 
 - New relationship asks for contact/person identity, optional business/contact details, with optional metadata kept secondary. It has no service, payment, onboarding or lifecycle wizard.
-- Detail page uses shared detail primitives and adds Services, Work and sale/onboarding history sections.
+- Detail page keeps information at the top, the existing Gantt below, and the relationship work queue directly beneath it. The Gantt left column doubles as the expandable services list; each service has its own lifecycle. Sale/onboarding history is a secondary disclosure. No relationship section tabs.
 - Add service chooses a published catalogue service, entry mode and applicable assignee. Existing-client entry can select Setup, Maintenance or Completed.
 - Each instance shows service name, stage, assignee and relevant progress. Add service-stage filters to the relationship list; do not invent a single aggregate relationship stage.
 - Update relationship context, search labels, filters and value summaries. Count negotiated potential separately from committed sales and recurring value; do not double count repeat instances or deferred opportunities.
 
-**Done:** create an empty relationship; assign three services; import Andy's website as Completed and Ads as Setup; refresh and retain exactly that state without sending or charging anything.
+**Done:** verify the continuous information/chart/queue layout on phones and desktop; expand independent service lifecycles from the chart; create an empty relationship; assign three services; import Andy's website as Completed and Ads as Setup; refresh and retain exactly that state without sending or charging anything.
 
 ### SS-03 — POS sells a selected set
 

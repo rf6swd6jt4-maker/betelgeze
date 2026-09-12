@@ -8,6 +8,11 @@ export type { ScheduleChange } from "@/lib/relationship-gantt-schedule"
 export type GanttPerson = { userId: string; username: string; avatarUrl: string | null }
 
 export type RelationshipGanttItem = {
+    virtual?: boolean
+    serviceRoot?: boolean
+    serviceInstanceId?: string
+    serviceStage?: string | null
+    timelineNote?: string
     id: string
     title: string
     status: RelationshipWorkItemStatus

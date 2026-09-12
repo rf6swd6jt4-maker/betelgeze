@@ -36,8 +36,7 @@ export function RelationshipBackgroundEditor({ workspaceSlug, relationshipId, us
     useEffect(() => { queue.receive(initial, updatedAt) }, [initial, updatedAt, queue])
     const update = <K extends keyof RelationshipDraft>(key: K, value: RelationshipDraft[K]) => queue.edit(draft => ({ ...draft, [key]: value }))
     const fieldClass = "min-h-9 w-full min-w-0 rounded-md bg-transparent px-1 py-1 text-base text-neutral-200 outline-none hover:bg-neutral-900/60 focus:bg-neutral-900 disabled:opacity-70 sm:text-sm"
-    return <details className="mt-4 border-t border-neutral-900" open={state.conflict || undefined}>
-        <summary className="cursor-pointer py-3 text-sm text-neutral-400">Contact details and notes</summary>
+    return <section aria-label="Relationship information" className="mt-4">
         <DetailFields className="!mt-0">
             {([
                 ["primaryPersonName", "Name", "identity", "text"], ["businessName", "Company", "relationship", "text"],
@@ -51,5 +50,5 @@ export function RelationshipBackgroundEditor({ workspaceSlug, relationshipId, us
         <p role="status" className="py-2 text-xs text-neutral-400">{state.error || state.storageError || (state.saving ? "Saving details…" : canEdit ? "Details save automatically" : "Read only")}</p>
         {state.error ? <button type="button" onClick={() => void queue.flush()} className="min-h-11 text-sm underline">Retry save</button> : null}
         {state.conflict ? <div role="alert" className="flex flex-wrap gap-3 py-2 text-sm text-amber-200"><span>Your draft is preserved. Review the latest values before saving.</span><button onClick={() => router.refresh()} className="min-h-11 underline">Refresh</button>{state.latest ? <><button onClick={() => queue.resolveConflict(false)} className="min-h-11 underline">Use saved values</button><button onClick={() => queue.resolveConflict(true)} className="min-h-11 underline">Keep my edits</button></> : null}</div> : null}
-    </details>
+    </section>
 }

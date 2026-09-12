@@ -6,6 +6,8 @@ import { createRelationshipGanttReader, readRelationshipGanttPlan } from "@/lib/
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal, flushSync } from "react-dom"
 import { Assignee, Status, relationshipPhaseColours } from "@/components/ui"
+import { pillTones } from "@/components/ui/pill-styles"
+import { SERVICE_STAGES } from "@/lib/service-stages"
 import { ganttSyncChannelName, postGanttSync } from "@/lib/ui/gantt-sync"
 import {
     ganttAnchoredScrollLeft,
@@ -141,6 +143,7 @@ function fixedRowStyle(height: number): CSSProperties {
 }
 
 function compareWorkItems(left: RelationshipGanttItem, right: RelationshipGanttItem) {
+    if (left.virtual && right.virtual && left.parentWorkItemId === right.parentWorkItemId) return left.sortOrder - right.sortOrder
     const leftStart = left.plannedStartDate ?? "9999-12-31"
     const rightStart = right.plannedStartDate ?? "9999-12-31"
     if (leftStart !== rightStart) return leftStart.localeCompare(rightStart)
@@ -181,7 +184,7 @@ function Icon({ kind }: { kind: "fit" | "minus" | "plus" | "labels" }) {
     return <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">{path}</svg>
 }
 
-export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan: initialPlan, canEdit, currentWork, onInvoiceRequest }: {
+export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan: initialPlan, canEdit, currentWork, onInvoiceRequest, serviceMode = false, readPlan, onEditService, canEditService }: {
     workspaceSlug: string
     relationshipId: string
     userId: string
@@ -189,6 +192,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
     canEdit: boolean
     currentWork?: { id: string; title: string; action: string | null; role: string; status: string; unassignedCount: number; blocked: boolean } | null
     onInvoiceRequest?: () => void
+    serviceMode?: boolean
+    readPlan?: (signal: AbortSignal) => Promise<RelationshipGanttPlan>
+    canEditService?: (id: string) => boolean
+    onEditService?: (id: string) => void
 }) {
     const router = useRouter()
     const navigation = useWorkspaceNavigation()
@@ -216,7 +223,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
     // The overview should answer "how long are the stages?" before it asks a
     // user to parse every task. Each nested parent remains independently
     // collapsed until its own disclosure is opened.
-    const [collapsed, setCollapsed] = useState<Set<string>>(() => parentIds(initialPlan.items))
+    const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set([...parentIds(initialPlan.items)].filter(id => !(serviceMode && initialPlan.items.filter(i => i.serviceRoot).length === 1 && initialPlan.items.find(i => i.id === id)?.serviceRoot))))
     const [collapsedCategories, setCollapsedCategories] = useState<Set<Category>>(() => new Set(["shared", "unscheduled"]))
     const [pinching, setPinching] = useState(false)
     const [activeItemId, setActiveItemId] = useState<string | null>(null)
@@ -232,10 +239,10 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
     const readBlocked = useRef(false)
     const localPlanEditing = useRef(false)
     const planReader = useMemo(() => createRelationshipGanttReader(
-        (signal) => readRelationshipGanttPlan({ workspaceSlug, relationshipId, userId, signal }),
+        (signal) => readPlan ? readPlan(signal) : readRelationshipGanttPlan({ workspaceSlug, relationshipId, userId, signal }),
         (next) => { setPlan(next); setReadError(null) },
         (error) => setReadError(error instanceof Error ? error.message : "Could not refresh the plan. Please retry."),
-    ), [workspaceSlug, relationshipId, userId])
+    ), [workspaceSlug, relationshipId, userId, readPlan])
 
     useLayoutEffect(() => {
         localPlanEditing.current = pending || Boolean(cascade) || Boolean(dragPreview)
@@ -322,9 +329,9 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
     const ghostItemIds = useMemo(() => new Set([...workflowProjection.ghostItemIds, ...ghostRanges.keys()]), [ghostRanges, workflowProjection.ghostItemIds])
     const displayRanges = useMemo(() => new Map([...workflowProjection.ranges, ...ghostRanges]), [ghostRanges, workflowProjection.ranges])
     const renderedGeometry = useCallback((item: RelationshipGanttItem, range: GanttDisplayRange): GanttProjectedBarGeometry => ganttProjectedBarGeometry({ range, scale, rangeStart, dayWidth, gutter: timelineGutter, inset: barInset, contentWidth: range.open ? openContentWidths.get(item.id) ?? 0 : 0 }), [barInset, dayWidth, openContentWidths, rangeStart, scale, timelineGutter])
-    const scheduledItems = plan.items.filter((item) => item.section === "relationship" && displayRanges.has(item.id))
+    const scheduledItems = plan.items.filter((item) => item.section === "relationship" && (serviceMode || displayRanges.has(item.id)))
     const sharedItems = plan.items.filter((item) => item.section === "shared" && displayRanges.has(item.id))
-    const unscheduledItems = plan.items.filter((item) => !displayRanges.has(item.id) && !workflowProjection.hiddenItemIds.has(item.id))
+    const unscheduledItems = plan.items.filter((item) => !displayRanges.has(item.id) && (!serviceMode || item.section !== "relationship") && !workflowProjection.hiddenItemIds.has(item.id))
     const scheduledRows = collapsedCategories.has("scheduled") ? [] : flattenRows(scheduledItems, collapsed, "scheduled", plan.dependencies)
     const sharedRows = collapsedCategories.has("shared") ? [] : flattenRows(sharedItems, collapsed, "shared", plan.dependencies)
     const unscheduledRows = collapsedCategories.has("unscheduled") ? [] : flattenRows(unscheduledItems, collapsed, "unscheduled", plan.dependencies)
@@ -532,7 +539,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
         planReader.invalidate()
         setResult(next)
         if (next.status === "saved") {
-            if (next.plan) setPlan(next.plan)
+            if (next.plan && !serviceMode) setPlan(next.plan)
             else void reload()
             postGanttSync(workspaceSlug)
         }
@@ -560,7 +567,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
         if (item.parentWorkItemId) {
             const parentRange = ranges.get(item.parentWorkItemId)
             const parent = plan.items.find((candidate) => candidate.id === item.parentWorkItemId)
-            if (parentRange && !rangeContainsRange(parentRange, proposed)) { flashInvalid(item.parentWorkItemId, `Keep this work inside ${parent?.title ?? "its parent"}: ${parentRange.start}–${parentRange.end}.`); return false }
+            if (parentRange && !parent?.virtual && !rangeContainsRange(parentRange, proposed)) { flashInvalid(item.parentWorkItemId, `Keep this work inside ${parent?.title ?? "its parent"}: ${parentRange.start}–${parentRange.end}.`); return false }
         }
         if (!movingDescendants) {
             for (const child of plan.items.filter((candidate) => candidate.parentWorkItemId === item.id)) {
@@ -611,7 +618,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
         const summaryDrag = ranges.get(item.id)?.derived === true
         const parent = item.parentWorkItemId ? plan.items.find((candidate) => candidate.id === item.parentWorkItemId) : null
         const parentRange = parent ? ranges.get(parent.id) : null
-        const frozenParent = parent && parentRange?.derived ? { id: parent.id, start: parentRange.start, end: parentRange.end } : undefined
+        const frozenParent = parent && !parent.virtual && parentRange?.derived ? { id: parent.id, start: parentRange.start, end: parentRange.end } : undefined
         const frozenParentChange: ScheduleChange | null = parent && frozenParent ? {
             id: parent.id,
             title: parent.title,
@@ -641,7 +648,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
     }
 
     function startBarDrag(event: ReactPointerEvent<HTMLElement>, item: RelationshipGanttItem, range: { start: string; end: string }, mode: "move" | "start" | "end") {
-        if (!canEdit || pending || ["done", "canceled"].includes(item.status)) return
+        if (!canEdit || item.virtual || pending || ["done", "canceled"].includes(item.status)) return
         event.preventDefault()
         event.stopPropagation()
         const originX = event.clientX
@@ -928,14 +935,16 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
                     else next.add(row.item.id)
                     return next
                 })}
-                className="flex h-6 w-5 shrink-0 items-center justify-center text-neutral-500 hover:text-white disabled:opacity-40"
-                style={{ marginLeft: `${(row.depth + 1) * 12}px` }}
+                data-icon-button className="flex h-6 w-5 shrink-0 items-center justify-center text-neutral-500 hover:text-white disabled:opacity-40"
+                style={{ marginLeft: `${Math.min(row.depth + 1, isNarrow ? 2 : 5) * (isNarrow ? 5 : 12)}px` }}
             ><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={`h-3.5 w-3.5 transition-transform ${collapsed.has(row.item.id) ? "" : "rotate-90"}`}><path d="m6 3 5 5-5 5" /></svg></button> : null}
-            {isRoot && !hasChildren ? <span className="w-5 shrink-0" style={{ marginLeft: "12px" }} /> : null}
-            {!isRoot && !hasChildren ? <span className="w-5 shrink-0" style={{ marginLeft: `${(row.depth + 1) * 12}px` }} /> : null}
-            <Link href={`/${workspaceSlug}/work-items/${row.item.id}`} className={`min-w-0 flex-1 truncate whitespace-nowrap text-left text-neutral-200 hover:text-white ${isRoot ? "text-sm font-semibold" : "text-xs font-normal"}`} title={row.item.title}>{row.item.title}</Link>
+            {isRoot && !hasChildren ? <span className="w-5 shrink-0" style={{ marginLeft: isNarrow ? "5px" : "12px" }} /> : null}
+            {!isRoot && !hasChildren ? <span className="w-5 shrink-0" style={{ marginLeft: `${Math.min(row.depth + 1, isNarrow ? 2 : 5) * (isNarrow ? 5 : 12)}px` }} /> : null}
+            {row.item.virtual ? <div className="min-w-0 flex-1" title={row.item.timelineNote ?? row.item.title}>
+                {row.item.serviceRoot && onEditService && canEditService?.(row.item.serviceInstanceId!) ? <button type="button" aria-label={`Edit ${row.item.title}`} onClick={() => onEditService(row.item.serviceInstanceId!)} className="flex min-h-11 w-full flex-col justify-center text-left text-neutral-200 hover:text-white"><span className="block w-full truncate text-xs font-semibold sm:text-sm">{row.item.title}</span><span className="block w-full truncate text-[10px] text-neutral-500">{SERVICE_STAGES.find(s => s.key === row.item.serviceStage)?.label ?? "Review needed"}</span></button> : <><span className={`block truncate text-neutral-200 ${isRoot ? "text-xs font-semibold sm:text-sm" : "text-xs"}`}>{row.item.title}</span>{row.item.serviceRoot ? <span className="block truncate text-[10px] text-neutral-500">{SERVICE_STAGES.find(s => s.key === row.item.serviceStage)?.label ?? "Review needed"}</span> : null}</>}
+            </div> : <Link href={`/${workspaceSlug}/work-items/${row.item.id}`} className={`min-w-0 flex-1 truncate whitespace-nowrap text-left text-neutral-200 hover:text-white ${isRoot ? "text-sm font-semibold" : "text-xs font-normal"}`} title={row.item.title}>{row.item.title}</Link>}
             {contextLabel ? <span title={contextLabel === "external" ? "Prerequisite from outside this relationship" : "Work shared with another relationship"} className="shrink-0 text-[9px] text-neutral-600">{contextLabel}</span> : null}
-            {isUnscheduled ? <Link href={`/${workspaceSlug}/work-items/${row.item.id}`} aria-label={`Schedule ${row.item.title}`} title="Unscheduled — open to add dates" className="flex h-7 w-7 shrink-0 items-center justify-center text-neutral-600 hover:text-white"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" className="h-3.5 w-3.5"><path d="M5 3v3M15 3v3M3 7h14M4 5h12v12H4z" /></svg></Link> : null}
+            {isUnscheduled && !row.item.virtual ? <Link href={`/${workspaceSlug}/work-items/${row.item.id}`} aria-label={`Schedule ${row.item.title}`} title="Unscheduled — open to add dates" className="flex h-7 w-7 shrink-0 items-center justify-center text-neutral-600 hover:text-white"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" className="h-3.5 w-3.5"><path d="M5 3v3M15 3v3M3 7h14M4 5h12v12H4z" /></svg></Link> : null}
         </div>
     }
 
@@ -949,7 +958,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
         const openEnded = Boolean(range?.open)
         const showOpenTrail = Boolean(range?.open || range?.futureOpen)
         const geometry = range ? renderedGeometry(item, range) : null
-        const colours = relationshipPhaseColours(item.lifecyclePhase)
+        const colours = item.serviceStage !== undefined ? pillTones[SERVICE_STAGES.find(s => s.key === item.serviceStage)?.tone ?? "neutral"] : relationshipPhaseColours(item.lifecyclePhase)
         const justStartedLifecycleStage = Boolean(
             geometry
             && geometry.overflow
@@ -958,14 +967,14 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
         )
         const flashing = flashingItemId === item.id
         const barBorder = flashing ? "#ef4444" : isGhost ? "#737373" : colours.border
-        const canDrag = Boolean(canEdit && !pending && !row.external && scheduleRange && !isGhost && !openEnded && !range?.futureOpen && !item.actualStartAt && !item.actualCompletedAt && !["done", "canceled"].includes(item.status))
+        const canDrag = Boolean(canEdit && !item.virtual && !pending && !row.external && scheduleRange && !isGhost && !openEnded && !range?.futureOpen && !item.actualStartAt && !item.actualCompletedAt && !["done", "canceled"].includes(item.status))
         // Derived summary bars move their descendants as a group and cannot be
         // resized independently without changing the hierarchy's meaning.
         const isSummary = range?.derived === true
         const canResize = Boolean(canDrag && !isSummary && geometry && geometry.width >= 40)
         const handleSpace = canResize ? 10 : 0
         const linkSize = barHeight
-        const showBarLink = Boolean(geometry && (openEnded || geometry.width >= linkSize + handleSpace * 2 + 12))
+        const showBarLink = Boolean(!item.virtual && geometry && (openEnded || geometry.width >= linkSize + handleSpace * 2 + 12))
         const showAssignee = Boolean(geometry && (openEnded || geometry.width >= 92))
         const isActive = activeItemId === item.id
         // Hover emphasis must not alter the bar's truthful horizontal extent.
@@ -1104,23 +1113,24 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
     const dragging = Boolean(dragPreview)
 
     return <section id="plan" className="relative isolate mt-4 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900/70">
-        <div className="flex h-9 items-center justify-between gap-2 border-b border-neutral-700 bg-neutral-950 px-2">
+        <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-neutral-700 bg-neutral-950 px-2">
             <div className="flex min-w-0 items-center gap-1">
-                {isNarrow ? <button type="button" disabled={dragging} onClick={() => setLabelsVisible((current) => !current)} aria-label={labelsVisible ? "Hide work item labels" : "Show work item labels"} aria-pressed={labelsVisible} title={labelsVisible ? "Hide labels" : "Show labels"} className={`flex h-7 w-7 items-center justify-center rounded-md border disabled:opacity-40 ${labelsVisible ? "border-neutral-600 bg-neutral-800 text-white" : "border-neutral-800 text-neutral-500"}`}><Icon kind="labels" /></button> : null}
-                <button type="button" disabled={dragging} onClick={goToToday} className="h-7 rounded-md border border-neutral-700 bg-white px-2 text-[11px] font-semibold text-neutral-950 disabled:opacity-40">Today</button>
-                <button type="button" disabled={dragging} onClick={fitPlan} aria-label="Fit plan" title="Fit plan" className="flex h-7 w-7 items-center justify-center rounded-md border border-neutral-700 text-neutral-300 hover:border-neutral-500 hover:text-white disabled:opacity-40"><Icon kind="fit" /></button>
-                <button type="button" disabled={dragging} onClick={expandAllParents} className="hidden h-7 px-1.5 text-[10px] font-medium text-neutral-400 hover:text-white disabled:opacity-40 sm:block">Expand all</button>
-                <button type="button" disabled={dragging} onClick={collapseAllParents} className="hidden h-7 px-1.5 text-[10px] font-medium text-neutral-400 hover:text-white disabled:opacity-40 sm:block">Collapse all</button>
+                {isNarrow ? <button type="button" data-icon-button disabled={dragging} onClick={() => setLabelsVisible((current) => !current)} aria-label={labelsVisible ? "Hide work item labels" : "Show work item labels"} aria-pressed={labelsVisible} title={labelsVisible ? "Hide labels" : "Show labels"} className={`flex h-7 w-7 items-center justify-center rounded-md border disabled:opacity-40 ${labelsVisible ? "border-neutral-600 bg-neutral-800 text-white" : "border-neutral-800 text-neutral-500"}`}><Icon kind="labels" /></button> : null}
+                <button type="button" data-icon-button disabled={dragging} onClick={goToToday} className="h-7 rounded-md border border-neutral-700 bg-white px-2 text-[11px] font-semibold text-neutral-950 disabled:opacity-40">Today</button>
+                <button type="button" data-icon-button disabled={dragging} onClick={fitPlan} aria-label="Fit plan" title="Fit plan" className="flex h-7 w-7 items-center justify-center rounded-md border border-neutral-700 text-neutral-300 hover:border-neutral-500 hover:text-white disabled:opacity-40"><Icon kind="fit" /></button>
+                <button type="button" data-icon-button disabled={dragging} onClick={expandAllParents} className="hidden h-7 px-1.5 text-[10px] font-medium text-neutral-400 hover:text-white disabled:opacity-40 sm:block">Expand all</button>
+                <button type="button" data-icon-button disabled={dragging} onClick={collapseAllParents} className="hidden h-7 px-1.5 text-[10px] font-medium text-neutral-400 hover:text-white disabled:opacity-40 sm:block">Collapse all</button>
                 {pending ? <span role="status" aria-live="polite" className="ml-1 truncate text-[10px] text-neutral-500">Saving…</span> : null}
             </div>
             <div className="flex shrink-0 items-center gap-1">
                 <div className="flex items-center rounded-md border border-neutral-700 bg-neutral-900 p-0.5">
-                    <button type="button" disabled={dragging || zoom <= minimumZoom} onClick={() => zoomAtTimelineCentre(zoom / 1.6)} aria-label="Zoom out" title="Zoom out" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="minus" /></button>
-                    <button type="button" disabled={dragging || zoom >= MAX_ZOOM} onClick={() => zoomAtTimelineCentre(zoom * 1.6)} aria-label="Zoom in" title="Zoom in" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="plus" /></button>
+                    <button type="button" data-icon-button disabled={dragging || zoom <= minimumZoom} onClick={() => zoomAtTimelineCentre(zoom / 1.6)} aria-label="Zoom out" title="Zoom out" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="minus" /></button>
+                    <button type="button" data-icon-button disabled={dragging || zoom >= MAX_ZOOM} onClick={() => zoomAtTimelineCentre(zoom * 1.6)} aria-label="Zoom in" title="Zoom in" className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30"><Icon kind="plus" /></button>
                 </div>
                 <div className="flex items-center rounded-md border border-neutral-700 bg-neutral-900 p-0.5">
                     {([['hour', 'hr'], ['day', 'd'], ['week', 'w'], ['month', 'mo']] as const).map(([value, label]) => <button
                         type="button"
+                        data-icon-button
                         key={value}
                         disabled={dragging}
                         onClick={() => selectScale(value)}
@@ -1152,7 +1162,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
                     <span className="absolute inset-y-0 z-10 w-px bg-red-400/60" style={{ left: `${todayLeft}px` }} />
                 </div>
                 <div className={`sticky left-0 z-40 flex min-w-0 items-center overflow-hidden border-b border-b-neutral-800 bg-neutral-950 text-[10px] font-semibold uppercase tracking-[.08em] text-neutral-400 ${effectiveLeftWidth ? "border-r border-r-neutral-700 px-2" : "border-r-0 px-0"}`} style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{effectiveLeftWidth ? "Milestones" : null}</div><div className="relative border-b border-neutral-800" style={fixedRowStyle(CATEGORY_ROW_HEIGHT)}>{visibleMilestones.map(({ milestone, left }) => { const colours = milestone.kind === "relationship_started" ? "border-sky-400 bg-sky-950" : milestone.kind === "client_invoiced" ? "border-amber-400 bg-amber-950" : milestone.kind === "onboarding_completed" ? "border-violet-400 bg-violet-950" : "border-emerald-400 bg-emerald-950"; const marker = <span className={`block h-2.5 w-2.5 rotate-45 border ${colours}`} />; return milestone.href ? <a key={milestone.id} href={milestone.href} aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded focus:outline-none focus:ring-1 focus:ring-neutral-300" style={{ left, top: 0 }}>{marker}</a> : <span key={milestone.id} role="img" aria-label={`${milestone.title}, ${milestone.occurredAt.slice(0, 10)}`} title={`${milestone.title} · ${milestone.occurredAt.slice(0, 10)}`} className="absolute flex h-7 w-7 -translate-x-1/2 items-center justify-center" style={{ left, top: 0 }}>{marker}</span> })}</div>
-                {renderCategory("scheduled", "Scheduled", scheduledItems.length)}
+                {renderCategory("scheduled", serviceMode ? "Services" : "Scheduled", serviceMode ? plan.items.filter(i => i.serviceRoot).length : scheduledItems.length)}
                 {scheduledRows.map((row) => <div className="contents" key={`scheduled-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}
                 {renderCategory("shared", "Shared", sharedItems.length + plan.externalItems.filter((item) => displayRanges.has(item.id)).length)}
                 {[...sharedRows, ...scheduledExternalRows].map((row) => <div className="contents" key={`shared-${row.item.id}`}>{renderLeft(row)}{renderTimeline(row)}</div>)}

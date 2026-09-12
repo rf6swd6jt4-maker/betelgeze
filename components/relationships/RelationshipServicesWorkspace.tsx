@@ -2,12 +2,10 @@
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import Link from "@/components/workspace/WorkspaceLink"
 import { useRouter } from "@/components/workspace/WorkspaceNavigation"
-import { Assignee, AssignmentSelector, Selector, ServiceStage } from "@/components/ui"
+import { AssignmentSelector, Selector } from "@/components/ui"
 import { SelectorDrawer, SelectorOption, SelectorTrigger } from "@/components/ui/Selector"
-import { ListActionMenu } from "@/components/list/ListActionMenu"
-import { MobileListActionSurface } from "@/components/list/MobileCardActionSurface"
-import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
-import { PanelSectionTabs } from "@/components/panel/PanelTabs"
+import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
+import { RelationshipServiceTimeline } from "./RelationshipServiceTimeline"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { DetailField, DetailFields } from "@/components/detail"
 import { addRelationshipService, changeRelationshipService } from "@/app/[workspaceSlug]/relationships/service-actions"
@@ -126,41 +124,20 @@ function Pagination({ page, hasMore, onChange }: {page: number; hasMore: boolean
 export function RelationshipServicesWorkspace(props: Props) {
     const router = useRouter()
     const endpoint = `/api/workspaces/${encodeURIComponent(props.workspaceSlug)}/relationships/${props.relationshipId}/services`
-    const [section, setSection] = useState<"services" | "work" | "history">("services")
+    const [history, setHistory] = useState(false)
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<RelationshipServiceRow | null>(null)
-    const [page, setPage] = useState(0)
-    const [loaded, setLoaded] = useState<{ source: RelationshipServicePage; data: RelationshipServicePage } | null>(null)
-    const data = (!page && loaded?.source !== props.initial) ? props.initial : loaded?.data ?? props.initial
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState("")
-    async function loadPage(next: number) {
-        setLoading(true); setError("")
-        try { const result = await read<RelationshipServicePage>(`${endpoint}?offset=${next * 30}`); setLoaded({ source: props.initial, data: result }); setPage(next) }
-        catch (error) { setError(error instanceof Error ? error.message : "Could not load services.") }
-        finally { setLoading(false) }
-    }
-    function saved() { setAdding(false); setEditing(null); setPage(0); setLoaded(null); router.refresh() }
+    const editable = (service: RelationshipServiceRow) => !service.legacy && props.canAdd && (props.canImport || service.origin === "negotiation") && !["awaiting_payment", "onboarding"].includes(service.stage ?? "")
+    function saved() { setAdding(false); setEditing(null); router.refresh() }
     return <section className="mt-5" aria-label="Relationship services and work">
-        <PanelSectionTabs active={section} onChange={setSection} ariaLabel="Relationship sections" items={[{key:"services",label:"Services"},{key:"work",label:"Work"},...(props.canSeeHistory ? [{key:"history" as const,label:"Sales & onboarding"}] : [])]} />
-        {section === "services" ? <>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="max-w-xl text-sm leading-6 text-neutral-400">Each service has its own progress and delivery responsibility.</p>{props.canAdd ? <button className={buttonClass} onClick={() => { setAdding(!adding); setEditing(null) }}>Add service</button> : null}</div>
-            {adding ? <ServiceForm endpoint={endpoint} props={props} onDone={saved} onClose={() => setAdding(false)} /> : null}
-            {editing ? <ServiceForm key={editing.id} row={editing} endpoint={endpoint} props={props} onDone={saved} onClose={() => setEditing(null)} /> : null}
-            {error ? <p role="alert" className="py-3 text-sm text-red-200">{error}<button onClick={() => void loadPage(page)} className="ml-2 min-h-11 underline">Retry</button></p> : null}
-            <div aria-busy={loading} className={loading ? "pointer-events-none opacity-50" : ""}><List ariaLabel="Assigned services">{data.items.length ? data.items.map(service => {
-                const editable = !service.legacy && props.canAdd && (props.canImport || service.origin === "negotiation") && !["awaiting_payment", "onboarding"].includes(service.stage ?? "")
-                const actions = [{label:"Copy service name",copyText:service.name}, ...(editable ? [{label:"Edit service",onSelect:() => { setEditing(service); setAdding(false) }}] : [])]
-                return <ListItem key={service.id}><MobileListActionSurface actions={actions} label={`Actions for ${service.name}`}>
-                    <ListPrimaryRow><ListTitle className="flex-1">{service.name}</ListTitle><ServiceStage stage={service.stage} /></ListPrimaryRow>
-                    <ListSecondaryRow><Assignee name={service.assignee_name} /><span className="hidden font-mono text-neutral-600 sm:inline">{shortId(service.id.replace("legacy:", ""))}</span><span className="hidden text-neutral-500 lg:inline">{service.legacy ? "Existing assignment" : service.origin === "already_onboarded" ? "Already onboarded" : "New opportunity"}</span><ListTrailing><ListActionMenu actions={actions} className="hidden sm:block" /></ListTrailing></ListSecondaryRow>
-                </MobileListActionSurface></ListItem>
-            }) : <p className="p-5 text-sm leading-6 text-neutral-400">No services assigned yet. Add a service from your catalogue to start a conversation or record existing work.</p>}</List><Pagination page={page} hasMore={data.hasMore} onChange={next => void loadPage(next)} /></div>
-            {data.values?.map(value => <div key={`${value.kind}:${value.currency}:${value.billing_interval}:${value.billing_interval_count}`} className="mt-4"><p className="text-xs text-neutral-500">{value.kind === "catalogue_estimate" ? "Negotiating · potential value" : "Committed sales"} · {value.currency}</p><QuickStats items={[
-                { label: "Upfront", value: new Intl.NumberFormat("en", {style:"currency",currency:value.currency}).format(value.upfront_cents / 100) },
-                { label: `Recurring / ${value.billing_interval_count ?? 1} ${value.billing_interval ?? "month"}`, value: new Intl.NumberFormat("en", {style:"currency",currency:value.currency}).format(value.recurring_cents / 100) },
-            ]} /></div>)}
-            {props.legacy ? <Link href={`/${props.workspaceSlug}/relationships/${props.relationshipId}/pos`} className="mt-4 inline-flex min-h-11 items-center text-sm text-neutral-400 underline">Open existing sales and delivery plan</Link> : null}
-        </> : <RelationshipActivity key={section} endpoint={endpoint} section={section} slug={props.workspaceSlug} relationshipId={props.relationshipId} legacy={props.legacy} />}
+        {props.initial.values?.length ? <div className="mb-4 flex flex-wrap gap-x-8 gap-y-3">{props.initial.values.map(value => <div key={`${value.kind}:${value.currency}:${value.billing_interval}:${value.billing_interval_count}`}><p className="text-xs text-neutral-500">{value.kind === "catalogue_estimate" ? "Negotiating · potential value" : "Committed sales"} · {value.currency}</p><QuickStats items={[
+            {label:"Upfront",value:new Intl.NumberFormat("en",{style:"currency",currency:value.currency}).format(value.upfront_cents/100)},
+            {label:`Recurring / ${value.billing_interval_count ?? 1} ${value.billing_interval ?? "month"}`,value:new Intl.NumberFormat("en",{style:"currency",currency:value.currency}).format(value.recurring_cents/100)},
+        ]}/></div>)}</div> : null}
+        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-semibold">Services</h2>{props.canAdd ? <button className={buttonClass} onClick={() => {setAdding(!adding);setEditing(null)}}>Add service</button> : null}</div>
+        {adding ? <ServiceForm endpoint={endpoint} props={props} onDone={saved} onClose={() => setAdding(false)} /> : null}
+        {editing ? <ServiceForm key={editing.id} row={editing} endpoint={endpoint} props={props} onDone={saved} onClose={() => setEditing(null)} /> : null}
+        <RelationshipServiceTimeline endpoint={endpoint} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canEdit={props.canImport} canEditService={editable} onEditService={row => {setEditing(row);setAdding(false)}} />
+        {props.canSeeHistory ? <details className="mt-5 border-t border-neutral-900" onToggle={event=>{if(event.currentTarget.open)setHistory(true)}}><summary className="cursor-pointer py-3 text-sm text-neutral-400">Sales &amp; onboarding history</summary>{history ? <RelationshipActivity endpoint={endpoint} section="history" slug={props.workspaceSlug} relationshipId={props.relationshipId} legacy={props.legacy} /> : null}{props.legacy ? <Link href={`/${props.workspaceSlug}/relationships/${props.relationshipId}/pos`} className="inline-flex min-h-11 items-center text-sm text-neutral-400 underline">Open existing POS</Link> : null}</details> : null}
     </section>
 }

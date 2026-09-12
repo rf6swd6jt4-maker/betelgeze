@@ -16,6 +16,14 @@ export async function GET(request: Request, context: { params: Promise<{workspac
         const kind = query.get("kind")
         if (!kind) return Response.json(await readRelationshipServices(workspace.id, relationshipId, user.id, offset), { headers })
         const parameters = { p_workspace_id: workspace.id, p_user_id: user.id }
+        if (kind === "timeline" || kind === "queue") {
+            if (request.headers.get("x-workspace-user") !== user.id) return Response.json({error:"Your session changed."},{status:409,headers})
+            const result = await supabaseAdmin.rpc(kind === "timeline" ? "read_relationship_service_plan" : "read_relationship_work_queue", {...parameters,p_relationship_id:relationshipId,p_offset:offset})
+            if(result.error) return Response.json({error:"Could not load relationship work."},{status:503,headers})
+            if(kind === "queue") return Response.json({...result.data,items:result.data.items.slice(0,30)},{headers})
+            const {buildRelationshipServicePlan} = await import("@/lib/relationship-service-plan")
+            return Response.json({userId:user.id,relationshipId,services:result.data.services.slice(0,30),hasMore:result.data.services.length>30,workTruncated:result.data.workTruncated,plan:buildRelationshipServicePlan(result.data)},{headers})
+        }
         const result = kind === "catalogue" ? await supabaseAdmin.rpc("relationship_service_catalogue", { ...parameters, p_query: (query.get("q") ?? "").slice(0, 100), p_offset: offset })
             : kind === "assignees" ? await supabaseAdmin.rpc("relationship_service_assignees", { ...parameters, p_relationship_id: relationshipId, p_service_id: query.get("service") })
             : ["work", "history"].includes(kind) ? await supabaseAdmin.rpc("relationship_service_activity", { ...parameters, p_relationship_id: relationshipId, p_kind: kind, p_offset: offset }) : null

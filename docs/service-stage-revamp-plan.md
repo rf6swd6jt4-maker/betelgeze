@@ -1,6 +1,6 @@
 # Service stages, relationship work, and personal Work Queue
 
-Planning baseline: 12 September 2026. SS-01's additive foundation and SS-02's relationship Services UI are implemented. SS-03–09 remain separate packages. See `service-instance-foundation.md` and `relationship-services-release.md` for evidence and adoption boundaries.
+Planning baseline: 12 September 2026. SS-01's additive foundation and SS-02's relationship Services UI are implemented. SS-03 is implemented and locally validated; its production migration and deployment await approval. SS-04–09 remain separate packages. See `service-instance-foundation.md`, `relationship-services-release.md` and `selected-service-pos-release.md` for evidence and adoption boundaries.
 
 This is the detailed workstream for the Saturday relationship/service revamp and Sunday work foundation in `scaylup-betelgeze-september-11-15-checklist.md`. The newer decisions in this task supersede that checklist's earlier description of retaining a broader relationship lifecycle. Existing checklist completion claims remain unchanged.
 
@@ -74,6 +74,8 @@ Status: implemented and validated; see `relationship-services-release.md`.
 **Done:** verify the continuous information/chart/queue layout on phones and desktop; expand independent service lifecycles from the chart; create an empty relationship; assign three services; import Andy's website as Completed and Ads as Setup; refresh and retain exactly that state without sending or charging anything.
 
 ### SS-03 — POS sells a selected set
+
+Status: implemented and locally validated; production rehearsal, migration and deployment are pending. See `selected-service-pos-release.md`. The minimum session-specific payment, completion and Onboarding links needed for these sales are included; SS-04 readiness, answer reuse and restart/revoke work are not complete.
 
 - POS lists Negotiating instances with explicit multi-selection. Keep client review, team allocation, onboarding preview and pricing review.
 - Compose preview and prices only from selected instances. Reuse existing supported billing/currency rules and reject unsupported combinations clearly.

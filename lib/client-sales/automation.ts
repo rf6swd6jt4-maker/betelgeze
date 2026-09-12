@@ -18,6 +18,8 @@ import { markSmsConsentConfirmed, smsConsentForConfirmation } from "@/lib/client
 import { loadWorkspacePublicBranding } from "@/lib/client-branding/public-branding"
 
 type ClientSale = {
+    service_scope?: "relationship" | "selected_services"
+    consent_confirmed_at?: string | null
     id: string
     client_id: string | null
     relationship_id: string | null
@@ -527,7 +529,7 @@ export async function handleCompletedStripeCheckout(checkout: StripeCheckoutLike
         return { ok: true, skipped: true, reason: "payment_pending" as const }
     }
     const { data: sale, error } = await supabaseAdmin.from("client_sales")
-        .select("id, client_id, relationship_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload, workspace_id, created_by, correlation_id, onboarding_session_id, snapshot_frozen_at, stripe_subscription_id")
+        .select("id, client_id, relationship_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload, workspace_id, created_by, correlation_id, onboarding_session_id, snapshot_frozen_at, stripe_subscription_id, service_scope")
         .eq("workspace_id", expectedWorkspaceId).eq("id", saleId).maybeSingle()
     if (error) return { ok: false, error: error.message }
     if (!sale) return { ok: false, error: "Betelgeze Checkout references an unknown sale" }
@@ -553,7 +555,7 @@ export async function handleCompletedStripeCheckout(checkout: StripeCheckoutLike
     if (!claimed && sale.status !== "paid") return { ok: true, skipped: true, reason: "not_payment_pending" as const }
     try {
         const onboarding = await ensurePaidOnboardingSession({ ...sale, status: "paid" } as ClientSale)
-        await activateRelationshipOnboardingAfterPayment({ workspaceId: sale.workspace_id, relationshipId: onboarding.relationshipId })
+        if (sale.service_scope !== "selected_services") await activateRelationshipOnboardingAfterPayment({ workspaceId: sale.workspace_id, relationshipId: onboarding.relationshipId })
         return { ok: true, onboardingSessionId: onboarding.sessionId, correlationId: sale.correlation_id ?? sale.id }
     } catch (paymentError) {
         const message = paymentError instanceof Error ? paymentError.message : "Could not unlock onboarding after payment"
@@ -562,7 +564,12 @@ export async function handleCompletedStripeCheckout(checkout: StripeCheckoutLike
     }
 }
 
-async function findPendingConfirmedSale(fromAddress: string, workspaceId: string) {
+async function findPendingConfirmedSale(fromAddress: string, workspaceId: string, messageId?: string | null) {
+    if (messageId) {
+        const prior = await supabaseAdmin.from("client_sales").select("id, client_id, relationship_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload, workspace_id, created_by, correlation_id, onboarding_session_id, snapshot_frozen_at, consent_confirmed_at, service_scope").eq("workspace_id",workspaceId).eq("consent_confirmed_message_id",messageId).limit(1).maybeSingle()
+        if (prior.error) throw new Error("Could not check the previous confirmation.")
+        if (prior.data) return firstUnarchivedRelationshipSale([prior.data])
+    }
     const equivalentAddresses = getEquivalentSalePhoneAddresses(fromAddress)
     const statuses = [
         "test_paid",
@@ -583,14 +590,14 @@ async function findPendingConfirmedSale(fromAddress: string, workspaceId: string
     const snapshotResult = await supabaseAdmin
         .from("client_sales")
         .select(
-            "id, client_id, relationship_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload, workspace_id, created_by, correlation_id, onboarding_session_id, snapshot_frozen_at"
+            "id, client_id, relationship_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload, workspace_id, created_by, correlation_id, onboarding_session_id, snapshot_frozen_at, consent_confirmed_at, service_scope"
         )
         .eq("workspace_id", workspaceId)
         .in("client_phone", equivalentAddresses)
         .in("status", statuses)
         .order("created_at", { ascending: false })
         .limit(50)
-    if (!snapshotResult.error) return firstUnarchivedRelationshipSale(snapshotResult.data ?? [])
+    if (!snapshotResult.error) return firstUnarchivedRelationshipSale([...(snapshotResult.data ?? [])].sort((a,b) => Number(Boolean(a.consent_confirmed_at))-Number(Boolean(b.consent_confirmed_at))))
     if (!isMissingOnboardingRuntimeColumn(snapshotResult.error)) throw new Error(snapshotResult.error.message)
 
     const { data: legacySales, error } = await supabaseAdmin
@@ -756,10 +763,14 @@ export async function handleSaleConsentConfirmation({
         return { handled: false }
     }
 
-    const sale = await findPendingConfirmedSale(fromAddress, workspaceId)
+    const sale = await findPendingConfirmedSale(fromAddress, workspaceId, messageId)
 
     if (!sale) return { handled: false }
 
+    if (sale.service_scope === "selected_services" && sale.consent_confirmed_at && sale.onboarding_session_id && sale.relationship_id) {
+        const recovered = await retrySelectedServiceOnboardingLink(workspaceId,sale.relationship_id,sale.id)
+        return {handled:true,ok:recovered.ok}
+    }
     const smsConsent = provider === "twilio_sms"
         ? await smsConsentForConfirmation({ workspaceId, saleId: sale.id, fromAddress })
         : null
@@ -1088,4 +1099,14 @@ export async function handleSaleConsentConfirmation({
         destination: fromAddress,
         onboardingUrl,
     })
+}
+
+export async function retrySelectedServiceOnboardingLink(workspaceId:string,relationshipId:string,saleId:string) {
+    const relationship=await supabaseAdmin.from("relationships").select("status").eq("workspace_id",workspaceId).eq("id",relationshipId).single()
+    if(relationship.error || relationship.data.status==="archived")throw new Error("Archived relationships cannot receive new delivery requests.")
+    const result=await supabaseAdmin.from("client_sales").select("id,workspace_id,relationship_id,client_phone,correlation_id,onboarding_session_id,consent_confirmed_at,service_scope").eq("workspace_id",workspaceId).eq("relationship_id",relationshipId).eq("id",saleId).eq("service_scope","selected_services").single()
+    if(result.error || !result.data.consent_confirmed_at || !result.data.onboarding_session_id) throw new Error("The selected sale has no confirmed onboarding session.")
+    const queued=await enqueueOnboardingLinkDelivery({sale:result.data as ClientSale,relationshipId,sessionId:result.data.onboarding_session_id,destination:result.data.client_phone,message:"Your secure onboarding link is ready."})
+    if(!queued.supported)throw new Error("The onboarding delivery queue is unavailable.")
+    return {ok:true,notice:"The saved onboarding link is queued for delivery. This reuses the existing sale and session."}
 }

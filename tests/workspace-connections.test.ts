@@ -103,7 +103,7 @@ test("webhooks resolve workspace identity before processing tenant data", () => 
     assert.match(twilioWebhook, /getWorkspaceIdForTwilioNumber\(businessNumber\)/u)
     assert.match(twilioWebhook, /validateTwilioSignature/u)
     assert.match(twilioWebhook, /provider: "twilio_sms"/u)
-    assert.match(saleAutomation, /findPendingConfirmedSale\(fromAddress, workspaceId\)/u)
+    assert.match(saleAutomation, /findPendingConfirmedSale\(fromAddress, workspaceId, messageId\)/u)
     assert.match(saleAutomation, /\.eq\("workspace_id", workspaceId\)/u)
 })
 

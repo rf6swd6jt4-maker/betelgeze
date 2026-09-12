@@ -1,4 +1,5 @@
-import { createStripeMixedCheckout, retrieveStripeCheckoutSession, type StripeCheckoutLineItemInput, type StripeRecurringInterval } from "@/lib/stripe/api"
+import { createStripeMixedCheckout, retrieveStripeCheckoutSession, getCheckoutFields, type StripeCheckoutLineItemInput, type StripeRecurringInterval } from "@/lib/stripe/api"
+import { handleCompletedStripeCheckout } from "@/lib/client-sales/automation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { createPrivateUploadSignedUrl, createServiceThumbnailPublicUrl } from "@/lib/onboarding/uploads"
@@ -17,6 +18,7 @@ type PaymentContext = {
     }
     sale: {
         id: string
+        service_scope?: "relationship" | "selected_services"
         status: string
         billing_interval: StripeRecurringInterval | null
         billing_interval_count: number | null
@@ -36,16 +38,17 @@ type PaymentContext = {
 export async function getOnboardingPaymentContext(token: string): Promise<PaymentContext | null> {
     const { data: session, error: sessionError } = await supabaseAdmin.from("relationship_onboarding_sessions")
         .select("id, workspace_id, relationship_id, source_sale_id")
-        .eq("session_token", token).in("status", ["active", "completed"]).maybeSingle()
+        .eq("session_token", token).is("token_revoked_at", null).in("status", ["active", "completed"]).maybeSingle()
     if (sessionError || !session?.source_sale_id) return null
     const { data: workspace, error: workspaceError } = await supabaseAdmin.from("workspaces")
         .select("slug, custom_onboarding_domain, custom_onboarding_domain_status")
         .eq("id", session.workspace_id).maybeSingle()
     if (workspaceError || !workspace) return null
     const { data: sale, error: saleError } = await supabaseAdmin.from("client_sales")
-        .select("id, status, billing_interval, billing_interval_count, upfront_total_amount, recurring_total_amount, client_name, client_email, client_phone, currency, project_timeframe_days, stripe_checkout_session_id, stripe_checkout_url, stripe_checkout_expires_at")
+        .select("id, status, billing_interval, billing_interval_count, upfront_total_amount, recurring_total_amount, client_name, client_email, client_phone, currency, project_timeframe_days, stripe_checkout_session_id, stripe_checkout_url, stripe_checkout_expires_at, service_scope, consent_confirmed_at")
         .eq("workspace_id", session.workspace_id).eq("id", session.source_sale_id).maybeSingle()
     if (saleError || !sale) return null
+    if (sale.service_scope === "selected_services" && (!sale.consent_confirmed_at || !["onboarding_payment_pending","onboarding_link_sent","onboarding_link_failed","payment_failed","paid","test_paid"].includes(sale.status))) return null
     return {
         sessionId: session.id,
         workspaceId: session.workspace_id,
@@ -134,10 +137,29 @@ export async function createOrReuseOnboardingCheckout(input: { token: string; or
     if (context.sale.stripe_checkout_url && Number.isFinite(existingExpiry) && existingExpiry > Date.now() + 60_000) {
         return { paid: false as const, checkoutUrl: context.sale.stripe_checkout_url, returnUrl }
     }
+    const native = context.sale.service_scope === "selected_services"
+    const config = await getWorkspaceProviderConfig(context.workspaceId, "stripe")
+    let previousCheckoutId: string | null = null
+    if (native && context.sale.stripe_checkout_session_id) {
+        const raw = await retrieveStripeCheckoutSession({secretKey: config.access_token || config.secret_key, checkoutSessionId: context.sale.stripe_checkout_session_id})
+        const existing = getCheckoutFields(raw)
+        if (existing.metadata.client_sale_id !== context.sale.id) throw new Error("The previous checkout does not match this sale.")
+        if (existing.paymentStatus === "paid" || existing.paymentStatus === "no_payment_required") {
+            const result = await handleCompletedStripeCheckout(raw,context.workspaceId)
+            if (!result.ok) throw new Error(result.error)
+            return {paid:true as const,checkoutUrl:null,returnUrl}
+        }
+        if (existing.checkoutStatus !== "expired") {
+            if (!existing.checkoutUrl) throw new Error("The previous checkout is still processing. Try again shortly.")
+            return {paid:false as const,checkoutUrl:existing.checkoutUrl,returnUrl}
+        }
+        previousCheckoutId = existing.checkoutSessionId
+        const marked = await supabaseAdmin.from("client_sales").update({stripe_checkout_status:"expired"}).eq("workspace_id",context.workspaceId).eq("id",context.sale.id).eq("stripe_checkout_session_id",previousCheckoutId)
+        if (marked.error) throw new Error("Could not reconcile the expired checkout. Try again.")
+    }
     if (!context.sale.client_email) throw new Error("A billing email is required before payment can begin")
     const expiresAt = Math.floor(Date.now() / 1_000) + 24 * 60 * 60 - 60
     const lineItems = await frozenCheckoutLineItems(context, expiresAt)
-    const config = await getWorkspaceProviderConfig(context.workspaceId, "stripe")
     const generation = context.sale.stripe_checkout_expires_at ?? "initial"
     const shared = {
         saleId: context.sale.id,
@@ -153,19 +175,17 @@ export async function createOrReuseOnboardingCheckout(input: { token: string; or
         successUrl: `${input.origin}/api/onboarding/session/${input.token}/payment-return?session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${returnUrl}?payment=cancelled`,
         expiresAt,
-        secretKey: config.access_token || config.secret_key,
         idempotencyKey: `${context.sale.id}:onboarding-checkout:${generation}`,
     }
-    const checkout = await createStripeMixedCheckout({
-        ...shared,
-        interval: context.sale.recurring_total_amount > 0
-            ? context.sale.billing_interval ?? "month"
-            : null,
-        intervalCount: context.sale.recurring_total_amount > 0
-            ? context.sale.billing_interval_count ?? 1
-            : null,
-    })
-    const { error: updateError } = await supabaseAdmin.from("client_sales").update({
+    let providerRequest = {...shared, interval:context.sale.recurring_total_amount>0?context.sale.billing_interval??"month":null, intervalCount:context.sale.recurring_total_amount>0?context.sale.billing_interval_count??1:null}
+    if (native) {
+        const claim = await supabaseAdmin.rpc("claim_selected_service_checkout", {p_workspace_id:context.workspaceId,p_sale_id:context.sale.id,p_session_token:input.token,p_previous_checkout_id:previousCheckoutId,p_request:{...providerRequest,idempotencyKey:`${context.sale.id}:service-checkout:${crypto.randomUUID()}`}})
+        if (claim.error) throw new Error(claim.error.code==="P0001"?claim.error.message:"Could not reserve this checkout. Try again.")
+        if (claim.data.paid) return {paid:true as const,checkoutUrl:null,returnUrl}
+        providerRequest = claim.data.request
+    }
+    const checkout = await createStripeMixedCheckout({...providerRequest,secretKey:config.access_token || config.secret_key})
+    let saveCheckout = supabaseAdmin.from("client_sales").update({
         stripe_customer_id: checkout.customerId,
         stripe_checkout_session_id: checkout.checkoutSessionId,
         stripe_checkout_status: checkout.checkoutStatus,
@@ -173,7 +193,9 @@ export async function createOrReuseOnboardingCheckout(input: { token: string; or
         stripe_checkout_expires_at: checkout.expiresAt,
         updated_at: new Date().toISOString(),
     }).eq("workspace_id", context.workspaceId).eq("id", context.sale.id)
-    if (updateError) throw new Error(updateError.message)
+    if (native) saveCheckout = saveCheckout.eq("service_checkout_request->>idempotencyKey",providerRequest.idempotencyKey)
+    const {error:updateError,data:savedCheckout}=await saveCheckout.select("id").maybeSingle()
+    if (updateError || !savedCheckout) throw new Error("Could not confirm the checkout save. Retry to recover the same checkout.")
     return { paid: false as const, checkoutUrl: checkout.checkoutUrl, returnUrl }
 }
 

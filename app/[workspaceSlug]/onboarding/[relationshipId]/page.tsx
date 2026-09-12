@@ -31,6 +31,7 @@ export const dynamic = "force-dynamic"
 
 type PageProps = {
     params: Promise<{ workspaceSlug: string; relationshipId: string }>
+    searchParams: Promise<{ session?: string }>
 }
 
 type WorkItemRow = {
@@ -430,6 +431,8 @@ function AssetRowLink({ asset, workspaceSlug }: { asset: AssetRow; workspaceSlug
 type OnboardingRelationship = NonNullable<Awaited<ReturnType<typeof getRelationship>>>
 
 function startOnboardingDetailData(input: {
+    sessionId?: string
+    userId: string
     workspaceId: string
     workspaceSlug: string
     customOnboardingDomain: string | null
@@ -439,7 +442,7 @@ function startOnboardingDetailData(input: {
     allowedServiceIds: string[]
     canOpenCompleteClientSession: boolean
 }) {
-    const sessionResultPromise = Promise.resolve(supabaseAdmin
+    let sessionQuery = supabaseAdmin
         .from("relationship_onboarding_sessions")
         .select("*")
         .eq("workspace_id", input.workspaceId)
@@ -447,7 +450,8 @@ function startOnboardingDetailData(input: {
         .in("status", ["active", "completed"])
         .order("updated_at", { ascending: false })
         .limit(1)
-        .maybeSingle())
+    if (input.sessionId) sessionQuery = sessionQuery.eq("id", input.sessionId)
+    const sessionResultPromise = Promise.resolve(sessionQuery.maybeSingle())
     const modulesResultPromise = Promise.resolve(supabaseAdmin
         .from("relationship_onboarding_modules")
         .select("module_key")
@@ -461,6 +465,12 @@ function startOnboardingDetailData(input: {
         .eq("relationship_id", input.relationship.id)
         .order("created_at", { ascending: true }))
 
+    const nativeAccessPromise=sessionResultPromise.then(async ({data:session})=>{
+        if(session?.service_scope!=="selected_services")return null
+        const result=await supabaseAdmin.rpc("read_selected_service_session_access",{p_workspace_id:input.workspaceId,p_session_ids:[session.id],p_user_id:input.userId})
+        if(result.error)throw new Error("Could not verify onboarding access.")
+        return result.data as {moduleIds:string[];fullSessionIds:string[]}
+    })
     const normalizedSnapshotPromise = sessionResultPromise.then(({ data: session }) => session ? loadNormalizedSessionSnapshot(session) : null)
     const serviceRevisionsPromise = servicesResultPromise.then(({ data: services }) => {
         const scoped = (services ?? []).filter((service) => input.role !== "staff" || input.allowedServiceIds.includes(service.service_id ?? ""))
@@ -504,13 +514,13 @@ function startOnboardingDetailData(input: {
         modulesResultPromise,
         servicesResultPromise,
         serviceRevisionsPromise,
-        normalizedSnapshotPromise,
-    ]).then(([{ data: session }, { data: modules }, { data: services }, serviceRevisions, normalizedSnapshot]) => {
+        normalizedSnapshotPromise, nativeAccessPromise,
+    ]).then(([{ data: session }, { data: modules }, { data: services }, serviceRevisions, normalizedSnapshot, nativeAccess]) => {
         const scopedServices = (services ?? []).filter((service) => input.role !== "staff" || input.allowedServiceIds.includes(service.service_id ?? ""))
         const moduleKeys = (modules ?? []).map((module) => module.module_key).filter((key): key is string => Boolean(key))
         const scopedServiceRevisionIds = new Set(scopedServices.map((service) => service.service_revision_id).filter((id): id is string => Boolean(id)))
         const scopedSnapshotModules = (normalizedSnapshot?.modules ?? []).filter((module) => (
-            input.role !== "staff"
+            nativeAccess ? nativeAccess.moduleIds.includes(module.id) : input.role !== "staff"
             || module.sourceKind === "mandatory"
             || Boolean(module.sourceServiceRevisionId && scopedServiceRevisionIds.has(module.sourceServiceRevisionId))
         ))
@@ -550,7 +560,7 @@ function startOnboardingDetailData(input: {
             sessionCompleted: session?.status === "completed",
             isTest: Boolean(session?.is_test) || input.relationship.source_metadata.is_test === true,
             canManage: input.role === "owner" || input.role === "admin",
-            canOpenCompleteClientSession: input.canOpenCompleteClientSession,
+            canOpenCompleteClientSession: nativeAccess ? nativeAccess.fullSessionIds.includes(session?.id ?? "") : input.canOpenCompleteClientSession,
             onboardingUrl: session ? getOnboardingUrl(input.workspaceSlug, session.session_token, input.customOnboardingDomain, input.customOnboardingDomainVerified) : null,
         }
     })
@@ -727,8 +737,9 @@ async function OnboardingContext({ data, workspaceSlug, relationship, access }: 
     />
 }
 
-export default async function OnboardingDetailPage({ params }: PageProps) {
-    const { workspaceSlug, relationshipId } = await params
+export default async function OnboardingDetailPage({ params, searchParams }: PageProps) {
+    const [{workspaceSlug,relationshipId}, query] = await Promise.all([params,searchParams])
+    if (query.session && !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(query.session)) notFound()
     const { workspace, user, role, access } = await requireWorkspacePanel(workspaceSlug, "onboarding")
     const [relationship, allowedRelationshipIds, fullyAllowedRelationshipIds] = await Promise.all([
         getRelationship(workspace.id, relationshipId),
@@ -738,6 +749,8 @@ export default async function OnboardingDetailPage({ params }: PageProps) {
     if (allowedRelationshipIds && !allowedRelationshipIds.has(relationshipId)) notFound()
     if (!relationship) notFound()
     const data = startOnboardingDetailData({
+        sessionId:query.session,
+        userId:user.id,
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
         customOnboardingDomain: workspace.custom_onboarding_domain,

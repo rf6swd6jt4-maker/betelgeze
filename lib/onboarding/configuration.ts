@@ -973,3 +973,18 @@ export async function loadPublishedOnboardingTheme(workspaceId: string): Promise
     if (swatchResult.error || themeResult.error) return defaultTheme()
     return mapTheme((themeResult.data ?? [])[0] as UnknownRow | undefined, (swatchResult.data ?? []) as UnknownRow[])
 }
+
+// POS preview hydrates only the server-selected composition, on explicit request.
+export async function loadSelectedServicePreview(workspaceId: string, quote: import("@/lib/service-pos").ServiceSaleQuote) {
+    const [config, theme] = await Promise.all([
+        quote.configurationId ? supabaseAdmin.from("onboarding_configuration_revisions").select("id, configuration_type, status, revision_number, definition").eq("workspace_id", workspaceId).eq("id", quote.configurationId).single() : Promise.resolve({data:null,error:null}),
+        loadPublishedOnboardingTheme(workspaceId),
+    ])
+    if (config.error) throw new Error("Could not load the selected onboarding configuration.")
+    const rows = config.data ? [config.data] : []
+    const modules = await Promise.all(quote.modules.map(async (m) => {
+        const base = mapModule({id:m.module_id,internal_code:m.code,status:"active"},{id:m.module_revision_id,status:"published",definition:m.definition})
+        return hydrateVisualModule({...base,mandatory:m.mandatory,sortOrder:m.sort_order},m.definition)
+    }))
+    return {modules,theme,payment:await hydrateVisualPayment(mapPayment(rows,false)),help:mapHelp(rows,false,null,false)}
+}

@@ -38,6 +38,8 @@ type PageProps = {
 
 type OnboardingState = "active" | "completed" | "stuck"
 type OnboardingSession = {
+    service_scope?: string
+    source_sale_id?: string | null
     id: string
     relationship_id: string
     status: string
@@ -61,6 +63,8 @@ type OnboardingDetails = {
     rowBySessionId: Map<string, OnboardingRowDetails>
     creatorById: Map<string, OnboardingCreator>
     moduleKeysByRelationship: Map<string, string[]>
+    nativeServicesBySession: Map<string,string[]>
+    nativeFullSessionIds: Set<string>
     servicesByRelationship: Map<string, Array<StoredRelationshipService & { relationship_id: string }>>
     serviceRevisions: Map<string, OnboardingServiceRevisionDisplay>
 }
@@ -83,21 +87,27 @@ function metadataSessionStepId(metadata: unknown) {
         : ""
 }
 
-async function loadOnboardingDetails({ workspaceId, rows, staffMode, allowedServiceIds }: { workspaceId: string; rows: OnboardingCoreRow[]; staffMode: boolean; allowedServiceIds: string[] }): Promise<OnboardingDetails> {
+async function loadOnboardingDetails({ userId, workspaceId, rows, staffMode, allowedServiceIds }: { userId:string; workspaceId: string; rows: OnboardingCoreRow[]; staffMode: boolean; allowedServiceIds: string[] }): Promise<OnboardingDetails> {
+    const nativeIds=rows.filter(r=>r.session.service_scope==="selected_services").map(r=>r.session.id)
     const sessionIds = rows.map((row) => row.session.id)
     const relationshipIds = [...new Set(rows.map((row) => row.relationship.id))]
     const creatorIds = [...new Set(rows.map((row) => row.session.created_by).filter((id): id is string => Boolean(id)))]
     const empty = <T,>() => Promise.resolve({ data: [] as T[] })
-    const [workItemsResult, assetsResult, modulesResult, servicesResult, snapshotModulesResult, snapshotStepsResult, creatorsResult] = await Promise.all([
+    const [workItemsResult, assetsResult, modulesResult, servicesResult, snapshotModulesResult, snapshotStepsResult, nativeSaleItems, creatorsResult, nativeAccess] = await Promise.all([
         sessionIds.length ? supabaseAdmin.from("work_items").select("id, status, metadata, updated_at, created_at").eq("workspace_id", workspaceId).eq("native_kind", "onboarding_step").in("metadata->>session_id", sessionIds).order("created_at", { ascending: true }).limit(1000) : empty<{ id: string; status: string; metadata: unknown; updated_at: string | null; created_at: string }>(),
         sessionIds.length ? supabaseAdmin.from("assets").select("id, asset_kind, native_kind, metadata, updated_at, created_at").eq("workspace_id", workspaceId).in("native_kind", ["onboarding_form_submission", "onboarding_upload"]).in("metadata->>session_id", sessionIds).order("updated_at", { ascending: false }).limit(1000) : empty<{ id: string; asset_kind: string; native_kind: string; metadata: unknown; updated_at: string | null; created_at: string }>(),
         relationshipIds.length ? supabaseAdmin.from("relationship_onboarding_modules").select("relationship_id, module_key").eq("workspace_id", workspaceId).in("relationship_id", relationshipIds).order("created_at", { ascending: true }) : empty<{ relationship_id: string; module_key: string }>(),
         relationshipIds.length ? supabaseAdmin.from("relationship_services").select("relationship_id, service_key, service_id, service_revision_id").eq("workspace_id", workspaceId).in("relationship_id", relationshipIds).order("created_at", { ascending: true }) : empty<{ relationship_id: string; service_key: string; service_id: string | null; service_revision_id: string | null }>(),
         sessionIds.length ? supabaseAdmin.from("relationship_onboarding_session_modules").select("id, session_id, source_kind, source_service_revision_id").eq("workspace_id", workspaceId).in("session_id", sessionIds) : empty<{ id: string; session_id: string; source_kind: string; source_service_revision_id: string | null }>(),
         sessionIds.length ? supabaseAdmin.from("relationship_onboarding_session_steps").select("id, session_id, session_module_id, kind, is_actionable").eq("workspace_id", workspaceId).in("session_id", sessionIds) : empty<{ id: string; session_id: string; session_module_id: string | null; kind: string; is_actionable: boolean | null }>(),
+        rows.some(r=>r.session.service_scope === "selected_services") ? supabaseAdmin.from("client_sale_items").select("client_sale_id,service_name").eq("workspace_id",workspaceId).in("client_sale_id",rows.flatMap(r=>r.session.service_scope === "selected_services" && r.session.source_sale_id ? [r.session.source_sale_id] : [])) : empty<{client_sale_id:string;service_name:string}>(),
         creatorIds.length ? supabaseAdmin.from("user_profiles").select("user_id, username, avatar_path").in("user_id", creatorIds) : empty<OnboardingCreator>(),
+        nativeIds.length ? supabaseAdmin.rpc("read_selected_service_session_access",{p_workspace_id:workspaceId,p_session_ids:nativeIds,p_user_id:userId}) : Promise.resolve({data:null,error:null}),
     ])
 
+    const namesBySale = new Map<string,string[]>()
+    for(const item of nativeSaleItems.data??[])namesBySale.set(item.client_sale_id,[...(namesBySale.get(item.client_sale_id)??[]),item.service_name])
+    const nativeServicesBySession = new Map(rows.filter(r=>r.session.service_scope === "selected_services").map(r=>[r.session.id,namesBySale.get(r.session.source_sale_id??"")??[]]))
     const moduleKeysByRelationship = new Map<string, string[]>()
     for (const onboardingModule of modulesResult.data ?? []) {
         moduleKeysByRelationship.set(onboardingModule.relationship_id, [...(moduleKeysByRelationship.get(onboardingModule.relationship_id) ?? []), onboardingModule.module_key])
@@ -107,9 +117,12 @@ async function loadOnboardingDetails({ workspaceId, rows, staffMode, allowedServ
     const servicesByRelationship = new Map<string, Array<StoredRelationshipService & { relationship_id: string }>>()
     for (const service of scopedServices) servicesByRelationship.set(service.relationship_id, [...(servicesByRelationship.get(service.relationship_id) ?? []), service])
 
+    if(nativeAccess.error)throw new Error("Could not verify onboarding access.")
+    const nativeModuleIds=new Set<string>(nativeAccess.data?.moduleIds??[])
+    const nativeSessionIds=new Set(nativeIds)
     const scopedServiceRevisionIds = new Set(scopedServices.map((service) => service.service_revision_id).filter((id): id is string => Boolean(id)))
     const scopedSnapshotModuleIds = new Set((snapshotModulesResult.data ?? []).filter((module) => (
-        !staffMode || module.source_kind === "mandatory" || Boolean(module.source_service_revision_id && scopedServiceRevisionIds.has(module.source_service_revision_id))
+        nativeSessionIds.has(module.session_id) ? nativeModuleIds.has(module.id) : !staffMode || module.source_kind === "mandatory" || Boolean(module.source_service_revision_id && scopedServiceRevisionIds.has(module.source_service_revision_id))
     )).map((module) => module.id))
     const snapshotSteps = snapshotStepsResult.data ?? []
     const snapshotSessionIds = new Set(snapshotSteps.map((step) => step.session_id))
@@ -163,6 +176,8 @@ async function loadOnboardingDetails({ workspaceId, rows, staffMode, allowedServ
         })
     }
     return {
+        nativeServicesBySession,
+        nativeFullSessionIds: new Set<string>(nativeAccess.data?.fullSessionIds ?? []),
         rowBySessionId,
         creatorById: new Map((creatorsResult.data ?? []).map((creator) => [creator.user_id, creator])),
         moduleKeysByRelationship,
@@ -197,18 +212,18 @@ async function OnboardingSecondary({ row, detailsPromise, staffMode, actions }: 
     const creatorAvatarSrc = creator?.avatar_path && creator.username ? profileAvatarUrl(creator.username, creator.avatar_path) : null
     const relationshipServices = details.servicesByRelationship.get(row.relationship.id) ?? []
     const moduleKeys = staffMode ? [] : details.moduleKeysByRelationship.get(row.relationship.id) ?? []
-    const serviceLabels = relationshipServices.map((service) => relationshipServiceDisplayName(service, details.serviceRevisions))
+    const serviceLabels = details.nativeServicesBySession.get(row.session.id) ?? relationshipServices.map((service) => relationshipServiceDisplayName(service, details.serviceRevisions))
     return <ListSecondaryRow>
         <MobileAssignedServices labels={serviceLabels} />
         {row.relationship.primary_contact_role ? <span className="hidden shrink-0 text-neutral-400 xl:inline">{row.relationship.primary_contact_role}</span> : null}
         <span className="hidden shrink-0 whitespace-nowrap text-neutral-500 sm:inline"><span className="text-neutral-200">{rowDetails.completedCount}</span>/{rowDetails.completedCount + rowDetails.missingCount} steps · <span className="text-neutral-200">{rowDetails.assetSummary.submissions}</span> submissions · <span className="text-neutral-200">{rowDetails.assetSummary.uploads}</span> files</span>
         <div className="hidden min-w-0 items-center gap-1.5 overflow-hidden lg:flex">
-            {relationshipServices.map((service) => <RoundPill key={`${service.service_key}:${service.service_revision_id ?? "legacy"}`} tone="emerald">{relationshipServiceDisplayName(service, details.serviceRevisions)}</RoundPill>)}
+            {serviceLabels.map((label,index)=><RoundPill key={`${index}:${label}`} tone="emerald">{label}</RoundPill>)}
             {moduleKeys.map((moduleKey) => <RoundPill key={moduleKey} tone="sky">{MODULES[moduleKey]?.title ?? moduleKey}</RoundPill>)}
         </div>
-        {relationshipServices.length === 0 ? <span className="hidden text-neutral-500 sm:inline">No assigned services</span> : null}
+        {serviceLabels.length === 0 ? <span className="hidden text-neutral-500 sm:inline">No assigned services</span> : null}
         <ListTrailing>
-            <span className="font-mono text-neutral-500">{shortId(row.relationship.id)}</span>
+            <span className="font-mono text-neutral-500">{shortId(row.session.id)}</span>
             <span className="whitespace-nowrap text-neutral-500">{formatRelativeTime(rowDetails.latestActivity)}</span>
             <ListCreatorBadge src={creatorAvatarSrc} username={creator?.username ?? null} label="Created by" date={new Date(row.session.created_at).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })} />
             <ListActionMenu actions={actions} className="hidden sm:block" />
@@ -216,12 +231,15 @@ async function OnboardingSecondary({ row, detailsPromise, staffMode, actions }: 
     </ListSecondaryRow>
 }
 
-function OnboardingRow({ row, detailsPromise, workspaceSlug, customDomain, customDomainVerified, canCopyLink, staffMode }: { row: OnboardingCoreRow; detailsPromise: Promise<OnboardingDetails>; workspaceSlug: string; customDomain: string | null; customDomainVerified: boolean; canCopyLink: boolean; staffMode: boolean }) {
-    const onboardingHref = onboardingDetailHref(workspaceSlug, row.relationship.id)
+async function OnboardingRow({ row, detailsPromise, workspaceSlug, customDomain, customDomainVerified, canCopyLink, staffMode }: { row: OnboardingCoreRow; detailsPromise: Promise<OnboardingDetails>; workspaceSlug: string; customDomain: string | null; customDomainVerified: boolean; canCopyLink: boolean; staffMode: boolean }) {
+    const onboardingHref = `${onboardingDetailHref(workspaceSlug,row.relationship.id)}?session=${row.session.id}`
     const title = row.relationship.business_name ? `${row.relationship.primary_person_name} – ${row.relationship.business_name}` : row.relationship.primary_person_name
+    const canCopySessionLink = row.session.service_scope === "selected_services"
+        ? (await detailsPromise).nativeFullSessionIds.has(row.session.id)
+        : canCopyLink
     const actions = [
         { label: "Open onboarding", href: onboardingHref },
-        ...(canCopyLink ? [{ label: "Copy onboarding link", copyText: getOnboardingUrl({ workspaceSlug, sessionToken: row.session.session_token, customDomain, customDomainVerified }) }] : []),
+        ...(canCopySessionLink ? [{ label: "Copy onboarding link", copyText: getOnboardingUrl({ workspaceSlug, sessionToken: row.session.session_token, customDomain, customDomainVerified }) }] : []),
     ]
     return <ListItem detailPreview={{
         category: "Onboarding",
@@ -255,23 +273,23 @@ async function StuckOnboardingRows({ rows, detailsPromise, renderRow, allHref }:
     return stuckRows.length ? stuckRows.map(renderRow) : <EmptyOnboarding selectedState="stuck" allHref={allHref} />
 }
 
-async function OnboardingPanel({ workspaceId, workspaceSlug, customDomain, customDomainVerified, selectedState, staffMode, allowedServiceIds, relationshipsPromise, sessionsPromise, scopesPromise }: { workspaceId: string; workspaceSlug: string; customDomain: string | null; customDomainVerified: boolean; selectedState: OnboardingState | null; staffMode: boolean; allowedServiceIds: string[]; relationshipsPromise: ReturnType<typeof listRelationshipsForWorkspace>; sessionsPromise: Promise<OnboardingSession[]>; scopesPromise: Promise<[Set<string> | null, Set<string> | null]> }) {
+async function OnboardingPanel({ userId, workspaceId, workspaceSlug, customDomain, customDomainVerified, selectedState, staffMode, allowedServiceIds, relationshipsPromise, sessionsPromise, scopesPromise }: { userId:string; workspaceId: string; workspaceSlug: string; customDomain: string | null; customDomainVerified: boolean; selectedState: OnboardingState | null; staffMode: boolean; allowedServiceIds: string[]; relationshipsPromise: ReturnType<typeof listRelationshipsForWorkspace>; sessionsPromise: Promise<OnboardingSession[]>; scopesPromise: Promise<[Set<string> | null, Set<string> | null]> }) {
     const [relationships, sessions, [allowedRelationshipIds, fullyAllowedRelationshipIds]] = await Promise.all([relationshipsPromise, sessionsPromise, scopesPromise])
     const relationshipAllowed = (relationshipId: string) => !allowedRelationshipIds || allowedRelationshipIds.has(relationshipId)
     const relationshipById = new Map(relationships.filter((relationship) => relationshipAllowed(relationship.id)).map((relationship) => [relationship.id, relationship]))
     const firstSessionByRelationship = new Map<string, OnboardingSession>()
-    for (const session of sessions) if (relationshipAllowed(session.relationship_id) && !firstSessionByRelationship.has(session.relationship_id)) firstSessionByRelationship.set(session.relationship_id, session)
+    for (const session of sessions) if (relationshipAllowed(session.relationship_id)) { const key=session.service_scope === "selected_services" ? session.id : session.relationship_id; if (!firstSessionByRelationship.has(key)) firstSessionByRelationship.set(key,session) }
     const rows = [...firstSessionByRelationship.values()].flatMap((session) => {
         const relationship = relationshipById.get(session.relationship_id)
         return relationship ? [{ relationship, session }] : []
     })
-    const detailsPromise = loadOnboardingDetails({ workspaceId, rows, staffMode, allowedServiceIds })
+    const detailsPromise = loadOnboardingDetails({ userId, workspaceId, rows, staffMode, allowedServiceIds })
     const activeRows = rows.filter((row) => row.session.status === "active")
     const completedRows = rows.filter((row) => row.session.status === "completed")
     const filterHref = (state: string | null) => workspaceHref(workspaceSlug, `onboarding${state ? `?state=${state}` : ""}`)
     const instantFiltersAvailable = selectedState !== "stuck"
     const renderRow = (row: OnboardingCoreRow) => <OnboardingRow
-        key={row.relationship.id}
+        key={row.session.id}
         row={row}
         detailsPromise={detailsPromise}
         workspaceSlug={workspaceSlug}
@@ -296,7 +314,7 @@ async function OnboardingPanel({ workspaceId, workspaceSlug, customDomain, custo
         <List ariaLabel="Relationship onboarding">
             {selectedState === "stuck" ? <Suspense fallback={Array.from({ length: Math.min(4, rows.length || 1) }, (_, index) => <OnboardingListItemFallback key={index} />)}><StuckOnboardingRows rows={rows} detailsPromise={detailsPromise} renderRow={renderRow} allHref={filterHref(null)} /></Suspense> : <InstantFilterResults
                 filters={[{ param: "state" }]}
-                items={rows.map((row) => ({ id: row.relationship.id, values: { state: row.session.status }, content: renderRow(row) }))}
+                items={rows.map((row) => ({ id: row.session.id, values: { state: row.session.status }, content: renderRow(row) }))}
                 empty={<EmptyOnboarding selectedState={null} allHref={filterHref(null)} />}
             />}
         </List>
@@ -325,7 +343,7 @@ export default async function RelationshipOnboardingPage({ params, searchParams 
     const scopesPromise = Promise.all([accessibleRelationshipIds(access), fullyAccessibleRelationshipIds(access)])
     const relationshipsPromise = listRelationshipsForWorkspace(workspace.id)
     const sessionsPromise = Promise.resolve(supabaseAdmin.from("relationship_onboarding_sessions")
-        .select("id, relationship_id, status, session_token, is_test, created_by, created_at, updated_at, completed_at")
+        .select("id, relationship_id, status, session_token, is_test, created_by, created_at, updated_at, completed_at, service_scope, source_sale_id")
         .eq("workspace_id", workspace.id)
         .in("status", ["active", "completed"])
         .order("updated_at", { ascending: false }))
@@ -337,6 +355,7 @@ export default async function RelationshipOnboardingPage({ params, searchParams 
             <PanelTabHeader title="Onboarding" description="Relationship onboarding work, submitted information, and assigned delivery setup." />
             <Suspense fallback={<OnboardingPanelFallback />}>
                 <OnboardingPanel
+                    userId={user.id}
                     workspaceId={workspace.id}
                     workspaceSlug={workspace.slug}
                     customDomain={workspace.custom_onboarding_domain}

@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { RelationshipServicePos } from "@/components/relationships/RelationshipServicePos"
 import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 import { Suspense } from "react"
 import { notFound } from "next/navigation"
@@ -174,6 +175,13 @@ export default async function RelationshipDetailPage({ params }: PageProps) {
     await requireRelationshipAccess(access, relationshipId)
     const relationship = await getRelationship(workspace.id, relationshipId)
     if (!relationship) notFound()
+    const native = await supabaseAdmin.from("relationship_service_instances").select("id").eq("workspace_id", workspace.id).eq("relationship_id", relationshipId).is("import_id", null).limit(1)
+    if (native.error) throw new Error("Could not verify the relationship sales flow")
+    if (native.data?.length || relationship.source_metadata.service_instances === true) {
+        const result = await supabaseAdmin.rpc("read_relationship_service_pos", {p_workspace_id:workspace.id,p_relationship_id:relationshipId,p_actor_user_id:user.id,p_offset:0})
+        if (result.error) throw new Error(result.error.code === "P0001" ? result.error.message : "Could not load the POS")
+        return <><WorkspaceTopBar userId={user.id} workspace={workspace} workspaceAccess={access} currentProduct="client-work" /><RelationshipServicePos key={`${user.id}:${relationshipId}`} workspaceSlug={workspace.slug} relationshipId={relationshipId} userId={user.id} initial={{...result.data,items:result.data.items.slice(0,30)}} relationship={{name:relationship.primary_person_name,company:relationship.business_name,email:relationship.primary_email,phone:relationship.primary_phone??relationship.whatsapp_phone,updatedAt:relationship.updated_at,managerId:relationship.fulfilment_manager_user_id}} /></>
+    }
     // Detail reads stay pure. Workflow stages are created and repaired by their
     // mutation/migration paths, so opening a record never writes and refetches
     // the same Gantt before it can render.

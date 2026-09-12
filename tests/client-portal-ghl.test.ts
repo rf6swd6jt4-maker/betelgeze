@@ -86,10 +86,20 @@ test("provider status errors are sanitized and do not disclose response bodies o
     await assert.rejects(readGhlJson(Response.json({ large: "a".repeat(300000) })), GhlError)
 })
 
-test("non-TEST, revoked and missing portals never reach storage or GHL", async () => {
-    for (const resolved of [null, { ...access, relationship: { id: "relationship-a", is_test: false } }, { ...access, relationship: { id: "relationship-a", is_test: "true" } }]) {
-        const response = await handlePortalGhl(request({ action: "connect", ...credentials }), "session", { resolve: async () => resolved, rpc: () => { throw new Error("must not reach storage") } })
-        assert.equal(response.status, 404)
+test("missing or revoked portals never reach storage or GHL", async () => {
+    const response = await handlePortalGhl(request({ action: "connect", ...credentials }), "session", { resolve: async () => null, rpc: () => { throw new Error("must not reach storage") } })
+    assert.equal(response.status, 404)
+})
+
+test("TEST and ordinary relationships can both use the scoped connection backend", async () => {
+    for (const is_test of [true, false, undefined]) {
+        const response = await handlePortalGhl(request({ action: "connect", ...credentials }), "session", {
+            resolve: async () => ({ ...access, relationship: { id: "relationship-a", is_test } }),
+            rpc: async (params) => { assert.equal(params.p_workspace_id, "workspace-a"); return { data: params.p_action === "finish" ? connected : { accepted: true }, error: null } },
+            fetchMetrics: async () => ({ locationName: "Test business", metrics }),
+        })
+        assert.equal(response.status, 200)
+        assert.deepEqual(await response.json(), connected)
     }
 })
 

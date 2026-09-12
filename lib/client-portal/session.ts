@@ -26,7 +26,7 @@ export async function resolveClientPortalAccessByToken(token: string) {
         workspaceSlug ? workspaceQuery.eq("slug", workspaceSlug).maybeSingle() : workspaceQuery.maybeSingle(),
         supabaseAdmin
             .from("relationships")
-            .select("id, client_id, primary_person_name, business_name, is_test:source_metadata->is_test")
+            .select("id, client_id, primary_person_name, business_name")
             .eq("workspace_id", session.workspace_id)
             .eq("id", session.relationship_id)
             .neq("status", "archived")

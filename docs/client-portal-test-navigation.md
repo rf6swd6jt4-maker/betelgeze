@@ -1,3 +1,5 @@
+> Historical TEST rollout record. On 12 September 2026, the user approved Results / Files / Chat and GHL connections for all relationships. The TEST gate and sample metrics UI are now removed; see `client-portal-ghl.md`.
+
 # TEST client portal navigation
 
 12 September 2026. Scope: top-bar Results / Files / Chat navigation for TEST relationships only.

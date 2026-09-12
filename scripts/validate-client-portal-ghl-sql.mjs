@@ -26,6 +26,7 @@ try {
  select set_config('request.jwt.claims','{"role":"service_role"}',false);
  `)
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20260912030000_client_portal_ghl.sql`,'utf8'))
+ await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20260912040000_release_client_portal_ghl.sql`,'utf8'))
  const call = async (action, op = null, saveToken = null, data = null, ws = w, session = token) => (await db.query('select client_portal_ghl($1,$2,$3,$4,$5,$6,$7,$8,$9) result',[session,ws,action,op,location,saveToken,'Synthetic',data,'permissions'])).rows[0].result
  const expire = () => db.exec("update client_portal_secure.ghl_connections set attempted_at = now()-interval '2 minutes',lease_until = now()-interval '1 minute'")
  assert.equal((await call('read')).connected,false)
@@ -57,14 +58,16 @@ try {
  await call('begin_connect',a)
  await expire()
  assert.equal((await call('finish',a,secret,metrics)).failure,'changed')
- for (const change of ["source_metadata='{}'","source_metadata='{\"is_test\":\"true\"}'","source_metadata='{\"is_test\":true}',status='archived'"]) {
+ for (const change of ["source_metadata='{}'","source_metadata='{\"is_test\":\"true\"}'"]) {
   await db.exec(`update relationships set ${change}`)
-  assert.equal((await call('read')).failure,'access')
+  assert.equal((await call('read')).connected,false)
  }
+ await db.exec("update relationships set status='archived'")
+ assert.equal((await call('read')).failure,'access')
  await db.exec(`update relationships set source_metadata='{"is_test":true}',status='active'`)
  assert.equal((await call('read',null,null,null,b)).failure,'access')
  assert.equal((await call('read',null,null,null,w,'b'.repeat(64))).failure,'access')
  await db.exec("update client_portal_sessions set token_revoked_at=now()")
  assert.equal((await call('read')).failure,'access')
- console.log('PASS: service-only permissions; TEST, workspace and session isolation; lease contention; token replacement; error preservation; cooldown; expired lease; disconnect vs late refresh; secret cleanup. Vault adapter is synthetic.')
+ console.log('PASS: service-only permissions; TEST and ordinary relationship access; workspace and session isolation; lease contention; token replacement; error preservation; cooldown; expired lease; disconnect vs late refresh; secret cleanup. Vault adapter is synthetic.')
 } finally { await db.close() }

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { fetchGhlMetrics, GhlError, parseGhlCredentials, readGhlJson } from "./ghl-provider"
 import { ghlErrorMessages, isGhlMetrics, type GhlSummary } from "./ghl-types"
 
-type Access = { workspace: { id: string }; relationship: { id: string; is_test?: unknown } }
+type Access = { workspace: { id: string }; relationship: { id: string } }
 type Dependencies = {
     resolve: (token: string) => Promise<Access | null>
     rpc: (params: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>
@@ -29,7 +29,7 @@ export async function handlePortalGhl(request: Request, token: string, deps: Dep
     let call: ((action: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>) | null = null
     try {
         const access = await deps.resolve(token)
-        if (!access || access.relationship.is_test !== true) return reply({ error: "This connection is not available for this portal." }, 404)
+        if (!access) return reply({ error: "This connection is not available for this portal." }, 404)
         call = async (action, params = {}) => {
             const { data, error } = await deps.rpc({ p_session_token: token, p_workspace_id: access.workspace.id, p_action: action, ...params })
             if (error || !data || typeof data !== "object") throw new GhlError("storage")

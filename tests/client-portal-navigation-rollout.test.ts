@@ -5,9 +5,8 @@ import { resolve } from "node:path"
 import test from "node:test"
 import ts from "typescript"
 
-// Exercise the server boundary: only a real relationship TEST boolean can
-// enable the preview, irrespective of URL parameters supplied by a visitor.
-test("portal navigation preview fails closed for non-test relationships", async () => {
+// Results navigation is now available for every authorized relationship.
+test("portal navigation is independent of historical TEST metadata", async () => {
     const path = resolve("app/client-portal/session/[token]/page.tsx")
     const localRequire = createRequire(path)
     let isTest: unknown
@@ -27,6 +26,7 @@ test("portal navigation preview fails closed for non-test relationships", async 
         isTest = value
         const result = await compiled.exports.default({ params: Promise.resolve({ token: "a".repeat(64) }), searchParams: Promise.resolve({ testNavigation: "true" }) })
         assert.equal(result.props.children.type, Shell)
-        assert.equal(result.props.children.props.testNavigation, value === true)
+        assert.equal(result.props.children.props.testNavigation, undefined)
+        assert.equal(result.props.children.props.token, "a".repeat(64))
     }
 })

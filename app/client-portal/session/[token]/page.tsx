@@ -44,6 +44,6 @@ export default async function ClientPortalSessionPage({ params }: PageProps) {
     ])
     const logoSrc = clientBrandLogoUrl("client-portal", token, brandAssets.logoPath)
     return <OnboardingThemeProvider theme={theme}>
-        <ClientPortalShell token={token} workspaceName={publicBranding.displayName} logoSrc={logoSrc} primaryPersonName={relationship.primary_person_name} privacyPolicyUrl={publicBranding.privacyPolicyUrl} termsOfServiceUrl={publicBranding.termsOfServiceUrl} testNavigation={relationship.is_test === true} />
+        <ClientPortalShell token={token} workspaceName={publicBranding.displayName} logoSrc={logoSrc} primaryPersonName={relationship.primary_person_name} privacyPolicyUrl={publicBranding.privacyPolicyUrl} termsOfServiceUrl={publicBranding.termsOfServiceUrl} />
     </OnboardingThemeProvider>
 }

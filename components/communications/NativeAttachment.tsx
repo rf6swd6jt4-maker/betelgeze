@@ -111,7 +111,7 @@ function AttachmentFileCard({ attachment, previewFailed = false }: { attachment:
 }
 
 function SingleNativeAttachment({ attachment, onOpenImage, light = false, whiteOnColor = false }: { attachment: CommunicationAttachment; onOpenImage: (media: MessageMediaPreview) => void; light?: boolean; whiteOnColor?: boolean }) {
-    const { ref, admitted, complete } = useConversationMedia(attachment.kind === "image" || attachment.kind === "sticker")
+    const { ref, admitted, complete } = useConversationMedia(attachment.kind === "image" || attachment.kind === "sticker" || (attachment.kind === "video" && Boolean(attachment.hasPreview)))
     // Freeze the fallback for old messages too. Later metadata/refreshes must not
     // change an already visible frame's shape.
     const [ratio] = useState(() => communicationMediaRatio(attachment))
@@ -132,10 +132,10 @@ function SingleNativeAttachment({ attachment, onOpenImage, light = false, whiteO
         </button>}
     </div>
     if (attachment.kind === "video") return <div ref={ref} data-message-media onClick={(event) => event.stopPropagation()}>
-        <div className="relative mb-2 w-full overflow-hidden rounded-xl bg-black" style={{ aspectRatio: ratio, maxHeight: 480 }}>
-            {failed ? fallback : admitted ? <video key={attempt} src={attachment.url} poster={attachment.hasPreview ? previewUrl : undefined} controls playsInline preload="none" aria-label={attachment.fileName} onError={() => setFailed(true)} className="absolute inset-0 h-full w-full object-contain" /> : null}
-        </div>
-        <button type="button" data-message-control onClick={() => onOpenImage({ url: attachment.url, alt: attachment.fileName, kind: "video" })} className="mb-2 flex items-center gap-1.5 text-xs opacity-70 hover:opacity-100" aria-label={`Expand ${attachment.fileName}`}><OpenWithIcon className="h-3.5 w-3.5" />Expand video</button>
+        <button data-icon-button type="button" onClick={() => onOpenImage({ url: attachment.url, alt: attachment.fileName, kind: "video" })} aria-label={`Play ${attachment.fileName}`} className="relative mb-2 block w-full overflow-hidden rounded-xl bg-black" style={{ aspectRatio: ratio, maxHeight: 320 }}>
+            {admitted && attachment.hasPreview && !failed ? <Image unoptimized fill sizes="(max-width: 768px) 80vw, 560px" loading="eager" decoding="async" src={previewUrl} alt="" onLoad={complete} onError={() => { complete(); setFailed(true) }} className="object-contain" /> : null}
+            <span className="absolute inset-0 flex items-center justify-center"><span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/60 text-white shadow-lg"><svg aria-hidden="true" viewBox="0 0 24 24" className="ml-1 h-7 w-7 fill-current"><path d="m8 4 12 8-12 8Z" /></svg></span></span>
+        </button>
         <AttachmentFileCard attachment={attachment} />
     </div>
     if (attachment.kind === "audio") return <div ref={ref} data-message-media onClick={(event) => event.stopPropagation()}>

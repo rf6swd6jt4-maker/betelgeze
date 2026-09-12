@@ -1,14 +1,15 @@
 "use client"
 
 import Image from "next/image"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type RefObject } from "react"
 import { ConversationMedia, useConversationMedia } from "@/components/communications/ConversationMedia"
+import { useMediaGalleryGestures } from "@/components/communications/useMediaGalleryGestures"
 import { clampImageZoom, moveImageZoom, type ImageZoom, type ImageZoomPoint } from "@/lib/communications/image-zoom"
 
 export type MessageMediaItem = { url: string; alt: string; kind?: "image" | "video"; thumbnailUrl?: string }
 export type MessageMediaPreview = MessageMediaItem & { items?: MessageMediaItem[] }
 
-function ImagePreview({ media, onClose }: { media: MessageMediaPreview; onClose: () => void }) {
+function ImagePreview({ media, onClose, zoomed }: { media: MessageMediaPreview; onClose: () => void; zoomed: RefObject<boolean> }) {
     const viewerRef = useRef<HTMLDivElement>(null)
     const imageRef = useRef<HTMLImageElement>(null)
     const dragged = useRef(false)
@@ -24,7 +25,7 @@ function ImagePreview({ media, onClose }: { media: MessageMediaPreview; onClose:
             const fit = image.naturalWidth && image.naturalHeight ? Math.min(image.offsetWidth / image.naturalWidth, image.offsetHeight / image.naturalHeight) : 1
             return { width: image.naturalWidth ? image.naturalWidth * fit : image.offsetWidth, height: image.naturalHeight ? image.naturalHeight * fit : image.offsetHeight, viewportWidth: viewer.clientWidth, viewportHeight: viewer.clientHeight }
         }
-        const paint = () => { image.style.transform = `translate3d(${zoom.x}px, ${zoom.y}px, 0) scale(${zoom.scale})` }
+        const paint = () => { zoomed.current = zoom.scale > 1.01; image.style.transform = `translate3d(${zoom.x}px, ${zoom.y}px, 0) scale(${zoom.scale})` }
         const point = (event: PointerEvent) => {
             const rect = viewer.getBoundingClientRect()
             return { x: event.clientX - rect.left - rect.width / 2, y: event.clientY - rect.top - rect.height / 2 }
@@ -81,26 +82,47 @@ function ImagePreview({ media, onClose }: { media: MessageMediaPreview; onClose:
             viewer.removeEventListener("gesturestart", preventGesture)
             viewer.removeEventListener("gesturechange", preventGesture)
         }
-    }, [])
+    }, [zoomed])
 
     return <div ref={viewerRef} onClick={(event) => { if (event.target === event.currentTarget && !dragged.current) onClose() }} className="flex h-full w-full touch-none select-none items-center justify-center overflow-hidden overscroll-none">
         <Image ref={imageRef} unoptimized draggable={false} src={media.url} alt={media.alt} width={1800} height={1400} className="h-full w-full touch-none object-contain will-change-transform" />
     </div>
 }
 
-function MediaThumbnail({ media }: { media: MessageMediaItem }) {
+function MediaThumbnail({ media, contain = false }: { media: MessageMediaItem; contain?: boolean }) {
     const [failed, setFailed] = useState(false)
     const { ref, admitted, complete } = useConversationMedia(Boolean(media.thumbnailUrl))
     return <div ref={ref} className="flex h-full w-full items-center justify-center">
-        {media.thumbnailUrl && !failed ? admitted ? <Image unoptimized src={media.thumbnailUrl} alt="" width={64} height={64} loading="eager" onLoad={complete} onError={() => { complete(); setFailed(true) }} className="h-full w-full object-cover" /> : null : <span className="px-1 text-[10px] text-white/70">{media.alt}</span>}
+        {media.thumbnailUrl && !failed ? admitted ? <Image unoptimized src={media.thumbnailUrl} alt="" width={64} height={64} loading="eager" onLoad={complete} onError={() => { complete(); setFailed(true) }} className={`h-full w-full ${contain ? "object-contain" : "object-cover"}`} /> : null : <span className="px-1 text-[10px] text-white/70">{media.alt}</span>}
         {media.kind === "video" ? <svg viewBox="0 0 24 24" aria-hidden="true" className="absolute h-5 w-5 fill-white drop-shadow"><path d="m8 4 12 8-12 8Z" /></svg> : null}
     </div>
+}
+
+function VideoPreview({ media }: { media: MessageMediaItem }) {
+    const ref = useRef<HTMLVideoElement>(null)
+    useEffect(() => {
+        const video = ref.current!
+        let cancelled = false
+        // A direct tap can play with sound. Browsers that block it can still
+        // start muted; the native controls retain an explicit unmute action.
+        void video.play().catch((error: unknown) => {
+            if (cancelled || !(error instanceof DOMException) || error.name !== "NotAllowedError") return
+            video.muted = true
+            void video.play().catch(() => undefined)
+        })
+        return () => { cancelled = true; video.pause() }
+    }, [])
+    return <video ref={ref} src={media.url} poster={media.thumbnailUrl} autoPlay controls playsInline preload="metadata" aria-label={media.alt} className="h-full w-full touch-none object-contain" />
 }
 
 function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose: () => void }) {
     const items = media.items?.length ? media.items : [media]
     const [index, setIndex] = useState(() => Math.max(0, items.findIndex((item) => item.url === media.url)))
-    const selected = items[index] ?? items[0]
+    const [departing, setDeparting] = useState<number | null>(null)
+    const viewportRef = useRef<HTMLDivElement>(null)
+    const trackRef = useRef<HTMLDivElement>(null)
+    const zoomed = useRef(false)
+    const inactiveZoom = useRef(false)
     const multiple = items.length > 1
     const dialogRef = useRef<HTMLDivElement>(null)
     const stripRef = useRef<HTMLDivElement>(null)
@@ -116,8 +138,24 @@ function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose:
         if (button.offsetLeft < strip.scrollLeft) strip.scrollLeft = button.offsetLeft
         else if (button.offsetLeft + button.offsetWidth > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = button.offsetLeft + button.offsetWidth - strip.clientWidth
     }, [index])
-    const previous = () => { setIndex((value) => Math.max(0, value - 1)); dialogRef.current?.focus({ preventScroll: true }) }
-    const next = () => { setIndex((value) => Math.min(items.length - 1, value + 1)); dialogRef.current?.focus({ preventScroll: true }) }
+    const select = (position: number) => {
+        const nextIndex = Math.max(0, Math.min(items.length - 1, position))
+        if (nextIndex !== index) {
+            setDeparting(index)
+            setIndex(nextIndex)
+            zoomed.current = false
+        }
+        dialogRef.current?.focus({ preventScroll: true })
+    }
+    useMediaGalleryGestures({ viewportRef, trackRef, zoomed, index, count: items.length, onSelect: select })
+    useEffect(() => {
+        if (departing === null) return
+        // Also release the outgoing image when motion is reduced or interrupted.
+        const timer = window.setTimeout(() => setDeparting(null), 300)
+        return () => window.clearTimeout(timer)
+    }, [departing, index])
+    const previous = () => select(index - 1)
+    const next = () => select(index + 1)
     const arrowClass = "absolute top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-white drop-shadow-lg hover:text-white/70 disabled:opacity-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
     return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Image preview" tabIndex={-1} className="betelgeze-popup-fade fixed inset-0 z-[180] flex flex-col overflow-hidden overscroll-none bg-black/95 text-white outline-none" onKeyDown={(event) => {
         if (event.key === "Tab") {
@@ -132,8 +170,14 @@ function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose:
     }}>
         <button type="button" data-icon-button onClick={onClose} aria-label="Close image preview" className="absolute right-3 top-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-neutral-900/90 text-2xl text-white shadow-xl hover:bg-neutral-800 sm:right-5 sm:top-5">×</button>
         <div className="relative min-h-0 flex-1" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
-            <div className="absolute inset-x-3 bottom-3 top-16 sm:inset-x-16 sm:bottom-6">
-                {selected.kind === "video" ? <video key={selected.url} src={selected.url} controls playsInline preload="metadata" aria-label={selected.alt} className="h-full w-full object-contain" /> : <ImagePreview key={selected.url} media={selected} onClose={onClose} />}
+            <div ref={viewportRef} data-media-gallery-viewport className="absolute inset-x-3 bottom-3 top-16 touch-none overflow-hidden overscroll-none sm:inset-x-16 sm:bottom-6">
+                <div ref={trackRef} className="flex h-full w-full transition-transform duration-200 ease-out motion-reduce:transition-none" style={{ transform: `translate3d(${-index * 100}%, 0, 0)` }} onTransitionEnd={(event) => { if (event.target === event.currentTarget) setDeparting(null) }}>
+                    {items.map((item, position) => <div key={item.url} role="group" aria-label={`${position + 1} / ${items.length}: ${item.alt}`} aria-hidden={position !== index} inert={position !== index} className="relative h-full w-full shrink-0">
+                        {position === index ? item.kind === "video" ? <VideoPreview media={item} /> : <ImagePreview media={item} onClose={onClose} zoomed={zoomed} />
+                            : position === departing && item.kind !== "video" ? <ImagePreview media={item} onClose={onClose} zoomed={inactiveZoom} />
+                            : Math.abs(position - index) === 1 || position === departing ? <MediaThumbnail media={item} contain /> : null}
+                    </div>)}
+                </div>
             </div>
             {multiple ? <>
                 <button type="button" data-icon-button aria-label="Previous media" disabled={index === 0} onClick={previous} className={`${arrowClass} left-1 sm:left-3`}><svg viewBox="0 0 24 24" aria-hidden="true" className="h-8 w-8 fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 5-7 7 7 7" /></svg></button>
@@ -143,7 +187,7 @@ function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose:
         {multiple ? <div className="shrink-0 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
             <p aria-live="polite" className="mb-2 text-center text-xs text-white/70">{index + 1} / {items.length}</p>
             <div ref={stripRef} role="group" aria-label="Message media" className="relative mx-auto flex w-fit max-w-full gap-2 overflow-x-auto overscroll-x-contain p-1">
-                <ConversationMedia active>{items.map((item, position) => <button key={item.url} type="button" data-icon-button aria-label={`View ${position + 1}: ${item.alt}`} aria-pressed={position === index} onClick={() => setIndex(position)} className={`relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white/10 sm:h-16 sm:w-16 ${position === index ? "ring-2 ring-white" : "opacity-60 hover:opacity-100"}`}><MediaThumbnail media={item} /></button>)}</ConversationMedia>
+                <ConversationMedia active>{items.map((item, position) => <button key={item.url} type="button" data-icon-button aria-label={`View ${position + 1}: ${item.alt}`} aria-pressed={position === index} onClick={() => select(position)} className={`relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white/10 sm:h-16 sm:w-16 ${position === index ? "ring-2 ring-white" : "opacity-60 hover:opacity-100"}`}><MediaThumbnail media={item} /></button>)}</ConversationMedia>
             </div>
         </div> : null}
     </div>

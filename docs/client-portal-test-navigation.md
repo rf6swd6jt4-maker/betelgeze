@@ -5,7 +5,7 @@
 ## Behavior and isolation
 
 - The existing authorized relationship read projects `source_metadata->is_test`; only the boolean `true` enables the layout. No URL or browser-storage override exists. Missing, false, or malformed values retain the existing portal layout.
-- Results contains appointments only; Files contains the existing uploader and file history. Chat retains its existing side panel and returns to the selected page.
+- Results contains appointments and two static connection placeholders; Files contains the existing uploader and file history. Chat retains its existing side panel and returns to the selected page.
 - Switching updates local React state and CSS visibility. Both panels stay mounted, preserving appointment period, scroll position, and queued/running uploads. No routing, remount, additional fetch, animation delay, or dependency is introduced.
 - The server read adds one projected JSON boolean to the existing query; no extra request or schema change is needed.
 
@@ -23,3 +23,9 @@
 Release only the portal shell, server TEST flag wiring, rollout regression, and related documentation. Preserve unrelated local changes. Bruce and other non-test relationships retain their existing UI.
 
 Rollback by reverting this scoped change. No data migration, provider connection, or upload-data change is involved. Live deployment and TEST portal checks are reported separately after release.
+
+## Connection placeholders — 12 September
+
+GHL sits above Google Ads to the right of appointments on desktop. Below 1024px, the boxes follow appointments in a scrollable Results view. Both reuse `PortalSection` and have no buttons, provider requests, or connection behavior. The TEST gate remains unchanged.
+
+Validation: 893 tests passed on the isolated release checkout, changed-file lint and production Webpack build passed. Chromium and WebKit checked 1440×900, 390×844, 320×568, 844×390, and 1440×390. All ten cases preserved box order and reachability, added no requests on page switching, and kept placeholders out of non-test portals. Desktop and phone screenshots were inspected. Physical-device checks remain unverified.

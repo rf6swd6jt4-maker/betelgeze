@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { ClientPortalChat } from "@/components/client-portal/ClientPortalChat"
 import { ClientPortalAppointments } from "@/components/client-portal/ClientPortalAppointments"
 import { ClientPortalResources } from "@/components/client-portal/ClientPortalResources"
-import { PortalIcon, portalPrimaryButton } from "@/components/client-portal/ClientPortalUI"
+import { PortalIcon, PortalSection, portalPrimaryButton } from "@/components/client-portal/ClientPortalUI"
 import { ClientBrandLogo } from "@/components/client-branding/ClientBrandLogo"
 import { DetailField, DetailFields } from "@/components/detail"
 import { appointmentDateLabels, type PortalAppointment } from "@/lib/client-portal/appointments"
@@ -113,7 +113,15 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
                 <section data-portal-greeting aria-labelledby="portal-greeting" className="mb-3 shrink-0 lg:mb-6"><p className="hidden text-sm font-medium text-[var(--onboarding-muted,#475569)] lg:block">Your client portal</p><h1 id="portal-greeting" className="truncate text-2xl font-semibold leading-tight tracking-tight lg:mt-2 lg:text-[2rem]">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-2 hidden text-sm leading-6 text-[var(--onboarding-muted,#475569)] lg:block">Check your appointments or send files to your team.</p></section>
                 {!testNavigation ? <div className="mb-3 shrink-0 lg:hidden"><FilterRail surface="light" spacing="tight" ariaLabel="Portal panels">{[{ value: "appointments", label: "Appointments" }, { value: "resources", label: "Files" }].map((item) => <FilterRailButton key={item.value} selected={activePage === item.value} aria-controls={item.value} onClick={() => setActivePage(item.value)}>{item.label}</FilterRailButton>)}</FilterRail></div> : null}
                 <div className={`grid min-h-0 flex-1 grid-cols-1 gap-4 ${testNavigation ? "" : "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:gap-6"}`}>
-                    <div className={`min-h-0 min-w-0 ${activePage === "appointments" ? "block" : testNavigation ? "hidden" : "hidden lg:block"}`}><ClientPortalAppointments token={token} onOpen={setPanel} /></div>
+                    <div className={`min-h-0 min-w-0 ${activePage === "appointments" ? "block" : testNavigation ? "hidden" : "hidden lg:block"}`}>
+                        <div className={testNavigation ? styles.results : "h-full min-h-0"}>
+                            <div className="min-h-0 min-w-0"><ClientPortalAppointments token={token} onOpen={setPanel} /></div>
+                            {testNavigation ? <div aria-label="Connections" className="grid min-h-0 min-w-0 content-start gap-4 lg:gap-6 lg:overflow-y-auto">
+                                <PortalSection id="ghl-connection" title="GHL" description="GHL connection" icon="connection"><p className="mt-5 text-sm text-[var(--onboarding-muted,#475569)]">Connection setup coming soon.</p></PortalSection>
+                                <PortalSection id="google-ads-connection" title="Google Ads" description="Google Ads connection" icon="connection"><p className="mt-5 text-sm text-[var(--onboarding-muted,#475569)]">Connection setup coming soon.</p></PortalSection>
+                            </div> : null}
+                        </div>
+                    </div>
                     {/* Keep the uploader mounted when changing panels so active transfers continue. */}
                     <div className={`min-h-0 min-w-0 ${activePage === "resources" ? "block" : testNavigation ? "hidden" : "hidden lg:block"}`}><ClientPortalResources token={token} /></div>
                 </div>

@@ -5,6 +5,25 @@
     overflow: hidden;
 }
 
+.results {
+    display: grid;
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: minmax(22rem, 1fr) auto;
+    gap: 1rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+@media (min-width: 1024px) {
+    .results {
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+        gap: 1.5rem;
+        overflow: hidden;
+    }
+}
+
 @media (max-width: 1023px) and (max-height: 450px) {
     /* The visible panel selector already names the section in phone landscape. */
     .viewport [data-portal-section-heading] {

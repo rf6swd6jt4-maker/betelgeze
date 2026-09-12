@@ -1,5 +1,5 @@
-export type GhlCalendarEvent = { id: string; title: string; start: string; end: string; status: string; kind: "appointment" | "busy"; allDay: boolean }
-export type GhlCalendarSnapshot = { source: "owner-user"; owner: { id: string; name: string }; timezone: string; month: string; events: GhlCalendarEvent[] }
+export type GhlCalendarEvent = { id: string; title: string; start: string; end: string; status: string; kind: "appointment" | "busy"; allDay: boolean; originalTitle?: string; contactCity?: string }
+export type GhlCalendarSnapshot = { source: "owner-user"; owner: { id: string; name: string }; timezone: string; month: string; events: GhlCalendarEvent[]; snapshotId?: string; namesStatus?: "pending" | "ready" | "unavailable" }
 export type GhlCalendarState = { revision: string | null; snapshot: GhlCalendarSnapshot | null; refreshedAt: string | null; error: string | null; busy: boolean }
 export const calendarErrors: Record<string, string> = {
     permissions: "Allow Users and Calendar Events read access in your GHL private integration, then try again.",

@@ -3,7 +3,7 @@ import { monthWindow, validMonth, type GhlCalendarSnapshot } from "./ghl-calenda
 const identifier = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9_-]{10,80}$/.test(value)
 type Credentials = { locationId: string; privateToken: string }
 export type OwnerBinding = { companyId: string; timezone: string; owner: { id: string; name: string } }
-export type OwnerCalendarResult = GhlCalendarSnapshot & { companyId: string }
+export type OwnerCalendarResult = GhlCalendarSnapshot & { companyId: string; eventContacts?: Record<string, string>; contactLabels?: import("./ghl-calendar-names-provider").ContactLabels }
 
 // Only GHL's explicit owner designation qualifies. Never infer ownership from an
 // admin role, display name, business email, or the first calendar/user returned.
@@ -52,7 +52,7 @@ export async function fetchGhlCalendar(credentials: Credentials, month: string, 
         const query = new URLSearchParams({ locationId: credentials.locationId, userId: binding.owner.id, startTime: String(window.start), endTime: String(window.end - 1) })
         const [owner, appointments, blocks] = await Promise.all([ownerCheck, request(`/calendars/events?${query}`), request(`/calendars/blocked-slots?${query}`)])
         if (!Array.isArray(appointments.events) || !Array.isArray(blocks.events) || appointments.events.length + blocks.events.length > 1000) throw new GhlError("response")
-        const snapshot: OwnerCalendarResult = { source: "owner-user", companyId, owner, timezone, month, events: [] }
+        const snapshot: OwnerCalendarResult = { source: "owner-user", companyId, owner, timezone, month, events: [], eventContacts: {}, namesStatus: "pending" }
         const seen = new Set<string>(), midnight = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })
         for (const [rows, kind] of [[appointments.events, "appointment"], [blocks.events, "busy"]] as const) {
             for (const row of rows) {
@@ -64,9 +64,11 @@ export async function fetchGhlCalendar(credentials: Credentials, month: string, 
                 seen.add(row.id)
                 const status = typeof row.appointmentStatus === "string" ? row.appointmentStatus.toLowerCase() : kind === "busy" ? "busy" : "confirmed"
                 if (["deleted", "invalid"].includes(status)) continue
+                if (kind === "appointment" && identifier(row.contactId)) snapshot.eventContacts![row.id] = row.contactId
                 snapshot.events.push({ id: row.id, kind, title: kind === "busy" ? "Busy" : typeof row.title === "string" && row.title.trim() ? row.title.trim().slice(0,200) : "Appointment", start: new Date(start).toISOString(), end: new Date(end).toISOString(), status, allDay: midnight.format(start) === "00:00:00" && midnight.format(end) === "00:00:00" })
             }
         }
+        if (!Object.keys(snapshot.eventContacts!).length) snapshot.namesStatus = "ready"
         snapshot.events.sort((a,b) => a.start.localeCompare(b.start) || a.id.localeCompare(b.id))
         return snapshot
     } catch (error) { controller.abort(); throw error instanceof GhlError ? error : new GhlError("unavailable") } finally { clearTimeout(timeout) }

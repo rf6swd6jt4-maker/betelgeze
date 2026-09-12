@@ -19,9 +19,13 @@ export async function GET(request: Request, { params }: RouteProps) {
     const requestUrl = new URL(request.url)
     if (!requestUrl.searchParams.has("v")) {
         requestUrl.searchParams.set("v", logo.storagePath.split("/").at(-1) ?? "1")
-        const response = Response.redirect(requestUrl, 307)
-        response.headers.set("Cache-Control", "private, no-store")
-        return response
+        return new Response(null, {
+            status: 307,
+            headers: {
+                Location: requestUrl.toString(),
+                "Cache-Control": "private, no-store",
+            },
+        })
     }
 
     try {

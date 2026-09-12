@@ -23,7 +23,7 @@ body {
    token-scoped agency appearance streams in. */
 html[data-client-portal-startup="true"]:not(:has(main)),
 html[data-client-portal-startup="true"]:not(:has(main)) body {
-  background-color: #1E3A5F !important;
+  background-color: #F8F7F3 !important;
   background-image: none !important;
 }
 

@@ -67,7 +67,7 @@ export async function loadClientPortalStartupAppearance(token: string) {
     ])
     if (assets.workspaceStatus !== "active") return null
     return {
-        backgroundColor: resolveOnboardingTheme(theme).primary,
+        backgroundColor: resolveOnboardingTheme(theme).pageBackground,
         logoSrc: clientBrandLogoUrl("client-portal", token, assets.logoPath),
     }
 }

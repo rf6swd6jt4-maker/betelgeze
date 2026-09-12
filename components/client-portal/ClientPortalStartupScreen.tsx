@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
 
-const FALLBACK_AGENCY_COLOUR = "#1E3A5F"
+const FALLBACK_PORTAL_BACKGROUND = "#F8F7F3"
 const TOKEN_PATTERN = /(?:^|\/)([a-f0-9]{64})\/?$/i
 
 type StartupAppearance = {
@@ -19,7 +19,7 @@ export function ClientPortalStartupScreen() {
         ? `/api/client-branding/logo/client-portal/${encodeURIComponent(token)}`
         : null
     const [appearance, setAppearance] = useState<StartupAppearance>({
-        backgroundColor: FALLBACK_AGENCY_COLOUR,
+        backgroundColor: FALLBACK_PORTAL_BACKGROUND,
         logoSrc: null,
     })
 
@@ -34,7 +34,7 @@ export function ClientPortalStartupScreen() {
             const result = await response.json() as Partial<StartupAppearance>
             if (controller.signal.aborted) return
             setAppearance({
-                backgroundColor: /^#[0-9A-F]{6}$/i.test(result.backgroundColor ?? "") ? result.backgroundColor! : FALLBACK_AGENCY_COLOUR,
+                backgroundColor: /^#[0-9A-F]{6}$/i.test(result.backgroundColor ?? "") ? result.backgroundColor! : FALLBACK_PORTAL_BACKGROUND,
                 logoSrc: typeof result.logoSrc === "string" ? result.logoSrc : null,
             })
         }).catch(() => undefined)
@@ -57,9 +57,9 @@ export function ClientPortalStartupScreen() {
         {appearance.logoSrc || immediateLogoSrc ? <img
             src={appearance.logoSrc ?? immediateLogoSrc!}
             alt=""
-            width={240}
-            height={96}
-            className="max-h-24 w-auto max-w-[min(70vw,15rem)] object-contain"
+            width={256}
+            height={64}
+            className="max-h-14 w-auto max-w-[min(72vw,16rem)] object-contain"
         /> : null}
     </div>
 }

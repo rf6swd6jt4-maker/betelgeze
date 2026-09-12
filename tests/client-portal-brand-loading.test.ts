@@ -38,8 +38,9 @@ test("the first portal fallback starts the agency logo request before hydration"
         compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
     }).outputText, path)
     const html = renderToStaticMarkup(React.createElement(compiled.exports.ClientPortalStartupScreen))
-    assert.match(html, /background-color:#1E3A5F/u)
+    assert.match(html, /background-color:#F8F7F3/u)
     assert.match(html, new RegExp(`/api/client-branding/logo/client-portal/${"a".repeat(64)}`, "u"))
+    assert.match(html, /max-h-14/u)
     assert.doesNotMatch(html, /data-loading-overlay|svg/u)
 })
 
@@ -49,7 +50,7 @@ test("portal startup appearance is token scoped and does not expand the page boo
     assert.match(portalSession, /session\.status !== "active"/u)
     assert.match(portalSession, /session\.token_revoked_at/u)
     assert.match(portalSession, /assets\.workspaceStatus !== "active"/u)
-    assert.match(portalSession, /resolveOnboardingTheme\(theme\)\.primary/u)
+    assert.match(portalSession, /resolveOnboardingTheme\(theme\)\.pageBackground/u)
     assert.match(portalSession, /clientBrandLogoUrl\("client-portal", token/u)
     assert.match(portalSession, /loadPublishedOnboardingTheme/u)
     assert.doesNotMatch(portalSession, /loadPublishedOnboardingConfiguration/u)

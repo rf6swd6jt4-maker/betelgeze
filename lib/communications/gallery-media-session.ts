@@ -43,11 +43,16 @@ export function createGalleryMediaSession(items: GalleryMediaMetadata[], initial
         getSnapshot: () => snapshot,
         select(index: number) {
             if (disposed || index === selected || index < 0 || index >= items.length) return
+            // A failed selected element must be recreated on an explicit return.
+            if (attempted.has(selected)) { resident.delete(selected); settled.delete(selected) }
             if (!resident.has(index)) settled.delete(index)
             selected = index
             buffering = false
             if (pending === index) pending = null // Promote the existing element; do not restart its request.
             else cancelPending()
+            for (const previous of resident) {
+                if (previous !== index && !settled.has(previous)) resident.delete(previous)
+            }
             resident.delete(index); resident.add(index)
             visited.delete(index); visited.add(index)
             for (const victim of [...resident].sort((a, b) => Number(visited.has(a)) - Number(visited.has(b)))) {
@@ -62,6 +67,7 @@ export function createGalleryMediaSession(items: GalleryMediaMetadata[], initial
             if (settled.has(index) && !(index === selected && buffering)) return
             if (index === selected) buffering = false
             settled.add(index)
+            if (success) attempted.delete(index)
             if (pending === index) pending = null
             if (!success) {
                 attempted.add(index)

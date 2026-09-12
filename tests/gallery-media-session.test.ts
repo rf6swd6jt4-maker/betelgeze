@@ -88,3 +88,27 @@ test("unknown sizes/dimensions are on demand; disposal ignores late completions"
     session.dispose(); session.settle(1); session.select(2)
     assert.equal(session.getSnapshot(), last)
 })
+
+test("returning to a failed selected item retries it instead of retaining a broken element", () => {
+    const session = open()
+    session.settle(0, false)
+    session.select(1)
+    assert.ok(!session.getSnapshot().resident.includes(0))
+    session.select(0)
+    assert.ok(session.getSnapshot().resident.includes(0))
+    assert.equal(session.getSnapshot().pending, null)
+    session.settle(0)
+    session.select(1)
+    assert.ok(session.getSnapshot().resident.includes(0))
+})
+
+test("rapid selection cancels unfinished former selections as well as speculation", () => {
+    const session = open()
+    session.select(1)
+    session.select(4)
+    assert.deepEqual(session.getSnapshot().resident, [4])
+    session.settle(0); session.settle(1)
+    assert.equal(session.getSnapshot().pending, null)
+    session.settle(4)
+    assert.equal(session.getSnapshot().pending, 3)
+})

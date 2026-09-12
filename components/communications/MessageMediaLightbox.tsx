@@ -101,7 +101,7 @@ function MediaThumbnail({ media, contain = false }: { media: MessageMediaItem; c
     </div>
 }
 
-function VideoPreview({ media, active, onReady, onWaiting }: { media: MessageMediaItem; active: boolean; onReady: (success: boolean) => void; onWaiting: () => void }) {
+function VideoPreview({ media, active, warming, onReady, onWaiting }: { media: MessageMediaItem; active: boolean; warming: boolean; onReady: (success: boolean) => void; onWaiting: () => void }) {
     const ref = useRef<HTMLVideoElement>(null)
     useEffect(() => {
         const video = ref.current!
@@ -120,13 +120,16 @@ function VideoPreview({ media, active, onReady, onWaiting }: { media: MessageMed
         const video = ref.current!
         return () => { video.pause(); video.removeAttribute("src"); video.load() }
     }, [])
-    return <video ref={ref} src={media.url} poster={media.thumbnailUrl} autoPlay={active} controls={active} playsInline preload="auto" onWaiting={onWaiting} onCanPlayThrough={() => onReady(true)} onError={() => onReady(false)} aria-label={media.alt} className="h-full w-full touch-none object-contain" />
+    const buffered = (video: HTMLVideoElement) => {
+        if (video.readyState >= 3 && Number.isFinite(video.duration) && video.buffered.length && video.buffered.end(video.buffered.length - 1) >= video.duration - 0.1) onReady(true)
+    }
+    return <video ref={ref} src={media.url} poster={media.thumbnailUrl} autoPlay={active} controls={active} playsInline preload={active || warming ? "auto" : "none"} onWaiting={onWaiting} onProgress={(event) => buffered(event.currentTarget)} onCanPlayThrough={(event) => { if (active) onReady(true); else buffered(event.currentTarget) }} onError={() => onReady(false)} aria-label={media.alt} className="h-full w-full touch-none object-contain" />
 }
 
 function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose: () => void }) {
     const items = media.items?.length ? media.items : [media]
     const initialIndex = Math.max(0, items.findIndex((item) => item.url === media.url))
-    const { selected: index, resident, enabled, session } = useGalleryMediaSession(items, initialIndex)
+    const { selected: index, resident, pending, enabled, session } = useGalleryMediaSession(items, initialIndex)
     const viewportRef = useRef<HTMLDivElement>(null)
     const trackRef = useRef<HTMLDivElement>(null)
     const zoomed = useRef(false)
@@ -175,7 +178,7 @@ function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose:
                 <div ref={trackRef} className="flex h-full w-full transition-transform duration-200 ease-out motion-reduce:transition-none" style={{ transform: `translate3d(${-index * 100}%, 0, 0)` }}>
                     {items.map((item, position) => <div key={item.url} role="group" aria-label={`${position + 1} / ${items.length}: ${item.alt}`} aria-hidden={position !== index} inert={position !== index} className="relative h-full w-full shrink-0">
                         {resident.includes(position) ? item.kind === "video"
-                            ? <VideoPreview media={item} active={position === index && enabled} onReady={(success) => session.settle(position, success)} onWaiting={() => session.wait(position)} />
+                            ? <VideoPreview media={item} warming={position === pending} active={position === index && enabled} onReady={(success) => session.settle(position, success)} onWaiting={() => session.wait(position)} />
                             : <ImagePreview media={item} onClose={onClose} zoomed={position === index ? zoomed : inactiveZoom} active={position === index} onReady={(success) => session.settle(position, success)} />
                             : Math.abs(position - index) === 1 ? <MediaThumbnail media={item} contain /> : null}
                     </div>)}

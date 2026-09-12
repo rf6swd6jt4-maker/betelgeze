@@ -1,5 +1,5 @@
 import { oauthEnabled, prepareOAuth } from "@/lib/google-ads/oauth-server"
-import { loadPortalGoogleAds, runPortalGoogleAds, portalGoogleAdsReport } from "@/lib/client-portal/google-ads-server"
+import { disconnectPortalGoogleAds, loadPortalGoogleAds, runPortalGoogleAds, portalGoogleAdsReport } from "@/lib/client-portal/google-ads-server"
 import { googleAdsBody, googleAdsReply } from "@/lib/google-ads/http"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -12,6 +12,7 @@ async function handle(request: Request, context: { params: Promise<{ token: stri
             return googleAdsReply(period ? await portalGoogleAdsReport(token, period, false) : { ...await loadPortalGoogleAds(token), oauthEnabled: oauthEnabled() })
         }
         const body = await googleAdsBody(request)
+        if (body.action === "disconnect") return googleAdsReply(await disconnectPortalGoogleAds(token))
         if (body.action === "oauth_start") return googleAdsReply(await prepareOAuth({ token }, new URL(request.url).origin))
         if (body.action === "refresh") return googleAdsReply(await portalGoogleAdsReport(token, body.period, true))
         if ((body.action !== "request" && body.action !== "verify") || typeof body.customerId !== "string") return googleAdsReply({ error: "Choose whether to request or verify access." }, 400)

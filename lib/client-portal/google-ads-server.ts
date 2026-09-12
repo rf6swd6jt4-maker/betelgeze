@@ -62,3 +62,11 @@ export async function portalGoogleAdsReport(token: string, period: unknown, refr
     // Never return the begin-operation credential payload.
     return { snapshot: data.snapshot ?? null, error: data.error ?? null, busy: data.busy === true }
 }
+
+export async function disconnectPortalGoogleAds(token: string) {
+    const access = await resolveClientPortalAccessByToken(token)
+    if (!access) throw new Error("This client portal is unavailable. Please reopen your portal link.")
+    const { error } = await supabaseAdmin.rpc("disconnect_google_ads_portal", { p_token: token, p_workspace_id: access.workspace.id })
+    if (error) throw new Error(error.code === "P0001" ? error.message : "Google Ads could not be disconnected. Please retry.")
+    return { connection: null, satisfied: false }
+}

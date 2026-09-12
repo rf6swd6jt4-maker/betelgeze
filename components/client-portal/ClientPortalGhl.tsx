@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
+import { ClientPortalDisconnect } from "./ClientPortalDisconnect"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { Status } from "@/components/ui/Status"
 import { PortalSection, portalPrimaryButton } from "./ClientPortalUI"
@@ -16,7 +17,6 @@ export function ClientPortalGhl({ token, active, onConnection }: { token: string
     const [reading, setReading] = useState(true)
     const [pending, setPending] = useState<string | null>(null)
     const [editing, setEditing] = useState(false)
-    const [confirmDisconnect, setConfirmDisconnect] = useState(false)
     const [locationId, setLocationId] = useState("")
     const [privateToken, setPrivateToken] = useState("")
     const readController = useRef<AbortController | null>(null)
@@ -82,7 +82,7 @@ export function ClientPortalGhl({ token, active, onConnection }: { token: string
             const value = await response.json()
             if (!response.ok) throw new Error(value.error || "The connection could not be saved.")
             if (!mounted.current) return
-            setSaved(value); setEditing(false); setConfirmDisconnect(false)
+            setSaved(value); setEditing(false)
             if (action !== "refresh") onConnection?.(value.connected, true)
             setPrivateToken(""); lastRead.current = Date.now()
         } catch (problem) {
@@ -97,7 +97,7 @@ export function ClientPortalGhl({ token, active, onConnection }: { token: string
     useEffect(() => { if (saved) onConnection?.(saved.connected) }, [saved, onConnection])
     const metrics = saved?.metrics
     const connected = saved?.connected === true
-    const beginEditing = () => { setLocationId(saved?.locationId ?? locationId); setEditing(true); setConfirmDisconnect(false) }
+    const beginEditing = () => { setLocationId(saved?.locationId ?? locationId); setEditing(true) }
 
     return <PortalSection id="ghl-connection" title="GHL" description="Contacts & opportunities" icon="connection">
         <div className="mt-4 min-w-0" aria-busy={Boolean(pending)}>
@@ -112,15 +112,14 @@ export function ClientPortalGhl({ token, active, onConnection }: { token: string
                 {saved?.refreshedAt ? <p className="mt-2 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">Updated {new Date(saved.refreshedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}. Refresh to update.</p> : null}
             </> : null}
             {error || saved?.error ? <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm leading-5 text-red-800"><p>{error || saved?.error}</p><button type="button" className={`${secondary} mt-1`} disabled={Boolean(pending) || reading} onClick={() => void load()}>Reload status</button></div> : null}
-            {editing ? <form onSubmit={submit} className="mt-4 space-y-4">
+            {editing && !connected ? <form onSubmit={submit} className="mt-4 space-y-4">
                 <div><label htmlFor="ghl-location-id" className="text-sm font-medium">Location ID</label><input id="ghl-location-id" className={field} value={locationId} onChange={(event) => setLocationId(event.target.value)} autoComplete="off" spellCheck={false} maxLength={80} required disabled={Boolean(pending)} /></div>
                 <div><label htmlFor="ghl-private-token" className="text-sm font-medium">Private Integration Token</label><input id="ghl-private-token" type="password" className={field} value={privateToken} onChange={(event) => setPrivateToken(event.target.value)} autoComplete="new-password" spellCheck={false} maxLength={4096} required disabled={Boolean(pending)} /><p className="mt-1.5 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">Saved securely for this client only. It will not be displayed again.</p></div>
                 <details className="text-sm leading-6 text-[var(--onboarding-muted,#475569)]"><summary className="min-h-11 cursor-pointer py-2 font-medium text-[var(--onboarding-primary,#1E3A5F)]">Where to find these details</summary><ol className="list-decimal space-y-2 pl-5"><li>Open the client’s GHL sub-account. Copy its Location ID from Settings → Business Profile.</li><li>In Settings → Private Integrations, create an integration named Betelgeze.</li><li>Allow read access to Contacts, Opportunities, and Locations (sub-accounts): <code className="break-all text-xs">contacts.readonly</code>, <code className="break-all text-xs">opportunities.readonly</code>, <code className="break-all text-xs">locations.readonly</code>.</li><li>For the appointment calendar, also allow <code className="break-all text-xs">calendars/events.readonly</code> and <code className="break-all text-xs">users.readonly</code> to identify the owner’s user calendar.</li><li>Copy the token and paste it above.</li></ol></details>
-                <div className="flex flex-wrap gap-2"><button type="submit" className={portalPrimaryButton} disabled={Boolean(pending) || !saved}>{pending === "connect" ? "Connecting…" : connected ? "Replace connection" : "Connect GHL"}</button><button type="button" className={secondary} disabled={Boolean(pending)} onClick={() => { setEditing(false); setPrivateToken("") }}>Cancel</button></div>
+                <div className="flex flex-wrap gap-2"><button type="submit" className={portalPrimaryButton} disabled={Boolean(pending) || !saved}>{pending === "connect" ? "Connecting…" : "Connect GHL"}</button><button type="button" className={secondary} disabled={Boolean(pending)} onClick={() => { setEditing(false); setPrivateToken("") }}>Cancel</button></div>
             </form> : <div className="mt-4 flex flex-wrap items-center gap-1">
-                {connected ? <><button type="button" className={portalPrimaryButton} disabled={Boolean(pending)} onClick={() => void mutate("refresh")}>{pending === "refresh" ? "Refreshing…" : "Refresh metrics"}</button><button type="button" className={secondary} disabled={Boolean(pending)} onClick={beginEditing}>Manage connection</button></> : <><button type="button" className={portalPrimaryButton} disabled={Boolean(pending) || !saved} onClick={beginEditing}>Connect GHL</button></>}
+                {connected ? <><button type="button" className={portalPrimaryButton} disabled={Boolean(pending)} onClick={() => void mutate("refresh")}>{pending === "refresh" ? "Refreshing…" : "Refresh metrics"}</button><ClientPortalDisconnect confirmation="Disconnect GHL from this portal? Its saved results and calendar will be cleared. You can reconnect later." pending={pending === "disconnect"} disabled={Boolean(pending)} onDisconnect={() => void mutate("disconnect")} /></> : <><button type="button" className={portalPrimaryButton} disabled={Boolean(pending) || !saved} onClick={beginEditing}>Connect GHL</button></>}
             </div>}
-            {connected && editing ? <div className="mt-4 border-t border-black/10 pt-2">{confirmDisconnect ? <><p className="mt-2 text-sm">Disconnect GHL and remove its saved metrics from this portal?</p><div className="flex flex-wrap gap-2"><button type="button" className={`${secondary} text-red-700`} disabled={Boolean(pending)} onClick={() => void mutate("disconnect")}>{pending === "disconnect" ? "Disconnecting…" : "Confirm disconnect"}</button><button type="button" className={secondary} disabled={Boolean(pending)} onClick={() => setConfirmDisconnect(false)}>Keep connected</button></div></> : <button type="button" className={`${secondary} text-red-700`} disabled={Boolean(pending)} onClick={() => setConfirmDisconnect(true)}>Disconnect GHL</button>}</div> : null}
         </div>
     </PortalSection>
 }

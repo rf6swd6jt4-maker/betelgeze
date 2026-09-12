@@ -1,6 +1,7 @@
 "use client"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { GoogleAdsConnection, adsFetch, adsPrimary, adsSecondary } from "@/components/google-ads/GoogleAdsConnection"
+import { ClientPortalDisconnect } from "./ClientPortalDisconnect"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { PortalSection } from "./ClientPortalUI"
 import { googleAdsPeriods, type GoogleAdsPeriod, type GoogleAdsReportSnapshot } from "@/lib/google-ads-report"
@@ -57,7 +58,18 @@ function Reports({ api, active }: { api: string; active: boolean }) {
 }
 export function ClientPortalGoogleAds({ token, active }: { token: string; active: boolean }) {
     const [account, setAccount] = useState<string | null>(null)
+    const [hasConnection, setHasConnection] = useState(false), [revision, setRevision] = useState(0), [disconnecting, setDisconnecting] = useState(false), [disconnectError, setDisconnectError] = useState("")
+    const disconnectBusy = useRef(false)
     const api = `/api/client-portal/session/${token}/connections/google-ads`
-    const onState = useCallback((connection: GoogleAdsOnboardingConnection | null, satisfied: boolean) => { setAccount(satisfied && connection ? `${connection.managerId}:${connection.customerId}` : null) }, [])
-    return <PortalSection id="google-ads-connection" title="Google Ads" description="Advertising results" icon="connection"><div className="mt-4"><GoogleAdsConnection api={api} active={active} onState={onState} />{account ? <Reports key={account} api={api} active={active} /> : null}</div></PortalSection>
+    const onState = useCallback((connection: GoogleAdsOnboardingConnection | null, satisfied: boolean) => { setHasConnection(Boolean(connection)); setAccount(satisfied && connection ? `${connection.managerId}:${connection.customerId}` : null) }, [])
+    async function disconnect() {
+        if (disconnectBusy.current) return
+        disconnectBusy.current = true; setDisconnecting(true); setDisconnectError("")
+        try {
+            await adsFetch(api, { action: "disconnect" })
+            setAccount(null); setHasConnection(false); setRevision(value => value + 1)
+        } catch (error) { setDisconnectError(error instanceof Error ? error.message : "The account could not be disconnected. Please retry.") }
+        finally { disconnectBusy.current = false; setDisconnecting(false) }
+    }
+    return <PortalSection id="google-ads-connection" title="Google Ads" description="Advertising results" icon="connection"><div className="mt-4"><GoogleAdsConnection key={revision} api={api} active={active} onState={onState} />{account ? <Reports key={account} api={api} active={active} /> : null}{hasConnection ? <div className="mt-4"><ClientPortalDisconnect confirmation="Disconnect Google Ads from this portal? Its saved results will be cleared. Your agency’s access in Google Ads will remain." pending={disconnecting} onDisconnect={() => void disconnect()} /></div> : null}{disconnectError ? <p role="alert" className="mt-3 text-sm leading-6 text-red-700">{disconnectError}</p> : null}</div></PortalSection>
 }

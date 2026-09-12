@@ -35,3 +35,8 @@ Migration: `20260912090000_client_portal_google_ads.sql`. Additive report table 
 Rollback: revert the application release; retain the additive schema and saved connections/reports. No production account invitations are created during automated validation. Browser fixtures use synthetic account/report data; physical-device and live Google account/report validation remain distinct.
 
 Release checks on 12 September 2026: 939 tests passed, changed-file lint and the production build passed, and the migration returned both connection/report readiness checks as true in production. Browser fixtures verified pending approval, connected metrics, report errors, period switching and onboarding recognition; these are synthetic data checks, not proof of live Google access.
+
+
+## Disconnecting
+
+The portal's Disconnect button uses the browser/device confirmation dialog. It removes the relationship's BE account binding and saved reports, invalidates unfinished OAuth attempts, and clears Google Ads requirements in active onboarding sessions. Completed onboarding history remains. The agency's manager access in Google Ads is retained and the confirmation explicitly says so. No Google account, campaign, budget or provider permission is modified. A running connection/approval must finish before disconnection; stale report/connection completions cannot recreate the deleted binding. The operation is authenticated, relationship-scoped and idempotent. Migration: `20260912110000_google_ads_portal_disconnect.sql`.

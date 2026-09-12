@@ -1,3 +1,4 @@
+import { oauthEnabled, prepareOAuth } from "@/lib/google-ads/oauth-server"
 import { loadPortalGoogleAds, runPortalGoogleAds, portalGoogleAdsReport } from "@/lib/client-portal/google-ads-server"
 import { googleAdsBody, googleAdsReply } from "@/lib/google-ads/http"
 export const dynamic = "force-dynamic"
@@ -8,9 +9,10 @@ async function handle(request: Request, context: { params: Promise<{ token: stri
         const { token } = await context.params
         if (request.method === "GET") {
             const period = new URL(request.url).searchParams.get("period")
-            return googleAdsReply(period ? await portalGoogleAdsReport(token, period, false) : await loadPortalGoogleAds(token))
+            return googleAdsReply(period ? await portalGoogleAdsReport(token, period, false) : { ...await loadPortalGoogleAds(token), oauthEnabled: oauthEnabled() })
         }
         const body = await googleAdsBody(request)
+        if (body.action === "oauth_start") return googleAdsReply(await prepareOAuth({ token }, new URL(request.url).origin))
         if (body.action === "refresh") return googleAdsReply(await portalGoogleAdsReport(token, body.period, true))
         if ((body.action !== "request" && body.action !== "verify") || typeof body.customerId !== "string") return googleAdsReply({ error: "Choose whether to request or verify access." }, 400)
         if (body.action === "request" && body.consented !== true) return googleAdsReply({ error: "Confirm you are authorised to connect this account." }, 400)

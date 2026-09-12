@@ -3,7 +3,7 @@ import { runGoogleAdsConnection } from "@/lib/google-ads/connection-server"
 import { googleAdsOnboardingResponse } from "@/lib/onboarding/google-ads-state"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
-async function googleAdsContext(token: string, blockId: string, mutation: boolean) {
+export async function googleAdsContext(token: string, blockId: string, mutation: boolean) {
     if (typeof token !== "string" || token.length > 300 || typeof blockId !== "string" || !/^[a-f0-9-]{36}$/i.test(blockId)) throw new Error("This onboarding link is invalid.")
     const resolved = await getCanonicalSessionByToken(token)
     const step = resolved?.steps.find((step) => step.blocks?.some((block) => block.sessionBlockId === blockId && block.kind === "connection" && block.provider === "google_ads"))

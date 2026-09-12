@@ -4,7 +4,7 @@ import { googleAdsOnboardingResponse, normalizeGoogleAdsCustomerId } from "@/lib
 import { decryptWorkspaceIntegration } from "@/lib/workspace-integrations"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
-export async function runGoogleAdsConnection(integration: { config_encrypted: string }, scope: { token: string; blockId: string } | { token: string; workspaceId: string }, rawCustomerId: string, sendRequest: boolean) {
+export async function runGoogleAdsConnection(integration: { config_encrypted: string }, scope: { token: string; blockId: string } | { token: string; workspaceId: string }, rawCustomerId: string, sendRequest: boolean, runner: typeof connectGoogleAdsClient = connectGoogleAdsClient) {
     const customerId = normalizeGoogleAdsCustomerId(rawCustomerId)
     let config
     try { config = normalizeGoogleAdsConfig(decryptWorkspaceIntegration(integration.config_encrypted)) }
@@ -20,7 +20,7 @@ export async function runGoogleAdsConnection(integration: { config_encrypted: st
     let message: string | null = null, diagnostic: string | null = null
     try {
         const budget = AbortSignal.timeout(50_000)
-        result = await connectGoogleAdsClient(config, customerId, sendRequest, (url, init) => fetch(url, { ...init, signal: AbortSignal.any([budget, init?.signal ?? budget]) }))
+        result = await runner(config, customerId, sendRequest, (url, init) => fetch(url, { ...init, signal: AbortSignal.any([budget, init?.signal ?? budget]) }))
     }
     catch (error) { message = googleAdsClientError(error); diagnostic = googleAdsDiagnosticError(error) }
     const { data, error: finishError } = await supabaseAdmin.rpc(onboarding ? "finish_google_ads_onboarding" : "finish_google_ads_portal", {

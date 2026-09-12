@@ -55,3 +55,11 @@
         padding-block: 0.75rem;
     }
 }
+
+/* Keep the complete month visible before the connections on smaller screens. */
+@media (max-width: 1023px) {
+    .calendarResults { grid-template-rows: minmax(44rem, 1fr) auto; }
+}
+@media (min-width: 1024px) {
+    .calendarResults { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+}

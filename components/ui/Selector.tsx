@@ -27,10 +27,11 @@ function SelectorChevron({ open }: { open: boolean }) {
 export const SelectorTrigger = forwardRef<HTMLButtonElement, {
     open: boolean
     appearance?: SelectorAppearance
+    surface?: "dark" | "light"
     children: ReactNode
     className?: string
-} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">>(function SelectorTrigger({ open, appearance = "field", children, className = "", ...props }, ref) {
-    return <button {...props} ref={ref} type="button" aria-expanded={open} aria-haspopup="listbox" className={`flex min-w-0 items-center gap-2 text-left text-sm text-neutral-200 outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-45 ${triggerClasses[appearance]} ${className}`}>
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">>(function SelectorTrigger({ open, appearance = "field", surface = "dark", children, className = "", ...props }, ref) {
+    return <button {...props} data-surface={surface} ref={ref} type="button" aria-expanded={open} aria-haspopup="listbox" className={`flex min-w-0 items-center gap-2 text-left text-sm text-neutral-200 data-[surface=light]:text-[var(--onboarding-text,#0F172A)] data-[surface=light]:border-black/15 data-[surface=light]:bg-transparent data-[surface=light]:hover:bg-black/5 outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-45 ${triggerClasses[appearance]} ${className}`}>
         <span className="min-w-0 flex-1 truncate">{children}</span>
         <SelectorChevron open={open} />
     </button>
@@ -100,7 +101,7 @@ export function SelectorOption({ selected = false, active = false, showCheck = t
     className?: string
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">) {
     return <div className={`flex min-w-0 items-center rounded-lg ${selected || active ? "bg-neutral-900" : "hover:bg-neutral-900/70"} ${className}`}>
-        <button {...props} type="button" role="option" aria-selected={selected} className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-neutral-200 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35">
+        <button {...props} type="button" role="option" aria-selected={selected} className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-neutral-200 data-[surface=light]:text-[var(--onboarding-text,#0F172A)] data-[surface=light]:border-black/15 data-[surface=light]:bg-transparent data-[surface=light]:hover:bg-black/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35">
             <span className="min-w-0 flex-1">
                 <span className="block min-w-0 truncate">{children}</span>
                 {description ? <span className="mt-0.5 block truncate text-[11px] text-neutral-500">{description}</span> : null}
@@ -111,7 +112,7 @@ export function SelectorOption({ selected = false, active = false, showCheck = t
     </div>
 }
 
-export function Selector({ value, options, onChange, onCommit, ariaLabel, placeholder = "Choose…", name, required = false, disabled = false, appearance = "field", className = "", popupClassName = "", title, description, searchThreshold = 7, searchPlaceholder = "Search…", workItemPopup = false }: {
+export function Selector({ value, options, onChange, onCommit, ariaLabel, placeholder = "Choose…", name, required = false, disabled = false, appearance = "field", surface = "dark", className = "", popupClassName = "", title, description, searchThreshold = 7, searchPlaceholder = "Search…", workItemPopup = false }: {
     value: string
     options: SelectorOptionDefinition[]
     onChange: (value: string) => void
@@ -122,6 +123,7 @@ export function Selector({ value, options, onChange, onCommit, ariaLabel, placeh
     required?: boolean
     disabled?: boolean
     appearance?: SelectorAppearance
+    surface?: "dark" | "light"
     className?: string
     popupClassName?: string
     title?: string
@@ -150,7 +152,7 @@ export function Selector({ value, options, onChange, onCommit, ariaLabel, placeh
 
     return <>
         {name ? <input type="hidden" name={name} value={value} /> : null}
-        <SelectorTrigger open={open} appearance={appearance} disabled={disabled} aria-label={ariaLabel} aria-required={required || undefined} onClick={(event) => { setQuery(""); setAnchor((current) => current ? null : event.currentTarget) }} className={className}>
+        <SelectorTrigger open={open} appearance={appearance} surface={surface} disabled={disabled} aria-label={ariaLabel} aria-required={required || undefined} onClick={(event) => { setQuery(""); setAnchor((current) => current ? null : event.currentTarget) }} className={className}>
             {selected?.content ?? selected?.label ?? <span className="text-neutral-600">{placeholder}</span>}
         </SelectorTrigger>
         {open ? <SelectorDrawer anchor={anchor} ariaLabel={ariaLabel} title={title} description={description} search={query} onSearch={searchable ? setQuery : undefined} searchPlaceholder={searchPlaceholder} onDismiss={() => { setAnchor(null); setQuery("") }} className={popupClassName} workItemPopup={workItemPopup}>

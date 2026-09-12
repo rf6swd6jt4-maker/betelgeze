@@ -1,0 +1,16 @@
+.weekdays { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); padding:6px 0 10px; text-align:center; font-size:11px; font-weight:500; color:var(--onboarding-muted,#475569); }
+.grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); border-top:1px solid rgb(0 0 0 / .08); border-left:1px solid rgb(0 0 0 / .08); border-radius:10px; overflow:hidden; }
+.day { position:relative; min-width:0; min-height:60px; padding:5px 3px; border-right:1px solid rgb(0 0 0 / .08); border-bottom:1px solid rgb(0 0 0 / .08); display:flex; flex-direction:column; align-items:center; text-align:left; background:transparent; }
+.day:hover { background:rgb(0 0 0 / .025); }
+.day:focus-visible { outline:2px solid var(--onboarding-primary,#1E3A5F); outline-offset:-2px; }
+.outside { background:rgb(0 0 0 / .018); color:var(--onboarding-muted,#475569); }
+.selected { box-shadow:inset 0 0 0 1.5px var(--onboarding-primary,#1E3A5F); background:color-mix(in srgb,var(--onboarding-primary,#1E3A5F) 4%,transparent); }
+.number { display:flex; align-items:center; justify-content:center; width:25px; height:25px; font-size:12px; border-radius:50%; }
+.today { background:var(--onboarding-primary,#1E3A5F); color:white; font-weight:600; }
+.eventArea { display:flex; flex-direction:column; gap:3px; width:100%; padding-top:3px; }
+.event { display:flex; flex-direction:column; min-width:0; border-left:2px solid var(--onboarding-primary,#1E3A5F); border-radius:2px; padding:2px 3px; background:color-mix(in srgb,var(--onboarding-primary,#1E3A5F) 7%,transparent); color:var(--onboarding-text,#0F172A); font-size:10px; line-height:13px; }
+.time,.title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.time { font-weight:600; }
+.more { padding-left:3px; font-size:10px; color:var(--onboarding-muted,#475569); }
+.mobileCount { display:none; }
+@media(max-width:639px) { .day{min-height:56px;padding:4px 2px;} .eventArea{display:none;} .mobileCount{display:block;margin-top:3px;font-size:10px;color:var(--onboarding-primary,#1E3A5F);font-weight:600;} }

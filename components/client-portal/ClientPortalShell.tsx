@@ -12,6 +12,7 @@ import { appointmentDateLabels, type PortalAppointment } from "@/lib/client-port
 import { FilterRailButton } from "@/components/panel/FilterRail"
 import styles from "./ClientPortalLayout.module.css"
 
+const ClientPortalCalendar = dynamic(() => import("./ClientPortalCalendar").then((module) => module.ClientPortalCalendar))
 const ClientPortalGhl = dynamic(() => import("./ClientPortalGhl").then((module) => module.ClientPortalGhl), {
     loading: () => <PortalSection id="ghl-connection" title="GHL" description="Contacts & opportunities" icon="connection"><p className="mt-4 text-sm">Loading connection…</p></PortalSection>,
 })
@@ -85,6 +86,9 @@ function AppointmentDetail({ appointment }: { appointment: PortalAppointment }) 
 export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, privacyPolicyUrl, termsOfServiceUrl }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null }) {
     const [panel, setPanel] = useState<"chat" | PortalAppointment | null>(null)
     const [greeting, setGreeting] = useState("Welcome")
+    const [ghlConnected, setGhlConnected] = useState(false)
+    const [calendarVersion, setCalendarVersion] = useState(0)
+    const onGhlConnection = useCallback((connected: boolean, reset = false) => { setGhlConnected(connected); if (reset) setCalendarVersion(value => value + 1) }, [])
     const [activePage, setActivePage] = useState("appointments")
     const closePanel = useCallback(() => setPanel(null), [])
     useEffect(() => {
@@ -118,10 +122,10 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
                 <section data-portal-greeting aria-labelledby="portal-greeting" className="mb-3 shrink-0 lg:mb-6"><p className="hidden text-sm font-medium text-[var(--onboarding-muted,#475569)] lg:block">Your client portal</p><h1 id="portal-greeting" className="truncate text-2xl font-semibold leading-tight tracking-tight lg:mt-2 lg:text-[2rem]">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-2 hidden text-sm leading-6 text-[var(--onboarding-muted,#475569)] lg:block">Check your appointments or send files to your team.</p></section>
                 <div className="grid min-h-0 flex-1 grid-cols-1 gap-4">
                     <div className={`min-h-0 min-w-0 ${activePage === "appointments" ? "block" : "hidden"}`}>
-                        <div className={styles.results}>
-                            <div className="min-h-0 min-w-0"><ClientPortalAppointments token={token} onOpen={setPanel} /></div>
+                        <div className={`${styles.results} ${ghlConnected ? styles.calendarResults : ""}`}>
+                            <div className="min-h-0 min-w-0">{ghlConnected ? <ClientPortalCalendar key={`${token}:${calendarVersion}`} token={token} active={activePage === "appointments" && panel === null} /> : <ClientPortalAppointments token={token} onOpen={setPanel} />}</div>
                             <div aria-label="Connections" className="grid min-h-0 min-w-0 auto-rows-max content-start gap-4 lg:gap-6 lg:overflow-y-auto">
-                                <ClientPortalGhl key={token} token={token} active={activePage === "appointments" && panel === null} />
+                                <ClientPortalGhl key={token} token={token} onConnection={onGhlConnection} active={activePage === "appointments" && panel === null} />
                                 <PortalSection id="google-ads-connection" title="Google Ads" description="Google Ads connection" icon="connection"><p className="mt-5 text-sm text-[var(--onboarding-muted,#475569)]">Connection setup coming soon.</p></PortalSection>
                             </div>
                         </div>

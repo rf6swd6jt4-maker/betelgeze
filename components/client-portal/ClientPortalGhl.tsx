@@ -10,7 +10,7 @@ const secondary = "inline-flex min-h-11 items-center justify-center rounded-lg p
 const field = "mt-1.5 min-h-11 w-full min-w-0 rounded-xl border border-black/15 bg-white px-3 py-2.5 text-base text-[var(--onboarding-text,#0F172A)] outline-none focus:border-[var(--onboarding-primary,#1E3A5F)] focus:ring-1 focus:ring-[var(--onboarding-primary,#1E3A5F)]"
 const number = (value: number) => value.toLocaleString("en-US")
 
-export function ClientPortalGhl({ token, active }: { token: string; active: boolean }) {
+export function ClientPortalGhl({ token, active, onConnection }: { token: string; active: boolean; onConnection?: (connected: boolean, reset?: boolean) => void }) {
     const [saved, setSaved] = useState<GhlSummary | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [reading, setReading] = useState(true)
@@ -83,6 +83,7 @@ export function ClientPortalGhl({ token, active }: { token: string; active: bool
             if (!response.ok) throw new Error(value.error || "The connection could not be saved.")
             if (!mounted.current) return
             setSaved(value); setEditing(false); setConfirmDisconnect(false)
+            if (action !== "refresh") onConnection?.(value.connected, true)
             setPrivateToken(""); lastRead.current = Date.now()
         } catch (problem) {
             if (mounted.current) setError(problem instanceof Error && problem.name !== "AbortError" ? problem.message : "The request did not finish in this browser. Reload its status to check whether it completed.")
@@ -93,6 +94,7 @@ export function ClientPortalGhl({ token, active }: { token: string; active: bool
         }
     }
     function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); void mutate("connect") }
+    useEffect(() => { if (saved) onConnection?.(saved.connected) }, [saved, onConnection])
     const metrics = saved?.metrics
     const connected = saved?.connected === true
     const beginEditing = () => { setLocationId(saved?.locationId ?? locationId); setEditing(true); setConfirmDisconnect(false) }
@@ -113,7 +115,7 @@ export function ClientPortalGhl({ token, active }: { token: string; active: bool
             {editing ? <form onSubmit={submit} className="mt-4 space-y-4">
                 <div><label htmlFor="ghl-location-id" className="text-sm font-medium">Location ID</label><input id="ghl-location-id" className={field} value={locationId} onChange={(event) => setLocationId(event.target.value)} autoComplete="off" spellCheck={false} maxLength={80} required disabled={Boolean(pending)} /></div>
                 <div><label htmlFor="ghl-private-token" className="text-sm font-medium">Private Integration Token</label><input id="ghl-private-token" type="password" className={field} value={privateToken} onChange={(event) => setPrivateToken(event.target.value)} autoComplete="new-password" spellCheck={false} maxLength={4096} required disabled={Boolean(pending)} /><p className="mt-1.5 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">Saved securely for this client only. It will not be displayed again.</p></div>
-                <details className="text-sm leading-6 text-[var(--onboarding-muted,#475569)]"><summary className="min-h-11 cursor-pointer py-2 font-medium text-[var(--onboarding-primary,#1E3A5F)]">Where to find these details</summary><ol className="list-decimal space-y-2 pl-5"><li>Open the client’s GHL sub-account. Copy its Location ID from Settings → Business Profile.</li><li>In Settings → Private Integrations, create an integration named Betelgeze.</li><li>Allow read access to Contacts, Opportunities, and Locations (sub-accounts): <code className="break-all text-xs">contacts.readonly</code>, <code className="break-all text-xs">opportunities.readonly</code>, <code className="break-all text-xs">locations.readonly</code>.</li><li>Copy the token and paste it above.</li></ol></details>
+                <details className="text-sm leading-6 text-[var(--onboarding-muted,#475569)]"><summary className="min-h-11 cursor-pointer py-2 font-medium text-[var(--onboarding-primary,#1E3A5F)]">Where to find these details</summary><ol className="list-decimal space-y-2 pl-5"><li>Open the client’s GHL sub-account. Copy its Location ID from Settings → Business Profile.</li><li>In Settings → Private Integrations, create an integration named Betelgeze.</li><li>Allow read access to Contacts, Opportunities, and Locations (sub-accounts): <code className="break-all text-xs">contacts.readonly</code>, <code className="break-all text-xs">opportunities.readonly</code>, <code className="break-all text-xs">locations.readonly</code>.</li><li>For the appointment calendar, also allow <code className="break-all text-xs">calendars.readonly</code> and <code className="break-all text-xs">calendars/events.readonly</code>.</li><li>Copy the token and paste it above.</li></ol></details>
                 <div className="flex flex-wrap gap-2"><button type="submit" className={portalPrimaryButton} disabled={Boolean(pending) || !saved}>{pending === "connect" ? "Connecting…" : connected ? "Replace connection" : "Connect GHL"}</button><button type="button" className={secondary} disabled={Boolean(pending)} onClick={() => { setEditing(false); setPrivateToken("") }}>Cancel</button></div>
             </form> : <div className="mt-4 flex flex-wrap items-center gap-1">
                 {connected ? <><button type="button" className={portalPrimaryButton} disabled={Boolean(pending)} onClick={() => void mutate("refresh")}>{pending === "refresh" ? "Refreshing…" : "Refresh metrics"}</button><button type="button" className={secondary} disabled={Boolean(pending)} onClick={beginEditing}>Manage connection</button></> : <><button type="button" className={portalPrimaryButton} disabled={Boolean(pending) || !saved} onClick={beginEditing}>Connect GHL</button></>}

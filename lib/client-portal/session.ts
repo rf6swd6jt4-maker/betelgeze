@@ -1,6 +1,8 @@
 import { headers } from "next/headers"
+import { clientBrandLogoUrl, loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
 import { getClientPortalUrl } from "@/lib/client-portal/domain"
-import { loadPublishedOnboardingConfiguration } from "@/lib/onboarding/configuration"
+import { loadPublishedOnboardingTheme } from "@/lib/onboarding/configuration"
+import { resolveOnboardingTheme } from "@/lib/onboarding/theme"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
 export async function resolveClientPortalAccessByToken(token: string) {
@@ -38,15 +40,36 @@ export async function resolveClientPortalAccessByToken(token: string) {
 export async function loadClientPortalSessionByToken(token: string) {
     const resolved = await resolveClientPortalAccessByToken(token)
     if (!resolved) return null
-    const configuration = await loadPublishedOnboardingConfiguration(resolved.session.workspace_id)
+    const [theme] = await Promise.all([
+        loadPublishedOnboardingTheme(resolved.session.workspace_id),
+        supabaseAdmin
+            .from("client_portal_sessions")
+            .update({ last_accessed_at: new Date().toISOString() })
+            .eq("workspace_id", resolved.session.workspace_id)
+            .eq("id", resolved.session.id),
+    ])
 
-    await supabaseAdmin
+    return { ...resolved, theme }
+}
+
+export async function loadClientPortalStartupAppearance(token: string) {
+    if (!/^[a-f0-9]{64}$/i.test(token)) return null
+    const { data: session, error } = await supabaseAdmin
         .from("client_portal_sessions")
-        .update({ last_accessed_at: new Date().toISOString() })
-        .eq("workspace_id", resolved.session.workspace_id)
-        .eq("id", resolved.session.id)
+        .select("workspace_id, status, token_revoked_at")
+        .eq("session_token", token.toLowerCase())
+        .maybeSingle()
+    if (error || !session || session.status !== "active" || session.token_revoked_at) return null
 
-    return { ...resolved, theme: configuration.theme }
+    const [theme, assets] = await Promise.all([
+        loadPublishedOnboardingTheme(session.workspace_id),
+        loadWorkspaceClientBrandAssets(session.workspace_id),
+    ])
+    if (assets.workspaceStatus !== "active") return null
+    return {
+        backgroundColor: resolveOnboardingTheme(theme).primary,
+        logoSrc: clientBrandLogoUrl("client-portal", token, assets.logoPath),
+    }
 }
 
 export async function getClientPortalUrlForOnboardingSession(input: {

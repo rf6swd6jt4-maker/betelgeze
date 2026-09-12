@@ -11,6 +11,10 @@ import "./globals.css";
 
 const workspaceFrameBootstrap = `(() => {
   try {
+    const pathname = window.location.pathname;
+    if (/^\\/client-portal\\/session\\/[a-f0-9]{64}\\/?$/i.test(pathname) || /^\\/[a-f0-9]{64}\\/?$/i.test(pathname)) {
+      document.documentElement.dataset.clientPortalStartup = "true";
+    }
     if (window.self === window.top || !window.name.startsWith(${JSON.stringify(WORKSPACE_TAB_FRAME_NAME_PREFIX)})) return;
     const tabId = window.name.slice(${JSON.stringify(WORKSPACE_TAB_FRAME_NAME_PREFIX)}.length);
     const url = new URL(window.location.href);

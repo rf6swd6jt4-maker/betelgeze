@@ -964,3 +964,12 @@ export async function loadPublishedOnboardingConfiguration(workspaceId: string):
         payment: await hydrateVisualPayment(mapPayment(raw.configurations, false)),
     }
 }
+
+export async function loadPublishedOnboardingTheme(workspaceId: string): Promise<OnboardingThemeDefinition> {
+    const [swatchResult, themeResult] = await Promise.all([
+        supabaseAdmin.from("onboarding_brand_swatches").select("*").eq("workspace_id", workspaceId),
+        supabaseAdmin.from("onboarding_themes").select("*").eq("workspace_id", workspaceId).limit(1),
+    ])
+    if (swatchResult.error || themeResult.error) return defaultTheme()
+    return mapTheme((themeResult.data ?? [])[0] as UnknownRow | undefined, (swatchResult.data ?? []) as UnknownRow[])
+}

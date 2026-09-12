@@ -69,6 +69,7 @@ test("public asset endpoints are same-origin, immutable, and keep the staff mani
     assert.match(faviconRoute, /Content-Type": "image\/png"/u)
     assert.match(logoRoute, /Content-Type": "image\/svg\+xml; charset=utf-8"/u)
     assert.match(logoRoute, /Content-Security-Policy/u)
+    assert.match(logoRoute, /Response\.redirect\(requestUrl, 307\)/u)
     assert.match(faviconRoute + logoRoute, /max-age=31536000, immutable/u)
     assert.match(manifest, /betelgeze-icon-192\.png/u)
     assert.match(manifest, /betelgeze-icon-512\.png/u)

@@ -22,7 +22,7 @@ function validLegacyFaviconPath(workspaceId: string, value: unknown) {
 export async function loadWorkspaceClientBrandAssets(workspaceId: string) {
     const { data, error } = await supabaseAdmin
         .from("workspaces")
-        .select("agency_logo_path, agency_favicon_path, logo_path")
+        .select("agency_logo_path, agency_favicon_path, logo_path, status")
         .eq("id", workspaceId)
         .maybeSingle()
 
@@ -30,15 +30,17 @@ export async function loadWorkspaceClientBrandAssets(workspaceId: string) {
         return {
             logoPath: validStoredPath(workspaceId, "logo", data.agency_logo_path),
             faviconPath: validStoredPath(workspaceId, "favicon", data.agency_favicon_path) ?? validLegacyFaviconPath(workspaceId, data.logo_path),
+            workspaceStatus: typeof data.status === "string" ? data.status : null,
             schemaReady: true,
         }
     }
 
-    if (!isMissingBrandAssetSchema(error)) return { logoPath: null, faviconPath: null, schemaReady: false }
-    const legacy = await supabaseAdmin.from("workspaces").select("logo_path").eq("id", workspaceId).maybeSingle()
+    if (!isMissingBrandAssetSchema(error)) return { logoPath: null, faviconPath: null, workspaceStatus: null, schemaReady: false }
+    const legacy = await supabaseAdmin.from("workspaces").select("logo_path, status").eq("id", workspaceId).maybeSingle()
     return {
         logoPath: null,
         faviconPath: validLegacyFaviconPath(workspaceId, legacy.data?.logo_path),
+        workspaceStatus: typeof legacy.data?.status === "string" ? legacy.data.status : null,
         schemaReady: false,
     }
 }

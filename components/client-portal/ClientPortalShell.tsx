@@ -77,10 +77,10 @@ function AppointmentDetail({ appointment }: { appointment: PortalAppointment }) 
     </>
 }
 
-export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, privacyPolicyUrl, termsOfServiceUrl }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null }) {
+export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, privacyPolicyUrl, termsOfServiceUrl, testNavigation = false }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null; testNavigation?: boolean }) {
     const [panel, setPanel] = useState<"chat" | PortalAppointment | null>(null)
     const [greeting, setGreeting] = useState("Welcome")
-    const [mobilePanel, setMobilePanel] = useState("appointments")
+    const [activePage, setActivePage] = useState("appointments")
     const closePanel = useCallback(() => setPanel(null), [])
     useEffect(() => {
         const elements = [document.documentElement, document.body]
@@ -99,17 +99,23 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
         <div data-portal-content className="flex h-full min-h-0 flex-col">
             <header className="shrink-0 border-b border-black/[0.07] bg-[var(--onboarding-surface,#FFFFFF)]">
                 <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 lg:h-20 lg:px-8">
-                    <ClientBrandLogo logoSrc={logoSrc} workspaceName={workspaceName} className="h-9 max-w-[min(12rem,38vw)]" fallbackClassName="min-w-0 truncate text-lg font-semibold tracking-tight" />
-                    <button type="button" onClick={() => setPanel("chat")} className={portalPrimaryButton}><PortalIcon name="chat" /><span>Chat</span></button>
+                    <ClientBrandLogo logoSrc={logoSrc} workspaceName={workspaceName} className={testNavigation ? "h-9 min-w-0 max-w-[min(12rem,38vw)] shrink" : "h-9 max-w-[min(12rem,38vw)]"} fallbackClassName="min-w-0 truncate text-lg font-semibold tracking-tight" />
+                    <div className="flex shrink-0 items-center gap-1 sm:gap-3">
+                        {testNavigation ? <nav aria-label="Portal pages" data-surface="light" className="group/rail flex items-center">
+                            <FilterRailButton selected={activePage === "appointments"} aria-controls="appointments" onClick={() => setActivePage("appointments")}>Results</FilterRailButton>
+                            <FilterRailButton selected={activePage === "resources"} aria-controls="resources" onClick={() => setActivePage("resources")}>Files</FilterRailButton>
+                        </nav> : null}
+                        <button type="button" onClick={() => setPanel("chat")} className={portalPrimaryButton}><PortalIcon name="chat" /><span>Chat</span></button>
+                    </div>
                 </div>
             </header>
             <main data-client-portal-main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6">
                 <section data-portal-greeting aria-labelledby="portal-greeting" className="mb-3 shrink-0 lg:mb-6"><p className="hidden text-sm font-medium text-[var(--onboarding-muted,#475569)] lg:block">Your client portal</p><h1 id="portal-greeting" className="truncate text-2xl font-semibold leading-tight tracking-tight lg:mt-2 lg:text-[2rem]">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-2 hidden text-sm leading-6 text-[var(--onboarding-muted,#475569)] lg:block">Check your appointments or send files to your team.</p></section>
-                <div className="mb-3 shrink-0 lg:hidden"><FilterRail surface="light" spacing="tight" ariaLabel="Portal panels">{[{ value: "appointments", label: "Appointments" }, { value: "resources", label: "Files" }].map((item) => <FilterRailButton key={item.value} selected={mobilePanel === item.value} aria-controls={item.value} onClick={() => setMobilePanel(item.value)}>{item.label}</FilterRailButton>)}</FilterRail></div>
-                <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:gap-6">
-                    <div className={`min-h-0 min-w-0 ${mobilePanel === "appointments" ? "block" : "hidden lg:block"}`}><ClientPortalAppointments token={token} onOpen={setPanel} /></div>
+                {!testNavigation ? <div className="mb-3 shrink-0 lg:hidden"><FilterRail surface="light" spacing="tight" ariaLabel="Portal panels">{[{ value: "appointments", label: "Appointments" }, { value: "resources", label: "Files" }].map((item) => <FilterRailButton key={item.value} selected={activePage === item.value} aria-controls={item.value} onClick={() => setActivePage(item.value)}>{item.label}</FilterRailButton>)}</FilterRail></div> : null}
+                <div className={`grid min-h-0 flex-1 grid-cols-1 gap-4 ${testNavigation ? "" : "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:gap-6"}`}>
+                    <div className={`min-h-0 min-w-0 ${activePage === "appointments" ? "block" : testNavigation ? "hidden" : "hidden lg:block"}`}><ClientPortalAppointments token={token} onOpen={setPanel} /></div>
                     {/* Keep the uploader mounted when changing panels so active transfers continue. */}
-                    <div className={`min-h-0 min-w-0 ${mobilePanel === "resources" ? "block" : "hidden lg:block"}`}><ClientPortalResources token={token} /></div>
+                    <div className={`min-h-0 min-w-0 ${activePage === "resources" ? "block" : testNavigation ? "hidden" : "hidden lg:block"}`}><ClientPortalResources token={token} /></div>
                 </div>
             </main>
             <footer className="mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-4 px-4 pb-[env(safe-area-inset-bottom)] text-xs text-[var(--onboarding-muted,#475569)] sm:px-6 lg:px-8"><span className="min-w-0 truncate">{workspaceName}</span><div className="flex shrink-0 gap-5">{privacyPolicyUrl ? <a href={privacyPolicyUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center underline underline-offset-4">Privacy</a> : null}{termsOfServiceUrl ? <a href={termsOfServiceUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center underline underline-offset-4">Terms</a> : null}</div></footer>

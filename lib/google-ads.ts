@@ -15,7 +15,6 @@ export function normalizeGoogleAdsConfig(config: Record<string, string>): Google
     const managerId = (config.manager_customer_id ?? "").replace(/[-\s]/g, "")
     if (!/^\d{10}$/.test(managerId)) throw new Error("Enter the 10-digit Google Ads manager account ID.")
     const developerToken = config.developer_token?.trim() ?? ""
-    if (!/^[A-Za-z0-9_-]{22}$/.test(developerToken)) throw new Error("Enter the developer token from your Google Ads manager account’s API Center.")
     const email = config.client_email?.trim() ?? ""
     if (!/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(email)) throw new Error("Upload a Google Cloud service-account JSON key.")
     const privateKey = config.private_key?.trim() ?? ""
@@ -84,14 +83,14 @@ export function googleAdsDiagnosticError(error: unknown) {
 
 function adsErrorMessage(codes: string[], status: number): string {
     if (codes.includes("NOT_ADS_USER")) return "Add the service-account email in Google Ads → Admin → Access and security for this manager account."
-    if (codes.includes("DEVELOPER_TOKEN_NOT_APPROVED")) return "Google has not approved this developer token for the requested operation. Check its access level in the manager account's API Center."
+    if (codes.includes("CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION") || codes.includes("DEVELOPER_TOKEN_NOT_APPROVED")) return "Google has not approved this Cloud project for the requested operation. Check Google Ads API access in Google Cloud Console."
     if (codes.includes("DEVELOPER_TOKEN_INVALID")) return "Google rejected the developer token. Copy it again from the manager account’s API Center."
     if (codes.includes("SERVICE_DISABLED")) return "Enable the Google Ads API in the service account’s Google Cloud project, then retry."
     if (codes.includes("USER_PERMISSION_DENIED")) return "Grant the service-account email Read-only access in Google Ads → Admin → Access and security for this manager account."
     if (codes.includes("CUSTOMER_NOT_ENABLED")) return "This Google Ads account is not enabled. Check its status in Google Ads."
     if (status === 429) return "Google’s API limit was reached. Wait before trying verification again."
     if (status === 401) return "Google issued an access token but rejected Ads access. Check that the service-account email has access to this manager account."
-    if (status === 403) return "Google denied API access. Check the developer token, enable the Google Ads API, and grant the service-account email access to this manager."
+    if (status === 403) return "Google denied API access. Check Cloud project API access, enable the Google Ads API, and grant the service-account email access to this manager."
     return `Google Ads verification failed (${status}). Check the manager account ID and Google API configuration, then retry.`
 }
 
@@ -122,7 +121,7 @@ type GoogleAdsRow = {
 async function adsCall(config: GoogleAdsConfig, token: string, customerId: string, method: string, body: unknown, fetcher: typeof fetch, step = "manager") {
     const response = await googleRequest(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/${method}`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "developer-token": config.developer_token, "login-customer-id": config.manager_customer_id, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${token}`, "login-customer-id": config.manager_customer_id, "Content-Type": "application/json" },
         body: JSON.stringify(body),
     }, fetcher)
     const payload = await response.json().catch(() => null)
@@ -207,4 +206,18 @@ export function googleAdsClientError(error: unknown) {
     }
     // Messages generated above contain no provider payloads or credentials.
     return error instanceof Error ? error.message : "Google Ads could not be connected. Please try again."
+}
+
+/** One exact-account aggregate; no campaign/history downloads or per-row lookups. */
+export async function fetchGoogleAdsReport(input: Record<string, string>, customerId: string, period: import("./google-ads-report").GoogleAdsPeriod, fetcher: typeof fetch = fetch, now = new Date()) {
+    const { googleAdsDateRange, parseGoogleAdsMetrics } = await import("./google-ads-report")
+    const config = normalizeGoogleAdsConfig(input)
+    if (!/^\d{10}$/.test(customerId) || customerId === config.manager_customer_id) throw new Error("Choose the connected advertising account.")
+    const token = await authorizeGoogleAds(config, fetcher)
+    const detail = await adsCall(config, token, customerId, "googleAds:search", { query: "SELECT customer.id, customer.currency_code, customer.time_zone, customer.manager, customer.test_account FROM customer LIMIT 1" }, fetcher, "report_access")
+    const account = detail?.results?.[0]?.customer
+    if (!account || String(account.id) !== customerId || account.manager || account.testAccount || !/^[A-Z]{3}$/.test(account.currencyCode ?? "") || !account.timeZone) throw new Error("Google could not confirm this account’s reporting settings. Check the connection and retry.")
+    const range = googleAdsDateRange(period, account.timeZone, now)
+    const payload = await adsCall(config, token, customerId, "googleAds:search", { query: `SELECT metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions FROM customer WHERE segments.date BETWEEN '${range.startDate}' AND '${range.endDate}' LIMIT 1` }, fetcher, "report")
+    return { customerId, currency: account.currencyCode!, timeZone: account.timeZone, ...range, ...parseGoogleAdsMetrics(payload) }
 }

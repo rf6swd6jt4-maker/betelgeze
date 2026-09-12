@@ -12,6 +12,7 @@ import { appointmentDateLabels, type PortalAppointment } from "@/lib/client-port
 import { FilterRailButton } from "@/components/panel/FilterRail"
 import styles from "./ClientPortalLayout.module.css"
 
+const ClientPortalGoogleAds = dynamic(() => import("./ClientPortalGoogleAds").then((module) => module.ClientPortalGoogleAds))
 const ClientPortalCalendar = dynamic(() => import("./ClientPortalCalendar").then((module) => module.ClientPortalCalendar))
 const ClientPortalGhl = dynamic(() => import("./ClientPortalGhl").then((module) => module.ClientPortalGhl), {
     loading: () => <PortalSection id="ghl-connection" title="GHL" description="Contacts & opportunities" icon="connection"><p className="mt-4 text-sm">Loading connection…</p></PortalSection>,
@@ -126,7 +127,7 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
                             <div className="min-h-0 min-w-0">{ghlConnected ? <ClientPortalCalendar key={`${token}:${calendarVersion}`} token={token} active={activePage === "appointments" && panel === null} /> : <ClientPortalAppointments token={token} onOpen={setPanel} />}</div>
                             <div aria-label="Connections" className="grid min-h-0 min-w-0 auto-rows-max content-start gap-4 lg:gap-6 lg:overflow-y-auto">
                                 <ClientPortalGhl key={token} token={token} onConnection={onGhlConnection} active={activePage === "appointments" && panel === null} />
-                                <PortalSection id="google-ads-connection" title="Google Ads" description="Google Ads connection" icon="connection"><p className="mt-5 text-sm text-[var(--onboarding-muted,#475569)]">Connection setup coming soon.</p></PortalSection>
+                                <ClientPortalGoogleAds token={token} active={activePage === "appointments" && panel === null} />
                             </div>
                         </div>
                     </div>

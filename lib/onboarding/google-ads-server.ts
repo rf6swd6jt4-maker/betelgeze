@@ -1,8 +1,6 @@
-import { randomUUID } from "node:crypto"
 import { getCanonicalSessionByToken } from "@/lib/onboarding/canonical"
-import { connectGoogleAdsClient, googleAdsClientError, googleAdsDiagnosticError, normalizeGoogleAdsConfig } from "@/lib/google-ads"
-import { googleAdsOnboardingResponse, normalizeGoogleAdsCustomerId } from "@/lib/onboarding/google-ads-state"
-import { decryptWorkspaceIntegration } from "@/lib/workspace-integrations"
+import { runGoogleAdsConnection } from "@/lib/google-ads/connection-server"
+import { googleAdsOnboardingResponse } from "@/lib/onboarding/google-ads-state"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
 async function googleAdsContext(token: string, blockId: string, mutation: boolean) {
@@ -35,32 +33,6 @@ export async function loadGoogleAdsOnboarding(token: string, blockId: string) {
 }
 
 export async function runGoogleAdsOnboarding(token: string, blockId: string, rawCustomerId: string, sendRequest: boolean) {
-    const customerId = normalizeGoogleAdsCustomerId(rawCustomerId)
     const { integration } = await googleAdsContext(token, blockId, true)
-    let config
-    try { config = normalizeGoogleAdsConfig(decryptWorkspaceIntegration(integration.config_encrypted)) }
-    catch { throw new Error("Your agency’s Google Ads connection needs attention. Contact your agency to continue.") }
-    const attemptId = randomUUID()
-    const { error: beginError } = await supabaseAdmin.rpc("begin_google_ads_onboarding", {
-        p_token: token, p_block_id: blockId, p_customer_id: customerId, p_manager_id: config.manager_customer_id, p_attempt_id: attemptId,
-    })
-    if (beginError) throw new Error(beginError.code === "P0001" || beginError.code === "22023" ? beginError.message : "The connection could not be prepared. Please try again.")
-    let result: Awaited<ReturnType<typeof connectGoogleAdsClient>> | null = null
-    let message: string | null = null
-    let diagnostic: string | null = null
-    try { result = await connectGoogleAdsClient(config, customerId, sendRequest) }
-    catch (error) { message = googleAdsClientError(error); diagnostic = googleAdsDiagnosticError(error) }
-    const { data, error: finishError } = await supabaseAdmin.rpc("finish_google_ads_onboarding", {
-        p_token: token, p_block_id: blockId, p_attempt_id: attemptId, p_expected_config: integration.config_encrypted,
-        p_status: result?.status ?? "needs_attention",
-        p_account_name: result?.status === "connected" ? result.accountName : null,
-        p_currency: result?.status === "connected" ? result.currency : null,
-        p_timezone: result?.status === "connected" ? result.timeZone : null,
-        p_error: diagnostic,
-    })
-    if (finishError) throw new Error(finishError.code === "P0001" ? finishError.message : "Google responded, but the connection could not be saved. Please check again.")
-    if (message) throw new Error(message)
-    const connection = googleAdsOnboardingResponse(data)
-    if (!connection) throw new Error("The saved connection could not be confirmed. Please check again.")
-    return connection
+    return runGoogleAdsConnection(integration, { token, blockId }, rawCustomerId, sendRequest)
 }

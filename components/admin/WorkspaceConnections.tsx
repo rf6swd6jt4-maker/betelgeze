@@ -102,7 +102,6 @@ function ManualFields({ provider }: { provider: IntegrationProvider }) {
     if (provider === "meta_ads") return null
     if (provider === "google_ads") return <>
         <label className="block text-sm text-neutral-300">Manager account ID<input className={inputClass} name="manager_customer_id" required placeholder="123-456-7890" autoComplete="off" maxLength={14} /></label>
-        <label className="block text-sm text-neutral-300">Developer token<input className={inputClass} name="developer_token" type="password" required autoComplete="new-password" maxLength={22} /><span className="mt-1 block text-xs leading-5 text-neutral-500">From your manager account’s API Center. Explorer Access supports reporting; Google may require further approval for automatic client invitations.</span></label>
         <label className="block text-sm text-neutral-300">Service-account JSON key<input className="mt-2 block w-full min-w-0 text-sm text-neutral-400 file:mr-3 file:rounded-lg file:border file:border-neutral-700 file:bg-neutral-900 file:px-3 file:py-2 file:text-sm file:text-white" name="service_account_key" type="file" accept=".json,application/json" required /><span className="mt-1 block text-xs leading-5 text-neutral-500">Download the key from Google Cloud → IAM &amp; Admin → Service Accounts → Keys.</span></label>
     </>
     if (provider === "stripe") return <>

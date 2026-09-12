@@ -7,7 +7,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ work
     const id = new URL(request.url).searchParams.get("id") ?? undefined
     if (id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return NextResponse.json({ error: "Invalid relationship" }, { status: 400 })
     try {
-        const snapshot = await loadNativeRelationships(workspaceSlug, id)
+        const snapshot = new URL(request.url).searchParams.get("view") === "services-v1"
+            ? await loadNativeRelationships(workspaceSlug, id)
+            : await (await import("@/lib/workspace-native-relationships-legacy")).loadLegacyNativeRelationships(workspaceSlug, id)
         if (request.headers.get("x-workspace-user") !== snapshot.userId) return NextResponse.json({ error: "Your session changed. Reload the workspace." }, { status: 409, headers: { "Cache-Control": "private, no-store" } })
         return NextResponse.json(snapshot, { headers: { "Cache-Control": "private, no-store", "Vary": "Cookie" } })
     } catch (error) {

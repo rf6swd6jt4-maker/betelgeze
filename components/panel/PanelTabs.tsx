@@ -51,3 +51,10 @@ export function PanelTabs({ items, active, ariaLabel }: { items: readonly PanelT
         </Link>)}
     </nav>
 }
+
+/** Local detail sections share panel-tab geometry without prefetching hidden data. */
+export function PanelSectionTabs<T extends string>({ items, active, onChange, ariaLabel }: { items: readonly {key: T; label: string}[]; active: T; onChange: (key: T) => void; ariaLabel: string }) {
+    return <nav aria-label={ariaLabel} className="my-5 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+        {items.map(item => <button type="button" key={item.key} aria-current={active === item.key ? "page" : undefined} onClick={() => onChange(item.key)} className={`min-h-11 shrink-0 rounded-lg px-3 py-2.5 sm:min-h-9 sm:py-2 ${active === item.key ? "bg-white font-medium text-black" : "border border-neutral-800 text-neutral-300 hover:border-neutral-600 hover:text-white"}`}>{item.label}</button>)}
+    </nav>
+}

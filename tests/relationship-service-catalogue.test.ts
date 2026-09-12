@@ -234,7 +234,7 @@ test("fulfilment uses immutable revision names while preserving legacy SOPs and 
 
 test("commercial save persists exact identities and dual negotiated prices", () => {
     const actions = readFileSync("app/[workspaceSlug]/relationships/actions.ts", "utf8")
-    const detail = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/page.tsx", "utf8")
+    const detail = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/pos/page.tsx", "utf8")
     assert.match(actions, /service_id: serviceId, service_revision_id: serviceRevisionId/)
     assert.match(actions, /service_currency_/)
     assert.match(actions, /upfront_price_cents/)
@@ -248,7 +248,7 @@ test("commercial save persists exact identities and dual negotiated prices", () 
 })
 
 test("relationship selling uses the visible details workspace and four-stage review with client team selection", () => {
-    const detail = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/page.tsx", "utf8")
+    const detail = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/pos/page.tsx", "utf8")
     const workspace = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/RelationshipDealWorkspace.tsx", "utf8")
     const gantt = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/RelationshipGantt.tsx", "utf8")
     const workflow = readFileSync("lib/relationship-workflow.ts", "utf8")
@@ -306,7 +306,7 @@ test("relationship selling uses the visible details workspace and four-stage rev
 
 test("legacy invoice replacement paths are retired", () => {
     const actions = readFileSync("app/[workspaceSlug]/relationships/actions.ts", "utf8")
-    const detail = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/page.tsx", "utf8")
+    const detail = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/pos/page.tsx", "utf8")
     const stripe = readFileSync("lib/stripe/api.ts", "utf8")
     assert.doesNotMatch(actions, /voidAndReopenRelationshipInvoice|voidStripeInvoice|reopen_voided_client_sale/)
     assert.doesNotMatch(detail, /VoidInvoiceButton|Sent invoice is frozen|Finish preparing replacement/)
@@ -359,8 +359,11 @@ test("mixed Checkout combines upfront fees with recurring service charges", () =
 })
 
 test("relationship and onboarding labels resolve versioned service revisions", () => {
+    const serviceRead = readFileSync("supabase/migrations/20260912130000_relationship_services_ui.sql", "utf8")
+    assert.match(serviceRead, /v.id=i.service_revision_id/)
+    assert.match(serviceRead, /v.id=s.service_revision_id/)
+
     for (const file of [
-        "app/[workspaceSlug]/relationships/page.tsx",
         "app/[workspaceSlug]/onboarding/page.tsx",
         "app/[workspaceSlug]/onboarding/[relationshipId]/page.tsx",
     ]) {

@@ -8,6 +8,7 @@ import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 export type ListAction = {
     label: string
     href?: string
+    onSelect?: () => void
     action?: () => Promise<void> | void
     copyText?: string
     danger?: boolean
@@ -26,7 +27,7 @@ export function ListActionMenu({ actions, label = "Open item actions", className
     const inheritedDetailPreview = anchor?.closest("[data-workspace-detail-preview]")?.getAttribute("data-workspace-detail-preview") ?? undefined
     const visibleActions = actions.filter((action): action is ListAction => {
         if (!action) return false
-        return Boolean(action.label && (action.href || action.action || action.copyText))
+        return Boolean(action.label && (action.href || action.action || action.onSelect || action.copyText))
     })
 
     useEffect(() => {
@@ -82,6 +83,7 @@ export function ListActionMenu({ actions, label = "Open item actions", className
                         {item.label}
                     </Link>
                 }
+                if (item.onSelect) return <button key={item.label} type="button" className={className} role="menuitem" onClick={() => { item.onSelect!(); setOpen(false) }}>{item.label}</button>
                 if (item.copyText) {
                     return <button key={item.label} type="button" className={className} role="menuitem" onClick={async () => {
                         try {

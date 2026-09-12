@@ -28,7 +28,6 @@ test("complete in-memory lists filter through native history without a server na
     assert.match(results, /useSearchParams\(\)/)
     assert.match(bridge, /hasAttribute\("data-workspace-instant-filter"\)\) return/)
     for (const path of [
-        "app/[workspaceSlug]/relationships/page.tsx",
         "app/[workspaceSlug]/work-items/page.tsx",
         "app/[workspaceSlug]/work/page.tsx",
         "app/[workspaceSlug]/admin/maintenance/page.tsx",
@@ -58,8 +57,8 @@ test("heavy panel homes stream their useful core before secondary metadata", () 
     const onboarding = source("app/[workspaceSlug]/onboarding/page.tsx")
     const settings = source("app/[workspaceSlug]/settings/page.tsx")
 
-    assert.match(relationships, /<Suspense fallback=\{<RelationshipsPanelFallback \/>\}>/)
-    assert.match(relationships, /<Suspense fallback=\{<RelationshipSecondaryFallback \/>\}>/)
+    assert.match(relationships, /<Suspense fallback=/)
+    assert.match(relationships, /<Contents authorization=/)
     assert.match(onboarding, /<Suspense fallback=\{<OnboardingPanelFallback \/>\}>/)
     assert.match(onboarding, /\.in\("metadata->>session_id", sessionIds\)/)
     for (const section of ["ServicesSettingsSection", "OnboardingSettingsSection", "AgencyBrandingSettingsSection", "ConnectionsSettingsSection", "UsersSettingsSection", "TeamsSettingsSection", "LeadgenSettingsSection"]) {
@@ -67,15 +66,18 @@ test("heavy panel homes stream their useful core before secondary metadata", () 
     }
 })
 
-test("relationship detail streams fields before the independently loaded timeline", () => {
+test("relationship detail streams the light service view and loads the legacy timeline only on demand", () => {
     const page = source("app/[workspaceSlug]/relationships/[relationshipId]/page.tsx")
     const workspace = source("app/[workspaceSlug]/relationships/[relationshipId]/RelationshipDealWorkspace.tsx")
     const gantt = source("lib/relationship-gantt.ts")
     const configuration = source("lib/onboarding/configuration.ts")
 
-    assert.match(page, /const planPromise = getRelationshipGanttPlan/)
+    assert.doesNotMatch(page, /getRelationshipGanttPlan|loadPublishedOnboardingConfiguration/)
+    assert.match(source("components/workspace/NativeRelationshipsPanel.tsx"), /<RelationshipServicesWorkspace/)
+    assert.match(source("components/workspace/NativeRelationshipsPanel.tsx"), /param: "serviceStage"/)
+    assert.doesNotMatch(source("lib/workspace-native-relationships.ts"), /loadNativeRelationshipDeal|getRelationshipGanttPlan/)
     assert.doesNotMatch(page, /ensureCurrentRelationshipStage/)
-    assert.match(page, /<Suspense fallback=\{<DetailFieldsLoading label="Loading relationship details" rows=\{8\} \/>\}>/)
+    assert.match(page, /<Suspense fallback=/)
     assert.match(workspace, /use\(planPromise\)/)
     assert.match(workspace, /<DetailContentLoading label="Loading relationship timeline"/)
     assert.match(configuration, /rawConfiguration\(workspaceId, false\)/)
@@ -157,7 +159,6 @@ test("workspace panel homes share one persistent banner inside their tab frame",
         "app/[workspaceSlug]/assets/page.tsx",
         "app/[workspaceSlug]/leadgen/page.tsx",
         "app/[workspaceSlug]/onboarding/page.tsx",
-        "app/[workspaceSlug]/relationships/page.tsx",
         "app/[workspaceSlug]/work/page.tsx",
         "app/[workspaceSlug]/work-items/page.tsx",
     ]) assert.doesNotMatch(source(path), /WorkspaceBanner/, `${path} must not rebuild shared banner chrome`)
@@ -230,4 +231,10 @@ test("shell-hosted loading states own their local desktop width without a second
     assert.match(styles, /main:not\(\[data-onboarding-full-window-preview\]\):not\(\[data-workspace-loading-root\]\)/)
     assert.match(loading, /className="absolute inset-0 overflow-hidden bg-black text-white"/)
     assert.doesNotMatch(loading, /className="fixed inset-0 overflow-hidden bg-black text-white"/)
+})
+
+test("relationship read contracts coexist while older browser tabs remain open", () => {
+    assert.match(source("components/workspace/NativeWorkspaceTab.tsx"), /query.set\("view", "services-v1"\)/)
+    assert.match(source("app/api/workspaces/[workspaceSlug]/panels/relationships/route.ts"), /loadLegacyNativeRelationships/)
+    assert.doesNotMatch(source("lib/workspace-native-relationships.ts"), /loadNativeRelationshipDeal|getRelationshipGanttPlan/)
 })

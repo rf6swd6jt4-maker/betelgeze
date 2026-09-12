@@ -1,7 +1,7 @@
 import type { WorkspaceCapability } from "./workspace-capabilities"
 
 export type RelationshipContextPerson = { id: string; name: string; avatarSrc: string | null }
-export type RelationshipContextService = { id: string; name: string; assignee: RelationshipContextPerson | null }
+export type RelationshipContextService = { id: string; name: string; stage?: string | null; assignee: RelationshipContextPerson | null }
 export type RelationshipContextDestination = "relationships" | "onboarding" | "fulfilment" | "appointment-setting"
 
 export const relationshipContextDestinations: Array<{ key: RelationshipContextDestination; path: string; label: string; capability: WorkspaceCapability }> = [

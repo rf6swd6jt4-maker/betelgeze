@@ -1,10 +1,10 @@
 "use client"
 
 import Link from "@/components/workspace/WorkspaceLink"
-import { useMemo } from "react"
 import { archiveRelationshipForNativePanel } from "@/app/[workspaceSlug]/relationships/actions"
 import { ArchiveRelationshipForm } from "@/app/[workspaceSlug]/relationships/[relationshipId]/ArchiveRelationshipForm"
-import { RelationshipDealWorkspace } from "@/app/[workspaceSlug]/relationships/[relationshipId]/RelationshipDealWorkspace"
+import { RelationshipServicesWorkspace } from "@/components/relationships/RelationshipServicesWorkspace"
+import { RelationshipBackgroundEditor } from "@/components/relationships/RelationshipBackgroundEditor"
 import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailPageHeader } from "@/components/detail"
 import { ListActionMenu, type ListAction } from "@/components/list/ListActionMenu"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
@@ -14,8 +14,8 @@ import { MobileAssignedServices } from "@/components/list/MobileAssignedServices
 import { FilterRail, FilterRailCount, FilterRailLink } from "@/components/panel/FilterRail"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { RetentionCommunicationsSetup } from "@/components/relationships/RetentionCommunicationsSetup"
-import { RelationshipStage, RoundPill, SquarePill, Status } from "@/components/ui"
-import { RELATIONSHIP_PHASES } from "@/lib/relationship-phases"
+import { RoundPill, SquarePill, Status } from "@/components/ui"
+import { SERVICE_STAGES } from "@/lib/service-stages"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import type { NativeRelationshipsSnapshot } from "@/lib/workspace-native-relationships"
 import { useSearchParams } from "./WorkspaceNavigation"
@@ -35,7 +35,6 @@ function RelationshipRow({ row, slug }: { row: ListSnapshot["rows"][number]; slu
             <ListPrimaryRow>
                 <ListTitle href={href} className="flex-1">{title}</ListTitle>
                 {row.isTest ? <SquarePill tone="yellow" className="shrink-0">Test</SquarePill> : null}
-                <RelationshipStage phase={row.phase} className="shrink-0" />
                 <span className="ml-auto shrink-0"><Status label={row.openWork > 0 ? "Open work" : "Up to date"} tone={row.openWork > 0 ? "yellow" : "green"} /></span>
             </ListPrimaryRow>
             <ListSecondaryRow>
@@ -61,31 +60,27 @@ function RelationshipRow({ row, slug }: { row: ListSnapshot["rows"][number]; slu
 
 function RelationshipList({ data }: { data: ListSnapshot }) {
     const search = useSearchParams()
-    const requested = search.get("phase")
-    const selected = RELATIONSHIP_PHASES.some((phase) => phase.key === requested) ? requested : null
-    const rows = selected ? data.rows.filter((row) => row.phase === selected) : data.rows
+    const requested = search.get("serviceStage")
+    const selected = SERVICE_STAGES.some((phase) => phase.key === requested) ? requested : null
+    const rows = selected ? data.rows.filter((row) => row.serviceStages.includes(selected as typeof row.serviceStages[number])) : data.rows
     const href = `/${data.workspaceSlug}/relationships`
     return <main className="min-h-full bg-neutral-950 px-4 pb-7 text-white sm:px-6"><div className="mx-auto max-w-7xl">
-        <PanelTabHeader title="Relationships" description="People and businesses moving through lead, sales, onboarding, fulfilment, and retention." actions={<Link href={`${href}?create=relationship`} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">Start new relationship</Link>} />
-        <FilterRail ariaLabel="Filter relationships by lifecycle stage">
-            <FilterRailLink href={href} selected={!selected} instant={{ param: "phase", value: null }}>All <FilterRailCount>{data.rows.length}</FilterRailCount></FilterRailLink>
-            {RELATIONSHIP_PHASES.map((phase) => <FilterRailLink key={phase.key} href={`${href}?phase=${phase.key}`} selected={selected === phase.key} instant={{ param: "phase", value: phase.key }}>{phase.label} <FilterRailCount>{data.rows.filter((row) => row.phase === phase.key).length}</FilterRailCount></FilterRailLink>)}
+        <PanelTabHeader title="Relationships" description="People, businesses and the services you deliver together." actions={<Link href={`${href}?create=relationship`} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">New relationship</Link>} />
+        <FilterRail ariaLabel="Filter relationships by service stage">
+            <FilterRailLink href={href} selected={!selected} instant={{ param: "serviceStage", value: null }}>All <FilterRailCount>{data.rows.length}</FilterRailCount></FilterRailLink>
+            {SERVICE_STAGES.map((phase) => <FilterRailLink key={phase.key} href={`${href}?serviceStage=${phase.key}`} selected={selected === phase.key} instant={{ param: "serviceStage", value: phase.key }}>{phase.label} <FilterRailCount>{data.rows.filter((row) => row.serviceStages.includes(phase.key)).length}</FilterRailCount></FilterRailLink>)}
         </FilterRail>
-        <List ariaLabel="Relationships">{rows.length ? rows.map((row) => <RelationshipRow key={row.id} row={row} slug={data.workspaceSlug} />) : <div className="p-6"><p className="text-lg font-semibold">No relationships match this lifecycle stage.</p><p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Choose another lifecycle stage above to broaden the list.</p></div>}</List>
+        <List ariaLabel="Relationships">{rows.length ? rows.map((row) => <RelationshipRow key={row.id} row={row} slug={data.workspaceSlug} />) : <div className="p-6"><p className="text-lg font-semibold">No relationships match this service stage.</p><p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Choose another service stage above to broaden the list.</p></div>}</List>
     </div></main>
 }
 
 function RelationshipDetail({ data }: { data: DetailSnapshot }) {
-    const planPromise = useMemo(() => Promise.resolve(data.plan), [data.plan])
     const record = data.record
     return <main className="min-h-full bg-neutral-950 px-4 py-6 text-white sm:px-6"><div className="mx-auto max-w-[92rem]"><div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]"><div className="min-w-0">
-        <DetailPageHeader category="Relationship" reference={shortId(record.id)} title={record.name} subtitle={record.businessName ?? "No company saved"} labels={<>{record.isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}<RelationshipStage phase={record.phase} /></>} facts={[{ label: "open", value: data.facts.open }, { label: "unscheduled", value: data.facts.unscheduled }]} updated={formatRelativeTime(record.updatedAt)} />
+        <DetailPageHeader category="Relationship" reference={shortId(record.id)} title={record.name} subtitle={record.businessName ?? "No company saved"} labels={<>{record.isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}</>} updated={formatRelativeTime(record.updatedAt)} />
         {data.setup ? <RetentionCommunicationsSetup {...data.setup} workspaceSlug={data.workspaceSlug} relationshipId={record.id} /> : null}
-        <RelationshipDealWorkspace key={`${data.deal.userId}:${record.id}`} {...data.deal} planPromise={planPromise} />
-        <section className="mt-5 flex flex-wrap gap-2 border-t border-neutral-900 pt-5 text-sm">
-            {["onboarding", "onboarding_review"].includes(record.phase) ? <Link href={`/${data.workspaceSlug}/onboarding/${record.id}`} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:text-white">Open onboarding detail</Link> : null}
-            {record.phase === "fulfilment" ? <Link href={`/${data.workspaceSlug}/work/${record.id}`} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:text-white">Open fulfilment detail</Link> : null}
-        </section>
+        <RelationshipServicesWorkspace key={`${data.userId}:${record.id}:services`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.services} canAdd={data.canAdd} canImport={data.canImport} canSeeHistory={data.canSeeHistory} legacy={data.legacy} />
+        <RelationshipBackgroundEditor key={`${data.userId}:${record.id}:background`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.background} updatedAt={record.updatedAt} canEdit={data.canEdit} commandsEnabled={data.backgroundCommandsEnabled} />
         {data.canArchive ? <DetailDangerZone>
             <DetailDangerAction title="Archive relationship" description="Removes it from active relationship lists and WhatsApp confirmation matching while preserving its billing records, messages, and other history." control={<ArchiveRelationshipForm action={archiveRelationshipForNativePanel.bind(null, data.workspaceSlug, record.id)} relationshipName={record.businessName ?? record.name} />} />
             <DetailDangerAction title="Delete relationship permanently" description="Permanent deletion will be enabled after the shared archive lifecycle and dependent-record safeguards are implemented." control={<DetailDangerButton type="button" tone="delete" disabled>Delete permanently</DetailDangerButton>} />

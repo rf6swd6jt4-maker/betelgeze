@@ -53,22 +53,15 @@ test("sale confirmation prepares the immutable session and payment reuses it bef
     assert.match(saleAutomation, /activateRelationshipOnboardingAfterPayment/u)
 })
 
-test("manual relationships start only at Potential Client or Retention and Retention defaults to messaging with an optional private portal handoff", () => {
-    const relationshipForm = workspaceCreateModal.slice(
-        workspaceCreateModal.indexOf('{target === "relationship"'),
-        workspaceCreateModal.indexOf('{target === "work-item"')
-    )
-    assert.match(relationshipForm, /<option value="potential_client">Potential client<\/option><option value="retention">Retention · Existing client<\/option>/u)
-    assert.doesNotMatch(relationshipForm, /<option value="(?:lead|sold|onboarding|fulfilment|completed_lost)"/u)
-    assert.match(relationshipForm, /relationshipStartPhase === "retention"[\s\S]+Preferred messaging channel/u)
-    assert.match(relationshipForm, /Choose how to set up communications in the next step\./u)
-    assert.match(relationshipActions, /creatableRelationshipPhases = new Set\(\["potential_client", "retention"\]/u)
-    assert.match(relationshipActions, /!isUsablePhoneNumber\(primaryPhone\) && !isUsablePhoneNumber\(whatsappPhone\)/u)
-    assert.match(workspaceCreateModal, /\[retentionHandoff, setRetentionHandoff\] = useState\("request_confirmation"\)/u)
-    assert.match(relationshipForm, /Share the portal link manually/u)
-    assert.match(relationshipActions, /retention_handoff: retentionHandoff/u)
-    assert.match(relationshipActions, /rpc\("create_retention_relationship"/u)
-    assert.match(relationshipActions, /sendSaleConsentTemplate\(retentionConfirmationSaleId, workspace\.id\)/u)
+test("new relationship creation is identity-only and uses an idempotent empty command", () => {
+    const relationshipForm = workspaceCreateModal.slice(workspaceCreateModal.indexOf('{target === "relationship" ? <div'), workspaceCreateModal.indexOf('{target === "work-item"'))
+    assert.match(relationshipForm, /primary_person_name/)
+    assert.match(relationshipForm, /business_name/)
+    assert.doesNotMatch(relationshipForm, /lifecycle_phase|RetentionRelationshipFields|CommunicationMethodSelector|service_id/)
+    const create = relationshipActions.slice(relationshipActions.indexOf("export async function createRelationshipFromModal"),relationshipActions.indexOf("export async function requestRetentionMessagingConfirmation"))
+    assert.match(create, /rpc\("create_empty_relationship"/)
+    assert.match(workspaceCreateModal, /relationshipRequestId.current \?\?= crypto.randomUUID/)
+    assert.doesNotMatch(create, /ensureRelationshipStage|sendSale|createOnboardingClient/)
 })
 
 test("Retention confirmation records consent without moving the relationship into onboarding", () => {

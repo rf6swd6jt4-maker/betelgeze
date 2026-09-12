@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import type { WorkspaceCreateActionState } from "@/app/[workspaceSlug]/relationships/actions"
-import { AssignmentSelector, CommunicationMethodSelector } from "@/components/ui"
-import { RetentionRelationshipFields } from "@/components/workspace/RetentionRelationshipFields"
+import { usePathname } from "@/components/workspace/WorkspaceNavigation"
+import { AssignmentSelector } from "@/components/ui"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 
 export type WorkspaceCreateTarget = "relationship" | "work-item" | "asset" | "okr"
@@ -38,14 +38,13 @@ function defaultOkrPeriod() {
 }
 
 export function WorkspaceCreateModal({ target, workspace, currentUserId, username, currentUserRole, createRelationshipAction, createWorkItemAction, createAssetAction, createOkrAction, onClose, onCreated }: Props) {
-    const retentionRequestId = useRef<string | null>(null)
-    const [retentionStep, setRetentionStep] = useState<1 | 2>(1)
-    const [retentionHandoff, setRetentionHandoff] = useState("request_confirmation")
-    const [retentionReady, setRetentionReady] = useState(false)
-    const [relationshipStartPhase, setRelationshipStartPhase] = useState<"potential_client" | "retention">("potential_client")
-    const [relationshipPhone, setRelationshipPhone] = useState("")
-    const [relationshipWhatsappPhone, setRelationshipWhatsappPhone] = useState("")
-    const [relationshipCommunicationPreference, setRelationshipCommunicationPreference] = useState<"" | "twilio_sms" | "meta_whatsapp">("")
+    const dialogRef = useRef<HTMLDialogElement | null>(null)
+    // Other create modes retain their established host for portalled selectors.
+    const ModalTag = target === "relationship" ? "dialog" : "div"
+    useEffect(() => { const dialog = dialogRef.current; dialog?.showModal(); return () => dialog?.close() }, [target])
+    const pathname = usePathname()
+    const linkedRelationshipId = pathname.match(/\/relationships\/([a-f0-9-]{36})(?:\/|$)/i)?.[1] ?? ""
+    const relationshipRequestId = useRef<string | null>(null)
     const [okrOwnerId, setOkrOwnerId] = useState(currentUserId)
     const [options, setOptions] = useState<CreateOptions>(EMPTY_OPTIONS)
     const [optionsLoading, setOptionsLoading] = useState(target !== "relationship")
@@ -77,17 +76,10 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
         event.preventDefault()
         setCreateError(null)
         const form = event.currentTarget
-        if (target === "relationship" && relationshipStartPhase === "retention" && retentionStep === 1) {
-            if (!retentionReady) { setCreateError("Complete the service and appointment setup first."); return }
-            setRetentionStep(2)
-            form.scrollTop = 0
-            return
-        }
         const formData = new FormData(form)
-        if (target === "relationship" && relationshipStartPhase === "retention") {
-            if (!retentionReady) { setCreateError("Complete the service and appointment setup first."); return }
-            retentionRequestId.current ??= crypto.randomUUID()
-            formData.set("retention_request_id", retentionRequestId.current)
+        if (target === "relationship") {
+            relationshipRequestId.current ??= crypto.randomUUID()
+            formData.set("relationship_request_id", relationshipRequestId.current)
         }
 
         if (target === "asset") {
@@ -122,6 +114,7 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
         }
 
         startCreateTransition(async () => {
+            try {
             const result = await runWorkspaceMutation(() => target === "relationship"
                 ? createRelationshipAction(formData)
                 : target === "work-item"
@@ -135,73 +128,52 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
             }
             form.reset()
             onCreated(result, target)
+            } catch { setCreateError("The save could not be confirmed. Retry to recover this same relationship.") }
         })
     }
 
     const title = target === "relationship" ? "Add relationship" : target === "work-item" ? "Add work item" : target === "asset" ? "Add asset" : "Create OKR"
     const submitLabel = target === "relationship"
-        ? relationshipStartPhase === "retention" ? retentionStep === 1 ? "Continue to Comms" : "Add retention client" : "Create relationship"
+        ? "Create relationship"
         : target === "work-item" ? "Create work item"
             : target === "asset" ? "Create asset"
                 : "Create OKR"
     const ownerOptions = options.okrOwnerOptions.length ? options.okrOwnerOptions : [{ id: currentUserId, label: username, role: currentUserRole }]
 
-    return <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="workspace-create-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    return <ModalTag ref={(node: HTMLElement | null) => { dialogRef.current = node instanceof HTMLDialogElement ? node : null }} role="dialog" aria-modal="true" className={`fixed inset-0 z-[90] m-0 h-dvh max-h-none w-full max-w-none items-center justify-center border-0 bg-black/70 px-4 py-6 backdrop-blur-sm ${target === "relationship" ? "open:flex" : "flex"}`} aria-labelledby="workspace-create-title" onCancel={event => { event.preventDefault(); if (!isCreating) onClose() }} onMouseDown={event => { if (!isCreating && event.target === event.currentTarget) onClose() }}>
         <div className="betelgeze-popup-enter w-full max-w-xl overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-white shadow-2xl shadow-black/50">
             <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3 sm:px-5">
                 <div><p className="text-xs text-neutral-500">Create in {workspace.name}</p><h2 id="workspace-create-title" className="text-lg font-semibold">{title}</h2></div>
-                <button data-icon-button type="button" onClick={onClose} aria-label="Close create panel" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white"><span aria-hidden="true" className="text-xl leading-none">×</span></button>
+                <button data-icon-button type="button" onClick={onClose} disabled={isCreating} aria-label="Close create panel" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white"><span aria-hidden="true" className="text-xl leading-none">×</span></button>
             </div>
             <form onSubmit={submitCreate} className="max-h-[min(70vh,42rem)] overflow-y-auto px-4 py-4 sm:px-5">
-                {target === "relationship" ? <div className="space-y-5">
-                    <label className="block text-sm text-neutral-300">Stage<select name="lifecycle_phase" value={relationshipStartPhase} disabled={isCreating || retentionStep === 2} onChange={(event) => { setRelationshipStartPhase(event.target.value as "potential_client" | "retention"); setRetentionStep(1) }} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="potential_client">Potential client</option><option value="retention">Retention · Existing client</option></select></label>
-                    {retentionStep === 2 ? <input type="hidden" name="lifecycle_phase" value={relationshipStartPhase} /> : null}
-                    {relationshipStartPhase === "retention" ? <p className="text-sm text-neutral-400" aria-live="polite">Step {retentionStep} of 2 · {retentionStep === 1 ? "Client details and services" : "Comms"}</p> : null}
-                    <div hidden={relationshipStartPhase === "retention" && retentionStep === 2} className="space-y-5">
-                    <section className="grid gap-3 sm:grid-cols-2">
-                        <label className="block text-sm text-neutral-300 sm:col-span-2">Name<input name="primary_person_name" required autoFocus placeholder="Person or primary contact" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label>
-                        <label className="block text-sm text-neutral-300">Company<input name="business_name" placeholder="Optional" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label>
-
-                    </section>
-                    <section className="border-t border-neutral-900 pt-4"><p className="mb-3 text-xs font-medium text-neutral-500">Contact details</p><div className="grid gap-3 sm:grid-cols-2">
-                        <label className="block text-sm text-neutral-300">Email<input name="primary_email" type="email" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label>
-                        <label className="block text-sm text-neutral-300">Phone number<input name="primary_phone" type="tel" value={relationshipPhone} onChange={(event) => { const value = event.target.value; setRelationshipPhone(value); if (!value.trim() && relationshipCommunicationPreference === "twilio_sms") setRelationshipCommunicationPreference("") }} required={relationshipStartPhase === "retention" && !relationshipWhatsappPhone.trim()} aria-describedby={relationshipStartPhase === "retention" ? "retention-phone-help" : undefined} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label>
-                        <label className="block text-sm text-neutral-300">WhatsApp number<input name="whatsapp_phone" type="tel" value={relationshipWhatsappPhone} onChange={(event) => { const value = event.target.value; setRelationshipWhatsappPhone(value); if (!value.trim() && relationshipCommunicationPreference === "meta_whatsapp") setRelationshipCommunicationPreference("") }} required={relationshipStartPhase === "retention" && !relationshipPhone.trim()} aria-describedby={relationshipStartPhase === "retention" ? "retention-phone-help" : undefined} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label>
-
-                        <label className="block text-sm text-neutral-300">Role<input name="primary_contact_role" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label>
-                        <label className="block text-sm text-neutral-300">Website<input name="website_url" type="url" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label>
-                        {relationshipStartPhase === "potential_client" ? <div className="text-sm text-neutral-300 sm:col-span-2"><p>Preferred messaging channel</p><span className="mt-1.5 block"><CommunicationMethodSelector name="communication_primary_provider" value={relationshipCommunicationPreference} onChange={(value) => { if (value !== "phone") setRelationshipCommunicationPreference(value) }} appearance="input" placeholder="Choose or set automatically" ariaLabel="Preferred messaging channel" choices={[{ value: "meta_whatsapp", label: "WhatsApp", description: "Use the client's WhatsApp number", disabled: !relationshipWhatsappPhone.trim() }, { value: "twilio_sms", label: "Twilio SMS", description: "Use the client's mobile number", disabled: !relationshipPhone.trim() }]} /></span></div> : null}
-                        <label className="flex h-10 items-center gap-2 self-end text-sm text-neutral-300"><input name="is_test" type="checkbox" className="h-4 w-4 rounded border-neutral-700 bg-black" />Test client?</label>
-                    </div>{relationshipStartPhase === "retention" ? <p id="retention-phone-help" className="mt-2 text-xs text-neutral-500">Add at least one number. Choose how to set up communications in the next step.</p> : null}</section>
-                    {relationshipStartPhase === "retention" ? <RetentionRelationshipFields workspaceSlug={workspace.slug} currentUserId={currentUserId} onReady={setRetentionReady} /> : null}
-                    <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Industry<input name="industry_value" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Location<input name="location_value" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Source<input name="source_label" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300 sm:col-span-2">Notes<textarea name="notes_summary" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label></section>
+                {target === "relationship" ? <div className="space-y-4">
+                    <p className="text-sm leading-6 text-neutral-400">Start with the person. Add their services from the relationship page.</p>
+                    <label className="block text-sm text-neutral-300">Name<input name="primary_person_name" maxLength={200} required autoFocus autoComplete="name" placeholder="Person or primary contact" className="mt-1.5 h-11 w-full rounded-lg border border-neutral-700 bg-black px-3 text-base text-white" /></label>
+                    <label className="block text-sm text-neutral-300">Company <span className="text-neutral-500">· optional</span><input name="business_name" maxLength={200} autoComplete="organization" className="mt-1.5 h-11 w-full rounded-lg border border-neutral-700 bg-black px-3 text-base text-white" /></label>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <label className="block text-sm text-neutral-300">Email <span className="text-neutral-500">· optional</span><input name="primary_email" type="email" maxLength={320} autoComplete="email" className="mt-1.5 h-11 w-full rounded-lg border border-neutral-700 bg-black px-3 text-base text-white" /></label>
+                        <label className="block text-sm text-neutral-300">Phone <span className="text-neutral-500">· optional</span><input name="primary_phone" type="tel" maxLength={80} autoComplete="tel" className="mt-1.5 h-11 w-full rounded-lg border border-neutral-700 bg-black px-3 text-base text-white" /></label>
                     </div>
-                    {relationshipStartPhase === "retention" ? <section hidden={retentionStep !== 2} className="space-y-4" aria-label="Retention communications">
-                        <div className="space-y-2"><h3 className="text-sm font-medium">Client portal access</h3><p className="text-sm text-neutral-400">Send a messaging confirmation request. Once the client confirms, their portal link is sent automatically on the selected channel.</p></div>
-                        {relationshipStartPhase === "retention" ? <label className="block text-sm text-neutral-300">Preferred messaging channel<span className="mt-1.5 block"><CommunicationMethodSelector name="communication_primary_provider" value={relationshipCommunicationPreference} onChange={(value) => { if (value !== "phone") setRelationshipCommunicationPreference(value) }} required={retentionStep === 2} appearance="input" placeholder="Choose a channel" ariaLabel="Preferred messaging channel" choices={[{ value: "meta_whatsapp", label: "WhatsApp", description: "Use the client's WhatsApp number", disabled: !relationshipWhatsappPhone.trim() }, { value: "twilio_sms", label: "Twilio SMS", description: "Use the client's mobile number", disabled: !relationshipPhone.trim() }]} /></span></label> : null}
-                        <fieldset className="space-y-3"><legend className="mb-2 text-sm font-medium">Messaging setup</legend>
-                            <label className="flex items-start gap-2 text-sm"><input type="radio" name="retention_handoff" value="request_confirmation" checked={retentionHandoff === "request_confirmation"} onChange={() => setRetentionHandoff("request_confirmation")} className="mt-1" /><span>Send the portal link through messaging<span className="mt-1 block text-xs text-neutral-500">WhatsApp sends the approved confirmation request first, then the portal link after the client confirms. SMS requires recorded opt-in.</span></span></label>
-                            <label className="flex items-start gap-2 text-sm"><input type="radio" name="retention_handoff" value="portal_only" checked={retentionHandoff === "portal_only"} onChange={() => setRetentionHandoff("portal_only")} className="mt-1" /><span>Share the portal link manually<span className="mt-1 block text-xs text-neutral-500">BE privately sends you the link in Comms → Team. Share it only with the intended client. No messaging confirmation is sent now.</span></span></label>
-                        </fieldset>
-                    </section> : null}
+                    <details className="text-sm text-neutral-400"><summary className="cursor-pointer py-2">More options</summary><label className="flex min-h-11 items-center gap-2"><input name="is_test" type="checkbox" />Test relationship</label></details>
                 </div> : null}
 
                 {target === "work-item" ? <div className="space-y-5">
                     <section className="grid gap-3 sm:grid-cols-2"><label className="block text-sm text-neutral-300 sm:col-span-2">Title<input name="title" required autoFocus placeholder="What needs to happen?" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label><label className="block text-sm text-neutral-300">Stage<select name="lifecycle_phase" defaultValue="fulfilment" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="lead">Lead</option><option value="onboarding">Onboarding</option><option value="fulfilment">Fulfilment</option><option value="retention">Retention</option></select></label><label className="block text-sm text-neutral-300">Status<select name="status" defaultValue="todo" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white"><option value="todo">To do</option><option value="doing">In progress</option><option value="waiting">Waiting</option><option value="blocked">Blocked</option><option value="done">Done</option></select></label></section>
                     <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><div><p className="text-sm text-neutral-300">Start</p><div className="mt-1.5 grid grid-cols-[1fr_5.5rem] gap-2"><input name="planned_start_date" type="date" aria-label="Start date" className="h-10 min-w-0 rounded-lg border border-neutral-700 bg-black px-3 text-white" /><input name="planned_start_time" type="time" aria-label="Start time" className="h-10 min-w-0 rounded-lg border border-neutral-700 bg-black px-2 text-white" /></div></div><div><p className="text-sm text-neutral-300">Due</p><div className="mt-1.5 grid grid-cols-[1fr_5.5rem] gap-2"><input name="due_date" type="date" aria-label="Due date" className="h-10 min-w-0 rounded-lg border border-neutral-700 bg-black px-3 text-white" /><input name="due_time" type="time" aria-label="Due time" className="h-10 min-w-0 rounded-lg border border-neutral-700 bg-black px-2 text-white" /></div></div></section>
-                    <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Linked relationship<select name="relationship_id" defaultValue="" disabled={optionsLoading} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white disabled:opacity-60"><option value="">{optionsLoading ? "Loading…" : "None"}</option>{options.relationshipOptions.map((relationship) => <option key={relationship.id} value={relationship.id}>{relationship.label}</option>)}</select></label><label className="block text-sm text-neutral-300">Parent work item<select name="parent_work_item_id" defaultValue="" disabled={optionsLoading} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white disabled:opacity-60"><option value="">{optionsLoading ? "Loading…" : "None"}</option>{options.workItemOptions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><label className="flex items-center gap-2 text-sm text-neutral-400 sm:col-span-2"><input name="wait_for_parent" type="checkbox" value="off" className="h-4 w-4 rounded border-neutral-700 bg-black" /> Can start before its parent is complete</label></section>
+                    <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Linked relationship<select name="relationship_id" defaultValue={linkedRelationshipId} disabled={optionsLoading} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white disabled:opacity-60"><option value="">{optionsLoading ? "Loading…" : "None"}</option>{options.relationshipOptions.map((relationship) => <option key={relationship.id} value={relationship.id}>{relationship.label}</option>)}</select></label><label className="block text-sm text-neutral-300">Parent work item<select name="parent_work_item_id" defaultValue="" disabled={optionsLoading} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white disabled:opacity-60"><option value="">{optionsLoading ? "Loading…" : "None"}</option>{options.workItemOptions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><label className="flex items-center gap-2 text-sm text-neutral-400 sm:col-span-2"><input name="wait_for_parent" type="checkbox" value="off" className="h-4 w-4 rounded border-neutral-700 bg-black" /> Can start before its parent is complete</label></section>
                     <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-[1fr_auto]"><label className="block text-sm text-neutral-300">Description<textarea name="description" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label><div className="flex items-end"><label className="flex h-10 items-center gap-2 whitespace-nowrap text-sm text-neutral-300"><input name="is_key_task" type="checkbox" defaultChecked className="h-4 w-4 rounded border-neutral-700 bg-black" /> Key task</label><input name="priority" type="hidden" value="3" /></div></section>
                 </div> : null}
 
-                {target === "asset" ? <div className="space-y-5"><section className="space-y-3"><label className="block text-sm text-neutral-300">File<input name="asset_file" type="file" required autoFocus className="mt-1.5 block w-full rounded-lg border border-dashed border-neutral-700 bg-black px-3 py-3 text-sm text-neutral-300 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-black" /></label><label className="block text-sm text-neutral-300">Title<input name="title" placeholder="Defaults to the file name" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label></section><section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Link to relationship<select name="relationship_id" defaultValue="" disabled={optionsLoading} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white disabled:opacity-60"><option value="">{optionsLoading ? "Loading…" : "None"}</option>{options.relationshipOptions.map((relationship) => <option key={relationship.id} value={relationship.id}>{relationship.label}</option>)}</select></label><label className="block text-sm text-neutral-300">Link to work item<select name="work_item_id" defaultValue="" disabled={optionsLoading} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white disabled:opacity-60"><option value="">{optionsLoading ? "Loading…" : "None"}</option>{options.workItemOptions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label></section><label className="block border-t border-neutral-900 pt-4 text-sm text-neutral-300">Description<textarea name="description" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label></div> : null}
+                {target === "asset" ? <div className="space-y-5"><section className="space-y-3"><label className="block text-sm text-neutral-300">File<input name="asset_file" type="file" required autoFocus className="mt-1.5 block w-full rounded-lg border border-dashed border-neutral-700 bg-black px-3 py-3 text-sm text-neutral-300 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-black" /></label><label className="block text-sm text-neutral-300">Title<input name="title" placeholder="Defaults to the file name" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label></section><section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Link to relationship<select name="relationship_id" defaultValue={linkedRelationshipId} disabled={optionsLoading} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white disabled:opacity-60"><option value="">{optionsLoading ? "Loading…" : "None"}</option>{options.relationshipOptions.map((relationship) => <option key={relationship.id} value={relationship.id}>{relationship.label}</option>)}</select></label><label className="block text-sm text-neutral-300">Link to work item<select name="work_item_id" defaultValue="" disabled={optionsLoading} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white disabled:opacity-60"><option value="">{optionsLoading ? "Loading…" : "None"}</option>{options.workItemOptions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label></section><label className="block border-t border-neutral-900 pt-4 text-sm text-neutral-300">Description<textarea name="description" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label></div> : null}
 
                 {target === "okr" ? <div className="space-y-5"><section className="grid gap-3 sm:grid-cols-2"><label className="block text-sm text-neutral-300 sm:col-span-2">Objective<input name="objective" required autoFocus placeholder="Increase reliable monthly sales" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label><label className="block text-sm text-neutral-300 sm:col-span-2">Description<textarea name="description" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label></section><section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Starts<input name="period_start" type="date" defaultValue={okrPeriod.start} required className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Deadline<input name="period_end" type="date" defaultValue={okrPeriod.end} required className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><div className="text-sm text-neutral-300"><p>Owner</p><span className="mt-1.5 block"><AssignmentSelector name="owner_user_id" value={okrOwnerId} onChange={setOkrOwnerId} people={ownerOptions.map((owner) => ({ id: owner.id, name: owner.label, avatarSrc: owner.avatarSrc, description: owner.role }))} required appearance="input" ariaLabel="Objective owner" title="Assign Objective owner" /></span></div></section><p className="text-xs leading-5 text-neutral-500">This will be saved as a fully editable draft. Add and review its Key Results from the OKRs table before committing it.</p></div> : null}
 
                 {optionsError ? <p className="mt-4 text-xs text-amber-300">{optionsError} You can still create this item without an optional link.</p> : null}
                 {createError ? <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{createError}</p> : null}
                 {uploadLabel ? <p className="mt-4 text-sm text-neutral-400">{uploadLabel}</p> : null}
-                <div className="mt-5 flex justify-end gap-3">{target === "relationship" && relationshipStartPhase === "retention" && retentionStep === 2 ? <button type="button" disabled={isCreating} onClick={() => { setRetentionStep(1); setCreateError(null) }} className="min-h-10 px-3 text-sm text-neutral-300">Back</button> : null}<button disabled={isCreating || Boolean(uploadLabel) || (target === "relationship" && relationshipStartPhase === "retention" && (!retentionReady || (retentionStep === 2 && !relationshipCommunicationPreference)))} className="inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating..." : submitLabel}</button></div>
+                <div className="mt-5 flex justify-end gap-3"><button disabled={isCreating || Boolean(uploadLabel)} className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating…" : submitLabel}</button></div>
             </form>
         </div>
-    </div>
+    </ModalTag>
 }

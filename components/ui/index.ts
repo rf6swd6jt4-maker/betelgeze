@@ -16,3 +16,5 @@ export { Selector, SelectorDrawer, SelectorOption, SelectorTrigger } from "./Sel
 export type { SelectorAppearance, SelectorOptionDefinition } from "./Selector"
 export { TrendChart } from "./TrendChart"
 export type { TrendChartBand, TrendChartLabel, TrendChartPoint, TrendChartTick } from "./TrendChart"
+
+export { ServiceStage } from "./ServiceStage"

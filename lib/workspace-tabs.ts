@@ -75,6 +75,7 @@ export type WorkspaceTabRelationshipContext = {
     metrics: WorkspaceTabContextMetric[]
     services?: RelationshipContextService[]
     manager?: RelationshipContextPerson | null
+    servicesHasMore?: boolean
     teamUnavailable?: boolean
     allowedDestinations?: RelationshipContextDestination[]
 }

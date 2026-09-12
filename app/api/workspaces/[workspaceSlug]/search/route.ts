@@ -7,7 +7,6 @@ import {
     listRelationshipsForWorkspace,
     onboardingDetailHref,
     relationshipHubHref,
-    relationshipNativeLocation,
     relationshipSearchHaystack,
     workItemHref,
     workspaceHref,
@@ -149,6 +148,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
     const canAccessPrivatePanels = canAccessPrivateWorkspacePanels(role)
     const canAccessCommunications = workspaceAccessHasCapability(workspaceAccess, "communications.manage")
     const canAccessLibrary = workspaceAccessHasCapability(workspaceAccess, "library.manage")
+    const canAccessRelationships = workspaceAccessHasCapability(workspaceAccess, "relationships.view")
     const canAccessOnboarding = workspaceAccessHasCapability(workspaceAccess, "onboarding.manage")
 
     const rawQuery = request.nextUrl.searchParams.get("q") ?? ""
@@ -168,10 +168,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
             "Relationship",
             relationship.primary_person_name,
             relationship.business_name ?? relationship.primary_email ?? relationship.primary_phone ?? "Relationship Hub",
-            role === "staff" ? staffHref : relationshipNativeLocation(workspace.slug, relationship),
+            canAccessRelationships ? relationshipHubHref(workspace.slug, relationship.id) : staffHref,
             {
-                hubHref: role === "staff" ? undefined : relationshipHubHref(workspace.slug, relationship.id),
-                path: role === "staff" ? `${workspace.name} > ${canAccessOnboarding ? "Onboarding" : "Fulfilment"}` : `${workspace.name} > Relationships`,
+                hubHref: canAccessRelationships ? relationshipHubHref(workspace.slug, relationship.id) : undefined,
+                path: canAccessRelationships ? `${workspace.name} > Relationships` : `${workspace.name} > ${canAccessOnboarding ? "Onboarding" : "Fulfilment"}`,
                 recordId: shortId(relationship.id),
             }
         ))

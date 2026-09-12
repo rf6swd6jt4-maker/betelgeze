@@ -34,6 +34,7 @@ export async function readNativePanel({ url, workspaceSlug, workspaceId, userId,
     const route = nativeWorkspaceRoute(url, workspaceSlug)
     if (!route) throw new Error("This panel is not available in the native workspace")
     const query = new URLSearchParams(new URL(route.key, "http://workspace.invalid").search)
+    if (route.kind === "relationships") query.set("view", "services-v1")
     if (route.relationshipId) query.set("id", route.relationshipId)
     if (route.kind === "assets" || route.kind === "work-items") query.set("kind", route.kind)
     if (route.section) query.set("section", route.section)

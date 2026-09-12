@@ -5,7 +5,7 @@ import test from "node:test"
 const canonicalListPages = [
     "app/[workspaceSlug]/leadgen/page.tsx",
     "app/[workspaceSlug]/leadgen/polls/page.tsx",
-    "app/[workspaceSlug]/relationships/page.tsx",
+    "components/workspace/NativeRelationshipsPanel.tsx",
     "app/[workspaceSlug]/onboarding/page.tsx",
     "app/[workspaceSlug]/work/page.tsx",
     "app/[workspaceSlug]/work-items/page.tsx",

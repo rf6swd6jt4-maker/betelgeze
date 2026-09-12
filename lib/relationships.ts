@@ -869,7 +869,6 @@ export function relationshipSearchHaystack(relationship: RelationshipRecord) {
         relationship.source_label,
         relationship.primary_contact_role,
         relationship.notes_summary,
-        relationship.lifecycle_phase,
     ].filter(Boolean).join(" ").toLowerCase()
 }
 

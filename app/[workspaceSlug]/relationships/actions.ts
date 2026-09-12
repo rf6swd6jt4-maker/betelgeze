@@ -15,14 +15,13 @@ import {
 } from "@/lib/relationships"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
-import { advanceRelationshipWorkflow, ensureRelationshipStage, ensureSalesStage, finalizeRelationshipSaleConfirmation, prepareRelationshipSale } from "@/lib/relationship-workflow"
+import { advanceRelationshipWorkflow, ensureSalesStage, finalizeRelationshipSaleConfirmation, prepareRelationshipSale } from "@/lib/relationship-workflow"
 import { sendSaleConsentTemplate } from "@/lib/client-sales/automation"
 import { sendSaleSmsConfirmationIfOptedIn } from "@/lib/client-sales/sms-consent"
 import type { StripeRecurringInterval } from "@/lib/stripe/api"
 import { WORKSPACE_TAB_FRAME_PARAM, workspaceTabFrameUrl } from "@/lib/workspace-tabs"
-import { isUsablePhoneNumber, normalizeProviderAddress, resolvePrimaryMessagingProvider, toE164Recipient } from "@/lib/client-messages/addresses"
+import { resolvePrimaryMessagingProvider } from "@/lib/client-messages/addresses"
 
-const creatableRelationshipPhases = new Set(["potential_client", "retention"] as const)
 const creatableAssetKinds = new Set(["file", "media", "document"])
 
 export type WorkspaceCreateActionState = {
@@ -87,6 +86,10 @@ async function requireRelationshipSeller(slug: string, relationshipId?: string) 
     const { data, error } = await supabaseAdmin.rpc("workspace_user_can_sell", { p_workspace_id: context.workspace.id, p_user_id: context.user.id })
     if (error || data !== true) throw new Error("Your account is not enabled for selling")
     if (relationshipId) {
+        const instances = await supabaseAdmin.from("relationship_service_instances").select("id").eq("workspace_id", context.workspace.id).eq("relationship_id", relationshipId).is("import_id", null).limit(1)
+        if (instances.error) throw new Error("Could not verify the relationship's sales flow")
+        if (instances.data?.length) throw new Error("Use the service-based POS for this relationship. Its service selections cannot be sold through the previous POS.")
+
         await requireRelationshipAccess(context.access, relationshipId)
         const { data: relationship } = await supabaseAdmin.from("relationships").select("seller_user_id, pos_started_at").eq("workspace_id", context.workspace.id).eq("id", relationshipId).single()
         if (relationship?.pos_started_at && relationship.seller_user_id !== context.user.id) throw new Error("This POS belongs to another seller")
@@ -111,125 +114,15 @@ export async function createRelationship(slug: string, formData: FormData) {
 
 export async function createRelationshipFromModal(slug: string, formData: FormData): Promise<WorkspaceCreateActionState> {
     const { workspace, user } = await requireRelationshipSeller(slug)
-    const primaryPersonName = formString(formData, "primary_person_name")
-    const businessName = nullableFormString(formData, "business_name")
-    const requestedPhase = formString(formData, "lifecycle_phase")
-    const phase = creatableRelationshipPhases.has(requestedPhase as "potential_client" | "retention")
-        ? requestedPhase as "potential_client" | "retention"
-        : null
-    const isTest = formData.get("is_test") === "on"
-    const primaryPhone = nullableFormString(formData, "primary_phone")
-    const whatsappPhone = nullableFormString(formData, "whatsapp_phone")
-    const requestedPrimaryProvider = formString(formData, "communication_primary_provider")
-    const retentionHandoff = formString(formData, "retention_handoff")
-
-    if (!primaryPersonName || !phase) {
-        return { ok: false, error: "missing-fields" }
-    }
-    if (phase === "retention") {
-        if (!["portal_only", "request_confirmation"].includes(retentionHandoff)) return { ok: false, error: "Choose how to set up communications." }
-        if (requestedPrimaryProvider !== "twilio_sms" && requestedPrimaryProvider !== "meta_whatsapp") {
-            return { ok: false, error: "Choose the client's preferred communication channel." }
-        }
-        if (!isUsablePhoneNumber(primaryPhone) && !isUsablePhoneNumber(whatsappPhone)) {
-            return { ok: false, error: "Add a usable phone number or WhatsApp number." }
-        }
-        if (requestedPrimaryProvider === "twilio_sms" && !isUsablePhoneNumber(primaryPhone)) {
-            return { ok: false, error: "Add a usable phone number for the selected SMS channel." }
-        }
-        if (requestedPrimaryProvider === "meta_whatsapp" && !isUsablePhoneNumber(whatsappPhone)) {
-            return { ok: false, error: "Add a usable WhatsApp number for the selected WhatsApp channel." }
-        }
-    }
-    const communicationPrimaryProvider = resolvePrimaryMessagingProvider({
-        requestedProvider: requestedPrimaryProvider === "twilio_sms" ? "twilio_sms" : "meta_whatsapp",
-        smsPhone: primaryPhone,
-        whatsappPhone,
+    const requestId = formString(formData, "relationship_request_id")
+    if (!/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(requestId)) return { ok: false, error: "Close and reopen the form to start a new relationship." }
+    const { data, error } = await supabaseAdmin.rpc("create_empty_relationship", {
+        p_workspace_id: workspace.id, p_actor_user_id: user.id, p_request_id: requestId,
+        p_details: { name: formString(formData, "primary_person_name"), company: formString(formData, "business_name"), email: formString(formData, "primary_email"), phone: formString(formData, "primary_phone"), isTest: formData.get("is_test") === "on" },
     })
-
-    const details = {
-        primary_person_name: primaryPersonName,
-        primary_email: nullableFormString(formData, "primary_email"),
-        primary_phone: primaryPhone,
-        whatsapp_phone: whatsappPhone,
-        business_name: businessName,
-        website_url: nullableFormString(formData, "website_url"),
-        industry_value: nullableFormString(formData, "industry_value"),
-        location_value: nullableFormString(formData, "location_value"),
-        source_label: nullableFormString(formData, "source_label") ?? "Manual",
-        primary_contact_role: nullableFormString(formData, "primary_contact_role"),
-        notes_summary: nullableFormString(formData, "notes_summary"),
-    }
-    let relationship: { id: string }
-    let retentionConfirmationSaleId: string | null = null
-    const retentionRequiresSmsConsent = communicationPrimaryProvider === "twilio_sms"
-    if (phase === "retention") {
-        let services: unknown
-        try { services = JSON.parse(formString(formData, "retention_services")) }
-        catch { return { ok: false, error: "Complete the service and appointment setup first." } }
-        const requestId = formString(formData, "retention_request_id")
-        if (!/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(requestId) || !Array.isArray(services) || !services.length) {
-            return { ok: false, error: "Choose at least one service and complete its delivery setup." }
-        }
-        const { data, error } = await supabaseAdmin.rpc("create_retention_relationship", {
-            p_workspace_id: workspace.id,
-            p_actor_user_id: user.id,
-            p_request_id: requestId,
-            p_details: {
-                ...details, is_test: isTest,
-                portal_base_url: process.env.NEXT_PUBLIC_SITE_URL,
-                retention_handoff: retentionHandoff,
-                fulfilment_manager_user_id: nullableFormString(formData, "fulfilment_manager_user_id"),
-                communication_primary_provider: communicationPrimaryProvider,
-                confirmation_address: normalizeProviderAddress(communicationPrimaryProvider, (retentionRequiresSmsConsent ? primaryPhone : whatsappPhone) ?? ""),
-                sms_recipient_e164: retentionRequiresSmsConsent ? toE164Recipient(primaryPhone ?? "") : null,
-            },
-            p_services: services,
-        })
-        if (error || !data?.relationship_id || !data?.sale_id) {
-            return { ok: false, error: error?.code === "P0001" ? error.message : "The retention client could not be saved. Check the setup and try again." }
-        }
-        relationship = { id: data.relationship_id }
-        retentionConfirmationSaleId = data.sale_id
-    } else {
-        const { data, error } = await supabaseAdmin.from("relationships").insert({
-            ...details, workspace_id: workspace.id, source_type: "manual", lifecycle_phase: phase, status: "active",
-            communication_primary_provider: communicationPrimaryProvider,
-            source_metadata: { created_from: "manual_relationship_form", created_by: user.id, is_test: isTest },
-        }).select("id").single()
-        if (error || !data) return { ok: false, error: "create-failed" }
-        relationship = data
-        try {
-            await ensureRelationshipStage({ workspaceId: workspace.id, relationshipId: relationship.id, phase, assigneeId: user.id })
-        } catch {
-            await supabaseAdmin.from("relationships").delete().eq("workspace_id", workspace.id).eq("id", relationship.id)
-            return { ok: false, error: "workflow-create-failed" }
-        }
-    }
-
-    let retentionConfirmationSent = false
-    if (retentionConfirmationSaleId && retentionHandoff === "request_confirmation") {
-        const confirmation = retentionRequiresSmsConsent
-            ? await sendSaleSmsConfirmationIfOptedIn({ workspaceId: workspace.id, saleId: retentionConfirmationSaleId }).catch(() => ({ ok: false as const }))
-            : await sendSaleConsentTemplate(retentionConfirmationSaleId, workspace.id).catch(() => ({ ok: false as const }))
-        if (!confirmation.ok) {
-            relationshipRevalidatePaths(slug, relationship.id)
-            return {
-                ok: true,
-                href: relationshipHubHref(slug, relationship.id),
-                notice: "Relationship added, but messaging confirmation could not be sent. Retry from the relationship’s communications setup. The portal link will be sent after confirmation.",
-            }
-        }
-        retentionConfirmationSent = "sent" in confirmation ? confirmation.sent : !("inProgress" in confirmation && confirmation.inProgress)
-    }
-
-    relationshipRevalidatePaths(slug, relationship.id)
-
-    return {
-        ok: true,
-        href: relationshipHubHref(slug, relationship.id),
-        ...(phase === "retention" ? { notice: retentionHandoff === "portal_only" ? "Relationship added. BE sent your portal link in Comms → Team. Messaging can be connected later." : `Relationship added.${retentionRequiresSmsConsent && !retentionConfirmationSent ? " Waiting for SMS opt-in." : " Messaging confirmation requested."} The portal link will be sent automatically after the client confirms.` } : {}),
-    }
+    if (error || !data) return { ok: false, error: error?.code === "P0001" ? error.message : "The save could not be confirmed. Retry to recover this same relationship." }
+    relationshipRevalidatePaths(slug, data)
+    return { ok: true, href: relationshipHubHref(slug, data) }
 }
 
 export async function requestRetentionMessagingConfirmation(slug: string, relationshipId: string) {
@@ -448,8 +341,9 @@ export async function saveRelationshipBackgroundDetails(slug: string, relationsh
     const { data: relationship, error: relationshipError } = await supabaseAdmin.from("relationships")
         .select("seller_user_id, fulfilment_manager_user_id, pos_started_at, updated_at").eq("workspace_id", workspace.id).eq("id", relationshipId).maybeSingle()
     if (relationshipError || !relationship) return { ok: false, error: relationshipError?.message ?? "The relationship could not be found" }
-    if (role !== "owner" && role !== "admin" && relationship.seller_user_id !== user.id && relationship.fulfilment_manager_user_id !== user.id && relationship.pos_started_at) {
-        return { ok: false, error: "Only this relationship's seller or a workspace admin can update its details" }
+    if (role !== "owner" && role !== "admin" && relationship.seller_user_id !== user.id && relationship.fulfilment_manager_user_id !== user.id) {
+        const seller = await supabaseAdmin.rpc("workspace_user_can_sell", {p_workspace_id: workspace.id, p_user_id: user.id})
+        if (relationship.pos_started_at || seller.error || seller.data !== true) return { ok: false, error: "Only this relationship's seller, manager or a workspace admin can update its details" }
     }
     if (input.expectedUpdatedAt && relationship.updated_at !== input.expectedUpdatedAt) {
         return { ok: false, conflict: true, version: relationship.updated_at, error: "Another user changed this relationship. Refresh to review their version before retrying your edits." }

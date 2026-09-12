@@ -1,10 +1,9 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Assignee, RelationshipStage, RoundPill } from "@/components/ui"
+import { Assignee, ServiceStage, RoundPill } from "@/components/ui"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { shortId } from "@/lib/ui/relative-time"
-import { RELATIONSHIP_PHASES } from "@/lib/relationship-phases"
 import { relationshipContactHref, relationshipContextDestinations } from "@/lib/relationship-context"
 import type { WorkspaceCapability } from "@/lib/workspace-capabilities"
 import type { WorkspaceTabRelationshipContext } from "@/lib/workspace-tabs"
@@ -46,7 +45,6 @@ function ContactValue({ label, value }: { label: "Phone" | "Email" | "Website"; 
 
 function ContextContent({ context, workspaceSlug, workspaceCapabilities, onNavigate, onClose }: Pick<Props, "context" | "workspaceSlug" | "workspaceCapabilities" | "onNavigate"> & { onClose?: () => void }) {
     const company = context.business_name?.trim()
-    const phase = RELATIONSHIP_PHASES.find((phase) => phase.key === context.lifecycle_phase)?.key
     const details = [
         { label: "Industry", value: context.industry_value?.replace(/_/g, " ") },
         { label: "Location", value: context.location_value?.replace(/_/g, " ") },
@@ -68,7 +66,6 @@ function ContextContent({ context, workspaceSlug, workspaceCapabilities, onNavig
             </div>
             <h2 className="mt-2 break-words text-sm font-semibold">{company || context.primary_person_name}</h2>
             {company || context.primary_contact_role?.trim() ? <p className="mt-1 break-words text-xs leading-5 text-neutral-400">{[company ? context.primary_person_name : null, context.primary_contact_role?.trim()].filter(Boolean).join(" · ")}</p> : null}
-            {phase ? <div className="mt-2"><RelationshipStage phase={phase} /></div> : null}
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
@@ -79,10 +76,11 @@ function ContextContent({ context, workspaceSlug, workspaceCapabilities, onNavig
                     {/* These are attached service/assignee field pairs, not a navigable record collection. */}
                     <dl className="mt-3 divide-y divide-neutral-900">
                         {context.services?.map((service) => <div key={service.id} className="py-2.5">
-                            <dt className="min-w-0"><RoundPill tone="emerald">{service.name}</RoundPill></dt>
+                            <dt className="flex min-w-0 flex-wrap gap-2"><RoundPill tone="emerald">{service.name}</RoundPill><ServiceStage stage={service.stage ?? null} /></dt>
                             <dd className="mt-1.5">{service.assignee ? <Assignee name={service.assignee.name} avatarSrc={service.assignee.avatarSrc} /> : <span className="text-xs text-neutral-400">Unassigned</span>}</dd>
                         </div>)}
                     </dl>
+                    {context.servicesHasMore ? <button type="button" onClick={() => onNavigate(`/${workspaceSlug}/relationships/${context.id}`)} className="py-2 text-xs text-neutral-400 underline">View all services</button> : null}
                     {!context.services?.length ? <p className="mt-2 text-xs text-neutral-500">No services available to show.</p> : null}
                 </>}
             </section>

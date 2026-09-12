@@ -1,11 +1,9 @@
 import { Suspense } from "react"
 import type { RelationshipRecord } from "@/lib/relationships"
-import { supabaseAdmin } from "@/lib/supabase/admin"
-import { fullyAccessibleRelationshipIds, loadAppointmentSettingServiceIds, requireRelationshipAccess, type WorkspaceAccess } from "@/lib/workspace-access"
+import { loadAppointmentSettingServiceIds, requireRelationshipAccess, type WorkspaceAccess } from "@/lib/workspace-access"
 import { loadWorkspaceMemberProfiles } from "@/lib/teams/server"
-import { loadOnboardingServiceRevisionDisplays } from "@/lib/onboarding/service-revisions"
-import { relationshipServiceDisplayName } from "@/lib/onboarding/service-display"
-import { relationshipContextCanShowService, relationshipContextShortcuts } from "@/lib/relationship-context"
+import { readRelationshipServices } from "@/lib/relationship-services-server"
+import { relationshipContextShortcuts } from "@/lib/relationship-context"
 import type { WorkspaceTabRelationshipContext } from "@/lib/workspace-tabs"
 import { RelationshipContextBridge } from "./RelationshipContextBridge"
 
@@ -30,26 +28,21 @@ export async function loadRelationshipContext({ relationship, access, metrics = 
         allowedDestinations: relationshipContextShortcuts(access.capabilities, false),
     }
     try {
-        const [serviceResult, people, fullIds, appointmentServices] = await Promise.all([
-            supabaseAdmin.from("relationship_services").select("service_key, service_id, service_revision_id, assignee_user_id")
-                .eq("workspace_id", access.workspaceId).eq("relationship_id", relationship.id).order("created_at"),
+        const [serviceResult, people, appointmentServices] = await Promise.all([
+            readRelationshipServices(access.workspaceId, relationship.id, access.userId),
             loadWorkspaceMemberProfiles(access.workspaceId),
-            fullyAccessibleRelationshipIds(access),
             loadAppointmentSettingServiceIds(access.workspaceId),
         ])
-        if (serviceResult.error) throw new Error("Could not load relationship services")
-        const services = (serviceResult.data ?? []).filter((service) => relationshipContextCanShowService(service, {
-            fullRelationship: !fullIds || fullIds.has(relationship.id), allowedServiceIds: access.allowedServiceIds, userId: access.userId,
-        }))
-        const revisions = await loadOnboardingServiceRevisionDisplays(access.workspaceId, services.map((service) => service.service_revision_id))
+        const services = serviceResult.items
+        context.servicesHasMore = serviceResult.hasMore
         const person = (id: string | null) => {
             const member = people.find((candidate) => candidate.id === id)
             return member ? { id: member.id, name: member.name, avatarSrc: member.avatarSrc } : id ? { id, name: "Assigned member unavailable", avatarSrc: null } : null
         }
         context.manager = person(relationship.fulfilment_manager_user_id)
         context.services = services.map((service) => ({
-            id: service.service_id ?? service.service_key,
-            name: relationshipServiceDisplayName(service, revisions),
+            id: service.id,
+            name: service.name, stage: service.stage,
             assignee: person(service.assignee_user_id),
         }))
         const appointmentSettingAvailable = relationship.lifecycle_phase === "retention" && relationship.status !== "archived"

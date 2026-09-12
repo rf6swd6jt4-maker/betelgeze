@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 
 const directDetailPages = [
-    "app/[workspaceSlug]/relationships/[relationshipId]/page.tsx",
+    "components/workspace/NativeRelationshipsPanel.tsx",
     "app/[workspaceSlug]/onboarding/[relationshipId]/page.tsx",
     "app/[workspaceSlug]/work/[relationshipId]/page.tsx",
     "app/[workspaceSlug]/work-items/[id]/page.tsx",

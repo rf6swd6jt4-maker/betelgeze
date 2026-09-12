@@ -3,13 +3,15 @@
 import Image from "next/image"
 import { useEffect, useRef, useState, type RefObject } from "react"
 import { ConversationMedia, useConversationMedia } from "@/components/communications/ConversationMedia"
+import { useGalleryMediaSession } from "@/components/communications/useGalleryMediaSession"
+import type { GalleryMediaMetadata } from "@/lib/communications/gallery-media-session"
 import { useMediaGalleryGestures } from "@/components/communications/useMediaGalleryGestures"
 import { clampImageZoom, moveImageZoom, type ImageZoom, type ImageZoomPoint } from "@/lib/communications/image-zoom"
 
-export type MessageMediaItem = { url: string; alt: string; kind?: "image" | "video"; thumbnailUrl?: string }
+export type MessageMediaItem = GalleryMediaMetadata & { url: string; alt: string; kind?: "image" | "video"; thumbnailUrl?: string }
 export type MessageMediaPreview = MessageMediaItem & { items?: MessageMediaItem[] }
 
-function ImagePreview({ media, onClose, zoomed }: { media: MessageMediaPreview; onClose: () => void; zoomed: RefObject<boolean> }) {
+function ImagePreview({ media, onClose, zoomed, active, onReady }: { media: MessageMediaPreview; onClose: () => void; zoomed: RefObject<boolean>; active: boolean; onReady: (success: boolean) => void }) {
     const viewerRef = useRef<HTMLDivElement>(null)
     const imageRef = useRef<HTMLImageElement>(null)
     const dragged = useRef(false)
@@ -17,6 +19,7 @@ function ImagePreview({ media, onClose, zoomed }: { media: MessageMediaPreview; 
     useEffect(() => {
         const viewer = viewerRef.current!
         const image = imageRef.current!
+        if (!active) return
         let zoom: ImageZoom = { scale: 1, x: 0, y: 0 }
         const pointers = new Map<number, ImageZoomPoint>()
         let start: ImageZoomPoint | null = null
@@ -82,10 +85,10 @@ function ImagePreview({ media, onClose, zoomed }: { media: MessageMediaPreview; 
             viewer.removeEventListener("gesturestart", preventGesture)
             viewer.removeEventListener("gesturechange", preventGesture)
         }
-    }, [zoomed])
+    }, [active, zoomed])
 
     return <div ref={viewerRef} onClick={(event) => { if (event.target === event.currentTarget && !dragged.current) onClose() }} className="flex h-full w-full touch-none select-none items-center justify-center overflow-hidden overscroll-none">
-        <Image ref={imageRef} unoptimized draggable={false} src={media.url} alt={media.alt} width={1800} height={1400} className="h-full w-full touch-none object-contain will-change-transform" />
+        <Image ref={imageRef} unoptimized loading="eager" fetchPriority={active ? "high" : "low"} onLoad={async (event) => { try { await event.currentTarget.decode(); onReady(true) } catch { onReady(false) } }} onError={() => onReady(false)} draggable={false} src={media.url} alt={media.alt} width={1800} height={1400} className="h-full w-full touch-none object-contain" />
     </div>
 }
 
@@ -98,10 +101,11 @@ function MediaThumbnail({ media, contain = false }: { media: MessageMediaItem; c
     </div>
 }
 
-function VideoPreview({ media }: { media: MessageMediaItem }) {
+function VideoPreview({ media, active, onReady, onWaiting }: { media: MessageMediaItem; active: boolean; onReady: (success: boolean) => void; onWaiting: () => void }) {
     const ref = useRef<HTMLVideoElement>(null)
     useEffect(() => {
         const video = ref.current!
+        if (!active) { video.pause(); return }
         let cancelled = false
         // A direct tap can play with sound. Browsers that block it can still
         // start muted; the native controls retain an explicit unmute action.
@@ -111,14 +115,18 @@ function VideoPreview({ media }: { media: MessageMediaItem }) {
             void video.play().catch(() => undefined)
         })
         return () => { cancelled = true; video.pause() }
+    }, [active])
+    useEffect(() => {
+        const video = ref.current!
+        return () => { video.pause(); video.removeAttribute("src"); video.load() }
     }, [])
-    return <video ref={ref} src={media.url} poster={media.thumbnailUrl} autoPlay controls playsInline preload="metadata" aria-label={media.alt} className="h-full w-full touch-none object-contain" />
+    return <video ref={ref} src={media.url} poster={media.thumbnailUrl} autoPlay={active} controls={active} playsInline preload="auto" onWaiting={onWaiting} onCanPlayThrough={() => onReady(true)} onError={() => onReady(false)} aria-label={media.alt} className="h-full w-full touch-none object-contain" />
 }
 
 function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose: () => void }) {
     const items = media.items?.length ? media.items : [media]
-    const [index, setIndex] = useState(() => Math.max(0, items.findIndex((item) => item.url === media.url)))
-    const [departing, setDeparting] = useState<number | null>(null)
+    const initialIndex = Math.max(0, items.findIndex((item) => item.url === media.url))
+    const { selected: index, resident, enabled, session } = useGalleryMediaSession(items, initialIndex)
     const viewportRef = useRef<HTMLDivElement>(null)
     const trackRef = useRef<HTMLDivElement>(null)
     const zoomed = useRef(false)
@@ -141,25 +149,18 @@ function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose:
     const select = (position: number) => {
         const nextIndex = Math.max(0, Math.min(items.length - 1, position))
         if (nextIndex !== index) {
-            setDeparting(index)
-            setIndex(nextIndex)
+            session.select(nextIndex)
             zoomed.current = false
         }
         dialogRef.current?.focus({ preventScroll: true })
     }
     useMediaGalleryGestures({ viewportRef, trackRef, zoomed, index, count: items.length, onSelect: select })
-    useEffect(() => {
-        if (departing === null) return
-        // Also release the outgoing image when motion is reduced or interrupted.
-        const timer = window.setTimeout(() => setDeparting(null), 300)
-        return () => window.clearTimeout(timer)
-    }, [departing, index])
     const previous = () => select(index - 1)
     const next = () => select(index + 1)
     const arrowClass = "absolute top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-white drop-shadow-lg hover:text-white/70 disabled:opacity-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
     return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Image preview" tabIndex={-1} className="betelgeze-popup-fade fixed inset-0 z-[180] flex flex-col overflow-hidden overscroll-none bg-black/95 text-white outline-none" onKeyDown={(event) => {
         if (event.key === "Tab") {
-            const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], video[controls], [tabindex="0"]'))
+            const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], video[controls], [tabindex="0"]')).filter((element) => !element.closest("[inert]"))
             const first = controls[0], last = controls.at(-1)
             if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) { event.preventDefault(); last?.focus() }
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
@@ -171,11 +172,12 @@ function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose:
         <button type="button" data-icon-button onClick={onClose} aria-label="Close image preview" className="absolute right-3 top-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-neutral-900/90 text-2xl text-white shadow-xl hover:bg-neutral-800 sm:right-5 sm:top-5">×</button>
         <div className="relative min-h-0 flex-1" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
             <div ref={viewportRef} data-media-gallery-viewport className="absolute inset-x-3 bottom-3 top-16 touch-none overflow-hidden overscroll-none sm:inset-x-16 sm:bottom-6">
-                <div ref={trackRef} className="flex h-full w-full transition-transform duration-200 ease-out motion-reduce:transition-none" style={{ transform: `translate3d(${-index * 100}%, 0, 0)` }} onTransitionEnd={(event) => { if (event.target === event.currentTarget) setDeparting(null) }}>
+                <div ref={trackRef} className="flex h-full w-full transition-transform duration-200 ease-out motion-reduce:transition-none" style={{ transform: `translate3d(${-index * 100}%, 0, 0)` }}>
                     {items.map((item, position) => <div key={item.url} role="group" aria-label={`${position + 1} / ${items.length}: ${item.alt}`} aria-hidden={position !== index} inert={position !== index} className="relative h-full w-full shrink-0">
-                        {position === index ? item.kind === "video" ? <VideoPreview media={item} /> : <ImagePreview media={item} onClose={onClose} zoomed={zoomed} />
-                            : position === departing && item.kind !== "video" ? <ImagePreview media={item} onClose={onClose} zoomed={inactiveZoom} />
-                            : Math.abs(position - index) === 1 || position === departing ? <MediaThumbnail media={item} contain /> : null}
+                        {resident.includes(position) ? item.kind === "video"
+                            ? <VideoPreview media={item} active={position === index && enabled} onReady={(success) => session.settle(position, success)} onWaiting={() => session.wait(position)} />
+                            : <ImagePreview media={item} onClose={onClose} zoomed={position === index ? zoomed : inactiveZoom} active={position === index} onReady={(success) => session.settle(position, success)} />
+                            : Math.abs(position - index) === 1 ? <MediaThumbnail media={item} contain /> : null}
                     </div>)}
                 </div>
             </div>

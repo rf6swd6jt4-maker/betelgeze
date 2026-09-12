@@ -150,7 +150,7 @@ export function NativeAttachment(props: { attachment: CommunicationAttachment; o
     const onOpenImage = (selected: MessageMediaPreview) => props.onOpenImage({
         ...selected,
         items: files.filter((file) => ["image", "sticker", "video"].includes(file.kind)).map((file) => ({
-            url: file.url, alt: file.fileName, kind: file.kind === "video" ? "video" as const : "image" as const,
+            url: file.url, alt: file.fileName, size: file.size, width: file.width, height: file.height, kind: file.kind === "video" ? "video" as const : "image" as const,
             thumbnailUrl: file.kind === "sticker" ? file.url : file.kind === "image" || file.hasPreview ? communicationPreviewUrl(file.url) : undefined,
         })),
     })

@@ -1,0 +1,50 @@
+# TEST client portal GHL reporting
+
+The Results page now supports a GHL Private Integration Token belonging to one client sub-account. Rollout is restricted to relationships whose `source_metadata.is_test` is the JSON boolean `true`, in both the portal/API layer and the database function. Non-test portals, including Bruce's, retain their prior UI and cannot call the new connection API.
+
+## Client experience
+
+The GHL card offers Connect GHL and Preview metrics. Preview is local sample data explicitly labelled as such; it never writes a connection or snapshot. Connect accepts a Location ID and a Private Integration Token. It checks the location identity and all required reads before saving. The first metrics are current contact and opportunity totals, plus open, won and lost opportunity counts across all pipelines, with no date filter. Total opportunities can also contain abandoned deals. These are CRM records, not unique acquired leads or collected revenue.
+
+Once connected, the card shows the GHL sub-account name and last successful update. Refresh metrics performs an explicit update. Manage connection supports token/account replacement and disconnect. Failed refreshes keep the preceding successful snapshot and show an actionable error. A failed replacement retains the preceding connection. No browser storage is used for credentials. The password input is cleared after successful save or cancel.
+
+This initial release uses manual metric refresh. Focus/visibility can reload the saved connection status after a minute; it does not contact GHL. It does not install webhooks or a scheduled synchronization worker. Google Ads remains a placeholder; the existing appointments panel keeps its current Betelgeze source.
+
+## Provider contract
+
+Required read scopes: `locations.readonly`, `contacts.readonly`, `opportunities.readonly`. No write scopes or agency account are required.
+
+1. `GET /locations/{locationId}` verifies exact identity and retrieves the account name.
+2. One `POST /contacts/search` requests `page: 1, pageLimit: 1` and reads `total`.
+3. Four `POST /opportunities/search` requests use `page: 0, limit: 1`: all opportunities, and `status eq open/won/lost`. Related notes/tasks/calendar events/unread conversations are excluded.
+
+The adapter uses the documented `Version: v3` header and a fixed HTTPS provider origin. Redirects are rejected. All six requests share a 20-second deadline; response bodies are bounded to 256 KiB each. This reads at most five sample records, discards them, and stores only validated totals. It never scans all CRM history or derives counts from page length. Missing/malformed totals, mismatched returned locations and ignored status filters fail the refresh. Provider error payloads and credentials are neither logged nor sent to the browser.
+
+Verified against official documentation on 2026-09-12:
+
+- [GHL API versioning](https://marketplace.gohighlevel.com/docs/Versioning/)
+- [Location identity](https://marketplace.gohighlevel.com/docs/ghl/locations/get-location/)
+- [Contact search](https://marketplace.gohighlevel.com/docs/ghl/contacts/search-contacts-advanced/), including its [linked request/response specification](https://doc.clickup.com/8631005/d/h/87cpx-158396/6e629989abe7fad)
+- [Opportunity search](https://marketplace.gohighlevel.com/docs/ghl/opportunities/search-opportunities-advanced/), including its [linked filter specification](https://doc.clickup.com/8631005/d/h/87cpx-424216/7bf11bc9b94f80f)
+
+## Storage and authorization
+
+`20260912030000_client_portal_ghl.sql` creates a private `client_portal_secure.ghl_connections` table and a service-role-only `public.client_portal_ghl` RPC. The table is outside the public API schema, has RLS enabled, and grants no direct privileges to anon, authenticated or service_role. It holds the workspace, relationship, location identity, a Vault secret reference, a small metrics snapshot, and operation metadata. GHL tokens live in existing Supabase Vault encryption.
+
+The HTTP route resolves the existing portal bearer session and host/workspace boundary. The RPC independently verifies session activity/revocation, relationship/workspace association, workspace activity, relationship non-archival and the TEST flag on every operation. Browser responses use an explicit projection, private no-store caching and no-referrer policy. Cross-site browser writes and non-JSON/oversize inputs are rejected. The client cannot choose a workspace or relationship in its request body.
+
+Connect and refresh acquire a database lease under an advisory transaction lock. Leases expire after 60 seconds, with a one-minute minimum between attempts. Finish/fail must match the active operation ID. Disconnect clears the operation, snapshot and managed Vault secret atomically, so late responses cannot restore a disconnected token. Replacements update the managed secret only after provider validation. Cascading relationship/workspace deletion removes its managed secret too.
+
+## Performance and verification
+
+The GHL component is code-split behind the existing TEST gate. Its saved-snapshot read is independent of appointments/files and never gates the portal shell. No provider request runs on portal entry or tab switching. Both Results and Files remain mounted, retaining GHL drafts and in-flight operations. Only visible/active Results responds to focus/visibility refresh; there is no polling timer. Counts have fixed request/response bounds independent of account size. The secure table uses a relationship primary key; authorization uses existing indexed session-token and entity lookups.
+
+Automated tests cover bounded provider queries, missing totals vs true zero, wrong account/status, sanitized errors, TEST/workspace isolation, credential projection, lease-before-provider ordering, failed replacement, stale completion and request validation. `scripts/validate-client-portal-ghl-sql.mjs` executes the actual migration and concurrency/access rules in local PGlite with a synthetic Vault adapter. Run with `BE_PGLITE_ROOT=/path/to/optional/pglite-install node scripts/validate-client-portal-ghl-sql.mjs`.
+
+The migration was applied to production through Supabase SQL Editor. A production rollback-only test passed for service-only access, TEST/workspace isolation, competing leases, actual Vault ciphertext vs plaintext, token round-trip, disconnect vs stale completion and secret cleanup. All synthetic connection data was rolled back. No Bruce token or live GHL account was used. Actual GHL data remains an integration verification step after the user reviews TEST UI and explicitly releases the feature to Bruce.
+
+Release checks: 909 repository tests passed after integrating the latest portal loading-screen change; changed-file lint and the production webpack build passed. Chromium checks used a production-built isolated portal with synthetic provider responses at 1280×720, 390×844, 320×568, 844×390 and 1440×390. The sample preview, form, draft persistence, navigation during a delayed connection, failed-refresh preservation, disconnect and legacy non-test layout were checked. Card content was not clipped and no horizontal document overflow was observed at narrow/short sizes. These checks establish behavior and layout, not a measured production latency improvement. WebKit and physical iOS/Android devices were not rechecked in this release. The production REST RPC returned an empty TEST snapshot after rollback and rejected anonymous execution.
+
+## Rollback
+
+Revert the application commit to remove the TEST UI/API. Leave the new private schema dormant if connections must be preserved. Disable the RPC grant to stop its use if required. Do not drop the schema or Vault secrets as an automatic rollback; those would discard connections. Promotion to non-test clients requires deliberately changing both rollout gates.

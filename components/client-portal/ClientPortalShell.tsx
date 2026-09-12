@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import dynamic from "next/dynamic"
 import { ClientPortalChat } from "@/components/client-portal/ClientPortalChat"
 import { ClientPortalAppointments } from "@/components/client-portal/ClientPortalAppointments"
 import { ClientPortalResources } from "@/components/client-portal/ClientPortalResources"
@@ -10,6 +11,10 @@ import { DetailField, DetailFields } from "@/components/detail"
 import { appointmentDateLabels, type PortalAppointment } from "@/lib/client-portal/appointments"
 import { FilterRail, FilterRailButton } from "@/components/panel/FilterRail"
 import styles from "./ClientPortalLayout.module.css"
+
+const ClientPortalGhl = dynamic(() => import("./ClientPortalGhl").then((module) => module.ClientPortalGhl), {
+    loading: () => <PortalSection id="ghl-connection" title="GHL" description="Contacts & opportunities" icon="connection"><p className="mt-4 text-sm">Loading connection…</p></PortalSection>,
+})
 
 function localGreeting(hour: number) {
     if (hour < 12) return "Good morning"
@@ -116,8 +121,8 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
                     <div className={`min-h-0 min-w-0 ${activePage === "appointments" ? "block" : testNavigation ? "hidden" : "hidden lg:block"}`}>
                         <div className={testNavigation ? styles.results : "h-full min-h-0"}>
                             <div className="min-h-0 min-w-0"><ClientPortalAppointments token={token} onOpen={setPanel} /></div>
-                            {testNavigation ? <div aria-label="Connections" className="grid min-h-0 min-w-0 content-start gap-4 lg:gap-6 lg:overflow-y-auto">
-                                <PortalSection id="ghl-connection" title="GHL" description="GHL connection" icon="connection"><p className="mt-5 text-sm text-[var(--onboarding-muted,#475569)]">Connection setup coming soon.</p></PortalSection>
+                            {testNavigation ? <div aria-label="Connections" className="grid min-h-0 min-w-0 auto-rows-max content-start gap-4 lg:gap-6 lg:overflow-y-auto">
+                                <ClientPortalGhl key={token} token={token} active={activePage === "appointments" && panel === null} />
                                 <PortalSection id="google-ads-connection" title="Google Ads" description="Google Ads connection" icon="connection"><p className="mt-5 text-sm text-[var(--onboarding-muted,#475569)]">Connection setup coming soon.</p></PortalSection>
                             </div> : null}
                         </div>

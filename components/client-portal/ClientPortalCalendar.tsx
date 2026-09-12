@@ -1,34 +1,35 @@
 "use client"
 import {useCallback,useEffect,useMemo,useRef,useState} from "react"
-import {Selector} from "@/components/ui/Selector"
+import { Status } from "@/components/ui/Status"
 import {List,ListItem,ListPrimaryRow,ListSecondaryRow,ListTitle} from "@/components/list/List"
 import {PortalSection} from "./ClientPortalUI"
-import {dateKey,monthDays,shiftMonth,validMonth,type GhlCalendarState} from "@/lib/client-portal/ghl-calendar"
+import {dateKey,monthDays,shiftMonth,validMonth,groupCalendarEvents,type GhlCalendarState} from "@/lib/client-portal/ghl-calendar"
 import styles from "./ClientPortalCalendar.module.css"
 const control="inline-flex min-h-11 items-center justify-center rounded-lg px-3 text-sm font-medium text-[var(--onboarding-primary,#1E3A5F)] hover:bg-black/5 focus-visible:outline-2 disabled:opacity-40"
 export function ClientPortalCalendar({token,active}:{token:string;active:boolean}) {
- const [state,setState]=useState<GhlCalendarState|null>(null),[month,setMonth]=useState(()=>dateKey(new Date(),"UTC").slice(0,7)),[calendar,setCalendar]=useState<string|null>(null),[day,setDay]=useState<string|null>(null)
+ const [state,setState]=useState<GhlCalendarState|null>(null),[month,setMonth]=useState(()=>dateKey(new Date(),"UTC").slice(0,7)),[day,setDay]=useState<string|null>(null)
  const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null)
  const controller=useRef<AbortController|null>(null),generation=useRef(0),lastRead=useRef(0),mounted=useRef(true)
  const [cache,setCache]=useState(new Map<string,GhlCalendarState>())
  const connectionRevision=useRef<string|null>(null),initialized=useRef(false)
  const api=`/api/client-portal/session/${token}/connections/ghl/calendar`
- const load=useCallback(async(refresh=false,nextMonth?:string,nextCalendar?:string|null)=>{
+ const load=useCallback(async(refresh=false,nextMonth?:string)=>{
   if(controller.current)return
   const request=new AbortController();controller.current=request;const version=++generation.current
   setBusy(true);setError(null);lastRead.current=Date.now()
   const timeout=window.setTimeout(()=>request.abort(),30000)
   try{
-   const response=await fetch(api,{method:refresh?"POST":"GET",cache:"no-store",signal:request.signal,...(refresh?{headers:{"Content-Type":"application/json"},body:JSON.stringify({month:nextMonth,calendarId:nextCalendar})}:{})})
+   const response=await fetch(api,{method:refresh?"POST":"GET",cache:"no-store",signal:request.signal,...(refresh?{headers:{"Content-Type":"application/json"},body:JSON.stringify({month:nextMonth})}:{})})
    const value=await response.json();if(!response.ok)throw new Error(value.error||"The calendar could not be loaded.")
    if(!mounted.current||version!==generation.current)return
    const saved=value as GhlCalendarState;setState(saved)
-   const changed=connectionRevision.current!==saved.revision;connectionRevision.current=saved.revision
+   const identity=`${saved.revision}:${saved.snapshot?.owner.id??""}`
+   const changed=connectionRevision.current!==identity;connectionRevision.current=identity
    if(changed)setCache(new Map())
    if(saved.snapshot){
-    const s=saved.snapshot;setCache(previous=>{const next=new Map(previous);next.set(`${s.calendarId}:${s.month}`,saved);while(next.size>6)next.delete(next.keys().next().value!);return next})
-    if(refresh){setMonth(s.month);setCalendar(s.calendarId)}
-    else if(!initialized.current||changed){setMonth(dateKey(new Date(),s.timezone).slice(0,7));setCalendar(s.calendarId)}
+    const s=saved.snapshot;setCache(previous=>{const next=new Map(previous);next.set(s.month,saved);while(next.size>6)next.delete(next.keys().next().value!);return next})
+    if(refresh){setMonth(s.month)}
+    else if(!initialized.current||changed){setMonth(dateKey(new Date(),s.timezone).slice(0,7))}
     initialized.current=true
    }
   }catch(problem){if(mounted.current&&version===generation.current)setError(problem instanceof Error&&problem.name!=="AbortError"?problem.message:"The calendar took too long to load. Please try again.")}
@@ -39,28 +40,23 @@ export function ClientPortalCalendar({token,active}:{token:string;active:boolean
  const [localTimezone]=useState(()=>Intl.DateTimeFormat().resolvedOptions().timeZone)
  const snapshot=state?.snapshot,timezone=snapshot?.timezone??localTimezone
  const today=dateKey(new Date(),timezone),days=useMemo(()=>monthDays(month),[month])
- const displayed=cache.get(`${calendar}:${month}`)??(snapshot?.calendarId===calendar&&snapshot.month===month?state:null)
- const ready=Boolean(displayed?.snapshot?.calendarId)
- const events=useMemo(()=>{
-  const result=new Map<string,NonNullable<typeof snapshot>["events"]>()
-  for(const event of displayed?.snapshot?.events??[]){const key=dateKey(event.start,timezone);result.set(key,[...(result.get(key)??[]),event])}
-  return result
- },[displayed,timezone])
+ const displayed=cache.get(month)??(snapshot?.month===month?state:null)
+ const ready=Boolean(displayed?.snapshot?.owner.id)
+ const events=useMemo(()=>groupCalendarEvents(displayed?.snapshot?.events??[],timezone,days),[displayed,timezone,days])
  const selectedDay=day&&days.includes(day)?day:month===today.slice(0,7)?today:`${month}-01`
  const time=(value:string)=>new Intl.DateTimeFormat(undefined,{timeZone:timezone,hour:"numeric",minute:"2-digit"}).format(new Date(value))
  const monthLabel=new Intl.DateTimeFormat(undefined,{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(month+"-01T12:00:00Z"))
- const selectMonth=(value:string)=>{if(busy||!validMonth(value))return;setMonth(value);setDay(null);setError(null);if(calendar&&!cache.has(`${calendar}:${value}`))void load(true,value,calendar)}
+ const selectMonth=(value:string)=>{if(busy||!validMonth(value))return;setMonth(value);setDay(null);setError(null);if(!cache.has(value))void load(true,value)}
  return <PortalSection id="appointments" title="Your calendar" description="Appointments from GHL, all in one view." icon="calendar">
   <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain" aria-busy={busy}>
-   {snapshot?.calendars.length ? <Selector surface="light" ariaLabel="GHL calendar" value={calendar??""} placeholder="Choose a calendar" options={snapshot.calendars.map(c=>({value:c.id,label:c.name}))} onChange={value=>{if(busy)return;setCalendar(value);setDay(null);if(!cache.has(`${value}:${month}`))void load(true,month,value)}} disabled={busy} className="mb-2 w-full"/>:null}
    <div className="flex flex-wrap items-center justify-between gap-1 pb-2"><h3 aria-live="polite" className="text-base font-semibold">{monthLabel}</h3><div className="flex items-center"><button className={control} onClick={()=>selectMonth(today.slice(0,7))} disabled={busy}>Today</button><button data-icon-button className={`${control} h-11 w-11 px-0`} aria-label="Previous month" onClick={()=>selectMonth(shiftMonth(month,-1))} disabled={busy}><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m14 6-6 6 6 6"/></svg></button><button data-icon-button className={`${control} h-11 w-11 px-0`} aria-label="Next month" onClick={()=>selectMonth(shiftMonth(month,1))} disabled={busy}><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m10 6 6 6-6 6"/></svg></button></div></div>
    <div className={styles.weekdays} aria-hidden="true">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><span key={d}>{d}</span>)}</div>
    <div className={styles.grid} role="group" aria-label={`${monthLabel} calendar`}>
-    {days.map(key=>{const appointments=events.get(key)??[];const selected=key===selectedDay;return <button key={key} data-icon-button type="button" aria-pressed={selected} aria-label={`${new Intl.DateTimeFormat(undefined,{dateStyle:"full",timeZone:"UTC"}).format(new Date(key+"T12:00:00Z"))}${ready?`, ${appointments.length} appointment${appointments.length===1?"":"s"}`:", appointments not loaded"}`} onClick={()=>setDay(key)} className={`${styles.day} ${key.slice(0,7)!==month?styles.outside:""} ${selected?styles.selected:""}`}><span className={`${styles.number} ${key===today?styles.today:""}`}>{Number(key.slice(8))}</span><span className={styles.eventArea}>{appointments.slice(0,2).map(e=><span key={e.id} className={styles.event}><span className={styles.time}>{time(e.start)}</span><span className={styles.title}>{e.title}</span></span>)}{appointments.length>2?<span className={styles.more}>+{appointments.length-2} more</span>:null}</span>{appointments.length>0?<span className={styles.mobileCount}>{appointments.length} <span className="sr-only">appointments</span></span>:null}</button>})}
+    {days.map(key=>{const appointments=events.get(key)??[];const selected=key===selectedDay;return <button key={key} data-icon-button type="button" aria-pressed={selected} aria-label={`${new Intl.DateTimeFormat(undefined,{dateStyle:"full",timeZone:"UTC"}).format(new Date(key+"T12:00:00Z"))}${ready?`, ${appointments.length} event${appointments.length===1?"":"s"}`:", appointments not loaded"}`} onClick={()=>setDay(key)} className={`${styles.day} ${key.slice(0,7)!==month?styles.outside:""} ${selected?styles.selected:""}`}><span className={`${styles.number} ${key===today?styles.today:""}`}>{Number(key.slice(8))}</span><span className={styles.eventArea}>{appointments.slice(0,2).map(e=><span key={e.id} className={`${styles.event} ${e.kind==="busy"?styles.busy:""} ${["cancelled","canceled"].includes(e.status)?styles.cancelled:""}`}><span className={styles.time}>{e.allDay?"All day":time(e.start)}</span><span className={styles.title}>{e.title}</span></span>)}{appointments.length>2?<span className={styles.more}>+{appointments.length-2} more</span>:null}</span>{appointments.length>0?<span className={styles.mobileCount}>{appointments.length} <span className="sr-only">events</span></span>:null}</button>})}
    </div>
    {error||state?.error?<p role="alert" className="mt-3 text-sm leading-5 text-red-700">{error||state?.error}</p>:null}
-   {!ready?<p role="status" className="mt-4 text-sm text-[var(--onboarding-muted,#475569)]">{busy?"Loading calendar…":snapshot&&!snapshot.calendars.length?"No active calendars were found in GHL.":snapshot?.calendars.length&&!calendar?"Choose the GHL calendar you want to see.":"Load your GHL appointments to fill this calendar."}</p>:<div className="mt-4"><h4 className="text-sm font-semibold">{new Intl.DateTimeFormat(undefined,{weekday:"long",month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(selectedDay+"T12:00:00Z"))}</h4>{events.get(selectedDay)?.length?<List embedded surface="light" ariaLabel="Appointments on selected day" className="mt-2">{events.get(selectedDay)!.map(e=><ListItem key={e.id}><ListPrimaryRow><ListTitle>{e.title}</ListTitle></ListPrimaryRow><ListSecondaryRow><time dateTime={e.start} className="text-[var(--onboarding-muted,#475569)]">{time(e.start)} – {time(e.end)}</time></ListSecondaryRow></ListItem>)}</List>:<p className="mt-2 text-sm text-[var(--onboarding-muted,#475569)]">No appointments on this day.</p>}</div>}
-   <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 border-t border-black/10 pt-1"><p className="text-xs text-[var(--onboarding-muted,#475569)]">{timezone.replaceAll("_"," ")}{displayed?.refreshedAt?` · Updated ${new Intl.DateTimeFormat(undefined,{timeZone:timezone,month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(displayed.refreshedAt))}`:""}</p><button className={control} disabled={busy} onClick={()=>void load(true,month,calendar)}>{busy?"Updating…":snapshot?"Refresh":"Load calendar"}</button></div>
+   {!ready?<p role="status" className="mt-4 text-sm text-[var(--onboarding-muted,#475569)]">{busy?"Loading calendar…":"Load your GHL appointments to fill this calendar."}</p>:<div className="mt-4"><h4 className="text-sm font-semibold">{new Intl.DateTimeFormat(undefined,{weekday:"long",month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(selectedDay+"T12:00:00Z"))}</h4>{events.get(selectedDay)?.length?<List embedded surface="light" ariaLabel="Schedule on selected day" className="mt-2">{events.get(selectedDay)!.map(e=><ListItem key={e.id}><ListPrimaryRow><ListTitle className={`flex-1 ${["cancelled","canceled"].includes(e.status)?"line-through":""}`}>{e.title}</ListTitle>{["cancelled","canceled"].includes(e.status)?<Status surface="light" tone="grey" label="Cancelled"/>:null}</ListPrimaryRow><ListSecondaryRow><time dateTime={e.start} className="text-[var(--onboarding-muted,#475569)]">{e.allDay?"All day":`${time(e.start)} – ${time(e.end)}`}</time></ListSecondaryRow></ListItem>)}</List>:<p className="mt-2 text-sm text-[var(--onboarding-muted,#475569)]">Nothing scheduled on this day.</p>}</div>}
+   <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 border-t border-black/10 pt-1"><p className="text-xs text-[var(--onboarding-muted,#475569)]">{timezone.replaceAll("_"," ")}{displayed?.refreshedAt?` · Updated ${new Intl.DateTimeFormat(undefined,{timeZone:timezone,month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(displayed.refreshedAt))}`:""}</p><button className={control} disabled={busy} onClick={()=>void load(true,month)}>{busy?"Updating…":snapshot?"Refresh":"Load calendar"}</button></div>
   </div>
  </PortalSection>
 }

@@ -1,9 +1,9 @@
-export type GhlCalendar = { id: string; name: string }
-export type GhlCalendarEvent = { id: string; title: string; start: string; end: string; status: string }
-export type GhlCalendarSnapshot = { calendars: GhlCalendar[]; timezone: string; calendarId: string | null; month: string; events: GhlCalendarEvent[] }
+export type GhlCalendarEvent = { id: string; title: string; start: string; end: string; status: string; kind: "appointment" | "busy"; allDay: boolean }
+export type GhlCalendarSnapshot = { source: "owner-user"; owner: { id: string; name: string }; timezone: string; month: string; events: GhlCalendarEvent[] }
 export type GhlCalendarState = { revision: string | null; snapshot: GhlCalendarSnapshot | null; refreshedAt: string | null; error: string | null; busy: boolean }
 export const calendarErrors: Record<string, string> = {
-    permissions: "Allow Calendars and Calendar Events read access in your GHL private integration, then try again.",
+    permissions: "Allow Users and Calendar Events read access in your GHL private integration, then try again.",
+    owner_unavailable: "GHL could not identify one owner for this account. Ask your team to check the account owner setup, then refresh.",
     credentials: "Check your GHL connection, then try again.",
     unavailable: "GHL could not be reached. Your saved calendar has been kept.",
     response: "GHL returned an incomplete calendar. Your saved calendar has been kept.",
@@ -30,3 +30,17 @@ export function midnightUtc(day: string, timezone: string): number {
     return candidate
 }
 export function monthWindow(month: string, timezone: string) { const days=monthDays(month); const end=new Date(Date.parse(days[41]+"T00:00:00Z")+86400000).toISOString().slice(0,10); return {start:midnightUtc(days[0],timezone),end:midnightUtc(end,timezone)} }
+
+export function groupCalendarEvents(events: GhlCalendarEvent[], timezone: string, days: string[]) {
+    const grouped = new Map<string, GhlCalendarEvent[]>()
+    const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" })
+    for (const event of events) {
+        const first = formatter.format(new Date(event.start)), last = formatter.format(new Date(Date.parse(event.end) - 1))
+        for (const day of days) if (day >= first && day <= last) {
+            const rows = grouped.get(day) ?? []
+            rows.push(event)
+            grouped.set(day, rows)
+        }
+    }
+    return grouped
+}

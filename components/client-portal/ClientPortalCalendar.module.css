@@ -14,3 +14,6 @@
 .more { padding-left:3px; font-size:10px; color:var(--onboarding-muted,#475569); }
 .mobileCount { display:none; }
 @media(max-width:639px) { .day{min-height:56px;padding:4px 2px;} .eventArea{display:none;} .mobileCount{display:block;margin-top:3px;font-size:10px;color:var(--onboarding-primary,#1E3A5F);font-weight:600;} }
+
+.busy { border-left-color:#94a3b8; background:rgb(100 116 139 / .12); color:var(--onboarding-muted,#475569); }
+.cancelled .title { text-decoration:line-through; }

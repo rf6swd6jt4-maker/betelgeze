@@ -28,14 +28,16 @@ try {
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20260912030000_client_portal_ghl.sql`,'utf8'))
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20260912040000_release_client_portal_ghl.sql`,'utf8'))
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20260912050000_client_portal_ghl_calendar.sql`,'utf8'))
+ await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20260912060000_client_portal_ghl_owner_calendar.sql`,'utf8'))
  const call = async (action, op = null, saveToken = null, data = null, ws = w, session = token) => (await db.query('select client_portal_ghl($1,$2,$3,$4,$5,$6,$7,$8,$9) result',[session,ws,action,op,location,saveToken,'Synthetic',data,'permissions'])).rows[0].result
  const expire = () => db.exec("update client_portal_secure.ghl_connections set attempted_at = now()-interval '2 minutes',lease_until = now()-interval '1 minute'")
 
  const calendar=async(action,op=null,snapshot=null,month='2026-09',cal=null,ws=w,session=token)=>(await db.query('select client_portal_ghl_calendar($1,$2,$3,$4,$5,$6,$7,$8) result',[session,ws,action,op,month,cal,snapshot,'permissions'])).rows[0].result
- const data={calendars:[{id:'calendar123456789',name:'Appointments'}],timezone:'America/Chicago',calendarId:'calendar123456789',month:'2026-09',events:[]}
+ const data={source:'owner-user',companyId:'company123456789',owner:{id:'owner1234567890',name:'Client owner'},timezone:'America/Chicago',month:'2026-09',events:[]}
  assert.equal((await calendar('read')).failure,'credentials_missing')
  await call('begin_connect',a);await call('finish',a,secret,metrics)
  assert.equal((await calendar('read')).snapshot,null)
+ assert.equal((await calendar('begin',a,null,'2026-09','calendar123456789')).failure,'response')
  assert.equal((await calendar('begin',a)).privateToken,secret)
  assert.equal((await calendar('begin',b)).failure,'busy')
  assert.equal((await calendar('finish',b,data)).failure,'changed')
@@ -44,7 +46,7 @@ try {
  assert.equal((await calendar('begin',b)).failure,'cooldown')
  assert.equal(JSON.stringify(await calendar('read')).includes(secret),false)
  await db.exec("update client_portal_secure.ghl_calendar_snapshots set attempted_at=now()-interval '1 minute'")
- await calendar('begin',a)
+ assert.equal((await calendar('begin',a)).binding.owner.id,data.owner.id)
  await calendar('fail',a)
  assert.deepEqual((await calendar('read')).snapshot,data)
  assert.equal((await calendar('read')).error,'permissions')

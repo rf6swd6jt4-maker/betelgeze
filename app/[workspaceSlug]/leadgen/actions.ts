@@ -7,7 +7,6 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { configObject, createInitialLeadgenPollTasks, MAX_SEED_CANDIDATES, planLeadgenSources, processLeadgenPoll, TARGET_VALIDATED_BUSINESSES } from "@/lib/leadgen/poll-runner"
 import { executableLeadgenSources, leadgenSourceRuntimeConfigured, seedLeadgenSources } from "@/lib/leadgen/sources"
 import { LEADGEN_POLLING_SYSTEM_VERSION } from "@/lib/leadgen/version"
-import { relationshipHubHref } from "@/lib/relationships"
 
 type EnabledIcpValueRow = { value: string }
 
@@ -137,65 +136,8 @@ export async function removeLeadgenCompany(slug: string, companyId: string) {
     revalidatePath(`/${slug}/leadgen`)
 }
 
-export async function promoteLeadgenCompanyToRelationship(slug: string, companyId: string) {
-    const { workspace, user } = await requireWorkspace(slug, "admin")
-    const { data: existingRelationship } = await supabaseAdmin
-        .from("relationships")
-        .select("id")
-        .eq("workspace_id", workspace.id)
-        .eq("leadgen_company_id", companyId)
-        .maybeSingle()
-
-    if (existingRelationship?.id) {
-        redirect(relationshipHubHref(workspace.slug, existingRelationship.id))
-    }
-
-    const { data: company } = await supabaseAdmin
-        .from("leadgen_companies")
-        .select("id, display_name, owner_name, owner_phone, phone, website_url, qualification_status, lead_score, source_key, industry_value, location_value, address, owner_identity_points, owner_phone_points, business_support_points")
-        .eq("id", companyId)
-        .eq("workspace_id", workspace.id)
-        .maybeSingle()
-
-    if (!company || company.qualification_status !== "qualified" || (!company.owner_name && !company.owner_phone)) {
-        redirect(`/${slug}/leadgen?relationshipError=not-ready`)
-    }
-
-    const { data: relationship, error } = await supabaseAdmin
-        .from("relationships")
-        .insert({
-            workspace_id: workspace.id,
-            leadgen_company_id: company.id,
-            source_type: "leadgen",
-            primary_person_name: company.owner_name ?? company.owner_phone ?? company.display_name,
-            primary_phone: company.owner_phone ?? company.phone ?? null,
-            business_name: company.display_name,
-            website_url: company.website_url ?? null,
-            industry_value: company.industry_value ?? null,
-            location_value: company.location_value ?? null,
-            address: company.address ?? {},
-            source_label: company.source_key,
-            primary_contact_role: company.owner_name ? "Owner" : null,
-            lifecycle_phase: "lead",
-            status: "active",
-            source_metadata: {
-                source_key: company.source_key,
-                lead_score: company.lead_score,
-                owner_identity_points: company.owner_identity_points,
-                owner_phone_points: company.owner_phone_points,
-                business_support_points: company.business_support_points,
-                promoted_from: "leadgen_companies",
-                promoted_by: user.id,
-            },
-        })
-        .select("id")
-        .single()
-
-    if (error || !relationship) {
-        redirect(`/${slug}/leadgen?relationshipError=schema`)
-    }
-
-    revalidatePath(`/${slug}/leadgen`)
-    revalidatePath(`/${slug}/relationships`)
-    redirect(relationshipHubHref(workspace.slug, relationship.id))
+// Keep the old action entry point safe for already-open lead lists.
+export async function promoteLeadgenCompanyToRelationship(slug: string) {
+    await requireWorkspace(slug, "admin")
+    redirect(`/${slug}/leadgen?relationshipError=paused`)
 }

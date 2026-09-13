@@ -12,7 +12,7 @@ import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { requireWorkspace, workspaceRoleLabel } from "@/lib/workspaces"
-import { promoteLeadgenCompanyToRelationship, removeLeadgenCompany } from "./actions"
+import { removeLeadgenCompany } from "./actions"
 import { relationshipHubHref } from "@/lib/relationships"
 import { LEADGEN_POLLING_SYSTEM_VERSION_LABEL } from "@/lib/leadgen/version"
 
@@ -47,6 +47,7 @@ export default async function LeadgenWorkspacePage({ params, searchParams }: Pag
             .from("relationships")
             .select("id, leadgen_company_id")
             .eq("workspace_id", workspace.id)
+            .neq("status", "archived")
             .in("leadgen_company_id", companies.map((company) => company.id))
         : { data: [] as Array<{ id: string; leadgen_company_id: string | null }>, error: null }
     const relationshipByCompanyId = new Map((relationshipResult.error ? [] : relationshipResult.data ?? []).map((relationship) => [relationship.leadgen_company_id, relationship.id]))
@@ -78,7 +79,7 @@ export default async function LeadgenWorkspacePage({ params, searchParams }: Pag
             />
 
             {relationshipError && <div className="mt-5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-                {relationshipError === "not-ready" ? "This lead needs a person and contact path before it can become a Relationship." : "Relationships are not ready in the database yet. Apply the latest Supabase migration, then try again."}
+                {relationshipError === "paused" ? "Creating relationships from Lead Gen is temporarily paused." : relationshipError === "not-ready" ? "This lead needs a person and contact path before it can become a Relationship." : "Relationships are not ready in the database yet. Apply the latest Supabase migration, then try again."}
             </div>}
 
             <QuickStats ariaLabel="Lead statistics" items={[
@@ -100,7 +101,7 @@ export default async function LeadgenWorkspacePage({ params, searchParams }: Pag
                     const relationshipId = relationshipByCompanyId.get(company.id)
                     const leadHref = relationshipId ? relationshipHubHref(workspace.slug, relationshipId) : sourceUrl
                     const leadActions = [
-                        relationshipId ? { label: "Open relationship", href: relationshipHubHref(workspace.slug, relationshipId) } : { label: "Create relationship", action: promoteLeadgenCompanyToRelationship.bind(null, workspace.slug, company.id) },
+                        ...(relationshipId ? [{ label: "Open relationship", href: relationshipHubHref(workspace.slug, relationshipId) }] : []),
                         sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
                         { label: "Copy lead details", copyText: copyLine },
                         { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },

@@ -1,6 +1,6 @@
 # Pre-queue cleanup proposal
 
-13 September 2026. Read-only production inventory; no cleanup has been authorized or executed. This is a preparation gate before SS-05 work generation and the personal queue, not a conversion of existing clients.
+13 September 2026. The user approved the cleanup, including both Lead Gen relationships. The transaction passed a production rollback rehearsal and was committed successfully. See `pre-queue-cleanup-release.md` for results. Bruce remains unconverted. The inventory below records the pre-cleanup state.
 
 ## Verified Scaylup inventory
 

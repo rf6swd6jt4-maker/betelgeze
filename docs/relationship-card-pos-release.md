@@ -64,3 +64,10 @@ Validation: 961 tests, scoped ESLint, `git diff --check`, and the production Web
 ### Compact catalogue and field alignment
 
 Removed the duplicate Add a service heading and inner form divider. Catalogue results scroll within two 6rem rows on mobile and three on desktop, retaining search, selection and pagination. Shared DetailField rows align single-line content by baseline; the multiline option aligns relationship Notes with its first line. Chromium and WebKit fixture checks confirmed both viewport limits, editable field behavior and multiline alignment; all 961 tests and scoped lint passed.
+
+
+### Mobile gallery review
+
+Service/contact gallery faces and add cards now use the same square aspect ratio. Compact mobile thumbnails, two-line titles and truncated secondary text prevent content from stretching the grid; full details remain available in the popup. Expanded POS selection cards retain room for their price and assignment controls. No data, request or mutation behavior changed.
+
+Validated actual-component fixtures in Chromium and WebKit at 320, 390, 639, 640 and 1280px: all service/contact/add gallery cards square, service detail, catalogue/assignee selection, the three POS steps, onboarding preview, every contact detail and Add contact, with no browser errors or sales submitted. Additional 320x568 checks covered inner-card containment and short-screen dialogs. Scoped lint, 961 tests, diff check and production Webpack build passed. This is browser emulation/fixture evidence, not physical iPhone/Android or live provider testing.

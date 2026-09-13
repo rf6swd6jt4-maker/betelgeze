@@ -1,5 +1,6 @@
 # SOP records and source interpretation
 
+Automatic test-service Setup work and per-call usage are now a separate layer; see [SOP work rollout](sop-work-pilot.md). Ready source interpretations are usable without an admin approval gate.
 Implemented locally; deployment, real R2/OpenAI calls, authenticated shell QA and physical-device checks are separate release gates.
 
 SOPs are durable records with a name, description, archive state, optimistic version, and independently stored assets. Owners/admins create/edit/archive/restore and add assets. Every current workspace member can browse and view. The existing sidebar entry is retained. Catalogue cards remain square procedure covers; detail pages use shared header/fields/danger-zone primitives and the Assets section uses the shared embedded List.

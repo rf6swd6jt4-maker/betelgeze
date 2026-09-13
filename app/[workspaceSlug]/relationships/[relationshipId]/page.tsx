@@ -18,3 +18,6 @@ export default async function RelationshipPage({ params }: {params: Promise<{ wo
         <Suspense fallback={<div className="px-4 py-6 text-sm text-neutral-500" role="status">Loading relationship…</div>}><Contents authorization={authorization} relationshipId={route.relationshipId} /></Suspense>
     </>
 }
+
+// SOP workers wake after service mutations; generation remains off the response path.
+export const maxDuration = 300

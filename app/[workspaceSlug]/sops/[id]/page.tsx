@@ -1,3 +1,4 @@
+import Link from "@/components/workspace/WorkspaceLink"
 import { Suspense } from "react"
 import { notFound } from "next/navigation"
 import { DetailContentLoading, DetailField, DetailFields, DetailPageHeader } from "@/components/detail"
@@ -34,6 +35,7 @@ export default async function SopPage({ params, searchParams }: { params: Promis
             <DetailPageHeader category="SOP" reference={shortId(sop.id)} title={sop.title} updated={formatRelativeTime(sop.updated_at)} />
             <DetailFields><DetailField label="Description" icon="description"><p className="whitespace-pre-wrap break-words">{sop.description || "No description yet."}</p></DetailField><DetailField label="Availability" icon="status" className="lg:border-l lg:pl-8">{sop.archived_at ? "Archived · read only" : "Available to your team"}</DetailField></DetailFields>
             {canEdit ? <SopRecordEditor {...editorProps} mode="fields" /> : null}
+            {admin ? <p className="mt-5 text-sm"><Link className="inline-flex min-h-11 items-center underline" href={`/${workspaceSlug}/sops/${id}/work`}>Work generation and usage</Link></p> : null}
             <section className="mt-8"><h2 className="text-base font-medium text-white">Assets</h2><p className="mt-1 text-sm text-neutral-500">The procedure and the material that explains how to carry it out.</p>
                 {canEdit ? <SopAssetUpload workspaceSlug={workspace.slug} workspaceId={workspace.id} userId={user.id} sopId={sop.id} /> : null}
                 <Suspense fallback={<DetailContentLoading label="Loading assets" />}><Assets data={assetsPromise} workspaceSlug={workspace.slug} sopId={sop.id} paged={Boolean(cursor)} canEdit={canEdit} aiReady={sopAiConfiguration().ready} /></Suspense>

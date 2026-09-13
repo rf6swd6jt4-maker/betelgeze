@@ -11,7 +11,7 @@ export function sopAiConfiguration() {
     const dailyLimit = Number(process.env.SOP_AI_DAILY_LIMIT ?? 10)
     return { ready: enabled && Boolean(process.env.OPENAI_API_KEY?.trim()) && /^[a-zA-Z0-9_.:-]{1,100}$/.test(model) && Number.isInteger(dailyLimit) && dailyLimit >= 1 && dailyLimit <= 100, model, dailyLimit }
 }
-export async function interpretSopAsset(input: { workspaceId: string; sopId: string; linked: SopAsset & { asset: SopAsset["asset"] & { storage_path: string } }; model: string }, request: typeof fetch = fetch) {
+export async function interpretSopAsset(input: { workspaceId: string; sopId: string; linked: SopAsset & { asset: SopAsset["asset"] & { storage_path: string } }; model: string; timeoutMs?: number }, request: typeof fetch = fetch) {
     const { linked, workspaceId, sopId, model } = input, asset = linked.asset
     const unavailable = interpretationUnavailable(asset)
     if (unavailable) throw new Error(unavailable)
@@ -30,8 +30,8 @@ export async function interpretSopAsset(input: { workspaceId: string; sopId: str
     else if (asset.content_type.startsWith("image/")) content.push({ type: "input_image", image_url: dataUrl(), detail: "high" })
     else content.push({ type: "input_file", filename: asset.title, file_data: dataUrl() })
     const response = await request("https://api.openai.com/v1/responses", {
-        method: "POST", headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY!.trim()}`, "Content-Type": "application/json" }, signal: AbortSignal.timeout(180_000),
-        body: JSON.stringify({ model, store: false, instructions: SOP_INTERPRETATION_INSTRUCTIONS, input: [{ role: "user", content }], max_output_tokens: 10000, text: { format: { type: "json_schema", name: "sop_source", strict: true, schema: SOP_INTERPRETATION_SCHEMA } } }),
+        method: "POST", headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY!.trim()}`, "Content-Type": "application/json" }, signal: AbortSignal.timeout(input.timeoutMs ?? 180_000),
+        body: JSON.stringify({ model, store: false, service_tier: "default", instructions: SOP_INTERPRETATION_INSTRUCTIONS, input: [{ role: "user", content }], max_output_tokens: 10000, text: { format: { type: "json_schema", name: "sop_source", strict: true, schema: SOP_INTERPRETATION_SCHEMA } } }),
     })
     if (!response.ok) throw new Error(`OpenAI could not interpret this file (HTTP ${response.status}). Check API access, limits and file support before retrying.`)
     const body = await response.json() as { status?: string; output?: { type: string; content?: { type: string; text?: string }[] }[]; usage?: { input_tokens?: number; output_tokens?: number } }

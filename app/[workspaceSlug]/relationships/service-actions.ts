@@ -1,4 +1,5 @@
 "use server"
+import { after } from "next/server"
 import { revalidatePath } from "next/cache"
 import { requireRelationshipAccess, requireWorkspacePanel } from "@/lib/workspace-access"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -11,6 +12,7 @@ export async function addRelationshipService(slug: string, relationshipId: strin
         || !((input.origin === "negotiation" && input.stage === "negotiating") || (input.origin === "already_onboarded" && ["setup", "maintenance", "completed"].includes(input.stage)))) return { ok: false, error: "Check the service and starting stage." }
     const { data, error } = await supabaseAdmin.rpc("add_relationship_service", { p_workspace_id: workspace.id, p_relationship_id: relationshipId, p_actor_user_id: user.id, p_request_id: input.requestId, p_service_id: input.serviceId, p_revision_id: input.revisionId, p_origin: input.origin, p_stage: input.stage, p_assignee_user_id: input.assigneeId || null })
     if (error) return { ok: false, uncertain: !/^[0-9A-Z]{5}$/.test(error.code ?? ""), error: error.code === "P0001" ? error.message : "The save could not be confirmed. Retry to recover this same service." }
+    after(async () => { const { processSopWork } = await import("@/lib/sops/work-worker"); await processSopWork(undefined, data as string) })
     revalidatePath(`/${slug}/relationships`)
     revalidatePath(`/${slug}/relationships/${relationshipId}`)
     return { ok: true, id: data as string }
@@ -23,6 +25,7 @@ export async function changeRelationshipService(slug: string, relationshipId: st
     if (instance.error || instance.data.relationship_id !== relationshipId) return { ok: false, error: "Service not found." }
     const { error } = await supabaseAdmin.rpc("change_service_instance", { p_workspace_id: workspace.id, p_instance_id: input.instanceId, p_actor_user_id: user.id, p_request_id: input.requestId, p_expected_version: input.version, p_stage: input.stage, p_disposition: "active", p_assignee_user_id: input.assigneeId || null, p_reason: input.reason.trim() })
     if (error) return { ok: false, uncertain: !/^[0-9A-Z]{5}$/.test(error.code ?? ""), error: error.code === "P0001" ? error.message : "The save could not be confirmed. Retry this change." }
+    if (input.stage === "setup") after(async () => { const { processSopWork } = await import("@/lib/sops/work-worker"); await processSopWork(undefined, input.instanceId) })
     revalidatePath(`/${slug}/relationships`)
     revalidatePath(`/${slug}/relationships/${relationshipId}`)
     return { ok: true }

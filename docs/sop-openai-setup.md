@@ -1,5 +1,6 @@
 # OpenAI setup for SOP interpretation
 
+Automatic test-service Setup work and per-call usage are now a separate layer; see [SOP work rollout](sop-work-pilot.md). Ready source interpretations are usable without an admin approval gate.
 This integration uses the OpenAI API, not a ChatGPT subscription. Keep API keys out of chat, source control, browser code, screenshots and terminal output.
 
 ## Development setup

@@ -129,4 +129,4 @@ export function buildRelationshipServicePlan(snapshot: ServicePlanSnapshot): Rel
 }
 
 export type RelationshipQueueItem = { id: string; title: string; status: string; workflow_action: string | null; due_date: string | null; planned_start_date: string | null; updated_at: string; queue_state: "Ready" | "In progress" | "Scheduled" | "Waiting" | "Blocked"; assignees: GanttPerson[] }
-export type RelationshipQueuePage = {items: RelationshipQueueItem[];hasMore:boolean}
+export type RelationshipQueuePage = {generation?: {instance_id:string;sop_id:string;run_id:string|null;status:string;error_summary:string|null}[];items: RelationshipQueueItem[];hasMore:boolean}

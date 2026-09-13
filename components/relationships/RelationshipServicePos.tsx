@@ -364,7 +364,7 @@ export function RelationshipServicePos(props: Props) {
         })
     }
     return (
-        <div className="mx-auto max-w-6xl px-4 py-5 text-white sm:px-6">
+        <div className="mx-auto w-full min-w-0 max-w-6xl px-4 py-5 text-white sm:px-6">
             <Link
                 href={`/${workspaceSlug}/relationships/${relationshipId}`}
                 className="inline-flex min-h-11 items-center text-sm text-neutral-400 hover:text-white"

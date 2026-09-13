@@ -1,6 +1,6 @@
 # Service stages, relationship work, and personal Work Queue
 
-Planning baseline: 12 September 2026. SS-01's additive foundation and SS-02's relationship Services UI are implemented. SS-03 is implemented and locally validated; its production migration and deployment await approval. SS-04–09 remain separate packages. See `service-instance-foundation.md`, `relationship-services-release.md` and `selected-service-pos-release.md` for evidence and adoption boundaries.
+Planning baseline: 12 September 2026. SS-01's additive foundation and SS-02's relationship Services UI are implemented. SS-03 is implemented and locally validated; its production migration is installed and application deployment is verified. SS-04–09 remain separate packages. See `service-instance-foundation.md`, `relationship-services-release.md` and `selected-service-pos-release.md` for evidence and adoption boundaries.
 
 This is the detailed workstream for the Saturday relationship/service revamp and Sunday work foundation in `scaylup-betelgeze-september-11-15-checklist.md`. The newer decisions in this task supersede that checklist's earlier description of retaining a broader relationship lifecycle. Existing checklist completion claims remain unchanged.
 
@@ -75,7 +75,7 @@ Status: implemented and validated; see `relationship-services-release.md`.
 
 ### SS-03 — POS sells a selected set
 
-Status: implemented and locally validated; production rehearsal, migration and deployment are pending. See `selected-service-pos-release.md`. The minimum session-specific payment, completion and Onboarding links needed for these sales are included; SS-04 readiness, answer reuse and restart/revoke work are not complete.
+Status: implemented and locally validated; production rehearsal and migration passed on 13 September 2026, with application deployment and authenticated desktop quote/preview verified. See `selected-service-pos-release.md`. The minimum session-specific payment, completion and Onboarding links needed for these sales are included; SS-04 readiness, answer reuse and restart/revoke work are not complete.
 
 - POS lists Negotiating instances with explicit multi-selection. Keep client review, team allocation, onboarding preview and pricing review.
 - Compose preview and prices only from selected instances. Reuse existing supported billing/currency rules and reject unsupported combinations clearly.
@@ -176,3 +176,7 @@ There is no measured basis for promising all packages will ship today. If time r
 - SS-07: review concrete queue ordering examples against current Admin behavior, including deadlines versus in-progress work and manual overrides.
 
 These are product decisions, not permission requests to perform the planning audit. This document does not authorize a production release or external client messages.
+
+## User feedback retained for later
+
+13 September 2026: the Negotiating potential-value summary is useful and may support future work. Leave its current behavior and UI unchanged for now; no further potential-value feature is authorized by this note.

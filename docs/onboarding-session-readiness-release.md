@@ -1,6 +1,6 @@
 # SS-04: independent onboarding sessions
 
-13 September 2026. Implemented and validated against release baseline `0659063d`. The user explicitly approved the production rehearsal, installation and deployment. The exact migration passed the live rollback rehearsal and was installed successfully. Application deployment is in progress.
+13 September 2026. Implemented and validated against release baseline `0659063d`. The user explicitly approved the production rehearsal, installation and deployment. The exact migration passed the live rollback rehearsal and was installed successfully. Application release `2f9bc011` deployed successfully on Vercel: https://vercel.com/betelgeze-projects/betelgeze/3co1425HSmG1UyKAA59JedM17Vac.
 
 ## Resulting behavior
 
@@ -19,6 +19,8 @@
 - 961 repository tests, changed-file ESLint, `git diff --check`, and the production Webpack/TypeScript build passed in the final local validation.
 - Actual renderer/Skip components passed Chromium and WebKit fixtures at 320, 390, 639, 640 and 1280 CSS pixels. Checks include hidden/ineligible Skip, side-by-side sizing, required Complete disabled while authorized Skip is usable, successful navigation, failed-command recovery and horizontal overflow. These are browser emulation results, not physical Android/iPhone or authenticated production QA.
 - At 65 additional archived sessions, the isolated 50-record panel query measured 3.85 ms median across seven samples. This is database-only fixture evidence, not production or end-to-end latency. The panel combines its session/access reads in one request; asset listing combines the former two relationship/work link reads; individual asset access uses a point lookup. Answer reuse runs alongside existing page reads, with indexed step/submission/field lookups. No polling, provider request or eager workspace download was added.
+
+Production checks confirmed the new RPC exists, 12 relationship teams with zero duplicates, zero welcome proofs, and Skip executable by service_role but not anon/authenticated. The in-app browser redirects to sign-in, so authenticated production UI and physical-device checks remain outstanding. No selected-service session existed for a live restart exercise.
 
 ## Release and recovery
 

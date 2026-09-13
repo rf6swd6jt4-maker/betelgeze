@@ -1,6 +1,6 @@
 # Service stages, relationship work, and personal Work Queue
 
-Planning baseline: 12 September 2026. SS-01's additive foundation and SS-02's relationship Services UI are implemented. SS-03 is implemented and locally validated; its production migration is installed and application deployment is verified. SS-04 is implemented and locally validated, pending explicit production migration approval; SS-05–09 remain separate packages. See `service-instance-foundation.md`, `relationship-services-release.md` and `selected-service-pos-release.md` for evidence and adoption boundaries.
+Planning baseline: 12 September 2026. SS-01's additive foundation and SS-02's relationship Services UI are implemented. SS-03 is implemented and locally validated; its production migration is installed and application deployment is verified. SS-04 is implemented, its production migration installed and application deployment verified; SS-05–09 remain separate packages. See `service-instance-foundation.md`, `relationship-services-release.md` and `selected-service-pos-release.md` for evidence and adoption boundaries.
 
 This is the detailed workstream for the Saturday relationship/service revamp and Sunday work foundation in `scaylup-betelgeze-september-11-15-checklist.md`. The newer decisions in this task supersede that checklist's earlier description of retaining a broader relationship lifecycle. Existing checklist completion claims remain unchanged.
 
@@ -89,7 +89,7 @@ The 13 September relationship-card and three-step centered POS revision is docum
 
 ### SS-04 — Multiple onboarding sessions and service readiness
 
-Status: implemented locally; production migration and deployment pending approval after automatic review rejected the rollback rehearsal. See [SS-04 release details](onboarding-session-readiness-release.md).
+Status: implemented, production rollback rehearsal passed, migration installed and application deployment verified on 13 September 2026. Authenticated production and physical-device QA remain outstanding. See [SS-04 release details](onboarding-session-readiness-release.md).
 
 - Scope session composition, autosave, uploads, submission, checkout, payment return, webhook processing, review work, restart and revoke to the sale/session and selected instances.
 - Deduplicate shared module requirements within a session using canonical module identity/revision; preserve ordered published snapshots.
@@ -177,8 +177,8 @@ There is no measured basis for promising all packages will ship today. If time r
 ## Items to settle before their work package
 
 - SS-01: approve public stage names, For later versus Declined, and audited pause/reopen behavior.
-- SS-04: per-service readiness and conservative answer prefill approved; production migration/rehearsal approval remains outstanding. Welcome proof and one relationship team were added to the accepted scope.
-- SS-05: choose the first maintenance cadence and template fixture; real SOP conversion remains separately tracked.
+- SS-04: per-service readiness and conservative answer prefill deployed after explicit production approval. Welcome proof and one relationship team were added to the accepted scope.
+- SS-05: review the [pre-queue cleanup proposal](pre-queue-cleanup-proposal.md), then choose the first maintenance cadence and template fixture; real SOP conversion remains separately tracked.
 - SS-07: review concrete queue ordering examples against current Admin behavior, including deadlines versus in-progress work and manual overrides.
 
 These are product decisions, not permission requests to perform the planning audit. This document does not authorize a production release or external client messages.

@@ -46,7 +46,7 @@ export type RelationshipGanttMilestone = {
     id: string
     title: string
     occurredAt: string
-    kind: "relationship_started" | "client_invoiced" | "onboarding_completed" | "client_fulfilled"
+    kind: "relationship_started" | "client_invoiced" | "onboarding_completed" | "client_fulfilled" | "service_stage"
     href: string | null
 }
 

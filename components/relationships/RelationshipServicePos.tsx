@@ -4,7 +4,7 @@ import dynamic from "next/dynamic"
 import Link from "@/components/workspace/WorkspaceLink"
 import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import { DetailField, DetailFields } from "@/components/detail"
-import { AssignmentSelector, Status, AttachmentCard, AttachmentCards } from "@/components/ui"
+import { AssignmentSelector, Status, AttachmentCard, AttachmentCards, RoundPill } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
 import {
     sellRelationshipServices,
@@ -135,21 +135,29 @@ function MoneyField({
     onChange: (cents: number) => void
     disabled: boolean
 }) {
+    const [editing, setEditing] = useState<{ text: string; cents: number } | null>(null)
     return (
         <label className="block min-w-0 text-xs text-neutral-400">
             {label.split(" for ")[0]}
             <input
                 aria-label={label}
                 className={`${inputClass} mt-1`}
-                type="number"
+                type="text"
                 inputMode="decimal"
-                min="0"
-                max="999999.99"
-                step="0.01"
-                value={value / 100 || ""}
+                maxLength={14}
+                value={editing?.cents === value ? editing.text : (value / 100).toFixed(2)}
                 placeholder="0.00"
                 disabled={disabled}
-                onChange={(e) => onChange(Math.round(Number(e.target.value) * 100))}
+                onChange={(event) => {
+                    const text = event.target.value
+                    if (!/^\d*(?:\.\d{0,2})?$/.test(text)) return
+                    const cents = Math.round(Number(text === "." ? "0" : text) * 100)
+                    if (!Number.isSafeInteger(cents) || cents > 99999999) return
+                    setEditing({ text, cents })
+                    onChange(cents)
+                }}
+                onBlur={() => setEditing(null)}
+                onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.blur() } }}
             />
         </label>
     )
@@ -374,7 +382,7 @@ export function RelationshipServicePos(props: Props) {
                 <DetailFields columns={1}><DetailField label="Manager" icon="person"><AssignmentSelector value={input.managerId} people={page.managers} onChange={managerId => change({ ...input, managerId })} disabled={locked} ariaLabel="Sale manager" placeholder="Choose manager" /></DetailField><DetailField label="Billing email" icon="contact">{relationship.email ?? "Add a billing email in Contact before selling"}</DetailField></DetailFields>
             </> : step === 2 ? <>
                 <h3 className="mb-2 font-semibold">Review onboarding</h3><p className="text-sm leading-6 text-neutral-400">One link will include checkout and the onboarding modules required by these services.</p>
-                <List ariaLabel="Included onboarding modules">{quote?.modules.map(module => <ListItem key={module.module_id}><ListPrimaryRow><ListTitle>{String(module.definition.name ?? module.code)}</ListTitle></ListPrimaryRow><ListSecondaryRow>{module.mandatory ? "Shared information" : "Selected service"}</ListSecondaryRow></ListItem>)}</List>
+                <div role="list" aria-label="Included onboarding modules" className="mt-4 flex flex-wrap gap-2">{quote?.modules.map(module => <span role="listitem" key={module.module_id} title={module.mandatory ? "Shared information" : "Selected service"}><RoundPill tone="sky">{String(module.definition.name ?? module.code)}</RoundPill></span>)}</div>
                 <button className={`${secondary} mt-4`} disabled={locked} onClick={() => void readReview(true)}>{reading ? "Opening preview…" : "Preview onboarding"}</button>
             </> : <>
                 <h3 className="mb-2 font-semibold">Send their onboarding link</h3><p className="mb-4 text-sm leading-6 text-neutral-400">Choose confirmed contact methods. Each selected method receives the same onboarding link.</p>

@@ -1,10 +1,9 @@
 "use client"
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import dynamic from "next/dynamic"
-import Link from "@/components/workspace/WorkspaceLink"
 import { useRouter, useSearchParams, useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
-import { AssignmentSelector, Selector, AttachmentCards, AttachmentCard, AddAttachmentCard, CenteredDialog, ServiceStage } from "@/components/ui"
-import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
+import { AssignmentSelector, Selector, AttachmentCards, AttachmentCard, AddAttachmentCard, CenteredDialog, ServiceStage, RoundPill } from "@/components/ui"
+import { List, ListItem, ListPrimaryRow, ListSecondaryRow } from "@/components/list/List"
 import { RelationshipServiceTimeline, RelationshipQueue } from "./RelationshipServiceTimeline"
 import { ServiceThumbnail } from "./ServiceThumbnail"
 import { RelationshipContactCards } from "./RelationshipContactCards"
@@ -13,7 +12,6 @@ import { DetailField, DetailFields } from "@/components/detail"
 import { addRelationshipService, changeRelationshipService } from "@/app/[workspaceSlug]/relationships/service-actions"
 import { SERVICE_STAGES, type RelationshipServicePage, type RelationshipServiceRow, type ServiceCatalogueChoice } from "@/lib/service-stages"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
-import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 
 type Props = { workspaceSlug: string; relationshipId: string; userId: string; initial: RelationshipServicePage; canAdd: boolean; canImport: boolean; canSeeHistory: boolean; legacy: boolean }
 const buttonClass = "inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
@@ -38,7 +36,7 @@ function CataloguePicker({ endpoint, selected, onChange, disabled }: { endpoint:
         return () => { clearTimeout(timer); controller.abort() }
     }, [choosing, endpoint, page, query, retry])
     if (!choosing && selected) return <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 text-left text-sm" disabled={disabled} onClick={() => setChoosing(true)}><strong>{selected.name}</strong><span className="text-neutral-500 underline">Change</span></button>
-    return <><input aria-label="Search service catalogue" placeholder="Search services" value={query} onChange={event => { setQuery(event.target.value); setPage(0); setData(null) }} className={inputClass} />{error ? <p role="alert" className="py-3 text-sm text-red-300">{error} <button type="button" className="min-h-11 underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p> : !data ? <p className="py-4 text-sm text-neutral-400">Loading services…</p> : <><List ariaLabel="Service catalogue">{data.items.map(service => <ListItem key={service.id}><button type="button" disabled={disabled} className="w-full text-left" onClick={() => { onChange(service); setChoosing(false) }}><ListPrimaryRow><ListTitle>{service.name}</ListTitle></ListPrimaryRow><ListSecondaryRow><span className="truncate text-xs text-neutral-400">{service.description}</span></ListSecondaryRow></button></ListItem>)}{!data.items.length ? <p className="p-4 text-sm text-neutral-500">No published services found.</p> : null}</List><Pagination page={page} hasMore={data.hasMore} onChange={setPage} /></>}</>
+    return <><input aria-label="Search service catalogue" placeholder="Search services" value={query} onChange={event => { setQuery(event.target.value); setPage(0); setData(null) }} className={inputClass} />{error ? <p role="alert" className="py-3 text-sm text-red-300">{error} <button type="button" className="min-h-11 underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p> : !data ? <p className="py-4 text-sm text-neutral-400">Loading services…</p> : <><List ariaLabel="Service catalogue">{data.items.map(service => <ListItem key={service.id}><button type="button" disabled={disabled} className="w-full text-left" title={service.description} onClick={() => { onChange(service); setChoosing(false) }}><ListPrimaryRow><RoundPill tone="emerald">{service.name}</RoundPill></ListPrimaryRow><ListSecondaryRow className="flex-wrap whitespace-normal gap-x-4 gap-y-1"><span className="text-xs text-neutral-300">{new Intl.NumberFormat(undefined, { style: "currency", currency: service.currency }).format(service.upfront_cents / 100)} upfront</span><span className="text-xs text-neutral-300">{new Intl.NumberFormat(undefined, { style: "currency", currency: service.currency }).format(service.recurring_cents / 100)} recurring</span></ListSecondaryRow></button></ListItem>)}{!data.items.length ? <p className="p-4 text-sm text-neutral-500">No published services found.</p> : null}</List><Pagination page={page} hasMore={data.hasMore} onChange={setPage} /></>}</>
 }
 
 function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange }: { endpoint: string; props: Props; row?: RelationshipServiceRow; onDone: () => void; onClose: () => void; onBusyChange: (busy: boolean) => void }) {
@@ -97,26 +95,6 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange }: { 
     </form>
 }
 
-type ActivityPage = { items: Array<{id: string; title: string; status: string; updated_at: string; kind?: string}>; hasMore: boolean }
-function RelationshipActivity({ endpoint, section, slug, relationshipId, legacy }: {endpoint: string; section: "work" | "history"; slug: string; relationshipId: string; legacy: boolean}) {
-    const [page, setPage] = useState(0)
-    const [data, setData] = useState<ActivityPage | null>(null)
-    const [error, setError] = useState("")
-    const [retry, setRetry] = useState(0)
-    useEffect(() => {
-        const controller = new AbortController()
-        void read<ActivityPage>(`${endpoint}?kind=${section}&offset=${page * 30}`, controller.signal).then(setData).catch(error => { if (!controller.signal.aborted) setError(error.message) })
-        return () => controller.abort()
-    }, [endpoint, page, retry, section])
-    return <>
-        {section === "history" && legacy ? <Link href={`/${slug}/onboarding/${relationshipId}`} className="inline-flex min-h-11 items-center text-sm text-neutral-400 underline">Open current onboarding</Link> : null}
-        {section === "work" ? <div className="mb-4 flex flex-wrap justify-end gap-3"><Link className="inline-flex min-h-11 items-center text-sm underline" href={`/${slug}/relationships/${relationshipId}?create=work-item`}>Add work item</Link>{legacy ? <Link className="inline-flex min-h-11 items-center text-sm underline" href={`/${slug}/relationships/${relationshipId}/pos`}>Open plan</Link> : null}</div> : null}
-        {error ? <p role="alert" className="py-4 text-sm text-red-200">{error}<button className="ml-2 min-h-11 underline" onClick={() => { setError(""); setRetry(retry + 1) }}>Retry</button></p> : !data ? <p role="status" className="py-4 text-sm text-neutral-400">Loading {section}…</p> : <>
-            <List ariaLabel={section === "work" ? "Relationship work" : "Sale and onboarding history"}>{data.items.length ? data.items.map(item => <ListItem key={`${item.kind ?? "work"}:${item.id}`}><ListPrimaryRow>{section === "work" ? <ListTitle href={`/${slug}/work-items/${item.id}`}>{item.title}</ListTitle> : <span className="text-sm font-medium">{item.title} <span className="font-mono text-neutral-500">{shortId(item.id)}</span></span>}</ListPrimaryRow><ListSecondaryRow><span className="capitalize">{item.status.replaceAll("_", " ")}</span><span>{formatRelativeTime(item.updated_at)}</span></ListSecondaryRow></ListItem>) : <p className="p-5 text-sm text-neutral-400">{section === "work" ? "No work items yet. Add one when this relationship needs work." : "No sales or onboarding sessions yet."}</p>}</List>
-            <Pagination page={page} hasMore={data.hasMore} onChange={value => { setData(null); setPage(value) }} />
-        </>}
-    </>
-}
 function Pagination({ page, hasMore, onChange }: {page: number; hasMore: boolean; onChange: (page: number) => void}) {
     return page || hasMore ? <div className="mt-3 flex items-center justify-between text-sm"><button className="min-h-11 px-2 disabled:opacity-40" disabled={!page} onClick={() => onChange(page - 1)}>Previous</button><span className="text-neutral-500">Page {page + 1}</span><button className="min-h-11 px-2 disabled:opacity-40" disabled={!hasMore} onClick={() => onChange(page + 1)}>Next</button></div> : null
 }
@@ -126,7 +104,6 @@ export function RelationshipServicesWorkspace(props: Props) {
     const search = useSearchParams()
     const active = useWorkspaceNavigation()?.active ?? true
     const endpoint = `/api/workspaces/${encodeURIComponent(props.workspaceSlug)}/relationships/${props.relationshipId}/services`
-    const [history, setHistory] = useState(false)
     const [adding, setAdding] = useState(false)
     const [serviceBusy, setServiceBusy] = useState(false)
     const [editing, setEditing] = useState<RelationshipServiceRow | null>(null)
@@ -154,7 +131,7 @@ export function RelationshipServicesWorkspace(props: Props) {
         <RelationshipServiceTimeline endpoint={endpoint} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canEdit={props.canImport} canEditService={() => true} onEditService={row => setOpened(cards.items.find(card => card.id === row.id) ?? row)} />
         <div className="mt-5 grid min-w-0 gap-x-6 gap-y-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,1fr)]">
             <div className="min-w-0"><RelationshipQueue endpoint={endpoint} slug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} />
-                {props.canSeeHistory ? <details className="mt-5 border-t border-neutral-900" onToggle={event => { if (event.currentTarget.open) setHistory(true) }}><summary className="cursor-pointer py-3 text-sm text-neutral-400">Sales &amp; onboarding history</summary>{history ? <RelationshipActivity endpoint={endpoint} section="history" slug={props.workspaceSlug} relationshipId={props.relationshipId} legacy={props.legacy} /> : null}</details> : null}
+
             </div>
             <div className="min-w-0"><section ref={host} className="mt-6" aria-label="Assigned services"><h2 className="mb-3 text-base font-semibold">Services</h2>
                 <AttachmentCards label="Assigned services">{cards.items.map(row => <AttachmentCard key={row.id} title={row.name} thumbnail={<ServiceThumbnail service={row} />} inactive={["negotiating", "declined", "for_later"].includes(row.stage ?? "")} subtitle={SERVICE_STAGES.find(stage => stage.key === row.stage)?.label ?? "Review needed"} onClick={() => setOpened(row)} />)}{props.canAdd ? <AddAttachmentCard label="Add service" onClick={() => setAdding(true)} /> : null}</AttachmentCards>

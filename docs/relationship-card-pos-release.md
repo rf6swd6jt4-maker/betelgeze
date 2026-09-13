@@ -52,3 +52,10 @@ Authenticated desktop Safari inspection on Test Client 17 verified the new heade
 A final 390px Chromium interaction check using the actual components verified automatic selection from the service card, preserved a $925 edited draft across closing/reopening, traversed the three steps, disabled unconfirmed SMS and kept the popup inside the viewport (12px–378px with document width 390px). The earlier five-width Chromium/WebKit fixture checks remain geometry evidence. Physical Android/iPhone and real provider delivery have not been tested in this release.
 
 The existing onboarding worker is invoked directly by the sale/retry path after the durable transaction. An independent periodic scheduler was not verified; the release does not claim unattended retry scheduling. Manual retry keeps the exact saved sale/session and chosen destinations.
+
+
+## Price and list polish — 13 September
+
+POS money fields now preserve decimal text during editing and show two fractional digits after blur, including zero and whole amounts. Onboarding modules use shared sky RoundPills; the catalogue uses emerald service pills and existing default upfront/recurring prices. Enter blurs and flushes single-line background fields, while Notes remains multiline. The separate sales/onboarding history disclosure is removed; recorded service-stage events appear as grouped Gantt milestones without inferred past dates or extra requests.
+
+Validation: 961 tests, scoped ESLint, `git diff --check`, and the production Webpack build passed. Actual-component fixtures passed Chromium and WebKit checks at 320, 390, 639, 640 and 1280px, including decimal editing/formatting, module composition, catalogue pricing, preview, delivery eligibility and zero sale submissions. Both engines also verified Enter blur/autosave and multiline Notes. These are browser fixture checks, not physical-device or live-delivery tests. No database changes are required.

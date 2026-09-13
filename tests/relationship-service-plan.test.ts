@@ -56,3 +56,20 @@ test('history from another instance cannot alter the visible service stage',()=>
  const plan=build(fixture({services:[service('one','Ads','setup')],events:[{instance_id:'other',new_stage:'setup',created_at:'2020-01-01T10:00:00Z',ended_at:null}]}))
  assert.equal(plan.items.find(i=>i.id===`${root('one')}:setup`)?.actualStartAt,null)
 })
+
+
+test('recorded milestones group simultaneous service events without inventing imported history',()=>{
+ const time='2026-09-09T10:00:00Z'
+ const plan=build(fixture({services:[{...service('one','Ads','setup'),origin:'already_onboarded'},service('two','Website','onboarding')],events:[
+  {instance_id:'one',new_stage:'setup',created_at:time,ended_at:null},
+  {instance_id:'two',new_stage:'onboarding',created_at:time,ended_at:null},
+  {instance_id:'hidden',new_stage:'completed',created_at:time,ended_at:null},
+ ]}))
+ assert.equal(plan.milestones.length,1)
+ assert.equal(plan.milestones[0].occurredAt,'2026-09-09T10:00:00.000Z')
+ assert.match(plan.milestones[0].title,/Ads · Setup recorded/)
+ assert.match(plan.milestones[0].title,/Website · Onboarding recorded/)
+ assert.doesNotMatch(plan.milestones[0].title,/Completed|payment|completed onboarding/)
+ assert.equal(plan.milestones[0].href,null)
+ assert.deepEqual(build(fixture({events:[]})).milestones,[])
+})

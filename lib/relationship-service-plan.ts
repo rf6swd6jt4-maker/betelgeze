@@ -109,7 +109,23 @@ export function buildRelationshipServicePlan(snapshot: ServicePlanSnapshot): Rel
     items.push(...real)
     const ids = new Set(items.map(i => i.id))
     dependencies.push(...snapshot.dependencies.filter(d => ids.has(d.work_item_id) && ids.has(d.depends_on_work_item_id)).map(d => ({workItemId:d.work_item_id,dependsOnWorkItemId:d.depends_on_work_item_id,source:d.source,external:false})))
-    return { items, externalItems: [], dependencies, milestones: [] }
+    // One marker per recorded instant keeps services sold together readable.
+    const serviceById = new Map(services.map(service => [service.id, service]))
+    const milestonesByTime = new Map<string, Set<string>>()
+    for (const event of snapshot.events) {
+        const service = serviceById.get(event.instance_id)
+        if (!service || !Number.isFinite(Date.parse(event.created_at))) continue
+        const label = SERVICE_STAGES.find(stage => stage.key === event.new_stage)?.label
+        if (!label) continue
+        const occurredAt = new Date(event.created_at).toISOString()
+        const titles = milestonesByTime.get(occurredAt) ?? new Set<string>()
+        titles.add(`${service.name} · ${label} recorded`)
+        milestonesByTime.set(occurredAt, titles)
+    }
+    const milestones: RelationshipGanttPlan["milestones"] = [...milestonesByTime].sort(([a], [b]) => a.localeCompare(b)).map(([occurredAt, titles]) => ({
+        id: `service-stage:${occurredAt}`, title: [...titles].join("; "), occurredAt, kind: "service_stage", href: null,
+    }))
+    return { items, externalItems: [], dependencies, milestones }
 }
 
 export type RelationshipQueueItem = { id: string; title: string; status: string; workflow_action: string | null; due_date: string | null; planned_start_date: string | null; updated_at: string; queue_state: "Ready" | "In progress" | "Scheduled" | "Waiting" | "Blocked"; assignees: GanttPerson[] }

@@ -44,7 +44,7 @@ export function RelationshipBackgroundEditor({ workspaceSlug, relationshipId, us
             {([
                 ["primaryPersonName", "Name", "identity", "text"], ["businessName", "Company", "relationship", "text"],
                 ["primaryContactRole", "Contact role", "person", "text"], ["locationValue", "Location", "relationship", "text"],
-            ] as const).map(([key, label, icon, type]) => <DetailField key={key} label={label} icon={icon}><input aria-label={label} type={type} disabled={!canEdit} value={state.draft[key] ?? ""} onChange={event => update(key, event.target.value)} onBlur={() => void queue.flush()} className={fieldClass} /></DetailField>)}
+            ] as const).map(([key, label, icon, type]) => <DetailField key={key} label={label} icon={icon}><input aria-label={label} type={type} disabled={!canEdit} value={state.draft[key] ?? ""} onChange={event => update(key, event.target.value)} onBlur={() => void queue.flush()} onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.blur() } }} className={fieldClass} /></DetailField>)}
             <DetailField label="Notes" icon="description" className="lg:col-span-2"><textarea aria-label="Relationship notes" disabled={!canEdit} rows={3} value={state.draft.description} onChange={event => update("description", event.target.value)} onBlur={() => void queue.flush()} className={fieldClass} /></DetailField>
         </DetailFields>
         <p role="status" className="py-2 text-xs text-neutral-400">{state.error || state.storageError || (state.saving ? "Saving details…" : canEdit ? "Details save automatically" : "Read only")}</p>

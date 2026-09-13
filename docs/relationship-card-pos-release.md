@@ -59,3 +59,8 @@ The existing onboarding worker is invoked directly by the sale/retry path after 
 POS money fields now preserve decimal text during editing and show two fractional digits after blur, including zero and whole amounts. Onboarding modules use shared sky RoundPills; the catalogue uses emerald service pills and existing default upfront/recurring prices. Enter blurs and flushes single-line background fields, while Notes remains multiline. The separate sales/onboarding history disclosure is removed; recorded service-stage events appear as grouped Gantt milestones without inferred past dates or extra requests.
 
 Validation: 961 tests, scoped ESLint, `git diff --check`, and the production Webpack build passed. Actual-component fixtures passed Chromium and WebKit checks at 320, 390, 639, 640 and 1280px, including decimal editing/formatting, module composition, catalogue pricing, preview, delivery eligibility and zero sale submissions. Both engines also verified Enter blur/autosave and multiline Notes. These are browser fixture checks, not physical-device or live-delivery tests. No database changes are required.
+
+
+### Compact catalogue and field alignment
+
+Removed the duplicate Add a service heading and inner form divider. Catalogue results scroll within two 6rem rows on mobile and three on desktop, retaining search, selection and pagination. Shared DetailField rows align single-line content by baseline; the multiline option aligns relationship Notes with its first line. Chromium and WebKit fixture checks confirmed both viewport limits, editable field behavior and multiline alignment; all 961 tests and scoped lint passed.

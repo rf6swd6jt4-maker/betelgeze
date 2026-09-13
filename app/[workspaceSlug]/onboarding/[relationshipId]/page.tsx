@@ -1,6 +1,8 @@
 import Link from "next/link"
 import { Suspense } from "react"
-import { notFound } from "next/navigation"
+import { loadOnboardingSessionPage, onboardingPageNumber } from "@/lib/onboarding/session-access"
+import { notFound, redirect } from "next/navigation"
+import { OnboardingSessionChooser } from "@/components/onboarding/OnboardingSessionChooser"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
 import { DetailContentLoading, DetailField, DetailFields, DetailFieldsLoading, DetailLoadingLabel, DetailPageHeader } from "@/components/detail"
@@ -31,7 +33,7 @@ export const dynamic = "force-dynamic"
 
 type PageProps = {
     params: Promise<{ workspaceSlug: string; relationshipId: string }>
-    searchParams: Promise<{ session?: string }>
+    searchParams: Promise<{ session?: string; page?: string }>
 }
 
 type WorkItemRow = {
@@ -447,11 +449,15 @@ function startOnboardingDetailData(input: {
         .select("*")
         .eq("workspace_id", input.workspaceId)
         .eq("relationship_id", input.relationship.id)
-        .in("status", ["active", "completed"])
+        .in("status", ["active", "completed", "archived"])
         .order("updated_at", { ascending: false })
         .limit(1)
     if (input.sessionId) sessionQuery = sessionQuery.eq("id", input.sessionId)
-    const sessionResultPromise = Promise.resolve(sessionQuery.maybeSingle())
+    const sessionResultPromise = Promise.resolve(sessionQuery.maybeSingle()).then((result) => {
+        if (result.error) throw new Error("Could not load this onboarding session.")
+        if (input.sessionId && !result.data) notFound()
+        return result
+    })
     const modulesResultPromise = Promise.resolve(supabaseAdmin
         .from("relationship_onboarding_modules")
         .select("module_key")
@@ -469,7 +475,7 @@ function startOnboardingDetailData(input: {
         if(session?.service_scope!=="selected_services")return null
         const result=await supabaseAdmin.rpc("read_selected_service_session_access",{p_workspace_id:input.workspaceId,p_session_ids:[session.id],p_user_id:input.userId})
         if(result.error)throw new Error("Could not verify onboarding access.")
-        return result.data as {moduleIds:string[];fullSessionIds:string[]}
+        return result.data as {moduleIds:string[];fullSessionIds:string[];serviceNamesBySession:Record<string,string[]>}
     })
     const normalizedSnapshotPromise = sessionResultPromise.then(({ data: session }) => session ? loadNormalizedSessionSnapshot(session) : null)
     const serviceRevisionsPromise = servicesResultPromise.then(({ data: services }) => {
@@ -516,6 +522,7 @@ function startOnboardingDetailData(input: {
         serviceRevisionsPromise,
         normalizedSnapshotPromise, nativeAccessPromise,
     ]).then(([{ data: session }, { data: modules }, { data: services }, serviceRevisions, normalizedSnapshot, nativeAccess]) => {
+        if (nativeAccess && !nativeAccess.moduleIds.length && !nativeAccess.fullSessionIds.includes(session?.id ?? "")) notFound()
         const scopedServices = (services ?? []).filter((service) => input.role !== "staff" || input.allowedServiceIds.includes(service.service_id ?? ""))
         const moduleKeys = (modules ?? []).map((module) => module.module_key).filter((key): key is string => Boolean(key))
         const scopedServiceRevisionIds = new Set(scopedServices.map((service) => service.service_revision_id).filter((id): id is string => Boolean(id)))
@@ -555,6 +562,7 @@ function startOnboardingDetailData(input: {
             serviceRevisions,
             normalizedSnapshot,
             scopedServices,
+            nativeServiceNames: nativeAccess?.serviceNamesBySession[session?.id ?? ""],
             scopedSnapshotModules,
             canonicalSteps,
             sessionCompleted: session?.status === "completed",
@@ -630,12 +638,13 @@ async function OnboardingFields({ data }: { data: OnboardingDetailData }) {
             </Suspense>
         </DetailField>
         <DetailField label="Status" icon="status" className="lg:border-l lg:border-neutral-900 lg:pl-8">
-            <Status label={summary.sessionCompleted ? "Completed" : summary.session ? "Active" : "Not started"} tone={summary.sessionCompleted ? "green" : summary.session ? "yellow" : "grey"} />
+            <Status label={summary.session?.status === "archived" ? "Archived" : summary.sessionCompleted ? "Completed" : summary.session ? "Active" : "Not started"} tone={summary.session?.status === "archived" ? "grey" : summary.sessionCompleted ? "green" : summary.session ? "yellow" : "grey"} />
         </DetailField>
         <DetailField label="Services" icon="services" className="lg:col-span-2">
             <div className="flex flex-wrap gap-1.5">
-                {summary.scopedServices.map((service) => <RoundPill key={`${service.service_key}:${service.service_revision_id ?? "legacy"}`} tone="emerald">{relationshipServiceDisplayName(service, summary.serviceRevisions)}</RoundPill>)}
-                {!summary.scopedServices.length ? <span className="text-neutral-600">None</span> : null}
+                {summary.nativeServiceNames?.map((name, index) => <RoundPill key={`${index}:${name}`} tone="emerald">{name}</RoundPill>)}
+                {!summary.nativeServiceNames && summary.scopedServices.map((service) => <RoundPill key={`${service.service_key}:${service.service_revision_id ?? "legacy"}`} tone="emerald">{relationshipServiceDisplayName(service, summary.serviceRevisions)}</RoundPill>)}
+                {!(summary.nativeServiceNames?.length ?? summary.scopedServices.length) ? <span className="text-neutral-600">None</span> : null}
             </div>
         </DetailField>
         <DetailField label="Modules" icon="modules" className="lg:col-span-2">
@@ -651,7 +660,7 @@ async function OnboardingFields({ data }: { data: OnboardingDetailData }) {
 async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { data: OnboardingDetailData; workspaceSlug: string; relationshipId: string }) {
     const activity = await data.activityPromise
     const previewControl = activity.canOpenCompleteClientSession ? <Suspense fallback={<button type="button" disabled className="min-h-9 px-3 text-sm text-neutral-500">Loading preview…</button>}>
-        <RelationshipOnboardingPreview workspaceSlug={workspaceSlug} relationshipId={relationshipId} />
+        <RelationshipOnboardingPreview workspaceSlug={workspaceSlug} relationshipId={relationshipId} sessionId={activity.session?.id} />
     </Suspense> : null
     return <>
         <section className="mt-4 overflow-hidden rounded-xl border border-neutral-800 bg-black sm:mt-6">
@@ -680,14 +689,14 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
                                     <h2 className="text-base font-semibold">Onboarding link</h2>
                                     <p className="mt-1 text-sm text-neutral-500">Manage the client’s access to onboarding.</p>
                                 </div>
-                                {activity.session && activity.canManage ? (
+                                {activity.session && activity.session.status!=="archived" && activity.canManage ? (
                                     <OnboardingLinkControls
                                         key={`${activity.session.id}:${activity.session.token_version ?? 1}`}
                                         previewControl={previewControl}
                                         initialPath={activity.onboardingUrl}
                                         revoked={Boolean(activity.session.token_revoked_at)}
                                         revokeAction={revokeOnboardingToken.bind(null, workspaceSlug, relationshipId, activity.session.id, Number(activity.session.token_version) || 1)}
-                                        rotateAction={rotateOnboardingToken.bind(null, workspaceSlug, relationshipId)}
+                                        rotateAction={rotateOnboardingToken.bind(null, workspaceSlug, relationshipId, activity.session!.id)}
                                     />
                                 ) : activity.onboardingUrl && !activity.session?.token_revoked_at && activity.canOpenCompleteClientSession ? (
                                     <div className="flex flex-wrap items-center gap-2">
@@ -717,8 +726,8 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
 
         {activity.canManage ? (
             <OnboardingDangerZone
-                hasSession={Boolean(activity.session)}
-                archiveAction={archiveOnboarding.bind(null, workspaceSlug, relationshipId)}
+                hasSession={Boolean(activity.session && activity.session.status!=="archived")}
+                archiveAction={archiveOnboarding.bind(null, workspaceSlug, relationshipId, activity.session?.id ?? "")}
                 restartAction={restartOnboarding.bind(null, workspaceSlug, relationshipId, activity.session?.id ?? null)}
             />
         ) : null}
@@ -748,6 +757,12 @@ export default async function OnboardingDetailPage({ params, searchParams }: Pag
     ])
     if (allowedRelationshipIds && !allowedRelationshipIds.has(relationshipId)) notFound()
     if (!relationship) notFound()
+    if (!query.session) {
+        const page = onboardingPageNumber(query.page)
+        const { sessions, access: sessionAccess, hasMore } = await loadOnboardingSessionPage(workspace.id, user.id, page, relationshipId)
+        if (sessions.length === 1 && !hasMore && page === 0) redirect(`/${workspaceSlug}/onboarding/${relationshipId}?session=${sessions[0].id}`)
+        return <OnboardingSessionChooser chrome={<WorkspaceTopBar userId={user.id} workspace={workspace} workspaceAccess={access} currentProduct="client-work" />} workspaceSlug={workspaceSlug} relationshipId={relationshipId} relationship={relationship} sessions={sessions} sessionAccess={sessionAccess} page={page} hasMore={hasMore} />
+    }
     const data = startOnboardingDetailData({
         sessionId:query.session,
         userId:user.id,

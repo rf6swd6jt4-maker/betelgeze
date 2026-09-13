@@ -1,14 +1,29 @@
 import { notFound } from "next/navigation"
 import { OnboardingPreviewButton } from "@/components/onboarding-builder/OnboardingPreviewOverlay"
 import { fullyAccessibleRelationshipIds, requireWorkspacePanel } from "@/lib/workspace-access"
-import { loadPublishedOnboardingConfiguration } from "@/lib/onboarding/configuration"
+import { loadPublishedOnboardingConfiguration, loadSelectedServicePreview } from "@/lib/onboarding/configuration"
 import { loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
 import { loadWorkspacePublicBranding } from "@/lib/client-branding/public-branding"
 import { createPrivateUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
-export async function RelationshipOnboardingPreview({ workspaceSlug, relationshipId }: { workspaceSlug: string; relationshipId: string }) {
+export async function RelationshipOnboardingPreview({ workspaceSlug, relationshipId, sessionId }: { workspaceSlug: string; relationshipId: string; sessionId?: string }) {
     const { workspace, access } = await requireWorkspacePanel(workspaceSlug, "onboarding")
+    if(sessionId) {
+        const {data:scope,error:scopeError}=await supabaseAdmin.rpc("read_selected_service_session_access",{p_workspace_id:workspace.id,p_session_ids:[sessionId],p_user_id:access.userId})
+        const {data:session,error:sessionError}=await supabaseAdmin.from("relationship_onboarding_sessions").select("source_sale_id,original_source_sale_id,configuration_revision_id,service_scope").eq("workspace_id",workspace.id).eq("relationship_id",relationshipId).eq("id",sessionId).maybeSingle()
+        if(scopeError||sessionError)throw new Error("Could not load this session preview")
+        if(session?.service_scope==="selected_services") {
+            if(!scope?.fullSessionIds?.includes(sessionId))notFound()
+            const [{data:composition,error},branding,assets]=await Promise.all([
+                supabaseAdmin.from("client_sale_composition_items").select("module_id,module_revision_id,source_kind,sort_order,definition,source_references").eq("workspace_id",workspace.id).eq("client_sale_id",session.source_sale_id??session.original_source_sale_id).order("sort_order").limit(100),
+                loadWorkspacePublicBranding(workspace.id,workspace.name),loadWorkspaceClientBrandAssets(workspace.id),
+            ])
+            if(error)throw new Error("Could not load this session composition")
+            const preview=await loadSelectedServicePreview(workspace.id,{configurationId:session.configuration_revision_id,modules:(composition??[]).map(module=>({...module,code:module.source_references?.module_code??"",mandatory:module.source_kind==="mandatory",instance_ids:[]}))})
+            return <OnboardingPreviewButton {...preview} workspaceName={branding.displayName} logoSrc={assets.logoPath?await createPrivateUploadSignedUrl(assets.logoPath):null} privacyPolicyUrl={branding.privacyPolicyUrl} termsOfServiceUrl={branding.termsOfServiceUrl}/>
+        }
+    }
     const allowed = await fullyAccessibleRelationshipIds(access)
     if (allowed && !allowed.has(relationshipId)) notFound()
     const [relationship, services, configuration, branding, assets] = await Promise.all([

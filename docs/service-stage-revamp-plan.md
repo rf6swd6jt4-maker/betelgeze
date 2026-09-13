@@ -1,6 +1,6 @@
 # Service stages, relationship work, and personal Work Queue
 
-Planning baseline: 12 September 2026. SS-01's additive foundation and SS-02's relationship Services UI are implemented. SS-03 is implemented and locally validated; its production migration is installed and application deployment is verified. SS-04–09 remain separate packages. See `service-instance-foundation.md`, `relationship-services-release.md` and `selected-service-pos-release.md` for evidence and adoption boundaries.
+Planning baseline: 12 September 2026. SS-01's additive foundation and SS-02's relationship Services UI are implemented. SS-03 is implemented and locally validated; its production migration is installed and application deployment is verified. SS-04 is implemented and locally validated, pending explicit production migration approval; SS-05–09 remain separate packages. See `service-instance-foundation.md`, `relationship-services-release.md` and `selected-service-pos-release.md` for evidence and adoption boundaries.
 
 This is the detailed workstream for the Saturday relationship/service revamp and Sunday work foundation in `scaylup-betelgeze-september-11-15-checklist.md`. The newer decisions in this task supersede that checklist's earlier description of retaining a broader relationship lifecycle. Existing checklist completion claims remain unchanged.
 
@@ -89,11 +89,15 @@ The 13 September relationship-card and three-step centered POS revision is docum
 
 ### SS-04 — Multiple onboarding sessions and service readiness
 
+Status: implemented locally; production migration and deployment pending approval after automatic review rejected the rollback rehearsal. See [SS-04 release details](onboarding-session-readiness-release.md).
+
 - Scope session composition, autosave, uploads, submission, checkout, payment return, webhook processing, review work, restart and revoke to the sale/session and selected instances.
 - Deduplicate shared module requirements within a session using canonical module identity/revision; preserve ordered published snapshots.
 - Add compatible answer prefill with confirmation and clear ownership of shared fields. Concurrent sessions retain independent submissions; promotion to the relationship's current information must not silently overwrite newer values.
 - Calculate readiness per instance. Shared answers and reviews can satisfy several services; service-only missing answers do not block unrelated setup.
 - Update Onboarding panel to show sessions as records, labelled by relationship and selected services. Open by session ID; preserve old relationship URLs through an explicit session chooser or unambiguous redirect.
+- Show Skip beside Complete only when a different session for the relationship has genuine, complete welcome evidence; session count and test shortcuts never qualify.
+- Keep one relationship team/group chat, adding members as further services sell. Session visibility still follows the relevant sale and service assignment. Settings permissions remain unchanged until the later package.
 - Keep portal identity and existing provider links stable across new sessions. A new sale must not rotate the relationship portal or disconnect an existing integration.
 
 **Done:** two active sessions on one relationship work independently; payment/submission/restart of one leaves the other intact; shared questions appear once; service-specific readiness works; both sessions and submissions remain visible in Onboarding.
@@ -173,7 +177,7 @@ There is no measured basis for promising all packages will ship today. If time r
 ## Items to settle before their work package
 
 - SS-01: approve public stage names, For later versus Declined, and audited pause/reopen behavior.
-- SS-04: approve per-service readiness within a shared session and review ownership; decide which existing answer types may prefill.
+- SS-04: per-service readiness and conservative answer prefill approved; production migration/rehearsal approval remains outstanding. Welcome proof and one relationship team were added to the accepted scope.
 - SS-05: choose the first maintenance cadence and template fixture; real SOP conversion remains separately tracked.
 - SS-07: review concrete queue ordering examples against current Admin behavior, including deadlines versus in-progress work and manual overrides.
 

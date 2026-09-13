@@ -25,6 +25,7 @@ import {
     workspaceHref,
     type RelationshipRecord,
 } from "@/lib/relationships"
+import { loadOnboardingSessionPage, onboardingPageNumber, type OnboardingPanelSession, type OnboardingSessionAccess } from "@/lib/onboarding/session-access"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { accessibleRelationshipIds, fullyAccessibleRelationshipIds, requireWorkspacePanel } from "@/lib/workspace-access"
@@ -33,23 +34,11 @@ export const dynamic = "force-dynamic"
 
 type PageProps = {
     params: Promise<{ workspaceSlug: string }>
-    searchParams: Promise<{ state?: string }>
+    searchParams: Promise<{ state?: string; page?: string }>
 }
 
-type OnboardingState = "active" | "completed" | "stuck"
-type OnboardingSession = {
-    service_scope?: string
-    source_sale_id?: string | null
-    id: string
-    relationship_id: string
-    status: string
-    session_token: string
-    is_test: boolean
-    created_by: string | null
-    created_at: string
-    updated_at: string
-    completed_at: string | null
-}
+type OnboardingState = "active" | "completed" | "archived" | "stuck"
+type OnboardingSession = OnboardingPanelSession
 type OnboardingCoreRow = { relationship: RelationshipRecord; session: OnboardingSession }
 type OnboardingCreator = { user_id: string; username: string; avatar_path: string | null }
 type OnboardingRowDetails = {
@@ -87,27 +76,23 @@ function metadataSessionStepId(metadata: unknown) {
         : ""
 }
 
-async function loadOnboardingDetails({ userId, workspaceId, rows, staffMode, allowedServiceIds }: { userId:string; workspaceId: string; rows: OnboardingCoreRow[]; staffMode: boolean; allowedServiceIds: string[] }): Promise<OnboardingDetails> {
+async function loadOnboardingDetails({ workspaceId, rows, staffMode, allowedServiceIds, nativeAccess }: { nativeAccess: { data: OnboardingSessionAccess; error: null }; workspaceId: string; rows: OnboardingCoreRow[]; staffMode: boolean; allowedServiceIds: string[] }): Promise<OnboardingDetails> {
     const nativeIds=rows.filter(r=>r.session.service_scope==="selected_services").map(r=>r.session.id)
     const sessionIds = rows.map((row) => row.session.id)
     const relationshipIds = [...new Set(rows.map((row) => row.relationship.id))]
     const creatorIds = [...new Set(rows.map((row) => row.session.created_by).filter((id): id is string => Boolean(id)))]
     const empty = <T,>() => Promise.resolve({ data: [] as T[] })
-    const [workItemsResult, assetsResult, modulesResult, servicesResult, snapshotModulesResult, snapshotStepsResult, nativeSaleItems, creatorsResult, nativeAccess] = await Promise.all([
+    const [workItemsResult, assetsResult, modulesResult, servicesResult, snapshotModulesResult, snapshotStepsResult, creatorsResult] = await Promise.all([
         sessionIds.length ? supabaseAdmin.from("work_items").select("id, status, metadata, updated_at, created_at").eq("workspace_id", workspaceId).eq("native_kind", "onboarding_step").in("metadata->>session_id", sessionIds).order("created_at", { ascending: true }).limit(1000) : empty<{ id: string; status: string; metadata: unknown; updated_at: string | null; created_at: string }>(),
         sessionIds.length ? supabaseAdmin.from("assets").select("id, asset_kind, native_kind, metadata, updated_at, created_at").eq("workspace_id", workspaceId).in("native_kind", ["onboarding_form_submission", "onboarding_upload"]).in("metadata->>session_id", sessionIds).order("updated_at", { ascending: false }).limit(1000) : empty<{ id: string; asset_kind: string; native_kind: string; metadata: unknown; updated_at: string | null; created_at: string }>(),
         relationshipIds.length ? supabaseAdmin.from("relationship_onboarding_modules").select("relationship_id, module_key").eq("workspace_id", workspaceId).in("relationship_id", relationshipIds).order("created_at", { ascending: true }) : empty<{ relationship_id: string; module_key: string }>(),
         relationshipIds.length ? supabaseAdmin.from("relationship_services").select("relationship_id, service_key, service_id, service_revision_id").eq("workspace_id", workspaceId).in("relationship_id", relationshipIds).order("created_at", { ascending: true }) : empty<{ relationship_id: string; service_key: string; service_id: string | null; service_revision_id: string | null }>(),
         sessionIds.length ? supabaseAdmin.from("relationship_onboarding_session_modules").select("id, session_id, source_kind, source_service_revision_id").eq("workspace_id", workspaceId).in("session_id", sessionIds) : empty<{ id: string; session_id: string; source_kind: string; source_service_revision_id: string | null }>(),
         sessionIds.length ? supabaseAdmin.from("relationship_onboarding_session_steps").select("id, session_id, session_module_id, kind, is_actionable").eq("workspace_id", workspaceId).in("session_id", sessionIds) : empty<{ id: string; session_id: string; session_module_id: string | null; kind: string; is_actionable: boolean | null }>(),
-        rows.some(r=>r.session.service_scope === "selected_services") ? supabaseAdmin.from("client_sale_items").select("client_sale_id,service_name").eq("workspace_id",workspaceId).in("client_sale_id",rows.flatMap(r=>r.session.service_scope === "selected_services" && r.session.source_sale_id ? [r.session.source_sale_id] : [])) : empty<{client_sale_id:string;service_name:string}>(),
         creatorIds.length ? supabaseAdmin.from("user_profiles").select("user_id, username, avatar_path").in("user_id", creatorIds) : empty<OnboardingCreator>(),
-        nativeIds.length ? supabaseAdmin.rpc("read_selected_service_session_access",{p_workspace_id:workspaceId,p_session_ids:nativeIds,p_user_id:userId}) : Promise.resolve({data:null,error:null}),
     ])
 
-    const namesBySale = new Map<string,string[]>()
-    for(const item of nativeSaleItems.data??[])namesBySale.set(item.client_sale_id,[...(namesBySale.get(item.client_sale_id)??[]),item.service_name])
-    const nativeServicesBySession = new Map(rows.filter(r=>r.session.service_scope === "selected_services").map(r=>[r.session.id,namesBySale.get(r.session.source_sale_id??"")??[]]))
+    const nativeServicesBySession = new Map(rows.filter(r=>r.session.service_scope === "selected_services").map(r=>[r.session.id,nativeAccess.data?.serviceNamesBySession?.[r.session.id]??[]]))
     const moduleKeysByRelationship = new Map<string, string[]>()
     for (const onboardingModule of modulesResult.data ?? []) {
         moduleKeysByRelationship.set(onboardingModule.relationship_id, [...(moduleKeysByRelationship.get(onboardingModule.relationship_id) ?? []), onboardingModule.module_key])
@@ -170,7 +155,7 @@ async function loadOnboardingDetails({ userId, workspaceId, rows, staffMode, all
         rowBySessionId.set(session.id, {
             completedCount: Math.min(steps.length, completedKeys.length),
             missingCount: Math.max(0, steps.length - completedKeys.length),
-            stuck: isOnboardingStuck({ percentage, createdAt: session.created_at, lastActivityAt: latestActivity }),
+            stuck: session.status === "active" && isOnboardingStuck({ percentage, createdAt: session.created_at, lastActivityAt: latestActivity }),
             latestActivity,
             assetSummary,
         })
@@ -239,7 +224,7 @@ async function OnboardingRow({ row, detailsPromise, workspaceSlug, customDomain,
         : canCopyLink
     const actions = [
         { label: "Open onboarding", href: onboardingHref },
-        ...(canCopySessionLink ? [{ label: "Copy onboarding link", copyText: getOnboardingUrl({ workspaceSlug, sessionToken: row.session.session_token, customDomain, customDomainVerified }) }] : []),
+        ...(canCopySessionLink && row.session.session_token ? [{ label: "Copy onboarding link", copyText: getOnboardingUrl({ workspaceSlug, sessionToken: row.session.session_token, customDomain, customDomainVerified }) }] : []),
     ]
     return <ListItem detailPreview={{
         category: "Onboarding",
@@ -253,7 +238,7 @@ async function OnboardingRow({ row, detailsPromise, workspaceSlug, customDomain,
                 <ListTitle href={onboardingHref} className="flex-1">{title}</ListTitle>
                 {row.session.is_test ? <SquarePill tone="yellow" className="shrink-0">Test</SquarePill> : null}
                 <Suspense fallback={null}><StuckBadge sessionId={row.session.id} detailsPromise={detailsPromise} /></Suspense>
-                <Status label={row.session.status === "completed" ? "Complete" : "In progress"} tone={row.session.status === "completed" ? "green" : "yellow"} className="ml-auto shrink-0" />
+                <Status label={row.session.status === "archived" ? "Archived" : row.session.status === "completed" ? "Complete" : "In progress"} tone={row.session.status === "archived" ? "grey" : row.session.status === "completed" ? "green" : "yellow"} className="ml-auto shrink-0" />
             </ListPrimaryRow>
             <Suspense fallback={<OnboardingSecondaryFallback />}><OnboardingSecondary row={row} detailsPromise={detailsPromise} staffMode={staffMode} actions={actions} /></Suspense>
         </MobileListActionSurface>
@@ -273,20 +258,20 @@ async function StuckOnboardingRows({ rows, detailsPromise, renderRow, allHref }:
     return stuckRows.length ? stuckRows.map(renderRow) : <EmptyOnboarding selectedState="stuck" allHref={allHref} />
 }
 
-async function OnboardingPanel({ userId, workspaceId, workspaceSlug, customDomain, customDomainVerified, selectedState, staffMode, allowedServiceIds, relationshipsPromise, sessionsPromise, scopesPromise }: { userId:string; workspaceId: string; workspaceSlug: string; customDomain: string | null; customDomainVerified: boolean; selectedState: OnboardingState | null; staffMode: boolean; allowedServiceIds: string[]; relationshipsPromise: ReturnType<typeof listRelationshipsForWorkspace>; sessionsPromise: Promise<OnboardingSession[]>; scopesPromise: Promise<[Set<string> | null, Set<string> | null]> }) {
-    const [relationships, sessions, [allowedRelationshipIds, fullyAllowedRelationshipIds]] = await Promise.all([relationshipsPromise, sessionsPromise, scopesPromise])
+async function OnboardingPanel({ workspaceId, workspaceSlug, customDomain, customDomainVerified, selectedState, staffMode, allowedServiceIds, relationshipsPromise, sessionsPromise, scopesPromise, page }: { page: number; workspaceId: string; workspaceSlug: string; customDomain: string | null; customDomainVerified: boolean; selectedState: OnboardingState | null; staffMode: boolean; allowedServiceIds: string[]; relationshipsPromise: ReturnType<typeof listRelationshipsForWorkspace>; sessionsPromise: ReturnType<typeof loadOnboardingSessionPage>; scopesPromise: Promise<[Set<string> | null, Set<string> | null]> }) {
+    const [relationships, sessionPage, [allowedRelationshipIds, fullyAllowedRelationshipIds]] = await Promise.all([relationshipsPromise, sessionsPromise, scopesPromise])
     const relationshipAllowed = (relationshipId: string) => !allowedRelationshipIds || allowedRelationshipIds.has(relationshipId)
     const relationshipById = new Map(relationships.filter((relationship) => relationshipAllowed(relationship.id)).map((relationship) => [relationship.id, relationship]))
-    const firstSessionByRelationship = new Map<string, OnboardingSession>()
-    for (const session of sessions) if (relationshipAllowed(session.relationship_id)) { const key=session.service_scope === "selected_services" ? session.id : session.relationship_id; if (!firstSessionByRelationship.has(key)) firstSessionByRelationship.set(key,session) }
-    const rows = [...firstSessionByRelationship.values()].flatMap((session) => {
+    const nativeAccess = { data: sessionPage.access, error: null }
+    const rows = sessionPage.sessions.flatMap((session) => {
         const relationship = relationshipById.get(session.relationship_id)
         return relationship ? [{ relationship, session }] : []
     })
-    const detailsPromise = loadOnboardingDetails({ userId, workspaceId, rows, staffMode, allowedServiceIds })
+    const detailsPromise = loadOnboardingDetails({ workspaceId, rows, staffMode, allowedServiceIds, nativeAccess })
     const activeRows = rows.filter((row) => row.session.status === "active")
     const completedRows = rows.filter((row) => row.session.status === "completed")
-    const filterHref = (state: string | null) => workspaceHref(workspaceSlug, `onboarding${state ? `?state=${state}` : ""}`)
+    const archivedRows = rows.filter((row) => row.session.status === "archived")
+    const filterHref = (state: string | null) => workspaceHref(workspaceSlug, `onboarding?page=${page}${state ? `&state=${state}` : ""}`)
     const instantFiltersAvailable = selectedState !== "stuck"
     const renderRow = (row: OnboardingCoreRow) => <OnboardingRow
         key={row.session.id}
@@ -300,7 +285,8 @@ async function OnboardingPanel({ userId, workspaceId, workspaceSlug, customDomai
     />
 
     return <>
-        <QuickStats ariaLabel="Onboarding statistics" items={[
+        {page > 0 || sessionPage.hasMore ? <p className="text-xs text-neutral-500">Page {page + 1} · counts show this page</p> : null}
+        <QuickStats ariaLabel="Onboarding statistics for this page" items={[
             { label: "Active", value: activeRows.length },
             { label: "Complete", value: completedRows.length },
             { label: "Stuck", value: <Suspense fallback="—"><StuckCount detailsPromise={detailsPromise} /></Suspense> },
@@ -309,6 +295,7 @@ async function OnboardingPanel({ userId, workspaceId, workspaceSlug, customDomai
             <FilterRailLink href={filterHref(null)} selected={!selectedState} instant={instantFiltersAvailable ? { param: "state", value: null } : undefined}>All <FilterRailCount>{rows.length}</FilterRailCount></FilterRailLink>
             <FilterRailLink href={filterHref("active")} selected={selectedState === "active"} instant={instantFiltersAvailable ? { param: "state", value: "active" } : undefined}>Active <FilterRailCount>{activeRows.length}</FilterRailCount></FilterRailLink>
             <FilterRailLink href={filterHref("completed")} selected={selectedState === "completed"} instant={instantFiltersAvailable ? { param: "state", value: "completed" } : undefined}>Complete <FilterRailCount>{completedRows.length}</FilterRailCount></FilterRailLink>
+            <FilterRailLink href={filterHref("archived")} selected={selectedState === "archived"} instant={instantFiltersAvailable ? { param: "state", value: "archived" } : undefined}>Archived <FilterRailCount>{archivedRows.length}</FilterRailCount></FilterRailLink>
             <FilterRailLink href={filterHref("stuck")} selected={selectedState === "stuck"}>Stuck <FilterRailCount><Suspense fallback="—"><StuckCount detailsPromise={detailsPromise} /></Suspense></FilterRailCount></FilterRailLink>
         </FilterRail>
         <List ariaLabel="Relationship onboarding">
@@ -318,6 +305,10 @@ async function OnboardingPanel({ userId, workspaceId, workspaceSlug, customDomai
                 empty={<EmptyOnboarding selectedState={null} allHref={filterHref(null)} />}
             />}
         </List>
+        {page > 0 || sessionPage.hasMore ? <nav aria-label="Onboarding pages" className="mt-4 flex justify-between gap-3 text-sm">
+            {page > 0 ? <Link className="px-3 py-3" href={workspaceHref(workspaceSlug, `onboarding?page=${page - 1}`)}>Newer sessions</Link> : <span />}
+            {sessionPage.hasMore ? <Link className="px-3 py-3" href={workspaceHref(workspaceSlug, `onboarding?page=${page + 1}`)}>Older sessions</Link> : null}
+        </nav> : null}
     </>
 }
 
@@ -339,15 +330,11 @@ function OnboardingPanelFallback() {
 export default async function RelationshipOnboardingPage({ params, searchParams }: PageProps) {
     const [{ workspaceSlug }, query] = await Promise.all([params, searchParams])
     const { workspace, user, access } = await requireWorkspacePanel(workspaceSlug, "onboarding")
-    const selectedState = (["active", "completed", "stuck"] as const).includes(query.state as OnboardingState) ? query.state as OnboardingState : null
+    const selectedState = (["active", "completed", "archived", "stuck"] as const).includes(query.state as OnboardingState) ? query.state as OnboardingState : null
     const scopesPromise = Promise.all([accessibleRelationshipIds(access), fullyAccessibleRelationshipIds(access)])
     const relationshipsPromise = listRelationshipsForWorkspace(workspace.id)
-    const sessionsPromise = Promise.resolve(supabaseAdmin.from("relationship_onboarding_sessions")
-        .select("id, relationship_id, status, session_token, is_test, created_by, created_at, updated_at, completed_at, service_scope, source_sale_id")
-        .eq("workspace_id", workspace.id)
-        .in("status", ["active", "completed"])
-        .order("updated_at", { ascending: false }))
-        .then((result) => (result.data ?? []) as OnboardingSession[])
+    const page = onboardingPageNumber(query.page)
+    const sessionsPromise = loadOnboardingSessionPage(workspace.id, user.id, page)
 
     return <main className="min-h-screen bg-neutral-950 px-4 pb-7 text-white sm:px-6">
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
@@ -355,7 +342,7 @@ export default async function RelationshipOnboardingPage({ params, searchParams 
             <PanelTabHeader title="Onboarding" description="Relationship onboarding work, submitted information, and assigned delivery setup." />
             <Suspense fallback={<OnboardingPanelFallback />}>
                 <OnboardingPanel
-                    userId={user.id}
+                    page={page}
                     workspaceId={workspace.id}
                     workspaceSlug={workspace.slug}
                     customDomain={workspace.custom_onboarding_domain}

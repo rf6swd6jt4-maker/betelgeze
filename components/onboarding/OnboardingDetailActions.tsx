@@ -1,6 +1,7 @@
 "use client"
 
 import { type ReactNode, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { Status } from "@/components/ui"
 import { DetailDangerAction, DetailDangerButton, DetailDangerZone } from "@/components/detail"
 
@@ -91,17 +92,19 @@ export function OnboardingDangerZone({
 }: {
     hasSession: boolean
     archiveAction: () => Promise<void>
-    restartAction: () => Promise<void>
+    restartAction: () => Promise<{ path: string }>
 }) {
+    const router = useRouter()
     const [pending, startTransition] = useTransition()
     const [error, setError] = useState<string | null>(null)
 
-    function run(action: () => Promise<void>, message: string) {
+    function run(action: () => Promise<void | { path: string }>, message: string) {
         if (!window.confirm(message)) return
         setError(null)
         startTransition(async () => {
             try {
-                await action()
+                const result = await action()
+                if (result?.path) router.replace(result.path)
             } catch (actionError) {
                 setError(actionError instanceof Error ? actionError.message : "Could not update onboarding")
             }
@@ -117,8 +120,8 @@ export function OnboardingDangerZone({
             />
             <DetailDangerAction
                 title="Restart onboarding"
-                description="Start the same onboarding again with a new client link and blank answers. Payment and test mode are preserved. Previous submissions and uploads remain in history."
-                control={<DetailDangerButton type="button" disabled={pending || !hasSession} onClick={() => run(restartAction, "Restart the same onboarding with blank answers and a new link? Payment stays unchanged. Previous submissions remain in history, and the current link will stop working.")}>{pending ? "Updating…" : "Restart onboarding"}</DetailDangerButton>}
+                description="Start a fresh submission with a new client link. Compatible previous answers can be reviewed and reused. Payment, test mode and existing delivery work are preserved."
+                control={<DetailDangerButton type="button" disabled={pending || !hasSession} onClick={() => run(restartAction, "Restart this onboarding with a new link? Payment and existing delivery work stay unchanged. Previous submissions remain in history, and this session’s current link will stop working.")}>{pending ? "Updating…" : "Restart onboarding"}</DetailDangerButton>}
             />
             <DetailDangerAction
                 title="Delete onboarding permanently"

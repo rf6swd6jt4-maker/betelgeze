@@ -9,6 +9,7 @@ import {
 import {
     completeCanonicalStep,
     getCanonicalMutationSessionByToken,
+    getCanonicalSessionByToken,
     getCanonicalStepDraft,
     getPublicOnboardingPath,
     markCanonicalSessionNoticeSeen,
@@ -260,6 +261,14 @@ export async function skipTestStep(
         if (!session.is_test) throw new Error("Invalid test onboarding session")
 
         const step = resolved.completableSteps.find((candidate) => candidate.key === stepKey)
+        // A test shortcut must never count as a genuinely completed welcome.
+        if (step?.sessionStepId) {
+            const { error: skipError } = await supabaseAdmin.rpc("mark_onboarding_test_shortcut", {
+                p_workspace_id: session.workspace_id, p_session_id: session.id,
+                p_session_token: token, p_step_id: step.sessionStepId,
+            })
+            if (skipError) throw new Error("Could not record this test shortcut")
+        }
         if (step?.kind === "form") {
             const form = step.form ?? getOnboardingForm(step.formKey)
             if (form) {
@@ -280,4 +289,16 @@ export async function skipTestStep(
             error: error instanceof Error ? error.message : "Could not skip this test step.",
         }
     }
+}
+
+
+export async function skipWelcomeSequence(token: string, stepKey: string) {
+    const resolved = await getPublicSession(token, stepKey)
+    const { error } = await supabaseAdmin.rpc("skip_previously_completed_welcome", {p_workspace_id:resolved.session.workspace_id,p_session_id:resolved.session.id,p_session_token:token,p_step_id:stepKey})
+    if (error) throw new Error(error.message || "Welcome cannot be skipped")
+    // Refresh the canonical rolling window after marking the welcome sequence.
+    const refreshed = await getCanonicalSessionByToken(token)
+    if (!refreshed) throw new Error("Reload this onboarding link to continue")
+    const next = refreshed.completableSteps.find(step => !refreshed.completedKeys.has(step.key))
+    return { nextPath: await onboardingPathForStep(token, next?.key ?? null) }
 }

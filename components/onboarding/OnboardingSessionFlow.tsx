@@ -10,6 +10,7 @@ import { skipTestStep } from "@/app/onboarding/session/[token]/actions"
 import { OnboardingAdvanceContext } from "./OnboardingAdvanceContext"
 import { OnboardingLayout } from "./OnboardingLayout"
 import { OnboardingSessionRenderer } from "./OnboardingSessionRenderer"
+import { WelcomeSequenceSkip } from "./WelcomeSequenceSkip"
 import { OnboardingStepSubmit } from "./OnboardingStepSubmit"
 import { OnboardingSessionNotice } from "./OnboardingSessionNotice"
 import { OnboardingThemeProvider } from "./OnboardingThemeProvider"
@@ -18,6 +19,8 @@ import { TestClientMenu } from "./TestClientMenu"
 
 export type OnboardingSessionFlowProps = {
     token: string
+    welcomeSkipStepIds?: string[]
+    prefilledStepKeys?: string[]
     steps: SessionStep[]
     completableStepKeys: string[]
     initialStepKey: string
@@ -44,7 +47,7 @@ export type OnboardingSessionFlowProps = {
     connectionReason?: string
 }
 
-export function OnboardingSessionFlow({ token, steps, completableStepKeys, initialStepKey, initialCompletedKeys, initialResponses,
+export function OnboardingSessionFlow({ token, welcomeSkipStepIds = [], prefilledStepKeys = [], steps, completableStepKeys, initialStepKey, initialCompletedKeys, initialResponses,
     compositionHash, preparedAt, sessionStatus, isTest, moduleTitles, theme, help, notices, satisfiedBlockIds, blockResponses,
     client, workspaceName, logoSrc, privacyPolicyUrl, termsOfServiceUrl, basePath, paymentComplete, metaResult, connectionReason,
 }: OnboardingSessionFlowProps) {
@@ -130,6 +133,7 @@ export function OnboardingSessionFlow({ token, steps, completableStepKeys, initi
         >
             <ScrollToTopOnStepChange stepKey={currentStep.key} />
 
+            {prefilledStepKeys.includes(currentStep.key) && !stepIsLocked ? <p className="mb-4 text-sm text-[var(--onboarding-muted)]">We have filled in compatible answers from your earlier onboarding. Please check them before completing this step.</p> : null}
             <OnboardingSessionRenderer
                 step={{ ...currentStep }}
                 moduleTitles={moduleTitles}
@@ -147,6 +151,7 @@ export function OnboardingSessionFlow({ token, steps, completableStepKeys, initi
                         sections={migrationNotice.sections}
                     />
                 ) : null}
+                skipAction={sessionStatus === "active" && !stepIsLocked && welcomeSkipStepIds.includes(currentStep.key) ? <WelcomeSequenceSkip token={token} stepKey={currentStep.key} /> : null}
                 action={sessionStatus === "active" && (canFinalizeHere || (!isFinalStep && (currentStep.kind === "video" || usesDirectVisualCompletion) && !stepIsLocked)) ? (
                     <OnboardingStepSubmit
                         token={token}

@@ -34,13 +34,13 @@ async function requireOnboardingManager(workspaceSlug: string, relationshipId: s
     return access
 }
 
-export async function archiveOnboarding(workspaceSlug: string, relationshipId: string) {
+export async function archiveOnboarding(workspaceSlug: string, relationshipId: string, sessionId: string) {
     const { workspace, user } = await requireOnboardingManager(workspaceSlug, relationshipId)
     const { data: session } = await supabaseAdmin
         .from("relationship_onboarding_sessions")
         .select("id, source_sale_id")
         .eq("workspace_id", workspace.id)
-        .eq("relationship_id", relationshipId)
+        .eq("relationship_id", relationshipId).eq("id", sessionId)
         .in("status", ["active", "completed"])
         .order("updated_at", { ascending: false })
         .limit(1)
@@ -91,7 +91,7 @@ export async function restartOnboarding(workspaceSlug: string, relationshipId: s
 
     // The rendered session ID is the retry key. A stale/double click must never
     // restart a newly created run, and a failed clone must leave the old run intact.
-    const { error } = await supabaseAdmin.rpc("restart_relationship_onboarding_session", {
+    const { data, error } = await supabaseAdmin.rpc("restart_relationship_onboarding_session", {
         p_workspace_id: workspace.id,
         p_relationship_id: relationshipId,
         p_session_id: sessionId,
@@ -106,6 +106,8 @@ export async function restartOnboarding(workspaceSlug: string, relationshipId: s
     revalidatePath(`/${workspace.slug}/onboarding`)
     revalidatePath(`/${workspace.slug}/onboarding/${relationshipId}`)
     revalidatePath(`/${workspace.slug}/relationships/${relationshipId}`)
+    if (!data?.session_id) throw new Error("Reload onboarding to open the restarted session.")
+    return { path: `/${workspace.slug}/onboarding/${relationshipId}?session=${data.session_id}` }
 }
 
 export async function revokeOnboardingToken(workspaceSlug: string, relationshipId: string, sessionId: string, tokenVersion: number) {
@@ -133,11 +135,11 @@ export async function revokeOnboardingToken(workspaceSlug: string, relationshipI
     return { ok: true as const, revoked: true as const, notificationQueued }
 }
 
-export async function rotateOnboardingToken(workspaceSlug: string, relationshipId: string) {
+export async function rotateOnboardingToken(workspaceSlug: string, relationshipId: string, sessionId: string) {
     const { workspace, user } = await requireOnboardingManager(workspaceSlug, relationshipId)
     const { data: session } = await supabaseAdmin.from("relationship_onboarding_sessions")
         .select("id, token_version, source_sale_id")
-        .eq("workspace_id", workspace.id).eq("relationship_id", relationshipId)
+        .eq("workspace_id", workspace.id).eq("relationship_id", relationshipId).eq("id", sessionId)
         .in("status", ["active", "completed"]).order("updated_at", { ascending: false }).limit(1).maybeSingle()
     if (!session) throw new Error("Onboarding session not found")
     const token = randomBytes(32).toString("hex")

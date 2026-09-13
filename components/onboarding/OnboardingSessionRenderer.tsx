@@ -35,6 +35,7 @@ export type OnboardingSessionRenderModel = {
     onPreviewBack?: () => void
     notice?: React.ReactNode
     allowEditRequest?: boolean
+    skipAction?: React.ReactNode
     action?: React.ReactNode
     satisfiedBlockIds?: string[]
     blockResponses?: Record<string, unknown>
@@ -78,6 +79,7 @@ export function OnboardingSessionRenderer({
     notice,
     allowEditRequest = false,
     action,
+    skipAction,
     satisfiedBlockIds = [],
     blockResponses = {},
     backHref = null,
@@ -120,6 +122,7 @@ export function OnboardingSessionRenderer({
                     allowEditRequest={allowEditRequest}
                     initiallySatisfied={satisfiedBlockIds}
                     initialBlockResponses={blockResponses}
+                    skipAction={skipAction}
                     continueAction={action}
                     continueLabel={step.navigation?.continueLabel || "Complete and continue"}
                     backLabel={step.navigation?.backLabel || "Back"}
@@ -203,7 +206,7 @@ export function OnboardingSessionRenderer({
                     <p className="mt-4 text-sm leading-6">{action ? "Finish onboarding below to open your client portal." : "You can close this page now. There is nothing else you need to do at this stage."}</p>
                 </div>
             )}
-            {action ? <div className={`mt-6 grid items-start gap-3 sm:mt-8 ${onPreviewBack || backHref ? "grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"}`}>{onPreviewBack ? <button type="button" onClick={onPreviewBack} className="inline-flex min-h-14 w-full items-center justify-center rounded-xl border border-[var(--onboarding-primary)] px-5 text-center font-medium text-[var(--onboarding-primary)] sm:w-auto">{step.navigation?.backLabel || "Back"}</button> : backHref ? <a href={backHref} className="inline-flex min-h-14 w-full items-center justify-center rounded-xl border border-[var(--onboarding-primary)] px-5 text-center font-medium text-[var(--onboarding-primary)] sm:w-auto">{step.navigation?.backLabel || "Back"}</a> : null}{action}</div> : null}
+            {action ? <div className={`mt-6 grid items-stretch gap-3 sm:mt-8 ${skipAction ? "grid-cols-[minmax(0,1fr)_minmax(0,2fr)]" : onPreviewBack || backHref ? "grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"}`}>{onPreviewBack ? <button type="button" onClick={onPreviewBack} className={`inline-flex min-h-14 w-full items-center justify-center rounded-xl border border-[var(--onboarding-primary)] px-5 text-center font-medium text-[var(--onboarding-primary)] sm:w-auto ${skipAction ? "col-span-full" : ""}`}>{step.navigation?.backLabel || "Back"}</button> : backHref ? <a href={backHref} className={`inline-flex min-h-14 w-full items-center justify-center rounded-xl border border-[var(--onboarding-primary)] px-5 text-center font-medium text-[var(--onboarding-primary)] sm:w-auto ${skipAction ? "col-span-full" : ""}`}>{step.navigation?.backLabel || "Back"}</a> : null}{skipAction}{action}</div> : null}
         </div>
     )
 }

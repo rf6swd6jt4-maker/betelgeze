@@ -220,19 +220,15 @@ export async function accessibleAssetIds(access: WorkspaceAccess, relationshipId
     const scopedWorkItemIds = workItemIds === undefined ? await accessibleWorkItemIds(access, scopedRelationshipIds) : workItemIds
     const relationshipIdList = [...fullyScopedRelationshipIds]
     const workItemIdList = [...(scopedWorkItemIds ?? [])]
-    const [relationshipLinks, workItemLinks] = await Promise.all([
-        relationshipIdList.length
-            ? supabaseAdmin.from("asset_relationships").select("asset_id").eq("workspace_id", access.workspaceId).in("relationship_id", relationshipIdList)
-            : Promise.resolve({ data: [] as Array<{ asset_id: string }>, error: null }),
-        workItemIdList.length
-            ? supabaseAdmin.from("asset_work_items").select("asset_id").eq("workspace_id", access.workspaceId).in("work_item_id", workItemIdList)
-            : Promise.resolve({ data: [] as Array<{ asset_id: string }>, error: null }),
-    ])
-    if (relationshipLinks.error || workItemLinks.error) return new Set()
-    return new Set([
-        ...(relationshipLinks.data ?? []).map((item) => item.asset_id),
-        ...(workItemLinks.data ?? []).map((item) => item.asset_id),
-    ])
+    if (!relationshipIdList.length && !workItemIdList.length) return new Set<string>()
+    const { data, error } = await supabaseAdmin.rpc("read_accessible_onboarding_asset_ids", {
+        p_workspace_id: access.workspaceId,
+        p_relationship_ids: relationshipIdList,
+        p_work_item_ids: workItemIdList,
+        p_user_id: access.userId,
+    })
+    if (error) throw new Error("Could not verify attachment access.")
+    return new Set<string>(data ?? [])
 }
 
 export async function requireAssetAccess(access: WorkspaceAccess, assetId: string) {
@@ -240,6 +236,10 @@ export async function requireAssetAccess(access: WorkspaceAccess, assetId: strin
 }
 
 export async function workspaceAccessCanAsset(access: WorkspaceAccess, assetId: string) {
-    const ids = await accessibleAssetIds(access)
-    return !ids || ids.has(assetId)
+    if (isAdminRole(access.role)) return true
+    const { data, error } = await supabaseAdmin.rpc("workspace_user_can_access_asset", {
+        p_workspace_id: access.workspaceId, p_asset_id: assetId, p_user_id: access.userId,
+    })
+    if (error) throw new Error("Could not verify attachment access.")
+    return data === true
 }

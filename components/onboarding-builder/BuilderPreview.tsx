@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import { OnboardingSessionRenderer, type OnboardingRenderStep } from "@/components/onboarding/OnboardingSessionRenderer"
 import { OnboardingLayout } from "@/components/onboarding/OnboardingLayout"
 import { OnboardingThemeProvider } from "@/components/onboarding/OnboardingThemeProvider"
-import type { OnboardingPaymentDefinitionV2 } from "@/lib/onboarding/block-definition"
+import type { OnboardingModuleDefinitionV2, OnboardingPaymentDefinitionV2 } from "@/lib/onboarding/block-definition"
 import type { OnboardingBookendDefinition, OnboardingHelpSettings, OnboardingModuleDefinition, OnboardingThemeDefinition } from "@/lib/onboarding/configuration-types"
 import { bookendToRenderStep, configuredStepToRenderStep, visualStepToRenderStep } from "@/lib/onboarding/render-model"
 
@@ -34,8 +34,8 @@ export function BuilderPreview({
     termsOfServiceUrl,
     fullWindow = false,
 }: {
-    module?: OnboardingModuleDefinition | null
-    modules?: OnboardingModuleDefinition[]
+    module?: OnboardingModuleDefinition | OnboardingModuleDefinitionV2 | null
+    modules?: (OnboardingModuleDefinition | OnboardingModuleDefinitionV2)[]
     bookend?: OnboardingBookendDefinition | null
     payment?: OnboardingPaymentDefinitionV2 | null
     theme: OnboardingThemeDefinition
@@ -65,7 +65,9 @@ export function BuilderPreview({
             })),
             ...previewModules.flatMap((module) => module.steps.map((step) => ({
                 key: `module:${module.id}:${step.id}`,
-                step: configuredStepToRenderStep(module, step, step.resolvedVideoUrl),
+                step: "kind" in step
+                    ? configuredStepToRenderStep({ ...module, steps: [] }, step, step.resolvedVideoUrl)
+                    : visualStepToRenderStep(module.name, step),
             }))),
         ]
     }, [bookend, payment, previewModules])

@@ -1,0 +1,35 @@
+# SS-04: independent onboarding sessions
+
+13 September 2026. Implemented and validated locally against release baseline `0659063d`. **Not installed or deployed.** Automatic approval review rejected the production rollback rehearsal because it includes a privileged migration, backfill and test restart. The live database has not executed this migration. Explicit approval for that production operation is the remaining release gate.
+
+## Resulting behavior
+
+- Each sale keeps its own frozen onboarding modules, submissions, drafts, uploads, payment and client token. The Onboarding panel shows individual active, completed and archived sessions, labelled by the services visible to the user. Old relationship URLs redirect only when unambiguous; otherwise they show a session chooser. Collections use 50-record pages, with counts explicitly scoped to the displayed page.
+- Welcome shows **Skip beside Complete** only after a different session for that relationship has proven completion. Proof requires every actionable welcome step, a client completion activity event and all required block receipts. Multiple sessions, partially completed welcomes and test shortcuts cannot establish proof. Skipping records its source session and never creates new completion evidence. The server independently checks the token, relationship, prior proof, payment and preceding steps. Existing historical test sessions are conservatively excluded from the backfill.
+- Compatible text, textarea, email, phone, number and URL answers can prefill matching source fields from the same frozen module revision. Existing drafts and current submissions win. Clients must review and complete the new step. Consent, payment authorizations, uploads and integration confirmations are not copied. The search is bounded to the previous 30 sessions; this feature does not promote old answers into current relationship fields.
+- Reviews become available when their required information arrives. Each service enters Setup only when its own required steps and reviews are done and its sale is paid/consented. Shared modules can satisfy several services; another service's missing form or review does not hold them all back. Welcome needs completion but no staff review; the closing bookend is not a readiness barrier.
+- Restart archives only the selected run, revokes its old link and clones its frozen composition, enrollments and requirements under new IDs. It preserves payment, previous submissions and existing delivery progress, and opens the replacement run. Retry returns the same replacement. Unpaid restarts remain waiting for payment. Archive/rotate/revoke actions bind the rendered session ID.
+- Further selected-service sales add their seller, manager and assignees to the **existing relationship team and group chat**. Existing members and messages remain. The migration reconciles previously sold selected services, excluding archived relationships.
+- Session/module access, service labels, asset downloads and raw session rows follow sale responsibility and current instance assignment. A raw session contains a bearer token, so partial service access never grants that row or the complete client link. Merely joining the relationship team is insufficient to access unrelated onboarding sessions.
+
+## Verification
+
+- `BE_PGLITE_ROOT=/private/tmp/be-performance-pg-fixture node scripts/validate-selected-service-sales-sql.mjs`: 31 groups passed. Existing selected-sale, deduplication, checkout, payment, confirmation and rollback cases remain covered. New cases exercise multi-step welcome evidence, test shortcuts, required welcome blocks, token revocation, replay, relationship team union, independent service review readiness, restart isolation and rollback, compatible answer mapping, attachment access, and history pagination.
+- The SQL harness uses the real SS-01 through SS-04 migrations, with a minimal legacy schema. Its legacy completion RPC and activity storage are adapters; it does **not** replace a rehearsal against the complete deployed schema. The production rehearsal in `tests/sql/onboarding-session-readiness-rehearsal.sql` remains unexecuted.
+- 961 repository tests, changed-file ESLint, `git diff --check`, and the production Webpack/TypeScript build passed in the final local validation.
+- Actual renderer/Skip components passed Chromium and WebKit fixtures at 320, 390, 639, 640 and 1280 CSS pixels. Checks include hidden/ineligible Skip, side-by-side sizing, required Complete disabled while authorized Skip is usable, successful navigation, failed-command recovery and horizontal overflow. These are browser emulation results, not physical Android/iPhone or authenticated production QA.
+- At 65 additional archived sessions, the isolated 50-record panel query measured 3.85 ms median across seven samples. This is database-only fixture evidence, not production or end-to-end latency. The panel combines its session/access reads in one request; asset listing combines the former two relationship/work link reads; individual asset access uses a point lookup. Answer reuse runs alongside existing page reads, with indexed step/submission/field lookups. No polling, provider request or eager workspace download was added.
+
+## Release and recovery
+
+Migration: `supabase/migrations/20260913150000_onboarding_session_readiness.sql`. SHA-256: `cabb3e6e570d9cc764b2dc929f9531e11ea1363d6cc042cdb7988daa25f77314`.
+
+1. Approve and run the reviewed migration with its final `commit` replaced by the rollback rehearsal. Inspect actual production schema behavior and the selected test-session restart. No provider send or payment call is part of the SQL rehearsal.
+2. If the rehearsal passes, install the exact reviewed migration. Confirm team uniqueness, welcome evidence counts, relevant grants and existing session preservation. Record the checksum and results.
+3. Deploy the scoped application commit, verify Vercel, then exercise authenticated Onboarding sessions and mobile views. Do not claim live provider or physical-device validation from deployment success.
+
+The additive schema supports the prior app while application deployment is pending. A code rollback can retain the new schema and history; do not drop evidence, delete sessions, or undo completed client work as a rollback strategy. Do not deploy the new app before its RPCs are installed.
+
+## Boundaries
+
+Settings permissions are unchanged. Giving all staff Comms, their Queue and Onboarding remains the later permissions package. SS-05 still owns Setup SOP generation and Maintenance cycles. Client portal identity and provider bindings are not rotated by new sales or restarts. Existing-client adoption, such as Andy's completed website and already-onboarded Ads, remains explicit import/review work; this release does not invent another charge or silently certify that historical progress.

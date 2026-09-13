@@ -975,7 +975,7 @@ export async function loadPublishedOnboardingTheme(workspaceId: string): Promise
 }
 
 // POS preview hydrates only the server-selected composition, on explicit request.
-export async function loadSelectedServicePreview(workspaceId: string, quote: import("@/lib/service-pos").ServiceSaleQuote) {
+export async function loadSelectedServicePreview(workspaceId: string, quote: Pick<import("@/lib/service-pos").ServiceSaleQuote, "configurationId" | "modules">) {
     const [config, theme] = await Promise.all([
         quote.configurationId ? supabaseAdmin.from("onboarding_configuration_revisions").select("id, configuration_type, status, revision_number, definition").eq("workspace_id", workspaceId).eq("id", quote.configurationId).single() : Promise.resolve({data:null,error:null}),
         loadPublishedOnboardingTheme(workspaceId),

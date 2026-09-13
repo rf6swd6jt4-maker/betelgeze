@@ -98,7 +98,7 @@ export default async function CanonicalSessionPage({ params, searchParams }: Pag
         ? requestedCandidate
         : null
     const currentStep = requestedStep ?? linearCurrentStep
-    const [submittedResponse, draft, drafts, preparedSteps] = await Promise.all([
+    const [submittedResponse, draft, drafts, preparedSteps, reuseResult] = await Promise.all([
         currentStep.kind === "form" ? getFormResponseAsset(session.id, currentStep) : undefined,
         currentStep.kind === "form" ? getCanonicalStepDraft(token, currentStep.key, resolved) : null,
         supabaseAdmin.from("onboarding_step_drafts").select("session_step_id, response")
@@ -111,15 +111,20 @@ export default async function CanonicalSessionPage({ params, searchParams }: Pag
                 ? { ...block, upload: { ...block.upload, resolvedUrl: await createPrivateUploadSignedUrl(block.upload.path) } }
                 : block)),
         }))),
+        supabaseAdmin.rpc("read_onboarding_session_reuse", {p_workspace_id:session.workspace_id,p_session_id:session.id,p_session_token:token}),
     ])
+    const reuse = reuseResult.error ? null : reuseResult.data as {canSkipWelcome:boolean;welcomeStepIds:string[];responses:Record<string,FormResponse>}
     const initialResponse = submittedResponse ?? draft?.response
-    const initialResponses = Object.fromEntries((drafts.data ?? []).map((row) => [row.session_step_id, row.response as FormResponse]))
+    const savedDrafts = Object.fromEntries((drafts.data ?? []).map((row) => [row.session_step_id, row.response as FormResponse]))
+    const initialResponses = { ...(reuse?.responses ?? {}), ...savedDrafts }
+    const prefilledStepKeys = Object.keys(reuse?.responses ?? {}).filter((key) => !(key in savedDrafts) && !(key === currentStep.key && initialResponse))
     if (initialResponse) initialResponses[currentStep.key] = initialResponse
     // Dynamic server request: timestamp the freshly signed media URLs.
     // eslint-disable-next-line react-hooks/purity
     const preparedAt = Date.now()
     return <OnboardingSessionFlow
         key={`${session.id}:${session.composition_hash}:${currentStep.key}`}
+        welcomeSkipStepIds={reuse?.canSkipWelcome ? reuse.welcomeStepIds : []} prefilledStepKeys={prefilledStepKeys}
         token={token} steps={preparedSteps} initialStepKey={currentStep.key}
         completableStepKeys={completableSteps.map((step) => step.key)} initialCompletedKeys={[...completedKeys]}
         initialResponses={initialResponses} compositionHash={session.composition_hash ?? null} preparedAt={preparedAt}

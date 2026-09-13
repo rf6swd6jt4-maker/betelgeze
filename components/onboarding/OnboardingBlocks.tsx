@@ -31,6 +31,7 @@ type OnboardingBlocksProps = {
     allowEditRequest: boolean
     initiallySatisfied?: string[]
     initialBlockResponses?: Record<string, unknown>
+    skipAction?: ReactNode
     continueAction?: ReactNode
     continueLabel: string
     backLabel: string
@@ -58,6 +59,7 @@ function OnboardingBlocksContent({
     initiallySatisfied = [],
     initialBlockResponses = {},
     continueAction,
+    skipAction,
     continueLabel,
     backLabel,
     backHref,
@@ -178,7 +180,7 @@ function OnboardingBlocksContent({
                 {block.required && !locked ? <p className="mt-2 text-xs text-[var(--onboarding-muted)]">{satisfied.has(requirementId) ? "✓ Opened" : "Open this link to continue."}</p> : null}
             </BlockFrame>
         })}
-        {(!locked && form) || continueAction ? <div className={`mt-6 grid items-start gap-3 sm:mt-8 ${backHref || onPreviewBack ? "grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"}`}>{onPreviewBack ? <button type="button" onClick={onPreviewBack} className="inline-flex min-h-14 w-full items-center justify-center rounded-xl border border-[var(--onboarding-primary)] px-5 text-center font-medium text-[var(--onboarding-primary)] sm:w-auto">{backLabel}</button> : backHref ? <a href={backHref} className="inline-flex min-h-14 w-full items-center justify-center rounded-xl border border-[var(--onboarding-primary)] px-5 text-center font-medium text-[var(--onboarding-primary)] sm:w-auto">{backLabel}</a> : null}{form && !locked ? <button type="submit" form={formId} disabled={unsatisfied.length > 0 || formSubmitting} className="min-h-14 w-full rounded-xl bg-[var(--onboarding-primary)] px-5 py-4 font-medium leading-6 text-white transition active:scale-[0.99] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-60">{formSubmitting ? "Saving…" : continueLabel}</button> : <fieldset disabled={unsatisfied.length > 0} className="contents">{continueAction}</fieldset>}</div> : null}
+        {(!locked && form) || continueAction ? <div className={`mt-6 grid items-stretch gap-3 sm:mt-8 ${skipAction ? "grid-cols-[minmax(0,1fr)_minmax(0,2fr)]" : backHref || onPreviewBack ? "grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"}`}>{onPreviewBack ? <button type="button" onClick={onPreviewBack} className={`inline-flex min-h-14 w-full items-center justify-center rounded-xl border border-[var(--onboarding-primary)] px-5 text-center font-medium text-[var(--onboarding-primary)] sm:w-auto ${skipAction ? "col-span-full" : ""}`}>{backLabel}</button> : backHref ? <a href={backHref} className={`inline-flex min-h-14 w-full items-center justify-center rounded-xl border border-[var(--onboarding-primary)] px-5 text-center font-medium text-[var(--onboarding-primary)] sm:w-auto ${skipAction ? "col-span-full" : ""}`}>{backLabel}</a> : null}{skipAction}{form && !locked ? <button type="submit" form={formId} disabled={unsatisfied.length > 0 || formSubmitting} className="min-h-14 w-full rounded-xl bg-[var(--onboarding-primary)] px-5 py-4 font-medium leading-6 text-white transition active:scale-[0.99] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-60">{formSubmitting ? "Saving…" : continueLabel}</button> : <fieldset disabled={unsatisfied.length > 0} className="contents">{continueAction}</fieldset>}</div> : null}
         {unsatisfied.length > 0 && !locked ? <p className="mt-3 text-center text-xs text-[var(--onboarding-muted)]">Complete {unsatisfied.length === 1 ? "the required item" : `${unsatisfied.length} required items`} above to continue.</p> : null}
         {requirementError ? <p role="alert" className="mt-3 text-left text-sm text-red-700">{requirementError} <RequestHelpLink />.</p> : null}
     </>

@@ -439,7 +439,7 @@ test("frozen visual previews and Settings style share the release pipeline witho
     assert.match(previewPage, /OnboardingSessionRenderer/)
     assert.match(previewPage, /preview/)
     assert.match(previewPage, /logoSrc=\{logoSrc\}/)
-    assert.match(builderPreview, /modules\?: OnboardingModuleDefinition\[\]/)
+    assert.match(builderPreview, /modules\?: \(OnboardingModuleDefinition \| OnboardingModuleDefinitionV2\)\[\]/)
     assert.match(builderPreview, /allowRoadmapNavigation/)
     assert.match(brandingSettings, /Unpublished style draft/)
     assert.match(brandingSettings, /publishVisualThemeDraft/)

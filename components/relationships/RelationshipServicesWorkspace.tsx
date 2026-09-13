@@ -1,12 +1,14 @@
 "use client"
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
+import dynamic from "next/dynamic"
 import Link from "@/components/workspace/WorkspaceLink"
-import { useRouter } from "@/components/workspace/WorkspaceNavigation"
-import { AssignmentSelector, Selector } from "@/components/ui"
-import { SelectorDrawer, SelectorOption, SelectorTrigger } from "@/components/ui/Selector"
+import { useRouter, useSearchParams, useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
+import { AssignmentSelector, Selector, AttachmentCards, AttachmentCard, AddAttachmentCard, CenteredDialog, ServiceStage } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
-import { RelationshipServiceTimeline } from "./RelationshipServiceTimeline"
-import { QuickStats } from "@/components/panel/QuickStats"
+import { RelationshipServiceTimeline, RelationshipQueue } from "./RelationshipServiceTimeline"
+import { ServiceThumbnail } from "./ServiceThumbnail"
+import { RelationshipContactCards } from "./RelationshipContactCards"
+const PosDialog = dynamic(() => import("./RelationshipPosDialog").then(module => module.RelationshipPosDialog))
 import { DetailField, DetailFields } from "@/components/detail"
 import { addRelationshipService, changeRelationshipService } from "@/app/[workspaceSlug]/relationships/service-actions"
 import { SERVICE_STAGES, type RelationshipServicePage, type RelationshipServiceRow, type ServiceCatalogueChoice } from "@/lib/service-stages"
@@ -17,33 +19,29 @@ type Props = { workspaceSlug: string; relationshipId: string; userId: string; in
 const buttonClass = "inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
 const inputClass = "min-h-11 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-base text-white sm:text-sm"
 async function read<T>(url: string, signal?: AbortSignal): Promise<T> {
-    const response = await fetch(url, { signal, cache: "no-store", credentials: "same-origin" })
+    const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000), cache: "no-store", credentials: "same-origin" })
     const result = await response.json()
     if (!response.ok) throw new Error(result.error ?? "Could not load this section.")
     return result
 }
 function CataloguePicker({ endpoint, selected, onChange, disabled }: { endpoint: string; selected: ServiceCatalogueChoice | null; onChange: (value: ServiceCatalogueChoice) => void; disabled: boolean }) {
-    const [anchor, setAnchor] = useState<HTMLElement | null>(null)
     const [query, setQuery] = useState("")
     const [page, setPage] = useState(0)
-    const [data, setData] = useState<{items: ServiceCatalogueChoice[]; hasMore: boolean} | null>(null)
+    const [data, setData] = useState<{ items: ServiceCatalogueChoice[]; hasMore: boolean } | null>(null)
     const [error, setError] = useState("")
     const [retry, setRetry] = useState(0)
+    const [choosing, setChoosing] = useState(!selected)
     useEffect(() => {
-        if (!anchor) return
+        if (!choosing) return
         const controller = new AbortController()
-        const timer = window.setTimeout(() => {
-            void read<{items: ServiceCatalogueChoice[]; hasMore: boolean}>(`${endpoint}?kind=catalogue&q=${encodeURIComponent(query)}&offset=${page * 30}`, controller.signal).then(setData).catch(error => { if (!controller.signal.aborted) setError(error.message) })
-        }, query ? 200 : 0)
+        const timer = window.setTimeout(() => { void read<{ items: ServiceCatalogueChoice[]; hasMore: boolean }>(`${endpoint}?kind=catalogue&q=${encodeURIComponent(query)}&offset=${page * 30}`, controller.signal).then(value => { if (!controller.signal.aborted) { setData(value); setError("") } }).catch(error => { if (!controller.signal.aborted) setError(error.message) }) }, query ? 200 : 0)
         return () => { clearTimeout(timer); controller.abort() }
-    }, [anchor, endpoint, page, query, retry])
-    return <><SelectorTrigger open={Boolean(anchor)} appearance="input" disabled={disabled} aria-label="Service catalogue" onClick={event => { setAnchor(event.currentTarget); setError("") }}>{selected?.name ?? "Choose a service"}</SelectorTrigger>
-        {anchor ? <SelectorDrawer anchor={anchor} ariaLabel="Service catalogue" title="Published services" search={query} onSearch={value => { setQuery(value); setPage(0); setData(null); setError("") }} onDismiss={() => setAnchor(null)} footer={page > 0 || data?.hasMore ? <div className="flex justify-between gap-2"><button type="button" disabled={page === 0} className="min-h-11 px-2 text-xs disabled:opacity-40" onClick={() => { setData(null); setPage(page - 1) }}>Previous</button><button type="button" disabled={!data?.hasMore} className="min-h-11 px-2 text-xs disabled:opacity-40" onClick={() => { setData(null); setPage(page + 1) }}>Next</button></div> : undefined}>
-            {error ? <div className="p-3 text-sm text-red-200">{error}<button type="button" className="block min-h-11 underline" onClick={() => { setError(""); setRetry(retry + 1) }}>Retry</button></div> : !data ? <p role="status" className="p-3 text-sm text-neutral-500">Loading services…</p> : data.items.length ? data.items.map(service => <SelectorOption key={service.id} selected={selected?.id === service.id} description={service.description} onClick={() => { onChange(service); setAnchor(null) }}>{service.name}</SelectorOption>) : <p className="p-3 text-sm text-neutral-500">No published services match. Publish a service in the catalogue first.</p>}
-        </SelectorDrawer> : null}
-    </>
+    }, [choosing, endpoint, page, query, retry])
+    if (!choosing && selected) return <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 text-left text-sm" disabled={disabled} onClick={() => setChoosing(true)}><strong>{selected.name}</strong><span className="text-neutral-500 underline">Change</span></button>
+    return <><input aria-label="Search service catalogue" placeholder="Search services" value={query} onChange={event => { setQuery(event.target.value); setPage(0); setData(null) }} className={inputClass} />{error ? <p role="alert" className="py-3 text-sm text-red-300">{error} <button type="button" className="min-h-11 underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p> : !data ? <p className="py-4 text-sm text-neutral-400">Loading services…</p> : <><List ariaLabel="Service catalogue">{data.items.map(service => <ListItem key={service.id}><button type="button" disabled={disabled} className="w-full text-left" onClick={() => { onChange(service); setChoosing(false) }}><ListPrimaryRow><ListTitle>{service.name}</ListTitle></ListPrimaryRow><ListSecondaryRow><span className="truncate text-xs text-neutral-400">{service.description}</span></ListSecondaryRow></button></ListItem>)}{!data.items.length ? <p className="p-4 text-sm text-neutral-500">No published services found.</p> : null}</List><Pagination page={page} hasMore={data.hasMore} onChange={setPage} /></>}</>
 }
-function ServiceForm({ endpoint, props, row, onDone, onClose }: { endpoint: string; props: Props; row?: RelationshipServiceRow; onDone: () => void; onClose: () => void }) {
+
+function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange }: { endpoint: string; props: Props; row?: RelationshipServiceRow; onDone: () => void; onClose: () => void; onBusyChange: (busy: boolean) => void }) {
     const heading = useRef<HTMLHeadingElement>(null)
     useEffect(() => { heading.current?.focus() }, [])
     const [service, setService] = useState<ServiceCatalogueChoice | null>(null)
@@ -57,6 +55,7 @@ function ServiceForm({ endpoint, props, row, onDone, onClose }: { endpoint: stri
     const [retry, setRetry] = useState(0)
     const [pending, startTransition] = useTransition()
     const [uncertain, setUncertain] = useState(false)
+    useEffect(() => { onBusyChange(pending || uncertain); return () => onBusyChange(false) }, [pending, uncertain, onBusyChange])
     const requestId = useRef<string | null>(null)
     const serviceId = row?.service_id ?? service?.id
     useEffect(() => {
@@ -79,22 +78,22 @@ function ServiceForm({ endpoint, props, row, onDone, onClose }: { endpoint: stri
             } catch { setUncertain(true); setError("The save could not be confirmed. Retry this same change to avoid a duplicate.") }
         })
     }
-    const stages = row ? SERVICE_STAGES.filter(s => ["negotiating", "for_later", "declined"].includes(row.stage ?? "") ? ["negotiating", "for_later", "declined"].includes(s.key) : ["setup", "maintenance", "completed"].includes(s.key)) : SERVICE_STAGES.filter(s => ["setup", "maintenance", "completed"].includes(s.key))
+    const stages = row ? SERVICE_STAGES.filter(s => ["negotiating", "for_later", "declined"].includes(row.stage ?? "") ? ["negotiating", "declined"].includes(s.key) : ["setup", "maintenance", "completed"].includes(s.key)) : SERVICE_STAGES.filter(s => ["setup", "maintenance", "completed"].includes(s.key))
     return <form onSubmit={submit} className="mb-4 border-y border-neutral-800 py-4" aria-label={row ? `Edit ${row.name}` : "Add service"}>
         <h3 ref={heading} tabIndex={-1} className="mb-3 text-base font-medium outline-none">{row ? row.name : "Add a service"}</h3>
         <fieldset disabled={pending || uncertain} className="min-w-0">
             {!row ? <CataloguePicker endpoint={endpoint} selected={service} onChange={value => { setService(value); setAssignee(""); setPeople(null); setPeopleError("") }} disabled={pending || uncertain} /> : null}
-            <DetailFields columns={1}>
+            {row || service ? <DetailFields columns={1}>
                 {!row ? <DetailField label="Start from" icon="status"><Selector ariaLabel="Service entry" disabled={pending || uncertain} value={origin} onChange={value => { setOrigin(value); setStage(value === "negotiation" ? "negotiating" : "setup") }} options={[{value:"negotiation",label:"Negotiating",description:"Discuss this service before selling it"}, ...(props.canImport ? [{value:"already_onboarded",label:"Already onboarded",description:"Record existing delivery without checkout"}] : [])]} /></DetailField> : null}
                 {row || origin === "already_onboarded" ? <DetailField label="Stage" icon="status"><Selector ariaLabel="Service stage" disabled={pending || uncertain} value={stage} onChange={setStage} options={stages.map(s => ({ value: s.key, label: s.label }))} /></DetailField> : null}
                 <DetailField label="Assignee" icon="user"><AssignmentSelector ariaLabel="Service assignee" disabled={!people || pending || uncertain} value={assignee} onChange={setAssignee} clearLabel="Unassigned" people={people ?? []} />{serviceId && !people && !peopleError ? <p className="text-xs text-neutral-500">Loading eligible people…</p> : null}</DetailField>
                 {row ? <DetailField label="Reason" icon="description"><input aria-label="Reason for service change" required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} className={inputClass} /></DetailField> : null}
-            </DetailFields>
+            </DetailFields> : null}
         </fieldset>
         {origin === "already_onboarded" && !row ? <p className="my-3 text-sm leading-6 text-neutral-400">Records existing work. No checkout or onboarding link is sent. {stage === "completed" ? "This service has no unfinished setup work." : stage === "maintenance" ? "Historical setup is not repeated." : "The service is ready for setup work."}</p> : null}
         {peopleError ? <p role="alert" className="py-2 text-sm text-red-200">{peopleError}<button type="button" onClick={() => { setPeopleError(""); setRetry(retry + 1) }} className="ml-2 min-h-11 underline">Retry choices</button></p> : null}
         {error ? <p role="alert" className="py-3 text-sm text-red-200">{error}</p> : null}
-        <div className="mt-3 flex flex-wrap justify-end gap-3"><button type="button" disabled={pending} onClick={onClose} className="min-h-11 px-3 text-sm text-neutral-400">Close</button><button disabled={pending || !serviceId || !people || Boolean(peopleError)} className={buttonClass}>{pending ? "Saving…" : uncertain ? "Retry same change" : row ? "Save change" : "Add service"}</button></div>
+        <div className="mt-3 flex flex-wrap justify-end gap-3"><button type="button" disabled={pending || uncertain} onClick={onClose} className="min-h-11 px-3 text-sm text-neutral-400">Close</button><button disabled={pending || !serviceId || !people || Boolean(peopleError)} className={buttonClass}>{pending ? "Saving…" : uncertain ? "Retry same change" : row ? "Save change" : "Add service"}</button></div>
     </form>
 }
 
@@ -121,23 +120,67 @@ function RelationshipActivity({ endpoint, section, slug, relationshipId, legacy 
 function Pagination({ page, hasMore, onChange }: {page: number; hasMore: boolean; onChange: (page: number) => void}) {
     return page || hasMore ? <div className="mt-3 flex items-center justify-between text-sm"><button className="min-h-11 px-2 disabled:opacity-40" disabled={!page} onClick={() => onChange(page - 1)}>Previous</button><span className="text-neutral-500">Page {page + 1}</span><button className="min-h-11 px-2 disabled:opacity-40" disabled={!hasMore} onClick={() => onChange(page + 1)}>Next</button></div> : null
 }
+type ServiceCardDetail = RelationshipServiceRow & { notes?: string; description?: string; manager?: string; seller?: string; sold_upfront_cents?: number | null; sold_recurring_cents?: number | null; sold_currency?: string | null; billing_interval?: string; billing_interval_count?: number }
 export function RelationshipServicesWorkspace(props: Props) {
     const router = useRouter()
+    const search = useSearchParams()
+    const active = useWorkspaceNavigation()?.active ?? true
     const endpoint = `/api/workspaces/${encodeURIComponent(props.workspaceSlug)}/relationships/${props.relationshipId}/services`
     const [history, setHistory] = useState(false)
     const [adding, setAdding] = useState(false)
+    const [serviceBusy, setServiceBusy] = useState(false)
     const [editing, setEditing] = useState<RelationshipServiceRow | null>(null)
+    const [opened, setOpened] = useState<ServiceCardDetail | null>(null)
+    const [pos, setPos] = useState<string | null>(null)
+    const [page, setPage] = useState(0)
+    const [cards, setCards] = useState<RelationshipServicePage>(props.initial)
+    const [error, setError] = useState("")
+    const [retry, setRetry] = useState(0)
+    const [visible, setVisible] = useState(false)
+    const host = useRef<HTMLElement>(null)
     const editable = (service: RelationshipServiceRow) => !service.legacy && props.canAdd && (props.canImport || service.origin === "negotiation") && !["awaiting_payment", "onboarding"].includes(service.stage ?? "")
-    function saved() { setAdding(false); setEditing(null); router.refresh() }
+    const canSell = (service: RelationshipServiceRow) => props.canAdd && !service.legacy && ["negotiating", "declined", "for_later"].includes(service.stage ?? "")
+    useEffect(() => { const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { setVisible(true); observer.disconnect() } }, { rootMargin: "160px" }); if (host.current) observer.observe(host.current); return () => observer.disconnect() }, [])
+    useEffect(() => {
+        if (!active || !visible) return
+        const controller = new AbortController()
+        fetch(`${endpoint}?kind=cards&offset=${page * 30}`, { headers: { "x-workspace-user": props.userId }, cache: "no-store", redirect: "error", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]) }).then(async response => { const value = await response.json(); if (!response.ok) throw new Error(value.error); return value }).then(value => { if (!controller.signal.aborted) { setCards(value); setError("") } }).catch(error => { if (!controller.signal.aborted) setError(error.message) })
+        return () => controller.abort()
+    }, [endpoint, page, props.initial, props.userId, active, visible, retry])
+    function saved() { setAdding(false); setEditing(null); setOpened(null); setRetry(value => value + 1); router.refresh() }
+    function closePos() { setPos(null); if (search.has("sell")) { const next = new URLSearchParams(search.toString()); next.delete("sell"); router.replace(`/${props.workspaceSlug}/relationships/${props.relationshipId}${next.size ? `?${next}` : ""}`) } }
+    const requestedPos = pos ?? search.get("sell")
     return <section className="mt-5" aria-label="Relationship services and work">
-        {props.initial.values?.length ? <div className="mb-4 flex flex-wrap gap-x-8 gap-y-3">{props.initial.values.map(value => <div key={`${value.kind}:${value.currency}:${value.billing_interval}:${value.billing_interval_count}`}><p className="text-xs text-neutral-500">{value.kind === "catalogue_estimate" ? "Negotiating · potential value" : "Committed sales"} · {value.currency}</p><QuickStats items={[
-            {label:"Upfront",value:new Intl.NumberFormat("en",{style:"currency",currency:value.currency}).format(value.upfront_cents/100)},
-            {label:`Recurring / ${value.billing_interval_count ?? 1} ${value.billing_interval ?? "month"}`,value:new Intl.NumberFormat("en",{style:"currency",currency:value.currency}).format(value.recurring_cents/100)},
-        ]}/></div>)}</div> : null}
-        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-semibold">Services</h2>{props.canAdd ? <div className="flex flex-wrap gap-3"><Link href={`/${props.workspaceSlug}/relationships/${props.relationshipId}/pos`} className="inline-flex min-h-11 items-center text-sm text-neutral-300 underline underline-offset-4">Open POS</Link><button className={buttonClass} onClick={() => {setAdding(!adding);setEditing(null)}}>Add service</button></div> : null}</div>
-        {adding ? <ServiceForm endpoint={endpoint} props={props} onDone={saved} onClose={() => setAdding(false)} /> : null}
-        {editing ? <ServiceForm key={editing.id} row={editing} endpoint={endpoint} props={props} onDone={saved} onClose={() => setEditing(null)} /> : null}
-        <RelationshipServiceTimeline endpoint={endpoint} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canEdit={props.canImport} canEditService={editable} onEditService={row => {setEditing(row);setAdding(false)}} />
-        {props.canSeeHistory ? <details className="mt-5 border-t border-neutral-900" onToggle={event=>{if(event.currentTarget.open)setHistory(true)}}><summary className="cursor-pointer py-3 text-sm text-neutral-400">Sales &amp; onboarding history</summary>{history ? <RelationshipActivity endpoint={endpoint} section="history" slug={props.workspaceSlug} relationshipId={props.relationshipId} legacy={props.legacy} /> : null}{props.legacy ? <Link href={`/${props.workspaceSlug}/relationships/${props.relationshipId}/pos`} className="inline-flex min-h-11 items-center text-sm text-neutral-400 underline">Open existing POS</Link> : null}</details> : null}
+        <RelationshipServiceTimeline endpoint={endpoint} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canEdit={props.canImport} canEditService={() => true} onEditService={row => setOpened(cards.items.find(card => card.id === row.id) ?? row)} />
+        <div className="mt-5 grid min-w-0 gap-x-6 gap-y-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,1fr)]">
+            <div className="min-w-0"><RelationshipQueue endpoint={endpoint} slug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} />
+                {props.canSeeHistory ? <details className="mt-5 border-t border-neutral-900" onToggle={event => { if (event.currentTarget.open) setHistory(true) }}><summary className="cursor-pointer py-3 text-sm text-neutral-400">Sales &amp; onboarding history</summary>{history ? <RelationshipActivity endpoint={endpoint} section="history" slug={props.workspaceSlug} relationshipId={props.relationshipId} legacy={props.legacy} /> : null}</details> : null}
+            </div>
+            <div className="min-w-0"><section ref={host} className="mt-6" aria-label="Assigned services"><h2 className="mb-3 text-base font-semibold">Services</h2>
+                <AttachmentCards label="Assigned services">{cards.items.map(row => <AttachmentCard key={row.id} title={row.name} thumbnail={<ServiceThumbnail service={row} />} inactive={["negotiating", "declined", "for_later"].includes(row.stage ?? "")} subtitle={SERVICE_STAGES.find(stage => stage.key === row.stage)?.label ?? "Review needed"} onClick={() => setOpened(row)} />)}{props.canAdd ? <AddAttachmentCard label="Add service" onClick={() => setAdding(true)} /> : null}</AttachmentCards>
+                {error ? <p role="alert" className="mt-2 text-sm text-red-300">{error} <button className="min-h-11 underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p> : null}
+                <Pagination page={page} hasMore={cards.hasMore} onChange={setPage} />
+            </section><RelationshipContactCards workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canAdd={props.canAdd} /></div>
+        </div>
+        {adding ? <CenteredDialog title="Add service" busy={serviceBusy} onClose={() => setAdding(false)}><ServiceForm onBusyChange={setServiceBusy} endpoint={endpoint} props={props} onDone={saved} onClose={() => setAdding(false)} /></CenteredDialog> : null}
+        {editing ? <CenteredDialog title="Edit service" busy={serviceBusy} onClose={() => setEditing(null)}><ServiceForm onBusyChange={setServiceBusy} key={editing.id} row={editing} endpoint={endpoint} props={props} onDone={saved} onClose={() => setEditing(null)} /></CenteredDialog> : null}
+        {opened ? <ServiceDetailDialog row={opened} endpoint={endpoint} userId={props.userId} onClose={() => setOpened(null)} onEdit={editable(opened) ? () => { setEditing(opened); setOpened(null) } : undefined} onSell={canSell(opened) ? () => { setPos(opened.id); setOpened(null) } : undefined} /> : null}
+        {requestedPos ? <PosDialog workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} selectedId={requestedPos === "1" ? undefined : requestedPos} onClose={closePos} /> : null}
     </section>
+}
+function ServiceDetailDialog({ row, endpoint, userId, onClose, onEdit, onSell }: { row: ServiceCardDetail; endpoint: string; userId: string; onClose: () => void; onEdit?: () => void; onSell?: () => void }) {
+    const [data, setData] = useState(row)
+    const [error, setError] = useState("")
+    useEffect(() => {
+        const controller = new AbortController()
+        fetch(`${endpoint}?kind=detail&id=${encodeURIComponent(row.id)}`, { headers: { "x-workspace-user": userId }, cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]) }).then(async response => { const value = await response.json(); if (!response.ok || !value.items[0]) throw new Error(value.error ?? "Service no longer available"); return value.items[0] }).then(value => { if (!controller.signal.aborted) setData(value) }).catch(error => { if (!controller.signal.aborted) setError(error.message) })
+        return () => controller.abort()
+    }, [endpoint, row, userId])
+    const money = (cents: number) => new Intl.NumberFormat("en", { style: "currency", currency: data.sold_currency ?? data.currency }).format(cents / 100)
+    return <CenteredDialog title={row.name} onClose={onClose} footer={onSell || onEdit ? <div className="flex justify-end gap-3">{onEdit ? <button className="min-h-11 px-3 text-sm text-neutral-300" onClick={onEdit}>Edit service</button> : null}{onSell ? <button className={buttonClass} onClick={onSell}>Sell service</button> : null}</div> : undefined}>
+        <ServiceStage stage={data.stage} />
+        {data.description ? <p className="mt-3 text-sm leading-6 text-neutral-400">{data.description}</p> : null}
+        <DetailFields columns={1}><DetailField label="Upfront" icon="status">{money(data.sold_upfront_cents ?? data.upfront_cents)}</DetailField><DetailField label="Recurring" icon="status">{money(data.sold_recurring_cents ?? data.recurring_cents)} / {data.billing_interval_count ?? 1} {data.billing_interval ?? "month"}</DetailField><DetailField label="Assigned to" icon="person">{data.assignee_name}</DetailField>{data.manager ? <DetailField label="Manager" icon="person">{data.manager}</DetailField> : null}{data.seller ? <DetailField label="Seller" icon="person">{data.seller}</DetailField> : null}<DetailField label="Notes" icon="description">{data.notes || "No notes"}</DetailField></DetailFields>
+        {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error}</p> : null}
+    </CenteredDialog>
 }

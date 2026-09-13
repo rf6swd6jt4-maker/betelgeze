@@ -16,6 +16,8 @@ type PopupPosition = {
 function popupHost(anchor: HTMLElement) {
     const sourceDocument = anchor.ownerDocument
     const sourceWindow = sourceDocument.defaultView ?? window
+    const dialog = anchor.closest<HTMLDialogElement>("dialog[open]")
+    if (dialog) return { document: sourceDocument, window: sourceWindow, frameRect: null, container: dialog }
     if (sourceWindow.parent === sourceWindow) return { document: sourceDocument, window: sourceWindow, frameRect: null }
 
     try {
@@ -102,7 +104,7 @@ export function AnchoredPopup({
             onDismiss?.()
         }
         const escape = (event: KeyboardEvent) => {
-            if (event.key === "Escape") onDismiss?.()
+            if (event.key === "Escape" && onDismiss) { event.preventDefault(); event.stopPropagation(); onDismiss() }
         }
         const dismissWhenOwnerBecomesInactive = () => {
             if (sourceDocument.body.dataset.workspaceTabActive === "false") onDismiss?.()
@@ -156,5 +158,5 @@ export function AnchoredPopup({
             maxWidth: position.maxWidth,
         } : { visibility: "hidden" }}
         className={`${position ? "betelgeze-popup-enter" : ""} fixed z-[2147483646] overflow-y-auto overscroll-contain ${className}`}
-    >{children}</div>, host.document.body)
+    >{children}</div>, host.container ?? host.document.body)
 }

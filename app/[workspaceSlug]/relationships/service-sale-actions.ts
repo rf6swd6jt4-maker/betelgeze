@@ -90,6 +90,11 @@ export async function sellRelationshipServices(
                 }
             destination = saved.data.client_phone
             sms = saved.data.sms_recipient_e164
+        } else if (request.input.uiVersion === 2) {
+            if (!request.input.delivery?.length) throw new Error("Choose a confirmed contact method.")
+            await Promise.all([getWorkspaceProviderConfig(workspace.id, "stripe"), ...request.input.delivery.map(choice => getWorkspaceProviderConfig(workspace.id, choice.provider))])
+            destination = request.input.delivery[0].address
+            sms = request.input.delivery.find(choice => choice.provider === "twilio_sms")?.address ?? null
         } else {
             const [channels] = await Promise.all([
                 resolveCommunicationDestinations({
@@ -144,7 +149,11 @@ export async function sellRelationshipServices(
         committed = data
         let delivery: { deliveryPending: boolean; notice: string }
         try {
-            delivery = await deliver(workspace.id, relationshipId, data.saleId)
+            if (request.input.uiVersion === 2) {
+                // The sale transaction already durably queued its exact channel choices.
+                const queued = await retrySelectedServiceOnboardingLink(workspace.id, relationshipId, data.saleId)
+                delivery = { deliveryPending: false, notice: queued.notice }
+            } else delivery = await deliver(workspace.id, relationshipId, data.saleId)
         } catch {
             delivery = {
                 deliveryPending: true,

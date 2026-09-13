@@ -85,6 +85,8 @@ Status: implemented and locally validated; production rehearsal and migration pa
 
 **Done:** select Meta Ads and landing page from three Negotiating services; checkout and modules contain only those two; Appointment Setting remains unchanged; retry creates no duplicate sale/session/charge.
 
+The 13 September relationship-card and three-step centered POS revision is documented in [relationship-card-pos-release.md](relationship-card-pos-release.md). It replaces potential-value cards with monthly header values, moves confirmation into contact cards, and declines unchecked services only when the reviewed sale commits. It does not complete SS-04.
+
 ### SS-04 — Multiple onboarding sessions and service readiness
 
 - Scope session composition, autosave, uploads, submission, checkout, payment return, webhook processing, review work, restart and revoke to the sale/session and selected instances.

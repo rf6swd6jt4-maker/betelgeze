@@ -1,5 +1,6 @@
 import type { PersistedRelationshipDraft } from "./relationship-draft-queue"
 export type RelationshipBackgroundValues = {
+    locationValue?: string
     primaryPersonName: string
     businessName: string
     primaryContactRole: string
@@ -25,11 +26,11 @@ export type RelationshipDraft = RelationshipBackgroundValues & {
 }
 export type RelationshipBackgroundCommand = { requestId: string; expectedUserId: string; expectedUpdatedAt: string; values: RelationshipBackgroundValues }
 export type RelationshipBackgroundResult = { ok: true; version: string; currentVersion?: string; values: RelationshipBackgroundValues } | { ok: false; error: string; conflict?: boolean; version?: string; values?: RelationshipBackgroundValues }
-export const RELATIONSHIP_BACKGROUND_FIELDS = ["primaryPersonName", "businessName", "primaryContactRole", "primaryPhone", "whatsappPhone", "communicationPrimaryProvider", "communicationDeliveryMode", "primaryEmail", "description"] as const
+export const RELATIONSHIP_BACKGROUND_FIELDS = ["locationValue", "primaryPersonName", "businessName", "primaryContactRole", "primaryPhone", "whatsappPhone", "communicationPrimaryProvider", "communicationDeliveryMode", "primaryEmail", "description"] as const
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function relationshipBackgroundValues(value: RelationshipBackgroundValues): RelationshipBackgroundValues {
-    return Object.fromEntries(RELATIONSHIP_BACKGROUND_FIELDS.map((key) => [key, value[key]])) as RelationshipBackgroundValues
+    return Object.fromEntries(RELATIONSHIP_BACKGROUND_FIELDS.filter(key => key !== "locationValue" || value[key] !== undefined).map((key) => [key, value[key]])) as RelationshipBackgroundValues
 }
 export function parseRelationshipBackgroundCommand(value: unknown): RelationshipBackgroundCommand | null {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null
@@ -38,7 +39,7 @@ export function parseRelationshipBackgroundCommand(value: unknown): Relationship
         || typeof row.expectedUpdatedAt !== "string" || row.expectedUpdatedAt.length > 50 || !Number.isFinite(Date.parse(row.expectedUpdatedAt))
         || !row.values || typeof row.values !== "object" || Array.isArray(row.values)) return null
     const values = row.values as Record<string, unknown>
-    if (Object.keys(values).length !== RELATIONSHIP_BACKGROUND_FIELDS.length || RELATIONSHIP_BACKGROUND_FIELDS.some((key) => typeof values[key] !== "string" || (values[key] as string).length > (key === "description" ? 20_000 : 2_000))) return null
+    if (Object.keys(values).length !== RELATIONSHIP_BACKGROUND_FIELDS.length - (values.locationValue === undefined ? 1 : 0) || RELATIONSHIP_BACKGROUND_FIELDS.some((key) => (key !== "locationValue" || values[key] !== undefined) && (typeof values[key] !== "string" || (values[key] as string).length > (key === "description" ? 20_000 : 2_000)))) return null
     if (!["meta_whatsapp", "twilio_sms"].includes(values.communicationPrimaryProvider as string) || !["primary_only", "primary_with_fallback", "mirror"].includes(values.communicationDeliveryMode as string)) return null
     return { requestId: row.requestId, expectedUserId: row.expectedUserId, expectedUpdatedAt: row.expectedUpdatedAt, values: relationshipBackgroundValues(values as RelationshipBackgroundValues) }
 }

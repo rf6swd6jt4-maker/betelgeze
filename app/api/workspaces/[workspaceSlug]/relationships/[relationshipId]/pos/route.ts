@@ -27,7 +27,8 @@ export async function GET(request: Request, context: Context) {
             { error: error.code === "P0001" ? error.message : "Could not load the POS." },
             { status: 400, headers },
         )
-    return Response.json({ ...data, items: data.items.slice(0, 30), userId: user.id, relationshipId }, { headers })
+    const { hydrateRelationshipServiceThumbnails } = await import("@/lib/relationship-services-server")
+    return Response.json({ ...data, items: await hydrateRelationshipServiceThumbnails(data.items.slice(0, 30)), userId: user.id, relationshipId }, { headers })
 }
 export async function POST(request: Request, context: Context) {
     const { workspace, user, relationshipId, valid } = await authorize(request, context)

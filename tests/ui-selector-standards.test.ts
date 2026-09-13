@@ -39,7 +39,7 @@ test("relationship and operational assignment paths use the shared selectors", a
     assert.match(relationship, /<AssignmentSelector/)
     assert.match(retention, /<AssignmentSelector/)
     assert.doesNotMatch(create, /<CommunicationMethodSelector/)
-    assert.match(await readFile("components/relationships/RelationshipBackgroundEditor.tsx", "utf8"), /<CommunicationMethodSelector/)
+    assert.match(await readFile("components/relationships/RelationshipContactCards.tsx", "utf8"), /<CommunicationMethodMark/)
     assert.match(await readFile("components/relationships/RelationshipServicesWorkspace.tsx", "utf8"), /<AssignmentSelector/)
     assert.match(settings, /<AssignmentSelector/)
     assert.match(officers, /<AssignmentSelector/)

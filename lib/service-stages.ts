@@ -12,6 +12,7 @@ export type ServiceStageKey = typeof SERVICE_STAGES[number]["key"]
 export const serviceStageLabel = (stage: string | null) => SERVICE_STAGES.find(s => s.key === stage)?.label ?? "Review needed"
 export type RelationshipServiceRow = {
     id: string; service_id: string; service_revision_id: string; name: string; stage: ServiceStageKey | null
+    thumbnailUrl?: string | null; thumbnailPath?: string | null; templateId?: string | null;
     origin: string; assignee_user_id: string | null; assignee_name: string; version: number
     upfront_cents: number; recurring_cents: number; currency: string; created_at: string; legacy: boolean
 }

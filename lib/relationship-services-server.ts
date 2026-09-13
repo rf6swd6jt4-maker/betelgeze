@@ -25,10 +25,18 @@ export async function summarizeRelationshipServices(workspaceId: string, userId:
 
 export function relationshipBackgroundDraft(r: RelationshipRecord): RelationshipDraft {
     return {
-        primaryPersonName: r.primary_person_name, businessName: r.business_name ?? "", primaryContactRole: r.primary_contact_role ?? "",
+        locationValue: r.location_value ?? "", primaryPersonName: r.primary_person_name, businessName: r.business_name ?? "", primaryContactRole: r.primary_contact_role ?? "",
         primaryPhone: r.primary_phone ?? "", whatsappPhone: r.whatsapp_phone ?? "", primaryEmail: r.primary_email ?? "",
         communicationPrimaryProvider: r.communication_primary_provider, communicationDeliveryMode: r.communication_delivery_mode, description: r.notes_summary ?? "",
         sellerUserId: r.seller_user_id ?? "", fulfilmentManagerUserId: r.fulfilment_manager_user_id ?? "", fulfilmentTeamId: r.fulfilment_team_id ?? "", projectTimeframeDays: r.project_timeframe_days,
         selectedCodes: [], serviceAssignees: {}, upfrontPrices: {}, recurringPrices: {}, currency: "USD", billingInterval: "month", billingIntervalCount: 1,
     }
+}
+
+/** Optional card data: called after the gallery is visible, never on header entry. */
+export async function hydrateRelationshipServiceThumbnails<T extends { thumbnailPath?: string | null }>(items: T[]): Promise<Array<T & { thumbnailUrl: string | null }>> {
+    const { createPrivateUploadSignedUrl } = await import("@/lib/onboarding/uploads")
+    const paths = [...new Set(items.flatMap(item => item.thumbnailPath ? [item.thumbnailPath] : []))]
+    const urls = new Map(await Promise.all(paths.map(async path => [path, await createPrivateUploadSignedUrl(path)] as const)))
+    return items.map(item => ({ ...item, thumbnailUrl: item.thumbnailPath ? urls.get(item.thumbnailPath) ?? null : null }))
 }

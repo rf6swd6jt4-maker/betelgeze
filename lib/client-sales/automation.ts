@@ -763,6 +763,9 @@ export async function handleSaleConsentConfirmation({
         return { handled: false }
     }
 
+    const contact = await supabaseAdmin.rpc("confirm_relationship_contact", { p_workspace_id: workspaceId, p_provider: provider, p_address: fromAddress, p_message_id: messageId ?? null, p_body: body, p_raw_payload: rawPayload })
+    if (contact.error) throw new Error("Could not check the pending contact confirmation.")
+    if (contact.data?.handled) return contact.data as { handled: true; ok: boolean; error?: string }
     const sale = await findPendingConfirmedSale(fromAddress, workspaceId, messageId)
 
     if (!sale) return { handled: false }

@@ -3,20 +3,23 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransiti
 import dynamic from "next/dynamic"
 import Link from "@/components/workspace/WorkspaceLink"
 import { useRouter } from "@/components/workspace/WorkspaceNavigation"
-import { DetailField, DetailFields, DetailPageHeader } from "@/components/detail"
-import { AssignmentSelector, Selector, Status } from "@/components/ui"
+import { DetailField, DetailFields } from "@/components/detail"
+import { AssignmentSelector, Status, AttachmentCard, AttachmentCards } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
 import {
     sellRelationshipServices,
     retryServiceSaleConfirmation,
 } from "@/app/[workspaceSlug]/relationships/service-sale-actions"
-import { changeRelationshipService } from "@/app/[workspaceSlug]/relationships/service-actions"
+import { ServiceThumbnail } from "./ServiceThumbnail"
+import { ContactThumbnail } from "./RelationshipContactCards"
+import { contactMethodName } from "@/lib/relationship-contacts"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
-import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { postGanttSync } from "@/lib/ui/gantt-sync"
 import {
     serviceSaleTotals,
     validServiceSaleInput,
+    validServiceSaleDraft,
+    monthlyServicePrice,
     type ServicePosPage,
     type ServicePosRow,
     type ServiceSaleInput,
@@ -47,6 +50,8 @@ function subscribeToRecovery(onChange: () => void) {
 }
 type PendingSale = { requestId: string; input: ServiceSaleInput; quoteHash: string }
 type Props = {
+    initialSelectionId?: string
+    onBusyChange?: (busy: boolean) => void
     workspaceSlug: string
     relationshipId: string
     userId: string
@@ -132,7 +137,7 @@ function MoneyField({
 }) {
     return (
         <label className="block min-w-0 text-xs text-neutral-400">
-            {label}
+            {label.split(" for ")[0]}
             <input
                 aria-label={label}
                 className={`${inputClass} mt-1`}
@@ -150,18 +155,32 @@ function MoneyField({
     )
 }
 export function RelationshipServicePos(props: Props) {
-    const { workspaceSlug, relationshipId, userId, relationship } = props
+    const { workspaceSlug, relationshipId, userId, relationship, onBusyChange } = props
     const router = useRouter()
     const endpoint = `/api/workspaces/${workspaceSlug}/relationships/${relationshipId}/pos`
     const servicesEndpoint = endpoint.replace(/\/pos$/, "/services")
     const storageKey = `be:service-pos:pending:${userId}:${workspaceSlug}:${relationshipId}`
     const [page, setPage] = useState(props.initial)
-    const [draft, setInput] = useState<ServiceSaleInput>({
+    const [step, setStep] = useState(1)
+    const draftKey = `be:service-pos:draft:${userId}:${workspaceSlug}:${relationshipId}`
+    const [draft, setDraft] = useState<ServiceSaleInput>(() => {
+        const initial: ServiceSaleInput = {
         relationshipVersion: relationship.updatedAt,
         managerId: relationship.managerId ?? "",
         billingInterval: "month",
         billingIntervalCount: 1,
+        uiVersion: 2,
+        offered: props.initial.items.map(row => ({ id: row.id, version: row.version })),
+        delivery: [],
         lines: [],
+        }
+        try {
+            const saved = JSON.parse(sessionStorage.getItem(draftKey) ?? "null") as ServiceSaleInput | null
+            if (validServiceSaleDraft(saved, props.initial.items, initial.relationshipVersion)) Object.assign(initial, { lines: saved.lines, managerId: saved.managerId })
+        } catch { /* A fresh form remains available when no saved draft can be read. */ }
+        const selected = props.initial.items.find(row => row.id === props.initialSelectionId)
+        if (selected && !initial.lines.some(line => line.id === selected.id)) initial.lines.push({ id: selected.id, version: selected.version, assigneeId: selected.assignee_user_id ?? "", upfrontCents: selected.upfront_cents, recurringCents: monthlyServicePrice(selected) })
+        return initial
     })
     const [quote, setQuote] = useState<ServiceSaleQuote | null>(null)
     const [preview, setPreview] = useState<ComponentProps<typeof PreviewComponent> | null>(null)
@@ -204,19 +223,22 @@ export function RelationshipServicePos(props: Props) {
     }
     const [error, setError] = useState("")
     const [notice, setNotice] = useState("")
+    const [draftStorageError, setDraftStorageError] = useState("")
     const [reading, setReading] = useState(false)
     const [pending, startTransition] = useTransition()
     const guard = useRef(false)
     const generation = useRef(0)
-    const [disposition, setDisposition] = useState<{
-        row: ServicePosRow
-        stage: "for_later" | "declined"
-        reason: string
-        requestId: string
-        uncertain?: boolean
-    } | null>(null)
     const locked = pending || reading || Boolean(recovery)
     const totals = serviceSaleTotals(page.items, input.lines)
+    useEffect(() => { onBusyChange?.(pending || reading); return () => onBusyChange?.(false) }, [onBusyChange, pending, reading])
+    const draftRef = useRef(draft)
+    function setInput(next: ServiceSaleInput | ((current: ServiceSaleInput) => ServiceSaleInput)) {
+        const value = typeof next === "function" ? next(draftRef.current) : next
+        draftRef.current = value
+        try { sessionStorage.setItem(draftKey, JSON.stringify(value)); setDraftStorageError("") }
+        catch { setDraftStorageError("This browser could not save your draft. Keep this popup open until site storage is available.") }
+        setDraft(value)
+    }
     function change(next: ServiceSaleInput) {
         generation.current++
         setInput(
@@ -241,7 +263,7 @@ export function RelationshipServicePos(props: Props) {
         change({
             ...input,
             ...(!exists && firstRecurring
-                ? { billingInterval: row.billing_interval, billingIntervalCount: row.billing_interval_count }
+                ? { billingInterval: "month", billingIntervalCount: 1 }
                 : {}),
             lines: exists
                 ? input.lines.filter((l) => l.id !== row.id)
@@ -252,7 +274,7 @@ export function RelationshipServicePos(props: Props) {
                           version: row.version,
                           assigneeId: row.assignee_user_id ?? "",
                           upfrontCents: row.upfront_cents,
-                          recurringCents: row.recurring_cents,
+                          recurringCents: monthlyServicePrice(row),
                       },
                   ],
         })
@@ -278,6 +300,7 @@ export function RelationshipServicePos(props: Props) {
                 throw new Error("Your account changed. Reload the POS.")
             if (revision !== generation.current) return
             setQuote(data.quote)
+            setStep(2)
             if (showPreview) setPreview(data.preview)
         } catch (e) {
             setError(e instanceof Error ? e.message : "Could not review this sale.")
@@ -286,11 +309,11 @@ export function RelationshipServicePos(props: Props) {
         }
     }
     async function refresh() {
-        const response = await fetch(endpoint, { headers: { "x-workspace-user": userId }, cache: "no-store" })
+        const response = await fetch(endpoint, { headers: { "x-workspace-user": userId }, cache: "no-store", signal: AbortSignal.timeout(30000) })
         const data = await response.json()
         if (!response.ok) throw new Error(data.error ?? "Reload the POS to see the saved sale.")
         setPage(data)
-        setInput((v) => ({ ...v, relationshipVersion: data.relationshipVersion ?? v.relationshipVersion }))
+        setInput((v) => ({ ...v, relationshipVersion: data.relationshipVersion ?? v.relationshipVersion, offered: data.items.map((row: ServicePosRow) => ({ id: row.id, version: row.version })) }))
         router.refresh()
         postGanttSync(workspaceSlug)
     }
@@ -320,7 +343,8 @@ export function RelationshipServicePos(props: Props) {
                 }
                 saveRecovery(null)
                 setQuote(null)
-                setInput((v) => ({ ...v, lines: [] }))
+                setInput((v) => ({ ...v, lines: [], delivery: [] }))
+                setStep(1)
                 setNotice(result.notice)
                 await refresh()
             } catch {
@@ -330,336 +354,37 @@ export function RelationshipServicePos(props: Props) {
             }
         })
     }
-    function deferService() {
-        if (!disposition || guard.current) return
-        guard.current = true
-        setError("")
-        startTransition(async () => {
-            try {
-                const result = await runWorkspaceMutation(() =>
-                    changeRelationshipService(workspaceSlug, relationshipId, {
-                        expectedUserId: userId,
-                        requestId: disposition.requestId,
-                        instanceId: disposition.row.id,
-                        version: disposition.row.version,
-                        stage: disposition.stage,
-                        assigneeId: disposition.row.assignee_user_id ?? "",
-                        reason: disposition.reason,
-                    }),
-                )
-                if (!result.ok) {
-                    setError(result.error ?? "Could not save the change.")
-                    setDisposition((v) => (v ? { ...v, uncertain: result.uncertain } : null))
-                    return
-                }
-                change({ ...input, lines: input.lines.filter((l) => l.id !== disposition.row.id) })
-                setDisposition(null)
-                await refresh()
-            } catch {
-                setDisposition((v) => (v ? { ...v, uncertain: true } : null))
-                setError("Could not confirm the change. Retry this same change.")
-            } finally {
-                guard.current = false
-            }
-        })
-    }
-    return (
-        <div className="mx-auto w-full min-w-0 max-w-6xl px-4 py-5 text-white sm:px-6">
-            <Link
-                href={`/${workspaceSlug}/relationships/${relationshipId}`}
-                className="inline-flex min-h-11 items-center text-sm text-neutral-400 hover:text-white"
-            >
-                ← Relationship
-            </Link>
-            <DetailPageHeader
-                reference={relationshipId.slice(0, 8)}
-                updated={formatRelativeTime(relationship.updatedAt)}
-                category="Point of sale"
-                title={relationship.company ?? relationship.name}
-                subtitle="Select Negotiating services to sell together."
-            />
-            <DetailFields>
-                <DetailField label="Contact" icon="identity">
-                    {relationship.name}
-                </DetailField>
-                <DetailField label="Billing email" icon="contact">
-                    <span className="break-words">
-                        {relationship.email ?? "Add an email in relationship information"}
-                    </span>
-                </DetailField>
-                <DetailField label="Client number" icon="contact">
-                    {relationship.phone ?? "Add a number in relationship information"}
-                </DetailField>
-                <DetailField label="Manager" icon="person">
-                    <AssignmentSelector
-                        value={input.managerId}
-                        people={page.managers}
-                        onChange={(id) => change({ ...input, managerId: id })}
-                        ariaLabel="Sale manager"
-                        placeholder="Choose manager"
-                        disabled={locked}
-                    />
-                </DetailField>
-            </DetailFields>
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="font-semibold">Negotiating services</h2>
-                <span className="text-sm text-neutral-500">{input.lines.length} selected</span>
-            </div>
-            <List ariaLabel="Negotiating services" className="!mt-3">
-                {page.items.length ? (
-                    page.items.map((row) => {
-                        const line = input.lines.find((l) => l.id === row.id)
-                        return (
-                            <ListItem key={row.id}>
-                                <ListPrimaryRow>
-                                    <label className="flex min-h-9 min-w-0 flex-1 cursor-pointer items-center gap-3">
-                                        <input
-                                            type="checkbox"
-                                            aria-label={`Select ${row.name}`}
-                                            checked={Boolean(line)}
-                                            disabled={locked || !ready || Boolean(disposition)}
-                                            onChange={() => toggle(row)}
-                                            className="h-5 w-5 shrink-0 accent-white"
-                                        />
-                                        <ListTitle>{row.name}</ListTitle>
-                                    </label>
-                                    <span className="shrink-0 text-xs text-neutral-500">{row.currency}</span>
-                                </ListPrimaryRow>
-                                {line ? (
-                                    <div className="grid min-w-0 gap-3 px-3.5 py-3 sm:grid-cols-2 lg:grid-cols-3">
-                                        <div className="min-w-0">
-                                            <p className="mb-1 text-xs text-neutral-400">Service assignee</p>
-                                            <AssigneeField
-                                                endpoint={servicesEndpoint}
-                                                row={row}
-                                                value={line.assigneeId}
-                                                onChange={(assigneeId) => patchLine(row.id, { assigneeId })}
-                                                disabled={locked}
-                                            />
-                                        </div>
-                                        <MoneyField
-                                            label={`Upfront for ${row.name}`}
-                                            value={line.upfrontCents}
-                                            onChange={(upfrontCents) => patchLine(row.id, { upfrontCents })}
-                                            disabled={locked}
-                                        />
-                                        {row.service_type === "retainer" ? (
-                                            <MoneyField
-                                                label={`Recurring for ${row.name}`}
-                                                value={line.recurringCents}
-                                                onChange={(recurringCents) => patchLine(row.id, { recurringCents })}
-                                                disabled={locked}
-                                            />
-                                        ) : null}
-                                    </div>
-                                ) : (
-                                    <ListSecondaryRow className="!flex-wrap !whitespace-normal">
-                                        <span className="min-w-0 text-xs text-neutral-500">
-                                            {money(row.upfront_cents, row.currency)} upfront
-                                            {row.recurring_cents
-                                                ? ` · ${money(row.recurring_cents, row.currency)} recurring`
-                                                : ""}
-                                        </span>
-                                        <div className="ml-auto flex gap-3">
-                                            {(["for_later", "declined"] as const).map((stage) => (
-                                                <button
-                                                    type="button"
-                                                    key={stage}
-                                                    disabled={locked || Boolean(disposition)}
-                                                    className="min-h-9 text-xs text-neutral-400 underline underline-offset-4 disabled:opacity-40"
-                                                    onClick={() =>
-                                                        setDisposition({
-                                                            row,
-                                                            stage,
-                                                            reason: "",
-                                                            requestId: crypto.randomUUID(),
-                                                        })
-                                                    }
-                                                >
-                                                    {stage === "for_later" ? "For later" : "Declined"}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </ListSecondaryRow>
-                                )}
-                            </ListItem>
-                        )
-                    })
-                ) : (
-                    <p className="p-4 text-sm text-neutral-500">
-                        No Negotiating services. Add or reopen a service on the relationship to prepare another sale.
-                    </p>
-                )}
-            </List>
-            {page.hasMore ? (
-                <button
-                    type="button"
-                    className={`${secondary} mt-3`}
-                    disabled={locked}
-                    onClick={async () => {
-                        setReading(true)
-                        try {
-                            const r = await fetch(`${endpoint}?offset=${page.items.length}`, {
-                                headers: { "x-workspace-user": userId },
-                                cache: "no-store",
-                            })
-                            const data = await r.json()
-                            if (!r.ok) throw new Error(data.error)
-                            setPage((p) => ({ ...p, items: [...p.items, ...data.items], hasMore: data.hasMore }))
-                        } catch {
-                            setError("Could not load more services. Try again.")
-                        } finally {
-                            setReading(false)
-                        }
-                    }}
-                >
-                    Load more services
-                </button>
-            ) : null}
-            {disposition ? (
-                <section className="mt-4 border-y border-neutral-800 py-4">
-                    <h3 className="text-sm font-medium">
-                        Move {disposition.row.name} to {disposition.stage === "for_later" ? "For later" : "Declined"}
-                    </h3>
-                    <label className="mt-3 block text-xs text-neutral-400">
-                        Reason
-                        <input
-                            className={`${inputClass} mt-1`}
-                            value={disposition.reason}
-                            disabled={pending || disposition.uncertain}
-                            maxLength={1000}
-                            onChange={(e) => setDisposition({ ...disposition, reason: e.target.value })}
-                        />
-                    </label>
-                    <div className="mt-3 flex gap-3">
-                        <button
-                            type="button"
-                            className={secondary}
-                            disabled={pending || disposition.uncertain}
-                            onClick={() => setDisposition(null)}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="button"
-                            className={button}
-                            disabled={pending || !disposition.reason.trim()}
-                            onClick={deferService}
-                        >
-                            {disposition.uncertain ? "Retry same change" : "Save change"}
-                        </button>
-                    </div>
-                </section>
-            ) : null}
-            {input.lines.length || recovery ? (
-                <section className="mt-5 border-t border-neutral-800 pt-4" aria-label="Sale summary">
-                    {totals.recurring > 0 ? (
-                        <div className="mb-4 grid max-w-md grid-cols-[5rem_minmax(0,1fr)] items-center gap-3">
-                            <label htmlFor="billing-count" className="text-sm text-neutral-400">
-                                Bill every
-                            </label>
-                            <div className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2">
-                                <input
-                                    id="billing-count"
-                                    aria-label="Billing interval count"
-                                    className={inputClass}
-                                    type="number"
-                                    min="1"
-                                    max={
-                                        input.billingInterval === "year"
-                                            ? 3
-                                            : input.billingInterval === "month"
-                                              ? 36
-                                              : 156
-                                    }
-                                    value={input.billingIntervalCount}
-                                    disabled={locked}
-                                    onChange={(e) => change({ ...input, billingIntervalCount: Number(e.target.value) })}
-                                />
-                                <Selector
-                                    ariaLabel="Billing interval"
-                                    appearance="input"
-                                    disabled={locked}
-                                    value={input.billingInterval}
-                                    onChange={(v) =>
-                                        change({ ...input, billingInterval: v as ServiceSaleInput["billingInterval"] })
-                                    }
-                                    options={[
-                                        { value: "week", label: "Weeks" },
-                                        { value: "month", label: "Months" },
-                                        { value: "year", label: "Years" },
-                                    ]}
-                                />
-                            </div>
-                        </div>
-                    ) : null}
-                    {totals.mixedCurrencies ? (
-                        <p className="text-sm text-amber-300">
-                            Select services in one currency. Different currencies need separate sales.
-                        </p>
-                    ) : totals.currency ? (
-                        <p className="text-lg font-medium">
-                            {money(totals.upfront, totals.currency)} upfront
-                            {totals.recurring
-                                ? ` + ${money(totals.recurring, totals.currency)} every ${input.billingIntervalCount} ${input.billingInterval}${input.billingIntervalCount > 1 ? "s" : ""}`
-                                : ""}
-                        </p>
-                    ) : null}
-                    {recovery ? (
-                        <div className="mt-3">
-                            <p className="mb-3 text-sm text-amber-200">
-                                A sale submission is pending. Recover this same sale before making changes.
-                            </p>
-                            <button type="button" disabled={pending || !ready} className={button} onClick={sell}>
-                                {pending ? "Recovering…" : "Retry same sale"}
-                            </button>
-                        </div>
-                    ) : quote ? (
-                        <div className="mt-4 rounded-xl border border-neutral-700 p-4">
-                            <h3 className="font-medium">Review sale</h3>
-                            <p className="mt-1 text-sm text-neutral-400">{quote.lines.map((l) => l.name).join(", ")}</p>
-                            <p className="mt-2 text-sm text-neutral-400">
-                                {quote.modules.length} onboarding modules, with shared modules included once. The
-                                selected services will move to Awaiting payment when you confirm.
-                            </p>
-                            <p className="mt-2 text-sm text-neutral-400">
-                                {money(quote.upfrontTotal, quote.currency)} upfront
-                                {quote.recurringTotal
-                                    ? ` + ${money(quote.recurringTotal, quote.currency)} every ${quote.billingIntervalCount} ${quote.billingInterval}${quote.billingIntervalCount !== 1 ? "s" : ""}`
-                                    : ""}
-                            </p>
-                            <div className="mt-4 flex flex-wrap gap-3">
-                                <button
-                                    type="button"
-                                    className={secondary}
-                                    disabled={locked}
-                                    onClick={() => void readReview(true)}
-                                >
-                                    {reading ? "Loading preview…" : "Preview onboarding"}
-                                </button>
-                                <button
-                                    type="button"
-                                    className={button}
-                                    disabled={locked || Boolean(disposition)}
-                                    onClick={sell}
-                                >
-                                    Sell {quote.lines.length} selected{" "}
-                                    {quote.lines.length === 1 ? "service" : "services"}
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <button
-                            type="button"
-                            className={`${button} mt-4`}
-                            disabled={locked || !ready || totals.mixedCurrencies || Boolean(disposition)}
-                            onClick={() => void readReview()}
-                        >
-                            {reading ? "Reviewing…" : "Review selected services"}
-                        </button>
-                    )}
-                </section>
-            ) : null}
+    return <div className="min-w-0 text-white">
+            {draftStorageError ? <p role="alert" className="mb-4 text-sm text-red-300">{draftStorageError}</p> : null}
+            <ol aria-label="Sale steps" className="mb-5 flex gap-3 border-b border-neutral-800 pb-4 text-xs sm:gap-6 sm:text-sm">{["Services", "Onboarding", "Send link"].map((label, index) => <li key={label} aria-current={step === index + 1 ? "step" : undefined} className={step === index + 1 ? "font-semibold text-white" : "text-neutral-500"}>{index + 1}. {label}</li>)}</ol>
+            {recovery ? <div className="mb-4 space-y-3 text-sm text-amber-200"><p>A sale submission is pending. Recover the same sale before making changes.</p><button disabled={pending || !ready} className={button} onClick={sell}>{pending ? "Recovering…" : "Retry same sale"}</button></div> : null}
+            {step === 1 ? <>
+                <p className="mb-4 text-sm text-neutral-400">Choose the services to sell together. Unchecked services become Declined only when the sale is saved, and can still be sold later.</p>
+                <AttachmentCards label="Services to sell" selection>{page.items.map(row => {
+                    const line = input.lines.find(line => line.id === row.id)
+                    return <AttachmentCard key={row.id} title={row.name} thumbnail={<ServiceThumbnail service={row} />} selected={Boolean(line)} inactive={!line} onClick={() => toggle(row)} disabled={locked || !ready} subtitle={line ? "Selected" : row.stage === "declined" ? "Declined · available to sell" : "Select service"}>
+                        {line ? <div className="grid min-w-0 grid-cols-2 gap-3"><MoneyField label={`Upfront for ${row.name}`} value={line.upfrontCents} onChange={upfrontCents => patchLine(row.id, { upfrontCents })} disabled={locked} />{row.service_type === "retainer" ? <MoneyField label={`Monthly for ${row.name}`} value={line.recurringCents} onChange={recurringCents => patchLine(row.id, { recurringCents })} disabled={locked} /> : null}<div className="col-span-2 min-w-0"><AssigneeField endpoint={servicesEndpoint} row={row} value={line.assigneeId} onChange={assigneeId => patchLine(row.id, { assigneeId })} disabled={locked} /></div></div> : <p className="text-xs text-neutral-500">{money(row.upfront_cents, row.currency)} upfront{row.recurring_cents ? ` + ${money(monthlyServicePrice(row), row.currency)} / month` : ""}</p>}
+                    </AttachmentCard>
+                })}</AttachmentCards>
+                {!page.items.length ? <p className="py-4 text-sm text-neutral-400">Add a service from the relationship’s catalogue before selling.</p> : null}
+                {page.hasMore ? <button className={`${secondary} mt-4`} disabled={locked || page.items.length >= 300} onClick={async () => {
+                    setReading(true)
+                    try { const response = await fetch(`${endpoint}?offset=${page.items.length}`, { headers: { "x-workspace-user": userId }, cache: "no-store", signal: AbortSignal.timeout(30000) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); setPage(current => ({ ...current, items: [...current.items, ...data.items], hasMore: data.hasMore })); change({ ...input, offered: [...(input.offered ?? []), ...data.items.map((row: ServicePosRow) => ({ id: row.id, version: row.version }))] }) } catch { setError("Could not load the remaining services. Retry before continuing.") } finally { setReading(false) }
+                }}>Load remaining services</button> : null}
+                <DetailFields columns={1}><DetailField label="Manager" icon="person"><AssignmentSelector value={input.managerId} people={page.managers} onChange={managerId => change({ ...input, managerId })} disabled={locked} ariaLabel="Sale manager" placeholder="Choose manager" /></DetailField><DetailField label="Billing email" icon="contact">{relationship.email ?? "Add a billing email in Contact before selling"}</DetailField></DetailFields>
+            </> : step === 2 ? <>
+                <h3 className="mb-2 font-semibold">Review onboarding</h3><p className="text-sm leading-6 text-neutral-400">One link will include checkout and the onboarding modules required by these services.</p>
+                <List ariaLabel="Included onboarding modules">{quote?.modules.map(module => <ListItem key={module.module_id}><ListPrimaryRow><ListTitle>{String(module.definition.name ?? module.code)}</ListTitle></ListPrimaryRow><ListSecondaryRow>{module.mandatory ? "Shared information" : "Selected service"}</ListSecondaryRow></ListItem>)}</List>
+                <button className={`${secondary} mt-4`} disabled={locked} onClick={() => void readReview(true)}>{reading ? "Opening preview…" : "Preview onboarding"}</button>
+            </> : <>
+                <h3 className="mb-2 font-semibold">Send their onboarding link</h3><p className="mb-4 text-sm leading-6 text-neutral-400">Choose confirmed contact methods. Each selected method receives the same onboarding link.</p>
+                <AttachmentCards label="Onboarding delivery methods">{(page.contacts ?? []).filter(choice => choice.added).map(choice => <AttachmentCard key={choice.provider} title={contactMethodName(choice.provider)} thumbnail={<ContactThumbnail method={choice.provider} />} subtitle={choice.state === "active" ? choice.canSend ? choice.address : "Client reply needed" : choice.state === "broken" ? "Needs attention" : "Confirmation required"} selected={input.delivery?.some(selected => selected.provider === choice.provider)} inactive={choice.state !== "active" || !choice.canSend} broken={choice.state === "broken"} disabled={locked || choice.state !== "active" || !choice.canSend} onClick={() => setInput(current => ({ ...current, delivery: current.delivery?.some(selected => selected.provider === choice.provider) ? current.delivery.filter(selected => selected.provider !== choice.provider) : [...(current.delivery ?? []), { provider: choice.provider, address: choice.address }] }))} />)}</AttachmentCards>
+                {!(page.contacts ?? []).some(choice => choice.state === "active" && choice.canSend && choice.added) ? <p className="mt-3 text-sm text-neutral-400">Confirm a WhatsApp or Twilio contact from the relationship before selling. Email and phone cards also offer direct email and calling.</p> : null}
+                <button className="mt-2 min-h-11 text-sm text-neutral-300 underline" disabled={locked} onClick={async () => { try { const response = await fetch(endpoint, { headers: { "x-workspace-user": userId }, cache: "no-store", signal: AbortSignal.timeout(30000) }); const value = await response.json(); if (!response.ok) throw new Error(); setPage(current => ({ ...current, contacts: value.contacts })) } catch { setError("Could not check contact methods. Try again.") } }}>Refresh contact methods</button>
+            </>}
+            {totals.currency && input.lines.length ? <p className="mt-5 border-t border-neutral-800 pt-4 text-sm font-semibold">{money(totals.upfront, totals.currency)} upfront{totals.recurring ? ` + ${money(totals.recurring, totals.currency)} / month` : ""}</p> : null}
+            {totals.mixedCurrencies ? <p className="mt-3 text-sm text-amber-300">Sell services in different currencies separately.</p> : null}
+            {!recovery ? <div className="mt-4 flex items-center justify-between gap-3">{step > 1 ? <button className={secondary} disabled={locked} onClick={() => setStep(step - 1)}>Back</button> : <span />}{step === 1 ? <button className={button} disabled={locked || !ready || !input.lines.length || page.hasMore || totals.mixedCurrencies} onClick={() => void readReview()}>{reading ? "Reviewing…" : "Review onboarding"}</button> : step === 2 ? <button className={button} disabled={locked || !quote} onClick={() => setStep(3)}>Choose contact methods</button> : <button className={button} disabled={locked || !quote || !input.delivery?.length} onClick={sell}>{pending ? "Saving sale…" : `Sell ${input.lines.length === 1 ? "service" : `${input.lines.length} services`} & send link`}</button>}</div> : null}
             {error || storedRecovery.error ? (
                 <p role="alert" className="mt-4 text-sm text-red-300">
                     {error || storedRecovery.error}
@@ -755,5 +480,4 @@ export function RelationshipServicePos(props: Props) {
                 </PreviewOverlay>
             ) : null}
         </div>
-    )
 }

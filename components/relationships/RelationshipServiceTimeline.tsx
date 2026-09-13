@@ -21,7 +21,8 @@ async function get<T>(endpoint: string, userId: string, signal: AbortSignal): Pr
 function Paging({ page, hasMore, change }: {page:number;hasMore:boolean;change:(n:number)=>void}) {
     return page || hasMore ? <div className="mt-2 flex items-center justify-between gap-3 text-sm"><button disabled={!page} className="min-h-11 px-2 disabled:opacity-40" onClick={() => change(page-1)}>Previous</button><span className="text-neutral-500">Page {page+1}</span><button disabled={!hasMore} className="min-h-11 px-2 disabled:opacity-40" onClick={() => change(page+1)}>Next</button></div> : null
 }
-function Queue({ endpoint, slug, relationshipId, userId, revision, active }: {endpoint:string;slug:string;relationshipId:string;userId:string;revision:unknown;active:boolean}) {
+export function RelationshipQueue({ endpoint, slug, relationshipId, userId, revision }: {endpoint:string;slug:string;relationshipId:string;userId:string;revision:unknown}) {
+    const active = useWorkspaceNavigation()?.active ?? true
     const host = useRef<HTMLDivElement>(null)
     const [visible,setVisible] = useState(false)
     const [page,setPage] = useState(0)
@@ -36,7 +37,7 @@ function Queue({ endpoint, slug, relationshipId, userId, revision, active }: {en
         return () => controller.abort()
     },[endpoint,userId,page,revision,visible,active,retry])
     useEffect(() => {if(typeof BroadcastChannel === "undefined")return;const channel=new BroadcastChannel(ganttSyncChannelName(slug));channel.onmessage=()=>setRetry(n=>n+1);return()=>channel.close()},[slug])
-    return <div ref={host} className="mt-6" aria-label="Relationship work queue"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">Work queue</h2><Link href={`/${slug}/relationships/${relationshipId}?create=work-item`} className="inline-flex min-h-11 items-center text-sm text-neutral-300 underline">Add work item</Link></div>
+    return <div ref={host} className="mt-6" aria-label="Relationship work queue"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">Queue</h2><Link href={`/${slug}/relationships/${relationshipId}?create=work-item`} className="inline-flex min-h-11 items-center text-sm text-neutral-300 underline">Add work item</Link></div>
         {error ? <p role="alert" className="py-2 text-sm text-red-200">{error}<button className="ml-2 min-h-11 underline" onClick={()=>setRetry(n=>n+1)}>Retry</button></p> : null}
         {!data ? <p role="status" className="py-5 text-sm text-neutral-500">Loading work queue…</p> : <><List ariaLabel="Relationship work queue">{data.items.length ? data.items.map(item => <ListItem key={item.id}><ListPrimaryRow><ListTitle href={item.workflow_action === "sell_client" ? `/${slug}/relationships/${relationshipId}/pos` : `/${slug}/work-items/${item.id}`}>{item.title}</ListTitle><Status label={item.queue_state} tone={item.queue_state === "Blocked" ? "red" : ["Waiting","Scheduled"].includes(item.queue_state) ? "yellow" : "green"} /></ListPrimaryRow><ListSecondaryRow>{item.assignees[0] ? <Assignee name={item.assignees[0].username} userId={item.assignees[0].userId} className="min-w-0" /> : <span className="text-neutral-500">Unassigned</span>}{item.assignees.length>1 ? <span>+{item.assignees.length-1}</span> : null}<ListTrailing>{item.due_date ? <span className="text-neutral-500">Due {new Date(`${item.due_date}T12:00:00`).toLocaleDateString('en-IE',{day:'numeric',month:'short'})}</span> : null}<Link href={`/${slug}/work-items/${item.id}`} className="inline-flex min-h-11 items-center text-neutral-300 underline">Open work</Link></ListTrailing></ListSecondaryRow></ListItem>) : <p className="px-4 py-5 text-sm text-neutral-500">No open work for this relationship.</p>}</List><Paging page={page} hasMore={data.hasMore} change={next=>{setPage(next);setData(null)}} /></>}
     </div>
@@ -74,6 +75,5 @@ export function RelationshipServiceTimeline({endpoint,workspaceSlug,relationship
             <Paging page={page} hasMore={data.hasMore} change={next=>{setPage(next);setData(null)}} />
             {data.workTruncated ? <p className="py-2 text-xs text-neutral-500">Showing the first 500 work items in the chart. The queue below includes all accessible open work across its pages.</p> : null}
         </> : <DetailContentLoading label="Loading service timelines…" />}
-        <Queue endpoint={endpoint} slug={workspaceSlug} relationshipId={relationshipId} userId={userId} revision={revision} active={active} />
     </div>
 }

@@ -58,7 +58,7 @@ export type RelationshipDealDetailsInput = {
 
 export type RelationshipBackgroundDetailsInput = Pick<RelationshipDealDetailsInput,
     "primaryPersonName" | "businessName" | "primaryContactRole" | "primaryPhone" | "whatsappPhone" | "communicationPrimaryProvider" | "communicationDeliveryMode" | "primaryEmail" | "description"
-> & { expectedUpdatedAt: string; expectedUserId?: string }
+> & { expectedUpdatedAt: string; expectedUserId?: string; locationValue?: string }
 
 function formString(formData: FormData, key: string) {
     return String(formData.get(key) ?? "").trim()
@@ -116,6 +116,7 @@ export async function createRelationshipFromModal(slug: string, formData: FormDa
     const { workspace, user } = await requireRelationshipSeller(slug)
     const requestId = formString(formData, "relationship_request_id")
     if (!/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(requestId)) return { ok: false, error: "Close and reopen the form to start a new relationship." }
+    if (!formString(formData, "primary_email") && !formString(formData, "primary_phone")) return { ok: false, error: "Add an email or phone number for this relationship." }
     const { data, error } = await supabaseAdmin.rpc("create_empty_relationship", {
         p_workspace_id: workspace.id, p_actor_user_id: user.id, p_request_id: requestId,
         p_details: { name: formString(formData, "primary_person_name"), company: formString(formData, "business_name"), email: formString(formData, "primary_email"), phone: formString(formData, "primary_phone"), isTest: formData.get("is_test") === "on" },
@@ -356,6 +357,7 @@ export async function saveRelationshipBackgroundDetails(slug: string, relationsh
         whatsappPhone: input.whatsappPhone,
     })
     let update = supabaseAdmin.from("relationships").update({
+        ...(input.locationValue !== undefined ? { location_value: input.locationValue.trim() || null } : {}),
         primary_person_name: primaryPersonName,
         business_name: input.businessName.trim() || null,
         primary_contact_role: input.primaryContactRole.trim() || null,

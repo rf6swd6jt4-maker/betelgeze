@@ -8,6 +8,7 @@ export async function smsConsentAllowsDelivery(input: {
     relationshipId: string
     address: string
     includeSending?: boolean
+    includeContactConfirmation?: boolean
 }) {
     const statuses = input.includeSending
         ? ["sending_confirmation", "awaiting_confirmation", "confirmed"]
@@ -22,7 +23,13 @@ export async function smsConsentAllowsDelivery(input: {
         .limit(1)
         .maybeSingle()
     if (error) throw new Error("SMS consent could not be verified.")
-    return Boolean(data)
+    if (data) return true
+    const [confirmation, optIn] = await Promise.all([
+        supabaseAdmin.from("relationship_contact_confirmations").select("id").eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId).eq("provider", "twilio_sms").eq("address", toE164Recipient(input.address)).in("status", input.includeContactConfirmation ? ["sending", "awaiting_confirmation", "confirmed"] : ["confirmed"]).limit(1).maybeSingle(),
+        supabaseAdmin.from("workspace_sms_opt_ins").select("id").eq("workspace_id", input.workspaceId).eq("phone_e164", toE164Recipient(input.address)).eq("status", "active").maybeSingle(),
+    ])
+    if (confirmation.error || optIn.error) throw new Error("SMS consent could not be verified.")
+    return Boolean(confirmation.data && optIn.data)
 }
 
 export async function smsConsentForConfirmation(input: { workspaceId: string; saleId: string; fromAddress: string }) {
@@ -51,7 +58,7 @@ export async function markSmsConsentConfirmed(input: { workspaceId: string; cons
 export async function recordSmsOptOut(input: { workspaceId: string; fromAddress: string }) {
     const optedOutAt = new Date().toISOString()
     const phoneE164 = toE164Recipient(input.fromAddress)
-    const [relationshipResult, workspaceResult] = await Promise.all([
+    const [relationshipResult, workspaceResult, contactResult] = await Promise.all([
         supabaseAdmin.from("relationship_sms_consents").update({
             status: "opted_out",
             opted_out_at: optedOutAt,
@@ -64,8 +71,9 @@ export async function recordSmsOptOut(input: { workspaceId: string; fromAddress:
             opted_out_at: optedOutAt,
         }).eq("workspace_id", input.workspaceId)
             .eq("phone_e164", phoneE164),
+        supabaseAdmin.from("relationship_contact_confirmations").update({ status: "revoked" }).eq("workspace_id", input.workspaceId).eq("provider", "twilio_sms").eq("address", phoneE164),
     ])
-    if (relationshipResult.error || workspaceResult.error) {
+    if (relationshipResult.error || workspaceResult.error || contactResult.error) {
         throw new Error(relationshipResult.error?.message ?? workspaceResult.error?.message ?? "SMS opt-out could not be recorded")
     }
 }

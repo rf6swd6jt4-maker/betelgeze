@@ -16,6 +16,13 @@ export async function GET(request: Request, context: { params: Promise<{workspac
         const kind = query.get("kind")
         if (!kind) return Response.json(await readRelationshipServices(workspace.id, relationshipId, user.id, offset), { headers })
         const parameters = { p_workspace_id: workspace.id, p_user_id: user.id }
+        if (kind === "cards" || kind === "detail") {
+            if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })
+            const result = await supabaseAdmin.rpc("read_relationship_service_cards", { ...parameters, p_relationship_id: relationshipId, p_offset: offset, p_id: kind === "detail" ? query.get("id") ?? "" : null })
+            if (result.error) throw new Error("Could not load service details")
+            const { hydrateRelationshipServiceThumbnails } = await import("@/lib/relationship-services-server")
+            return Response.json({ ...result.data, items: await hydrateRelationshipServiceThumbnails(result.data.items.slice(0, 30)) }, { headers })
+        }
         if (kind === "timeline" || kind === "queue") {
             if (request.headers.get("x-workspace-user") !== user.id) return Response.json({error:"Your session changed."},{status:409,headers})
             const result = await supabaseAdmin.rpc(kind === "timeline" ? "read_relationship_service_plan" : "read_relationship_work_queue", {...parameters,p_relationship_id:relationshipId,p_offset:offset})

@@ -53,3 +53,23 @@ test("confirmation webhook replay resolves its original sale before looking for 
  assert.equal((await find("sms:+353850000000","workspace","message-id")).id,"original-sale")
  assert.equal(queries,1)
 })
+
+test("card POS validates reviewed candidates and exact delivery destinations", () => {
+ const selected={...draft,uiVersion:2,offered:draft.lines.map(line=>({id:line.id,version:line.version})),delivery:[{provider:"meta_whatsapp",address:"+353850000001"}]}
+ assert(validServiceSaleInput(selected))
+ for(const change of [{offered:[]},{offered:[selected.offered[0],selected.offered[0]]},{delivery:[...selected.delivery,...selected.delivery]},{delivery:[{provider:"email",address:"a@example.com"}]},{delivery:[{provider:"twilio_sms",address:"not a number"}]}]) assert(!validServiceSaleInput({...selected,...change}))
+ assert(validServiceSaleInput({...selected,delivery:[]})) // Preview may precede channel selection; commit requires it.
+})
+
+// The stepped POS always edits monthly prices, including services priced by another catalogue cadence.
+test("monthly POS defaults normalize cadence and reject stale or malformed drafts", async () => {
+ const { monthlyServicePrice, validServiceSaleDraft } = await import("../lib/service-pos.ts")
+ assert.equal(monthlyServicePrice({recurring_cents:120000,billing_interval:"year",billing_interval_count:1}),10000)
+ assert.equal(monthlyServicePrice({recurring_cents:30000,billing_interval:"month",billing_interval_count:3}),10000)
+ const row={id:"00000000-0000-4000-a000-000000000001",version:2} as import("../lib/service-pos.ts").ServicePosRow
+ const draft={uiVersion:2,relationshipVersion:"2026-09-13",billingInterval:"month",billingIntervalCount:1,managerId:"",lines:[{id:row.id,version:2,assigneeId:"",upfrontCents:0,recurringCents:10000}]}
+ assert(validServiceSaleDraft(draft,[row],"2026-09-13"))
+ assert(!validServiceSaleDraft({...draft,billingInterval:"year"},[row],"2026-09-13"))
+ assert(!validServiceSaleDraft(draft,[{...row,version:3}],"2026-09-13"))
+ assert(!validServiceSaleDraft({...draft,lines:[null]},[row],"2026-09-13"))
+})

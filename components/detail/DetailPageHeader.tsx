@@ -18,6 +18,7 @@ export function DetailPageHeader({
     labels,
     facts = [],
     updated,
+    summary,
 }: {
     category: string
     reference: string
@@ -26,6 +27,7 @@ export function DetailPageHeader({
     labels?: ReactNode
     facts?: DetailHeaderFacts
     updated: ReactNode
+    summary?: ReactNode
 }) {
     return <header data-workspace-record-title={typeof title === "string" ? title : undefined} className="border-b border-neutral-800 pb-4">
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -40,5 +42,6 @@ export function DetailPageHeader({
                 <span className="shrink-0 whitespace-nowrap">Updated {updated}</span>
             </div>
         </div>
+        {summary ? <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-bold text-neutral-200">{summary}</div> : null}
     </header>
 }

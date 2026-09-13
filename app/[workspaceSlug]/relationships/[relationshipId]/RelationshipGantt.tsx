@@ -1153,7 +1153,7 @@ export function RelationshipGantt({ workspaceSlug, relationshipId, userId, plan:
         >
             <div className="grid items-start" style={{ gridTemplateColumns: `${effectiveLeftWidth}px ${contentWidth}px`, gridAutoRows: "max-content", minWidth: `${effectiveLeftWidth + contentWidth}px` }}>
                 <div className={`sticky left-0 top-0 z-50 flex h-11 min-w-0 items-center overflow-hidden border-b border-neutral-700 bg-neutral-950 text-xs font-semibold text-white ${effectiveLeftWidth ? "border-r px-2" : "border-r-0 px-0"}`}>
-                    <span className="truncate">Plan</span>
+                    <span className={serviceMode ? "truncate text-base" : "truncate"}>{serviceMode ? "History" : "Plan"}</span>
                     {!isNarrow ? <button type="button" aria-label="Resize timeline label column" title="Drag to resize" onPointerDown={startDividerDrag} className="group absolute -right-1.5 inset-y-0 hidden w-3 cursor-col-resize touch-none lg:block"><span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-neutral-400" /></button> : null}
                 </div>
                 <div className="sticky top-0 z-40 h-11 border-b border-neutral-700 bg-neutral-950">

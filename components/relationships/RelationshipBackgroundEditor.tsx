@@ -1,7 +1,6 @@
 "use client"
-import { useEffect, useState, useSyncExternalStore } from "react"
+import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react"
 import { DetailField, DetailFields } from "@/components/detail"
-import { CommunicationMethodSelector, Selector } from "@/components/ui"
 import { saveRelationshipBackgroundDetails } from "@/app/[workspaceSlug]/relationships/actions"
 import { RelationshipDraftQueue } from "@/lib/relationship-draft-queue"
 import { createRelationshipDraftStorage, sendRelationshipBackgroundCommand, type RelationshipDraft } from "@/lib/relationship-draft-command"
@@ -9,8 +8,12 @@ import { getRelationshipDraftQueue, retainRelationshipDraftQueue } from "@/lib/r
 import { registerWorkspaceAutosaveFlusher, runWorkspaceMutation } from "@/lib/workspace-mutations"
 import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 
-export function RelationshipBackgroundEditor({ workspaceSlug, relationshipId, userId, initial, updatedAt, canEdit, commandsEnabled }: {
-    workspaceSlug: string; relationshipId: string; userId: string; initial: RelationshipDraft; updatedAt: string; canEdit: boolean; commandsEnabled: boolean
+type BackgroundContext = { draft: RelationshipDraft; canEdit: boolean; update: (key: keyof RelationshipDraft, value: string) => void; flush: () => Promise<unknown> }
+const Context = createContext<BackgroundContext | null>(null)
+export function useRelationshipBackground() { const value = useContext(Context); if (!value) throw new Error("Relationship details provider required"); return value }
+
+export function RelationshipBackgroundEditor({ workspaceSlug, relationshipId, userId, initial, updatedAt, canEdit, commandsEnabled, children }: {
+    workspaceSlug: string; relationshipId: string; userId: string; initial: RelationshipDraft; updatedAt: string; canEdit: boolean; commandsEnabled: boolean; children?: ReactNode
 }) {
     const router = useRouter()
     const runtimeKey = `${userId}:${workspaceSlug}:${relationshipId}`
@@ -36,19 +39,16 @@ export function RelationshipBackgroundEditor({ workspaceSlug, relationshipId, us
     useEffect(() => { queue.receive(initial, updatedAt) }, [initial, updatedAt, queue])
     const update = <K extends keyof RelationshipDraft>(key: K, value: RelationshipDraft[K]) => queue.edit(draft => ({ ...draft, [key]: value }))
     const fieldClass = "min-h-9 w-full min-w-0 rounded-md bg-transparent px-1 py-1 text-base text-neutral-200 outline-none hover:bg-neutral-900/60 focus:bg-neutral-900 disabled:opacity-70 sm:text-sm"
-    return <section aria-label="Relationship information" className="mt-4">
+    return <Context.Provider value={{ draft: state.draft, canEdit, update: (key, value) => update(key, value as never), flush: async () => { if (!await queue.flush()) throw new Error("Save or resolve the relationship details before continuing.") } }}><section aria-label="Relationship information" className="mt-4 border-b border-neutral-800">
         <DetailFields className="!mt-0">
             {([
                 ["primaryPersonName", "Name", "identity", "text"], ["businessName", "Company", "relationship", "text"],
-                ["primaryContactRole", "Contact role", "person", "text"], ["primaryEmail", "Email", "contact", "email"],
-                ["primaryPhone", "Phone", "contact", "tel"], ["whatsappPhone", "WhatsApp", "contact", "tel"],
-            ] as const).map(([key, label, icon, type]) => <DetailField key={key} label={label} icon={icon}><input aria-label={label} type={type} disabled={!canEdit} value={state.draft[key]} onChange={event => update(key, event.target.value)} onBlur={() => void queue.flush()} className={fieldClass} /></DetailField>)}
-            <DetailField label="Preferred channel" icon="contact"><CommunicationMethodSelector choices={[{value:"meta_whatsapp"},{value:"twilio_sms"}]} value={state.draft.communicationPrimaryProvider} onChange={value => update("communicationPrimaryProvider", value as "meta_whatsapp" | "twilio_sms")} disabled={!canEdit} /></DetailField>
-            <DetailField label="Delivery" icon="contact"><Selector ariaLabel="Message delivery" disabled={!canEdit} value={state.draft.communicationDeliveryMode} onChange={value => update("communicationDeliveryMode", value as RelationshipDraft["communicationDeliveryMode"])} options={[{value:"primary_only",label:"Preferred channel only"},{value:"primary_with_fallback",label:"Use fallback if needed"},{value:"mirror",label:"Both channels"}]} /></DetailField>
+                ["primaryContactRole", "Contact role", "person", "text"], ["locationValue", "Location", "relationship", "text"],
+            ] as const).map(([key, label, icon, type]) => <DetailField key={key} label={label} icon={icon}><input aria-label={label} type={type} disabled={!canEdit} value={state.draft[key] ?? ""} onChange={event => update(key, event.target.value)} onBlur={() => void queue.flush()} className={fieldClass} /></DetailField>)}
             <DetailField label="Notes" icon="description" className="lg:col-span-2"><textarea aria-label="Relationship notes" disabled={!canEdit} rows={3} value={state.draft.description} onChange={event => update("description", event.target.value)} onBlur={() => void queue.flush()} className={fieldClass} /></DetailField>
         </DetailFields>
         <p role="status" className="py-2 text-xs text-neutral-400">{state.error || state.storageError || (state.saving ? "Saving details…" : canEdit ? "Details save automatically" : "Read only")}</p>
         {state.error ? <button type="button" onClick={() => void queue.flush()} className="min-h-11 text-sm underline">Retry save</button> : null}
         {state.conflict ? <div role="alert" className="flex flex-wrap gap-3 py-2 text-sm text-amber-200"><span>Your draft is preserved. Review the latest values before saving.</span><button onClick={() => router.refresh()} className="min-h-11 underline">Refresh</button>{state.latest ? <><button onClick={() => queue.resolveConflict(false)} className="min-h-11 underline">Use saved values</button><button onClick={() => queue.resolveConflict(true)} className="min-h-11 underline">Keep my edits</button></> : null}</div> : null}
-    </section>
+    </section>{children}</Context.Provider>
 }

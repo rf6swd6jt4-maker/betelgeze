@@ -1,3 +1,4 @@
+import { selectedOnboardingDestinations } from "./selected-delivery"
 import { getOnboardingUrl } from "@/lib/onboarding/client-creation"
 import { getClientPortalUrl } from "@/lib/client-portal/domain"
 import { resolveCommunicationDestinations, sendCommunicationDeliveries } from "@/lib/client-messages/omnichannel"
@@ -251,7 +252,7 @@ async function existingDeliveryMessage(row: DeliveryOutboxRow, sentOnly: boolean
         .contains("raw_payload", { outbox_id: row.id })
         .order("created_at", { ascending: false })
         .limit(1)
-    if (sentOnly) query = query.in("status", ["sent", "send_uncertain", "whatsapp_sent", "whatsapp_delivered", "whatsapp_read"])
+    if (sentOnly) query = query.in("status", row.payload?.delivery_choices ? ["sent", "delivered", "read", "whatsapp_sent", "whatsapp_delivered", "whatsapp_read"] : ["sent", "send_uncertain", "whatsapp_sent", "whatsapp_delivered", "whatsapp_read"])
     return query.maybeSingle()
 }
 
@@ -275,7 +276,13 @@ async function processDeliveryRow(row: DeliveryOutboxRow) {
         messageLogId = existingMessage.data?.id ?? null
         const context = await deliveryContext(row)
         const body = deliveryBody(row, context.publicUrl, context.workspaceName, await deliveryHasConfirmedSmsConsent(row))
-        const channels = await resolveCommunicationDestinations({ workspaceId: row.workspace_id, relationshipId: context.relationshipId })
+        const selected = row.payload?.delivery_choices
+        let channels
+        if (selected) {
+            const current = await supabaseAdmin.rpc("relationship_messaging_choices", { p_workspace_id: row.workspace_id, p_relationship_id: context.relationshipId })
+            if (current.error) throw new Error("Could not verify the selected delivery channels.")
+            channels = { destinations: selectedOnboardingDestinations(row.payload, current.data)! }
+        } else channels = await resolveCommunicationDestinations({ workspaceId: row.workspace_id, relationshipId: context.relationshipId })
         if (!channels.destinations.length) throw new Error("The relationship has no connected messaging destination")
         const primaryDestination = channels.destinations.find((destination) => destination.primary) ?? channels.destinations[0]
         const payload = payloadRecord(row.payload)
@@ -334,7 +341,7 @@ async function processDeliveryRow(row: DeliveryOutboxRow) {
             destinations: channels.destinations,
         })
         const successful = delivery.results.filter((result) => result.ok)
-        providerSent = successful.length > 0
+        providerSent = row.payload?.delivery_choices ? successful.length === delivery.results.length : successful.length > 0
         sentProviderId = (successful.find((result) => result.primary) ?? successful[0])?.providerMessageId ?? null
         if (!providerSent) throw new Error(delivery.error ?? "Every onboarding message delivery failed")
         const messageUpdate = await supabaseAdmin.from("client_messages").select("id").eq("workspace_id", row.workspace_id).eq("id", messageLogId).maybeSingle()
@@ -373,7 +380,7 @@ async function processDeliveryRow(row: DeliveryOutboxRow) {
             kind: row.kind,
         })
         if (!providerSent) {
-            if (messageLogId) {
+            if (messageLogId && !row.payload?.delivery_choices) {
                 await supabaseAdmin.from("client_messages").update({ status: "send_failed", error: reported.errorSummary }).eq("workspace_id", row.workspace_id).eq("id", messageLogId)
             }
             const finished = await finishDelivery(row, false, null, reported.errorCode, reported.errorSummary)

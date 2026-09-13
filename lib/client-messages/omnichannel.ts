@@ -180,7 +180,7 @@ async function sendProvider(input: {
     attachmentAccessUrl?: string | null
     replyToMessageId?: string | null
     whatsappTemplate?: { name: string; language: string } | null
-    smsConsentContext?: "web_opt_in"
+    smsConsentContext?: "web_opt_in" | "relationship_confirmation"
 }) {
     if (input.destination.provider === "client_portal") return null
     const replyTo = await replyProviderId({
@@ -195,6 +195,7 @@ async function sendProvider(input: {
             relationshipId: input.relationshipId,
             address: input.destination.address,
             includeSending: input.smsConsentContext === "web_opt_in",
+            includeContactConfirmation: input.smsConsentContext === "relationship_confirmation",
         })
         if (!consentAllowed) throw new Error("This client has not opted in to SMS messages for this relationship.")
         const mediaUrls = input.attachment && input.attachment.kind !== "sticker"
@@ -265,7 +266,7 @@ export async function sendCommunicationDeliveries(input: {
     replyToMessageId?: string | null
     whatsappTemplate?: { name: string; language: string } | null
     destinations?: ResolvedCommunicationDestination[]
-    smsConsentContext?: "web_opt_in"
+    smsConsentContext?: "web_opt_in" | "relationship_confirmation"
 }) {
     const resolved = input.destinations
         ? null

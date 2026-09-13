@@ -85,3 +85,5 @@ No sale was submitted during UI QA. Physical iPhone/Android and real provider-de
 The schema is additive around existing records, but several shared guards are extended. Do not drop native sale/session history or revert shared guards blindly after real sales exist. If a release issue appears, stop new native sale finalizations while retaining the migrated data and compatible payment/completion handlers, then repair the affected path. Code rollback must account for any native sales already created.
 
 Provider references: [Stripe Checkout request limits and expiry](https://docs.stripe.com/api/checkout/sessions/create) and [Stripe idempotent-request behavior](https://docs.stripe.com/api/idempotent_requests).
+
+The subsequent relationship UI and centered three-step POS revision supersedes this release’s original POS presentation. See [relationship-card-pos-release.md](relationship-card-pos-release.md) for changed decline/confirmation/delivery behavior and its validation.

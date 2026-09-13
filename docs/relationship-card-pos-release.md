@@ -40,3 +40,15 @@ Release and authenticated verification are recorded below after deployment. No p
 - Different currencies require separate sales. Historical For later records remain readable and sellable, although the new UI offers Declined.
 
 Rollback should preserve new confirmations, receipts, sales and queued deliveries. Repair or roll back the UI while retaining the compatible schema; never remove accepted work or service history to undo a visual release.
+
+## Production outcome
+
+The exact migration installed successfully after both rollback rehearsals. Post-install verification preserved 42 relationships, 46 sales, 23 onboarding sessions, one service instance, 581 messages and 27 pre-existing outbox rows, with zero contact confirmations created by installation. Confirmation-table RLS is enabled and authenticated RPC execution is denied.
+
+Application commit `68ae0187` deployed successfully to production via [Vercel deployment JnQvhEZEbC1A2heaPxhZc8UPZy6w](https://vercel.com/betelgeze-projects/betelgeze/JnQvhEZEbC1A2heaPxhZc8UPZy6w).
+
+Authenticated desktop Safari inspection on Test Client 17 verified the new header/fields/History, service/contact cards, centered POS, $750 upfront plus $750 monthly selection, four-module published composition, real full-screen onboarding preview, return to the POS, and delivery eligibility. The WhatsApp card displayed its existing confirmation and last outgoing message status; the POS correctly disabled it while a fresh reply is required. Add contact listed only the remaining Phone and Twilio SMS methods. The sale and confirmation controls were not submitted.
+
+A final 390px Chromium interaction check using the actual components verified automatic selection from the service card, preserved a $925 edited draft across closing/reopening, traversed the three steps, disabled unconfirmed SMS and kept the popup inside the viewport (12px–378px with document width 390px). The earlier five-width Chromium/WebKit fixture checks remain geometry evidence. Physical Android/iPhone and real provider delivery have not been tested in this release.
+
+The existing onboarding worker is invoked directly by the sale/retry path after the durable transaction. An independent periodic scheduler was not verified; the release does not claim unattended retry scheduling. Manual retry keeps the exact saved sale/session and chosen destinations.

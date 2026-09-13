@@ -41,6 +41,7 @@ test("workspace panels derive Staff access from service capabilities", () => {
         "Appointment Setting",
         "Communications",
         "Library",
+        "SOPs",
         "Onboarding Builder",
         "Lead Gen",
         "Admin",

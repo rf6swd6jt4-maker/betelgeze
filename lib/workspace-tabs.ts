@@ -119,6 +119,8 @@ export function workspaceTabTitleForUrl(value: string, workspaceSlug: string) {
     if (suffix.startsWith("appointment-setting/")) return "Appointment Setting Detail"
     if (suffix === "work-items") return "Work Items"
     if (suffix.startsWith("work-items/")) return "Work Item"
+    if (suffix === "sops") return "SOPs"
+    if (suffix.startsWith("sops/")) return "SOP"
     if (suffix === "assets") return "Assets"
     if (suffix.startsWith("assets/")) return "Asset"
     if (suffix === "communications") return "Communications"

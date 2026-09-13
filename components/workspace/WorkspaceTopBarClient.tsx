@@ -285,6 +285,7 @@ function workspacePanelIcon(key: WorkspacePanelKey) {
     if (key === "fulfilment") return <WorkIcon />
     if (key === "appointment-setting") return <AppointmentIcon />
     if (key === "communications") return <CommunicationsIcon />
+    if (key === "sops") return <LibraryIcon />
     if (key === "library") return <LibraryIcon />
     if (key === "onboarding-builder") return <BuilderIcon />
     if (key === "leadgen") return <LeadIcon />

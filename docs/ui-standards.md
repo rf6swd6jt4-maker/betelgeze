@@ -608,3 +608,26 @@ The service POS opens as a centered dialog with Services, Onboarding, and Send l
 Relationship POS prices retain typed decimal text while editing and normalize to two decimal places on blur. Module composition uses sky RoundPills; the add-service catalogue uses emerald service pills with its existing default upfront/recurring prices. Enter leaves a single-line relationship field through its normal blur/save path; Notes retains multiline Enter. Relationship history is communicated by the Gantt, without a separate Sales and onboarding history disclosure.
 
 The relationship add-service popup uses its single dialog heading, then search and an internally scrolling catalogue capped at two 6rem service rows on mobile and three from `sm` upward. Selection reveals the existing configuration fields.
+
+## SOP catalogue and records
+
+SOPs are durable procedure records available to every workspace member. Retain
+the square `DocumentCatalogue`, `DocumentCard`, and `AddDocumentCard` treatment
+for their procedure-cover catalogue. This is an intentional document-container
+gallery; attached asset collections use the shared embedded `List`. Catalogue
+cards show title and update time without fetching asset previews or counts.
+Paginate records and assets independently with stable cursors.
+
+Only Owner/Admin sees Add SOP and record/asset editing. Add SOP opens a compact
+name/description form, then the record's Assets section accepts the main document
+and supporting material. SOP details follow `DetailPageHeader`, `DetailFields`,
+record-specific Assets content, and the admin `DetailDangerZone`. Use `Selector`
+for asset roles. Archive preserves sources and interpretations; restore uses the
+same record route. Permanent deletion remains explicitly unavailable.
+
+Assets support documents, text, images, video and audio. Previews and interpretation
+results load only when requested. Staff can view/download assets without Library
+permissions. Upload, saving, retry and interpretation states remain distinct.
+Interpretations are source-derived drafts, with examples, conditions, source
+quotes and missing-information warnings visible. Mark reviewed is an admin action;
+it does not publish a client work plan. No parsing or model call runs on navigation.

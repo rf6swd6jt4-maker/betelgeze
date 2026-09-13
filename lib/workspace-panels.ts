@@ -8,6 +8,7 @@ export type WorkspacePanelDefinition = {
     activeRoutes?: readonly string[]
     capability: WorkspaceCapability
     minimumRole?: "admin"
+    allMembers?: boolean
     requiresService?: boolean
     description: string
     keywords: readonly string[]
@@ -21,6 +22,7 @@ export const WORKSPACE_PANELS = [
     { key: "appointment-setting", label: "Appointment Setting", route: "appointment-setting", capability: "appointment_setting.manage", requiresService: true, description: "Leads, bookings, setter availability, and appointment outcomes", keywords: ["appointments", "bookings", "setters", "calendar", "leads"] },
     { key: "communications", label: "Communications", route: "communications", capability: "communications.manage", description: "Relationship communication summaries", keywords: ["messages", "chat", "whatsapp", "communication"] },
     { key: "library", label: "Library", route: "work-items", activeRoutes: ["work-items", "assets"], capability: "library.manage", minimumRole: "admin", description: "Workspace work items and assets", keywords: ["tasks", "files", "uploads", "gallery"] },
+    { key: "sops", label: "SOPs", route: "sops", capability: "library.manage", allMembers: true, description: "Team SOP document catalogue", keywords: ["sop", "procedures", "instructions", "documents"] },
     { key: "onboarding-builder", label: "Onboarding Builder", route: "onboarding-builder", capability: "onboarding_builder.manage", minimumRole: "admin", standalone: true, description: "Build workspace onboarding modules and session structure", keywords: ["onboarding modules", "session builder", "forms builder", "form fields", "welcome", "completion", "visual builder"] },
     { key: "leadgen", label: "Lead Gen", route: "leadgen", capability: "leadgen.manage", minimumRole: "admin", description: "Lead generation dashboard", keywords: ["leads", "lead generation"] },
     { key: "admin", label: "Admin", route: "admin", capability: "admin.manage", minimumRole: "admin", description: "Private OKRs, activity, maintenance, and automation-failure follow-up", keywords: ["admin tools", "okr", "objectives", "key results", "metrics", "activity console", "automation history", "maintenance", "automation failures", "admin work items", "goals"] },
@@ -34,11 +36,12 @@ export function canAccessPrivateWorkspacePanels(role: WorkspaceRole) {
 }
 
 export function canAccessWorkspacePanel(
-    panel: Pick<WorkspacePanelDefinition, "capability" | "minimumRole" | "requiresService">,
+    panel: Pick<WorkspacePanelDefinition, "capability" | "minimumRole" | "requiresService" | "allMembers">,
     role: WorkspaceRole,
     capabilities: ReadonlySet<WorkspaceCapability> | readonly WorkspaceCapability[] = []
 ) {
     const capabilitySet = new Set(capabilities)
+    if (panel.allMembers) return true
     if (panel.requiresService && !capabilitySet.has(panel.capability)) return false
     if (canAccessPrivateWorkspacePanels(role)) return true
     if (panel.minimumRole === "admin") return false

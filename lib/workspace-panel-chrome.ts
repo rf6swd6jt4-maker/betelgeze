@@ -13,6 +13,7 @@ export function workspaceRouteUsesSharedBanner(pathname: string) {
     return nested.length === 0 && [
         "appointment-setting",
         "assets",
+        "sops",
         "onboarding",
         "relationships",
         "work",

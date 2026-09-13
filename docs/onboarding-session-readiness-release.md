@@ -1,6 +1,6 @@
 # SS-04: independent onboarding sessions
 
-13 September 2026. Implemented and validated locally against release baseline `0659063d`. **Not installed or deployed.** Automatic approval review rejected the production rollback rehearsal because it includes a privileged migration, backfill and test restart. The live database has not executed this migration. Explicit approval for that production operation is the remaining release gate.
+13 September 2026. Implemented and validated against release baseline `0659063d`. The user explicitly approved the production rehearsal, installation and deployment. The exact migration passed the live rollback rehearsal and was installed successfully. Application deployment is in progress.
 
 ## Resulting behavior
 
@@ -15,7 +15,7 @@
 ## Verification
 
 - `BE_PGLITE_ROOT=/private/tmp/be-performance-pg-fixture node scripts/validate-selected-service-sales-sql.mjs`: 31 groups passed. Existing selected-sale, deduplication, checkout, payment, confirmation and rollback cases remain covered. New cases exercise multi-step welcome evidence, test shortcuts, required welcome blocks, token revocation, replay, relationship team union, independent service review readiness, restart isolation and rollback, compatible answer mapping, attachment access, and history pagination.
-- The SQL harness uses the real SS-01 through SS-04 migrations, with a minimal legacy schema. Its legacy completion RPC and activity storage are adapters; it does **not** replace a rehearsal against the complete deployed schema. The production rehearsal in `tests/sql/onboarding-session-readiness-rehearsal.sql` remains unexecuted.
+- The SQL harness uses the real SS-01 through SS-04 migrations, with a minimal legacy schema. Its legacy completion RPC and activity storage are adapters; it does **not** replace a rehearsal against the complete deployed schema. The production rehearsal in `tests/sql/onboarding-session-readiness-rehearsal.sql` passed against the live schema, returning `SS04_REHEARSAL_PASSED`, zero proven welcomes, zero selected-service sessions and 12 relationship teams. Because no selected-service session exists in production, the live restart branch had no eligible record; restart behavior remains covered by the isolated SQL harness.
 - 961 repository tests, changed-file ESLint, `git diff --check`, and the production Webpack/TypeScript build passed in the final local validation.
 - Actual renderer/Skip components passed Chromium and WebKit fixtures at 320, 390, 639, 640 and 1280 CSS pixels. Checks include hidden/ineligible Skip, side-by-side sizing, required Complete disabled while authorized Skip is usable, successful navigation, failed-command recovery and horizontal overflow. These are browser emulation results, not physical Android/iPhone or authenticated production QA.
 - At 65 additional archived sessions, the isolated 50-record panel query measured 3.85 ms median across seven samples. This is database-only fixture evidence, not production or end-to-end latency. The panel combines its session/access reads in one request; asset listing combines the former two relationship/work link reads; individual asset access uses a point lookup. Answer reuse runs alongside existing page reads, with indexed step/submission/field lookups. No polling, provider request or eager workspace download was added.

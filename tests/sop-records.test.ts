@@ -174,3 +174,38 @@ test("background worker rechecks current admin access before downloading or send
     assert.deepEqual(await worker.processSopInterpretation(id(30)),{claimed:1,completed:0})
     assert.equal(providerCalls,0);assert.equal(finishes[0].p_result,null);assert.match(String(finishes[0].p_error),/no longer available/)
 })
+
+test("SOP service assignment takes a service only and rejects staff, foreign origins and stale actors", async () => {
+    let role="admin", calls=0, sent:unknown
+    const route=load("app/api/workspaces/[workspaceSlug]/sops/[id]/services/route.ts",{
+        "@/lib/workspace-access":{requireWorkspaceAccess:async()=>({workspace:{id:id(1)},user:{id:id(2)},role})},
+        "@/lib/supabase/admin":{supabaseAdmin:{rpc:async(name:string,args:unknown)=>{calls++;assert.equal(name,"assign_sop_service");sent=args;return {error:null}}}},
+        "@/lib/sops/policy":{canAddSop:(r:string)=>r==="admin"},
+        "@/lib/sops/records-policy":policy,
+        "@/lib/sops/http":load("lib/sops/http.ts"),
+    }) as typeof import("../app/api/workspaces/[workspaceSlug]/sops/[id]/services/route")
+    const context={params:Promise.resolve({workspaceSlug:"acme",id:id(3)})},body={serviceId:id(4),userId:id(2),unlink:false}
+    const request=(payload=body,origin="https://fixture.test")=>new Request("https://fixture.test/api/services",{method:"POST",headers:{origin},body:JSON.stringify(payload)})
+    assert.equal((await route.POST(request(),context)).status,200)
+    assert.deepEqual(sent,{p_workspace:id(1),p_actor:id(2),p_sop:id(3),p_service:id(4),p_remove:false})
+    role="staff";assert.equal((await route.POST(request(),context)).status,403)
+    role="admin";assert.equal((await route.POST(request(body,"https://foreign.test"),context)).status,403)
+    assert.equal((await route.POST(request({...body,userId:id(9)}),context)).status,400)
+    assert.equal(calls,1)
+})
+
+test("SOP autosave passes field baselines in the body and returns conflicts without overwriting", async () => {
+    let role="admin", calls=0, conflict=false
+    const route=load("app/api/workspaces/[workspaceSlug]/sops/[id]/route.ts",{
+        "@/lib/workspaces":{requireWorkspace:async()=>({workspace:{id:id(1)},user:{id:id(2)},role})},
+        "@/lib/supabase/admin":{supabaseAdmin:{rpc:async(name:string,args:{p_field:string;p_baseline:string})=>{calls++;assert.equal(name,"save_sop_text");assert.equal(args.p_field,"description");assert.equal(args.p_baseline,"Previous value");return {data:conflict?null:{version:"2026-09-14T12:00:00Z"}}}}},
+        "@/lib/sops/policy":{canAddSop:(r:string)=>r==="admin"},"@/lib/sops/records-policy":policy,
+        "@/lib/sops/records":{},"@/lib/sops/http":load("lib/sops/http.ts"),
+    }) as typeof import("../app/api/workspaces/[workspaceSlug]/sops/[id]/route")
+    const context={params:Promise.resolve({workspaceSlug:"acme",id:id(3)})}
+    const request=()=>new Request("https://fixture.test/api/sop",{method:"PATCH",body:JSON.stringify({field:"description",value:"New value",baseline:"Previous value",userId:id(2)})})
+    assert.equal((await route.PATCH(request(),context)).status,200)
+    conflict=true;assert.equal((await route.PATCH(request(),context)).status,409)
+    role="staff";assert.equal((await route.PATCH(request(),context)).status,403)
+    assert.equal(calls,2)
+})

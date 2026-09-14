@@ -67,6 +67,7 @@ function staticNavigationResults(workspace: { name: string; slug: string }, quer
         }))
     const entries = [
         ...panelEntries,
+        { id: "tab-sops", type: "Tab", label: "SOPs", description: "Team procedures and supporting files", href: workspaceHref(workspace.slug, "sops"), path: `${libraryPath} > SOPs`, keywords: ["sop", "procedures", "instructions"] },
         ...(canAccessLibrary ? [
             { id: "tab-work-items", type: "Tab", label: "Work Items", description: "Workspace-native task IDs and work item list", href: workspaceHref(workspace.slug, "work-items"), path: `${libraryPath} > Work Items`, keywords: ["tasks", "work item ids", "work ids"] },
             { id: "tab-assets", type: "Tab", label: "Assets", description: "Workspace asset IDs and file gallery", href: workspaceHref(workspace.slug, "assets"), path: `${libraryPath} > Assets`, keywords: ["files", "uploads", "asset ids", "gallery"] },

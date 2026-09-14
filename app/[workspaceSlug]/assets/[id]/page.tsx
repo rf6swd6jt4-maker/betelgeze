@@ -1,3 +1,4 @@
+import { CollapsedPillLinks } from "@/components/ui/CollapsedPillLinks"
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link"
@@ -129,9 +130,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
                                 </div>
                             </DetailField>
                             <DetailField label="Work items" icon="activity" className="lg:col-span-2">
-                                <div className="flex flex-wrap gap-1.5">
-                                    {scopedWorkItems.length ? scopedWorkItems.map((link) => <Link key={link.work_item_id} href={workItemHref(workspace.slug, link.work_item_id)}><RoundPill tone="sky">{link.work_item?.title ?? "Work item"}</RoundPill></Link>) : <span className="text-neutral-600">None</span>}
-                                </div>
+                                <CollapsedPillLinks label="linked work items" items={scopedWorkItems.map(link => ({ id: link.work_item_id, label: link.work_item?.title ?? "Work item", href: workItemHref(workspace.slug, link.work_item_id) }))} />
                             </DetailField>
                             <DetailField label="Description" icon="description" className="lg:col-span-2">{asset.description || <span className="text-neutral-600">No description</span>}</DetailField>
                         </DetailFields>

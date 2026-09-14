@@ -1,4 +1,4 @@
-import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { requireWorkspaceAccess } from "@/lib/workspace-access"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { canAddSop } from "@/lib/sops/policy"
 import { isSopId } from "@/lib/sops/records-policy"
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic"
 type Context = { params: Promise<{ workspaceSlug: string; id: string }> }
 export async function GET(request: Request, context: Context) {
     const { workspaceSlug, id } = await context.params
-    const { workspace, user, role } = await requireWorkspacePanel(workspaceSlug, "sops")
+    const { workspace, user, role } = await requireWorkspaceAccess(workspaceSlug)
     if (!canAddSop(role) || !isSopId(id)) return Response.json({ error: "SOP administration required." }, { status: 403, headers })
     const query = new URL(request.url).searchParams, offset = Number(query.get("offset") ?? 0)
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > 10000) return Response.json({ error: "Invalid page." }, { status: 400, headers })
@@ -28,12 +28,12 @@ export async function GET(request: Request, context: Context) {
 }
 export async function POST(request: Request, context: Context) {
     const { workspaceSlug, id } = await context.params
-    const { workspace, user, role } = await requireWorkspacePanel(workspaceSlug, "sops")
+    const { workspace, user, role } = await requireWorkspaceAccess(workspaceSlug)
     if (!canAddSop(role) || !sopMutationOrigin(request)) return Response.json({ error: "Only admins can link SOP services." }, { status: 403, headers })
     try {
         const body = await sopPayload(request)
-        if (body.userId !== user.id || ![id, body.serviceId, body.assetId].every(isSopId) || typeof body.unlink !== "boolean") return Response.json({ error: "Check the selected service and SOP file." }, { status: 400, headers })
-        const result = await supabaseAdmin.rpc("link_sop_service", { p_workspace: workspace.id, p_actor: user.id, p_sop: id, p_service: body.serviceId, p_asset: body.assetId, p_unlink: body.unlink })
+        if (body.userId !== user.id || ![id, body.serviceId].every(isSopId) || typeof body.unlink !== "boolean") return Response.json({ error: "Check the selected service." }, { status: 400, headers })
+        const result = await supabaseAdmin.rpc("assign_sop_service", { p_workspace: workspace.id, p_actor: user.id, p_sop: id, p_service: body.serviceId, p_remove: body.unlink })
         if (result.error) return Response.json({ error: result.error.code === "P0001" ? result.error.message : "The link could not be saved. Retry the same selection." }, { status: 400, headers })
         return Response.json({ ok: true }, { headers })
     } catch { return Response.json({ error: "The link could not be saved. Retry the same selection." }, { status: 400, headers }) }

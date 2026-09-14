@@ -119,7 +119,7 @@ test("pilot routes reject staff and foreign origins before queuing or dispatchin
     let role="staff",dispatched=0
     const route=load("app/api/workspaces/[workspaceSlug]/sops/[id]/work-runs/route.ts",{
         "next/server":{after:()=>{dispatched++}},
-        "@/lib/workspace-access":{requireWorkspacePanel:async()=>({workspace:{id:"w"},user:{id:"actor"},role})},
+        "@/lib/workspace-access":{requireWorkspaceAccess:async()=>({workspace:{id:"w"},user:{id:"actor"},role})},
         "@/lib/supabase/admin":{supabaseAdmin:{rpc:()=>{throw new Error("Must not queue")}}},
         "@/lib/sops/policy":{canAddSop:(v:string)=>v==="admin"},
         "@/lib/sops/records":{getSopAsset:()=>{throw new Error("Must not read assets")}},
@@ -139,7 +139,7 @@ test("downloaded cost reports retain workspace/SOP/run authorization and contain
     let found=true,scope:unknown[]=[]
     const route=load("app/api/workspaces/[workspaceSlug]/sops/[id]/work-runs/[runId]/route.ts",{
         "next/server":{after:()=>{throw new Error("Reads must not dispatch work")}},
-        "@/lib/workspace-access":{requireWorkspacePanel:async()=>({workspace:{id:id(1)},role:"admin"})},
+        "@/lib/workspace-access":{requireWorkspaceAccess:async()=>({workspace:{id:id(1)},role:"admin"})},
         "@/lib/supabase/admin":{supabaseAdmin:{}},
         "@/lib/sops/policy":{canAddSop:()=>true},
         "@/lib/sops/records-policy":load("lib/sops/records-policy.ts"),

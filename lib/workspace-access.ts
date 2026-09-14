@@ -141,6 +141,8 @@ export async function requireWorkspaceCapability(slug: string, capability: Works
 export async function requireWorkspacePanel(slug: string, panelKey: WorkspacePanelKey) {
     const context = await requireWorkspaceAccess(slug)
     const panel = workspacePanelByKey(panelKey)
+    // Library navigation includes team SOPs; workspace-wide asset/work lists remain admin-only.
+    if (panelKey === "library" && context.role !== "owner" && context.role !== "admin") notFound()
     if (!canAccessWorkspacePanel(panel, context.role, context.access.capabilities)) notFound()
     return context
 }

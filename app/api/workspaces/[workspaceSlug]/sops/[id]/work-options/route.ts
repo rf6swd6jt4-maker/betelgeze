@@ -1,4 +1,4 @@
-import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { requireWorkspaceAccess } from "@/lib/workspace-access"
 import { canAddSop } from "@/lib/sops/policy"
 import { isSopId } from "@/lib/sops/records-policy"
 import { listSopAssets } from "@/lib/sops/records"
@@ -7,7 +7,7 @@ import { sopError, sopPrivateHeaders } from "@/lib/sops/http"
 export const dynamic = "force-dynamic"
 export async function GET(request: Request, context: { params: Promise<{ workspaceSlug: string; id: string }> }) {
     const { workspaceSlug, id } = await context.params
-    const { workspace, role } = await requireWorkspacePanel(workspaceSlug, "sops")
+    const { workspace, role } = await requireWorkspaceAccess(workspaceSlug)
     if (!canAddSop(role)) return Response.json({ error: "Only admins can run this pilot." }, { status: 403, headers: sopPrivateHeaders })
     if (!isSopId(id)) return Response.json({ error: "Not found." }, { status: 404, headers: sopPrivateHeaders })
     const query = new URL(request.url).searchParams

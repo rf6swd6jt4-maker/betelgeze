@@ -1,5 +1,5 @@
 import { after } from "next/server"
-import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { requireWorkspaceAccess } from "@/lib/workspace-access"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { canAddSop } from "@/lib/sops/policy"
 import { isSopId } from "@/lib/sops/records-policy"
@@ -12,7 +12,7 @@ export const maxDuration = 300
 type Context = { params: Promise<{ workspaceSlug: string; id: string; runId: string }> }
 export async function GET(request: Request, context: Context) {
     const { workspaceSlug, id, runId } = await context.params
-    const { workspace, role } = await requireWorkspacePanel(workspaceSlug, "sops")
+    const { workspace, role } = await requireWorkspaceAccess(workspaceSlug)
     if (!canAddSop(role)) return Response.json({ error: "Only admins can view pilot costs." }, { status: 403, headers: sopPrivateHeaders })
     if (![id, runId].every(isSopId)) return Response.json({ error: "Not found." }, { status: 404, headers: sopPrivateHeaders })
     try {
@@ -23,7 +23,7 @@ export async function GET(request: Request, context: Context) {
 }
 export async function POST(request: Request, context: Context) {
     const { workspaceSlug, id, runId } = await context.params
-    const { workspace, user, role } = await requireWorkspacePanel(workspaceSlug, "sops")
+    const { workspace, user, role } = await requireWorkspaceAccess(workspaceSlug)
     if (!canAddSop(role) || !sopMutationOrigin(request)) return Response.json({ error: "Only admins can resume a pilot run." }, { status: 403, headers: sopPrivateHeaders })
     if (![id, runId].every(isSopId)) return Response.json({ error: "Not found." }, { status: 404, headers: sopPrivateHeaders })
     try {

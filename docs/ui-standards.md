@@ -615,25 +615,45 @@ The relationship add-service popup uses its single dialog heading, then search a
 
 ## SOP catalogue and records
 
-SOPs are durable procedure records available to every workspace member. Retain
-the square `DocumentCatalogue`, `DocumentCard`, and `AddDocumentCard` treatment
-for their procedure-cover catalogue. This is an intentional document-container
-gallery; attached asset collections use the shared embedded `List`. Catalogue
-cards show title and update time without fetching asset previews or counts.
-Paginate records and assets independently with stable cursors.
+SOPs are a category in Library, not a separate sidebar panel. Library navigation
+opens SOPs for every workspace member; workspace-wide Work Items and Assets
+categories keep their existing admin access. Keep existing SOP record URLs and
+workspace tabs stable. SOP covers use `DocumentCatalogue`; attached files and the
+Assets category share `AssetGallery` and `AssetGalleryCard`.
 
-Only Owner/Admin sees Add SOP and record/asset editing. Add SOP opens a compact
-name/description form, then the record's Assets section accepts the main document
-and supporting material. SOP details follow `DetailPageHeader`, `DetailFields`,
-record-specific Assets content, and the admin `DetailDangerZone`. Use `Selector`
-for asset roles. Archive preserves sources and interpretations; restore uses the
-same record route. Permanent deletion remains explicitly unavailable.
+SOP details use the standard detail header, inline autosaving Name and Description,
+a Services field, the Assets gallery, and the admin danger zone. There is no separate
+Edit details form or Linked services section. Text edits compare the field baseline
+atomically, preserve conflicts, and flush before navigation. Archive reads the current
+record version after flushing edits, so it cannot overwrite a recently saved field.
 
-Assets support documents, text, images, video and audio. Previews and interpretation
-results load only when requested. Staff can view/download assets without Library
-permissions. Upload, saving, retry and interpretation states remain distinct.
-Interpretations are source-derived drafts, with examples, conditions, source
-quotes and missing-information warnings visible. Mark reviewed is an admin action;
-it does not publish a client work plan. No parsing or model call runs on navigation.
+The Services field uses `PillField`: existing `RoundPill` values followed immediately
+by a small, box-less plus button. Pressing it opens the shared anchored `SelectorDrawer`
+with services rendered as pills. Selection saves immediately. Removable values have
+an accessible remove control. Keep catalogue searches and pagination bounded and
+load choices only while the popup is open. Use this pattern for future multi-value
+fields; do not create a second local pill-plus implementation.
 
-SOP service links use the shared selector controls for catalogue services and main procedure files. An explicit Link service command chooses the source for subsequent Setup work. The Add service dialog shows generation milestones in an accessible progress bar, closes only after publication and an updated queue read, and displays failures below the bar. Generation reports and pricing are not part of this user flow.
+A service is assigned to an SOP. The SOP's main procedure supplies the generation
+source for every assigned service; users never select a document per service. A sole
+readable attached file is adopted automatically. With several files, choose Use as
+main procedure on the relevant asset card. Changing it updates future source bindings
+atomically and leaves published work and source history intact. Generation still
+reads one main procedure; supporting assets are not silently claimed as extracted.
+
+Asset cards show image thumbnails for small images, a format cover otherwise, and
+open the selected file in a shared dialog with preview, download and interpretation
+controls. Large originals, PDF viewers and playable media mount only on request;
+closed cards never load full PDF/video/audio viewers. Preserve bounded independent
+asset pagination and pause opened media when the workspace tab is inactive.
+
+`CollapsedPillLinks` shows three linked records followed by a `+N` pill for the rest.
+The overflow opens an anchored, scrollable list of links. Asset detail Work items
+fields use it in both routed and native views; do not dump every linked task into
+the field. Counts and links must already be scoped to the viewer's permissions.
+
+Only Owner/Admin can edit SOPs, assign services, select the main procedure or upload.
+Staff can view/download SOP assets. Saving, upload, interpretation and generation
+remain separate operations. No parser or model call runs during navigation or field
+editing. Archive preserves records, sources and interpretations; permanent deletion
+remains unavailable.

@@ -6,9 +6,10 @@ import { recordVersionAfter, reconcileRecordTextDraft } from "@/lib/record-versi
 import { postGanttSync } from "@/lib/ui/gantt-sync"
 
 type SaveResult = { ok: true; version: string } | { ok: false; error: string; conflict?: boolean }
-export function useWorkItemTextDraft(props: { workspaceSlug: string; workItemId: string; updatedAt: string; description: string | null; label: string; save: (value: string, version: string, baseline: string) => Promise<SaveResult> }) {
+export function useWorkItemTextDraft(props: { workspaceSlug: string; workItemId: string; updatedAt: string; description: string | null; label: string; onSaved?: () => void; save: (value: string, version: string, baseline: string) => Promise<SaveResult> }) {
     const router = useRouter()
     const persist = props.save
+    const onSaved = props.onSaved
     const [description, setDescription] = useState(props.description ?? "")
     const [descriptionBaseline, setDescriptionBaseline] = useState(props.description ?? "")
     const [descriptionSaveState, setDescriptionSaveState] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle")
@@ -26,7 +27,7 @@ export function useWorkItemTextDraft(props: { workspaceSlug: string; workItemId:
         const textarea = descriptionRef.current
         if (!textarea) return
         textarea.style.height = "auto"
-        textarea.style.height = `${Math.max(props.label === "Description" ? 48 : 80, textarea.scrollHeight)}px`
+        textarea.style.height = `${Math.max(props.label === "Instructions" ? 80 : 48, textarea.scrollHeight)}px`
     }, [description, props.label])
 
     const reconcileDescription = useCallback(() => {
@@ -86,7 +87,8 @@ export function useWorkItemTextDraft(props: { workspaceSlug: string; workItemId:
                 if (descriptionConflictRef.current) return false
                 if (latestDescriptionRef.current === saved) {
                     setDescriptionSaveState("saved")
-                    postGanttSync(props.workspaceSlug)
+                    if (onSaved) onSaved()
+                    else postGanttSync(props.workspaceSlug)
                     return true
                 }
             }
@@ -101,7 +103,7 @@ export function useWorkItemTextDraft(props: { workspaceSlug: string; workItemId:
             reconcileDescription()
         })
         return descriptionPromiseRef.current
-    }, [persist, props.workspaceSlug, reconcileDescription, router])
+    }, [persist, props.workspaceSlug, onSaved, reconcileDescription, router])
 
     useEffect(() => {
         const unregister = registerWorkspaceAutosaveFlusher(saveDescription)

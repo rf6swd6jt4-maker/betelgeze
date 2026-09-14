@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
+import { AssetGallery, AssetGalleryCard, CenteredDialog, RoundPill } from "@/components/ui"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/lib/workspace-tabs"
 import { sopFileSize } from "@/lib/sops/policy"
 import { interpretationUnavailable, SOP_SOURCE_LABELS, type SopAsset, type SopInterpretationSummary } from "@/lib/sops/records-policy"
@@ -12,7 +12,7 @@ import { sopButtonClass, sopCommand } from "./client"
 type Interpretation = SopInterpretationSummary & { result: SopInterpretation | null; model: string; input_tokens: number | null; output_tokens: number | null; reviewed_at: string | null }
 function AssetRow({ item, job, workspaceSlug, sopId, canEdit, aiReady }: { item: SopAsset; job?: SopInterpretationSummary; workspaceSlug: string; sopId: string; canEdit: boolean; aiReady: boolean }) {
     const router = useRouter(), busyRef = useRef(false), mediaRef = useRef<HTMLMediaElement | null>(null)
-    const [preview, setPreview] = useState(false), [interpretation, setInterpretation] = useState<Interpretation | null>(null), [showInterpretation, setShowInterpretation] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("")
+    const [opened, setOpened] = useState(false), [preview, setPreview] = useState(false), [interpretation, setInterpretation] = useState<Interpretation | null>(null), [showInterpretation, setShowInterpretation] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("")
     const { asset } = item, type = asset.content_type
     const url = `/api/workspaces/${workspaceSlug}/sops/${sopId}/assets/${item.asset_id}`, api = `/api/workspaces/${workspaceSlug}/sops/${sopId}/interpretations`
     const unavailable = interpretationUnavailable(asset), previewable = /^(image|video|audio)\//.test(type) || type === "application/pdf"
@@ -31,12 +31,14 @@ function AssetRow({ item, job, workspaceSlug, sopId, canEdit, aiReady }: { item:
     }
     async function read() { if (job) { setInterpretation(await sopCommand(`${api}/${job.id}`, undefined, "GET")); setShowInterpretation(true); router.refresh() } }
     const result = interpretation?.result
-    return <ListItem>
-        <ListPrimaryRow><ListTitle>{asset.title}</ListTitle><span className="ml-auto shrink-0 text-xs text-neutral-500">{sopFileSize(asset.file_size)}</span></ListPrimaryRow>
-        <ListSecondaryRow><span className="truncate text-xs text-neutral-400">{SOP_SOURCE_LABELS[item.role]}</span><span className="ml-auto shrink-0 text-xs text-neutral-500">{asset.title.split(".").at(-1)?.toUpperCase()}</span></ListSecondaryRow>
-        <div className="px-4 pb-4">
+    return <><AssetGalleryCard title={asset.title} subtitle={<span>{SOP_SOURCE_LABELS[item.role]}</span>} detail={sopFileSize(asset.file_size)} format={asset.title.split(".").at(-1)} previewUrl={type.startsWith("image/") && asset.file_size <= 2 * 1024 * 1024 ? url : null} onClick={() => { setOpened(true); setPreview(previewable) }} />
+        {opened ? <CenteredDialog title={asset.title} wide busy={busy} onClose={() => { setOpened(false); setPreview(false) }}>
+        <div>
+            <RoundPill>{SOP_SOURCE_LABELS[item.role]}</RoundPill>
+
             {item.notes ? <p className="mb-2 whitespace-pre-wrap break-words text-sm text-neutral-400">{item.notes}</p> : null}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-300">
+                {canEdit && !unavailable && item.role !== "main" ? <button type="button" disabled={busy} className="min-h-10" onClick={() => void action(async () => { await sopCommand(url, { action: "main" }, "PATCH"); router.refresh() })}>Use as main procedure</button> : null}
                 {previewable ? <button type="button" className="min-h-10 hover:text-white" onClick={() => setPreview(value => !value)}>{preview ? "Close preview" : "Preview"}</button> : null}
                 <a href={url} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center hover:text-white">Open</a>
                 <a href={`${url}?download=1`} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center hover:text-white">Download</a>
@@ -64,12 +66,12 @@ function AssetRow({ item, job, workspaceSlug, sopId, canEdit, aiReady }: { item:
                 </>}
             </section> : null}
         </div>
-    </ListItem>
+        </CenteredDialog> : null}</>
 }
 export function SopAssets({ workspaceSlug, sopId, items, interpretations, next, paged, canEdit, aiReady }: { workspaceSlug: string; sopId: string; items: SopAsset[]; interpretations: SopInterpretationSummary[]; next: string | null; paged: boolean; canEdit: boolean; aiReady: boolean }) {
     return <div className="mt-4">
         {canEdit && !aiReady ? <p className="text-xs text-neutral-500">Asset storage is ready. AI interpretation becomes available after OpenAI setup is enabled.</p> : null}
-        {items.length ? <List ariaLabel="SOP assets" embedded>{items.map(item => <AssetRow key={item.asset_id} item={item} job={interpretations.find(job => job.asset_id === item.asset_id)} workspaceSlug={workspaceSlug} sopId={sopId} canEdit={canEdit} aiReady={aiReady} />)}</List> : <p className="py-6 text-sm text-neutral-500">No assets yet. Add the main SOP document, then any supporting material.</p>}
+        {items.length ? <AssetGallery label="SOP assets">{items.map(item => <AssetRow key={item.asset_id} item={item} job={interpretations.find(job => job.asset_id === item.asset_id)} workspaceSlug={workspaceSlug} sopId={sopId} canEdit={canEdit} aiReady={aiReady} />)}</AssetGallery> : <p className="py-6 text-sm text-neutral-500">No assets yet. Add the main SOP document, then any supporting material.</p>}
         {next || paged ? <nav aria-label="SOP asset pages" className="mt-4 flex gap-4 text-sm text-neutral-300">{paged ? <Link prefetch={false} href={`/${workspaceSlug}/sops/${sopId}`}>Newest assets</Link> : null}{next ? <Link prefetch={false} href={`/${workspaceSlug}/sops/${sopId}?cursor=${encodeURIComponent(next)}`}>Older assets</Link> : null}</nav> : null}
     </div>
 }

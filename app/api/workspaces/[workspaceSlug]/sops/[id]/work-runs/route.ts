@@ -1,4 +1,4 @@
-import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { requireWorkspaceAccess } from "@/lib/workspace-access"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { canAddSop } from "@/lib/sops/policy"
 import { isSopId } from "@/lib/sops/records-policy"
@@ -10,7 +10,7 @@ export const maxDuration = 300
 type Context = { params: Promise<{ workspaceSlug: string; id: string }> }
 export async function GET(_request: Request, context: Context) {
     const { workspaceSlug, id } = await context.params
-    const { workspace, role } = await requireWorkspacePanel(workspaceSlug, "sops")
+    const { workspace, role } = await requireWorkspaceAccess(workspaceSlug)
     if (!canAddSop(role)) return Response.json({ error: "Only admins can view pilot runs." }, { status: 403, headers: sopPrivateHeaders })
     if (!isSopId(id)) return Response.json({ error: "Not found." }, { status: 404, headers: sopPrivateHeaders })
     const result = await supabaseAdmin.from("sop_work_runs").select(SOP_RUN_SUMMARY).eq("workspace_id", workspace.id).eq("sop_id", id).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(10)
@@ -19,7 +19,7 @@ export async function GET(_request: Request, context: Context) {
 // The old manual pilot form is retired. Service assignment is the only UI entry.
 export async function POST(request: Request, context: Context) {
     const { workspaceSlug } = await context.params
-    const { role } = await requireWorkspacePanel(workspaceSlug, "sops")
+    const { role } = await requireWorkspaceAccess(workspaceSlug)
     if (!canAddSop(role) || !sopMutationOrigin(request)) return Response.json({ error: "SOP administration required." }, { status: 403, headers: sopPrivateHeaders })
     return Response.json({ error: "Link a service on the SOP, then add the service from its relationship." }, { status: 410, headers: sopPrivateHeaders })
 }

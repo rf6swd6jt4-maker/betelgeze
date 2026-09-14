@@ -285,7 +285,6 @@ function workspacePanelIcon(key: WorkspacePanelKey) {
     if (key === "fulfilment") return <WorkIcon />
     if (key === "appointment-setting") return <AppointmentIcon />
     if (key === "communications") return <CommunicationsIcon />
-    if (key === "sops") return <LibraryIcon />
     if (key === "library") return <LibraryIcon />
     if (key === "onboarding-builder") return <BuilderIcon />
     if (key === "leadgen") return <LeadIcon />
@@ -1154,7 +1153,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
 
     const openCreate = useCallback((target: "relationship" | "work-item" | "asset" | "okr") => {
         if (target === "relationship" && !canAccessWorkspacePanel(WORKSPACE_PANELS[0], workspaceRole, workspaceCapabilities)) return
-        if ((target === "work-item" || target === "asset") && !canAccessWorkspacePanel(WORKSPACE_PANELS[5], workspaceRole, workspaceCapabilities)) return
+        if ((target === "work-item" || target === "asset") && !canAccessPrivateWorkspacePanels(workspaceRole)) return
         if (target === "okr" && !canAccessPrivateWorkspacePanels(workspaceRole)) return
         window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: "workspace-create" }))
         setCreateTarget(target)
@@ -1748,7 +1747,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         const intent = url.searchParams.get("create")
         if (intent !== "relationship" && intent !== "work-item" && intent !== "asset" && intent !== "okr") return
         if ((intent === "relationship" && !canAccessWorkspacePanel(WORKSPACE_PANELS[0], workspaceRole, workspaceCapabilities))
-            || ((intent === "work-item" || intent === "asset") && !canAccessWorkspacePanel(WORKSPACE_PANELS[5], workspaceRole, workspaceCapabilities))
+            || ((intent === "work-item" || intent === "asset") && !canAccessPrivateWorkspacePanels(workspaceRole))
             || (intent === "okr" && !canAccessPrivateWorkspacePanels(workspaceRole))) return
         const key = `${tab.id}:${url.pathname}:${intent}`
         if (createIntentHandledRef.current === key) return
@@ -2256,7 +2255,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     }))
     const canCreateOkr = canAccessPrivateWorkspacePanels(workspaceRole)
     const canCreateRelationship = canAccessWorkspacePanel(WORKSPACE_PANELS[0], workspaceRole, workspaceCapabilities)
-    const canCreateLibraryItem = canAccessWorkspacePanel(WORKSPACE_PANELS[5], workspaceRole, workspaceCapabilities)
+    const canCreateLibraryItem = canAccessPrivateWorkspacePanels(workspaceRole)
     const visibleTabs: WorkspaceTab[] = tabs.length ? tabs : [initialTab]
     const residentTabIdSet = new Set(residentTabIds)
     const frameTabs = orderWorkspaceTabsByStableIds(tabs, tabFrameOrder)

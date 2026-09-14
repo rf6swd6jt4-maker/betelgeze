@@ -21,8 +21,7 @@ export const WORKSPACE_PANELS = [
     { key: "fulfilment", label: "Fulfilment", route: "work", capability: "fulfilment.manage", allMembers: true, description: "Fulfilment relationship work items", keywords: ["tasks", "project management", "queue", "fulfilment"] },
     { key: "appointment-setting", label: "Appointment Setting", route: "appointment-setting", capability: "appointment_setting.manage", requiresService: true, description: "Leads, bookings, setter availability, and appointment outcomes", keywords: ["appointments", "bookings", "setters", "calendar", "leads"] },
     { key: "communications", label: "Communications", route: "communications", capability: "communications.manage", allMembers: true, description: "Relationship communication summaries", keywords: ["messages", "chat", "whatsapp", "communication"] },
-    { key: "library", label: "Library", route: "work-items", activeRoutes: ["work-items", "assets"], capability: "library.manage", minimumRole: "admin", description: "Workspace work items and assets", keywords: ["tasks", "files", "uploads", "gallery"] },
-    { key: "sops", label: "SOPs", route: "sops", capability: "library.manage", allMembers: true, description: "Team SOP document catalogue", keywords: ["sop", "procedures", "instructions", "documents"] },
+    { key: "library", label: "Library", route: "sops", activeRoutes: ["work-items", "assets", "sops"], capability: "library.manage", allMembers: true, description: "Workspace procedures, work items and assets", keywords: ["tasks", "files", "uploads", "gallery", "sop", "procedures"] },
     { key: "onboarding-builder", label: "Onboarding Builder", route: "onboarding-builder", capability: "onboarding_builder.manage", minimumRole: "admin", standalone: true, description: "Build workspace onboarding modules and session structure", keywords: ["onboarding modules", "session builder", "forms builder", "form fields", "welcome", "completion", "visual builder"] },
     { key: "leadgen", label: "Lead Gen", route: "leadgen", capability: "leadgen.manage", minimumRole: "admin", description: "Lead generation dashboard", keywords: ["leads", "lead generation"] },
     { key: "admin", label: "Admin", route: "admin", capability: "admin.manage", minimumRole: "admin", description: "Private OKRs, activity, maintenance, and automation-failure follow-up", keywords: ["admin tools", "okr", "objectives", "key results", "metrics", "activity console", "automation history", "maintenance", "automation failures", "admin work items", "goals"] },
@@ -75,6 +74,7 @@ export function canAccessWorkspaceUrl(
         const set = new Set(capabilities)
         return set.has("onboarding.manage") || set.has("fulfilment.manage")
     }
+    if (suffix === "work-items" || suffix === "assets") return false
     const panel = workspacePanelForUrl(value, workspaceSlug)
     return panel ? canAccessWorkspacePanel(panel, role, capabilities) : false
 }

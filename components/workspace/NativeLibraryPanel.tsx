@@ -1,5 +1,7 @@
-/* eslint-disable @next/next/no-img-element */
 "use client"
+import { AssetGallery, AssetGalleryCard } from "@/components/ui/AssetGallery"
+import { CollapsedPillLinks } from "@/components/ui/CollapsedPillLinks"
+/* eslint-disable @next/next/no-img-element */
 
 import Link from "@/components/workspace/WorkspaceLink"
 import { LibraryTabs } from "@/components/library/LibraryTabs"
@@ -57,38 +59,7 @@ function Assets({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "assets
 
                 <section className="mt-5">
                     {previewEntries.length ? (
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                            {previewEntries.map(({ asset, previewUrl }) => (
-                                <Link
-                                    key={asset.id}
-                                    href={assetHref(data.workspaceSlug, asset.id)}
-                                    prefetch={false}
-                                    data-workspace-detail-preview={serializeWorkspaceDetailPreview({
-                                        category: "Asset",
-                                        reference: shortId(asset.id),
-                                        title: asset.title,
-                                        updated: formatRelativeTime(asset.updated_at),
-                                    })}
-                                    className="group overflow-hidden rounded-xl border border-neutral-800 bg-black hover:border-neutral-600"
-                                >
-                                    <div className="aspect-[4/3] bg-neutral-900">
-                                        {previewUrl ? (
-                                            <img src={previewUrl} alt={asset.title} className="h-full w-full object-cover transition group-hover:scale-[1.02]" />
-                                        ) : (
-                                            <div className="h-full bg-neutral-900" />
-                                        )}
-                                    </div>
-                                    <div className="p-4">
-                                        <p className="truncate font-medium text-neutral-100">{asset.title}</p>
-                                        <p className="mt-1 font-mono text-xs text-neutral-600">{shortId(asset.id)}</p>
-                                        <div className="mt-4 flex items-center justify-between gap-3 text-xs text-neutral-500">
-                                            <span className="truncate">{formatRelativeTime(asset.updated_at)}</span>
-                                            <span className="shrink-0">{formatFileSize(asset.file_size, "No file size")}</span>
-                                        </div>
-                                    </div>
-                                </Link>
-                            ))}
-                        </div>
+                        <AssetGallery label="Assets">{previewEntries.map(({ asset, previewUrl }) => <AssetGalleryCard key={asset.id} href={assetHref(data.workspaceSlug, asset.id)} title={asset.title} subtitle={shortId(asset.id)} previewUrl={previewUrl} format={asset.title.split(".").at(-1)} detail={<span className="flex justify-between gap-2"><span>{formatRelativeTime(asset.updated_at)}</span><span>{formatFileSize(asset.file_size)}</span></span>} navigationPreview={serializeWorkspaceDetailPreview({ category: "Asset", reference: shortId(asset.id), title: asset.title, updated: formatRelativeTime(asset.updated_at) })} />)}</AssetGallery>
                     ) : (
                         <div className="rounded-2xl border border-neutral-800 bg-black p-6">
                             <p className="text-lg font-semibold">No assets yet.</p>
@@ -130,9 +101,7 @@ function AssetDetail({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "a
                                 </div>
                             </DetailField>
                             <DetailField label="Work items" icon="activity" className="lg:col-span-2">
-                                <div className="flex flex-wrap gap-1.5">
-                                    {scopedWorkItems.length ? scopedWorkItems.map((link) => <Link key={link.work_item_id} href={workItemHref(data.workspaceSlug, link.work_item_id)}><RoundPill tone="sky">{link.work_item?.title ?? "Work item"}</RoundPill></Link>) : <span className="text-neutral-600">None</span>}
-                                </div>
+                                <CollapsedPillLinks label="linked work items" items={scopedWorkItems.map(link => ({ id: link.work_item_id, label: link.work_item?.title ?? "Work item", href: workItemHref(data.workspaceSlug, link.work_item_id) }))} />
                             </DetailField>
                             <DetailField label="Description" icon="description" className="lg:col-span-2">{asset.description || <span className="text-neutral-600">No description</span>}</DetailField>
                         </DetailFields>

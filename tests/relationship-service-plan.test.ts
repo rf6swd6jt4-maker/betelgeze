@@ -20,15 +20,27 @@ const service=(id:string,name:string,stage:stages.ServiceStageKey,legacy=false)=
 const work=(id:string,values:Partial<ServicePlanWork>={}):ServicePlanWork=>({id,title:id,status:'todo',lifecycle_phase:'fulfilment',workflow_role:'task',workflow_action:null,parent_work_item_id:null,planned_start_date:null,planned_start_time:null,due_date:null,due_time:null,actual_start_at:null,actual_start_has_time:false,actual_completed_at:null,actual_completed_has_time:false,sort_order:0,created_at:'2026-09-01T10:00:00Z',updated_at:'2026-09-01T10:00:00Z',service_id:null,native_key:null,shared:false,assignees:[],...values})
 const fixture=(values:Partial<ServicePlanSnapshot>={}):ServicePlanSnapshot=>({services:[service('one','Ads','setup'),service('two','Website','completed')],events:[{instance_id:'one',new_stage:'setup',created_at:'2026-09-09T10:00:00Z',ended_at:null},{instance_id:'two',new_stage:'completed',created_at:'2026-09-10T10:00:00Z',ended_at:null}],work:[],links:[],dependencies:[],workTruncated:false,...values})
 
-test('same catalogue can have separate service lifecycles without inferred past dates',()=>{
+test('same catalogue can have separate service lifecycles without skipped past stages',()=>{
  const plan=build(fixture())
  assert.equal(plan.items.filter(i=>i.serviceRoot).length,2)
  assert.equal(plan.items.find(i=>i.id===root('one'))?.title,'Ads')
  assert.equal(plan.items.find(i=>i.id===root('two'))?.status,'done')
- assert.equal(plan.items.find(i=>i.id===`${root('one')}:negotiating`)?.actualStartAt,null)
+ assert.equal(plan.items.find(i=>i.id===`${root('one')}:negotiating`),undefined)
+ assert.equal(plan.items.find(i=>i.id===`${root('one')}:awaiting_payment`),undefined)
+ assert.equal(plan.items.find(i=>i.id===`${root('one')}:onboarding`),undefined)
  assert.equal(plan.items.find(i=>i.id===`${root('one')}:setup`)?.actualStartAt,'2026-09-09T10:00:00Z')
  assert.ok(plan.items.every(i=>i.virtual))
  assert.ok(plan.dependencies.every(d=>d.workItemId.startsWith(root('one')) && d.dependsOnWorkItemId.startsWith(root('one'))))
+})
+test('recorded earlier service stages remain visible',()=>{
+ const plan=build(fixture({services:[service('one','Ads','setup')],events:[
+  {instance_id:'one',new_stage:'negotiating',created_at:'2026-09-01T10:00:00Z',ended_at:'2026-09-02T10:00:00Z'},
+  {instance_id:'one',new_stage:'awaiting_payment',created_at:'2026-09-02T10:00:00Z',ended_at:'2026-09-03T10:00:00Z'},
+  {instance_id:'one',new_stage:'setup',created_at:'2026-09-03T10:00:00Z',ended_at:null},
+ ]}))
+ assert.equal(plan.items.find(i=>i.id===`${root('one')}:negotiating`)?.status,'done')
+ assert.equal(plan.items.find(i=>i.id===`${root('one')}:awaiting_payment`)?.status,'done')
+ assert.equal(plan.items.find(i=>i.id===`${root('one')}:onboarding`),undefined)
 })
 test('legacy timelines repeat stage dates, while shared work remains one real record',()=>{
  const plan=build(fixture({services:[service('legacy:ads','Ads','onboarding',true),{...service('legacy:website','Website','onboarding',true),service_id:'web'}],events:[],work:[work('old-stage',{workflow_role:'lifecycle_stage',lifecycle_phase:'onboarding',status:'doing',actual_start_at:'2026-09-04T10:00:00Z'}),work('shared-form',{parent_work_item_id:'old-stage',lifecycle_phase:'onboarding'}),work('ads-copy',{service_id:'catalogue',parent_work_item_id:null})]}))
@@ -51,6 +63,16 @@ test('explicit instance links distinguish repeat services; shared multi-instance
  assert.equal(plan.items.find(i=>i.id==='child')?.parentWorkItemId,'first')
  assert.equal(plan.items.filter(i=>i.id==='both').length,1)
  assert.equal(plan.items.find(i=>i.id==='both')?.section,'shared')
+})
+test('generated service wrapper is flattened without flattening its real children',()=>{
+ const plan=build(fixture({services:[service('one','SEO','setup')],work:[
+  work('group',{title:'SEO',workflow_role:'service_group'}),
+  work('task',{title:'Obtain access',parent_work_item_id:'group'}),
+  work('subtask',{title:'Confirm access',parent_work_item_id:'task'}),
+ ],links:[{instance_id:'one',work_item_id:'group'}]}))
+ assert.equal(plan.items.find(i=>i.id==='group'),undefined)
+ assert.equal(plan.items.find(i=>i.id==='task')?.parentWorkItemId,`${root('one')}:setup`)
+ assert.equal(plan.items.find(i=>i.id==='subtask')?.parentWorkItemId,'task')
 })
 test('history from another instance cannot alter the visible service stage',()=>{
  const plan=build(fixture({services:[service('one','Ads','setup')],events:[{instance_id:'other',new_stage:'setup',created_at:'2020-01-01T10:00:00Z',ended_at:null}]}))

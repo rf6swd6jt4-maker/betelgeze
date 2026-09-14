@@ -53,12 +53,16 @@ export function buildRelationshipServicePlan(snapshot: ServicePlanSnapshot): Rel
         items.push(template)
         const normal = SERVICE_STAGES.filter(s => !["for_later", "declined"].includes(s.key))
         const stages = service.stage === "for_later" || service.stage === "declined" ? [...normal.slice(0,1), SERVICE_STAGES.find(s => s.key === service.stage)!] : normal
+        const currentStageIndex = stages.findIndex(stage => stage.key === service.stage)
         let previous: string | null = null
         for (const [index, stage] of stages.entries()) {
             const event = snapshot.events.find(e => e.instance_id === service.id && e.new_stage === stage.key)
             const old = service.legacy ? legacyStages.filter(w => stageForPhase[w.lifecycle_phase] === stage.key).sort((a,b) => a.sort_order-b.sort_order) : []
             const observedStart = event?.created_at ?? old.find(w => w.actual_start_at)?.actual_start_at ?? null
             const observedEnd = event?.ended_at ?? (old.length && old.every(w => ["done","canceled"].includes(w.status)) ? old.map(w => w.actual_completed_at).filter((v): v is string => Boolean(v)).sort().at(-1) ?? null : null)
+            // A service can enter the system midway through its lifecycle. Past
+            // stages without an event are skipped, not empty history rows.
+            if (currentStageIndex > index && !observedStart && !observedEnd) continue
             const isCurrent = service.stage === stage.key
             const completed = Boolean(observedEnd) || isCurrent && ["completed","declined"].includes(stage.key)
             const row: RelationshipGanttItem = { ...template, id: stageId(service.id,stage.key), title: stage.label, serviceRoot: false,
@@ -96,13 +100,16 @@ export function buildRelationshipServicePlan(snapshot: ServicePlanSnapshot): Rel
     for (const work of snapshot.work) {
         // Legacy stage summaries are represented once per assigned service above.
         if (work.workflow_role === "lifecycle_stage" && legacyServices.length) continue
+        // Generated service groups duplicate the service root in this view. Keep
+        // their children as real work, attached directly to the lifecycle stage.
+        if (work.workflow_role === "service_group") continue
         const item = workItem(work)
         const owner = resolveOwner(work)
         const parent = work.parent_work_item_id ? workById.get(work.parent_work_item_id) : null
         item.section = owner ? "relationship" : "shared"
         if (owner) {
             item.serviceInstanceId = owner
-            item.parentWorkItemId = parent && parent.workflow_role !== "lifecycle_stage" && resolveOwner(parent) === owner ? parent.id : stageId(owner,stageForPhase[work.lifecycle_phase] ?? "setup")
+            item.parentWorkItemId = parent && !["lifecycle_stage", "service_group"].includes(parent.workflow_role) && resolveOwner(parent) === owner ? parent.id : stageId(owner,stageForPhase[work.lifecycle_phase] ?? "setup")
         } else item.parentWorkItemId = parent && parent.workflow_role !== "lifecycle_stage" && !resolveOwner(parent) ? parent.id : null
         real.push(item)
     }
@@ -128,5 +135,5 @@ export function buildRelationshipServicePlan(snapshot: ServicePlanSnapshot): Rel
     return { items, externalItems: [], dependencies, milestones }
 }
 
-export type RelationshipQueueItem = { id: string; title: string; status: string; workflow_action: string | null; due_date: string | null; planned_start_date: string | null; updated_at: string; queue_state: "Ready" | "In progress" | "Scheduled" | "Waiting" | "Blocked"; assignees: GanttPerson[] }
+export type RelationshipQueueItem = { id: string; title: string; status: string; workflow_action: string | null; due_date: string | null; planned_start_date: string | null; updated_at: string; created_at: string; queue_state: "Ready" | "In progress" | "Scheduled" | "Waiting" | "Blocked"; assignees: GanttPerson[]; services: string[]; automated: boolean; creator: GanttPerson | null }
 export type RelationshipQueuePage = {generation?: {instance_id:string;sop_id:string;run_id:string|null;status:string;error_summary:string|null}[];items: RelationshipQueueItem[];hasMore:boolean}

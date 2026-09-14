@@ -631,3 +631,5 @@ permissions. Upload, saving, retry and interpretation states remain distinct.
 Interpretations are source-derived drafts, with examples, conditions, source
 quotes and missing-information warnings visible. Mark reviewed is an admin action;
 it does not publish a client work plan. No parsing or model call runs on navigation.
+
+SOP service links use the shared selector controls for catalogue services and main procedure files. An explicit Link service command chooses the source for subsequent Setup work. The Add service dialog shows generation milestones in an accessible progress bar, closes only after publication and an updated queue read, and displays failures below the bar. Generation reports and pricing are not part of this user flow.

@@ -22,7 +22,7 @@ async function get<T>(endpoint: string, userId: string, signal: AbortSignal): Pr
 function Paging({ page, hasMore, change }: {page:number;hasMore:boolean;change:(n:number)=>void}) {
     return page || hasMore ? <div className="mt-2 flex items-center justify-between gap-3 text-sm"><button disabled={!page} className="min-h-11 px-2 disabled:opacity-40" onClick={() => change(page-1)}>Previous</button><span className="text-neutral-500">Page {page+1}</span><button disabled={!hasMore} className="min-h-11 px-2 disabled:opacity-40" onClick={() => change(page+1)}>Next</button></div> : null
 }
-export function RelationshipQueue({ endpoint, slug, relationshipId, userId, revision }: {endpoint:string;slug:string;relationshipId:string;userId:string;revision:unknown}) {
+export function RelationshipQueue({ endpoint, slug, relationshipId, userId, revision, publishedQueue, onGeneration }: {endpoint:string;slug:string;relationshipId:string;userId:string;revision:unknown;publishedQueue?:RelationshipQueuePage|null;onGeneration?:(instanceId:string)=>void}) {
     const active = useWorkspaceNavigation()?.active ?? true
     const host = useRef<HTMLDivElement>(null)
     const inFlight = useRef<AbortController | null>(null)
@@ -31,6 +31,8 @@ export function RelationshipQueue({ endpoint, slug, relationshipId, userId, revi
     const [data,setData] = useState<RelationshipQueuePage | null>(null)
     const [error,setError] = useState("")
     const [retry,setRetry] = useState(0)
+    const [receivedQueue, setReceivedQueue] = useState(publishedQueue)
+    if (publishedQueue !== receivedQueue) { setReceivedQueue(publishedQueue); if (publishedQueue) { setData(publishedQueue); setPage(0); setError("") } }
     useEffect(() => { const observer = new IntersectionObserver(entries => { setVisible(entries.some(e => e.isIntersecting)) },{rootMargin:"160px"}); if(host.current)observer.observe(host.current); return () => observer.disconnect() },[])
     useEffect(() => {
         if(!visible || !active)return
@@ -38,11 +40,11 @@ export function RelationshipQueue({ endpoint, slug, relationshipId, userId, revi
         inFlight.current = controller
         void get<RelationshipQueuePage>(`${endpoint}?kind=queue&offset=${page*30}`,userId,controller.signal).then(value => {if(!controller.signal.aborted){setData(value);setError("")}}).catch(e => {if(!controller.signal.aborted)setError(e.message)}).finally(() => { if (inFlight.current === controller) inFlight.current = null })
         return () => { controller.abort(); if (inFlight.current === controller) inFlight.current = null }
-    },[endpoint,userId,page,revision,visible,active,retry])
+    },[endpoint,userId,page,revision,visible,active,retry,publishedQueue])
     useEffect(() => {if(typeof BroadcastChannel === "undefined")return;const channel=new BroadcastChannel(ganttSyncChannelName(slug));channel.onmessage=()=>setRetry(n=>n+1);return()=>channel.close()},[slug])
     useSopWorkRefresh(Boolean(data?.generation?.some(run => ["pending", "queued", "running"].includes(run.status))), visible, () => { if (!inFlight.current) setRetry(n => n + 1) })
     return <div ref={host} className="mt-6" aria-label="Relationship work queue"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">Queue</h2><button type="button" className="min-h-11 text-sm text-neutral-400 underline" onClick={() => setRetry(n => n + 1)}>Refresh</button><Link href={`/${slug}/relationships/${relationshipId}?create=work-item`} className="inline-flex min-h-11 items-center text-sm text-neutral-300 underline">Add work item</Link></div>
-        {data?.generation?.length ? <div className="mb-3 space-y-2">{data.generation.map(run => <p key={run.instance_id} role="status" className="text-sm leading-6 text-neutral-400">{run.status === "published" ? "SOP work created." : run.status === "failed" ? (run.error_summary || "SOP work generation needs attention.") : "Creating work from the SOP…"} <Link className="underline" href={`/${slug}/sops/${run.sop_id}/work${run.run_id ? `?run=${run.run_id}` : ""}`}>View generation</Link></p>)}</div> : null}
+        {data?.generation?.some(run => run.status !== "published") ? <div className="mb-3 space-y-2">{data.generation.filter(run => run.status !== "published").map(run => <button type="button" key={run.instance_id} className="block min-h-11 text-sm text-neutral-400 underline" onClick={() => onGeneration?.(run.instance_id)}>{run.status === "failed" ? "Work generation needs attention" : "Generating work…"}</button>)}</div> : null}
         {error ? <p role="alert" className="py-2 text-sm text-red-200">{error}<button className="ml-2 min-h-11 underline" onClick={()=>setRetry(n=>n+1)}>Retry</button></p> : null}
         {!data ? <p role="status" className="py-5 text-sm text-neutral-500">Loading work queue…</p> : <><List ariaLabel="Relationship work queue">{data.items.length ? data.items.map(item => <ListItem key={item.id}><ListPrimaryRow><ListTitle href={item.workflow_action === "sell_client" ? `/${slug}/relationships/${relationshipId}/pos` : `/${slug}/work-items/${item.id}`}>{item.title}</ListTitle><Status label={item.queue_state} tone={item.queue_state === "Blocked" ? "red" : ["Waiting","Scheduled"].includes(item.queue_state) ? "yellow" : "green"} /></ListPrimaryRow><ListSecondaryRow>{item.assignees[0] ? <Assignee name={item.assignees[0].username} userId={item.assignees[0].userId} className="min-w-0" /> : <span className="text-neutral-500">Unassigned</span>}{item.assignees.length>1 ? <span>+{item.assignees.length-1}</span> : null}<ListTrailing>{item.due_date ? <span className="text-neutral-500">Due {new Date(`${item.due_date}T12:00:00`).toLocaleDateString('en-IE',{day:'numeric',month:'short'})}</span> : null}<Link href={`/${slug}/work-items/${item.id}`} className="inline-flex min-h-11 items-center text-neutral-300 underline">Open work</Link></ListTrailing></ListSecondaryRow></ListItem>) : <p className="px-4 py-5 text-sm text-neutral-500">No open work for this relationship.</p>}</List><Paging page={page} hasMore={data.hasMore} change={next=>{setPage(next);setData(null)}} /></>}
     </div>

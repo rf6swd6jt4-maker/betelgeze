@@ -16,6 +16,14 @@ export async function GET(request: Request, context: { params: Promise<{workspac
         const kind = query.get("kind")
         if (!kind) return Response.json(await readRelationshipServices(workspace.id, relationshipId, user.id, offset), { headers })
         const parameters = { p_workspace_id: workspace.id, p_user_id: user.id }
+        if (kind === "generation") {
+            if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })
+            const instanceId = query.get("id") ?? ""
+            if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(instanceId)) return Response.json({ error: "Invalid service." }, { status: 400, headers })
+            const result = await supabaseAdmin.rpc("read_service_sop_progress", { p_workspace: workspace.id, p_actor: user.id, p_relationship: relationshipId, p_instance: instanceId })
+            if (result.error) return Response.json({ error: "Could not check work generation." }, { status: 503, headers })
+            return Response.json(result.data, { headers })
+        }
         if (kind === "cards" || kind === "detail") {
             if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })
             const result = await supabaseAdmin.rpc("read_relationship_service_cards", { ...parameters, p_relationship_id: relationshipId, p_offset: offset, p_id: kind === "detail" ? query.get("id") ?? "" : null })

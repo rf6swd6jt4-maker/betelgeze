@@ -6,7 +6,7 @@ import { sopAiConfiguration } from "./interpreter"
 import { processSopInterpretation } from "./interpretation-worker"
 import { generateSopWork } from "./work-generator"
 import { sopLedgerRequest } from "./usage-ledger"
-import { parseSopWorkPlan, type SopWorkPlan } from "./work-plan"
+import { parseSopWorkPlan, SOP_WORK_VERSION, type SopWorkPlan } from "./work-plan"
 
 export function sopWorkConfiguration() {
     const config = sopAiConfiguration()
@@ -48,22 +48,24 @@ export async function processSopWork(id?: string, instanceId?: string) {
                 await save({ status: "queued", lease_token: null, lease_until: null })
                 return { claimed: 1, published: 0 }
             }
-            if (!["ready", "reviewed"].includes(source.status)) throw new Error("SOP interpretation failed. Check its source and usage report before retrying.")
+            if (!["ready", "reviewed"].includes(source.status)) throw new Error("SOP interpretation failed. Check the linked main procedure file.")
             const interpretation = parseSopInterpretation(source.result)
             if (!interpretation.steps.length) throw new Error("The SOP interpretation has no actionable steps. Choose a procedure with readable instructions.")
             // Extraction can take time. Recheck revocation and evidence before the second paid call.
             const current = await supabaseAdmin.rpc("prepare_sop_work", { p_id: job.id, p_lease: job.lease_token })
             if (current.error || !current.data || !sopWorkConfiguration().ready) throw new Error("Client information or access changed before generation. No work was published.")
-            const plan = await generateSopWork({ model: job.model, evidence: current.data, source: interpretation }, sopLedgerRequest({ id: job.lease_token, workspaceId: job.workspace_id, model: job.model, stage: "generation", runId: job.id }))
+            const plan = await generateSopWork({ model: job.model, source: interpretation }, sopLedgerRequest({ id: job.lease_token, workspaceId: job.workspace_id, model: job.model, stage: "generation", runId: job.id }), async output => {
+                await save({ raw_output: output, source_snapshot: interpretation, schema_version: SOP_WORK_VERSION })
+            })
             // Save before publication. A lost acknowledgement can retry publication without paying again.
             await save({ plan, source_snapshot: interpretation })
         } else {
             parseSopWorkPlan(job.plan, parseSopInterpretation(job.source_snapshot))
         }
         const publish = await supabaseAdmin.rpc("publish_sop_work", { p_id: job.id, p_lease: job.lease_token })
-        if (publish.error) throw new Error("Work could not be published. The saved plan can be retried without another generation charge if client information is unchanged.")
+        if (publish.error) throw new Error("Work could not be published. The saved plan is retained for recovery.")
     } catch (error) {
-        const message = error instanceof Error && /^(OpenAI |Client |SOP |The SOP |The work |A task |Work |Could not |An onboarding |Onboarding )/.test(error.message) ? error.message.slice(0, 500) : "Work generation failed. Check the run and usage report before retrying."
+        const message = error instanceof Error && /^(OpenAI |Client |SOP |The SOP |The work |A task |Work |Could not |An onboarding |Onboarding )/.test(error.message) ? error.message.slice(0, 500) : "Work generation failed. No flow was generated."
         await save({ status: "failed", error_summary: message, lease_token: null, lease_until: null })
         return { claimed: 1, published: 0 }
     }

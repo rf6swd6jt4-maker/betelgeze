@@ -10,23 +10,25 @@ export async function addRelationshipService(slug: string, relationshipId: strin
     await requireRelationshipAccess(access, relationshipId)
     if (user.id !== input.expectedUserId || !uuid.test(input.requestId) || !uuid.test(input.serviceId) || !uuid.test(input.revisionId) || (input.assigneeId && !uuid.test(input.assigneeId))
         || !((input.origin === "negotiation" && input.stage === "negotiating") || (input.origin === "already_onboarded" && ["setup", "maintenance", "completed"].includes(input.stage)))) return { ok: false, error: "Check the service and starting stage." }
-    const { data, error } = await supabaseAdmin.rpc("add_relationship_service", { p_workspace_id: workspace.id, p_relationship_id: relationshipId, p_actor_user_id: user.id, p_request_id: input.requestId, p_service_id: input.serviceId, p_revision_id: input.revisionId, p_origin: input.origin, p_stage: input.stage, p_assignee_user_id: input.assigneeId || null })
+    const { sopWorkConfiguration } = await import("@/lib/sops/work-worker")
+    const { data, error } = await supabaseAdmin.rpc("add_relationship_service_with_sop", { p_workspace_id: workspace.id, p_relationship_id: relationshipId, p_actor_user_id: user.id, p_request_id: input.requestId, p_service_id: input.serviceId, p_revision_id: input.revisionId, p_origin: input.origin, p_stage: input.stage, p_assignee_user_id: input.assigneeId || null, p_generation_enabled: sopWorkConfiguration().ready })
     if (error) return { ok: false, uncertain: !/^[0-9A-Z]{5}$/.test(error.code ?? ""), error: error.code === "P0001" ? error.message : "The save could not be confirmed. Retry to recover this same service." }
-    after(async () => { const { processSopWork } = await import("@/lib/sops/work-worker"); await processSopWork(undefined, data as string) })
+    after(async () => { const { processSopWork } = await import("@/lib/sops/work-worker"); await processSopWork(undefined, data.id as string) })
     revalidatePath(`/${slug}/relationships`)
     revalidatePath(`/${slug}/relationships/${relationshipId}`)
-    return { ok: true, id: data as string }
+    return { ok: true, id: data.id as string, generation: data.generation === true }
 }
 export async function changeRelationshipService(slug: string, relationshipId: string, input: { expectedUserId: string; requestId: string; instanceId: string; version: number; stage: string; assigneeId: string; reason: string }) {
     const { workspace, user, access } = await requireWorkspacePanel(slug, "relationships")
     await requireRelationshipAccess(access, relationshipId)
     if (user.id !== input.expectedUserId || !uuid.test(input.requestId) || !uuid.test(input.instanceId) || !Number.isSafeInteger(input.version) || input.version < 1 || !isServiceStage(input.stage) || (input.assigneeId && !uuid.test(input.assigneeId)) || !input.reason.trim() || input.reason.length > 1000) return { ok: false, error: "Check the service change and give a reason." }
-    const instance = await supabaseAdmin.from("relationship_service_instances").select("relationship_id").eq("workspace_id", workspace.id).eq("id", input.instanceId).single()
+    const instance = await supabaseAdmin.from("relationship_service_instances").select("relationship_id,service_id,stage").eq("workspace_id", workspace.id).eq("id", input.instanceId).single()
     if (instance.error || instance.data.relationship_id !== relationshipId) return { ok: false, error: "Service not found." }
-    const { error } = await supabaseAdmin.rpc("change_service_instance", { p_workspace_id: workspace.id, p_instance_id: input.instanceId, p_actor_user_id: user.id, p_request_id: input.requestId, p_expected_version: input.version, p_stage: input.stage, p_disposition: "active", p_assignee_user_id: input.assigneeId || null, p_reason: input.reason.trim() })
+    const { sopWorkConfiguration } = await import("@/lib/sops/work-worker")
+    const { data, error } = await supabaseAdmin.rpc("change_relationship_service_with_sop", { p_workspace_id: workspace.id, p_relationship_id: relationshipId, p_instance_id: input.instanceId, p_actor_user_id: user.id, p_request_id: input.requestId, p_expected_version: input.version, p_stage: input.stage, p_disposition: "active", p_assignee_user_id: input.assigneeId || null, p_reason: input.reason.trim(), p_generation_enabled: sopWorkConfiguration().ready })
     if (error) return { ok: false, uncertain: !/^[0-9A-Z]{5}$/.test(error.code ?? ""), error: error.code === "P0001" ? error.message : "The save could not be confirmed. Retry this change." }
     if (input.stage === "setup") after(async () => { const { processSopWork } = await import("@/lib/sops/work-worker"); await processSopWork(undefined, input.instanceId) })
     revalidatePath(`/${slug}/relationships`)
     revalidatePath(`/${slug}/relationships/${relationshipId}`)
-    return { ok: true }
+    return { ok: true, id: input.instanceId, generation: data.generation === true }
 }

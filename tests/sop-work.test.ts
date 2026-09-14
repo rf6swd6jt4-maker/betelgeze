@@ -19,14 +19,7 @@ const task={title:"Confirm access",instruction:"Check the client's access.",sour
 const plan={summary:"Setup",warnings:[],tasks:[task,{...task,title:"Check tracking",depends_on:[1]}]}
 test("work plan accepts a usable dependency graph and rejects unsupported/cyclic/duplicate work",()=>{
     assert.deepEqual(work.parseSopWorkPlan(plan,source),plan)
-    for(const tasks of [[],[task,task],[{...task,source_steps:[2]}],[{...task,depends_on:[1]}],[task,{...task,title:"Other",depends_on:[2]}],[task,{...task,title:"Other",depends_on:[1,1]}],Array(41).fill(task)]) assert.throws(()=>work.parseSopWorkPlan({...plan,tasks},source))
-})
-test("client evidence excludes credential fields and rejects oversized content without truncating it",()=>{
-    const value=work.workEvidence({answers:{goal:"Bookings",api_key:"secret",files:[{storage_path:"private",name:"brief.pdf"}],nested:{password:"secret"}}})
-    assert.deepEqual(value.data,{answers:{goal:"Bookings",files:[{name:"brief.pdf"}],nested:{}}})
-    assert.equal(value.omittedSensitiveFields,3)
-    assert.throws(()=>work.workEvidence({answer:"a".repeat(12001)}),/too long/)
-    assert.throws(()=>work.workEvidence(Array(6000).fill("value")),/too large/)
+    for(const tasks of [[],[task,task],[{...task,source_steps:[2]}],[{...task,depends_on:[1]}],[task,{...task,title:"Other",depends_on:[2]}],Array(41).fill(task)]) assert.throws(()=>work.parseSopWorkPlan({...plan,tasks},source))
 })
 test("pricing applies cached input rates, includes reasoning only once, and leaves unknown prices unknown",()=>{
     const usage=pricing.sopUsage({input_tokens:10000,input_tokens_details:{cached_tokens:2000},output_tokens:2000,output_tokens_details:{reasoning_tokens:500}})
@@ -72,12 +65,12 @@ test("generation sends bounded evidence and strict source-only instructions with
     const request:typeof fetch=async(_url,init)=>{
         const body=JSON.parse(String(init?.body))
         assert.equal(body.store,false);assert.equal(body.service_tier,"default");assert.equal(body.tools,undefined)
-        assert.equal(body.text.format.strict,true);assert.equal(body.max_output_tokens,14000)
+        assert.deepEqual(JSON.parse(body.input[0].content[0].text),{source});assert.equal(body.text.format.strict,true);assert.equal(body.max_output_tokens,14000)
         assert.match(body.instructions,/no tools/i);assert.doesNotMatch(body.input[0].content[0].text,/super-secret/)
         return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(plan)}]}]})
     }
-    const result=await generator.generateSopWork({model:"gpt-5.4-mini",source,evidence:{goal:"Bookings",password:"super-secret"}},request)
-    assert.equal(result.tasks.length,2);assert.match(result.warnings[0],/omitted/)
+    const result=await generator.generateSopWork({model:"gpt-5.4-mini",source},request,async()=>{})
+    assert.equal(result.tasks.length,2);assert.deepEqual(result.warnings,[])
 })
 
 function workerFixture(options:{revoked?:boolean;cached?:boolean;savedPlan?:boolean;failPublish?:boolean;acceptNone?:boolean}={}) {
@@ -108,7 +101,7 @@ test("worker interprets once, generates and saves before atomic publication; cac
     const previous=process.env.SOP_WORK_PILOT_ENABLED;process.env.SOP_WORK_PILOT_ENABLED="true"
     try {
         const first=workerFixture();assert.deepEqual(await first.worker.processSopWork("run"),{claimed:1,published:1})
-        assert.equal(first.calls.source,1);assert.equal(first.calls.generation,1);assert.equal(first.calls.publish,1);assert.deepEqual(first.calls.saves[0].plan,plan)
+        assert.equal(first.calls.source,1);assert.equal(first.calls.generation,1);assert.equal(first.calls.publish,1);assert.deepEqual(first.calls.saves.find(s=>s.plan)?.plan,plan)
         const cached=workerFixture({cached:true});await cached.worker.processSopWork("run");assert.equal(cached.calls.source,0)
         const retry=workerFixture({savedPlan:true});await retry.worker.processSopWork("run");assert.equal(retry.calls.generation,0);assert.equal(retry.calls.source,0);assert.equal(retry.calls.publish,1)
     } finally { if(previous===undefined)delete process.env.SOP_WORK_PILOT_ENABLED;else process.env.SOP_WORK_PILOT_ENABLED=previous }
@@ -119,7 +112,7 @@ test("worker revocation blocks every provider call; publication failure preserve
         const revoked=workerFixture({revoked:true});await revoked.worker.processSopWork("run")
         assert.equal(revoked.calls.source,0);assert.equal(revoked.calls.generation,0);assert.equal(revoked.calls.publish,0);assert.equal(revoked.calls.saves[0].status,"failed")
         const failed=workerFixture({cached:true,failPublish:true});await failed.worker.processSopWork("run")
-        assert.deepEqual(failed.calls.saves[0].plan,plan);assert.equal(failed.calls.saves[1].status,"failed");assert.equal("plan" in failed.calls.saves[1],false)
+        assert.deepEqual(failed.calls.saves.find(s=>s.plan)?.plan,plan);assert.equal(failed.calls.saves.at(-1)?.status,"failed");assert.equal("plan" in failed.calls.saves.at(-1)!,false)
     } finally { if(previous===undefined)delete process.env.SOP_WORK_PILOT_ENABLED;else process.env.SOP_WORK_PILOT_ENABLED=previous }
 })
 test("pilot routes reject staff and foreign origins before queuing or dispatching",async()=>{
@@ -173,7 +166,7 @@ test("sparse client context keeps generic SOP tasks and dispatch usage for repor
         calls.push({body:JSON.parse(init?.body as string)})
         return Response.json({id:"resp_sparse",model:"gpt-5.4-mini",service_tier:"default",status:"completed",usage:{input_tokens:2100,output_tokens:900,input_tokens_details:{cached_tokens:100},output_tokens_details:{reasoning_tokens:50}},output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(plan)}]}]})
     })
-    const result=await generator.generateSopWork({model:"gpt-5.4-mini",evidence:{client:{},onboarding:[],session_id:null},source},request)
+    const result=await generator.generateSopWork({model:"gpt-5.4-mini",source},request,async()=>{})
     assert.equal(result.tasks.length,2)
     assert.equal(result.tasks[0].blocked_reason,"")
     assert.deepEqual(result.tasks[1].depends_on,[1])
@@ -204,4 +197,21 @@ test("cron acknowledges only authenticated wakeups and defers all processing",as
         assert.equal((await route.POST(new Request("https://be.test/api/cron/sop-work",{method:"POST",headers:{authorization:"Bearer fixture-worker-secret"}}))).status,202)
         assert.equal(calls,0);await callbacks[0]();assert.equal(calls,1)
     } finally {if(previous===undefined)delete process.env.SOP_WORK_CRON_SECRET;else process.env.SOP_WORK_CRON_SECRET=previous}
+})
+
+test("dependency normalization preserves a valid graph, deduplicates edges and reorders forward references",()=>{
+    const value=work.parseSopWorkPlan({...plan,tasks:[{...task,title:"Launch",depends_on:[3,3,2]},{...task,title:"Validate",depends_on:[3]},{...task,title:"Access"}]},source)
+    assert.deepEqual(value.tasks.map(t=>[t.title,t.depends_on]),[["Access",[]],["Validate",[1]],["Launch",[1,2]]])
+    const many=Array.from({length:15},(_,index)=>({...task,title:`Task ${index+1}`,depends_on:index===14?Array.from({length:14},(_,i)=>i+1):[]}))
+    assert.equal(work.parseSopWorkPlan({...plan,tasks:many},source).tasks[14].depends_on.length,14)
+    assert.throws(()=>work.parseSopWorkPlan({...plan,tasks:[{...task,depends_on:[2]},{...task,title:"Two",depends_on:[1]}]},source),/cycle involving tasks 1, 2/)
+    assert.throws(()=>work.parseSopWorkPlan({...plan,tasks:[{...task,depends_on:[47]}]},source),/task 1 refers to nonexistent task 47/)
+})
+test("a rejected provider plan is retained before dependency validation, with usage intact",async()=>{
+    const generator=load("lib/sops/work-generator.ts") as typeof import("../lib/sops/work-generator")
+    const raw=JSON.stringify({...plan,tasks:[{...task,depends_on:[99]}]})
+    let retained="",paid=0
+    const request=meter.meteredSopRequest("gpt-5.4-mini",{start:async()=>{},finish:async()=>{paid++}},async()=>Response.json({status:"completed",usage:{input_tokens:100,output_tokens:100},output:[{type:"message",content:[{type:"output_text",text:raw}]}]}))
+    await assert.rejects(generator.generateSopWork({model:"gpt-5.4-mini",source},request,async text=>{retained=text}),/nonexistent task 99/)
+    assert.equal(retained,raw);assert.equal(paid,1)
 })

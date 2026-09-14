@@ -224,5 +224,50 @@ try {
     assert.match(JSON.stringify(relPlan),/sop_work_test_relationships_idx/)
     assert.match(JSON.stringify(evidencePlan),/sop_work_submission_idx/)
     pass('30k relationship/source growth uses bounded indexed queries')
+    // Upgrade in place from the deployed pilot; existing cost/source history survives.
+    await db.exec('alter table onboarding_service_revisions add column service_id uuid; alter table onboarding_service_revisions add column revision_number integer default 1;')
+    await db.query('update onboarding_service_revisions set service_id=id')
+    await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20260914120000_sop_service_generation_flow.sql`,'utf8'))
+    const fresh=await fixture(310)
+    const before=(await one('select count(*)::int n from work_items')).n
+    const freshRun=(await one('select accept_sop_work_request($1,$2,100) id',[fresh,'gpt-5.4-mini'])).id
+    assert.equal((await one('select count(*)::int n from work_items')).n,before)
+    const freshJob=await claim(freshRun)
+    const generic=(await prepare(freshJob)).packet
+    assert.deepEqual(Object.keys(generic).sort(),['mode','service'])
+    assert.equal(generic.mode,'generic')
+    assert.equal(freshJob.group_work_item_id,null)
+    await db.query("update relationships set business_name='Not sent to AI',notes_summary='Private client strategy' where id=$1",[fresh])
+    assert.deepEqual((await prepare(freshJob)).packet,generic)
+    await db.query('update sop_work_runs set plan=$1,source_snapshot=$2,raw_output=$3 where id=$4',[{...plan,tasks:[{...plan.tasks[0],depends_on:[99]}]},source,'retained invalid graph',freshRun])
+    await assert.rejects(db.query('select publish_sop_work($1,$2)',[freshRun,freshJob.lease_token]),/dependency/)
+    assert.equal((await one('select count(*)::int n from work_items')).n,before)
+    assert.equal((await one('select group_work_item_id from sop_work_runs where id=$1',[freshRun])).group_work_item_id,null)
+    await db.query('update sop_work_runs set plan=null where id=$1',[freshRun])
+    const validationProgress=(await one('select read_service_sop_progress($1,$2,$3,$4) value',[w,admin,fresh,fresh])).value
+    assert.equal(validationProgress.progress,80)
+    assert(!('cost' in validationProgress));assert(!('raw_output' in validationProgress))
+    const dense={summary:'Generic setup',warnings:[],tasks:Array.from({length:15},(_,i)=>({...plan.tasks[0],title:`Step ${i+1}`,depends_on:i===14?Array.from({length:14},(_,n)=>n+1):[]}))}
+    await db.query('update sop_work_runs set plan=$1 where id=$2',[dense,freshRun])
+    const freshIds=(await one('select publish_sop_work($1,$2) ids',[freshRun,freshJob.lease_token])).ids
+    assert.equal(freshIds.length,15)
+    assert.equal((await one('select count(*)::int n from work_items')).n,before+16)
+    assert.equal((await one('select read_service_sop_progress($1,$2,$3,$4) value',[w,admin,fresh,fresh])).value.progress,100)
+    assert.deepEqual(new Set((await one('select read_relationship_work_queue($1,$2,$3) value',[w,fresh,admin])).value.items.map(i=>i.id)),new Set(freshIds))
+    pass('generic upgrade retains rejected output, publishes no partial flow, accepts dense valid dependencies and reaches 100 only after atomic publication')
+    await assert.rejects(db.query('select link_sop_service($1,$2,$3,$4,$5)',[w,staff,sop,revision,asset]),/admins/)
+    await db.query('select link_sop_service($1,$2,$3,$4,$5,true)',[w,admin,sop,revision,asset])
+    const unmapped=await fixture(330)
+    assert.equal((await one('select count(*)::int n from sop_work_requests where instance_id=$1',[unmapped])).n,0)
+    await assert.rejects(queue(unmapped,id(331)),/Link this service/)
+    await db.query('select link_sop_service($1,$2,$3,$4,$5)',[w,admin,sop,revision,asset])
+    const links=(await one('select read_sop_service_links($1,$2,$3) value',[w,admin,sop])).value
+    assert.equal(links[0].service_id,revision);assert.equal(links[0].asset_name,'Procedure.txt')
+    const relinked=await fixture(340)
+    const relinkedRun=(await one('select accept_sop_work_request($1,$2,100) id',[relinked,'gpt-5.4-mini'])).id
+    const relinkedJob=await claim(relinkedRun);await prepare(relinkedJob)
+    await db.query('select link_sop_service($1,$2,$3,$4,$5,true)',[w,admin,sop,revision,asset])
+    await assert.rejects(prepare(relinkedJob),/link changed/)
+    pass('user-owned linking/unlinking controls generation; missing or revoked mapping cannot publish')
     console.log(JSON.stringify({checks,publicationMs,ordinaryPublicationMs,relationshipPlan:relPlan,evidencePlan}))
 } finally { await db.close() }

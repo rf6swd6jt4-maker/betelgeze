@@ -64,12 +64,10 @@ test("Services uses a compact Settings option list with popup editing", () => {
     assert.doesNotMatch(servicesUi, /<List|<MobileListActionSurface|<ListActionMenu/)
 })
 
-test("Teams owns the centred service fulfilment permissions editor", () => {
+test("service settings keep fulfilment eligibility without editable panel permissions", () => {
     const teamUi = readFileSync("components/settings/WorkspaceTeamSettings.tsx", "utf8")
-    assert.match(teamUi, /Service fulfilment permissions/)
-    assert.match(servicesUi, /STAFF_SERVICE_PERMISSION_OPTIONS\.map/)
-    assert.match(servicesUi, /Fulfilment permissions/)
-    assert.match(servicesUi, /saveOnboardingServiceStaffPermissions/)
-    assert.match(teamUi, /createPortal\(<ServiceStaffPermissionsEditor/)
-    assert.match(servicesUi, /fixed inset-0[\s\S]*items-center justify-center/)
+    assert.match(servicesUi, /DeliveryUserPicker/)
+    assert.match(teamUi, /No service eligibility selected/)
+    assert.doesNotMatch(teamUi, /Service fulfilment permissions|Edit permissions/)
+    assert.doesNotMatch(servicesUi, /STAFF_SERVICE_PERMISSION_OPTIONS|saveOnboardingServiceStaffPermissions|Fulfilment permissions/)
 })

@@ -5,11 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { createPortal } from "react-dom"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { saveOnboardingService, saveOnboardingServiceStaffPermissions, setOnboardingServiceState } from "@/app/[workspaceSlug]/settings/service-actions"
+import { saveOnboardingService, setOnboardingServiceState } from "@/app/[workspaceSlug]/settings/service-actions"
 import { SquarePill, Status, StatusStat, type StatusTone } from "@/components/ui"
 import type { OnboardingAssigneeOption, OnboardingModuleSummary, OnboardingServiceDefinition, OnboardingServiceState, OnboardingServiceType } from "@/lib/onboarding/configuration-types"
 import { SERVICE_TEMPLATES, type ServiceTemplateDefinition } from "@/lib/onboarding/service-templates"
-import { STAFF_SERVICE_PERMISSION_OPTIONS, type StaffServicePermission, type WorkspaceCapability } from "@/lib/workspace-capabilities"
 
 const inputClass = "mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-sm text-white outline-none focus:border-neutral-500"
 const textareaClass = "mt-1.5 w-full resize-none rounded-lg border border-neutral-700 bg-black px-3 py-2 text-sm leading-5 text-white outline-none focus:border-neutral-500"
@@ -313,95 +312,6 @@ function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schem
     </div>
 }
 
-export function ServiceStaffPermissionsEditor({ workspaceSlug, service, initialPermissions, onClose }: {
-    workspaceSlug: string
-    service: { id: string; name: string }
-    initialPermissions: WorkspaceCapability[]
-    onClose: () => void
-}) {
-    const router = useRouter()
-    const supported = useMemo(() => new Set(STAFF_SERVICE_PERMISSION_OPTIONS.map((option) => option.capability)), [])
-    const [selected, setSelected] = useState<Set<StaffServicePermission>>(() => new Set(initialPermissions.filter((permission): permission is StaffServicePermission => supported.has(permission as StaffServicePermission))))
-    const [error, setError] = useState<string | null>(null)
-    const [pending, startTransition] = useTransition()
-    const dialogRef = useRef<HTMLElement>(null)
-    const closeRef = useRef<HTMLButtonElement>(null)
-
-    useEffect(() => {
-        const hostDocument = dialogRef.current?.ownerDocument ?? document
-        const origin = hostDocument.activeElement instanceof HTMLElement ? hostDocument.activeElement : null
-        const previousOverflow = hostDocument.body.style.overflow
-        const handleKey = (event: KeyboardEvent) => {
-            if (event.key === "Escape") {
-                event.preventDefault()
-                onClose()
-                return
-            }
-            if (event.key !== "Tab" || !dialogRef.current) return
-            const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
-            if (!focusable.length) return
-            const first = focusable[0]
-            const last = focusable.at(-1)!
-            if (event.shiftKey && hostDocument.activeElement === first) { event.preventDefault(); last.focus() }
-            else if (!event.shiftKey && hostDocument.activeElement === last) { event.preventDefault(); first.focus() }
-        }
-        hostDocument.body.style.overflow = "hidden"
-        hostDocument.addEventListener("keydown", handleKey)
-        closeRef.current?.focus()
-        return () => {
-            hostDocument.body.style.overflow = previousOverflow
-            hostDocument.removeEventListener("keydown", handleKey)
-            origin?.focus()
-        }
-    }, [onClose])
-
-    function save() {
-        setError(null)
-        startTransition(async () => {
-            const permissions = STAFF_SERVICE_PERMISSION_OPTIONS.flatMap((option) => selected.has(option.capability) ? [option.capability] : [])
-            const outcome = await saveOnboardingServiceStaffPermissions(workspaceSlug, service.id, permissions)
-            if (!outcome.ok) {
-                setError(outcome.error ?? "Fulfilment permissions could not be saved.")
-                return
-            }
-            router.refresh()
-            onClose()
-        })
-    }
-
-    return <div className="fixed inset-0 z-[2147483646] flex items-center justify-center overflow-hidden overscroll-none bg-black/75 p-3 text-white backdrop-blur-sm sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-        <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="service-staff-permissions-title" aria-describedby="service-staff-permissions-description" className="betelgeze-popup-enter flex max-h-[min(90dvh,36rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70">
-            <header className="flex shrink-0 items-start gap-4 border-b border-neutral-800 px-4 py-4 sm:px-5">
-                <div className="min-w-0 flex-1">
-                    <h2 id="service-staff-permissions-title" className="text-lg font-semibold">Fulfilment permissions</h2>
-                    <p id="service-staff-permissions-description" className="mt-1 text-sm text-neutral-500">{service.name}</p>
-                </div>
-                <button ref={closeRef} type="button" onClick={onClose} aria-label="Close Fulfilment permissions" className="inline-flex h-9 w-9 shrink-0 items-center justify-center text-xl text-neutral-500 hover:text-white">×</button>
-            </header>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-                <p className="text-sm leading-6 text-neutral-400">These permissions apply when someone delivers this service. Client-chat participation is controlled separately by the client’s manager.</p>
-                <fieldset className="mt-4 space-y-2">
-                    <legend className="sr-only">Panel permissions</legend>
-                    {STAFF_SERVICE_PERMISSION_OPTIONS.map((option) => <label key={option.capability} className="flex min-h-11 items-center gap-3 rounded-lg border border-neutral-800 bg-black px-3 text-sm text-neutral-200">
-                        <input type="checkbox" checked={selected.has(option.capability)} onChange={(event) => setSelected((current) => {
-                            const next = new Set(current)
-                            if (event.target.checked) next.add(option.capability)
-                            else next.delete(option.capability)
-                            return next
-                        })} className="h-4 w-4 accent-white" />
-                        <span>{option.label}</span>
-                    </label>)}
-                </fieldset>
-                {error ? <p role="alert" className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</p> : null}
-            </div>
-            <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-neutral-800 px-4 py-3 sm:px-5">
-                <button type="button" onClick={onClose} className="h-9 px-3 text-sm text-neutral-400 hover:text-white">Cancel</button>
-                <button type="button" disabled={pending} onClick={save} className="h-9 rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-40">{pending ? "Saving…" : "Save permissions"}</button>
-            </footer>
-        </section>
-    </div>
-}
-
 function ServiceStatusSummary({ services }: { services: OnboardingServiceDefinition[] }) {
     const counts = services.reduce<Record<OnboardingServiceState, number>>((current, service) => {
         current[service.state] += 1
@@ -415,17 +325,15 @@ function ServiceStatusSummary({ services }: { services: OnboardingServiceDefinit
     </div>
 }
 
-export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaReady, initialServiceId, serviceCapabilities, eligibleUsers }: {
+export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaReady, initialServiceId, eligibleUsers }: {
     workspaceSlug: string
     services: OnboardingServiceDefinition[]
     modules: OnboardingModuleSummary[]
     assignees: OnboardingAssigneeOption[]
     schemaReady: boolean
     initialServiceId?: string | null
-    serviceCapabilities: Record<string, WorkspaceCapability[]>
     eligibleUsers: Record<string, string[]>
 }) {
-    void serviceCapabilities
     const [selectedId, setSelectedId] = useState<string | null>(initialServiceId && initialServiceId !== "new" ? initialServiceId : null)
     const [templatesOpen, setTemplatesOpen] = useState(false)
     const selectedTemplate = selectedId?.startsWith("template:")

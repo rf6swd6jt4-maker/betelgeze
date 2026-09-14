@@ -2,12 +2,16 @@
 import { revalidatePath } from "next/cache"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
-import type { WorkspaceCapability } from "@/lib/workspace-capabilities"
 
-export async function saveWorkspaceOperations(slug: string, people: Array<{ userId: string; canSell: boolean; canManage: boolean }>, permissions: Record<string, WorkspaceCapability[]>) {
+export async function saveWorkspaceOperations(slug: string, people: Array<{ userId: string; canSell: boolean; canManage: boolean }>) {
     try {
         const { workspace, user } = await requireWorkspace(slug, "admin")
-        const { error } = await supabaseAdmin.rpc("save_workspace_operations", { p_workspace_id: workspace.id, p_actor_user_id: user.id, p_people: people, p_permissions: permissions })
+        const { error } = await supabaseAdmin.rpc("save_workspace_operations", {
+            p_workspace_id: workspace.id,
+            p_actor_user_id: user.id,
+            p_people: people,
+            p_permissions: { seller: ["relationships.view"], manager: ["relationships.view"] },
+        })
         if (error) throw new Error(error.message)
         revalidatePath(`/${slug}`, "layout")
         return { ok: true as const }

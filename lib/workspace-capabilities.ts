@@ -18,14 +18,6 @@ export const DEFAULT_SERVICE_CAPABILITIES = [
     "fulfilment.manage",
 ] as const satisfies readonly WorkspaceCapability[]
 
-export const STAFF_SERVICE_PERMISSION_OPTIONS = [
-    { capability: "onboarding.manage", label: "Onboarding" },
-    { capability: "fulfilment.manage", label: "Fulfilment" },
-    { capability: "appointment_setting.manage", label: "Appointment Setting" },
-] as const satisfies readonly { capability: WorkspaceCapability; label: string }[]
-
-export type StaffServicePermission = (typeof STAFF_SERVICE_PERMISSION_OPTIONS)[number]["capability"]
-
 export function normalizeWorkspaceCapability(value: unknown): WorkspaceCapability | null {
     return typeof value === "string" && (WORKSPACE_CAPABILITIES as readonly string[]).includes(value)
         ? value as WorkspaceCapability

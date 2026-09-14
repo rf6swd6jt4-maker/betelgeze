@@ -70,8 +70,8 @@ export async function loadWorkspaceAccess(input: {
     userId: string
     role: WorkspaceRole
 }): Promise<WorkspaceAccess> {
-    const appointmentSettingServices = await loadAppointmentSettingServiceIds(input.workspaceId)
     if (isAdminRole(input.role)) {
+        const appointmentSettingServices = await loadAppointmentSettingServiceIds(input.workspaceId)
         return {
             ...input,
             capabilities: WORKSPACE_CAPABILITIES.filter((capability) => (
@@ -82,50 +82,36 @@ export async function loadWorkspaceAccess(input: {
         }
     }
 
-    const [assignmentResult, capabilityResult, rolesResult, permissionsResult, allocatedServices, responsibilities] = await Promise.all([
+    const [assignmentResult, rolesResult, allocatedServices] = await Promise.all([
         supabaseAdmin
             .from("workspace_member_service_access")
             .select("service_id")
             .eq("workspace_id", input.workspaceId)
             .eq("user_id", input.userId),
-        supabaseAdmin
-            .from("workspace_service_capabilities")
-            .select("service_id, capability")
-            .eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("workspace_operational_roles").select("can_sell, can_manage").eq("workspace_id", input.workspaceId).eq("user_id", input.userId).maybeSingle(),
-        supabaseAdmin.from("workspace_operational_permissions").select("position, capability").eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("relationship_services").select("service_id").eq("workspace_id", input.workspaceId).eq("assignee_user_id", input.userId),
-        supabaseAdmin.from("relationships").select("seller_user_id, fulfilment_manager_user_id").eq("workspace_id", input.workspaceId).or(`seller_user_id.eq.${input.userId},fulfilment_manager_user_id.eq.${input.userId}`),
     ])
     const { data: assignments, error: assignmentError } = assignmentResult
+    const baseCapabilities = ["fulfilment.manage", "communications.manage"] satisfies WorkspaceCapability[]
 
-    if (assignmentError || rolesResult.error || permissionsResult.error || allocatedServices.error || responsibilities.error) {
+    if (assignmentError || rolesResult.error || allocatedServices.error) {
         console.error("Workspace service access could not be loaded", {
             workspaceId: input.workspaceId,
             userId: input.userId,
             code: assignmentError?.code,
         })
-        return { ...input, capabilities: [], allowedServiceIds: [], serviceAccessSchemaReady: false }
+        return { ...input, capabilities: baseCapabilities, allowedServiceIds: [], serviceAccessSchemaReady: false }
     }
 
     const allowedServiceIds = [...new Set([...(assignments ?? []), ...(allocatedServices.data ?? [])].map((item) => item.service_id).filter(Boolean))]
-    const { data: allGrants, error: capabilityError } = capabilityResult
-
-    if (capabilityError) {
-        console.error("Workspace service capabilities could not be loaded", {
-            workspaceId: input.workspaceId,
-            userId: input.userId,
-            code: capabilityError.code,
-        })
-        return { ...input, capabilities: [], allowedServiceIds, serviceAccessSchemaReady: false }
-    }
-
-    const allowedServiceIdSet = new Set(allowedServiceIds)
-    const assignedAppointmentSettingService = allowedServiceIds.some((serviceId) => appointmentSettingServices.ids.has(serviceId))
-    const operational = (permissionsResult.data ?? []).filter((p) => p.position === "seller" ? rolesResult.data?.can_sell || responsibilities.data?.some((r) => r.seller_user_id === input.userId) : rolesResult.data?.can_manage || responsibilities.data?.some((r) => r.fulfilment_manager_user_id === input.userId)).map((p) => p.capability)
-    const capabilities = combineWorkspaceCapabilities([["communications.manage", ...operational], ...(allGrants ?? []).filter((grant) => allowedServiceIdSet.has(grant.service_id)).map((item) => [item.capability])]).filter((capability) => (
-        capability !== APPOINTMENT_SETTING_CAPABILITY || assignedAppointmentSettingService
-    ))
+    const appointmentSettingServices = allowedServiceIds.length
+        ? await loadAppointmentSettingServiceIds(input.workspaceId)
+        : { ids: new Set<string>(), ready: true }
+    const capabilities = combineWorkspaceCapabilities([
+        baseCapabilities,
+        rolesResult.data?.can_sell || rolesResult.data?.can_manage ? ["relationships.view"] : [],
+        allowedServiceIds.some((serviceId) => appointmentSettingServices.ids.has(serviceId)) ? [APPOINTMENT_SETTING_CAPABILITY] : [],
+    ])
 
     return { ...input, capabilities, allowedServiceIds, serviceAccessSchemaReady: appointmentSettingServices.ready }
 }
@@ -160,7 +146,10 @@ export async function requireWorkspacePanel(slug: string, panelKey: WorkspacePan
 }
 
 export function defaultWorkspaceHref(access: WorkspaceAccess) {
-    const panel = WORKSPACE_PANELS.find((candidate) => canAccessWorkspacePanel(candidate, access.role, access.capabilities))
+    const workPanel = workspacePanelByKey("fulfilment")
+    const panel = canAccessWorkspacePanel(workPanel, access.role, access.capabilities)
+        ? workPanel
+        : WORKSPACE_PANELS.find((candidate) => canAccessWorkspacePanel(candidate, access.role, access.capabilities))
     return panel ? workspacePanelHref(access.workspaceSlug, panel) : `/${access.workspaceSlug}/no-access`
 }
 

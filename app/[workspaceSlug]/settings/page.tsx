@@ -26,7 +26,6 @@ import { normalizeWorkspaceRole, requireWorkspace, workspaceRoleLabel } from "@/
 import { BASE_INTEGRATION_PROVIDERS, listWorkspaceConnections } from "@/lib/workspace-integrations"
 import { loadWorkspacePublicBranding } from "@/lib/client-branding/public-branding"
 import { loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
-import { normalizeWorkspaceCapability, type WorkspaceCapability } from "@/lib/workspace-capabilities"
 import { saveLeadgenSettings } from "../leadgen/settings/actions"
 import { saveAgencyPublicBranding, uploadAgencyFavicon, uploadAgencyLogo } from "./branding-actions"
 import { inviteWorkspaceUser, removeWorkspaceUser, resetWorkspaceUserMfa } from "../users/actions"
@@ -128,18 +127,12 @@ function WorkspaceSettingsSection({ workspace }: { workspace: WorkspaceRecord })
 }
 
 async function ServicesSettingsSection({ workspace, initialServiceId, onboardingSettingsPromise }: { workspace: WorkspaceRecord; initialServiceId?: string; onboardingSettingsPromise: Promise<OnboardingSettingsData> }) {
-    const [onboardingSettings, serviceCapabilitiesResult, operations] = await Promise.all([
+    const [onboardingSettings, operations] = await Promise.all([
         onboardingSettingsPromise,
-        supabaseAdmin.from("workspace_service_capabilities").select("service_id, capability").eq("workspace_id", workspace.id),
         loadWorkspaceOperations(workspace.id),
     ])
-    const capabilitiesByService = new Map<string, WorkspaceCapability[]>()
-    for (const grant of serviceCapabilitiesResult.data ?? []) {
-        const capability = normalizeWorkspaceCapability(grant.capability)
-        if (capability) capabilitiesByService.set(grant.service_id, [...(capabilitiesByService.get(grant.service_id) ?? []), capability])
-    }
     return <section id="services" className="min-w-0 max-w-full scroll-mt-5">
-        <ServiceCatalogue workspaceSlug={workspace.slug} services={onboardingSettings.services} modules={onboardingSettings.modules} assignees={onboardingSettings.assignees} schemaReady={onboardingSettings.schemaReady} initialServiceId={initialServiceId} serviceCapabilities={Object.fromEntries(capabilitiesByService)} eligibleUsers={Object.fromEntries(operations.services.map((s) => [s.id, operations.eligible.filter((e) => e.service_id === s.id).map((e) => e.user_id)]))} />
+        <ServiceCatalogue workspaceSlug={workspace.slug} services={onboardingSettings.services} modules={onboardingSettings.modules} assignees={onboardingSettings.assignees} schemaReady={onboardingSettings.schemaReady} initialServiceId={initialServiceId} eligibleUsers={Object.fromEntries(operations.services.map((s) => [s.id, operations.eligible.filter((e) => e.service_id === s.id).map((e) => e.user_id)]))} />
     </section>
 }
 

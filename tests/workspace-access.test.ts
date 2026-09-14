@@ -6,7 +6,7 @@ import {
     canAccessWorkspacePanel,
     WORKSPACE_PANELS,
 } from "../lib/workspace-panels.ts"
-import { combineWorkspaceCapabilities, STAFF_SERVICE_PERMISSION_OPTIONS } from "../lib/workspace-capabilities.ts"
+import { combineWorkspaceCapabilities } from "../lib/workspace-capabilities.ts"
 import {
     normalizeWorkspaceRole,
     WORKSPACE_ROLES,
@@ -24,6 +24,8 @@ const serviceAccessMigration = readFileSync("supabase/migrations/20260902170000_
 const servicePermissionMigration = readFileSync("supabase/migrations/20260902213000_service_staff_permission_controls.sql", "utf8")
 const settingsPage = readFileSync("app/[workspaceSlug]/settings/page.tsx", "utf8")
 const workspaceAccess = readFileSync("lib/workspace-access.ts", "utf8")
+const workspaceTeamSettings = readFileSync("components/settings/WorkspaceTeamSettings.tsx", "utf8")
+const defaultStaffAccessMigration = readFileSync("supabase/migrations/20260914170000_default_staff_work_and_comms.sql", "utf8")
 
 test("workspace roles are Owner, Admin, and Staff with legacy member normalization", () => {
     assert.deepEqual(WORKSPACE_ROLES, ["owner", "admin", "staff"])
@@ -33,7 +35,7 @@ test("workspace roles are Owner, Admin, and Staff with legacy member normalizati
     assert.equal(workspaceRoleMeetsMinimum("admin", "staff"), true)
 })
 
-test("workspace panels derive Staff access from service capabilities", () => {
+test("Staff always see Work and Communications while operational roles reveal Relationships", () => {
     assert.deepEqual(WORKSPACE_PANELS.map((panel) => panel.label), [
         "Relationships",
         "Onboarding",
@@ -48,19 +50,21 @@ test("workspace panels derive Staff access from service capabilities", () => {
         "Settings",
     ])
     const byKey = new Map(WORKSPACE_PANELS.map((panel) => [panel.key, panel]))
-    const metaAdsCapabilities = ["onboarding.manage", "fulfilment.manage"] as const
-    const appointmentSettingCapabilities = [...metaAdsCapabilities, "appointment_setting.manage"] as const
-    assert.equal(canAccessWorkspacePanel(byKey.get("onboarding")!, "staff", metaAdsCapabilities), true)
-    assert.equal(canAccessWorkspacePanel(byKey.get("fulfilment")!, "staff", metaAdsCapabilities), true)
-    assert.equal(canAccessWorkspacePanel(byKey.get("appointment-setting")!, "staff", metaAdsCapabilities), false)
-    assert.equal(canAccessWorkspacePanel(byKey.get("appointment-setting")!, "staff", appointmentSettingCapabilities), true)
-    assert.equal(canAccessWorkspacePanel(byKey.get("communications")!, "staff", ["communications.manage"]), true)
-    assert.equal(canAccessWorkspacePanel(byKey.get("settings")!, "staff", appointmentSettingCapabilities), false)
-    assert.equal(canAccessWorkspacePanel(byKey.get("appointment-setting")!, "admin", metaAdsCapabilities), false)
-    assert.equal(canAccessWorkspacePanel(byKey.get("appointment-setting")!, "admin", appointmentSettingCapabilities), true)
+    const baseline = [] as const
+    const sellerOrManager = ["relationships.view"] as const
+    const appointmentSetter = ["appointment_setting.manage"] as const
+    assert.equal(canAccessWorkspacePanel(byKey.get("relationships")!, "staff", baseline), false)
+    assert.equal(canAccessWorkspacePanel(byKey.get("relationships")!, "staff", sellerOrManager), true)
+    assert.equal(canAccessWorkspacePanel(byKey.get("onboarding")!, "staff", ["onboarding.manage"]), false)
+    assert.equal(canAccessWorkspacePanel(byKey.get("fulfilment")!, "staff", baseline), true)
+    assert.equal(canAccessWorkspacePanel(byKey.get("communications")!, "staff", baseline), true)
+    assert.equal(canAccessWorkspacePanel(byKey.get("appointment-setting")!, "staff", appointmentSetter), true)
+    assert.equal(canAccessWorkspacePanel(byKey.get("settings")!, "staff", sellerOrManager), false)
+    assert.equal(canAccessWorkspacePanel(byKey.get("appointment-setting")!, "admin", baseline), false)
+    assert.equal(canAccessWorkspacePanel(byKey.get("appointment-setting")!, "admin", appointmentSetter), true)
     assert.equal(WORKSPACE_PANELS.filter((panel) => panel.key !== "appointment-setting").every((panel) => canAccessWorkspacePanel(panel, "admin")), true)
-    assert.equal(canAccessWorkspaceUrl("/acme/settings", "acme", "staff", appointmentSettingCapabilities), false)
-    assert.equal(canAccessWorkspaceUrl("/acme/appointment-setting", "acme", "staff", appointmentSettingCapabilities), true)
+    assert.equal(canAccessWorkspaceUrl("/acme/settings", "acme", "staff", sellerOrManager), false)
+    assert.equal(canAccessWorkspaceUrl("/acme/work", "acme", "staff", baseline), true)
 })
 
 test("Appointment Setting activates only for a non-archived template service and assigned Staff", () => {
@@ -68,20 +72,26 @@ test("Appointment Setting activates only for a non-archived template service and
     assert.equal("requiresService" in appointmentSettingPanel && appointmentSettingPanel.requiresService, true)
     assert.match(workspaceAccess, /APPOINTMENT_SETTING_TEMPLATE_ID = "appointment-setting"/)
     assert.match(workspaceAccess, /\.neq\("state", "archived"\)/)
-    assert.match(workspaceAccess, /assignedAppointmentSettingService/)
-    assert.match(workspaceAccess, /capability !== APPOINTMENT_SETTING_CAPABILITY \|\| assignedAppointmentSettingService/)
+    assert.match(workspaceAccess, /allowedServiceIds\.some\(\(serviceId\) => appointmentSettingServices\.ids\.has\(serviceId\)\)/)
+    assert.match(workspaceAccess, /\? \[APPOINTMENT_SETTING_CAPABILITY\] : \[\]/)
 })
 
-test("Staff permissions from multiple assigned services add together", () => {
-    assert.deepEqual(STAFF_SERVICE_PERMISSION_OPTIONS.map((option) => option.label), [
-        "Onboarding",
-        "Fulfilment",
-        "Appointment Setting",
-    ])
+test("workspace capability normalization remains deterministic", () => {
     assert.deepEqual(combineWorkspaceCapabilities([
         ["communications.manage", "onboarding.manage"],
         ["fulfilment.manage", "appointment_setting.manage", "onboarding.manage"],
     ]), ["onboarding.manage", "fulfilment.manage", "appointment_setting.manage", "communications.manage"])
+})
+
+test("workspace access defaults every member to Work without editable panel permissions", () => {
+    assert.match(workspaceAccess, /baseCapabilities = \["fulfilment\.manage", "communications\.manage"\]/)
+    assert.match(workspaceAccess, /const workPanel = workspacePanelByKey\("fulfilment"\)/)
+    assert.doesNotMatch(workspaceAccess, /from\("workspace_service_capabilities"\)/)
+    assert.doesNotMatch(workspaceAccess, /from\("workspace_operational_permissions"\)/)
+    assert.doesNotMatch(workspaceTeamSettings, /Position permissions|Service fulfilment permissions|Edit permissions/)
+    assert.match(defaultStaffAccessMigration, /when p_capability in \('fulfilment\.manage', 'communications\.manage'\) then true/)
+    assert.match(defaultStaffAccessMigration, /operational\.can_sell or operational\.can_manage/)
+    assert.match(defaultStaffAccessMigration, /create or replace function public\.workspace_shell_bootstrap/)
 })
 
 test("mobile workspace navigation scrolls within the dynamic viewport", () => {

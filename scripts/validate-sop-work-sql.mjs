@@ -35,7 +35,11 @@ try {
     create table client_sales(id uuid primary key);
     create table client_sale_items(id uuid primary key);
     create table user_profiles(user_id uuid primary key,username text,display_name text);
-    create function workspace_user_can_access_relationship(uuid,uuid,uuid) returns boolean language sql as $$ select true $$;
+    create function workspace_user_can_access_relationship(p_workspace_id uuid,p_relationship_id uuid,p_user_id uuid) returns boolean language sql as $$
+      select exists(select 1 from relationships r join workspace_memberships m on m.workspace_id=r.workspace_id
+        where r.workspace_id=p_workspace_id and r.id=p_relationship_id and m.user_id=p_user_id
+          and (m.role in ('owner','admin') or r.fulfilment_manager_user_id=p_user_id
+            or exists(select 1 from relationship_service_instances i where i.workspace_id=r.workspace_id and i.relationship_id=r.id and i.assignee_user_id=p_user_id))) $$;
     create function workspace_user_can_access_work_item(uuid,uuid,uuid) returns boolean language sql as $$ select true $$;
     create table relationship_services(workspace_id uuid,relationship_id uuid,service_key text,service_id uuid,service_revision_id uuid,assignee_user_id uuid,primary key(relationship_id,service_key));
     create table relationship_onboarding_sessions(id uuid primary key,workspace_id uuid,relationship_id uuid,status text,archived_at timestamptz,created_at timestamptz default now());
@@ -228,6 +232,7 @@ try {
     await db.exec('alter table onboarding_service_revisions add column service_id uuid; alter table onboarding_service_revisions add column revision_number integer default 1;')
     await db.query('update onboarding_service_revisions set service_id=id')
     await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20260914120000_sop_service_generation_flow.sql`,'utf8'))
+    await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20260914121000_sop_progress_access.sql`,'utf8'))
     const fresh=await fixture(310)
     const before=(await one('select count(*)::int n from work_items')).n
     const freshRun=(await one('select accept_sop_work_request($1,$2,100) id',[fresh,'gpt-5.4-mini'])).id
@@ -246,6 +251,9 @@ try {
     await db.query('update sop_work_runs set plan=null where id=$1',[freshRun])
     const validationProgress=(await one('select read_service_sop_progress($1,$2,$3,$4) value',[w,admin,fresh,fresh])).value
     assert.equal(validationProgress.progress,80)
+    assert.equal((await one('select read_service_sop_progress($1,$2,$3,$4) value',[w,staff,fresh,fresh])).value.progress,80)
+    await assert.rejects(db.query('select read_service_sop_progress($1,$2,$3,$4)',[w,id(999),fresh,fresh]),/Relationship access required/)
+    await assert.rejects(db.query('select read_service_sop_progress($1,$2,$3,$4)',[foreign,admin,fresh,fresh]),/Relationship access required/)
     assert(!('cost' in validationProgress));assert(!('raw_output' in validationProgress))
     const dense={summary:'Generic setup',warnings:[],tasks:Array.from({length:15},(_,i)=>({...plan.tasks[0],title:`Step ${i+1}`,depends_on:i===14?Array.from({length:14},(_,n)=>n+1):[]}))}
     await db.query('update sop_work_runs set plan=$1 where id=$2',[dense,freshRun])

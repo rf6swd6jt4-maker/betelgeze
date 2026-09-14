@@ -1,13 +1,15 @@
 import "server-only"
-import { parseSopWorkPlan, SOP_WORK_INSTRUCTIONS, SOP_WORK_SCHEMA } from "./work-plan"
+import { parseSopWorkPlan, SOP_WORK_INSTRUCTIONS, sopWorkSchema } from "./work-plan"
 import type { SopInterpretation } from "./interpretation"
 
 export async function generateSopWork(input: { model: string; source: SopInterpretation }, request: typeof fetch, retain: (text: string) => Promise<void>) {
+    const schema = sopWorkSchema(input.source)
+    const numberedSource = { ...input.source, steps: input.source.steps.map((step, index) => ({ ...step, step_id: index + 1 })) }
     const response = await request("https://api.openai.com/v1/responses", {
         method: "POST", headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY?.trim()}`, "Content-Type": "application/json" }, signal: AbortSignal.timeout(90_000),
         body: JSON.stringify({ model: input.model, store: false, service_tier: "default", instructions: SOP_WORK_INSTRUCTIONS,
-            input: [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ source: input.source }) }] }],
-            max_output_tokens: 14000, text: { format: { type: "json_schema", name: "sop_work", strict: true, schema: SOP_WORK_SCHEMA } },
+            input: [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ source: numberedSource }) }] }],
+            max_output_tokens: 14000, text: { format: { type: "json_schema", name: "sop_work", strict: true, schema } },
         }),
     })
     if (!response.ok) throw new Error(`OpenAI work generation failed (HTTP ${response.status}). No flow was generated.`)

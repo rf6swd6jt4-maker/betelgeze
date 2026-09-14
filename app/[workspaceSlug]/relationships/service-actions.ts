@@ -14,8 +14,12 @@ export async function addRelationshipService(slug: string, relationshipId: strin
     const { data, error } = await supabaseAdmin.rpc("add_relationship_service_with_sop", { p_workspace_id: workspace.id, p_relationship_id: relationshipId, p_actor_user_id: user.id, p_request_id: input.requestId, p_service_id: input.serviceId, p_revision_id: input.revisionId, p_origin: input.origin, p_stage: input.stage, p_assignee_user_id: input.assigneeId || null, p_generation_enabled: sopWorkConfiguration().ready })
     if (error) return { ok: false, uncertain: !/^[0-9A-Z]{5}$/.test(error.code ?? ""), error: error.code === "P0001" ? error.message : "The save could not be confirmed. Retry to recover this same service." }
     after(async () => { const { processSopWork } = await import("@/lib/sops/work-worker"); await processSopWork(undefined, data.id as string) })
-    revalidatePath(`/${slug}/relationships`)
-    revalidatePath(`/${slug}/relationships/${relationshipId}`)
+    // Keep the initiating dialog mounted while the durable job runs.
+    // The worker invalidates published work; the dialog fetches the queue before closing.
+    if (!data.generation) {
+        revalidatePath(`/${slug}/relationships`)
+        revalidatePath(`/${slug}/relationships/${relationshipId}`)
+    }
     return { ok: true, id: data.id as string, generation: data.generation === true }
 }
 export async function changeRelationshipService(slug: string, relationshipId: string, input: { expectedUserId: string; requestId: string; instanceId: string; version: number; stage: string; assigneeId: string; reason: string }) {
@@ -28,7 +32,11 @@ export async function changeRelationshipService(slug: string, relationshipId: st
     const { data, error } = await supabaseAdmin.rpc("change_relationship_service_with_sop", { p_workspace_id: workspace.id, p_relationship_id: relationshipId, p_instance_id: input.instanceId, p_actor_user_id: user.id, p_request_id: input.requestId, p_expected_version: input.version, p_stage: input.stage, p_disposition: "active", p_assignee_user_id: input.assigneeId || null, p_reason: input.reason.trim(), p_generation_enabled: sopWorkConfiguration().ready })
     if (error) return { ok: false, uncertain: !/^[0-9A-Z]{5}$/.test(error.code ?? ""), error: error.code === "P0001" ? error.message : "The save could not be confirmed. Retry this change." }
     if (input.stage === "setup") after(async () => { const { processSopWork } = await import("@/lib/sops/work-worker"); await processSopWork(undefined, input.instanceId) })
-    revalidatePath(`/${slug}/relationships`)
-    revalidatePath(`/${slug}/relationships/${relationshipId}`)
+    // Keep the initiating dialog mounted while the durable job runs.
+    // The worker invalidates published work; the dialog fetches the queue before closing.
+    if (!data.generation) {
+        revalidatePath(`/${slug}/relationships`)
+        revalidatePath(`/${slug}/relationships/${relationshipId}`)
+    }
     return { ok: true, id: input.instanceId, generation: data.generation === true }
 }

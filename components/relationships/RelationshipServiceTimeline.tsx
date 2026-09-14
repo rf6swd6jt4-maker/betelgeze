@@ -32,6 +32,11 @@ export function RelationshipQueue({ endpoint, slug, relationshipId, userId, revi
     const [error,setError] = useState("")
     const [retry,setRetry] = useState(0)
     const [receivedQueue, setReceivedQueue] = useState(publishedQueue)
+    const presented = useRef(new Set<string>())
+    useEffect(() => {
+        const run = data?.generation?.find(run => run.status !== "published" && !presented.current.has(run.instance_id))
+        if (run && onGeneration) { presented.current.add(run.instance_id); onGeneration(run.instance_id) }
+    }, [data, onGeneration])
     if (publishedQueue !== receivedQueue) { setReceivedQueue(publishedQueue); if (publishedQueue) { setData(publishedQueue); setPage(0); setError("") } }
     useEffect(() => { const observer = new IntersectionObserver(entries => { setVisible(entries.some(e => e.isIntersecting)) },{rootMargin:"160px"}); if(host.current)observer.observe(host.current); return () => observer.disconnect() },[])
     useEffect(() => {
@@ -44,7 +49,7 @@ export function RelationshipQueue({ endpoint, slug, relationshipId, userId, revi
     useEffect(() => {if(typeof BroadcastChannel === "undefined")return;const channel=new BroadcastChannel(ganttSyncChannelName(slug));channel.onmessage=()=>setRetry(n=>n+1);return()=>channel.close()},[slug])
     useSopWorkRefresh(Boolean(data?.generation?.some(run => ["pending", "queued", "running"].includes(run.status))), visible, () => { if (!inFlight.current) setRetry(n => n + 1) })
     return <div ref={host} className="mt-6" aria-label="Relationship work queue"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">Queue</h2><button type="button" className="min-h-11 text-sm text-neutral-400 underline" onClick={() => setRetry(n => n + 1)}>Refresh</button><Link href={`/${slug}/relationships/${relationshipId}?create=work-item`} className="inline-flex min-h-11 items-center text-sm text-neutral-300 underline">Add work item</Link></div>
-        {data?.generation?.some(run => run.status !== "published") ? <div className="mb-3 space-y-2">{data.generation.filter(run => run.status !== "published").map(run => <button type="button" key={run.instance_id} className="block min-h-11 text-sm text-neutral-400 underline" onClick={() => onGeneration?.(run.instance_id)}>{run.status === "failed" ? "Work generation needs attention" : "Generating work…"}</button>)}</div> : null}
+
         {error ? <p role="alert" className="py-2 text-sm text-red-200">{error}<button className="ml-2 min-h-11 underline" onClick={()=>setRetry(n=>n+1)}>Retry</button></p> : null}
         {!data ? <p role="status" className="py-5 text-sm text-neutral-500">Loading work queue…</p> : <><List ariaLabel="Relationship work queue">{data.items.length ? data.items.map(item => <ListItem key={item.id}><ListPrimaryRow><ListTitle href={item.workflow_action === "sell_client" ? `/${slug}/relationships/${relationshipId}/pos` : `/${slug}/work-items/${item.id}`}>{item.title}</ListTitle><Status label={item.queue_state} tone={item.queue_state === "Blocked" ? "red" : ["Waiting","Scheduled"].includes(item.queue_state) ? "yellow" : "green"} /></ListPrimaryRow><ListSecondaryRow>{item.assignees[0] ? <Assignee name={item.assignees[0].username} userId={item.assignees[0].userId} className="min-w-0" /> : <span className="text-neutral-500">Unassigned</span>}{item.assignees.length>1 ? <span>+{item.assignees.length-1}</span> : null}<ListTrailing>{item.due_date ? <span className="text-neutral-500">Due {new Date(`${item.due_date}T12:00:00`).toLocaleDateString('en-IE',{day:'numeric',month:'short'})}</span> : null}<Link href={`/${slug}/work-items/${item.id}`} className="inline-flex min-h-11 items-center text-neutral-300 underline">Open work</Link></ListTrailing></ListSecondaryRow></ListItem>) : <p className="px-4 py-5 text-sm text-neutral-500">No open work for this relationship.</p>}</List><Paging page={page} hasMore={data.hasMore} change={next=>{setPage(next);setData(null)}} /></>}
     </div>

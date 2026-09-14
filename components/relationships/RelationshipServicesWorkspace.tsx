@@ -54,7 +54,8 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
     const [pending, startTransition] = useTransition()
     const [uncertain, setUncertain] = useState(false)
     const [generation, setGeneration] = useState<{ instanceId: string | null } | null>(null)
-    useEffect(() => { onBusyChange(pending || uncertain); return () => onBusyChange(false) }, [pending, uncertain, onBusyChange])
+    const [progressBusy, setProgressBusy] = useState(true)
+    useEffect(() => { onBusyChange(pending || uncertain || Boolean(generation && !error && progressBusy)) }, [pending, uncertain, generation, error, progressBusy, onBusyChange])
     const requestId = useRef<string | null>(null)
     const serviceId = row?.service_id ?? service?.id
     useEffect(() => {
@@ -68,7 +69,7 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
         if (!serviceId || !people || peopleError) return
         requestId.current ??= crypto.randomUUID()
         setError("")
-        if (stage === "setup") { setGeneration({ instanceId: null }); onGenerating(true) }
+        if (stage === "setup") { onBusyChange(true); setProgressBusy(true); setGeneration({ instanceId: null }); onGenerating(true) }
         startTransition(async () => {
             try {
                 const result = await runWorkspaceMutation(() => row ? changeRelationshipService(props.workspaceSlug, props.relationshipId, { requestId: requestId.current!, expectedUserId: props.userId, instanceId: row.id, version: row.version, stage, assigneeId: assignee, reason })
@@ -78,7 +79,7 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
             } catch { setUncertain(true); setError("The save could not be confirmed. Retry this same change to avoid a duplicate.") }
         })
     }
-    if (generation) return <SopWorkProgress endpoint={endpoint} instanceId={generation.instanceId} userId={props.userId} initialError={error} onComplete={onDone} onClose={() => { if (uncertain) { setGeneration(null); onGenerating(false) } else onDone() }} recovery={error && !generation.instanceId ? <button type="button" className="min-h-11 text-sm text-neutral-300 underline" onClick={() => { setGeneration(null); onGenerating(false) }}>{uncertain ? "Return to retry same change" : "Back to service"}</button> : undefined} />
+    if (generation) return <SopWorkProgress onBusyChange={setProgressBusy} endpoint={endpoint} instanceId={generation.instanceId} userId={props.userId} initialError={error} onComplete={onDone} onClose={() => { if (uncertain) { setGeneration(null); onGenerating(false) } else onDone() }} recovery={error && !generation.instanceId ? <button type="button" className="min-h-11 text-sm text-neutral-300 underline" onClick={() => { setGeneration(null); onGenerating(false) }}>{uncertain ? "Return to retry same change" : "Back to service"}</button> : undefined} />
     const stages = row ? SERVICE_STAGES.filter(s => ["negotiating", "for_later", "declined"].includes(row.stage ?? "") ? ["negotiating", "declined"].includes(s.key) : ["setup", "maintenance", "completed"].includes(s.key)) : SERVICE_STAGES.filter(s => ["setup", "maintenance", "completed"].includes(s.key))
     return <form onSubmit={submit} className="min-w-0" aria-label={row ? `Edit ${row.name}` : "Add service"}>
         <fieldset disabled={pending || uncertain} className="min-w-0">
@@ -129,13 +130,14 @@ export function RelationshipServicesWorkspace(props: Props) {
         fetch(`${endpoint}?kind=cards&offset=${page * 30}`, { headers: { "x-workspace-user": props.userId }, cache: "no-store", redirect: "error", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]) }).then(async response => { const value = await response.json(); if (!response.ok) throw new Error(value.error); return value }).then(value => { if (!controller.signal.aborted) { setCards(value); setError("") } }).catch(error => { if (!controller.signal.aborted) setError(error.message) })
         return () => controller.abort()
     }, [endpoint, page, props.initial, props.userId, active, visible, retry])
+    function resumeGeneration(instanceId: string) { if (!adding && !editing && !resumedGeneration) { setServiceBusy(true); setResumedGeneration(instanceId) } }
     function saved(queue?: RelationshipQueuePage) { if (queue) setPublishedQueue(queue); setGenerating(false); setResumedGeneration(null); setAdding(false); setEditing(null); setOpened(null); setRetry(value => value + 1); router.refresh() }
     function closePos() { setPos(null); if (search.has("sell")) { const next = new URLSearchParams(search.toString()); next.delete("sell"); router.replace(`/${props.workspaceSlug}/relationships/${props.relationshipId}${next.size ? `?${next}` : ""}`) } }
     const requestedPos = pos ?? search.get("sell")
     return <section className="mt-5" aria-label="Relationship services and work">
         <RelationshipServiceTimeline endpoint={endpoint} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canEdit={props.canImport} canEditService={() => true} onEditService={row => setOpened(cards.items.find(card => card.id === row.id) ?? row)} />
         <div className="mt-5 grid min-w-0 gap-x-6 gap-y-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,1fr)]">
-            <div className="min-w-0"><RelationshipQueue endpoint={endpoint} slug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} publishedQueue={publishedQueue} onGeneration={setResumedGeneration} />
+            <div className="min-w-0"><RelationshipQueue endpoint={endpoint} slug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} publishedQueue={publishedQueue} onGeneration={resumeGeneration} />
 
             </div>
             <div className="min-w-0"><section ref={host} className="mt-6" aria-label="Assigned services"><h2 className="mb-3 text-base font-semibold">Services</h2>
@@ -146,7 +148,7 @@ export function RelationshipServicesWorkspace(props: Props) {
         </div>
         {adding ? <CenteredDialog title={generating ? "Generating work…" : "Add service"} busy={serviceBusy} onClose={() => setAdding(false)}><ServiceForm onGenerating={setGenerating} onBusyChange={setServiceBusy} endpoint={endpoint} props={props} onDone={saved} onClose={() => setAdding(false)} /></CenteredDialog> : null}
         {editing ? <CenteredDialog title={generating ? "Generating work…" : "Edit service"} busy={serviceBusy} onClose={() => setEditing(null)}><ServiceForm onGenerating={setGenerating} onBusyChange={setServiceBusy} key={editing.id} row={editing} endpoint={endpoint} props={props} onDone={saved} onClose={() => setEditing(null)} /></CenteredDialog> : null}
-        {resumedGeneration ? <CenteredDialog title="Generating work…" onClose={() => setResumedGeneration(null)}><SopWorkProgress endpoint={endpoint} instanceId={resumedGeneration} userId={props.userId} onComplete={saved} onClose={() => setResumedGeneration(null)} /></CenteredDialog> : null}
+        {resumedGeneration ? <CenteredDialog title="Generating work…" busy={serviceBusy} onClose={() => setResumedGeneration(null)}><SopWorkProgress onBusyChange={setServiceBusy} endpoint={endpoint} instanceId={resumedGeneration} userId={props.userId} onComplete={saved} onClose={() => setResumedGeneration(null)} /></CenteredDialog> : null}
         {opened ? <ServiceDetailDialog row={opened} endpoint={endpoint} userId={props.userId} onClose={() => setOpened(null)} onEdit={editable(opened) ? () => { setEditing(opened); setOpened(null) } : undefined} onSell={canSell(opened) ? () => { setPos(opened.id); setOpened(null) } : undefined} /> : null}
         {requestedPos ? <PosDialog workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} selectedId={requestedPos === "1" ? undefined : requestedPos} onClose={closePos} /> : null}
     </section>

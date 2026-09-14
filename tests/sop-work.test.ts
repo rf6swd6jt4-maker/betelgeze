@@ -65,7 +65,7 @@ test("generation sends bounded evidence and strict source-only instructions with
     const request:typeof fetch=async(_url,init)=>{
         const body=JSON.parse(String(init?.body))
         assert.equal(body.store,false);assert.equal(body.service_tier,"default");assert.equal(body.tools,undefined)
-        assert.deepEqual(JSON.parse(body.input[0].content[0].text),{source});assert.equal(body.text.format.strict,true);assert.equal(body.max_output_tokens,14000)
+        assert.deepEqual(JSON.parse(body.input[0].content[0].text),{source:{...source,steps:source.steps.map((step,index)=>({...step,step_id:index+1}))}});assert.equal(body.text.format.strict,true);assert.equal(body.max_output_tokens,14000)
         assert.match(body.instructions,/no tools/i);assert.doesNotMatch(body.input[0].content[0].text,/super-secret/)
         return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(plan)}]}]})
     }
@@ -214,4 +214,40 @@ test("a rejected provider plan is retained before dependency validation, with us
     const request=meter.meteredSopRequest("gpt-5.4-mini",{start:async()=>{},finish:async()=>{paid++}},async()=>Response.json({status:"completed",usage:{input_tokens:100,output_tokens:100},output:[{type:"message",content:[{type:"output_text",text:raw}]}]}))
     await assert.rejects(generator.generateSopWork({model:"gpt-5.4-mini",source},request,async text=>{retained=text}),/nonexistent task 99/)
     assert.equal(retained,raw);assert.equal(paid,1)
+})
+
+
+test("47-step source constrains output references to exactly its numbered steps", async () => {
+    const longSource={...source,steps:Array.from({length:47},(_,i)=>({...source.steps[0],title:`SOP step ${i+1}`}))}
+    const generator=load("lib/sops/work-generator.ts") as typeof import("../lib/sops/work-generator")
+    await generator.generateSopWork({model:"gpt-5.4-mini",source:longSource},async(_url,init)=>{
+        const body=JSON.parse(String(init?.body))
+        const ids=body.text.format.schema.properties.tasks.items.properties.source_steps.items.enum
+        assert.deepEqual(ids,Array.from({length:47},(_,i)=>i+1))
+        assert(!ids.includes(48))
+        assert.deepEqual(JSON.parse(body.input[0].content[0].text).source.steps.map((s:{step_id:number})=>s.step_id),ids)
+        return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify({...plan,tasks:[{...task,source_steps:[47]}]})}]}]})
+    },async()=>{})
+    assert.throws(()=>work.parseSopWorkPlan({...plan,tasks:[{...task,source_steps:[47,48]}]},longSource),/invalid SOP reference/)
+    assert.deepEqual(work.sopWorkSchema(source).properties.tasks.items.properties.source_steps.items.enum,[1])
+})
+
+test("service acceptance preserves the progress owner; ordinary saves still revalidate", async () => {
+    const id=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`
+    let generation=true
+    const refreshed:string[]=[]
+    const actions=load("app/[workspaceSlug]/relationships/service-actions.ts",{
+        "next/server":{after:()=>{}},"next/cache":{revalidatePath:(p:string)=>refreshed.push(p)},
+        "@/lib/workspace-access":{requireWorkspacePanel:async()=>({workspace:{id:id(1)},user:{id:id(2)},access:{}}),requireRelationshipAccess:async()=>{}},
+        "@/lib/relationship-access":{requireRelationshipAccess:async()=>{}},
+        "@/lib/service-stages":{isServiceStage:()=>true},
+        "@/lib/sops/work-worker":{sopWorkConfiguration:()=>({ready:true})},
+        "@/lib/supabase/admin":{supabaseAdmin:{rpc:async()=>({data:{id:id(3),generation}})}},
+    }) as typeof import("../app/[workspaceSlug]/relationships/service-actions")
+    const input={expectedUserId:id(2),requestId:id(4),serviceId:id(5),revisionId:id(6),origin:"already_onboarded",stage:"setup",assigneeId:""}
+    assert.equal((await actions.addRelationshipService("acme",id(7),input)).generation,true)
+    assert.deepEqual(refreshed,[])
+    generation=false
+    await actions.addRelationshipService("acme",id(7),input)
+    assert.deepEqual(refreshed,["/acme/relationships",`/acme/relationships/${id(7)}`])
 })

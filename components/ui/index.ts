@@ -1,4 +1,5 @@
 export { Assignee } from "./Assignee"
+export { AutoGrowTextarea } from "./AutoGrowTextarea"
 export { AssignmentSelector } from "./AssignmentSelector"
 export type { AssignmentPerson } from "./AssignmentSelector"
 export { AnchoredPopup } from "./AnchoredPopup"

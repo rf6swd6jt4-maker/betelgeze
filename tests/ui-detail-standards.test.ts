@@ -36,6 +36,20 @@ test("detail field implementations use the shared borderless field rows", async 
     assert.match(workItemFields, /<DetailFields>/)
 })
 
+test("relationship fields use semantic icons and shared auto-growing notes", async () => {
+    const icons = await readFile("components/detail/DetailFields.tsx", "utf8")
+    const relationship = await readFile("components/relationships/RelationshipBackgroundEditor.tsx", "utf8")
+    const textarea = await readFile("components/ui/AutoGrowTextarea.tsx", "utf8")
+
+    assert.match(icons, /company:/)
+    assert.match(icons, /role:/)
+    assert.match(icons, /location:/)
+    assert.match(relationship, /\["locationValue", "Location", "location"/)
+    assert.match(relationship, /<AutoGrowTextarea aria-label="Relationship notes"/)
+    assert.match(textarea, /resize-none overflow-hidden/)
+    assert.match(textarea, /textarea\.scrollHeight/)
+})
+
 test("detail headers omit operational status and allow at most two unrepeated facts", async () => {
     const header = await readFile("components/detail/DetailPageHeader.tsx", "utf8")
     const onboarding = await readFile("app/[workspaceSlug]/onboarding/[relationshipId]/page.tsx", "utf8")

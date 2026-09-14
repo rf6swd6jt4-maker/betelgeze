@@ -1,6 +1,7 @@
 "use client"
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react"
 import { DetailField, DetailFields } from "@/components/detail"
+import { AutoGrowTextarea } from "@/components/ui"
 import { saveRelationshipBackgroundDetails } from "@/app/[workspaceSlug]/relationships/actions"
 import { RelationshipDraftQueue } from "@/lib/relationship-draft-queue"
 import { createRelationshipDraftStorage, sendRelationshipBackgroundCommand, type RelationshipDraft } from "@/lib/relationship-draft-command"
@@ -42,10 +43,10 @@ export function RelationshipBackgroundEditor({ workspaceSlug, relationshipId, us
     return <Context.Provider value={{ draft: state.draft, canEdit, update: (key, value) => update(key, value as never), flush: async () => { if (!await queue.flush()) throw new Error("Save or resolve the relationship details before continuing.") } }}><section aria-label="Relationship information" className="mt-4 border-b border-neutral-800">
         <DetailFields className="!mt-0">
             {([
-                ["primaryPersonName", "Name", "identity", "text"], ["businessName", "Company", "relationship", "text"],
-                ["primaryContactRole", "Contact role", "person", "text"], ["locationValue", "Location", "relationship", "text"],
+                ["primaryPersonName", "Name", "identity", "text"], ["businessName", "Company", "company", "text"],
+                ["primaryContactRole", "Contact role", "role", "text"], ["locationValue", "Location", "location", "text"],
             ] as const).map(([key, label, icon, type]) => <DetailField key={key} label={label} icon={icon}><input aria-label={label} type={type} disabled={!canEdit} value={state.draft[key] ?? ""} onChange={event => update(key, event.target.value)} onBlur={() => void queue.flush()} onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.blur() } }} className={fieldClass} /></DetailField>)}
-            <DetailField multiline label="Notes" icon="description" className="lg:col-span-2"><textarea aria-label="Relationship notes" disabled={!canEdit} rows={3} value={state.draft.description} onChange={event => update("description", event.target.value)} onBlur={() => void queue.flush()} className={fieldClass} /></DetailField>
+            <DetailField multiline label="Notes" icon="description" className="lg:col-span-2"><AutoGrowTextarea aria-label="Relationship notes" disabled={!canEdit} rows={3} value={state.draft.description} onChange={event => update("description", event.target.value)} onBlur={() => void queue.flush()} className={fieldClass} /></DetailField>
         </DetailFields>
         <p role="status" className="py-2 text-xs text-neutral-400">{state.error || state.storageError || (state.saving ? "Saving details…" : canEdit ? "Details save automatically" : "Read only")}</p>
         {state.error ? <button type="button" onClick={() => void queue.flush()} className="min-h-11 text-sm underline">Retry save</button> : null}

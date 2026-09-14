@@ -7,6 +7,9 @@ export type DetailFieldIcon =
     | "person"
     | "identity"
     | "contact"
+    | "company"
+    | "role"
+    | "location"
     | "parent"
     | "dependency"
     | "relationship"
@@ -30,6 +33,9 @@ function DetailFieldIconMark({ kind }: { kind: DetailFieldIcon }) {
         person: <><circle cx="8" cy="8" r="3" /><circle cx="16" cy="8" r="3" /><path d="M3 20c.5-4 2.2-6 5-6M21 20c-.5-4-2.2-6-5-6" /></>,
         identity: <><circle cx="12" cy="8" r="4" /><path d="M4.5 20c.8-4 3.3-6 7.5-6s6.7 2 7.5 6" /></>,
         contact: <><path d="M5 5h14v14H5z" /><path d="m6 7 6 5 6-5" /></>,
+        company: <><path d="M4 21V5h10v16M14 9h6v12M7 9h4M7 13h4M7 17h4M17 13h1M17 17h1M2 21h20" /></>,
+        role: <><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M9 6V4h6v2M3 11h18M10 14h4" /></>,
+        location: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
         parent: <><path d="M6 5h5v5H6zM13 14h5v5h-5zM8.5 10v2a4 4 0 0 0 4 4h.5" /></>,
         dependency: <><circle cx="7" cy="7" r="3" /><circle cx="17" cy="17" r="3" /><path d="M9.5 9.5l5 5" /></>,
         relationship: <><circle cx="8" cy="9" r="3" /><circle cx="16" cy="9" r="3" /><path d="M2.5 20c.5-3.3 2.3-5 5.5-5M21.5 20c-.5-3.3-2.3-5-5.5-5M10 17h4" /></>,

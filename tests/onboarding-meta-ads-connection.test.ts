@@ -9,17 +9,17 @@ const start = readFileSync("app/api/onboarding/session/[token]/meta-ads/start/ro
 const callback = readFileSync("app/api/onboarding/meta-ads/callback/route.ts", "utf8")
 const migration = readFileSync("supabase/migrations/20260830170000_onboarding_meta_ads_connections.sql", "utf8")
 
-test("the Builder exposes a required Facebook connection block", () => {
+test("the Builder exposes a required Meta Ads reporting connection block", () => {
     const block = createConnectionBlock()
     assert.equal(block.kind, "connection")
     assert.equal(block.provider, "meta_ads")
-    assert.equal(block.label, "Connect Facebook")
+    assert.equal(block.label, "Connect Meta Ads")
     assert.equal(block.required, true)
-    assert.match(builder, /Facebook connection/u)
-    assert.match(runtime, /Facebook connected/u)
+    assert.match(builder, /Meta Ads reporting connection/u)
+    assert.match(runtime, /WindsorMetaAdsConnectionBlock/u)
 })
 
-test("client OAuth is short lived, single use, and bound to the onboarding block", () => {
+test("the dormant direct Meta OAuth remains short lived, single use, and bound to the onboarding block", () => {
     assert.match(start, /randomBytes\(32\)\.toString\("base64url"\)/u)
     assert.match(start, /createHash\("sha256"\)/u)
     assert.match(start, /Date\.now\(\) \+ 10 \* 60_000/u)

@@ -567,7 +567,7 @@ const LIBRARY_BLOCK_PRESENTATION: Record<BuilderBlockKind, { label: string; icon
     video: { label: "Video", icon: "▶" },
     button: { label: "Button", icon: "↗" },
     calendar: { label: "Calendar", icon: "▦" },
-    connection: { label: "Facebook connection", icon: "f" },
+    connection: { label: "Meta Ads reporting connection", icon: "f" },
     google_ads_connection: { label: "Google Ads connection", icon: "" },
     appointment_medium: { label: "Appointment medium", icon: "◉" },
     appointment_fields: { label: "Appointment information", icon: "≡" },

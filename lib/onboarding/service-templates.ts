@@ -55,9 +55,9 @@ export const SERVICE_TEMPLATES: readonly ServiceTemplateDefinition[] = [{
         defaultBillingInterval: "month",
         defaultBillingIntervalCount: 1,
     },
-    setup: { kind: "connection", connectionKey: "meta_ads" },
+    setup: { kind: "connection", connectionKey: "windsor" },
     capabilities: ["onboarding.manage", "fulfilment.manage"],
-    onboardingBlocks: [{ kind: "connection", label: "Facebook connection" }],
+    onboardingBlocks: [{ kind: "connection", label: "Meta Ads reporting connection" }],
 }, {
     id: "appointment-setting",
     name: "Appointment Setting",

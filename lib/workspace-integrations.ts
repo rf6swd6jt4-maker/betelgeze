@@ -6,7 +6,7 @@ import { stripeAccountMode } from "@/lib/stripe/mode"
 import { verifyGoogleAdsManager } from "@/lib/google-ads"
 
 export const BASE_INTEGRATION_PROVIDERS = ["stripe", "meta_whatsapp", "twilio_sms"] as const
-export const INTEGRATION_PROVIDERS = [...BASE_INTEGRATION_PROVIDERS, "meta_ads", "google_ads"] as const
+export const INTEGRATION_PROVIDERS = [...BASE_INTEGRATION_PROVIDERS, "meta_ads", "windsor", "google_ads"] as const
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number]
 export type IntegrationConfig = Record<string, string>
 export type ConnectionAuthMethod = "legacy" | "oauth" | "embedded_signup" | "manual"
@@ -87,6 +87,9 @@ export function integrationHint(provider: IntegrationProvider, config: Integrati
         business_name: config.business_name || null,
         business_verification_status: config.business_verification_status || null,
         token_expires_at: config.access_token_expires_at || null,
+    }
+    if (provider === "windsor") return {
+        key_suffix: config.api_key?.slice(-4) ?? null,
     }
     return {
         account_sid: config.account_sid || null,
@@ -495,10 +498,34 @@ async function verifyTwilioCandidate(config: IntegrationConfig) {
 
 async function verifyCandidate(provider: IntegrationProvider, config: IntegrationConfig) {
     if (provider === "google_ads") return verifyGoogleAdsManager(config)
+    if (provider === "windsor") return verifyWindsorCandidate(config)
     if (provider === "stripe") return verifyStripeCandidate(config)
     if (provider === "meta_whatsapp") return verifyWhatsAppCandidate(config)
     if (provider === "meta_ads") return verifyMetaAdsCandidate(config)
     return verifyTwilioCandidate(config)
+}
+
+async function verifyWindsorCandidate(config: IntegrationConfig) {
+    const apiKey = config.api_key?.trim()
+    if (!apiKey) throw new Error("Enter the Windsor.ai API key from your team account.")
+    const url = new URL("https://onboard.windsor.ai/api/team/co-user-linked-accounts/")
+    url.searchParams.set("api_key", apiKey)
+    const response = await fetch(url, {
+        headers: { accept: "application/json", "user-agent": "Betelgeze/1.0" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(15_000),
+    }).catch(() => null)
+    if (!response) throw new Error("Windsor.ai could not be reached. Try again in a moment.")
+    if (!response.ok) throw new Error(response.status === 401 || response.status === 403
+        ? "Windsor.ai rejected this API key. Use the team owner API key and try again."
+        : `Windsor.ai could not verify this connection (${response.status}). Try again.`)
+    return {
+        ...integrationHint("windsor", config),
+        account_id: createHash("sha256").update(apiKey).digest("hex"),
+        account_name: "Windsor.ai team",
+        verified_at: new Date().toISOString(),
+        capabilities: { api_access: true, external_authorization: true, reporting: true },
+    }
 }
 
 export async function verifyAndActivateWorkspaceIntegrationCandidate(workspaceId: string, provider: IntegrationProvider) {
@@ -511,6 +538,8 @@ export async function verifyAndActivateWorkspaceIntegrationCandidate(workspaceId
                 ? (hint as Record<string, unknown>).waba_id
                 : provider === "meta_ads"
                     ? (hint as Record<string, unknown>).business_id
+                    : provider === "windsor"
+                        ? (hint as Record<string, unknown>).account_id
                     : provider === "google_ads"
                         ? (hint as Record<string, unknown>).manager_customer_id
                     : (hint as Record<string, unknown>).account_sid
@@ -525,7 +554,7 @@ export async function verifyAndActivateWorkspaceIntegrationCandidate(workspaceId
                 .limit(1)
                 .maybeSingle()
             if (connectedLookupError) throw new Error(`Betelgeze could not confirm that this provider account is unique: ${connectedLookupError.message}`)
-            if (alreadyConnected) throw new Error(`This ${provider === "stripe" ? "Stripe" : provider === "meta_whatsapp" ? "WhatsApp" : provider === "meta_ads" ? "Meta Business Portfolio" : provider === "google_ads" ? "Google Ads manager" : "Twilio"} account is already connected to another Betelgeze workspace.`)
+            if (alreadyConnected) throw new Error(`This ${provider === "stripe" ? "Stripe" : provider === "meta_whatsapp" ? "WhatsApp" : provider === "meta_ads" ? "Meta Business Portfolio" : provider === "windsor" ? "Windsor.ai team" : provider === "google_ads" ? "Google Ads manager" : "Twilio"} account is already connected to another Betelgeze workspace.`)
         }
         if (provider === "google_ads") {
             const activation = await supabaseAdmin.rpc("activate_google_ads_manager_candidate", { p_workspace_id: workspaceId, p_expected_candidate: candidate.encrypted, p_verified_hint: hint })

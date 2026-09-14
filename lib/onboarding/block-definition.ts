@@ -228,11 +228,11 @@ export function createConnectionBlock(provider: ConnectionBlock["provider"] = "m
     const google = provider === "google_ads"
     return {
         id: stableUuid(),
-        name: google ? "Google Ads connection" : "Facebook connection",
+        name: google ? "Google Ads connection" : "Meta Ads reporting connection",
         kind: "connection",
         provider,
-        label: google ? "Connect Google Ads" : "Connect Facebook",
-        description: google ? "Connect your Google Ads account so our team can manage your campaigns and report on their performance." : "Sign in with Facebook so we can securely connect the advertising accounts you manage.",
+        label: google ? "Connect Google Ads" : "Connect Meta Ads",
+        description: google ? "Connect your Google Ads account so our team can manage your campaigns and report on their performance." : "Securely connect the Meta Ads account that runs your campaigns so your results can appear in the client portal.",
         required: true,
         layout: { ...DEFAULT_BLOCK_LAYOUT, width: "wide" },
     }

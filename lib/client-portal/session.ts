@@ -40,16 +40,25 @@ export async function resolveClientPortalAccessByToken(token: string) {
 export async function loadClientPortalSessionByToken(token: string) {
     const resolved = await resolveClientPortalAccessByToken(token)
     if (!resolved) return null
-    const [theme] = await Promise.all([
+    const [theme, reportingResult] = await Promise.all([
         loadPublishedOnboardingTheme(resolved.session.workspace_id),
-        supabaseAdmin
-            .from("client_portal_sessions")
+        supabaseAdmin.from("relationship_windsor_meta_ads_connections")
+            .select("account_id, account_name")
+            .eq("workspace_id", resolved.session.workspace_id)
+            .eq("relationship_id", resolved.session.relationship_id)
+            .eq("status", "connected")
+            .maybeSingle(),
+        supabaseAdmin.from("client_portal_sessions")
             .update({ last_accessed_at: new Date().toISOString() })
             .eq("workspace_id", resolved.session.workspace_id)
             .eq("id", resolved.session.id),
     ])
-
-    return { ...resolved, theme }
+    const reporting = reportingResult.data
+    return {
+        ...resolved,
+        theme,
+        metaAdsReporting: reporting?.account_id ? { accountId: reporting.account_id, accountName: reporting.account_name ?? null } : null,
+    }
 }
 
 export async function loadClientPortalStartupAppearance(token: string) {

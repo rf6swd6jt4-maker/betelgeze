@@ -150,6 +150,7 @@ export async function saveWorkspaceConnection(slug: string, provider: Integratio
         meta_whatsapp: ["access_token", "phone_number_id", "webhook_verify_token"],
         twilio_sms: ["account_sid", "auth_token", "phone_number"],
         meta_ads: [],
+        windsor: ["api_key"],
         google_ads: [],
     }
     if (provider === "meta_ads") throw new Error("Meta Ads must be connected through the Betelgeze Meta App.")
@@ -228,6 +229,7 @@ export async function stageManualWorkspaceConnection(slug: string, provider: Int
             meta_whatsapp: ["access_token", "phone_number_id", "waba_id", "consent_template_name"],
             twilio_sms: ["account_sid", "auth_token", "phone_number"],
             meta_ads: [],
+            windsor: ["api_key"],
             google_ads: [],
         }
         if (provider === "meta_ads") throw new Error("Meta Ads must be connected through the Betelgeze Meta App.")

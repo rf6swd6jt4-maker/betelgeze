@@ -6,6 +6,7 @@ import { OnboardingForm } from "@/components/onboarding/OnboardingForm"
 import { AppointmentSetupBlock } from "@/components/onboarding/AppointmentSetupBlock"
 import { CalendarDateTimeBlock } from "@/components/onboarding/CalendarDateTimeBlock"
 import { GoogleAdsConnectionBlock } from "@/components/onboarding/GoogleAdsConnectionBlock"
+import { WindsorMetaAdsConnectionBlock } from "@/components/onboarding/WindsorMetaAdsConnectionBlock"
 import { OnboardingSaveCoordinator } from "@/components/onboarding/OnboardingSaveCoordinator"
 import { RequestHelpLink } from "@/components/onboarding/RequestHelpLink"
 import { StripePaymentButtonLabel } from "@/components/onboarding/StripePaymentButtonLabel"
@@ -162,16 +163,7 @@ function OnboardingBlocksContent({
             if (block.kind === "connection") {
                 const requirementId = block.sessionBlockId ?? block.id
                 if (block.provider === "google_ads") return <BlockFrame key={block.id} block={block}><GoogleAdsConnectionBlock block={block} token={token} sessionBlockId={block.sessionBlockId} initialResponse={initialBlockResponses[requirementId]} locked={locked} preview={preview} satisfied={satisfied.has(requirementId)} onSatisfied={() => setSatisfied((current) => new Set(current).add(requirementId))} onUnsatisfied={() => setSatisfied((current) => { const next = new Set(current); next.delete(requirementId); return next })} /></BlockFrame>
-                const connected = satisfied.has(requirementId)
-                const href = preview || !block.sessionBlockId ? undefined : `/api/onboarding/session/${encodeURIComponent(token)}/meta-ads/start?block=${encodeURIComponent(block.sessionBlockId)}`
-                return <BlockFrame key={block.id} block={block}>
-                    <div className="rounded-2xl border border-black/10 bg-[var(--onboarding-page)] p-4 sm:p-5">
-                        <p className="font-semibold text-[var(--onboarding-text)]">Facebook Ads</p>
-                        {block.description ? <p className="mt-2 text-sm leading-6 text-[var(--onboarding-muted)]">{block.description}</p> : null}
-                        {connected ? <div className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-3 font-medium text-emerald-900 sm:w-auto"><span aria-hidden="true">✓</span> Facebook connected</div> : preview ? <button type="button" onClick={() => void satisfy(block, "meta_ads_connected")} className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--onboarding-primary)] px-5 py-3 font-medium text-white sm:w-auto">{block.label}</button> : <a href={href} className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--onboarding-primary)] px-5 py-3 font-medium text-white sm:w-auto">{block.label}</a>}
-                        {!connected && !locked ? <p className="mt-2 text-xs text-[var(--onboarding-muted)]">Connect Facebook to continue.</p> : null}
-                    </div>
-                </BlockFrame>
+                return <BlockFrame key={block.id} block={block}><WindsorMetaAdsConnectionBlock block={block} token={token} sessionBlockId={block.sessionBlockId} initialResponse={initialBlockResponses[requirementId]} locked={locked} preview={preview} satisfied={satisfied.has(requirementId)} onSatisfied={() => setSatisfied((current) => new Set(current).add(requirementId))} onUnsatisfied={() => setSatisfied((current) => { const next = new Set(current); next.delete(requirementId); return next })} /></BlockFrame>
             }
             const requirementId = block.sessionBlockId ?? block.id
             const paymentButton = block.id === ONBOARDING_PAYMENT_BUTTON_ID

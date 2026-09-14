@@ -11,6 +11,7 @@ const portalAttachmentKeyFixMigration = readFileSync("supabase/migrations/202608
 const proxy = readFileSync("proxy.ts", "utf8")
 const portalPage = readFileSync("app/client-portal/session/[token]/page.tsx", "utf8")
 const portalShell = readFileSync("components/client-portal/ClientPortalShell.tsx", "utf8")
+const portalMetaAds = readFileSync("components/client-portal/ClientPortalMetaAds.tsx", "utf8")
 const portalChat = readFileSync("components/client-portal/ClientPortalChat.tsx", "utf8")
 const portalComposerViewport = readFileSync("components/client-portal/client-portal-composer-viewport.ts", "utf8")
 const composerKeyboardSlide = readFileSync("components/communications/composer-keyboard-slide.ts", "utf8")
@@ -92,6 +93,15 @@ test("completed onboarding redirects to a branded portal with a safe invalid-lin
     assert.doesNotMatch(portalShell, /Required actions|Your results|coming next|placeholder/u)
     assert.match(portalShell, /md:w-\[30rem\]/u)
     assert.match(portalShell, /aria-label=\{`Back from/u)
+})
+
+test("connected Windsor Meta Ads relationships receive a local-data reporting placeholder", () => {
+    assert.match(portalSession, /relationship_windsor_meta_ads_connections/u)
+    assert.match(portalSession, /\.eq\("status", "connected"\)/u)
+    assert.match(portalPage, /metaAdsReporting=\{metaAdsReporting\}/u)
+    assert.match(portalShell, /<ClientPortalMetaAds reporting=\{metaAdsReporting\}/u)
+    assert.match(portalMetaAds, /Reporting connection ready/u)
+    assert.doesNotMatch(portalSession, /windsor\.ai|connectors\.windsor/u)
 })
 
 test("the portal message bridge is token scoped and strips staff-only communication data", () => {

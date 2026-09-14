@@ -5,6 +5,7 @@ import dynamic from "next/dynamic"
 import { ClientPortalChat } from "@/components/client-portal/ClientPortalChat"
 import { ClientPortalAppointments } from "@/components/client-portal/ClientPortalAppointments"
 import { ClientPortalResources } from "@/components/client-portal/ClientPortalResources"
+import { ClientPortalMetaAds, type ClientPortalMetaAdsReporting } from "@/components/client-portal/ClientPortalMetaAds"
 import { PortalIcon, PortalSection, portalPrimaryButton } from "@/components/client-portal/ClientPortalUI"
 import { ClientBrandLogo } from "@/components/client-branding/ClientBrandLogo"
 import { DetailField, DetailFields } from "@/components/detail"
@@ -84,7 +85,7 @@ function AppointmentDetail({ appointment }: { appointment: PortalAppointment }) 
     </>
 }
 
-export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, privacyPolicyUrl, termsOfServiceUrl }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null }) {
+export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, metaAdsReporting, privacyPolicyUrl, termsOfServiceUrl }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; metaAdsReporting?: ClientPortalMetaAdsReporting | null; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null }) {
     const [panel, setPanel] = useState<"chat" | PortalAppointment | null>(null)
     const [greeting, setGreeting] = useState("Welcome")
     const [ghlConnected, setGhlConnected] = useState(false)
@@ -128,6 +129,7 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
                             <div aria-label="Connections" className="grid min-h-0 min-w-0 auto-rows-max content-start gap-4 lg:gap-6 lg:overflow-y-auto">
                                 <ClientPortalGhl key={token} token={token} onConnection={onGhlConnection} active={activePage === "appointments" && panel === null} />
                                 <ClientPortalGoogleAds token={token} active={activePage === "appointments" && panel === null} />
+                                {metaAdsReporting ? <ClientPortalMetaAds reporting={metaAdsReporting} /> : null}
                             </div>
                         </div>
                     </div>

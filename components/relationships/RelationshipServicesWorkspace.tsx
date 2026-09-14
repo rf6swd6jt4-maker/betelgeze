@@ -137,8 +137,7 @@ export function RelationshipServicesWorkspace(props: Props) {
     return <section className="mt-5" aria-label="Relationship services and work">
         <RelationshipServiceTimeline endpoint={endpoint} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canEdit={props.canImport} canEditService={() => true} onEditService={row => setOpened(cards.items.find(card => card.id === row.id) ?? row)} />
         <div className="mt-5 grid min-w-0 gap-x-6 gap-y-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,1fr)]">
-            <div className="min-w-0"><RelationshipQueue endpoint={endpoint} slug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} publishedQueue={publishedQueue} onGeneration={resumeGeneration} />
-
+            <div className="relative h-[25.5rem] min-w-0 pt-6 xl:h-auto xl:min-h-0"><div className="h-full xl:absolute xl:inset-0 xl:pt-6"><RelationshipQueue endpoint={endpoint} slug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} publishedQueue={publishedQueue} onGeneration={resumeGeneration} /></div>
             </div>
             <div className="min-w-0"><section ref={host} className="mt-6" aria-label="Assigned services"><h2 className="mb-3 text-base font-semibold">Services</h2>
                 <AttachmentCards label="Assigned services" compact>{cards.items.map(row => <AttachmentCard compact thumbnailFit="contain" key={row.id} title={row.name} thumbnail={<ServiceThumbnail service={row} />} inactive={["negotiating", "declined", "for_later"].includes(row.stage ?? "")} subtitle={SERVICE_STAGES.find(stage => stage.key === row.stage)?.label ?? "Review needed"} onClick={() => setOpened(row)} />)}{props.canAdd ? <AddAttachmentCard compact label="Add service" onClick={() => { setGenerating(false); setAdding(true) }} /> : null}</AttachmentCards>

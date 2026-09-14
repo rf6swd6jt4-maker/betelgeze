@@ -15,7 +15,7 @@ const pricing=load("lib/sops/pricing.ts") as typeof import("../lib/sops/pricing"
 const work=load("lib/sops/work-plan.ts") as typeof import("../lib/sops/work-plan")
 const meter=load("lib/sops/metered-request.ts") as typeof import("../lib/sops/metered-request")
 const source={summary:"Set up",applicability:[],steps:[{title:"Access",instruction:"Check access.",condition:"",source_location:"Page 1",source_quote:"Check access.",kind:"requirement" as const}],missing_information:[],warnings:[]}
-const task={title:"Confirm access",instruction:"Check the client's access.",source_steps:[1],depends_on:[],blocked_reason:""}
+const task={description:"Confirm the account is accessible.",instructions:"1. Check the client account access.",completion_requirements:["The account can be opened."],task_type:"implementation" as const,requested_inputs:[],title:"Confirm access",instruction:"Check the client's access.",source_steps:[1],depends_on:[],blocked_reason:""}
 const plan={summary:"Setup",warnings:[],tasks:[task,{...task,title:"Check tracking",depends_on:[1]}]}
 test("work plan accepts a usable dependency graph and rejects unsupported/cyclic/duplicate work",()=>{
     assert.deepEqual(work.parseSopWorkPlan(plan,source),plan)
@@ -65,7 +65,7 @@ test("generation sends bounded evidence and strict source-only instructions with
     const request:typeof fetch=async(_url,init)=>{
         const body=JSON.parse(String(init?.body))
         assert.equal(body.store,false);assert.equal(body.service_tier,"default");assert.equal(body.tools,undefined)
-        assert.deepEqual(JSON.parse(body.input[0].content[0].text),{source:{...source,steps:source.steps.map((step,index)=>({...step,step_id:index+1}))}});assert.equal(body.text.format.strict,true);assert.equal(body.max_output_tokens,14000)
+        assert.deepEqual(JSON.parse(body.input[0].content[0].text),{source:{...source,steps:source.steps.map((step,index)=>({...step,step_id:index+1}))},client_inputs:[],client_context:{mode:"not_supplied"}});assert.equal(body.text.format.strict,true);assert.equal(body.max_output_tokens,14000)
         assert.match(body.instructions,/no tools/i);assert.doesNotMatch(body.input[0].content[0].text,/super-secret/)
         return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify({...plan,tasks:plan.tasks.map(task=>({...task,depends_on:[]}))})}]}]})
     }
@@ -218,7 +218,7 @@ test("a rejected provider plan is retained before dependency validation, with us
 
 
 test("47-step source constrains output references to exactly its numbered steps", async () => {
-    const longSource={...source,steps:Array.from({length:47},(_,i)=>({...source.steps[0],title:`SOP step ${i+1}`}))}
+    const longSource={...source,steps:Array.from({length:47},(_,i)=>({...source.steps[0],title:`SOP step ${i+1}`,kind:i===46?"requirement" as const:"example" as const}))}
     const generator=load("lib/sops/work-generator.ts") as typeof import("../lib/sops/work-generator")
     await generator.generateSopWork({model:"gpt-5.4-mini",source:longSource},async(_url,init)=>{
         const body=JSON.parse(String(init?.body))
@@ -262,4 +262,35 @@ test("generic generation owns task ordering and cannot request model-generated d
         return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify({...plan,tasks:[{...task,title:"Validate",source_steps:[2]},{...task,source_steps:[1]}]})}]}]})
     },async()=>{})
     assert.deepEqual(result.tasks.map(t=>({title:t.title,refs:t.source_steps,deps:t.depends_on})),[{title:"Confirm access",refs:[1],deps:[]},{title:"Validate",refs:[2],deps:[1]}])
+})
+
+
+test("detailed plans require goal, procedure, completion checks, source coverage and real input IDs", () => {
+    const detailed={...plan,tasks:[{...task}]}
+    assert.equal(work.parseSopWorkPlan(detailed,source,true).tasks.length,1)
+    for (const change of [{description:""},{instructions:""},{completion_requirements:[]},{completion_requirements:[" "]},{task_type:"request_information"},{requested_inputs:["99.1"]}]) {
+        assert.throws(()=>work.parseSopWorkPlan({...detailed,tasks:[{...task,...change}]},source,true))
+    }
+    assert.throws(()=>work.parseSopWorkPlan(detailed,{...source,steps:[...source.steps,{...source.steps[0],title:"Publish"}]},true),/omitted a required SOP step/)
+    const assumed={...source,steps:[{...source.steps[0],client_inputs:["Access to the client account"]}]}
+    assert.throws(()=>work.parseSopWorkPlan(detailed,assumed,true),/did not request all/)
+    const request={...task,title:"Obtain account access",task_type:"request_information" as const,requested_inputs:["1.1"]}
+    assert.equal(work.parseSopWorkPlan({...detailed,tasks:[request,task]},assumed,true).tasks.length,2)
+    assert.throws(()=>work.parseSopWorkPlan({...detailed,tasks:[request,{...request,title:"Ask again"}]},assumed,true),/repeated client input/)
+})
+
+test("input requests are grounded and sequenced before grouped implementation with one provider call", async () => {
+    const generator=load("lib/sops/work-generator.ts") as typeof import("../lib/sops/work-generator")
+    const inputSource={...source,steps:[source.steps[0],{...source.steps[0],title:"Configure",client_inputs:["The agreed budget"]}]}
+    const requestTask={...task,title:"Confirm the agreed budget",task_type:"request_information",requested_inputs:["2.1"],source_steps:[2]}
+    let calls=0
+    const result=await generator.generateSopWork({model:"gpt-5.4-mini",source:inputSource},async(_url,init)=>{
+        calls++
+        const body=JSON.parse(String(init?.body)),packet=JSON.parse(body.input[0].content[0].text)
+        assert.deepEqual(packet.client_inputs,[{input_id:"2.1",name:"The agreed budget",source_step:2}])
+        assert.deepEqual(body.text.format.schema.properties.tasks.items.properties.requested_inputs.items.enum,["2.1"])
+        return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify({...plan,tasks:[{...task,title:"Set up and configure",source_steps:[1,2]},requestTask]})}]}]})
+    },async()=>{})
+    assert.equal(calls,1)
+    assert.deepEqual(result.tasks.map(t=>[t.title,t.depends_on]),[["Confirm the agreed budget",[]],["Set up and configure",[1]]])
 })

@@ -41,3 +41,14 @@ The save wrappers return durable generation acceptance in the existing database 
 The v5 generator supplies explicit numeric step IDs and builds the strict source-reference enum from that exact source. A 47-step source permits only IDs 1 through 47; local and database validation remain in place. This closes the previously unconstrained source-reference output field.
 
 Generic work ordering is application-owned: the model must return empty dependency arrays, enforced by its strict schema. After validation, tasks are stably ordered by their first referenced SOP step and linked sequentially. The model cannot invent task numbers or self-dependencies. This conservative sequence deliberately defers parallel execution planning to the contextual engine.
+
+
+## Detailed work content (v6)
+
+New source reads use `sop-source-v2`: preserve the concrete procedure, conditions, outputs and checks, and identify client-specific input prerequisites per source step. Reuse remains keyed by interpretation version. A new version reads an existing source once on next use; earlier interpretations and usage history survive. This is source-only mode: it cannot claim an input is absent from onboarding. Requests tell staff to check existing records first and obtain/confirm only missing values.
+
+The v6 generator receives numbered source steps and numbered client inputs, both constrained by actual-ID enums. It creates coherent outcome-based groups, a short description, actionable instructions and explicit completion requirements. Every input must be requested exactly once and every required source step referenced. Requests sort before implementation; the application still builds a conservative sequential dependency chain. Shape/reference/coverage validation is deterministic; semantic fidelity still needs real-source evaluation. No repair call is automatic and call/token limits are unchanged.
+
+Migration `20260914130000_sop_work_item_content.sql` adds `work_items.instructions` and immutable `evidence`, publishes all three fields atomically, and retains the old paid-plan format for recovery. Source evidence is assembled from the saved source snapshot, not generated a second time. The original asset link survives. A guarded conversion splits existing positively identified SOP task bodies at their exact source marker, preserves their instruction text, and uses the existing title as the short goal. It does not regenerate existing work. Ordinary/manual descriptions remain intact.
+
+Work item details share one autosave hook for both editable fields, with independent field-value compare-and-swap on the server. Access checks stay unchanged; long text is selected only for its own edit and selected detail, never added to queue/list reads. Evidence has no write action and a database trigger rejects changes. No added provider pass, polling timer or navigation request is introduced.

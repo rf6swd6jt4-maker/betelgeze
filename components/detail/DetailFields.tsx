@@ -52,8 +52,8 @@ export function DetailFields({ children, surface = "dark", columns = 2, classNam
     return <section data-surface={surface} className={`group/fields mt-5 grid grid-cols-1 ${columns === 2 ? "lg:grid-cols-2" : ""} ${className}`}>{children}</section>
 }
 
-export function DetailField({ label, icon, children, multiline = false, className = "" }: { label: string; icon: DetailFieldIcon; children: ReactNode; multiline?: boolean; className?: string }) {
-    return <div className={`grid min-h-10 grid-cols-[8rem_minmax(0,1fr)] ${multiline ? "items-start" : "items-baseline"} gap-2 border-b border-neutral-900 py-2 group-data-[surface=light]/fields:border-black/10 sm:grid-cols-[9rem_minmax(0,1fr)] ${className}`}>
+export function DetailField({ label, icon, children, multiline = false, stackOnMobile = false, className = "" }: { label: string; icon: DetailFieldIcon; children: ReactNode; multiline?: boolean; stackOnMobile?: boolean; className?: string }) {
+    return <div className={`grid min-h-10 ${stackOnMobile ? "grid-cols-1" : "grid-cols-[8rem_minmax(0,1fr)]"} ${multiline ? "items-start" : "items-baseline"} gap-2 border-b border-neutral-900 py-2 group-data-[surface=light]/fields:border-black/10 sm:grid-cols-[9rem_minmax(0,1fr)] ${className}`}>
         <p className={`flex items-center gap-2 text-sm text-neutral-500 ${multiline ? "pt-1.5" : ""}`}><DetailFieldIconMark kind={icon} /><span>{label}</span></p>
         <div className="min-w-0 text-sm text-neutral-200 group-data-[surface=light]/fields:text-[var(--onboarding-text,#0F172A)]">{children}</div>
     </div>

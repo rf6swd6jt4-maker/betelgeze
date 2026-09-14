@@ -110,7 +110,7 @@ async function loadWorkItemDetail(workspaceSlug: string, id: string) {
     const fields = {
         workspaceSlug: workspace.slug, workItemId: item.id, status: item.status, statusLabel: status.label, statusTone: status.tone, updatedAt: item.updated_at,
         plannedStartDate: item.planned_start_date, plannedStartTime: item.planned_start_time ?? null, dueDate: item.due_date, dueTime: item.due_time ?? null,
-        actualStartAt: item.actual_start_at, actualStartHasTime: Boolean(item.actual_start_has_time), actualCompletedAt: item.actual_completed_at, actualCompletedHasTime: Boolean(item.actual_completed_has_time), description: item.description,
+        actualStartAt: item.actual_start_at, actualStartHasTime: Boolean(item.actual_start_has_time), actualCompletedAt: item.actual_completed_at, actualCompletedHasTime: Boolean(item.actual_completed_has_time), description: item.description, instructions: item.instructions, evidence: item.evidence,
         assignees: planning.assignees.map(personProps), executionOwnerId: item.execution_owner_id ?? null, creator: planning.creator ? personProps(planning.creator) : null, members: planning.members.map(personProps),
         parent: parent ? { id: parent.id, title: parent.title, status: parent.status } : null, parentId: item.parent_work_item_id ?? null,
         waitsForParent: dependencies.some((dependency) => dependency.source === "parent_auto" && dependency.work_item_id === item.parent_work_item_id),

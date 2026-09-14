@@ -5,11 +5,12 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { accessibleRelationshipIds, accessibleWorkItemIds, requireWorkspaceAccess, workspaceAccessCanWorkItem, workspaceAccessHasCapability } from "@/lib/workspace-access"
 import { workItemHref } from "@/lib/relationships"
 
-async function requireWorkItem(slug: string, workItemId: string) {
+type WorkItemEditRow = { id: string; status: string; native_kind: string | null; parent_work_item_id: string | null; area: string; visibility: string; execution_owner_id: string | null; actual_completed_at: string | null; actual_completed_has_time: boolean; updated_at: string; description?: string | null; instructions?: string | null }
+async function requireWorkItem(slug: string, workItemId: string, textField?: "description" | "instructions") {
     const context = await requireWorkspaceAccess(slug)
-    const { data: item } = await supabaseAdmin.from("work_items")
-        .select("id, status, native_kind, parent_work_item_id, area, visibility, execution_owner_id, actual_completed_at, actual_completed_has_time, updated_at")
-        .eq("workspace_id", context.workspace.id).eq("id", workItemId).maybeSingle()
+    const columns: string = `id, status, native_kind, parent_work_item_id, area, visibility, execution_owner_id, actual_completed_at, actual_completed_has_time, updated_at${textField ? `, ${textField}` : ""}`
+    const { data: item } = await supabaseAdmin.from("work_items").select(columns)
+        .eq("workspace_id", context.workspace.id).eq("id", workItemId).returns<WorkItemEditRow[]>().maybeSingle()
     if (!item) throw new Error("Work item not found")
     if (context.role === "staff" && (
         item.area === "admin"
@@ -61,23 +62,36 @@ export async function updateWorkItemSchedule(slug: string, workItemId: string, s
     await refreshScheduleSurfaces(slug, workspace.id, workItemId)
 }
 
-export async function updateWorkItemDescription(slug: string, workItemId: string, description: string, expectedUpdatedAt: string): Promise<{ ok: true; version: string } | { ok: false; error: string; conflict?: boolean; version?: string }> {
-    const { workspace, item } = await requireWorkItem(slug, workItemId)
-    if (expectedUpdatedAt && item.updated_at !== expectedUpdatedAt) {
-        return { ok: false, conflict: true, version: item.updated_at, error: "Another user changed this work item. Refresh to review their version before retrying your description." }
+type TextSaveResult = { ok: true; version: string } | { ok: false; error: string; conflict?: boolean; version?: string }
+async function updateWorkItemText(slug: string, workItemId: string, field: "description" | "instructions", text: string, baseline?: string, expectedUpdatedAt?: string): Promise<TextSaveResult> {
+    const { workspace, item } = await requireWorkItem(slug, workItemId, field)
+    if (baseline === undefined && !expectedUpdatedAt) return { ok: false, error: "Reload this work item before editing it." }
+    if (typeof text !== "string" || text.length > 100000 || (baseline !== undefined && typeof baseline !== "string")) return { ok: false, error: "This text is invalid or too long." }
+    const conflict = { ok: false as const, conflict: true, version: item.updated_at, error: `The ${field} changed elsewhere. Refresh to review the latest version before retrying.` }
+    // Compare the edited field, so saving instructions cannot conflict with a
+    // simultaneous description/schedule save or overwrite another text draft.
+    if (baseline !== undefined ? (item[field] ?? "") !== baseline : expectedUpdatedAt && item.updated_at !== expectedUpdatedAt) return conflict
+    if (baseline !== undefined) {
+        const { data: version, error } = await supabaseAdmin.rpc("save_work_item_text", { p_workspace: workspace.id, p_item: workItemId, p_field: field, p_value: text, p_baseline: baseline })
+        if (error) return { ok: false, error: `The database rejected this work-item change (${error.code}): ${error.message}` }
+        if (!version) return conflict
+        refreshWorkItem(slug, workItemId)
+        return { ok: true, version: version as string }
     }
-    const value = description.trim()
-    const nextVersion = new Date().toISOString()
-    let update = supabaseAdmin.from("work_items").update({ description: value || null, updated_at: nextVersion }).eq("workspace_id", workspace.id).eq("id", workItemId)
-    if (expectedUpdatedAt) update = update.eq("updated_at", expectedUpdatedAt)
-    const { data: saved, error } = await update.select("updated_at").maybeSingle()
+    // Compatibility for an older mounted Description editor during deployment.
+    const { data: saved, error } = await supabaseAdmin.from("work_items").update({ [field]: text.trim() || null, updated_at: new Date().toISOString() })
+        .eq("workspace_id", workspace.id).eq("id", workItemId).eq("updated_at", expectedUpdatedAt!).select("updated_at").maybeSingle()
     if (error) return { ok: false, error: `The database rejected this work-item change (${error.code}): ${error.message}` }
-    if (!saved) {
-        const { data: latest } = await supabaseAdmin.from("work_items").select("updated_at").eq("workspace_id", workspace.id).eq("id", workItemId).maybeSingle()
-        return { ok: false, conflict: true, version: latest?.updated_at, error: "Another user changed this work item. Refresh to review their version before retrying your description." }
-    }
+    if (!saved) return conflict
     refreshWorkItem(slug, workItemId)
     return { ok: true, version: saved.updated_at }
+}
+
+export async function updateWorkItemDescription(slug: string, workItemId: string, description: string, expectedUpdatedAt: string, baseline?: string): Promise<TextSaveResult> {
+    return updateWorkItemText(slug, workItemId, "description", description, baseline, expectedUpdatedAt)
+}
+export async function updateWorkItemInstructions(slug: string, workItemId: string, instructions: string, baseline: string): Promise<TextSaveResult> {
+    return updateWorkItemText(slug, workItemId, "instructions", instructions, baseline)
 }
 
 export async function updateWorkItemAssignees(slug: string, workItemId: string, assigneeIds: string[], executionOwnerId: string | null) {

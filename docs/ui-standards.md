@@ -503,6 +503,10 @@ The record-specific middle remains flexible. The header, fields, and destructive
 - Omit fields that do not apply. Do not render decorative empty rows to balance the columns.
 - Long descriptions may span both columns. Record-specific analytical summaries such as poll funnel statistics remain content, not fields.
 
+### Work item content
+
+Work item details separate Description (a short goal), Instructions (the editable procedure and completion requirements), and Evidence (immutable source text). Description and Instructions use the same quiet multiline editor and preserve independent drafts/conflict recovery. Evidence uses plain, selectable, tightly spaced text with no editor, blank paragraphs, cards or source badges. `DetailField stackOnMobile` places the label above long text below the small breakpoint so instructions remain readable; other fields retain their label track. The original SOP remains a linked asset. Full Instructions and Evidence belong only to the selected detail read; list and queue summaries use Description.
+
 ### Record-specific content
 
 - Unique content follows the fields block at the normal `mt-5` or `mt-6` page rhythm and may use the surface best suited to its interaction.

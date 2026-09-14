@@ -49,6 +49,8 @@ export type RelationshipWorkItem = {
     relationship_id: string | null
     title: string
     description: string | null
+    instructions?: string | null
+    evidence?: string | null
     lifecycle_phase: RelationshipPhase
     area?: "workspace" | "admin"
     kind?: "standard" | "okr_action" | "maintenance"
@@ -433,6 +435,8 @@ function mapWorkItem(row: Record<string, unknown>, relationshipId: string | null
         relationship_id: relationshipId,
         title: String(row.title ?? "Untitled work item"),
         description: typeof row.description === "string" ? row.description : null,
+        instructions: typeof row.instructions === "string" ? row.instructions : null,
+        evidence: typeof row.evidence === "string" ? row.evidence : null,
         lifecycle_phase: normalizeRelationshipPhase(row.lifecycle_phase),
         area: row.area === "admin" ? "admin" : "workspace",
         kind: row.kind === "okr_action" || row.kind === "maintenance" ? row.kind : "standard",
@@ -968,7 +972,7 @@ export async function countOpenWorkItemsByRelationship(workspaceId: string) {
 export async function getWorkItem(workspaceId: string, workItemId: string): Promise<RelationshipWorkItem | null> {
     const result = await supabaseAdmin
         .from("work_items")
-        .select("id, workspace_id, title, description, lifecycle_phase, area, kind, visibility, status, priority, priority_override, execution_owner_id, is_key_task, native_kind, native_id, native_href, planned_start_date, planned_start_time, due_date, due_time, actual_start_at, actual_start_has_time, actual_completed_at, actual_completed_has_time, parent_work_item_id, sort_order, metadata, created_by, created_at, updated_at")
+        .select("id, workspace_id, title, description, instructions, evidence, lifecycle_phase, area, kind, visibility, status, priority, priority_override, execution_owner_id, is_key_task, native_kind, native_id, native_href, planned_start_date, planned_start_time, due_date, due_time, actual_start_at, actual_start_has_time, actual_completed_at, actual_completed_has_time, parent_work_item_id, sort_order, metadata, created_by, created_at, updated_at")
         .eq("workspace_id", workspaceId)
         .eq("id", workItemId)
         .maybeSingle()

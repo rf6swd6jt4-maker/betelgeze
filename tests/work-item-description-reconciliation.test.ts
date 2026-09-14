@@ -60,7 +60,8 @@ function editorFixture() {
     const slots: Slot[] = []
     let cursor = 0, changed = false
     let effects: Array<() => void> = []
-    let flush!: () => Promise<boolean>
+    const flushers = new Set<() => Promise<boolean>>()
+    const flush = async () => { for (const callback of flushers) if (!await callback()) return false; return true }
     let respond: ((result: { ok: true; version: string }) => void) | undefined
     const saves: Array<{ value: string; version: string }> = []
     const router = { refresh: () => {} }
@@ -101,7 +102,7 @@ function editorFixture() {
         "@/components/detail": { DetailField: "field", DetailFields: "fields" },
         "@/lib/ui/gantt-sync": { postGanttSync: () => {} },
         "@/lib/work-item-priority": { workItemPrioritySelectionLabel: () => "System generated", workItemPrioritySelectionOptions: [] },
-        "@/lib/workspace-mutations": { registerWorkspaceAutosaveFlusher: (callback: typeof flush) => { flush = callback; return () => {} }, runWorkspaceMutation: (run: () => unknown) => run() },
+        "@/lib/workspace-mutations": { registerWorkspaceAutosaveFlusher: (callback: typeof flush) => { flushers.add(callback); return () => { flushers.delete(callback) } }, runWorkspaceMutation: (run: () => unknown) => run() },
         "@/lib/record-version": { recordVersionAfter, reconcileRecordTextDraft },
         "./actions": { updateWorkItemDescription: (_slug: string, _id: string, value: string, expectedVersion: string) => {
             saves.push({ value, version: expectedVersion })
@@ -109,11 +110,17 @@ function editorFixture() {
         } },
     }
     const file = "app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields.tsx"
-    const compiled = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText
-    const localRequire = createRequire(resolve(file))
-    const compiledModule = new Module(resolve(file)) as Module & { _compile: (source: string, filename: string) => void }
-    compiledModule.require = ((name: string) => name in dependencies ? dependencies[name] : localRequire(name)) as typeof compiledModule.require
-    compiledModule._compile(compiled, file)
+    function compile(file: string) {
+        const compiled = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText
+        const localRequire = createRequire(resolve(file))
+        const compiledModule = new Module(resolve(file)) as Module & { _compile: (source: string, filename: string) => void }
+        compiledModule.require = ((name: string) => name in dependencies ? dependencies[name] : localRequire(name)) as typeof compiledModule.require
+        compiledModule._compile(compiled, file)
+        return compiledModule
+    }
+    dependencies["@/components/work-items/useWorkItemTextDraft"] = compile("components/work-items/useWorkItemTextDraft.ts").exports
+    dependencies["@/components/work-items/WorkItemTextField"] = compile("components/work-items/WorkItemTextField.tsx").exports
+    const compiledModule = compile(file)
     const properties = { workspaceSlug: "example", workItemId: "record", updatedAt: version("000001"), description: "Original", status: "todo", assignees: [], manualDependencyIds: [], dependencies: [], relationships: [], keyResults: [], workOptions: [], relationshipOptions: [], keyResultOptions: [], members: [] }
     let tree: ElementNode
     const oldWindow = Object.getOwnPropertyDescriptor(globalThis, "window")

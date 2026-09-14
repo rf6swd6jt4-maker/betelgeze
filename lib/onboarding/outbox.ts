@@ -10,6 +10,7 @@ import {
     assertSafeOnboardingStorageCleanupPath,
     sanitizeOnboardingOutboxError,
 } from "@/lib/onboarding/outbox-safety"
+import { secureDeliveryLogBody } from "@/lib/onboarding/secure-link-display"
 
 export { sanitizeOnboardingOutboxError } from "@/lib/onboarding/outbox-safety"
 
@@ -276,6 +277,7 @@ async function processDeliveryRow(row: DeliveryOutboxRow) {
         messageLogId = existingMessage.data?.id ?? null
         const context = await deliveryContext(row)
         const body = deliveryBody(row, context.publicUrl, context.workspaceName, await deliveryHasConfirmedSmsConsent(row))
+        const logBody = secureDeliveryLogBody(body, context.publicUrl, row.kind)
         const selected = row.payload?.delivery_choices
         let channels
         if (selected) {
@@ -303,7 +305,7 @@ async function processDeliveryRow(row: DeliveryOutboxRow) {
                 communication_channel_id: primaryDestination.channelId,
                 provider: channels.destinations.length > 1 ? "omnichannel" : primaryDestination.provider,
                 to_address: primaryDestination.address,
-                body,
+                body: logBody,
                 status: "sending",
                 error: null,
                 sender_kind: "automation",
@@ -321,7 +323,7 @@ async function processDeliveryRow(row: DeliveryOutboxRow) {
                 communication_channel_id: primaryDestination.channelId,
                 provider: channels.destinations.length > 1 ? "omnichannel" : primaryDestination.provider,
                 to_address: primaryDestination.address,
-                body,
+                body: logBody,
                 status: "sending",
                 sender_kind: "automation",
                 automation_kind: row.kind,

@@ -16,6 +16,7 @@ import { platformFailureFingerprint, reportPlatformFailure } from "@/lib/admin/m
 import { getWhatsAppConsentTemplate, getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { markSmsConsentConfirmed, smsConsentForConfirmation } from "@/lib/client-sales/sms-consent-state"
 import { loadWorkspacePublicBranding } from "@/lib/client-branding/public-branding"
+import { secureDeliveryLogBody } from "@/lib/onboarding/secure-link-display"
 
 type ClientSale = {
     service_scope?: "relationship" | "selected_services"
@@ -695,14 +696,14 @@ async function sendLegacyOnboardingLink(input: {
             direction: "outbound",
             provider: "meta_whatsapp",
             to_address: input.destination,
-            body: outboundBody,
+            body: secureDeliveryLogBody(outboundBody, input.onboardingUrl, "onboarding_link"),
             status: "sending",
             sender_kind: "automation",
             automation_kind: "onboarding_link",
             automation_label: "Onboarding link",
             raw_payload: {
                 client_sale_id: input.sale.id,
-                onboarding_url: input.onboardingUrl,
+                kind: "onboarding_link",
             },
         })
         .select("id")

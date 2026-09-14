@@ -20,5 +20,9 @@ export async function generateSopWork(input: { model: string; source: SopInterpr
     if (body.status !== "completed" || content.some(item => item.type === "refusal")) throw new Error("OpenAI did not finish the work plan. No flow was generated.")
     const plan = parseSopWorkPlan(JSON.parse(raw), input.source)
     if (plan.tasks.some(task => task.blocked_reason !== "")) throw new Error("The work plan asserted a client-specific blocker in generic mode.")
-    return plan
+    // Generic mode follows the source order; task identities and prerequisites
+    // are application-owned, never model-generated indexes.
+    if (plan.tasks.some(task => task.depends_on.length)) throw new Error("The work plan supplied dependencies in generic mode.")
+    const tasks = [...plan.tasks].sort((a, b) => Math.min(...a.source_steps) - Math.min(...b.source_steps))
+    return { ...plan, tasks: tasks.map((task, index) => ({ ...task, depends_on: index ? [index] : [] })) }
 }

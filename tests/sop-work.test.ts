@@ -67,7 +67,7 @@ test("generation sends bounded evidence and strict source-only instructions with
         assert.equal(body.store,false);assert.equal(body.service_tier,"default");assert.equal(body.tools,undefined)
         assert.deepEqual(JSON.parse(body.input[0].content[0].text),{source:{...source,steps:source.steps.map((step,index)=>({...step,step_id:index+1}))}});assert.equal(body.text.format.strict,true);assert.equal(body.max_output_tokens,14000)
         assert.match(body.instructions,/no tools/i);assert.doesNotMatch(body.input[0].content[0].text,/super-secret/)
-        return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(plan)}]}]})
+        return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify({...plan,tasks:plan.tasks.map(task=>({...task,depends_on:[]}))})}]}]})
     }
     const result=await generator.generateSopWork({model:"gpt-5.4-mini",source},request,async()=>{})
     assert.equal(result.tasks.length,2);assert.deepEqual(result.warnings,[])
@@ -164,7 +164,7 @@ test("sparse client context keeps generic SOP tasks and dispatch usage for repor
     const records: unknown[]=[]
     const request=meter.meteredSopRequest("gpt-5.4-mini",{start:async()=>{records.push("dispatched")},finish:async result=>{records.push(result)}},async (_url,init)=>{
         calls.push({body:JSON.parse(init?.body as string)})
-        return Response.json({id:"resp_sparse",model:"gpt-5.4-mini",service_tier:"default",status:"completed",usage:{input_tokens:2100,output_tokens:900,input_tokens_details:{cached_tokens:100},output_tokens_details:{reasoning_tokens:50}},output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(plan)}]}]})
+        return Response.json({id:"resp_sparse",model:"gpt-5.4-mini",service_tier:"default",status:"completed",usage:{input_tokens:2100,output_tokens:900,input_tokens_details:{cached_tokens:100},output_tokens_details:{reasoning_tokens:50}},output:[{type:"message",content:[{type:"output_text",text:JSON.stringify({...plan,tasks:plan.tasks.map(task=>({...task,depends_on:[]}))})}]}]})
     })
     const result=await generator.generateSopWork({model:"gpt-5.4-mini",source},request,async()=>{})
     assert.equal(result.tasks.length,2)
@@ -250,4 +250,16 @@ test("service acceptance preserves the progress owner; ordinary saves still reva
     generation=false
     await actions.addRelationshipService("acme",id(7),input)
     assert.deepEqual(refreshed,["/acme/relationships",`/acme/relationships/${id(7)}`])
+})
+
+
+test("generic generation owns task ordering and cannot request model-generated dependencies",async()=>{
+    const generator=load("lib/sops/work-generator.ts") as typeof import("../lib/sops/work-generator")
+    const twoSteps={...source,steps:[source.steps[0],{...source.steps[0],title:"Validate"}]}
+    const result=await generator.generateSopWork({model:"gpt-5.4-mini",source:twoSteps},async(_url,init)=>{
+        const body=JSON.parse(String(init?.body))
+        assert.equal(body.text.format.schema.properties.tasks.items.properties.depends_on.maxItems,0)
+        return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify({...plan,tasks:[{...task,title:"Validate",source_steps:[2]},{...task,source_steps:[1]}]})}]}]})
+    },async()=>{})
+    assert.deepEqual(result.tasks.map(t=>({title:t.title,refs:t.source_steps,deps:t.depends_on})),[{title:"Confirm access",refs:[1],deps:[]},{title:"Validate",refs:[2],deps:[1]}])
 })

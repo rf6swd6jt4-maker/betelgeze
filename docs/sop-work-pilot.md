@@ -38,4 +38,6 @@ The generic-flow revision validates and stably topologically sorts task dependen
 
 The save wrappers return durable generation acceptance in the existing database round trip. Progress reads use primary/unique keys; service links use a workspace/SOP index and page at 30 records. Source and service choices load only when their selector opens. Changes add no AI call or status polling to navigation. Database fixtures and local Chromium/WebKit UI fixtures are separate from authenticated production or physical-device proof.
 
-The v4 generator supplies explicit numeric step IDs and builds the strict source-reference enum from that exact source. A 47-step source permits only IDs 1 through 47; local and database validation remain in place. This closes the previously unconstrained source-reference output field.
+The v5 generator supplies explicit numeric step IDs and builds the strict source-reference enum from that exact source. A 47-step source permits only IDs 1 through 47; local and database validation remain in place. This closes the previously unconstrained source-reference output field.
+
+Generic work ordering is application-owned: the model must return empty dependency arrays, enforced by its strict schema. After validation, tasks are stably ordered by their first referenced SOP step and linked sequentially. The model cannot invent task numbers or self-dependencies. This conservative sequence deliberately defers parallel execution planning to the contextual engine.

@@ -1,5 +1,5 @@
 import "server-only"
-import { parseSopWorkPlan, SOP_WORK_INSTRUCTIONS, sopWorkSchema, sopClientInputs } from "./work-plan"
+import { completeSopInputRequests, SOP_WORK_INSTRUCTIONS, sopWorkSchema, sopClientInputs } from "./work-plan"
 import type { SopInterpretation } from "./interpretation"
 
 export async function generateSopWork(input: { model: string; source: SopInterpretation }, request: typeof fetch, retain: (text: string) => Promise<void>) {
@@ -18,7 +18,7 @@ export async function generateSopWork(input: { model: string; source: SopInterpr
     const raw = content.filter(item => item.type === "output_text").map(item => item.text ?? "").join("")
     await retain(raw.slice(0, 200000))
     if (body.status !== "completed" || content.some(item => item.type === "refusal")) throw new Error("OpenAI did not finish the work plan. No flow was generated.")
-    const plan = parseSopWorkPlan(JSON.parse(raw), input.source, true)
+    const plan = completeSopInputRequests(JSON.parse(raw), input.source)
     if (plan.tasks.some(task => task.blocked_reason !== "")) throw new Error("The work plan asserted a client-specific blocker in generic mode.")
     // Generic mode follows the source order; task identities and prerequisites
     // are application-owned, never model-generated indexes.

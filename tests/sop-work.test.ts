@@ -294,3 +294,42 @@ test("input requests are grounded and sequenced before grouped implementation wi
     assert.equal(calls,1)
     assert.deepEqual(result.tasks.map(t=>[t.title,t.depends_on]),[["Confirm the agreed budget",[]],["Set up and configure",[1]]])
 })
+
+test("input reconciliation reuses exact repeated prerequisites and requests omitted source inputs", async () => {
+    const generator=load("lib/sops/work-generator.ts") as typeof import("../lib/sops/work-generator")
+    const inputSource={...source,steps:[
+        {...source.steps[0],client_inputs:["website access","main keyword"]},
+        {...source.steps[0],title:"Benchmark",client_inputs:["main keyword"]},
+        {...source.steps[0],title:"Website checks",client_inputs:["Website access","GBP details"]},
+    ]}
+    const output={...plan,tasks:[
+        {...task,title:"Obtain starting inputs",task_type:"request_information",requested_inputs:["1.1","1.2"]},
+        {...task,title:"Perform the source procedure",source_steps:[1,2,3]},
+    ]}
+    let calls=0
+    const result=await generator.generateSopWork({model:"fixture",source:inputSource},async()=>{
+        calls++
+        return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(output)}]}]})
+    },async()=>{})
+    assert.equal(calls,1)
+    assert.equal(result.tasks.length,3)
+    assert.deepEqual(result.tasks[0].requested_inputs,["1.1","1.2","2.1","3.1"])
+    assert.deepEqual(result.tasks[0].source_steps,[1,2,3])
+    assert.deepEqual(result.tasks[1].requested_inputs,["3.2"])
+    assert.match(result.tasks[1].instructions!,/GBP details/)
+    assert.match(result.tasks[1].instructions!,/Check existing client records/)
+    assert.match(result.tasks[1].instructions!,/do not substitute guessed values/)
+    assert.deepEqual(result.tasks.map(t=>t.depends_on),[[],[1],[2]])
+    assert.deepEqual(output.tasks[0].source_steps,[1])
+})
+
+test("input reconciliation preserves conditions and rejects unsupported plans instead of rewriting them", () => {
+    const assumed={...source,steps:[{...source.steps[0],condition:"Only when expansion is required",client_inputs:["Area list"]}]}
+    const result=work.completeSopInputRequests({...plan,tasks:[task]},assumed)
+    assert.match(result.tasks[1].instructions!,/Only when expansion is required/)
+    assert.match(result.tasks[1].instructions!,/defer this request/)
+    for(const change of [{source_steps:[99]},{completion_requirements:[]},{task_type:"request_information",requested_inputs:["99.1"]}]) {
+        assert.throws(()=>work.completeSopInputRequests({...plan,tasks:[{...task,...change}]},assumed))
+    }
+    assert.throws(()=>work.completeSopInputRequests({...plan,tasks:Array.from({length:40},(_,i)=>({...task,title:`Task ${i}`}))},assumed),/too large/)
+})

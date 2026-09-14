@@ -37,7 +37,7 @@ export const SOP_WORK_SCHEMA = {
     }, required: ["summary", "warnings", "tasks"],
 }
 const bounded = (v: unknown, max: number): v is string => typeof v === "string" && v.length <= max
-export function parseSopWorkPlan(value: unknown, source: SopInterpretation, requireDetailed = false): SopWorkPlan {
+export function parseSopWorkPlan(value: unknown, source: SopInterpretation, requireDetailed = false, allowMissingInputs = false): SopWorkPlan {
     const plan = value as SopWorkPlan | null
     if (!plan || !bounded(plan.summary, 3000) || !Array.isArray(plan.warnings) || plan.warnings.length > 20 || !plan.warnings.every(v => bounded(v, 1000)) || !Array.isArray(plan.tasks) || plan.tasks.length < 1 || plan.tasks.length > 40) throw new Error("The work plan is incomplete or too large.")
     const titles = new Set<string>()
@@ -68,7 +68,7 @@ export function parseSopWorkPlan(value: unknown, source: SopInterpretation, requ
         }
     }
     if (requireDetailed) {
-        if ([...inputs.keys()].some(id => !requested.has(id))) throw new Error("The work plan did not request all SOP-required client inputs.")
+        if (!allowMissingInputs && [...inputs.keys()].some(id => !requested.has(id))) throw new Error("The work plan did not request all SOP-required client inputs.")
         const covered = new Set(plan.tasks.flatMap(task => task.source_steps))
         if (source.steps.some((step, index) => step.kind === "requirement" && !covered.has(index + 1))) throw new Error("The work plan omitted a required SOP step.")
     }
@@ -83,6 +83,51 @@ export function parseSopWorkPlan(value: unknown, source: SopInterpretation, requ
     }
     const positions = new Map(ordered.map((id, index) => [id, index + 1]))
     return { ...plan, tasks: ordered.map(id => ({ ...plan.tasks[id - 1], depends_on: [...new Set(plan.tasks[id - 1].depends_on)].map(dependency => positions.get(dependency)!).sort((a, b) => a - b) })) }
+}
+
+/** Fill bookkeeping omissions using source text only; never repair invented references or procedures. */
+export function completeSopInputRequests(value: unknown, source: SopInterpretation): SopWorkPlan {
+    const plan = parseSopWorkPlan(value, source, true, true)
+    const tasks = plan.tasks.map(task => ({ ...task, source_steps: [...task.source_steps], requested_inputs: [...task.requested_inputs!] }))
+    const inputs = sopClientInputs(source)
+    const requested = new Set(tasks.flatMap(task => task.requested_inputs))
+    const key = (input: typeof inputs[number]) => JSON.stringify([
+        input.name.trim().toLowerCase().replace(/\s+/g, " "),
+        source.steps[input.source_step - 1].condition.trim().toLowerCase(),
+        source.steps[input.source_step - 1].kind,
+    ])
+    const missing = new Map<number, typeof inputs>()
+    for (const input of inputs) {
+        if (requested.has(input.input_id)) continue
+        // Exact repeated prerequisites can share a request; no semantic guessing.
+        const equivalent = inputs.filter(other => requested.has(other.input_id) && key(other) === key(input))
+        const existing = tasks.find(task => task.task_type === "request_information"
+            && equivalent.some(other => task.requested_inputs.includes(other.input_id))
+            && (task.source_steps.includes(input.source_step) || task.source_steps.length < 10))
+        if (existing) {
+            existing.requested_inputs.push(input.input_id)
+            if (!existing.source_steps.includes(input.source_step)) existing.source_steps.push(input.source_step)
+            requested.add(input.input_id)
+        } else missing.set(input.source_step, [...(missing.get(input.source_step) ?? []), input])
+    }
+    for (const [stepId, entries] of missing) {
+        const step = source.steps[stepId - 1]
+        const conditional = step.condition || (step.kind !== "requirement" ? "Only if this optional SOP step is being performed." : "")
+        tasks.push({
+            title: `Confirm inputs for SOP step ${stepId}: ${step.title}`.slice(0, 200),
+            description: `Make the SOP-required inputs available for: ${step.title}.`,
+            instructions: [conditional ? `SOP condition: ${conditional}` : "", "1. Check existing client records for the following inputs:",
+                ...entries.map(input => `- ${input.name}`),
+                "2. Obtain or confirm only what remains missing. Record the information or where the authorised access or asset can be found; do not request passwords.",
+                "3. Make these inputs available before carrying out the linked SOP work; do not substitute guessed values.",
+                conditional ? "If this SOP condition does not apply, record that and defer this request." : "",
+            ].filter(Boolean).join("\n"),
+            completion_requirements: [...entries.map(input => `Available or located in existing records: ${input.name}`),
+                ...(conditional ? ["If not applicable, the reason for deferring this request is recorded."] : [])],
+            task_type: "request_information", requested_inputs: entries.map(input => input.input_id), source_steps: [stepId], depends_on: [], blocked_reason: "",
+        })
+    }
+    return parseSopWorkPlan({ ...plan, tasks }, source, true)
 }
 
 export const SOP_WORK_INSTRUCTIONS = `Create a conservative, generic Setup implementation flow close to the supplied SOP. No relationship profile, onboarding answers or call notes are supplied in this mode. Missing client context MUST NOT cause an empty plan, a single vague placeholder, skipped core SOP steps, or blanket blocking. Follow the SOP's straightforward flow without optimising or personalising it.

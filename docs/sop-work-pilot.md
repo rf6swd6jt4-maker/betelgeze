@@ -18,7 +18,7 @@ Library, the service chart and the relationship queue reference the same `work_i
 
 ## Deployment
 
-Apply `20260914110000_sop_work_pilot.sql` after the existing SOP records and service-stage migrations, then `20260914111000_sop_work_scheduler.sql` and `20260914120000_sop_service_generation_flow.sql`. The latter requires Supabase Vault plus `pg_cron`/`pg_net`; its scheduler is inert until configured. Production uses the existing OpenAI key unchanged.
+Apply `20260914110000_sop_work_pilot.sql` after the existing SOP records and service-stage migrations, then `20260914111000_sop_work_scheduler.sql`, `20260914120000_sop_service_generation_flow.sql`, and `20260914121000_sop_progress_access.sql`. The scheduler migration requires Supabase Vault plus `pg_cron`/`pg_net`; it is inert until configured. Production uses the existing OpenAI key unchanged.
 
 Set `SOP_AI_ENABLED=true`, `SOP_WORK_PILOT_ENABLED=true`, `OPENAI_SOP_MODEL=gpt-5.4-mini`, `SOP_AI_DAILY_LIMIT=10`, and a random dedicated `SOP_WORK_CRON_SECRET`. Configure the same worker secret and verified production endpoint with the trusted-server-only `configure_sop_work_scheduler`. Never place the token in source control or a cron command. An admin configures service links through the SOP UI. No automatic runs are backfilled by deployment.
 

@@ -24,3 +24,27 @@ export function validateAssetSelections(plan:SopWorkPlan,source:SopInterpretatio
  }
  return plan
 }
+
+/** Optional suggestions may be omitted; never invent or weaken their evidence. */
+export function filterAssetSelections(plan:SopWorkPlan,source:SopInterpretation,candidates:AssetCandidate[]):SopWorkPlan {
+ let total=0,omitted=0
+ const tasks=plan.tasks.map(task=>{
+  const attachments:AssetSelection[]=[],seen=new Set<string>()
+  if(!Array.isArray(task.attachments)){omitted++;return {...task,attachments}}
+  for(const choice of task.attachments){
+   try {
+    if(!choice||seen.has(choice.asset_id)||attachments.length>=3||total>=12)throw new Error('Optional attachment limit')
+    validateAssetSelections({...plan,tasks:[{...task,attachments:[choice]}]},source,candidates,true)
+    attachments.push(choice);seen.add(choice.asset_id);total++
+   } catch {omitted++}
+  }
+  return {...task,attachments}
+ })
+ const warnings=[...plan.warnings]
+ if(omitted){
+  const warning=`Omitted ${omitted} optional asset suggestion${omitted===1?'':'s'}: evidence, scope or attachment limits were not satisfied.`
+  if(warnings.length<20)warnings.push(warning)
+  else warnings[19]=`${warning} ${warnings[19]}`.slice(0,1000)
+ }
+ return {...plan,tasks,warnings}
+}

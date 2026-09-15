@@ -352,5 +352,6 @@ try {
     assert.equal((await one('select save_sop_text($1,$2,$3,$4,$5,$6) saved',[w,admin,uiSop,'title','Archived edit','Updated name'])).saved,null)
     pass('SOP field CAS allows independent autosaves and rejects stale, empty, staff and archived edits')
     await (await import('./sop-image-sql-checks.mjs')).validateSopImageSql({db,id,w,foreign,admin,staff,sop,revision,fixture})
+    await (await import('./sop-reliability-sql-checks.mjs')).validateSopReliabilitySql({db,id,w,admin,staff,sop,revision,fixture})
     console.log(JSON.stringify({checks,publicationMs,ordinaryPublicationMs,relationshipPlan:relPlan,evidencePlan}))
 } finally { await db.close() }

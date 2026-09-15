@@ -1,4 +1,5 @@
 import "server-only"
+import { workFailureMessage, workDatabaseError } from "./work-errors"
 import { revalidatePath } from "next/cache"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { parseSopInterpretation, type SopInterpretation } from "./interpretation"
@@ -13,7 +14,7 @@ export function sopWorkConfiguration() {
     const config = sopAiConfiguration()
     return { ...config, ready: config.ready && process.env.SOP_WORK_PILOT_ENABLED === "true" }
 }
-type Job = { id: string; workspace_id: string; relationship_id: string; sop_id: string; interpretation_id: string; requested_by: string; model: string; lease_token: string; plan: SopWorkPlan | null; source_snapshot: SopInterpretation | null;asset_candidates:AssetCandidate[]|null }
+type Job = { id: string; workspace_id: string; relationship_id: string; sop_id: string; interpretation_id: string; requested_by: string; model: string; lease_token: string; plan: SopWorkPlan | null; source_snapshot: SopInterpretation | null;schema_version?:string;asset_candidates:AssetCandidate[]|null }
 export async function processSopWork(id?: string, instanceId?: string) {
     if (!sopWorkConfiguration().ready) return { claimed: 0, published: 0 }
     if (!id) {
@@ -33,7 +34,7 @@ export async function processSopWork(id?: string, instanceId?: string) {
     }
     try {
         const prepare = await supabaseAdmin.rpc("prepare_sop_work", { p_id: job.id, p_lease: job.lease_token })
-        if (prepare.error || !prepare.data) throw new Error("Client or SOP information is unavailable, changed, or access was revoked. Check this test relationship.")
+        if (prepare.error || !prepare.data) throw new Error(workDatabaseError("preparation failed", prepare.error ?? {}))
         if (!job.plan) {
             const sourceRead = async () => {
                 const source = await supabaseAdmin.from("sop_interpretations").select("id,status,result,error_summary").eq("workspace_id", job.workspace_id).eq("sop_id", job.sop_id).eq("id", job.interpretation_id).maybeSingle()
@@ -65,15 +66,21 @@ export async function processSopWork(id?: string, instanceId?: string) {
             // Save before publication. A lost acknowledgement can retry publication without paying again.
             await save({ plan, source_snapshot: interpretation })
         } else {
-            parseSopWorkPlan(job.plan, parseSopInterpretation(job.source_snapshot))
+            parseSopWorkPlan(job.plan, parseSopInterpretation(job.source_snapshot), ["sop-work-assets-v7", SOP_WORK_VERSION].includes(job.schema_version ?? ""))
             validateAssetSelections(job.plan,parseSopInterpretation(job.source_snapshot),job.asset_candidates??[])
         }
         const publish = await supabaseAdmin.rpc("publish_sop_work", { p_id: job.id, p_lease: job.lease_token })
-        if (publish.error) throw new Error("Work could not be published. The saved plan is retained for recovery.")
+        if (publish.error) throw new Error(workDatabaseError("publication failed", publish.error))
+        if (!Array.isArray(publish.data) || !publish.data.length) throw new Error("Work publication returned no items; check the saved run before retrying.")
     } catch (error) {
-        const message = error instanceof Error && /^(OpenAI |Client |SOP |The SOP |The work |A task |Work |Could not |An onboarding |Onboarding )/.test(error.message) ? error.message.slice(0, 500) : "Work generation failed. No flow was generated."
-        await save({ status: "failed", error_summary: message, lease_token: null, lease_until: null })
-        return { claimed: 1, published: 0 }
+        const message = workFailureMessage(error)
+        // A lost publication acknowledgement must not overwrite committed success.
+        const failed = await supabaseAdmin.from("sop_work_runs").update({ status: "failed", error_summary: message, lease_token: null, lease_until: null, updated_at: new Date().toISOString() }).eq("id", job.id).eq("workspace_id", job.workspace_id).eq("status", "running").eq("lease_token", job.lease_token).select("id").maybeSingle()
+        if (failed.error || !failed.data) {
+            const actual = await supabaseAdmin.from("sop_work_runs").select("status").eq("id", job.id).eq("workspace_id", job.workspace_id).maybeSingle()
+            if (actual.error || !actual.data) throw new Error("Work status could not be confirmed; check progress again.")
+            if (actual.data.status !== "published") return { claimed: 1, published: 0 }
+        } else return { claimed: 1, published: 0 }
     }
     // Cache invalidation is best effort after the transaction; never undo a published run.
     const workspace = await supabaseAdmin.from("workspaces").select("slug").eq("id", job.workspace_id).maybeSingle()

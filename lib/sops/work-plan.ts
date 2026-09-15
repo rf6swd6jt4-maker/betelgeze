@@ -1,7 +1,7 @@
 import type { SopInterpretation } from "./interpretation"
 import type { AssetSelection } from './asset-selection'
 
-export const SOP_WORK_VERSION = "sop-work-assets-v7"
+export const SOP_WORK_VERSION = "sop-work-assets-v8"
 export type SopWorkPlan = {
     summary: string
     warnings: string[]
@@ -17,7 +17,7 @@ export function sopWorkSchema(source: SopInterpretation) {
         tasks: { ...SOP_WORK_SCHEMA.properties.tasks, items: { ...SOP_WORK_SCHEMA.properties.tasks.items,
             properties: { ...SOP_WORK_SCHEMA.properties.tasks.items.properties,
                 requested_inputs: { type: "array", maxItems: sopClientInputs(source).length, items: sopClientInputs(source).length ? { type: "string", enum: sopClientInputs(source).map(input => input.input_id) } : { type: "string" } },
-                source_steps: { type: "array", minItems: 1, maxItems: 10, items: { type: "integer", enum: source.steps.map((_, index) => index + 1) } },
+                source_steps: { type: "array", minItems: 1, maxItems: source.steps.length, items: { type: "integer", enum: source.steps.map((_, index) => index + 1) } },
                 depends_on: { type: "array", maxItems: 0, items: { type: "integer" } },
             },
         } },
@@ -32,7 +32,7 @@ export const SOP_WORK_SCHEMA = {
         tasks: { type: "array", minItems: 1, maxItems: 40, items: { type: "object", additionalProperties: false,
             properties: { title: { ...text, maxLength: 200 }, description: { ...text, minLength: 1, maxLength: 600 }, instructions: { ...text, minLength: 1, maxLength: 6000 },
                 completion_requirements: { type: "array", minItems: 1, maxItems: 10, items: { ...text, minLength: 1, maxLength: 600 } },
-                task_type: { type: "string", enum: ["implementation", "request_information"] }, requested_inputs: { type: "array", items: text }, source_steps: { ...numbers, minItems: 1, maxItems: 10 }, depends_on: { type: "array", maxItems: 39, items: { type: "integer", minimum: 1, maximum: 40 } }, blocked_reason: { type: "string", enum: [""] } },
+                task_type: { type: "string", enum: ["implementation", "request_information"] }, requested_inputs: { type: "array", items: text }, source_steps: { ...numbers, minItems: 1, maxItems: 80 }, depends_on: { type: "array", maxItems: 39, items: { type: "integer", minimum: 1, maximum: 40 } }, blocked_reason: { type: "string", enum: [""] } },
             required: ["title", "description", "instructions", "completion_requirements", "task_type", "requested_inputs", "source_steps", "depends_on", "blocked_reason"],
         } },
     }, required: ["summary", "warnings", "tasks"],
@@ -48,20 +48,22 @@ export function parseSopWorkPlan(value: unknown, source: SopInterpretation, requ
         if (task && (requireDetailed || task.instructions !== undefined)) {
             if (!bounded(task.description, 600) || !task.description.trim() || !bounded(task.instructions, 6000) || !task.instructions.trim()
                 || !Array.isArray(task.completion_requirements) || !task.completion_requirements.length || task.completion_requirements.length > 10 || !task.completion_requirements.every(v => bounded(v, 600) && v.trim())
-                || !["implementation", "request_information"].includes(task.task_type ?? "") || !Array.isArray(task.requested_inputs) || task.requested_inputs.length > inputs.size) throw new Error("The work plan contains incomplete instructions or completion requirements.")
-            if ((task.task_type === "request_information") !== Boolean(task.requested_inputs.length)) throw new Error("The work plan contains an unsupported information request.")
+                || !["implementation", "request_information"].includes(task.task_type ?? "") || !Array.isArray(task.requested_inputs) || task.requested_inputs.length > inputs.size) throw new Error(`The work plan task ${index + 1}: missing or oversized instructions, description, or completion checks.`)
+            if ((task.task_type === "request_information") !== Boolean(task.requested_inputs.length)) throw new Error(`The work plan task ${index + 1}: request type does not match its client input list.`)
             for (const id of task.requested_inputs) {
                 const input = inputs.get(id)
-                if (!input || !task.source_steps?.includes(input.source_step) || requested.has(id)) throw new Error("The work plan contains an invalid or repeated client input reference.")
+                if (!input) throw new Error(`The work plan task ${index + 1}: unknown client input ${String(id).slice(0, 24)}.`)
+                if (!task.source_steps?.includes(input.source_step)) throw new Error(`The work plan task ${index + 1}: input ${id} needs SOP step ${input.source_step}.`)
+                if (requested.has(id)) throw new Error(`The work plan task ${index + 1}: repeated client input ${id}.`)
                 requested.add(id)
             }
         }
         const instruction = task?.instructions ?? task?.instruction
         if (!task || !bounded(task.title, 200) || !task.title.trim() || !bounded(instruction, 6000) || !instruction.trim() || !bounded(task.blocked_reason, 1000)) throw new Error("The work plan contains an invalid task.")
         const title = task.title.trim().toLowerCase()
-        if (titles.has(title)) throw new Error("The work plan contains duplicate tasks.")
+        if (titles.has(title)) throw new Error(`The work plan task ${index + 1}: duplicate title "${task.title.slice(0, 48)}".`)
         titles.add(title)
-        if (!Array.isArray(task.source_steps) || task.source_steps.length < 1 || task.source_steps.length > 10 || !task.source_steps.every(n => Number.isInteger(n) && n >= 1 && n <= source.steps.length)) throw new Error("A task has an invalid SOP reference.")
+        if (!Array.isArray(task.source_steps) || task.source_steps.length < 1 || task.source_steps.length > source.steps.length || !task.source_steps.every(n => Number.isInteger(n) && n >= 1 && n <= source.steps.length)) throw new Error("A task has an invalid SOP reference.")
         if (!Array.isArray(task.depends_on) || task.depends_on.length > 40) throw new Error(`The work plan task ${index + 1} has too many dependencies.`)
         for (const dependency of task.depends_on) {
             if (!Number.isInteger(dependency) || dependency < 1 || dependency > plan.tasks.length) throw new Error(`The work plan task ${index + 1} refers to nonexistent task ${dependency}.`)
@@ -69,9 +71,11 @@ export function parseSopWorkPlan(value: unknown, source: SopInterpretation, requ
         }
     }
     if (requireDetailed) {
-        if (!allowMissingInputs && [...inputs.keys()].some(id => !requested.has(id))) throw new Error("The work plan did not request all SOP-required client inputs.")
+        const missingInputs = [...inputs.keys()].filter(id => !requested.has(id))
+        if (!allowMissingInputs && missingInputs.length) throw new Error(`The work plan did not request all client inputs: ${missingInputs.slice(0, 6).join(", ")}${missingInputs.length > 6 ? "…" : ""}.`)
         const covered = new Set(plan.tasks.flatMap(task => task.source_steps))
-        if (source.steps.some((step, index) => step.kind === "requirement" && !covered.has(index + 1))) throw new Error("The work plan omitted a required SOP step.")
+        const missingSteps = source.steps.flatMap((step, index) => step.kind === "requirement" && !covered.has(index + 1) ? [index + 1] : [])
+        if (missingSteps.length) throw new Error(`The work plan omitted a required SOP step: ${missingSteps.slice(0, 10).join(", ")}${missingSteps.length > 10 ? "…" : ""}.`)
     }
     if (Buffer.byteLength(JSON.stringify(plan), "utf8") > 100000) throw new Error("The work plan is too large.")
     // Stable topological order preserves every prerequisite, including valid
@@ -88,7 +92,15 @@ export function parseSopWorkPlan(value: unknown, source: SopInterpretation, requ
 
 /** Fill bookkeeping omissions using source text only; never repair invented references or procedures. */
 export function completeSopInputRequests(value: unknown, source: SopInterpretation): SopWorkPlan {
-    const plan = parseSopWorkPlan(value, source, true, true)
+    // IDs carry exact source ownership. Fill only that bookkeeping; never infer procedure content.
+    const candidate = value as SopWorkPlan | null
+    const known = new Map(sopClientInputs(source).map(input => [input.input_id, input.source_step]))
+    const repaired = candidate && Array.isArray(candidate.tasks) ? { ...candidate, tasks: candidate.tasks.map(task => {
+        if (!task || !Array.isArray(task.source_steps) || !Array.isArray(task.requested_inputs)) return task
+        const refs = task.requested_inputs.flatMap(id => known.has(id) ? [known.get(id)!] : [])
+        return { ...task, requested_inputs: [...new Set(task.requested_inputs)], source_steps: [...new Set([...task.source_steps, ...refs])] }
+    }) } : value
+    const plan = parseSopWorkPlan(repaired, source, true, true)
     const tasks = plan.tasks.map(task => ({ ...task, source_steps: [...task.source_steps], requested_inputs: [...task.requested_inputs!] }))
     const inputs = sopClientInputs(source)
     const requested = new Set(tasks.flatMap(task => task.requested_inputs))
@@ -104,7 +116,7 @@ export function completeSopInputRequests(value: unknown, source: SopInterpretati
         const equivalent = inputs.filter(other => requested.has(other.input_id) && key(other) === key(input))
         const existing = tasks.find(task => task.task_type === "request_information"
             && equivalent.some(other => task.requested_inputs.includes(other.input_id))
-            && (task.source_steps.includes(input.source_step) || task.source_steps.length < 10))
+            && (task.source_steps.includes(input.source_step) || task.source_steps.length < source.steps.length))
         if (existing) {
             existing.requested_inputs.push(input.input_id)
             if (!existing.source_steps.includes(input.source_step)) existing.source_steps.push(input.source_step)
@@ -140,5 +152,5 @@ For each work item:
 - instructions: directly usable numbered actions in plain text. Preserve the SOP's concrete method, required inputs, named outputs and relevant conditions. Explain what to inspect, change, record and hand over where the source supports it. Use neutral client placeholders for unknown values. Use as much detail as the procedure actually supplies; do not pad it with generic advice. If a necessary method is absent, say what needs clarification without inventing a method.
 - completion_requirements: specific observable outcomes/checks for every grouped piece of work. Describe how to verify the task's own output; do not invent numerical targets, deadlines, extra deliverables or approval gates. For a request, completion means the needed information is recorded and available, not merely that a message was sent. The application appends these checks under "Complete when" in Instructions.
 - source_steps: copy the explicit step_id values supporting all included actions, input requests and completion requirements. Never invent a source ID. Evidence quotations are attached by the application; do not put citations, page references or long quotes in description or instructions.
-Treat every supplied client_inputs entry as an input whose value has NOT been supplied to this generation. Create clearly named request_information work items to obtain or confirm these prerequisites, with requested_inputs copied from their input_id values. Cover every input exactly once, combining related inputs into a coherent request where practical. Say specifically what is needed and what work it enables. Tell staff to check existing client records first and obtain only what remains missing. Never assert an account lacks information, tell staff to share passwords, or fabricate a value. Do not turn research/calculations the SOP asks staff to perform into questions for the client. Do not invent a generic onboarding questionnaire. If there are no supplied input prerequisites, do not fabricate requests. Keep the subsequent implementation tasks; refer to the confirmed inputs rather than choosing their values. The application places input requests before implementation.
+Treat every supplied client_inputs entry as an input whose value has NOT been supplied to this generation. Create clearly named request_information work items to obtain or confirm these prerequisites, with requested_inputs copied from their input_id values. Cover every input exactly once, combining related inputs into a coherent request where practical. Include every originating source_step for grouped inputs; a request may reference all supplied SOP steps. Say specifically what is needed and what work it enables. Tell staff to check existing client records first and obtain only what remains missing. Never assert an account lacks information, tell staff to share passwords, or fabricate a value. Do not turn research/calculations the SOP asks staff to perform into questions for the client. Do not invent a generic onboarding questionnaire. If there are no supplied input prerequisites, do not fabricate requests. Keep the subsequent implementation tasks; refer to the confirmed inputs rather than choosing their values. The application places input requests before implementation.
 Set task_type to implementation for the remaining work and requested_inputs to an empty array. Set depends_on to an empty array on every task: the application owns sequence and dependencies. Keep blocked_reason empty. Never add an admin review gate merely because the plan is AI-generated. Include unresolved contradictions and coverage limitations in warnings. Return only the required JSON.`

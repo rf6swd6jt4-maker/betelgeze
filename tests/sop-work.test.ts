@@ -73,12 +73,13 @@ test("generation sends bounded evidence and strict source-only instructions with
     assert.equal(result.tasks.length,2);assert.deepEqual(result.warnings,[])
 })
 
-function workerFixture(options:{revoked?:boolean;cached?:boolean;savedPlan?:boolean;failPublish?:boolean;acceptNone?:boolean}={}) {
+function workerFixture(options:{revoked?:boolean;cached?:boolean;savedPlan?:boolean;failPublish?:boolean;acceptNone?:boolean;lostAck?:boolean;invalidSaved?:boolean}={}) {
     const calls={accepted:0,source:0,generation:0,publish:0,prepares:0,saves:[] as Record<string,unknown>[]}
-    const job={id:"run",workspace_id:"workspace",relationship_id:"relationship",sop_id:"sop",interpretation_id:"interpretation",requested_by:"admin",model:"gpt-5.4-mini",lease_token:"lease",plan:options.savedPlan?plan:null,source_snapshot:options.savedPlan?source:null}
+    const job={id:"run",workspace_id:"workspace",relationship_id:"relationship",sop_id:"sop",interpretation_id:"interpretation",requested_by:"admin",model:"gpt-5.4-mini",lease_token:"lease",schema_version:work.SOP_WORK_VERSION,plan:options.invalidSaved?{...plan,tasks:[{...task,completion_requirements:[]}]}:options.savedPlan?plan:null,source_snapshot:options.savedPlan||options.invalidSaved?source:null}
     let sourceReady=Boolean(options.cached)
     const query=(table:string)=>{
-        const q={select:()=>q,eq:()=>q,gt:()=>q,update:(v:Record<string,unknown>)=>{calls.saves.push(v);return q},maybeSingle:async()=>table==="sop_interpretations"?{data:{id:"interpretation",status:sourceReady?"ready":"queued",result:source}}:table==="workspaces"?{data:{slug:"test"}}:{data:{id:"run"}}}
+        let writing=false
+        const q={select:()=>q,eq:()=>q,gt:()=>q,update:(v:Record<string,unknown>)=>{writing=true;calls.saves.push(v);return q},maybeSingle:async()=>table==="sop_work_runs"&&options.lostAck&&calls.publish?{data:writing?null:{id:"run",status:"published"}}:table==="sop_interpretations"?{data:{id:"interpretation",status:sourceReady?"ready":"queued",result:source}}:table==="workspaces"?{data:{slug:"test"}}:{data:{id:"run"}}}
         return q
     }
     const worker=load("lib/sops/work-worker.ts",{
@@ -92,7 +93,7 @@ function workerFixture(options:{revoked?:boolean;cached?:boolean;savedPlan?:bool
             if(name==="claim_sop_work")return {data:[job]}
             if(name==="prepare_sop_work"){calls.prepares++;return options.revoked?{error:{message:"revoked"}}:{data:{goal:"Bookings"}}}
             if(name==='sop_work_asset_candidates')return {data:[]}
-            if(name==="publish_sop_work"){calls.publish++;return options.failPublish?{error:{message:"offline"}}:{data:["work1","work2"]}}
+            if(name==="publish_sop_work"){calls.publish++;return options.failPublish||options.lostAck?{error:{message:"offline"}}:{data:["work1","work2"]}}
             throw new Error(name)
         }}},
     }) as typeof import("../lib/sops/work-worker")
@@ -336,7 +337,7 @@ test("input reconciliation preserves conditions and rejects unsupported plans in
 })
 
 
-test("generation makes one evidence-bound attachment decision and rejects an unrelated candidate",async()=>{
+test("generation makes one evidence-bound attachment decision and omits an unrelated candidate",async()=>{
     const generator=load("lib/sops/work-generator.ts") as typeof import("../lib/sops/work-generator")
     const visualId="00000000-0000-4000-8000-000000000001"
     const imageSource={...source,steps:[{...source.steps[0],instruction:"Compare conversion settings with the approved reference screenshot.",image_ids:[visualId]}]}
@@ -351,5 +352,63 @@ test("generation makes one evidence-bound attachment decision and rejects an unr
     }
     const result=await generator.generateSopWork({model:"gpt-5.4-mini",source:imageSource,assets},request,async()=>{})
     assert.equal(calls,1);assert.deepEqual(result.tasks[0].attachments,[attachment])
-    await assert.rejects(generator.generateSopWork({model:"gpt-5.4-mini",source:imageSource,assets:[]},request,async()=>{}),/invalid or repeated asset/)
+    const omitted=await generator.generateSopWork({model:"gpt-5.4-mini",source:imageSource,assets:[]},request,async()=>{})
+    assert.deepEqual(omitted.tasks[0].attachments,[]);assert.match(omitted.warnings[0],/Omitted 1 optional/)
+})
+
+test('grouped requests repair exact input ownership beyond ten SOP steps without another provider call', async () => {
+    const longSource={...source,steps:Array.from({length:13},(_,i)=>({...source.steps[0],title:`Step ${i+1}`,client_inputs:[`Required input ${i+1}`]}))}
+    const inputIds=longSource.steps.map((_,i)=>`${i+1}.1`)
+    const raw={...plan,tasks:[{...task,task_type:'request_information',requested_inputs:[...inputIds,'1.1'],source_steps:Array.from({length:10},(_,i)=>i+1)}]}
+    let calls=0
+    const generator=load('lib/sops/work-generator.ts') as typeof import('../lib/sops/work-generator')
+    const result=await generator.generateSopWork({model:'fixture',source:longSource},async()=>{calls++;return Response.json({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(raw)}]}]})},async()=>{})
+    assert.equal(calls,1);assert.equal(result.tasks.length,1)
+    assert.deepEqual(result.tasks[0].requested_inputs,inputIds)
+    assert.deepEqual(result.tasks[0].source_steps,Array.from({length:13},(_,i)=>i+1))
+    assert.equal(raw.tasks[0].source_steps.length,10)
+    assert.equal(work.sopWorkSchema(longSource).properties.tasks.items.properties.source_steps.maxItems,13)
+})
+test('input repair still rejects invented references and repeated requests across tasks',()=>{
+    const inputs={...source,steps:[{...source.steps[0],client_inputs:['Access']} ]}
+    const request={...task,task_type:'request_information',requested_inputs:['1.1']}
+    assert.throws(()=>work.completeSopInputRequests({...plan,tasks:[{...request,requested_inputs:['99.1']}]},inputs),/task 1: unknown client input 99.1/)
+    assert.throws(()=>work.completeSopInputRequests({...plan,tasks:[request,{...request,title:'Again'}]},inputs),/task 2: repeated client input 1.1/)
+    assert.throws(()=>work.completeSopInputRequests({...plan,tasks:[{...request,source_steps:[99]}]},inputs),/invalid SOP reference/)
+})
+test('work errors stay on one bounded Unicode-safe line and distinguish invalid JSON',()=>{
+    const errors=load('lib/sops/work-errors.ts') as typeof import('../lib/sops/work-errors')
+    const message=errors.compactWorkError('The work\n task\t'+ '😀'.repeat(200))
+    assert.equal(Array.from(message).length,160);assert.doesNotMatch(message,/[\n\r\t]/)
+    assert.equal(message.at(-1),'…');assert.doesNotMatch(message,/\uFFFD/)
+    assert.match(errors.workFailureMessage(new SyntaxError('internal payload')),/invalid JSON/)
+    assert.doesNotMatch(errors.workFailureMessage(new Error('secret payload')),/secret/)
+})
+test('provider output-limit, empty-output and refusal failures retain diagnostics and never publish partial plans',async()=>{
+    const generator=load('lib/sops/work-generator.ts') as typeof import('../lib/sops/work-generator')
+    for(const [body,pattern] of [
+        [{status:'incomplete',incomplete_details:{reason:'max_output_tokens'},output:[]},/output limit/],
+        [{status:'completed',output:[]},/empty work plan/],
+        [{status:'completed',output:[{type:'message',content:[{type:'refusal'}]}]},/declined/],
+    ] as const){let retained=0;await assert.rejects(generator.generateSopWork({model:'fixture',source},async()=>Response.json(body),async()=>{retained++}),pattern);assert.equal(retained,1)}
+})
+test('unsupported attachment quotes are omitted while supported assets and work are preserved',()=>{
+ const assets=load('lib/sops/asset-selection.ts') as typeof import('../lib/sops/asset-selection')
+ const candidate={id:'asset',title:'Reference',description:'Approved conversion settings',kind:'sop_asset' as const,source_steps:[],version:'v1'}
+ const reference={...source,steps:[{...source.steps[0],instruction:'Compare conversion settings with the approved reference.'}]}
+ const valid={asset_id:'asset',source_step:1,source_quote:'Compare conversion settings',asset_quote:'Approved conversion settings',reason:'Shows the required settings for comparison.'}
+ const result=assets.filterAssetSelections({...plan,tasks:[{...task,attachments:[{...valid,asset_quote:'Made up unsupported description'},valid,valid]}]},reference,[candidate])
+ assert.deepEqual(result.tasks[0].attachments,[valid]);assert.equal(result.tasks[0].instructions,task.instructions)
+ assert.match(result.warnings[0],/Omitted 2/);assets.validateAssetSelections(result,reference,[candidate],true)
+})
+test('worker recovers a lost publication acknowledgement and rejects invalid saved detailed plans',async()=>{
+ const previous=process.env.SOP_WORK_PILOT_ENABLED;process.env.SOP_WORK_PILOT_ENABLED='true'
+ try {
+  const ack=workerFixture({savedPlan:true,lostAck:true})
+  assert.deepEqual(await ack.worker.processSopWork('run'),{claimed:1,published:1})
+  assert.equal(ack.calls.generation,0);assert.equal(ack.calls.publish,1)
+  const invalid=workerFixture({invalidSaved:true})
+  assert.deepEqual(await invalid.worker.processSopWork('run'),{claimed:1,published:0})
+  assert.equal(invalid.calls.generation,0);assert.equal(invalid.calls.publish,0)
+ }finally{if(previous===undefined)delete process.env.SOP_WORK_PILOT_ENABLED;else process.env.SOP_WORK_PILOT_ENABLED=previous}
 })

@@ -1,7 +1,7 @@
 import "server-only"
 import { completeSopInputRequests, SOP_WORK_INSTRUCTIONS, sopWorkSchema, sopClientInputs } from "./work-plan"
 import type { SopInterpretation } from "./interpretation"
-import { ASSET_SELECTION_INSTRUCTIONS,assetSelectionSchema,validateAssetSelections,type AssetCandidate } from './asset-selection'
+import { ASSET_SELECTION_INSTRUCTIONS,assetSelectionSchema,validateAssetSelections,filterAssetSelections,type AssetCandidate } from './asset-selection'
 
 export async function generateSopWork(input: { model: string; source: SopInterpretation;assets?:AssetCandidate[] }, request: typeof fetch, retain: (text: string) => Promise<void>) {
     const base = sopWorkSchema(input.source)
@@ -15,12 +15,15 @@ export async function generateSopWork(input: { model: string; source: SopInterpr
         }),
     })
     if (!response.ok) throw new Error(`OpenAI work generation failed (HTTP ${response.status}). No flow was generated.`)
-    const body = await response.json() as { status?: string; output?: { type: string; content?: { type: string; text?: string }[] }[] }
+    const body = await response.json() as { status?: string; incomplete_details?: { reason?: string }; output?: { type: string; content?: { type: string; text?: string }[] }[] }
     const content = body.output?.filter(item => item.type === "message").flatMap(item => item.content ?? []) ?? []
     const raw = content.filter(item => item.type === "output_text").map(item => item.text ?? "").join("")
     await retain(raw.slice(0, 200000))
-    if (body.status !== "completed" || content.some(item => item.type === "refusal")) throw new Error("OpenAI did not finish the work plan. No flow was generated.")
-    const plan = completeSopInputRequests(JSON.parse(raw), input.source)
+    if (content.some(item => item.type === "refusal")) throw new Error("OpenAI declined this work plan; review the SOP source.")
+    if (body.status !== "completed") throw new Error(body.incomplete_details?.reason === "max_output_tokens" ? "OpenAI work plan exceeded its output limit; split the SOP into smaller procedures." : "OpenAI did not finish the work plan; the partial response is saved.")
+    if (!raw.trim()) throw new Error("OpenAI returned an empty work plan; no work was published.")
+    const parsed = completeSopInputRequests(JSON.parse(raw), input.source)
+    const plan = input.assets ? filterAssetSelections(parsed,input.source,input.assets) : parsed
     validateAssetSelections(plan,input.source,input.assets??[],input.assets!==undefined)
     if (plan.tasks.some(task => task.blocked_reason !== "")) throw new Error("The work plan asserted a client-specific blocker in generic mode.")
     // Generic mode follows the source order; task identities and prerequisites

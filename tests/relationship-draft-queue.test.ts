@@ -179,3 +179,24 @@ test("browser windows keep independent journals and foreign draft recovery requi
     second.write(null)
     assert.equal(first.read()?.draft.currency, "EUR", "One window never clears another window's unsaved work")
 })
+
+test("relationship context fields autosave, clear, and survive draft recovery", async () => {
+    const saved = storage()
+    const sent: unknown[] = []
+    const queue = new RelationshipDraftQueue({ ...initial, industryValue: "Old", websiteUrl: "old.example", locationValue: "Dublin" }, v1, async command => {
+        sent.push(command.values)
+        return { ok: true, version: v2, values: command.values }
+    }, "command", 100_000)
+    queue.attachStorage(saved)
+    queue.edit(draft => ({ ...draft, industryValue: "SEO agency", websiteUrl: "https://example.com" }))
+    const recovered = parsePersistedRelationshipDraft(saved.read())
+    assert.equal(recovered?.draft.industryValue, "SEO agency")
+    assert.equal(recovered?.draft.websiteUrl, "https://example.com")
+    assert.equal(await queue.flush(), true)
+    assert.equal((sent[0] as RelationshipDraft).industryValue, "SEO agency")
+    assert.equal((sent[0] as RelationshipDraft).locationValue, "Dublin")
+    queue.edit(draft => ({ ...draft, websiteUrl: "" }))
+    assert.equal(await queue.flush(), true)
+    assert.equal((sent[1] as RelationshipDraft).websiteUrl, "")
+    queue.stop()
+})

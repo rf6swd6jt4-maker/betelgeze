@@ -44,6 +44,7 @@ export function RelationshipBackgroundEditor({ workspaceSlug, relationshipId, us
         <DetailFields className="!mt-0">
             {([
                 ["primaryPersonName", "Name", "identity", "text"], ["businessName", "Company", "company", "text"],
+                ["industryValue", "Industry", "company", "text"], ["websiteUrl", "Website", "source", "url"],
                 ["primaryContactRole", "Contact role", "role", "text"], ["locationValue", "Location", "location", "text"],
             ] as const).map(([key, label, icon, type]) => <DetailField key={key} label={label} icon={icon}><input aria-label={label} type={type} disabled={!canEdit} value={state.draft[key] ?? ""} onChange={event => update(key, event.target.value)} onBlur={() => void queue.flush()} onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.blur() } }} className={fieldClass} /></DetailField>)}
             <DetailField multiline label="Notes" icon="description" className="lg:col-span-2"><AutoGrowTextarea aria-label="Relationship notes" disabled={!canEdit} rows={3} value={state.draft.description} onChange={event => update("description", event.target.value)} onBlur={() => void queue.flush()} className={fieldClass} /></DetailField>

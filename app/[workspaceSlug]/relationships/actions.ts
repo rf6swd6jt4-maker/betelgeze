@@ -58,7 +58,7 @@ export type RelationshipDealDetailsInput = {
 
 export type RelationshipBackgroundDetailsInput = Pick<RelationshipDealDetailsInput,
     "primaryPersonName" | "businessName" | "primaryContactRole" | "primaryPhone" | "whatsappPhone" | "communicationPrimaryProvider" | "communicationDeliveryMode" | "primaryEmail" | "description"
-> & { expectedUpdatedAt: string; expectedUserId?: string; locationValue?: string }
+> & { expectedUpdatedAt: string; expectedUserId?: string; locationValue?: string; industryValue?: string; websiteUrl?: string }
 
 function formString(formData: FormData, key: string) {
     return String(formData.get(key) ?? "").trim()
@@ -367,6 +367,8 @@ export async function saveRelationshipBackgroundDetails(slug: string, relationsh
         communication_delivery_mode: input.communicationDeliveryMode,
         primary_email: input.primaryEmail.trim() || null,
         notes_summary: input.description.trim() || null,
+        ...(input.industryValue !== undefined ? { industry_value: input.industryValue.trim() || null } : {}),
+        ...(input.websiteUrl !== undefined ? { website_url: input.websiteUrl.trim() || null } : {}),
         updated_at: nextVersion,
     }).eq("workspace_id", workspace.id).eq("id", relationshipId)
     if (input.expectedUpdatedAt) update = update.eq("updated_at", input.expectedUpdatedAt)

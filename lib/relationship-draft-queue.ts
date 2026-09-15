@@ -5,8 +5,8 @@ type Pending = { requestId: string; version: string; values: RelationshipBackgro
 export type PersistedRelationshipDraft = { version: string; baseline: RelationshipDraft; draft: RelationshipDraft; pending?: Pending; conflict: boolean }
 export type RelationshipDraftSnapshot = PersistedRelationshipDraft & { saving: boolean; error: string | null; storageError: string | null; latest: { version: string; draft: RelationshipDraft } | null }
 type Storage = { read(): PersistedRelationshipDraft | null; write(value: PersistedRelationshipDraft | null): void }
-const backgroundFields = ["primaryPersonName", "businessName", "primaryContactRole", "primaryPhone", "whatsappPhone", "communicationPrimaryProvider", "communicationDeliveryMode", "primaryEmail", "description"] as const
-const relationshipBackgroundValues = (draft: RelationshipDraft) => Object.fromEntries(backgroundFields.map((field) => [field, draft[field]])) as RelationshipBackgroundCommand["values"]
+const backgroundFields = ["industryValue", "websiteUrl", "locationValue", "primaryPersonName", "businessName", "primaryContactRole", "primaryPhone", "whatsappPhone", "communicationPrimaryProvider", "communicationDeliveryMode", "primaryEmail", "description"] as const
+const relationshipBackgroundValues = (draft: RelationshipDraft) => Object.fromEntries(backgroundFields.filter(field => !["industryValue", "websiteUrl", "locationValue"].includes(field) || draft[field] !== undefined).map((field) => [field, draft[field]])) as RelationshipBackgroundCommand["values"]
 const key = (draft: RelationshipDraft) => JSON.stringify(relationshipBackgroundValues(draft))
 const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
 

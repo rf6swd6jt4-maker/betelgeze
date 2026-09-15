@@ -1,11 +1,11 @@
 import { PanelTabs } from "@/components/panel/PanelTabs"
 
 export function LibraryTabs({ workspaceSlug, active, sopOnly = false }: { workspaceSlug: string; active: "work-items" | "assets" | "sops"; sopOnly?: boolean }) {
-    return <PanelTabs items={[
-        { key: "sops", label: "SOPs", href: `/${workspaceSlug}/sops` },
-        ...(!sopOnly ? [
+    const sops = { key: "sops", label: "SOPs", href: `/${workspaceSlug}/sops` }
+    const items = sopOnly ? [sops] : [
         { key: "work-items", label: "Work Items", href: `/${workspaceSlug}/work-items` },
+        sops,
         { key: "assets", label: "Assets", href: `/${workspaceSlug}/assets` },
-        ] : []),
-    ]} active={active} ariaLabel="Library panel" />
+    ]
+    return <PanelTabs items={items} active={active} ariaLabel="Library panel" />
 }

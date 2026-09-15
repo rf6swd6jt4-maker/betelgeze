@@ -77,3 +77,8 @@ test("the Assets sibling keeps the shared Library shell without becoming a canon
     assert.match(source, /<QuickStats/)
     assert.doesNotMatch(source, /<List ariaLabel=/)
 })
+
+test("Library tabs place SOPs immediately after Work Items", async () => {
+    const source = await readFile("components/library/LibraryTabs.tsx", "utf8")
+    assert.match(source, /items = sopOnly \? \[sops\] : \[\s*\{ key: "work-items"[\s\S]*?\},\s*sops,\s*\{ key: "assets"/)
+})

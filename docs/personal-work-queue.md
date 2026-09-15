@@ -42,8 +42,16 @@ Rollback: revert the app/navigation commit and disable `QUEUE_AI_ENABLED` and `w
 ## Release evidence — 2026-09-15
 
 - Both additive migrations applied to the production schema; the first was rehearsed inside a rolled-back transaction. The scheduler is installed disabled until the application deployment is ready.
-- Live authorized reads returned 40 owner-assigned items (20 ready, 20 deferred) and zero eligible assigned items for the other current workspace members. Forty-two open records were queued for initial assessment. These counts are a point-in-time observation.
+- Live authorized reads returned 40 owner-assigned items (20 ready, 20 deferred) and zero returned items for the other current workspace members. The latter was subsequently traced to the assignment-access bug below; it did not establish that those workers had no assigned work. Forty-two open records were queued for initial assessment. These counts are a point-in-time observation.
 - Production Webpack build, focused ESLint and all 1,038 repository tests passed. Eleven PostgreSQL fixture scenarios and eight Chromium/WebKit viewport cases passed.
 - The actual worker code passed five isolated provider/DB fixture checks: stored-context reuse makes no new provider call, changed context makes one, unknown dispatch records unknown usage, malformed responses retain billed usage but cannot publish, and disabling AI prevents claims.
 
 - Implementation `1f7bc44f` deployed successfully. After explicit approval for the OpenAI payload, the production scheduler was enabled; initial assessments and token/cost records were confirmed in the database. Authenticated queue entry and its saved AI rationale were verified in the macOS app.
+
+## Service assignment visibility repair — 2026-09-15
+
+The shared `workspace_user_can_access_work_item` helper recognized legacy relationship-service assignments but omitted current service-instance assignments. Personal queue ownership checked that helper first, so assigned staff could not see generated tasks. The repair recognizes the assigned instance only when workspace, relationship and service match; existing owner/admin and legacy paths remain intact. Imported drafts and cancelled instances do not grant access. Paused work remains visible but deferred. No task ownership or status data is rewritten.
+
+The new `scripts/validate-queue-assignment-access.mjs` loads the actual old helper, reproduces the empty queue, then verifies the repair, reassignment, cross-client/service denial, private Admin exclusion, cancelled/imported/paused instances, legacy access and start/pause commands. All 1,065 repository tests and the production Webpack build passed. The indexed 1,000-item SQL fixture read took approximately 65 ms; this is not production end-to-end latency. The change adds no browser requests or AI calls.
+
+The migration was rehearsed with rollback, then applied to production. Live actor-scoped reads for the affected staff member returned 11 tasks (1 ready, 10 deferred), and delivery scope included the previously inaccessible task. A different staff member remained denied; existing admin access remained intact. These are database checks, not a signed-in worker visual test. Refresh the personal queue to replace any cached empty result.

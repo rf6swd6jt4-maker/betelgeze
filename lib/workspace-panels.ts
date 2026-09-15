@@ -27,7 +27,7 @@ export const WORKSPACE_PANELS = [
     { key: "admin", label: "Admin", route: "admin", capability: "admin.manage", minimumRole: "admin", description: "Private OKRs, activity, maintenance, and automation-failure follow-up", keywords: ["admin tools", "okr", "objectives", "key results", "metrics", "activity console", "automation history", "maintenance", "automation failures", "admin work items", "goals"] },
     { key: "settings", label: "Settings", route: "settings", capability: "settings.manage", minimumRole: "admin", description: "Unified workspace settings", keywords: ["workspace settings", "services", "agency branding", "onboarding colours"] },
 ] as const satisfies readonly WorkspacePanelDefinition[]
-// Retain authorization and saved URLs while the personal queue is designed.
+// Retain authorization and saved URLs alongside the personal queue.
 // This legacy destination is deliberately absent from navigation and search.
 const LEGACY_FULFILMENT_PANEL = { key: "fulfilment", label: "Fulfilment", route: "work", capability: "fulfilment.manage", allMembers: true, description: "Fulfilment relationship work items", keywords: ["tasks", "project management", "queue", "fulfilment"] } as const satisfies WorkspacePanelDefinition
 export type WorkspacePanel = (typeof WORKSPACE_PANELS)[number] | typeof LEGACY_FULFILMENT_PANEL

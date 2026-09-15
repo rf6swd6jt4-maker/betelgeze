@@ -35,7 +35,7 @@ import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorksp
 import { LEADGEN_POLLING_SYSTEM_VERSION_LABEL } from "@/lib/leadgen/version"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
 import { ONBOARDING_BUILDER_WINDOW_SOURCE, openOnboardingBuilderWindow, type OnboardingBuilderWindowSignal } from "@/lib/onboarding-builder-window"
-import { canAccessPrivateWorkspacePanels, canAccessWorkspacePanel, canAccessWorkspaceUrl, WORKSPACE_PANELS, workspacePanelHref, type WorkspacePanelKey } from "@/lib/workspace-panels"
+import { canAccessPrivateWorkspacePanels, canAccessWorkspacePanel, canAccessWorkspaceUrl, WORKSPACE_PANELS, workspacePanelByKey, workspacePanelHref, type WorkspacePanelKey } from "@/lib/workspace-panels"
 import type { WorkspaceCapability } from "@/lib/workspace-capabilities"
 import type { WorkspaceRole } from "@/lib/workspaces"
 import { WORKSPACE_MEMBER_PROFILE_EVENT, WORKSPACE_MEMBER_PROFILE_MESSAGE_SOURCE } from "@/lib/workspace-member-profile"
@@ -1152,7 +1152,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     }, [prepareNativeLeave, beginTabNavigation, titleForUrl, saveTabsState, requestTabFrameNavigation, startNativeNavigation, nativeNavigationPerformance])
 
     const openCreate = useCallback((target: "relationship" | "work-item" | "asset" | "okr") => {
-        if (target === "relationship" && !canAccessWorkspacePanel(WORKSPACE_PANELS[0], workspaceRole, workspaceCapabilities)) return
+        if (target === "relationship" && !canAccessWorkspacePanel(workspacePanelByKey("relationships"), workspaceRole, workspaceCapabilities)) return
         if ((target === "work-item" || target === "asset") && !canAccessPrivateWorkspacePanels(workspaceRole)) return
         if (target === "okr" && !canAccessPrivateWorkspacePanels(workspaceRole)) return
         window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: "workspace-create" }))
@@ -1746,7 +1746,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         const url = new URL(tab.url, window.location.origin)
         const intent = url.searchParams.get("create")
         if (intent !== "relationship" && intent !== "work-item" && intent !== "asset" && intent !== "okr") return
-        if ((intent === "relationship" && !canAccessWorkspacePanel(WORKSPACE_PANELS[0], workspaceRole, workspaceCapabilities))
+        if ((intent === "relationship" && !canAccessWorkspacePanel(workspacePanelByKey("relationships"), workspaceRole, workspaceCapabilities))
             || ((intent === "work-item" || intent === "asset") && !canAccessPrivateWorkspacePanels(workspaceRole))
             || (intent === "okr" && !canAccessPrivateWorkspacePanels(workspaceRole))) return
         const key = `${tab.id}:${url.pathname}:${intent}`
@@ -2254,7 +2254,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         standalone: "standalone" in panel && panel.standalone === true,
     }))
     const canCreateOkr = canAccessPrivateWorkspacePanels(workspaceRole)
-    const canCreateRelationship = canAccessWorkspacePanel(WORKSPACE_PANELS[0], workspaceRole, workspaceCapabilities)
+    const canCreateRelationship = canAccessWorkspacePanel(workspacePanelByKey("relationships"), workspaceRole, workspaceCapabilities)
     const canCreateLibraryItem = canAccessPrivateWorkspacePanels(workspaceRole)
     const visibleTabs: WorkspaceTab[] = tabs.length ? tabs : [initialTab]
     const residentTabIdSet = new Set(residentTabIds)

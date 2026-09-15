@@ -45,3 +45,5 @@ Rollback: revert the app/navigation commit and disable `QUEUE_AI_ENABLED` and `w
 - Live authorized reads returned 40 owner-assigned items (20 ready, 20 deferred) and zero eligible assigned items for the other current workspace members. Forty-two open records were queued for initial assessment. These counts are a point-in-time observation.
 - Production Webpack build, focused ESLint and all 1,038 repository tests passed. Eleven PostgreSQL fixture scenarios and eight Chromium/WebKit viewport cases passed.
 - The actual worker code passed five isolated provider/DB fixture checks: stored-context reuse makes no new provider call, changed context makes one, unknown dispatch records unknown usage, malformed responses retain billed usage but cannot publish, and disabling AI prevents claims.
+
+- Implementation `1f7bc44f` deployed successfully. After explicit approval for the OpenAI payload, the production scheduler was enabled; initial assessments and token/cost records were confirmed in the database. Authenticated queue entry and its saved AI rationale were verified in the macOS app.

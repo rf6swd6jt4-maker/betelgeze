@@ -84,17 +84,21 @@ test("Library tabs place SOPs immediately after Work Items", async () => {
 })
 
 test("Library lands on Work Items and SOP creation uses shared popups and add cards", async () => {
-    const [panels, nativeLibrary, catalogue, upload, detailFields] = await Promise.all([
+    const [panels, nativeLibrary, catalogue, upload, detailFields, assetGallery] = await Promise.all([
         readFile("lib/workspace-panels.ts", "utf8"),
         readFile("lib/workspace-native-library.ts", "utf8"),
         readFile("components/sops/SopCatalogue.tsx", "utf8"),
         readFile("components/sops/SopAssetUpload.tsx", "utf8"),
         readFile("components/work-items/WorkItemTextField.tsx", "utf8"),
+        readFile("components/ui/AssetGallery.tsx", "utf8"),
     ])
     assert.match(panels, /key: "library", label: "Library", route: "work-items"/)
     assert.match(nativeLibrary, /async function loadWorkItemList[\s\S]*?requireWorkspaceAccess\(workspaceSlug\)/)
     assert.match(catalogue, /<CenteredDialog title="Add SOP"/)
-    assert.match(upload, /<AddAttachmentCard label="Add asset"/)
+    assert.match(upload, /<AddAssetGalleryCard label="Add asset"/)
     assert.match(upload, /<CenteredDialog title="Add asset"/)
+    assert.match(assetGallery, /export function AddAssetGalleryCard/)
+    assert.match(assetGallery, /before:pb-\[75%\]/, "the gallery add card must retain a useful 4:3 minimum when its row has no asset")
+    assert.match(detailFields, /multiline stackOnMobile=\{!compact\}/, "the compact Name editor must top-align with its save-status block")
     assert.match(detailFields, /compact \? "min-h-6" : "min-h-12"/)
 })

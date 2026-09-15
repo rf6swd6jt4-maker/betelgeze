@@ -13,10 +13,23 @@ export const AutoGrowTextarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttr
         const textarea = localRef.current
         if (!textarea) return
         textarea.style.height = "auto"
-        textarea.style.height = `${textarea.scrollHeight}px`
+        if (textarea.scrollHeight > 0) textarea.style.height = `${textarea.scrollHeight}px`
     }, [])
 
-    useLayoutEffect(resize, [defaultValue, resize, value])
+    useLayoutEffect(() => {
+        resize()
+        const dialog = localRef.current?.closest("dialog")
+        if (!dialog || dialog.open) return
+        // A closed native dialog has no measurable scroll height. Remeasure as
+        // soon as showModal() moves it into the top layer, before its next paint.
+        const observer = new MutationObserver(() => {
+            if (!dialog.open) return
+            resize()
+            observer.disconnect()
+        })
+        observer.observe(dialog, { attributes: true, attributeFilter: ["open"] })
+        return () => observer.disconnect()
+    }, [defaultValue, resize, value])
 
     return <textarea
         {...props}
@@ -24,6 +37,6 @@ export const AutoGrowTextarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttr
         value={value}
         defaultValue={defaultValue}
         onInput={event => { resize(); onInput?.(event) }}
-        className={`resize-none overflow-hidden [field-sizing:content] ${className}`}
+        className={`resize-none overflow-hidden ${className}`}
     />
 })

@@ -620,7 +620,9 @@ SOPs are a category in Library, not a separate sidebar panel. Library navigation
 opens SOPs for every workspace member; workspace-wide Work Items and Assets
 categories keep their existing admin access. Keep existing SOP record URLs and
 workspace tabs stable. SOP covers use `DocumentCatalogue`; attached files and the
-Assets category share `AssetGallery` and `AssetGalleryCard`.
+Assets category share `AssetGallery` and `AssetGalleryCard`. Add-file controls in
+these galleries use `AddAssetGalleryCard`, which keeps a 4:3 minimum when empty
+and stretches to the full metadata-card row height when assets are present.
 
 SOP details use the standard detail header, inline autosaving Name and Description,
 a Services field, the Assets gallery, and the admin danger zone. There is no separate

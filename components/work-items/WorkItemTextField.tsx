@@ -4,7 +4,7 @@ import type { useWorkItemTextDraft } from "./useWorkItemTextDraft"
 /** The same quiet text editor for the goal and the full procedure. Evidence has no editor. */
 export function workItemTextField(label: "Name" | "Description" | "Instructions", draft: ReturnType<typeof useWorkItemTextDraft>) {
     const compact = label === "Name"
-    return <DetailField label={label} icon="description" multiline={!compact} stackOnMobile={!compact} className="lg:col-span-2">
+    return <DetailField label={label} icon="description" multiline stackOnMobile={!compact} className="lg:col-span-2">
         <div>
             <textarea ref={draft.ref} aria-label={label} value={draft.value} onChange={event => draft.change(event.target.value)} onBlur={() => void draft.save()}
                 rows={label === "Name" ? 1 : label === "Description" ? 2 : 5} maxLength={label === "Name" ? 200 : undefined} placeholder={label === "Name" ? "SOP name" : label === "Description" ? "Add a description…" : "Add instructions and completion requirements…"}

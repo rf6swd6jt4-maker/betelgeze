@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { AddAttachmentCard, AutoGrowTextarea, CenteredDialog, Selector } from "@/components/ui"
+import { AddAssetGalleryCard, AutoGrowTextarea, CenteredDialog, Selector } from "@/components/ui"
 import { registerWorkspaceAutosaveFlusher } from "@/lib/workspace-mutations"
 import { SOP_ASSET_ACCEPT, SOP_SOURCE_LABELS, SOP_SOURCE_ROLES, validateSopAsset, type SopSourceRole } from "@/lib/sops/records-policy"
 import { sopCommand, sopInputClass, sopTabKey, useSopDraft } from "./client"
@@ -57,7 +57,7 @@ export function SopAssetUpload({ workspaceSlug, workspaceId, userId, sopId }: { 
         finally { busyRef.current = false; setBusy(false) }
     }
     return <>
-        <AddAttachmentCard label="Add asset" onClick={() => setOpen(true)} compact />
+        <AddAssetGalleryCard label="Add asset" onClick={() => setOpen(true)} disabled={busy} />
         {open ? <CenteredDialog title="Add asset" busy={busy} onClose={() => setOpen(false)}><div className="space-y-3">
             <p className="text-xs leading-5 text-neutral-500">PDF, DOCX, text, images, presentations and spreadsheets up to 50 MB. Video and audio up to 250 MB. Add up to 10 at a time.</p>
             <div><p className="mb-1 text-xs text-neutral-500">How should these assets be used?</p><Selector appearance="input" ariaLabel="Asset role" value={role} disabled={busy || Boolean(pending)} options={SOP_SOURCE_ROLES.map(value => ({ value, label: SOP_SOURCE_LABELS[value] }))} onChange={value => updateGuidance(value as SopSourceRole, notes)} /></div>

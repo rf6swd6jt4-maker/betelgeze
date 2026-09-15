@@ -27,4 +27,4 @@ export { DocumentCatalogue, DocumentCard, AddDocumentCard } from "./DocumentCata
 export { PillField } from "./PillField"
 export { CollapsedPillLinks } from "./CollapsedPillLinks"
 
-export { AssetGallery, AssetGalleryCard } from "./AssetGallery"
+export { AssetGallery, AssetGalleryCard, AddAssetGalleryCard } from "./AssetGallery"

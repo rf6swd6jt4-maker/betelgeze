@@ -48,6 +48,9 @@ test("relationship fields use semantic icons and shared auto-growing notes", asy
     assert.match(relationship, /<AutoGrowTextarea aria-label="Relationship notes"/)
     assert.match(textarea, /resize-none overflow-hidden/)
     assert.match(textarea, /textarea\.scrollHeight/)
+    assert.match(textarea, /closest\("dialog"\)/)
+    assert.match(textarea, /MutationObserver/)
+    assert.doesNotMatch(textarea, /field-sizing:content/, "native content sizing must not compete with measured textarea height")
 })
 
 test("detail headers omit operational status and allow at most two unrepeated facts", async () => {

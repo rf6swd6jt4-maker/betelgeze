@@ -9,3 +9,8 @@ export function AssetGalleryCard({ title, subtitle, detail, previewUrl, format, 
     const className = "block min-w-0 w-full overflow-hidden rounded-xl border border-neutral-800 bg-black text-left hover:border-neutral-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-neutral-400"
     return href ? <Link href={href} prefetch={false} data-workspace-detail-preview={navigationPreview} className={className}>{content}</Link> : <button type="button" onClick={onClick} className={className} aria-label={`Preview ${title}`}>{content}</button>
 }
+export function AddAssetGalleryCard({ label, onClick, disabled = false }: { label: string; onClick: () => void; disabled?: boolean }) {
+    return <button type="button" onClick={onClick} disabled={disabled} aria-label={label} className="relative flex min-w-0 items-center justify-center overflow-hidden rounded-xl border border-dashed border-neutral-700 bg-black text-neutral-500 transition before:block before:w-0 before:shrink-0 before:pb-[75%] hover:border-neutral-500 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-neutral-400 disabled:cursor-wait disabled:opacity-50">
+        <span className="flex flex-col items-center justify-center gap-1.5"><span aria-hidden="true" className="text-3xl font-light">+</span><span className="text-sm">{label}</span></span>
+    </button>
+}

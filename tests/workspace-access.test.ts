@@ -37,6 +37,7 @@ test("workspace roles are Owner, Admin, and Staff with legacy member normalizati
 
 test("Staff see Library and Communications while operational roles reveal Relationships", () => {
     assert.deepEqual(WORKSPACE_PANELS.map((panel) => panel.label), [
+        "Work Queue",
         "Relationships",
         "Onboarding",
         "Appointment Setting",
@@ -85,9 +86,9 @@ test("workspace capability normalization remains deterministic", () => {
     ]), ["onboarding.manage", "fulfilment.manage", "appointment_setting.manage", "communications.manage"])
 })
 
-test("workspace access defaults every member to Library without changing delivery permissions", () => {
+test("workspace access defaults every member to Work Queue without changing delivery permissions", () => {
     assert.match(workspaceAccess, /baseCapabilities = \["fulfilment\.manage", "communications\.manage"\]/)
-    assert.match(workspaceAccess, /const workPanel = workspacePanelByKey\("library"\)/)
+    assert.match(workspaceAccess, /const workPanel = workspacePanelByKey\("queue"\)/)
     assert.doesNotMatch(workspaceAccess, /from\("workspace_service_capabilities"\)/)
     assert.doesNotMatch(workspaceAccess, /from\("workspace_operational_permissions"\)/)
     assert.doesNotMatch(workspaceTeamSettings, /Position permissions|Service fulfilment permissions|Edit permissions/)

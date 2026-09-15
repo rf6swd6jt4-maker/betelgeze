@@ -7,6 +7,7 @@ import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 import type { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
 import type { NativeRelationshipsSnapshot } from "@/lib/workspace-native-relationships"
 import type { NativeAdminSnapshot } from "@/lib/workspace-native-admin"
+import type { PersonalQueueSnapshot } from "@/lib/work-queue/server"
 import type { NativeWorkSnapshot } from "@/lib/workspace-native-work"
 import type { NativeAppointmentSnapshot } from "@/lib/workspace-native-appointment"
 import type { NativeLibrarySnapshot } from "@/lib/workspace-native-library"
@@ -22,10 +23,11 @@ import { WorkspaceTabOpeningState } from "./WorkspaceTabOpeningState"
 // boundary could otherwise report a panel ready before its code has arrived.
 const RelationshipsPanel = lazy(() => import("./NativeRelationshipsPanel"))
 const LibraryPanel = lazy(() => import("./NativeLibraryPanel"))
+const QueuePanel = lazy(() => import("./NativeQueuePanel"))
 const WorkPanel = lazy(() => import("./NativeWorkPanel"))
 const AdminPanel = lazy(() => import("./NativeAdminPanel"))
 const AppointmentPanel = lazy(() => import("./NativeAppointmentPanel"))
-export type NativePanelSnapshot = NativeRelationshipsSnapshot | NativeLibrarySnapshot | NativeWorkSnapshot | NativeAdminSnapshot | NativeAppointmentSnapshot
+export type NativePanelSnapshot = PersonalQueueSnapshot | NativeRelationshipsSnapshot | NativeLibrarySnapshot | NativeWorkSnapshot | NativeAdminSnapshot | NativeAppointmentSnapshot
 export type NativeTabHandle = { post: (message: Omit<WorkspaceTabParentMessage, "source" | "target" | "tabId">) => void }
 
 export function nativePanelCacheKey(userId: string, workspaceId: string, routeKey: string) { return `${userId}:${workspaceId}:${routeKey}` }
@@ -53,6 +55,7 @@ class NativePanelAccessError extends Error {}
 
 function NativePanel({ data }: { data: NativePanelSnapshot }) {
     switch (data.kind) {
+        case "queue": return <QueuePanel data={data} />
         case "relationships": case "relationship-detail": return <RelationshipsPanel data={data} />
         case "assets": case "asset-detail": case "work-items": case "work-item-detail": return <LibraryPanel data={data} />
         case "work": case "work-detail": return <WorkPanel data={data} />

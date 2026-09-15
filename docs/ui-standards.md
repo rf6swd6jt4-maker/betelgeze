@@ -660,3 +660,14 @@ Staff can view/download SOP assets. Saving, upload, interpretation and generatio
 remain separate operations. No parser or model call runs during navigation or field
 editing. Archive preserves records, sources and interpretations; permanent deletion
 remains unavailable.
+
+## Personal work queue
+
+The personal queue uses `PanelTabHeader`, `QuickStats`, `FilterRail` and the shared
+`List` bands. Its first ready/current item keeps the regular title and status bands
+and adds a modest goal, recommendation reason, estimated effort and execution controls
+beneath them. Following items retain the normal two-band list anatomy. This featured
+execution area is the only intentional expanded record; opening a dispute never
+inserts content into the list. Use `CenteredDialog` with native focus containment,
+Escape/backdrop dismissal and focus restoration. The current dispute preview has no
+submit control and clearly states that details are not saved or sent.

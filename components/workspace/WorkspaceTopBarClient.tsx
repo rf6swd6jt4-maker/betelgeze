@@ -282,7 +282,7 @@ function SettingsIcon() {
 function workspacePanelIcon(key: WorkspacePanelKey) {
     if (key === "relationships") return <RelationshipsIcon />
     if (key === "onboarding") return <HomeIcon />
-    if (key === "fulfilment") return <WorkIcon />
+    if (key === "fulfilment" || key === "queue") return <WorkIcon />
     if (key === "appointment-setting") return <AppointmentIcon />
     if (key === "communications") return <CommunicationsIcon />
     if (key === "library") return <LibraryIcon />

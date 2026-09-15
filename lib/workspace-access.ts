@@ -148,7 +148,7 @@ export async function requireWorkspacePanel(slug: string, panelKey: WorkspacePan
 }
 
 export function defaultWorkspaceHref(access: WorkspaceAccess) {
-    const workPanel = workspacePanelByKey("library")
+    const workPanel = workspacePanelByKey("queue")
     const panel = canAccessWorkspacePanel(workPanel, access.role, access.capabilities)
         ? workPanel
         : WORKSPACE_PANELS.find((candidate) => canAccessWorkspacePanel(candidate, access.role, access.capabilities))

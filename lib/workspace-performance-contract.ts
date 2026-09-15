@@ -6,7 +6,7 @@ export const WORKSPACE_PERFORMANCE_BOUNDARIES = [
     "code_ready", "data_ready", "meaningful_ready", "local_persisted", "server_ack", "external_completed", "visual_response",
 ] as const
 export const WORKSPACE_PERFORMANCE_SECTIONS = [
-    "workspace", "relationships", "work", "work-items", "assets", "appointment-setting", "onboarding",
+    "queue", "workspace", "relationships", "work", "work-items", "assets", "appointment-setting", "onboarding",
     "onboarding-builder", "communications", "settings", "admin", "leadgen", "no-access", "portal", "unknown",
 ] as const
 export const WORKSPACE_PERFORMANCE_COMMANDS = [

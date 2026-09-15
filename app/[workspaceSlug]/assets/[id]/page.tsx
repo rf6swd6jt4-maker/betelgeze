@@ -90,7 +90,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
     const contextRelationshipId = scopedRelationships[0]?.relationship_id
     const [contextRelationship, previewUrl] = await Promise.all([
         contextRelationshipId ? getRelationship(workspace.id, contextRelationshipId) : Promise.resolve(null),
-        asset.storage_path
+        asset.native_kind==='sop_extracted_image'?Promise.resolve(`/api/workspaces/${workspace.slug}/sop-images/${asset.id}`):asset.storage_path
             ? asset.source_kind === "message"
                 ? Promise.resolve(`/api/client-messages/media/${asset.storage_path.split("/").map(encodeURIComponent).join("/")}`)
                 : createUploadSignedUrl(asset.storage_path)

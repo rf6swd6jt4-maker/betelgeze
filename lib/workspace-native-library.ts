@@ -17,7 +17,8 @@ function assetSummary(asset: RelationshipAsset) {
     return { id: asset.id, title: asset.title, description: asset.description, asset_kind: asset.asset_kind, source_kind: asset.source_kind, content_type: asset.content_type, file_size: asset.file_size, updated_at: asset.updated_at }
 }
 
-function assetPreview(asset: RelationshipAsset) {
+function assetPreview(asset: RelationshipAsset,workspaceSlug:string) {
+    if(asset.native_kind==='sop_extracted_image')return Promise.resolve(`/api/workspaces/${workspaceSlug}/sop-images/${asset.id}`)
     if (!asset.storage_path) return Promise.resolve(asset.external_url)
     return asset.source_kind === "message"
         ? Promise.resolve(`/api/client-messages/media/${asset.storage_path.split("/").map(encodeURIComponent).join("/")}`)
@@ -28,7 +29,7 @@ async function loadAssetList(workspaceSlug: string) {
     const { workspace, user, access } = await requireWorkspacePanel(workspaceSlug, "library")
     const [allAssets, allowedIds] = await Promise.all([listWorkspaceAssets(workspace.id), accessibleAssetIds(access)])
     const assets = allAssets.filter((asset) => !allowedIds || allowedIds.has(asset.id))
-    const previewEntries = await Promise.all(assets.slice(0, 24).map(async (asset) => ({ asset: assetSummary(asset), previewUrl: asset.content_type?.startsWith("image/") && asset.storage_path ? await assetPreview(asset) : null })))
+    const previewEntries = await Promise.all(assets.slice(0, 24).map(async (asset) => ({ asset: assetSummary(asset), previewUrl: asset.content_type?.startsWith("image/") && asset.storage_path ? await assetPreview(asset,workspace.slug)+(asset.native_kind==='sop_extracted_image'?'?thumbnail=1':'') : null })))
     return {
         userId: user.id, workspaceId: workspace.id, workspaceSlug: workspace.slug, kind: "assets" as const, context: null,
         previewEntries, counts: { total: assets.length, images: assets.filter((asset) => asset.content_type?.startsWith("image/")).length, documents: assets.filter((asset) => asset.asset_kind === "document" || asset.content_type === "application/pdf").length, uploads: assets.filter((asset) => asset.source_kind === "upload").length },
@@ -70,7 +71,7 @@ async function loadAssetDetail(workspaceSlug: string, id: string) {
     const scopedRelationships = relationships.filter((link) => !allowedRelationships || allowedRelationships.has(link.relationship_id)).map((link) => ({ relationship_id: link.relationship_id, relationship: link.relationship ? { business_name: link.relationship.business_name, primary_person_name: link.relationship.primary_person_name } : null }))
     const scopedWorkItems = workItems.filter((link) => !allowedWorkItems || allowedWorkItems.has(link.work_item_id)).map((link) => ({ work_item_id: link.work_item_id, work_item: link.work_item ? { title: link.work_item.title } : null }))
     const contextRelationshipId = scopedRelationships[0]?.relationship_id
-    const [relationship, previewUrl] = await Promise.all([contextRelationshipId ? getRelationship(workspace.id, contextRelationshipId) : null, assetPreview(asset)])
+    const [relationship, previewUrl] = await Promise.all([contextRelationshipId ? getRelationship(workspace.id, contextRelationshipId) : null, assetPreview(asset,workspace.slug)])
     const context = await loadRelationshipContext({ workspaceSlug, relationship, access, metrics: [{ label: "Reference", value: shortId(asset.id) }, { label: "Links", value: scopedRelationships.length + scopedWorkItems.length }] })
     const response = asset.asset_kind === "form_submission" ? asset.metadata.response : null
     const formEntries = response && typeof response === "object" && !Array.isArray(response)

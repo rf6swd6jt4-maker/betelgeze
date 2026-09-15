@@ -1,10 +1,11 @@
 import type { SopInterpretation } from "./interpretation"
+import type { AssetSelection } from './asset-selection'
 
-export const SOP_WORK_VERSION = "sop-work-generic-v6"
+export const SOP_WORK_VERSION = "sop-work-assets-v7"
 export type SopWorkPlan = {
     summary: string
     warnings: string[]
-    tasks: { title: string; instruction?: string; description?: string; instructions?: string; completion_requirements?: string[]; task_type?: "implementation" | "request_information"; requested_inputs?: string[]; source_steps: number[]; depends_on: number[]; blocked_reason: string }[]
+    tasks: { title: string; instruction?: string; description?: string; instructions?: string; completion_requirements?: string[]; task_type?: "implementation" | "request_information"; requested_inputs?: string[]; source_steps: number[]; depends_on: number[]; blocked_reason: string; attachments?:AssetSelection[] }[]
 }
 export function sopClientInputs(source: SopInterpretation) {
     return source.steps.flatMap((step, index) => (step.client_inputs ?? []).map((name, inputIndex) => ({ input_id: `${index + 1}.${inputIndex + 1}`, name, source_step: index + 1 })))
@@ -125,6 +126,7 @@ export function completeSopInputRequests(value: unknown, source: SopInterpretati
             completion_requirements: [...entries.map(input => `Available or located in existing records: ${input.name}`),
                 ...(conditional ? ["If not applicable, the reason for deferring this request is recorded."] : [])],
             task_type: "request_information", requested_inputs: entries.map(input => input.input_id), source_steps: [stepId], depends_on: [], blocked_reason: "",
+            attachments: [],
         })
     }
     return parseSopWorkPlan({ ...plan, tasks }, source, true)

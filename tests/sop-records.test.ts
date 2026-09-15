@@ -101,6 +101,7 @@ test("OpenAI adapter sends only the chosen source, disables storage/tools, and h
     process.env.SOP_AI_ENABLED="true";process.env.OPENAI_API_KEY="fixture-key"
     const source=Buffer.from("Confirm account access.")
     const api=load("lib/sops/interpreter.ts",{
+        "./extraction":{supportsExtraction:()=>false},
         "./assets":{assertSopAssetPath:()=>{}},
         "@/lib/onboarding/uploads":{getR2BucketName:()=>"fixture",getR2Client:()=>({send:async()=>({ContentLength:source.length,Body:{transformToByteArray:async()=>source}})})},
     }) as typeof import("../lib/sops/interpreter")
@@ -111,7 +112,7 @@ test("OpenAI adapter sends only the chosen source, disables storage/tools, and h
             calls++;assert.equal(url,"https://api.openai.com/v1/responses")
             const body=JSON.parse(String(options?.body));assert.equal(body.store,false);assert.equal(body.tools,undefined);assert.equal(body.model,"fixture-model");assert.equal(body.text.format.strict,true);assert.equal(body.input.length,1)
             assert.equal(body.input[0].content[1].text,source.toString())
-            return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(draft)}]}],usage:{input_tokens:100,output_tokens:50}})
+            return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify({...draft,steps:draft.steps.map(s=>({...s,image_ids:[]}))})}]}],usage:{input_tokens:100,output_tokens:50}})
         }
         const result=await api.interpretSopAsset(input,response)
         assert.equal(result.inputTokens,100);assert.equal(result.sourceHash.length,64);assert.equal(calls,1)
@@ -164,6 +165,7 @@ test("media seek streams only the requested bytes and fails closed before storag
 test("background worker rechecks current admin access before downloading or sending a source",async()=>{
     let providerCalls=0;const finishes:Record<string,unknown>[]=[]
     const worker=load("lib/sops/interpretation-worker.ts",{
+        "./extraction":{supportsExtraction:()=>false},
         "./interpreter":{sopAiConfiguration:()=>({ready:true}),interpretSopAsset:async()=>{providerCalls++;return {}}},
         "./records":{getSopAsset:async()=>({asset:{id:ticket.id}})},
         "@/lib/supabase/admin":{supabaseAdmin:{

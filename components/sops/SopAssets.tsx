@@ -9,6 +9,7 @@ import { sopFileSize } from "@/lib/sops/policy"
 import { interpretationUnavailable, SOP_SOURCE_LABELS, type SopAsset, type SopInterpretationSummary } from "@/lib/sops/records-policy"
 import type { SopInterpretation } from "@/lib/sops/interpretation"
 import { sopButtonClass, sopCommand } from "./client"
+import { SopExtractedImages } from './SopExtractedImages'
 type Interpretation = SopInterpretationSummary & { result: SopInterpretation | null; model: string; input_tokens: number | null; output_tokens: number | null; reviewed_at: string | null }
 function AssetRow({ item, job, workspaceSlug, sopId, canEdit, aiReady }: { item: SopAsset; job?: SopInterpretationSummary; workspaceSlug: string; sopId: string; canEdit: boolean; aiReady: boolean }) {
     const router = useRouter(), busyRef = useRef(false), mediaRef = useRef<HTMLMediaElement | null>(null)
@@ -42,6 +43,7 @@ function AssetRow({ item, job, workspaceSlug, sopId, canEdit, aiReady }: { item:
                 {previewable ? <button type="button" className="min-h-10 hover:text-white" onClick={() => setPreview(value => !value)}>{preview ? "Close preview" : "Preview"}</button> : null}
                 <a href={url} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center hover:text-white">Open</a>
                 <a href={`${url}?download=1`} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center hover:text-white">Download</a>
+                {canEdit&&['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(type)?<SopExtractedImages workspaceSlug={workspaceSlug} sopId={sopId} assetId={item.asset_id}/>:null}
                 {job ? <button type="button" disabled={busy} className="min-h-10 disabled:opacity-40" onClick={() => void action(read)}>{busy ? "Loading…" : job.status === "ready" ? "Review interpretation" : job.status === "reviewed" ? "View interpretation" : "Check interpretation"}</button> : null}
                 {canEdit && !unavailable && (!job || ["queued", "failed", "running"].includes(job.status)) ? <button type="button" disabled={busy || !aiReady} title={!aiReady ? "OpenAI setup is not enabled" : undefined} className="min-h-10 text-white disabled:opacity-35" onClick={() => void action(async () => { await sopCommand(api, { assetId: item.asset_id, retry: job?.status === "failed" }); router.refresh() })}>{job?.status === "failed" ? "Retry interpretation" : job ? "Resume interpretation" : "Interpret asset"}</button> : null}
                 {job ? <span className="text-neutral-500">{job.status === "ready" ? "AI draft · needs review" : job.status === "reviewed" ? "Reviewed" : job.status === "failed" ? "Needs attention" : job.status === "queued" ? "Queued" : "Interpreting"}</span> : null}

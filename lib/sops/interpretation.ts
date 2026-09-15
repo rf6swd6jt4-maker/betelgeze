@@ -1,9 +1,9 @@
 /** Shared, bounded interpretation contract. This is source guidance, never client work. */
-export const SOP_INTERPRETATION_VERSION = "sop-source-v2"
+export const SOP_INTERPRETATION_VERSION = "sop-source-images-v3"
 export type SopInterpretation = {
     summary: string
     applicability: string[]
-    steps: { title: string; instruction: string; condition: string; source_location: string; source_quote: string; kind: "requirement" | "recommendation" | "example"; client_inputs?: string[] }[]
+    steps: { title: string; instruction: string; condition: string; source_location: string; source_quote: string; kind: "requirement" | "recommendation" | "example"; client_inputs?: string[];image_ids?:string[] }[]
     missing_information: string[]
     warnings: string[]
 }
@@ -25,6 +25,7 @@ export function parseSopInterpretation(value: unknown, originalText?: string): S
     for (const step of v.steps) {
         if (!step || !text(step.title, 200) || !step.title.trim() || !text(step.instruction, 2500) || !text(step.condition, 1000) || !text(step.source_location, 300) || !text(step.source_quote, 1500) || !step.source_quote.trim() || !["requirement", "recommendation", "example"].includes(step.kind)) throw new Error("The interpretation contains an unsupported step. Review the source before retrying.")
         if (step.client_inputs !== undefined && (!Array.isArray(step.client_inputs) || step.client_inputs.length > 8 || !step.client_inputs.every(input => text(input, 500) && input.trim()))) throw new Error("The interpretation contains invalid client inputs.")
+        if(step.image_ids!==undefined&&(!Array.isArray(step.image_ids)||step.image_ids.length>4||!step.image_ids.every(id=>typeof id==='string'&&/^[a-f0-9-]{36}$/i.test(id))))throw new Error('The interpretation contains invalid image references.')
         if (originalText && !originalText.replace(/\s+/g, " ").includes(step.source_quote.replace(/\s+/g, " "))) throw new Error("An interpretation quote could not be found in the text. Review the source before retrying.")
     }
     if (JSON.stringify(v).length > 80000) throw new Error("The interpretation is too large. Split the source into smaller documents.")

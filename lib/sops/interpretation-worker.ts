@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getSopAsset } from "./records"
 import { interpretSopAsset, sopAiConfiguration } from "./interpreter"
 import { sopLedgerRequest } from "./usage-ledger"
+import { queueSopExtraction,readSopExtraction,supportsExtraction } from './extraction'
 type Job = { id: string; workspace_id: string; sop_id: string; asset_id: string; requested_by: string; model: string; lease_token: string }
 export async function processSopInterpretation(id?: string, pilot?: { runId: string }) {
     if (!sopAiConfiguration().ready) return { claimed: 0, completed: 0 }
@@ -19,6 +20,16 @@ export async function processSopInterpretation(id?: string, pilot?: { runId: str
             getSopAsset(job.workspace_id, job.sop_id, job.asset_id),
         ])
         if (access.error || sop.error || !sop.data || sop.data.archived_at || !linked) throw new Error("This source is no longer available for interpretation.")
+        if(supportsExtraction(linked.asset.content_type)){
+            await queueSopExtraction(job.workspace_id,job.requested_by,job.sop_id,job.asset_id)
+            const extraction=await readSopExtraction(job.workspace_id,job.sop_id,job.asset_id)
+            if(extraction?.status==='failed')throw new Error('The source image extraction failed. Review its status and retry extraction first.')
+            if(extraction?.status!=='ready'){
+                const deferred=await supabaseAdmin.from('sop_interpretations').update({status:'queued',lease_token:null,lease_until:null,updated_at:new Date().toISOString()}).eq('id',job.id).eq('lease_token',job.lease_token)
+                if(deferred.error)throw new Error('Interpretation deferral could not be confirmed.')
+                return {claimed:1,completed:0}
+            }
+        }
         outcome = await interpretSopAsset({ workspaceId: job.workspace_id, sopId: job.sop_id, linked, model: job.model, timeoutMs: pilot ? 90_000 : undefined }, sopLedgerRequest({ id: job.lease_token, workspaceId: job.workspace_id, model: job.model, stage: "interpretation", interpretationId: job.id, runId: pilot?.runId }))
     } catch (e) {
         // Never persist raw provider bodies, credentials, document text or SDK errors.

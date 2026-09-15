@@ -7,12 +7,13 @@ import { processSopInterpretation } from "./interpretation-worker"
 import { generateSopWork } from "./work-generator"
 import { sopLedgerRequest } from "./usage-ledger"
 import { parseSopWorkPlan, SOP_WORK_VERSION, type SopWorkPlan } from "./work-plan"
+import { validateAssetSelections,type AssetCandidate } from './asset-selection'
 
 export function sopWorkConfiguration() {
     const config = sopAiConfiguration()
     return { ...config, ready: config.ready && process.env.SOP_WORK_PILOT_ENABLED === "true" }
 }
-type Job = { id: string; workspace_id: string; relationship_id: string; sop_id: string; interpretation_id: string; requested_by: string; model: string; lease_token: string; plan: SopWorkPlan | null; source_snapshot: SopInterpretation | null }
+type Job = { id: string; workspace_id: string; relationship_id: string; sop_id: string; interpretation_id: string; requested_by: string; model: string; lease_token: string; plan: SopWorkPlan | null; source_snapshot: SopInterpretation | null;asset_candidates:AssetCandidate[]|null }
 export async function processSopWork(id?: string, instanceId?: string) {
     if (!sopWorkConfiguration().ready) return { claimed: 0, published: 0 }
     if (!id) {
@@ -54,13 +55,18 @@ export async function processSopWork(id?: string, instanceId?: string) {
             // Extraction can take time. Recheck revocation and evidence before the second paid call.
             const current = await supabaseAdmin.rpc("prepare_sop_work", { p_id: job.id, p_lease: job.lease_token })
             if (current.error || !current.data || !sopWorkConfiguration().ready) throw new Error("Client information or access changed before generation. No work was published.")
-            const plan = await generateSopWork({ model: job.model, source: interpretation }, sopLedgerRequest({ id: job.lease_token, workspaceId: job.workspace_id, model: job.model, stage: "generation", runId: job.id }), async output => {
+            const candidateRead=await supabaseAdmin.rpc('sop_work_asset_candidates',{p_id:job.id,p_lease:job.lease_token,p_image_ids:[...new Set(interpretation.steps.flatMap(step=>step.image_ids??[]))]})
+            if(candidateRead.error)throw new Error('Could not read permitted asset candidates.')
+            const assets=(candidateRead.data as AssetCandidate[]).map(a=>({...a,description:a.description.slice(0,1000),source_steps:interpretation.steps.flatMap((s,i)=>s.image_ids?.includes(a.id)?[i+1]:[])})).filter(a=>a.kind!=='extracted_image'||a.source_steps.length)
+            await save({asset_candidates:assets})
+            const plan = await generateSopWork({ model: job.model, source: interpretation,assets }, sopLedgerRequest({ id: job.lease_token, workspaceId: job.workspace_id, model: job.model, stage: "generation", runId: job.id }), async output => {
                 await save({ raw_output: output, source_snapshot: interpretation, schema_version: SOP_WORK_VERSION })
             })
             // Save before publication. A lost acknowledgement can retry publication without paying again.
             await save({ plan, source_snapshot: interpretation })
         } else {
             parseSopWorkPlan(job.plan, parseSopInterpretation(job.source_snapshot))
+            validateAssetSelections(job.plan,parseSopInterpretation(job.source_snapshot),job.asset_candidates??[])
         }
         const publish = await supabaseAdmin.rpc("publish_sop_work", { p_id: job.id, p_lease: job.lease_token })
         if (publish.error) throw new Error("Work could not be published. The saved plan is retained for recovery.")

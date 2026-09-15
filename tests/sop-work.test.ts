@@ -91,6 +91,7 @@ function workerFixture(options:{revoked?:boolean;cached?:boolean;savedPlan?:bool
             if(name==="accept_sop_work_request"){calls.accepted++;return {data:options.acceptNone?null:"run"}}
             if(name==="claim_sop_work")return {data:[job]}
             if(name==="prepare_sop_work"){calls.prepares++;return options.revoked?{error:{message:"revoked"}}:{data:{goal:"Bookings"}}}
+            if(name==='sop_work_asset_candidates')return {data:[]}
             if(name==="publish_sop_work"){calls.publish++;return options.failPublish?{error:{message:"offline"}}:{data:["work1","work2"]}}
             throw new Error(name)
         }}},
@@ -191,7 +192,7 @@ test("cron acknowledges only authenticated wakeups and defers all processing",as
     const previous=process.env.SOP_WORK_CRON_SECRET;process.env.SOP_WORK_CRON_SECRET="fixture-worker-secret"
     const callbacks:(()=>Promise<void>)[]=[];let calls=0
     try {
-        const route=load("app/api/cron/sop-work/route.ts",{"next/server":{after:(fn:()=>Promise<void>)=>callbacks.push(fn)},"@/lib/sops/work-worker":{processSopWork:async()=>{calls++}}}) as typeof import("../app/api/cron/sop-work/route")
+        const route=load("app/api/cron/sop-work/route.ts",{"next/server":{after:(fn:()=>Promise<void>)=>callbacks.push(fn)},"@/lib/sops/work-worker":{processSopWork:async()=>{calls++;return {claimed:1}}},"@/lib/sops/extraction":{processSopExtraction:async()=>({claimed:0})},"@/lib/sops/interpretation-worker":{processSopInterpretation:async()=>{}}}) as typeof import("../app/api/cron/sop-work/route")
         assert.equal((await route.POST(new Request("https://be.test/api/cron/sop-work",{method:"POST"}))).status,401)
         assert.equal(callbacks.length,0)
         assert.equal((await route.POST(new Request("https://be.test/api/cron/sop-work",{method:"POST",headers:{authorization:"Bearer fixture-worker-secret"}}))).status,202)
@@ -332,4 +333,23 @@ test("input reconciliation preserves conditions and rejects unsupported plans in
         assert.throws(()=>work.completeSopInputRequests({...plan,tasks:[{...task,...change}]},assumed))
     }
     assert.throws(()=>work.completeSopInputRequests({...plan,tasks:Array.from({length:40},(_,i)=>({...task,title:`Task ${i}`}))},assumed),/too large/)
+})
+
+
+test("generation makes one evidence-bound attachment decision and rejects an unrelated candidate",async()=>{
+    const generator=load("lib/sops/work-generator.ts") as typeof import("../lib/sops/work-generator")
+    const visualId="00000000-0000-4000-8000-000000000001"
+    const imageSource={...source,steps:[{...source.steps[0],instruction:"Compare conversion settings with the approved reference screenshot.",image_ids:[visualId]}]}
+    const assets=[{id:visualId,title:"Conversion reference",description:"Approved conversion settings screenshot.",kind:"extracted_image" as const,source_steps:[1],version:"v1"}]
+    const attachment={asset_id:visualId,source_step:1,source_quote:"Compare conversion settings",asset_quote:"Approved conversion settings",reason:"Shows the specific conversion settings to verify."}
+    let calls=0
+    const request:typeof fetch=async(_url,init)=>{
+        calls++;const body=JSON.parse(String(init?.body))
+        assert.deepEqual(JSON.parse(body.input[0].content[0].text).asset_candidates,calls===1?assets:[])
+        if(calls===1)assert.deepEqual(body.text.format.schema.properties.tasks.items.properties.attachments.items.properties.asset_id.enum,[visualId])
+        return Response.json({status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify({...plan,tasks:[{...task,attachments:[attachment]}]})}]}]})
+    }
+    const result=await generator.generateSopWork({model:"gpt-5.4-mini",source:imageSource,assets},request,async()=>{})
+    assert.equal(calls,1);assert.deepEqual(result.tasks[0].attachments,[attachment])
+    await assert.rejects(generator.generateSopWork({model:"gpt-5.4-mini",source:imageSource,assets:[]},request,async()=>{}),/invalid or repeated asset/)
 })

@@ -41,7 +41,7 @@ export default async function AssetsPage({ params }: PageProps) {
     const previewEntries = await Promise.all(assets.slice(0, 24).map(async (asset) => ({
         asset,
         previewUrl: isImage(asset) && asset.storage_path
-            ? asset.source_kind === "message" ? encryptedMessageAssetUrl(asset.storage_path) : await createUploadSignedUrl(asset.storage_path)
+            ? asset.native_kind==='sop_extracted_image'?`/api/workspaces/${workspace.slug}/sop-images/${asset.id}?thumbnail=1`:asset.source_kind === "message" ? encryptedMessageAssetUrl(asset.storage_path) : await createUploadSignedUrl(asset.storage_path)
             : null,
     })))
 

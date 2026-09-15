@@ -203,7 +203,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                     hubHref: role === "staff" ? undefined : item.native_href?.startsWith("/") ? item.native_href : undefined,
                     path: isPrivate
                         ? `${workspace.name} > Admin > ${item.kind === "maintenance" ? "Maintenance" : "Work"}`
-                        : role === "staff" ? `${workspace.name} > Fulfilment` : `${workspace.name} > Library > Work Items`,
+                        : `${workspace.name} > Library > Work Items`,
                     recordId: shortId(item.id),
                 }
             ))

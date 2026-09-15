@@ -123,6 +123,8 @@ Status: implemented, production rollback rehearsal passed, migration installed a
 
 ### SS-07 — Personal Work Queue and Home
 
+Navigation preparation (2026-09-15): Fulfilment is removed from sidebar and panel search; Library is the interim default destination. Saved `/work` routes retain their existing permission checks and content for compatibility. No work records, relationship queues or delivery capabilities are removed. The personal queue below remains proposed. This navigation-only change adds no requests, ranking work, polling or provider calls.
+
 - New panel defaults to My work for every user, including users with no assignments. Provide an honest empty state.
 - Show recommended current work with its relationship/service, reason, relevant deadline and appropriate action. Sales opens scoped POS; reviews open relevant submissions; manual tasks use guarded completion. Waiting for payment/client input cannot be manually completed.
 - Below it, show ordered actionable work and separate Waiting/Blocked/Scheduled views. Keep personal responsibility distinct from optional authorized oversight/unassigned work.

@@ -18,7 +18,6 @@ export type WorkspacePanelDefinition = {
 export const WORKSPACE_PANELS = [
     { key: "relationships", label: "Relationships", route: "relationships", capability: "relationships.view", description: "Relationship Hub list", keywords: ["dashboard", "crm", "people", "accounts"] },
     { key: "onboarding", label: "Onboarding", route: "onboarding", capability: "onboarding.manage", minimumRole: "admin", description: "Relationship onboarding status and submissions", keywords: ["forms", "submissions", "portal"] },
-    { key: "fulfilment", label: "Fulfilment", route: "work", capability: "fulfilment.manage", allMembers: true, description: "Fulfilment relationship work items", keywords: ["tasks", "project management", "queue", "fulfilment"] },
     { key: "appointment-setting", label: "Appointment Setting", route: "appointment-setting", capability: "appointment_setting.manage", requiresService: true, description: "Leads, bookings, setter availability, and appointment outcomes", keywords: ["appointments", "bookings", "setters", "calendar", "leads"] },
     { key: "communications", label: "Communications", route: "communications", capability: "communications.manage", allMembers: true, description: "Relationship communication summaries", keywords: ["messages", "chat", "whatsapp", "communication"] },
     { key: "library", label: "Library", route: "work-items", activeRoutes: ["work-items", "sops", "assets"], capability: "library.manage", allMembers: true, description: "Workspace procedures, work items and assets", keywords: ["tasks", "files", "uploads", "gallery", "sop", "procedures"] },
@@ -27,7 +26,10 @@ export const WORKSPACE_PANELS = [
     { key: "admin", label: "Admin", route: "admin", capability: "admin.manage", minimumRole: "admin", description: "Private OKRs, activity, maintenance, and automation-failure follow-up", keywords: ["admin tools", "okr", "objectives", "key results", "metrics", "activity console", "automation history", "maintenance", "automation failures", "admin work items", "goals"] },
     { key: "settings", label: "Settings", route: "settings", capability: "settings.manage", minimumRole: "admin", description: "Unified workspace settings", keywords: ["workspace settings", "services", "agency branding", "onboarding colours"] },
 ] as const satisfies readonly WorkspacePanelDefinition[]
-export type WorkspacePanel = (typeof WORKSPACE_PANELS)[number]
+// Retain authorization and saved URLs while the personal queue is designed.
+// This legacy destination is deliberately absent from navigation and search.
+const LEGACY_FULFILMENT_PANEL = { key: "fulfilment", label: "Fulfilment", route: "work", capability: "fulfilment.manage", allMembers: true, description: "Fulfilment relationship work items", keywords: ["tasks", "project management", "queue", "fulfilment"] } as const satisfies WorkspacePanelDefinition
+export type WorkspacePanel = (typeof WORKSPACE_PANELS)[number] | typeof LEGACY_FULFILMENT_PANEL
 export type WorkspacePanelKey = WorkspacePanel["key"]
 
 export function canAccessPrivateWorkspacePanels(role: WorkspaceRole) {
@@ -48,7 +50,7 @@ export function canAccessWorkspacePanel(
 }
 
 export function workspacePanelByKey(key: WorkspacePanelKey) {
-    return WORKSPACE_PANELS.find((panel) => panel.key === key)!
+    return key === "fulfilment" ? LEGACY_FULFILMENT_PANEL : WORKSPACE_PANELS.find((panel) => panel.key === key)!
 }
 
 export function workspacePanelForUrl(value: string, workspaceSlug: string) {
@@ -56,6 +58,7 @@ export function workspacePanelForUrl(value: string, workspaceSlug: string) {
     const prefix = `/${workspaceSlug}/`
     if (!pathname.startsWith(prefix)) return null
     const route = pathname.slice(prefix.length).split("/")[0]
+    if (route === LEGACY_FULFILMENT_PANEL.route) return LEGACY_FULFILMENT_PANEL
     return WORKSPACE_PANELS.find((panel) => panel.route === route || ("activeRoutes" in panel && (panel.activeRoutes as readonly string[]).includes(route))) ?? null
 }
 

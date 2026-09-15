@@ -35,11 +35,10 @@ test("workspace roles are Owner, Admin, and Staff with legacy member normalizati
     assert.equal(workspaceRoleMeetsMinimum("admin", "staff"), true)
 })
 
-test("Staff always see Work and Communications while operational roles reveal Relationships", () => {
+test("Staff see Library and Communications while operational roles reveal Relationships", () => {
     assert.deepEqual(WORKSPACE_PANELS.map((panel) => panel.label), [
         "Relationships",
         "Onboarding",
-        "Fulfilment",
         "Appointment Setting",
         "Communications",
         "Library",
@@ -55,7 +54,7 @@ test("Staff always see Work and Communications while operational roles reveal Re
     assert.equal(canAccessWorkspacePanel(byKey.get("relationships")!, "staff", baseline), false)
     assert.equal(canAccessWorkspacePanel(byKey.get("relationships")!, "staff", sellerOrManager), true)
     assert.equal(canAccessWorkspacePanel(byKey.get("onboarding")!, "staff", ["onboarding.manage"]), false)
-    assert.equal(canAccessWorkspacePanel(byKey.get("fulfilment")!, "staff", baseline), true)
+    assert.equal(byKey.has("fulfilment"), false)
     assert.equal(canAccessWorkspacePanel(byKey.get("communications")!, "staff", baseline), true)
     assert.equal(canAccessWorkspacePanel(byKey.get("appointment-setting")!, "staff", appointmentSetter), true)
     assert.equal(canAccessWorkspacePanel(byKey.get("settings")!, "staff", sellerOrManager), false)
@@ -86,9 +85,9 @@ test("workspace capability normalization remains deterministic", () => {
     ]), ["onboarding.manage", "fulfilment.manage", "appointment_setting.manage", "communications.manage"])
 })
 
-test("workspace access defaults every member to Work without editable panel permissions", () => {
+test("workspace access defaults every member to Library without changing delivery permissions", () => {
     assert.match(workspaceAccess, /baseCapabilities = \["fulfilment\.manage", "communications\.manage"\]/)
-    assert.match(workspaceAccess, /const workPanel = workspacePanelByKey\("fulfilment"\)/)
+    assert.match(workspaceAccess, /const workPanel = workspacePanelByKey\("library"\)/)
     assert.doesNotMatch(workspaceAccess, /from\("workspace_service_capabilities"\)/)
     assert.doesNotMatch(workspaceAccess, /from\("workspace_operational_permissions"\)/)
     assert.doesNotMatch(workspaceTeamSettings, /Position permissions|Service fulfilment permissions|Edit permissions/)

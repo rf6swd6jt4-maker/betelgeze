@@ -304,3 +304,21 @@ export async function notifyClientChatMessage(input: {
         url: `/${encodeURIComponent(workspace.slug)}/communications?conversation=${encodeURIComponent(input.relationshipId)}`,
     })
 }
+
+/** Internal dispute notification: recipient and destination come only from the saved dispute. */
+export async function notifyQueueDispute(input:{workspaceId:string;disputeId:string}) {
+    const result=await supabaseAdmin.from('work_queue_disputes').select('resolver_id,conversation_id,message_id').eq('workspace_id',input.workspaceId).eq('id',input.disputeId).single()
+    if(result.error)throw new Error('Dispute notification unavailable')
+    const d=result.data
+    const [conversation,workspace,message,access]=await Promise.all([
+        supabaseAdmin.from('workspace_native_conversations').select('team_id,kind').eq('workspace_id',input.workspaceId).eq('id',d.conversation_id).single(),
+        supabaseAdmin.from('workspaces').select('slug').eq('id',input.workspaceId).single(),
+        supabaseAdmin.from('workspace_native_messages').select('created_at').eq('workspace_id',input.workspaceId).eq('conversation_id',d.conversation_id).eq('id',d.message_id).single(),
+        supabaseAdmin.rpc('queue_feedback_can_review',{p_workspace:input.workspaceId,p_dispute:input.disputeId,p_user:d.resolver_id}),
+    ])
+    if(conversation.error||workspace.error||message.error||access.error)throw new Error('Dispute notification routing unavailable')
+    if(conversation.data.kind!=='team'||!access.data)return
+    const team=await supabaseAdmin.from('workspace_teams').select('name').eq('workspace_id',input.workspaceId).eq('id',conversation.data.team_id).is('archived_at',null).single()
+    if(team.error)throw new Error('Dispute team unavailable')
+    await deliverChatPush([d.resolver_id],{workspaceId:input.workspaceId,conversationKind:'native',messageId:d.message_id,messageCreatedAt:message.data.created_at,conversationId:d.conversation_id,title:`Dispute in ${team.data.name}`,body:'A work item needs your review.',url:`/${workspace.data.slug}/queue/feedback?dispute=${input.disputeId}`})
+}

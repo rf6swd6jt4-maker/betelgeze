@@ -6,7 +6,7 @@ The `/queue` panel is the workspace landing page. It combines explicitly owned A
 
 The featured item uses the same List identity/state bands as following records, with a larger goal/rationale/action area. Accept & start records the actual first start. Pause and resume preserve it. Completion requires confirmation of the instructions' completion requirements, uses an optimistic version check and a database transaction, and unlocks dependent tasks. Parent-workflow completion reuses the existing rules through a durable follow-up and retries independently of the saved task completion.
 
-A centered native-top-layer dialog contains the dispute reasons and optional details; Other requires details. There is deliberately no submit control, persistence, chat delivery or learning behaviour in this release. Opening it does not change the underlying list geometry.
+A centered native-top-layer dialog contains the dispute reasons and optional details; Other requires details. Submission, internal team routing and controlled learning are now available; see [Queue feedback](queue-feedback.md). Opening it does not change the underlying list geometry.
 
 ## Ranking and reuse
 
@@ -16,7 +16,7 @@ A centered native-top-layer dialog contains the dispute reasons and optional det
 * GPT-5.4 mini with low reasoning is the sole model. There is no stronger-model routing. Context fingerprint includes model and policy version so a later explicit model change can invalidate reuse.
 * Source changes enqueue durable work. The worker fingerprints context; unchanged input reuses the stored result without another provider request. Ordinary reads, visits and Refresh cannot run an assessment. Existing results remain usable while refreshed; readiness is always live.
 * Time-sensitive ordering is computed cheaply from existing assessments: explicit overrides, deadline slack, impact, urgency and bounded age. Effort is a small tie preference, never a value-per-minute ratio that lets tiny chores dominate important work. Started work stays first.
-* Context from other client scopes is excluded. Multi-client work omits client notes rather than mixing access scopes. Scores are comparable across services; the model cannot create deadlines, change assignment/dependencies, rewrite instructions or mark work complete. Optional inherited urgency and a more extensive dependency horizon can be evaluated later.
+* Context from other client scopes is excluded. Multi-client work omits client notes rather than mixing access scopes. Scores are comparable across services; the model supplies qualitative urgency bands and a reading aid; it cannot create clock-time deadlines, change assignment/dependencies, rewrite canonical instructions or mark work complete. Optional inherited urgency and a more extensive dependency horizon can be evaluated later.
 * A changed revision during inference prevents publication and queues the current context. Expired/uncertain calls do not retry automatically; usage stays unknown when provider usage cannot be confirmed. Real content changes permit a new assessment.
 
 ## Runtime setup
@@ -55,3 +55,5 @@ The shared `workspace_user_can_access_work_item` helper recognized legacy relati
 The new `scripts/validate-queue-assignment-access.mjs` loads the actual old helper, reproduces the empty queue, then verifies the repair, reassignment, cross-client/service denial, private Admin exclusion, cancelled/imported/paused instances, legacy access and start/pause commands. All 1,065 repository tests and the production Webpack build passed. The indexed 1,000-item SQL fixture read took approximately 65 ms; this is not production end-to-end latency. The change adds no browser requests or AI calls.
 
 The migration was rehearsed with rollback, then applied to production. Live actor-scoped reads for the affected staff member returned 11 tasks (1 ready, 10 deferred), and delivery scope included the previously inaccessible task. A different staff member remained denied; existing admin access remained intact. These are database checks, not a signed-in worker visual test. Refresh the personal queue to replace any cached empty result.
+
+Feedback and four-band priority implementation: [queue-feedback.md](queue-feedback.md).

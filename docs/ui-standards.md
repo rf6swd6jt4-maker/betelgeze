@@ -669,5 +669,4 @@ and adds a modest goal, recommendation reason, estimated effort and execution co
 beneath them. Following items retain the normal two-band list anatomy. This featured
 execution area is the only intentional expanded record; opening a dispute never
 inserts content into the list. Use `CenteredDialog` with native focus containment,
-Escape/backdrop dismissal and focus restoration. The current dispute preview has no
-submit control and clearly states that details are not saved or sent.
+Escape/backdrop dismissal and focus restoration. The dispute popup has a fixed-footer Submit dispute control, required details for Other, and an explicit internal-team routing explanation. Pending and failed submissions retain the draft; acknowledgement advances the queue. Ready items display one qualitative urgency band; execution state replaces it while in progress or blocked. Feedback uses the shared List and CenteredDialog for manager resolution, with original instructions loaded on demand.

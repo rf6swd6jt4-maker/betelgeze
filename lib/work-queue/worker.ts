@@ -1,7 +1,7 @@
 import "server-only"
 import { createHash } from "node:crypto"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { ASSESSMENT_INSTRUCTIONS, ASSESSMENT_SCHEMA, parseAssessment, QUEUE_MODEL, QUEUE_POLICY } from "./ranking"
+import { ASSESSMENT_INSTRUCTIONS, HORIZON_INSTRUCTIONS, ASSESSMENT_SCHEMA, parseAssessment, QUEUE_MODEL, QUEUE_POLICY } from "./ranking"
 
 export function queueAiConfiguration() {
     const dailyLimit = Number(process.env.QUEUE_AI_DAILY_LIMIT ?? 500)
@@ -35,7 +35,7 @@ export async function processQueueAssessment(request: typeof fetch = fetch) {
             dispatched = true
             const response = await request("https://api.openai.com/v1/responses", {
                 method: "POST", headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY!.trim()}`, "Content-Type": "application/json" }, signal: AbortSignal.timeout(65000),
-                body: JSON.stringify({ model: QUEUE_MODEL, store: false, service_tier: "default", reasoning: { effort: "low" }, instructions: ASSESSMENT_INSTRUCTIONS,
+                body: JSON.stringify({ model: QUEUE_MODEL, store: false, service_tier: "default", reasoning: { effort: "low" }, instructions: ASSESSMENT_INSTRUCTIONS + HORIZON_INSTRUCTIONS,
                     input: [{ role: "user", content: [{ type: "input_text", text: input }] }], max_output_tokens: 4000,
                     text: { format: { type: "json_schema", name: "work_assessment", strict: true, schema: ASSESSMENT_SCHEMA } },
                 }),

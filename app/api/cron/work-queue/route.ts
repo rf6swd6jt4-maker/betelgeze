@@ -1,3 +1,4 @@
+import { processQueueFeedback, processQueueFeedbackFast } from "@/lib/work-queue/feedback-worker"
 import { after } from "next/server"
 import { processQueueCompletion } from "@/lib/work-queue/completion"
 import { timingSafeEqual } from "node:crypto"
@@ -11,7 +12,9 @@ async function processRequest(request: Request) {
     after(async () => {
         try {
             await processQueueCompletion()
-            for (let n=0;n<4;n++) { if (!(await processQueueAssessment()).processed) break }
+            await processQueueFeedbackFast()
+            await processQueueFeedback("dispute")
+            for (let n=0;n<3;n++) { if (!(await processQueueAssessment()).processed) break }
         } catch { console.error("Queue worker could not confirm processing; durable jobs remain available.") }
     })
     return Response.json({ accepted: true }, { status: 202, headers: { "Cache-Control": "no-store" } })

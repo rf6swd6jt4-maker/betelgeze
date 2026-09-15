@@ -8,6 +8,7 @@ function panelLoadingForUrl(value: string, workspaceSlug: string): { variant: Pa
     const segments = url.pathname.split("/").filter(Boolean).slice(1)
     const [panel, nested] = segments
 
+    if (panel === "sops" && nested) return { variant: "detail", title: "SOP" }
     if (workspaceRouteIsRecordDetail(value, workspaceSlug, "http://localhost")) return { variant: "detail" as const, title: panel?.replace(/-/g, " ") ?? "record" }
     if (panel === "admin") {
         if (nested === "activity") return { variant: "admin-activity" as const }
@@ -24,6 +25,8 @@ function panelLoadingForUrl(value: string, workspaceSlug: string): { variant: Pa
         communications: "communications",
         onboarding: "onboarding",
         relationships: "relationships",
+        queue: "queue",
+        sops: "sops",
         settings: "settings",
         work: "fulfilment",
         "work-items": "work-items",

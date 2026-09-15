@@ -1,9 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
-import Script from "next/script";
 import { GlobalLoadingOverlay } from "@/components/GlobalLoadingOverlay";
-import { appStartupCanvas } from "@/components/AppStartupScreen";
+import { appStartupBootstrap, appStartupStyles } from "@/lib/app-startup";
 import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import { WorkspaceTabFrameGuard } from "@/components/workspace/WorkspaceTabFrameGuard";
 import { WORKSPACE_TAB_FRAME_NAME_PREFIX, WORKSPACE_TAB_FRAME_PARAM } from "@/lib/workspace-tabs";
@@ -67,11 +66,15 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      style={{ ...appStartupCanvas, height: "100%", colorScheme: "dark" }}
+      suppressHydrationWarning
+      style={{ backgroundColor: "#171717", height: "100%", colorScheme: "dark" }}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body style={appStartupCanvas} className="min-h-full flex flex-col">
-        <Script id="workspace-frame-bootstrap" strategy="beforeInteractive">{workspaceFrameBootstrap}</Script>
+      <head>
+        <style dangerouslySetInnerHTML={{ __html: appStartupStyles }} />
+        <script id="workspace-frame-bootstrap" dangerouslySetInnerHTML={{ __html: appStartupBootstrap + workspaceFrameBootstrap }} />
+      </head>
+      <body className="min-h-full flex flex-col">
         <Suspense fallback={null}>
           <WorkspaceTabFrameGuard />
         </Suspense>

@@ -81,7 +81,8 @@ Apply judgment: this gate concerns a concrete mechanism or unresolved material r
 
 ### Launch and loading visuals
 
-- Preserve the app-controlled startup canvas: dark grey `#171717` with the white Betelgeze diamond centered, available from early HTML/inline styles without waiting for a remote image, font, or JavaScript hydration.
+- Reserve the app-controlled startup canvas (dark grey `#171717` with the white Betelgeze diamond centered) for top-level BE app launch only, available from early HTML/inline styles without waiting for a remote image, font, or JavaScript hydration. It must never appear in workspace panel frames, panel navigation/retry, or client-facing UIs. Public onboarding and client portals use their agency logo; a missing logo must not fall back to BE branding.
+- Every workspace panel must have a route-specific loading state shared by its route fallback and shell opening state. Pending navigation keeps the frame receiver alive independently of destination readiness; the latest navigation must supersede older draft-flush continuations, including A -> B -> A.
 - Remove the startup cover when the real page/shell is ready. Do not add a minimum splash duration or leave it over usable content.
 - Keep the document, iframe canvas, loading states, and panel fallbacks dark before CSS/content arrives, including when the operating system uses a light theme. Do not expose a white intermediate Communications frame.
 - Keep shared chrome under one owner. The workspace banner/logo belongs to the shared layout/`WorkspacePanelChrome`; `WorkspaceTabOpeningState` must not repeat it as another skeleton beneath the real banner.
@@ -171,6 +172,14 @@ Never use this exception to relax a threshold after a failed feature benchmark, 
 - **Evidence:** existing-preview storage stays at one request. Successful legacy conversion falls from six storage operations (preview GET, preview HEAD, original HEAD, original GET, preview PUT, preview GET) to three (preview GET, original GET, preview PUT). Permission checks change from serial to concurrent with the same decisions. These are source/control-flow counts, not measured production latency. Runtime regression covers generated-byte delivery, cached previews, HEAD, conversion failure, validators, and storage denial.
 - **Limitations:** first legacy preview still downloads/converts the original and persists the derivative; image-heavy chats still have a four-slot admission queue. No sub-second guarantee or authenticated-device latency result is established.
 - **Rollout/rollback:** application-only change, no schema, backfill, provider purchase, or public caching. Revert this change to restore the former waterfall and corresponding standard.
+
+### 2026-09-15 — Interrupted panel navigation and launch-only branding
+
+- **Authorized scope:** fix rapid panel switches and reserve BE launch branding for app launch; compare with the original speed baseline.
+- **Clarified standard:** navigation transport remains resident through loading/error boundaries; pending readiness must not force a document reload. Route-specific panel fallbacks replace exposed document startup branding. The launch diamond cannot reappear after usable app content; public surfaces use agency branding. No speed budget is relaxed.
+- **Evidence:** `docs/interrupted-panel-loading.md` records the production Safari error, baseline scope, runtime regression tests and release verification. The deterministic rapid-switch case goes from a hard document navigation to zero hard navigations. This is a control-flow comparison, not an end-to-end latency claim.
+- **Resources and correctness:** no additional panel data request, bootstrap, timer, retry loop, cache invalidation or authorization change. One root navigation receiver replaces page-level command handling; a bounded launch observer disconnects at first visible content. Draft persistence stays mandatory and newer intents fence older continuations.
+- **Rollback:** revert the scoped application change and restore this contract wording. No migration, data conversion or rollout-flag change.
 
 ### Required format for future speed updates
 

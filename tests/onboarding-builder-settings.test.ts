@@ -250,7 +250,7 @@ test("Builder opens outside the workspace shell and leaves a lightweight tab pla
     assert.match(workspaceShell, /openOnboardingBuilderWindow\(href, workspace\.slug\)\s+navigateActiveTab\(href\)/)
     assert.match(workspaceBridge, /isWorkspaceOnboardingBuilderUrl\(nextUrl/)
     assert.match(workspaceBridge, /openOnboardingBuilderWindow\(nextUrl, workspaceSlug\)/)
-    assert.match(workspaceBridge, /router\.push\(workspaceTabFrameUrl\(nextUrl, tabId/)
+    assert.match(workspaceBridge, /new CustomEvent\(WORKSPACE_FRAME_NAVIGATION_EVENT, \{ detail: \{ url: nextUrl/)
     assert.match(builderWindowControls, /disabled:bg-neutral-700|bg-neutral-700/)
     assert.match(builderWindowControls, /Onboarding Builder is already open/)
     assert.match(builderWindowProtocol, /window\.opener\.top/)

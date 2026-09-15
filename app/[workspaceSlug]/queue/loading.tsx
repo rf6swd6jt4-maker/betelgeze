@@ -1,1 +1,3 @@
-export default function LoadingQueue() { return <p className="p-6 text-sm text-neutral-400">Opening your queue…</p> }
+import { PanelRouteLoading } from "@/components/workspace/PanelRouteLoading"
+
+export default function Loading() { return <PanelRouteLoading variant="queue" /> }

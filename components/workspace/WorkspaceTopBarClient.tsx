@@ -1,5 +1,7 @@
 "use client"
 
+import { workspaceFrameHasNavigationReceiver } from "@/lib/workspace-frame-navigation"
+
 import { useOnline } from "@/components/pwa/useOnline"
 import { WorkspaceOfflineStatus } from "@/components/pwa/WorkspaceOfflineStatus"
 
@@ -958,7 +960,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
 
     const requestTabFrameNavigation = useCallback((tabId: string, url: string, mode: "assign" | "replace" = "assign") => {
         const messageType = mode === "replace" ? "traverse" : "navigate"
-        if (readyTabIdsRef.current.has(tabId) && postToTab(tabId, { type: messageType, url })) {
+        const frame = iframeRefs.current.get(tabId)
+        const receiverAvailable = nativeRefs.current.has(tabId) || (frame && workspaceFrameHasNavigationReceiver(frame, tabId))
+        if (receiverAvailable && postToTab(tabId, { type: messageType, url })) {
             readyTabIdsRef.current.delete(tabId)
             // Recover a missed acknowledgement without aborting the stream.
             scheduleSoftNavigationFallback(tabId, url)
@@ -1194,7 +1198,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 }
                 return
             }
-            if (native && message.type === "navigation-failed" && message.url) {
+            if (message.type === "navigation-failed" && message.url) {
                 const url = normalizeWorkspaceUrl(message.url)
                 if (!workspaceNavigationReadyMatches(url, tabsRef.current.find((tab) => tab.id === message.tabId)?.url, pendingNavigationRef.current.get(message.tabId))) return
                 nativeNavigationPerformance.finishTarget(message.tabId, url, "failed")
@@ -1908,10 +1912,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         const tabId = activeTabIdRef.current
         if (!tabId) { nativeNavigationPerformance.finish(intent, "aborted"); return }
         const url = normalizeWorkspaceUrl(href)
-        const currentTab = tabs.find((candidate) => candidate.id === tabId)
+        const currentTab = tabsRef.current.find((candidate) => candidate.id === tabId)
         const isLoaded = loadedTabIdsRef.current.has(tabId)
         const alreadyPending = pendingNavigationRef.current.get(tabId) === url
-        if (currentTab?.url === url && isLoaded && !alreadyPending) { nativeNavigationPerformance.finish(intent, "aborted"); return }
+        if (alreadyPending || (currentTab?.url === url && isLoaded && !pendingNavigationRef.current.has(tabId))) { nativeNavigationPerformance.finish(intent, "aborted"); return }
         beginTabNavigation(tabId, url)
         if (currentTab?.url !== url) {
             updateTabForShellNavigation(tabId, url)
@@ -2695,10 +2699,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                     ready={loadedTabIds.has(tab.id)}
                 />
             ))}
-            {tabsHydrated && activeRouteLoading && !activeNativePanel && (
-                <div className="absolute inset-0 z-20 bg-neutral-950" aria-hidden="true" />
-            )}
-            {!loadedTabIds.has(activeTabId) && !activeRouteLoading && !activeNativePanel && (
+            {!activeNativePanel && (!loadedTabIds.has(activeTabId) || activeNavigation || activeRouteLoading) && (
                 <div className="absolute inset-0 z-10 overflow-y-auto bg-neutral-950">
                     <WorkspaceTabOpeningState url={activeTab.url} workspaceSlug={workspace.slug} detailPreview={activeTab.detailPreview} />
                 </div>

@@ -8,7 +8,6 @@ import {
     normalizeWorkspaceUrl,
     WORKSPACE_TAB_FRAME_PARAM,
     WORKSPACE_TAB_MESSAGE_SOURCE,
-    workspaceTabFrameUrl,
     workspaceTabRecordTitleForUrl,
     workspaceRouteIsRecordDetail,
     type WorkspaceTabFrameMessage,
@@ -16,6 +15,7 @@ import {
 } from "@/lib/workspace-tabs"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
 import { openOnboardingBuilderWindow } from "@/lib/onboarding-builder-window"
+import { WORKSPACE_FRAME_NAVIGATION_EVENT } from "@/lib/workspace-frame-navigation"
 import { focusedChatComposer } from "@/lib/workspace-composer-viewport"
 import { parseWorkspaceDetailPreview, storeWorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 import {
@@ -79,7 +79,11 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
 
         reportLocation()
         window.addEventListener("hashchange", reportLocation)
-        return () => window.removeEventListener("hashchange", reportLocation)
+        window.addEventListener("betelgeze:frame-navigation-committed", reportLocation)
+        return () => {
+            window.removeEventListener("hashchange", reportLocation)
+            window.removeEventListener("betelgeze:frame-navigation-committed", reportLocation)
+        }
     }, [pathname, searchParams, tabId, workspaceSlug])
 
     useEffect(() => {
@@ -175,8 +179,7 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
                 openOnboardingBuilderWindow(nextUrl, workspaceSlug)
                 window.dispatchEvent(new Event("betelgeze:workspace-navigation-start"))
                 reportNavigationStart(nextUrl)
-                await flushWorkspaceAutosaves()
-                router.push(workspaceTabFrameUrl(nextUrl, tabId, window.location.origin))
+                window.dispatchEvent(new CustomEvent(WORKSPACE_FRAME_NAVIGATION_EVENT, { detail: { url: nextUrl } }))
                 return
             }
             if (anchor.target === "_blank") return
@@ -199,12 +202,11 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             }
             event.preventDefault()
             // Stop page-local refreshers before starting the App Router
-            // transition. The host retains a delayed hard-navigation fallback
-            // in case a streamed transition cannot complete.
+            // transition. The root receiver survives route loading and error
+            // boundaries and fences overlapping draft flushes.
             window.dispatchEvent(new Event("betelgeze:workspace-navigation-start"))
             reportNavigationStart(nextUrl)
-            await flushWorkspaceAutosaves()
-            router.push(workspaceTabFrameUrl(nextUrl, tabId, window.location.origin))
+            window.dispatchEvent(new CustomEvent(WORKSPACE_FRAME_NAVIGATION_EVENT, { detail: { url: nextUrl } }))
         }
 
         async function receiveHostMessage(event: MessageEvent<WorkspaceTabParentMessage>) {
@@ -222,23 +224,6 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
                     url: current,
                 }
                 window.parent.postMessage(reply, window.location.origin)
-            } else if (message.type === "navigate" && message.url) {
-                const target = workspaceTabFrameUrl(message.url, tabId, window.location.origin)
-                const current = `${window.location.pathname}${window.location.search}${window.location.hash}`
-                if (target !== current) {
-                    window.dispatchEvent(new Event("betelgeze:workspace-navigation-start"))
-                    await flushWorkspaceAutosaves()
-                    router.push(target)
-                }
-            } else if (message.type === "traverse" && message.url) {
-                window.dispatchEvent(new Event("betelgeze:clear-loading"))
-                const target = workspaceTabFrameUrl(message.url, tabId, window.location.origin)
-                const current = `${window.location.pathname}${window.location.search}${window.location.hash}`
-                if (target !== current) {
-                    window.dispatchEvent(new Event("betelgeze:workspace-navigation-start"))
-                    await flushWorkspaceAutosaves()
-                    router.replace(target)
-                }
             } else if (message.type === "activate") {
                 if (!message.active) focusedChatComposer(document)?.blur()
                 document.body.dataset.workspaceTabActive = message.active ? "true" : "false"

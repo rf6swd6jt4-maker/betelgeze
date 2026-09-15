@@ -59,7 +59,7 @@ test("workspace navigation keeps recent frame content mounted and reports progre
     assert.match(shell, /scheduleTabWarm\(tab\.id\)/)
     assert.match(shell, /warmWorkspaceTab\(tab\.id\)/)
     assert.match(shell, /onPointerEnter=/)
-    assert.match(bridge, /router\.push\(workspaceTabFrameUrl\(nextUrl, tabId/)
+    assert.match(bridge, /new CustomEvent\(WORKSPACE_FRAME_NAVIGATION_EVENT, \{ detail: \{ url: nextUrl/)
     assert.match(shell, /scheduleSoftNavigationFallback\(tabId, url\)/)
     assert.match(bridge, /if \(!message\.active\) await flushWorkspaceAutosaves\(\)/)
 })

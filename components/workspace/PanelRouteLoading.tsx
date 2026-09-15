@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from "react"
 
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow } from "@/components/list/List"
+import { DocumentCatalogue } from "@/components/ui/DocumentCatalogue"
+import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { DetailRouteLoading } from "@/components/workspace/DetailRouteLoading"
 
 export type PanelLoadingVariant =
@@ -17,6 +19,8 @@ export type PanelLoadingVariant =
     | "leadgen-polls"
     | "onboarding"
     | "relationships"
+    | "queue"
+    | "sops"
     | "settings"
     | "work-items"
     | "detail"
@@ -89,6 +93,21 @@ function RelationshipsLoading() {
         <PanelHeader title="Relationships" action />
         <FilterSkeleton widths={[54, 70, 104, 64, 86, 78]} />
         <ListSkeleton kind="relationship" />
+    </PanelFrame>
+}
+
+function QueueLoading() {
+    return <PanelFrame title="Work Queue">
+        <PanelTabHeader title="Work Queue" description="Your ready work, ordered by value, timing and what it enables." />
+        <FilterSkeleton widths={[92, 152]} />
+        <ListSkeleton rows={5} />
+    </PanelFrame>
+}
+
+function SopsLoading() {
+    return <PanelFrame title="SOPs">
+        <PanelTabHeader title="SOPs" description="Standard operating procedures and reference documents for your team." />
+        <div className="mt-5"><DocumentCatalogue label="Loading SOP catalogue">{[0, 1, 2, 3].map((id) => <div key={id} role="listitem" className="aspect-square animate-pulse rounded-xl border border-neutral-800 bg-neutral-900" />)}</DocumentCatalogue></div>
     </PanelFrame>
 }
 
@@ -218,6 +237,8 @@ function SettingsLoading() {
 export function PanelRouteLoading({ variant, title }: { variant: PanelLoadingVariant; title?: string }) {
     if (variant === "communications") return <CommunicationsLoading />
     if (variant === "communications-team") return <CommunicationsLoading team />
+    if (variant === "queue") return <QueueLoading />
+    if (variant === "sops") return <SopsLoading />
     if (variant === "settings") return <SettingsLoading />
     if (variant === "relationships") return <RelationshipsLoading />
     if (variant === "onboarding") return <OnboardingLoading />

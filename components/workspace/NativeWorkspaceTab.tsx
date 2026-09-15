@@ -44,14 +44,18 @@ export async function readNativePanel({ url, workspaceSlug, workspaceId, userId,
     const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/panels/${endpoint}?${query}`, {
         cache: "no-store", credentials: "same-origin", headers: { "x-workspace-user": userId }, signal,
     })
-    if (response.redirected || [401, 403, 404, 409].includes(response.status)) throw new NativePanelAccessError("Access changed. Reload the workspace to continue.")
+    signal.throwIfAborted()
+    if (response.redirected || [401, 409].includes(response.status)) throw new NativePanelAccessError("Your workspace session changed. Reload to continue.")
+    if ([403, 404].includes(response.status)) throw new NativePanelUnavailableError("This page is unavailable or you do not have access. You can retry or open another workspace tab.")
     if (!response.ok || !response.headers.get("content-type")?.includes("application/json")) throw new Error("Could not load this panel. Please retry.")
     const data = await response.json() as NativePanelSnapshot
+    signal.throwIfAborted()
     if (data.userId !== userId || data.workspaceId !== workspaceId || data.workspaceSlug !== workspaceSlug) throw new NativePanelAccessError("Your workspace session changed. Reload to continue.")
     return data
 }
 
 class NativePanelAccessError extends Error {}
+class NativePanelUnavailableError extends Error {}
 
 function NativePanel({ data }: { data: NativePanelSnapshot }) {
     switch (data.kind) {
@@ -148,7 +152,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     }, [active, scrollPositions, scrollKey])
     const snapshot = useSyncExternalStore(useCallback((notify) => cache.subscribe(key, notify), [cache, key]), useCallback(() => cache.getSnapshot(key), [cache, key]), useCallback(() => cache.getSnapshot(key), [cache, key]))
     const post = useCallback((message: Omit<WorkspaceTabFrameMessage, "source" | "target" | "tabId">) => onMessage({ source: WORKSPACE_TAB_MESSAGE_SOURCE, target: "host", tabId: tab.id, ...message }), [onMessage, tab.id])
-    const read = useCallback((force = false) => cache.load(key, (signal) => readNativePanel({ url: tab.url, workspaceSlug, workspaceId, userId, signal }), { force }).catch((error: unknown) => {
+    const read = useCallback((force = false) => cache.load(key, (signal) => readNativePanel({ url: tab.url, workspaceSlug, workspaceId, userId, signal }), { force, discardDataOnError: (error) => error instanceof NativePanelUnavailableError }).catch((error: unknown) => {
         if (error instanceof NativePanelAccessError) {
             // Removing private data must not also remove the recovery message.
             setAccessError({ key, message: error.message })
@@ -162,8 +166,11 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
             cache.invalidate((candidate) => candidate === key)
             return
         }
-        void read(true).catch(() => undefined)
-    }, [read, cache, key, tab.url, accessError])
+        void read(true).catch((error: unknown) => {
+            if (error instanceof Error && error.name === "AbortError") return
+            if (current.current.active && current.current.tab.url === tab.url && !cache.getSnapshot(key).data) post({ type: "navigation-failed", url: tab.url })
+        })
+    }, [read, cache, key, tab.url, accessError, post])
     const measurement = useRef<ReturnType<typeof beginWorkspaceInteraction> | null>(null)
     const blockedByAccess = accountCleared || accessError?.key === key
     const reportLocation = useCallback(() => {
@@ -274,7 +281,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
             const target = nativeWorkspaceRoute(href, workspaceSlug)
             if (!target || prefetchReads.current.has(target.key)) return
             prefetchReads.current.add(target.key)
-            void cache.load(nativePanelCacheKey(userId, workspaceId, target.key), (signal) => readNativePanel({ url: href, workspaceSlug, workspaceId, userId, signal }))
+            void cache.load(nativePanelCacheKey(userId, workspaceId, target.key), (signal) => readNativePanel({ url: href, workspaceSlug, workspaceId, userId, signal }), { discardDataOnError: (error) => error instanceof NativePanelUnavailableError })
                 .catch(() => undefined).finally(() => prefetchReads.current.delete(target.key))
         },
         context: (context) => post({ type: "context-status", contextSupported: Boolean(context), relationshipId: context?.id ?? null, context }),
@@ -305,7 +312,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
         {blockedByAccess ? <div role="alert" className="px-4 py-2 text-sm text-red-200">{accountCleared ? "Your workspace session changed. Reload to continue." : accessError?.message} <button type="button" onClick={() => window.location.reload()} className="underline">Reload workspace</button></div> : null}
         {snapshot.error ? <div role="alert" className="border-b border-red-900/50 px-4 py-2 text-sm text-red-200">{snapshot.error} <button type="button" onClick={refresh} className="underline">Retry</button></div> : null}
         <WorkspacePanelChrome banner={banner}><PanelBoundary key={key} onRetry={refresh} onFailure={() => { measurement.current?.finish("failed"); post({ type: "navigation-failed", url: tab.url }) }}><Suspense fallback={<WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />}>
-            {!blockedByAccess && (snapshot.data ? <><NativePanel data={snapshot.data} /><RestoreScroll onRestore={restoreScroll} /><Ready key={snapshot.updatedAt} onMounted={onMounted} onReady={onReady} /></> : <WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />)}
+            {!blockedByAccess && (snapshot.data ? <><NativePanel data={snapshot.data} /><RestoreScroll onRestore={restoreScroll} /><Ready key={snapshot.updatedAt} onMounted={onMounted} onReady={onReady} /></> : snapshot.error ? null : <WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />)}
         </Suspense></PanelBoundary></WorkspacePanelChrome>
     </div></WorkspaceNavigationProvider>
 }

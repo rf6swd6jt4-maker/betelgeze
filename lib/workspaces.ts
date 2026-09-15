@@ -55,24 +55,31 @@ const loadRequiredWorkspace = cache(async function loadRequiredWorkspace(
 
     let workspace = workspaceResult.data
     if (workspaceResult.error?.message.includes("custom_onboarding_domain") || workspaceResult.error?.message.includes("custom_client_portal_domain") || workspaceResult.error?.message.includes("leadgen_banner")) {
-        const { data: legacyWorkspace } = await supabaseAdmin
+        const { data: legacyWorkspace, error: legacyError } = await supabaseAdmin
             .from("workspaces")
             .select("id, name, slug, status, banner_path, logo_path, banner_height, banner_position")
             .eq("slug", slug)
             .maybeSingle()
+        if (legacyError) throw new Error("Could not verify this workspace. Please retry.")
         workspace = legacyWorkspace
             ? { ...legacyWorkspace, leadgen_banner_path: null, leadgen_banner_height: 192, leadgen_banner_position: 50, custom_onboarding_domain: null, custom_onboarding_domain_status: "none", custom_onboarding_domain_records: [], custom_onboarding_domain_error: null, custom_client_portal_domain: null, custom_client_portal_domain_status: "none", custom_client_portal_domain_records: [], custom_client_portal_domain_error: null }
             : null
+    } else if (workspaceResult.error) {
+        throw new Error("Could not verify this workspace. Please retry.")
     }
 
-    const { data: membership } = workspace
+    const { data: membership, error: membershipError } = workspace
         ? await supabaseAdmin
               .from("workspace_memberships")
               .select("role")
               .eq("workspace_id", workspace.id)
               .eq("user_id", user.id)
               .maybeSingle()
-        : { data: null }
+        : { data: null, error: null }
+
+    // A failed read is not proof of revocation. Fail closed with a retryable
+    // error instead of redirecting a still-authenticated workspace to login.
+    if (membershipError) throw new Error("Could not verify workspace membership. Please retry.")
 
     const role = normalizeWorkspaceRole(membership?.role)
     if (

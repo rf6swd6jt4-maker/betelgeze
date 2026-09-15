@@ -57,7 +57,7 @@ export class WorkspaceRecordCache<T> {
         if (entry.snapshot.data !== null || entry.request) return
         this.publish(entry, { data, loading: false, error: null, updatedAt: this.now(), revision: entry.generation })
     }
-    async load(key: string, read: (signal: AbortSignal) => Promise<T>, options: { force?: boolean; maxAge?: number; timeoutMs?: number } = {}): Promise<T> {
+    async load(key: string, read: (signal: AbortSignal) => Promise<T>, options: { force?: boolean; maxAge?: number; timeoutMs?: number; discardDataOnError?: (error: unknown) => boolean } = {}): Promise<T> {
         const entry = this.entry(key)
         if (entry.request) return entry.request
         if (!options.force && entry.snapshot.data !== null && this.now() - entry.snapshot.updatedAt < (options.maxAge ?? 30_000)) return entry.snapshot.data
@@ -83,7 +83,7 @@ export class WorkspaceRecordCache<T> {
             return data
         }).catch((error: unknown) => {
             if (entry.generation === generation && (!controller.signal.aborted || timedOut)) {
-                this.publish(entry, { ...entry.snapshot, loading: false, error: error instanceof Error ? error.message : "Could not load this panel" })
+                this.publish(entry, { ...entry.snapshot, data: options.discardDataOnError?.(error) ? null : entry.snapshot.data, loading: false, error: error instanceof Error ? error.message : "Could not load this panel" })
             }
             throw error
         }).finally(() => {

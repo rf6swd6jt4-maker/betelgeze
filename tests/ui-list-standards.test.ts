@@ -80,5 +80,21 @@ test("the Assets sibling keeps the shared Library shell without becoming a canon
 
 test("Library tabs place SOPs immediately after Work Items", async () => {
     const source = await readFile("components/library/LibraryTabs.tsx", "utf8")
-    assert.match(source, /items = sopOnly \? \[sops\] : \[\s*\{ key: "work-items"[\s\S]*?\},\s*sops,\s*\{ key: "assets"/)
+    assert.match(source, /items = limited \? \[workItems, sops\] : \[\s*workItems,\s*sops,\s*\{ key: "assets"/)
+})
+
+test("Library lands on Work Items and SOP creation uses shared popups and add cards", async () => {
+    const [panels, nativeLibrary, catalogue, upload, detailFields] = await Promise.all([
+        readFile("lib/workspace-panels.ts", "utf8"),
+        readFile("lib/workspace-native-library.ts", "utf8"),
+        readFile("components/sops/SopCatalogue.tsx", "utf8"),
+        readFile("components/sops/SopAssetUpload.tsx", "utf8"),
+        readFile("components/work-items/WorkItemTextField.tsx", "utf8"),
+    ])
+    assert.match(panels, /key: "library", label: "Library", route: "work-items"/)
+    assert.match(nativeLibrary, /async function loadWorkItemList[\s\S]*?requireWorkspaceAccess\(workspaceSlug\)/)
+    assert.match(catalogue, /<CenteredDialog title="Add SOP"/)
+    assert.match(upload, /<AddAttachmentCard label="Add asset"/)
+    assert.match(upload, /<CenteredDialog title="Add asset"/)
+    assert.match(detailFields, /compact \? "min-h-6" : "min-h-12"/)
 })

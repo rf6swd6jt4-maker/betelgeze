@@ -64,7 +64,7 @@ test("Staff always see Work and Communications while operational roles reveal Re
     assert.equal(WORKSPACE_PANELS.filter((panel) => panel.key !== "appointment-setting").every((panel) => canAccessWorkspacePanel(panel, "admin")), true)
     assert.equal(canAccessWorkspacePanel(byKey.get("library")!, "staff", baseline), true)
     assert.equal(canAccessWorkspaceUrl("/acme/sops", "acme", "staff", baseline), true)
-    assert.equal(canAccessWorkspaceUrl("/acme/work-items", "acme", "staff", baseline), false)
+    assert.equal(canAccessWorkspaceUrl("/acme/work-items", "acme", "staff", baseline), true)
     assert.equal(canAccessWorkspaceUrl("/acme/assets", "acme", "staff", baseline), false)
     assert.equal(canAccessWorkspaceUrl("/acme/settings", "acme", "staff", sellerOrManager), false)
     assert.equal(canAccessWorkspaceUrl("/acme/work", "acme", "staff", baseline), true)

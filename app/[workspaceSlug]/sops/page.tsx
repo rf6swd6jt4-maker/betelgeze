@@ -15,7 +15,7 @@ export default async function SopsPage({ params, searchParams }: { params: Promi
     const catalogue = await listSopRecords(workspace.id, cursor, archived === "1")
     return <main className="min-h-screen bg-neutral-950 px-4 pb-7 text-white sm:px-6">
         <WorkspaceTopBar userId={user.id} workspace={workspace} workspaceAccess={access} currentProduct="client-work" />
-        <div className="mx-auto max-w-7xl"><PanelTabHeader title="SOPs" description="Team procedures and supporting files." tabs={<LibraryTabs workspaceSlug={workspace.slug} active="sops" sopOnly={!canAddSop(role)} />} />
+        <div className="mx-auto max-w-7xl"><PanelTabHeader title="SOPs" description="Team procedures and supporting files." tabs={<LibraryTabs workspaceSlug={workspace.slug} active="sops" limited={!canAddSop(role)} />} />
             <SopCatalogue workspaceSlug={workspace.slug} workspaceId={workspace.id} userId={user.id} canAdd={canAddSop(role)} items={catalogue.items} next={catalogue.next} paged={Boolean(cursor)} archived={archived === "1"} />
         </div>
     </main>

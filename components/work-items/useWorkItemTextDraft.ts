@@ -27,7 +27,7 @@ export function useWorkItemTextDraft(props: { workspaceSlug: string; workItemId:
         const textarea = descriptionRef.current
         if (!textarea) return
         textarea.style.height = "auto"
-        textarea.style.height = `${Math.max(props.label === "Instructions" ? 80 : 48, textarea.scrollHeight)}px`
+        textarea.style.height = `${Math.max(props.label === "Instructions" ? 80 : props.label === "Name" ? 24 : 48, textarea.scrollHeight)}px`
     }, [description, props.label])
 
     const reconcileDescription = useCallback(() => {

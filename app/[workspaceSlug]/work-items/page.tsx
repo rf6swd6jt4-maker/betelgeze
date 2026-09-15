@@ -15,7 +15,7 @@ import { profileAvatarUrl } from "@/lib/profile-avatar"
 import { listWorkspaceWorkItems, workItemHref, workspaceHref } from "@/lib/relationships"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
-import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { accessibleWorkItemIds, requireWorkspaceAccess } from "@/lib/workspace-access"
 import { workItemPriorityLabel } from "@/lib/work-item-priority"
 
 export const dynamic = "force-dynamic"
@@ -27,8 +27,9 @@ type PageProps = {
 
 export default async function WorkItemsPage({ params, searchParams }: PageProps) {
     const [{ workspaceSlug }, query] = await Promise.all([params, searchParams])
-    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "library")
-    const items = await listWorkspaceWorkItems(workspace.id)
+    const { workspace, user, role, access } = await requireWorkspaceAccess(workspaceSlug)
+    const [workspaceItems, permittedIds] = await Promise.all([listWorkspaceWorkItems(workspace.id), accessibleWorkItemIds(access)])
+    const items = permittedIds ? workspaceItems.filter((item) => permittedIds.has(item.id)) : workspaceItems
     const openItems = items.filter((item) => !["done", "canceled"].includes(item.status))
     const completedItems = items.filter((item) => ["done", "canceled"].includes(item.status))
     const blockedItems = items.filter((item) => item.status === "blocked")
@@ -49,7 +50,7 @@ export default async function WorkItemsPage({ params, searchParams }: PageProps)
                     title="Work Items"
                     description="Workspace tasks ordered by their most recent update."
                     actions={<Link href={workspaceHref(workspace.slug, "work-items?create=work-item")} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">New work item</Link>}
-                    tabs={<LibraryTabs workspaceSlug={workspace.slug} active="work-items" />}
+                    tabs={<LibraryTabs workspaceSlug={workspace.slug} active="work-items" limited={role !== "owner" && role !== "admin"} />}
                 />
 
                 <QuickStats ariaLabel="Work item statistics" items={[

@@ -1,6 +1,6 @@
 "use client"
 /* eslint-disable @next/next/no-img-element -- Private originals load only on explicit preview; never use the shared image optimizer. */
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AssetGallery, AssetGalleryCard, CenteredDialog, RoundPill } from "@/components/ui"
@@ -68,10 +68,10 @@ function AssetRow({ item, job, workspaceSlug, sopId, canEdit, aiReady }: { item:
         </div>
         </CenteredDialog> : null}</>
 }
-export function SopAssets({ workspaceSlug, sopId, items, interpretations, next, paged, canEdit, aiReady }: { workspaceSlug: string; sopId: string; items: SopAsset[]; interpretations: SopInterpretationSummary[]; next: string | null; paged: boolean; canEdit: boolean; aiReady: boolean }) {
+export function SopAssets({ workspaceSlug, sopId, items, interpretations, next, paged, canEdit, aiReady, addControl }: { workspaceSlug: string; sopId: string; items: SopAsset[]; interpretations: SopInterpretationSummary[]; next: string | null; paged: boolean; canEdit: boolean; aiReady: boolean; addControl?: ReactNode }) {
     return <div className="mt-4">
         {canEdit && !aiReady ? <p className="text-xs text-neutral-500">Asset storage is ready. AI interpretation becomes available after OpenAI setup is enabled.</p> : null}
-        {items.length ? <AssetGallery label="SOP assets">{items.map(item => <AssetRow key={item.asset_id} item={item} job={interpretations.find(job => job.asset_id === item.asset_id)} workspaceSlug={workspaceSlug} sopId={sopId} canEdit={canEdit} aiReady={aiReady} />)}</AssetGallery> : <p className="py-6 text-sm text-neutral-500">No assets yet. Add the main SOP document, then any supporting material.</p>}
+        {items.length || addControl ? <AssetGallery label="SOP assets">{addControl}{items.map(item => <AssetRow key={item.asset_id} item={item} job={interpretations.find(job => job.asset_id === item.asset_id)} workspaceSlug={workspaceSlug} sopId={sopId} canEdit={canEdit} aiReady={aiReady} />)}</AssetGallery> : <p className="py-6 text-sm text-neutral-500">No assets yet.</p>}
         {next || paged ? <nav aria-label="SOP asset pages" className="mt-4 flex gap-4 text-sm text-neutral-300">{paged ? <Link prefetch={false} href={`/${workspaceSlug}/sops/${sopId}`}>Newest assets</Link> : null}{next ? <Link prefetch={false} href={`/${workspaceSlug}/sops/${sopId}?cursor=${encodeURIComponent(next)}`}>Older assets</Link> : null}</nav> : null}
     </div>
 }

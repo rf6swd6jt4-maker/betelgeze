@@ -36,7 +36,7 @@ async function loadAssetList(workspaceSlug: string) {
 }
 
 async function loadWorkItemList(workspaceSlug: string) {
-    const { workspace, user, access } = await requireWorkspacePanel(workspaceSlug, "library")
+    const { workspace, user, access } = await requireWorkspaceAccess(workspaceSlug)
     const [allItems, allowedIds] = await Promise.all([listWorkspaceWorkItems(workspace.id), accessibleWorkItemIds(access)])
     const items = allItems.filter((item) => !allowedIds || allowedIds.has(item.id))
     const creatorIds = [...new Set(items.flatMap((item) => item.created_by ? [item.created_by] : []))]

@@ -57,7 +57,7 @@ export async function processSopWork(id?: string, instanceId?: string) {
             if (current.error || !current.data || !sopWorkConfiguration().ready) throw new Error("Client information or access changed before generation. No work was published.")
             const candidateRead=await supabaseAdmin.rpc('sop_work_asset_candidates',{p_id:job.id,p_lease:job.lease_token,p_image_ids:[...new Set(interpretation.steps.flatMap(step=>step.image_ids??[]))]})
             if(candidateRead.error)throw new Error('Could not read permitted asset candidates.')
-            const assets=(candidateRead.data as AssetCandidate[]).map(a=>({...a,description:a.description.slice(0,1000),source_steps:interpretation.steps.flatMap((s,i)=>s.image_ids?.includes(a.id)?[i+1]:[])})).filter(a=>a.kind!=='extracted_image'||a.source_steps.length)
+            const assets=(candidateRead.data as AssetCandidate[]).map(a=>({...a,description:Array.from(a.description).slice(0,1000).join(''),source_steps:interpretation.steps.flatMap((s,i)=>s.image_ids?.includes(a.id)?[i+1]:[])})).filter(a=>a.kind!=='extracted_image'||a.source_steps.length)
             await save({asset_candidates:assets})
             const plan = await generateSopWork({ model: job.model, source: interpretation,assets }, sopLedgerRequest({ id: job.lease_token, workspaceId: job.workspace_id, model: job.model, stage: "generation", runId: job.id }), async output => {
                 await save({ raw_output: output, source_snapshot: interpretation, schema_version: SOP_WORK_VERSION })

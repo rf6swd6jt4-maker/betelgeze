@@ -63,7 +63,7 @@ export async function processSopExtraction(id?:string){
    if(createHash('sha256').update(data).digest('hex')!==item.hash)throw new Error('Extracted image integrity failed.')
    const Key=`${job.workspace_id}/sops/${job.sop_id}/extractions/${job.id}/${item.hash}.webp`
    if(!written.has(item.hash)){for(const [key,body] of [[Key,data],[Key+'.thumbnail',thumbnail]] as const)await client.send(new PutObjectCommand({Bucket,Key:key,Body:body,ContentType:'image/webp',CacheControl:'private, max-age=3600'}),{abortSignal:storageTimeout()});written.add(item.hash)}
-   images.push({id:randomUUID(),ordinal:item.ordinal,attachable:item.attachable===true,location:item.location.slice(0,300),context:item.context,method:item.method,width:item.width,height:item.height,hash:item.hash,size:data.length})
+   images.push({id:randomUUID(),ordinal:item.ordinal,attachable:item.attachable===true,location:Array.from(item.location).slice(0,300).join(''),context:item.context,method:item.method,width:item.width,height:item.height,hash:item.hash,size:data.length})
   }
  }catch(e){error=e instanceof Error&&/^(SOP access|The source|The document|Image extraction|Extracted image|Invalid image|This source|Extracted images|The DOCX|A DOCX|A source|Unsupported XML|An image)/.test(e.message)?e.message.slice(0,400):'Image extraction failed. Check the source file and retry.';images=[]}
  const finish=await supabaseAdmin.rpc('finish_sop_extraction',{p_id:job.id,p_lease:job.lease_token,p_hash:hash,p_images:images,p_warnings:warnings,p_error:error})

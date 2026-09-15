@@ -35,11 +35,11 @@ Rollback application changes while retaining the additive schema and original fi
 
 ## Verification
 
-- 1,088 repository tests passed; changed-file lint and `git diff --check` passed.
+- 1,095 repository tests passed; changed-file lint and `git diff --check` passed.
 - Actual migrations rehearsed in isolated PGlite with the existing work graph and growth fixtures. Cases cover leases, current authority, private/cross-client exclusion, preview-only exclusion, stale assets, unsupported quotes/steps, atomic rollback, duplicate-free replay and ordinary-role denial.
 - Synthetic PDF verifies an annotation outside the embedded image survives; DOCX verifies cropping, separate occurrences, stable hashes, unsafe transformation exclusion, external-link omission and extraction limits.
 - Both existing production source PDFs were read and extracted locally without AI or production writes: Meta Ads produced 45 visual pages in 7.6 seconds (5.15 MB); SEO produced 32 in 3.9 seconds (3.52 MB). These are single local parser observations, excluding network/storage and provider time, not production latency guarantees.
 - Browser fixture: initial SOP control makes zero extraction reads; opening the modal makes one status read, renders thumbnails and a selected original, retains background layout and returns focus on close. Desktop and 390 px Chromium viewport checked. Physical mobile devices and WebKit were not checked in this release.
 - Production Webpack build passed. Runtime extraction must also pass from the exact traced deployment files, followed by live worker/image checks after deployment.
 
-Production migration and deployment verification are recorded separately at release completion.
+The initial release migration and deployment succeeded. Live SEO extraction produced 32 stored references; owner access, unassigned-staff denial, unauthenticated denial, image hashes and thumbnails were verified. Live Meta Ads extraction exposed PDF null characters rejected by PostgreSQL; extraction now removes non-text control characters and preserves complete Unicode characters when truncating source context. A regression reproduces that failure. Final live recovery is checked after the corrective deployment.

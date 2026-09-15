@@ -320,5 +320,5 @@ export async function notifyQueueDispute(input:{workspaceId:string;disputeId:str
     if(conversation.data.kind!=='team'||!access.data)return
     const team=await supabaseAdmin.from('workspace_teams').select('name').eq('workspace_id',input.workspaceId).eq('id',conversation.data.team_id).is('archived_at',null).single()
     if(team.error)throw new Error('Dispute team unavailable')
-    await deliverChatPush([d.resolver_id],{workspaceId:input.workspaceId,conversationKind:'native',messageId:d.message_id,messageCreatedAt:message.data.created_at,conversationId:d.conversation_id,title:`Dispute in ${team.data.name}`,body:'A work item needs your review.',url:`/${workspace.data.slug}/queue/feedback?dispute=${input.disputeId}`})
+    await deliverChatPush([d.resolver_id],{workspaceId:input.workspaceId,conversationKind:'native',messageId:d.message_id,messageCreatedAt:message.data.created_at,conversationId:d.conversation_id,title:`Dispute in ${team.data.name}`,body:'A work item needs your review.',url:`/${workspace.data.slug}/communications?conversation=${encodeURIComponent(d.conversation_id)}`})
 }

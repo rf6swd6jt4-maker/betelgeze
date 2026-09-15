@@ -6,7 +6,7 @@ The `/queue` panel is the workspace landing page. It combines explicitly owned A
 
 The featured item uses the same List identity/state bands as following records, with a larger goal/rationale/action area. Accept & start records the actual first start. Pause and resume preserve it. Completion requires confirmation of the instructions' completion requirements, uses an optimistic version check and a database transaction, and unlocks dependent tasks. Parent-workflow completion reuses the existing rules through a durable follow-up and retries independently of the saved task completion.
 
-A centered native-top-layer dialog contains the dispute reasons and optional details; Other requires details. Submission, internal team routing and controlled learning are now available; see [Queue feedback](queue-feedback.md). Opening it does not change the underlying list geometry.
+A shorter centered native-top-layer dialog contains the dispute reasons and optional details in an internally scrolling body; Other requires details. Submission and internal team routing remain available. Opening it does not change the underlying list geometry.
 
 ## Ranking and reuse
 

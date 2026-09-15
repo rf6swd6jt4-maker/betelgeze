@@ -14,7 +14,7 @@ Client work routes to its relationship team and fulfilment manager. Missing or a
 
 Blocking reasons set the work to Blocked and stop its effort timer. Existing dependencies keep downstream work waiting; unrelated eligible work stays available. Too detailed/Too brief are nonblocking preferences. Resolving requires the responsible reviewer or authorized owner/admin, a resolution note and an explicit decision whether the resolution may inform future work. Resolving does not change canonical instructions or bypass prerequisites/service readiness. Resolved work receives a modest preference within its urgency band and does not interrupt started work.
 
-The Feedback page loads the latest 50 permitted dispute summaries; the original snapshot is loaded separately on open. A notification link loads its exact permitted dispute alongside the summaries and opens the review popup, including records outside that recent window. Work-item links retain their own authorization. Dispute drafts and retry identities use account/workspace/item-scoped session storage.
+There is no standalone Queue feedback page. Dispute drafts and retry identities use account/workspace/item-scoped session storage, and the durable internal team message remains the review notification. Existing direct links safely redirect an authorised reviewer to that team conversation.
 
 ## Low-cost learning
 

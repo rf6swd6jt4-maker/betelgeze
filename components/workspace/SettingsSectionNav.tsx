@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { resolveSettingsSectionIndex } from "@/lib/settings-section-navigation"
 
 export type SettingsSectionNavItem = {
     id: string
@@ -19,29 +20,21 @@ export function SettingsSectionNav({ sections }: { sections: SettingsSectionNavI
         if (!nodes.length) return
 
         let frame = 0
-        let previousScrollY = window.scrollY
 
         function updateActiveSection() {
             frame = 0
-            const scrollY = window.scrollY
-            const direction = scrollY >= previousScrollY ? 1 : -1
-            previousScrollY = scrollY
+            const scrollingElement = document.scrollingElement
+            const scrollTop = scrollingElement?.scrollTop ?? window.scrollY
+            const viewportHeight = scrollingElement?.clientHeight || window.innerHeight
+            const scrollHeight = scrollingElement?.scrollHeight ?? document.documentElement.scrollHeight
             const activationLine = window.innerHeight * 0.22
-            const hysteresis = 28
             const currentIndex = Math.max(0, nodes.findIndex((node) => node.id === activeRef.current))
-            let nextIndex = currentIndex
-
-            if (window.innerHeight + scrollY >= document.documentElement.scrollHeight - 2) {
-                nextIndex = nodes.length - 1
-            } else if (direction > 0) {
-                while (nextIndex < nodes.length - 1 && nodes[nextIndex + 1].getBoundingClientRect().top <= activationLine - hysteresis) {
-                    nextIndex += 1
-                }
-            } else {
-                while (nextIndex > 0 && nodes[nextIndex].getBoundingClientRect().top > activationLine + hysteresis) {
-                    nextIndex -= 1
-                }
-            }
+            const nextIndex = resolveSettingsSectionIndex({
+                tops: nodes.map((node) => node.getBoundingClientRect().top),
+                currentIndex,
+                activationLine,
+                atEnd: viewportHeight + scrollTop >= scrollHeight - 2,
+            })
 
             const nextActive = nodes[nextIndex]?.id
             if (nextActive && nextActive !== activeRef.current) {
@@ -55,13 +48,18 @@ export function SettingsSectionNav({ sections }: { sections: SettingsSectionNavI
             frame = window.requestAnimationFrame(updateActiveSection)
         }
 
+        const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate)
+        nodes.forEach((node) => resizeObserver?.observe(node))
         scheduleUpdate()
         window.addEventListener("scroll", scheduleUpdate, { passive: true })
         window.addEventListener("resize", scheduleUpdate)
+        document.addEventListener("scroll", scheduleUpdate, { capture: true, passive: true })
         return () => {
             if (frame) window.cancelAnimationFrame(frame)
+            resizeObserver?.disconnect()
             window.removeEventListener("scroll", scheduleUpdate)
             window.removeEventListener("resize", scheduleUpdate)
+            document.removeEventListener("scroll", scheduleUpdate, true)
         }
     }, [sections])
 

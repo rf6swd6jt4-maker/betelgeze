@@ -14,7 +14,7 @@ Client work routes to its relationship team and fulfilment manager. Missing or a
 
 Blocking reasons set the work to Blocked and stop its effort timer. Existing dependencies keep downstream work waiting; unrelated eligible work stays available. Too detailed/Too brief are nonblocking preferences. Resolving requires the responsible reviewer or authorized owner/admin, a resolution note and an explicit decision whether the resolution may inform future work. Resolving does not change canonical instructions or bypass prerequisites/service readiness. Resolved work receives a modest preference within its urgency band and does not interrupt started work.
 
-The Feedback page loads the latest 50 permitted dispute summaries; the original snapshot is loaded separately on open. Work-item links retain their own authorization. Dispute drafts and retry identities use account/workspace/item-scoped session storage.
+The Feedback page loads the latest 50 permitted dispute summaries; the original snapshot is loaded separately on open. A notification link loads its exact permitted dispute alongside the summaries and opens the review popup, including records outside that recent window. Work-item links retain their own authorization. Dispute drafts and retry identities use account/workspace/item-scoped session storage.
 
 ## Low-cost learning
 
@@ -27,7 +27,7 @@ The Feedback page loads the latest 50 permitted dispute summaries; the original 
 
 ## Performance and verification
 
-Interactive queue reads add indexed joins to saved summaries. No provider dependency or new shell bootstrap was added. Summary workers process at most 1,000 owned items; exceeding the bound preserves existing results and requires workload review. Feedback history is paginated by a bounded recent window, and original instructions load on demand. New lookup and pending-work indexes cover queue reads and unused learning samples.
+Interactive queue reads add indexed joins to saved summaries. No provider dependency or new shell bootstrap was added. Summary workers process at most 1,000 owned items; exceeding the bound preserves existing results and requires workload review. Feedback history uses a bounded recent window, and original instructions load on demand. New lookup and pending-work indexes cover queue reads and unused learning samples.
 
 Local validation: 1,070 repository tests, changed-file ESLint, production Webpack build, database fixtures for ownership/review denial, duplicate recovery, encrypted-message acceptance contract, alternate work, pause/resolution, three-vote preferences, stale publication, five-sample calibration, provider uncertainty and ordinary-role denial. A 1,000-item queue read measured about 48 ms in the PostgreSQL fixture, compared with about 65 ms in the previous access fixture; different fixture runs are not a production end-to-end benchmark.
 
@@ -36,5 +36,7 @@ Browser fixture checks confirm unchanged featured-card geometry on dispute open,
 ## Release and rollback
 
 Apply `20260915150000_work_queue_feedback.sql` before deploying the new endpoints. It explicitly enables RLS and denies ordinary-role table/function access. The migration extends the existing scheduler; no new provider credentials or client delivery integration is required. Verify database rehearsal, deployment and authenticated feedback separately.
+
+Production verification on 2026-09-15: migration applied after a rolled-back rehearsal using the real encryption trigger and internal team route. Release `5d47dbdc` reported successful deployment; the existing scheduler produced saved queue summaries and new `now`/`today` assessments. No test dispute or message was retained. Local direct-link review also opened the preserved original instructions without a second fetch. Signed-in macOS page verification was incomplete because the app stalled during reload; physical-device push delivery has not been tested.
 
 Rollback the app change to remove submission/review controls. Disable the existing queue scheduler/AI flag if background processing must stop, preserving accepted disputes, messages, outcomes and usage. Do not drop the feedback tables or delete original snapshots. Existing tasks and recorded client dates are retained.

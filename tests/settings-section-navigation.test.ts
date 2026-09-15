@@ -46,4 +46,6 @@ test("settings rail observes streamed geometry and nested scroll owners", () => 
     assert.match(source, /new ResizeObserver\(scheduleUpdate\)/)
     assert.match(source, /document\.addEventListener\("scroll", scheduleUpdate, \{ capture: true, passive: true \}\)/)
     assert.match(source, /document\.scrollingElement/)
+    assert.match(source, /scrollIntoView\(\{ behavior: "auto", block: "start" \}\)/)
+    assert.ok(source.indexOf("scrollIntoView") < source.indexOf("activeRef.current = id"))
 })

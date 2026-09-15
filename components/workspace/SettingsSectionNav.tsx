@@ -64,9 +64,13 @@ export function SettingsSectionNav({ sections }: { sections: SettingsSectionNavI
     }, [sections])
 
     function scrollToSection(id: string) {
+        const node = document.getElementById(id)
+        // Keep the geometry and selected state atomic. In embedded Safari,
+        // smooth scrolling begins after the next scheduled geometry frame,
+        // which can restore the old section before the scroll surface moves.
+        node?.scrollIntoView({ behavior: "auto", block: "start" })
         activeRef.current = id
         setActive(id)
-        document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
     }
 
     const activeIndex = Math.max(0, sections.findIndex((section) => section.id === active))

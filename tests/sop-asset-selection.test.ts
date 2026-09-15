@@ -15,3 +15,23 @@ test('attachments require source and asset evidence, with abstention supported',
  assert.throws(()=>validateAssetSelections({...plan,tasks:[{...task,attachments:[attachment,attachment]}]},source,candidates,true))
  assert.equal(assetSelectionSchema([],source).maxItems,0)
 })
+
+test('original source quotations and procedural excerpts are both valid, but other steps and paraphrases are not',()=>{
+ const original='Open the verified business profile in the search dashboard.'
+ const different={...source,steps:[{...source.steps[0],source_quote:original}]}
+ const choices={...attachment,source_quote:original}
+ assert.doesNotThrow(()=>validateAssetSelections({summary:'Setup',warnings:[],tasks:[{...task,attachments:[choices]}]},different,candidates,true))
+ assert.doesNotThrow(()=>validateAssetSelections({summary:'Setup',warnings:[],tasks:[task]},different,candidates,true))
+ for(const quote of ['Open a verified business profile in a dashboard.',original+' Extra invented text.'])assert.throws(()=>validateAssetSelections({summary:'Setup',warnings:[],tasks:[{...task,attachments:[{...choices,source_quote:quote}]}]},different,candidates,true),/SOP attachment evidence/)
+ const otherStep={...different,steps:[source.steps[0],different.steps[0]]}
+ assert.throws(()=>validateAssetSelections({summary:'Setup',warnings:[],tasks:[{...task,attachments:[choices]}]},otherStep,candidates,true),/SOP attachment evidence/)
+})
+
+test('source quote matching normalizes whitespace without accepting missing evidence',async()=>{
+ const {attachmentQuoteMatches}=await import('../lib/sops/asset-selection.ts')
+ assert.equal(attachmentQuoteMatches('Original\u00a0source\nquotation','Original source quotation'),true)
+ assert.equal(attachmentQuoteMatches('ORIGINAL source quotation','Original source quotation'),true)
+ assert.equal(attachmentQuoteMatches('Original source quotation',null),false)
+ assert.equal(attachmentQuoteMatches(null,'Original source quotation'),false)
+ assert.equal(attachmentQuoteMatches('a            b','a b'),false)
+})

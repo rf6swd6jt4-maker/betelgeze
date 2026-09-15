@@ -581,10 +581,15 @@ function BlockLibraryItem({ kind, label, editable, addBlock }: { kind: BuilderBl
 export function OnboardingBuilderWorkspace({ workspaceSlug, workspaceName, logoSrc, privacyPolicyUrl, termsOfServiceUrl, data, initialBookend }: { workspaceSlug: string; workspaceName: string; logoSrc?: string | null; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null; data: OnboardingBuilderData; initialBookend?: "welcome" | "completion" | null }) {
     const initialDocument = useMemo<VisualBuilderDocument>(() => ({ modules: data.visualModules, welcome: data.visualWelcome, completion: data.visualCompletion, payment: data.visualPayment, theme: data.theme, linkedChangeSets: [] }), [data])
     const collaboration = useCollaborativeOnboardingDocument({ workspaceSlug, initial: initialDocument, collaboration: data.collaboration })
-    const installedServiceBlockGroups = SERVICE_TEMPLATES.filter((template) => (
-        template.onboardingBlocks.length > 0
-        && data.services.some((service) => service.templateId === template.id && service.state !== "archived")
-    ))
+    const installedConnectionGroups = new Set<string>()
+    const installedServiceBlockGroups = SERVICE_TEMPLATES.filter((template) => {
+        if (!template.onboardingBlocks.length || !data.services.some((service) => service.templateId === template.id && service.state !== "archived")) return false
+        // Search and Local Services share one relationship-level Google Ads connection.
+        const group = template.setup.kind === "connection" ? `connection:${template.setup.connectionKey}` : `template:${template.id}`
+        if (installedConnectionGroups.has(group)) return false
+        installedConnectionGroups.add(group)
+        return true
+    })
     const [publishedVersion, setPublishedVersion] = useState(data.collaboration.publishedVersion)
     const [publishedBaseline, setPublishedBaseline] = useState<ReleaseFingerprint | null>(() => data.collaboration.version === data.collaboration.publishedVersion
         ? releaseFingerprint(collaboration.initialDocument)

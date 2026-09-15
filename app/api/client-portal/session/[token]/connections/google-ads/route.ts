@@ -8,13 +8,13 @@ async function handle(request: Request, context: { params: Promise<{ token: stri
     try {
         const { token } = await context.params
         if (request.method === "GET") {
-            const period = new URL(request.url).searchParams.get("period")
-            return googleAdsReply(period ? await portalGoogleAdsReport(token, period, false) : { ...await loadPortalGoogleAds(token), oauthEnabled: oauthEnabled() })
+            const url = new URL(request.url), period = url.searchParams.get("period"), kind = url.searchParams.get("kind") ?? "search"
+            return googleAdsReply(period ? await portalGoogleAdsReport(token, period, kind, false) : { ...await loadPortalGoogleAds(token), oauthEnabled: oauthEnabled() })
         }
         const body = await googleAdsBody(request)
         if (body.action === "disconnect") return googleAdsReply(await disconnectPortalGoogleAds(token))
         if (body.action === "oauth_start") return googleAdsReply(await prepareOAuth({ token }, new URL(request.url).origin))
-        if (body.action === "refresh") return googleAdsReply(await portalGoogleAdsReport(token, body.period, true))
+        if (body.action === "refresh") return googleAdsReply(await portalGoogleAdsReport(token, body.period, body.kind ?? "search", true))
         if ((body.action !== "request" && body.action !== "verify") || typeof body.customerId !== "string") return googleAdsReply({ error: "Choose whether to request or verify access." }, 400)
         if (body.action === "request" && body.consented !== true) return googleAdsReply({ error: "Confirm you are authorised to connect this account." }, 400)
         return googleAdsReply({ connection: await runPortalGoogleAds(token, body.customerId, body.action === "request") })

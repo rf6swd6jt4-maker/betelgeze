@@ -114,3 +114,14 @@ test('OAuth selection requires explicit consent and an account from the saved Go
         assert.equal(f.calls(),1)
     }finally{f.restore()}
 })
+
+test('OAuth UI reconciles automatically after return and keeps one explicit approval action', () => {
+    const connection = readFileSync('components/google-ads/GoogleAdsConnection.tsx', 'utf8')
+    const picker = readFileSync('components/google-ads/GoogleAdsAccountPicker.tsx', 'utf8')
+    assert.match(connection, /if \(value\.oauthEnabled === true && !value\.connection\) setExpanded\(true\)/)
+    assert.match(connection, /if \(!oauthWaiting\) return[\s\S]*window\.addEventListener\("focus", returned\)[\s\S]*document\.addEventListener\("visibilitychange", returned\)/)
+    assert.match(picker, /Approve and connect/)
+    assert.match(picker, /consented: true/)
+    assert.match(picker, /window\.opener\?\.postMessage[\s\S]*window\.close\(\)/)
+    assert.doesNotMatch(picker, /type="checkbox"/)
+})

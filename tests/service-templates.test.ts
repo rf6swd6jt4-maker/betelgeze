@@ -6,7 +6,7 @@ import { SERVICE_TEMPLATES } from "../lib/onboarding/service-templates.ts"
 const servicesUi = readFileSync("components/settings/ServiceCatalogue.tsx", "utf8")
 
 test("the service template catalogue starts with the Meta Ads template", () => {
-    assert.equal(SERVICE_TEMPLATES.length, 3)
+    assert.equal(SERVICE_TEMPLATES.length, 4)
     const [metaAds, appointmentSetting] = SERVICE_TEMPLATES
     assert.equal(metaAds.id, "meta-ads")
     assert.equal(metaAds.name, "Meta Ads")
@@ -26,12 +26,23 @@ test("the service template catalogue starts with the Meta Ads template", () => {
     assert.equal(existsSync(`public${appointmentSetting.thumbnail.src}`), true)
 })
 
-test("Google Ads includes its manager connection and onboarding block", () => {
-    const googleAds = SERVICE_TEMPLATES.find((template) => template.id === "google-ads")!
-    assert.equal(googleAds.name, "Google Ads")
-    assert.deepEqual(googleAds.setup, { kind: "connection", connectionKey: "google_ads" })
-    assert.deepEqual(googleAds.onboardingBlocks, [{ kind: "google_ads_connection", label: "Google Ads connection" }])
-    assert.equal(existsSync(`public${googleAds.thumbnail.src}`), true)
+test("Search and Local Services Ads share the trusted Google connection process", () => {
+    const googleServices = SERVICE_TEMPLATES.filter((template) => template.setup.kind === "connection" && template.setup.connectionKey === "google_ads")
+    assert.deepEqual(googleServices.map((template) => [template.id, template.name]), [
+        ["google-search-ads", "Google Search Ads"],
+        ["google-local-services-ads", "Google Local Services Ads"],
+    ])
+    for (const service of googleServices) {
+        assert.deepEqual(service.onboardingBlocks, [{ kind: "google_ads_connection", label: "Google Ads connection" }])
+        assert.equal(existsSync(`public${service.thumbnail.src}`), true)
+    }
+})
+
+test("the onboarding builder offers one shared connection block for both Google Ads services", () => {
+    const builder = readFileSync("components/onboarding-builder/OnboardingBuilderWorkspace.tsx", "utf8")
+    assert.match(builder, /const installedConnectionGroups = new Set<string>\(\)/)
+    assert.match(builder, /`connection:\$\{template\.setup\.connectionKey\}`/)
+    assert.match(builder, /if \(installedConnectionGroups\.has\(group\)\) return false/)
 })
 
 test("New service opens templates and the first card reaches the preserved custom editor", () => {

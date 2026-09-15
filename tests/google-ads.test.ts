@@ -94,12 +94,17 @@ test("form accepts only service account keys and never follows uploaded token UR
 
 test("Google template installation and activation preserve account and credential boundaries", () => {
     const migration = readFileSync("supabase/migrations/20260906230000_google_ads_manager_connection.sql", "utf8")
+    const splitMigration = readFileSync("supabase/migrations/20260915090000_google_ads_service_reporting_split.sql", "utf8")
     assert.match(migration, /p_template_id = 'google-ads' and p_connection_provider = 'google_ads'/)
     assert.match(migration, /on conflict \(workspace_id, provider\) do nothing/)
     assert.match(migration, /v_candidate is distinct from p_expected_candidate/)
     assert.match(migration, /for update;/)
     assert.match(migration, /create unique index[\s\S]*where provider = 'google_ads' and enabled/)
     assert.match(migration, /revoke all on function public.activate_google_ads_manager_candidate[\s\S]*from public, anon, authenticated/)
+    assert.match(splitMigration, /p_template_id = 'meta-ads' and p_connection_provider = 'windsor'/)
+    assert.match(splitMigration, /p_template_id in \('google-search-ads', 'google-local-services-ads'\)[\s\S]*p_connection_provider = 'google_ads'/)
+    assert.match(splitMigration, /primary key \(connection_id, period, report_kind\)/)
+    assert.match(splitMigration, /p_report->>'kind' is distinct from p_report_kind/)
     const actions = readFileSync("app/[workspaceSlug]/settings/actions.ts", "utf8")
     assert.match(actions, /requireWorkspace\(slug, "owner"\)[\s\S]*if \(provider === "google_ads"\)/)
     assert.match(actions, /Create a service using the Google Ads template/)

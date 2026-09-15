@@ -15,7 +15,7 @@ export async function adsFetch(api: string, body?: unknown, signal?: AbortSignal
 
 type Props = {
     api: string | null; active?: boolean; preview?: boolean; locked?: boolean; initialResponse?: unknown; satisfied?: boolean
-    onState: (connection: GoogleAdsOnboardingConnection | null, satisfied: boolean) => void
+    onState: (connection: GoogleAdsOnboardingConnection | null, satisfied: boolean, details?: { reportKinds?: string[] }) => void
 }
 export function GoogleAdsConnection({ api, active = true, preview = false, locked = false, initialResponse, satisfied = false, onState }: Props) {
     const [manual, setManual] = useState(false)
@@ -29,8 +29,8 @@ export function GoogleAdsConnection({ api, active = true, preview = false, locke
     const callbacks = useRef(onState), mounted = useRef(true), read = useRef<AbortController | null>(null), write = useRef(false), version = useRef(0), lastRead = useRef(0)
     useEffect(() => { callbacks.current = onState }, [onState])
     useEffect(() => { const counter = version; mounted.current = true; return () => { mounted.current = false; counter.current++; read.current?.abort(); read.current = null; lastRead.current = 0 } }, [])
-    const apply = useCallback((value: GoogleAdsOnboardingConnection | null, ok: boolean) => {
-        setConnection(value); setVerified(ok); callbacks.current(value, ok)
+    const apply = useCallback((value: GoogleAdsOnboardingConnection | null, ok: boolean, details?: { reportKinds?: string[] }) => {
+        setConnection(value); setVerified(ok); callbacks.current(value, ok, details)
         if (value) { setCustomerId(value.customerId); setManager({ id: value.managerId, name: value.managerName }); setExpanded(true) }
     }, [])
     const load = useCallback(async () => {
@@ -42,7 +42,9 @@ export function GoogleAdsConnection({ api, active = true, preview = false, locke
             if (!mounted.current || current !== version.current) return
             if (value.error) throw new Error(value.error)
             setManager({ id: value.managerId, name: value.managerName }); setOauthAvailable(value.oauthEnabled === true); setError(null)
-            apply(googleAdsOnboardingResponse(value.connection), value.satisfied === true)
+            if (value.oauthEnabled === true && !value.connection) setExpanded(true)
+            setOauthWaiting(false)
+            apply(googleAdsOnboardingResponse(value.connection), value.satisfied === true, { reportKinds: Array.isArray(value.reportKinds) ? value.reportKinds : undefined })
         } catch (e) { if (mounted.current && current === version.current) setError(e instanceof Error && e.name !== "AbortError" ? e.message : "The connection took too long to load. Please retry.") }
         finally { if (read.current === controller) read.current = null; if (mounted.current && current === version.current) setLoading(false) }
     }, [api, preview, locked, apply])
@@ -59,6 +61,13 @@ export function GoogleAdsConnection({ api, active = true, preview = false, locke
         window.addEventListener("message", completed)
         return () => window.removeEventListener("message", completed)
     }, [load])
+    useEffect(() => {
+        if (!oauthWaiting) return
+        const returned = () => { if (document.visibilityState === "visible") void load() }
+        window.addEventListener("focus", returned)
+        document.addEventListener("visibilitychange", returned)
+        return () => { window.removeEventListener("focus", returned); document.removeEventListener("visibilitychange", returned) }
+    }, [oauthWaiting, load])
     async function signIn() {
         if (!api || pending || loading || locked || write.current) return
         const opened = window.open("about:blank", "_blank", "popup,width=560,height=740")

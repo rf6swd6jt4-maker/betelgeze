@@ -116,6 +116,9 @@ type GoogleAdsRow = {
     customer?: GoogleAdsCustomer
     customerClient?: GoogleAdsCustomer & { level?: string | number; status?: string }
     customerClientLink?: { status?: string; resourceName?: string; managerLinkId?: string }
+    campaign?: { id?: string }
+    metrics?: Record<string, unknown>
+    localServicesLead?: Record<string, unknown>
 }
 
 async function adsCall(config: GoogleAdsConfig, token: string, customerId: string, method: string, body: unknown, fetcher: typeof fetch, step = "manager") {
@@ -126,7 +129,7 @@ async function adsCall(config: GoogleAdsConfig, token: string, customerId: strin
     }, fetcher)
     const payload = await response.json().catch(() => null)
     if (!response.ok) throw adsError(payload, response.status, step)
-    return payload as { results?: GoogleAdsRow[]; result?: { resourceName?: string } } | null
+    return payload as { results?: GoogleAdsRow[]; result?: { resourceName?: string }; nextPageToken?: string } | null
 }
 
 export async function verifyGoogleAdsManager(input: Record<string, string>, fetcher: typeof fetch = fetch) {
@@ -208,16 +211,25 @@ export function googleAdsClientError(error: unknown) {
     return error instanceof Error ? error.message : "Google Ads could not be connected. Please try again."
 }
 
-/** One exact-account aggregate; no campaign/history downloads or per-row lookups. */
-export async function fetchGoogleAdsReport(input: Record<string, string>, customerId: string, period: import("./google-ads-report").GoogleAdsPeriod, fetcher: typeof fetch = fetch, now = new Date()) {
-    const { googleAdsDateRange, parseGoogleAdsMetrics } = await import("./google-ads-report")
+/** Exact-account, service-specific summaries with bounded Local Services lead metadata. */
+export async function fetchGoogleAdsReport(input: Record<string, string>, customerId: string, period: import("./google-ads-report").GoogleAdsPeriod, kind: import("./google-ads-report").GoogleAdsReportKind = "search", fetcher: typeof fetch = fetch, now = new Date()) {
+    const { googleAdsDateRange, isGoogleAdsReportKind, parseGoogleAdsCampaignMetrics, parseGoogleLocalServicesLeads } = await import("./google-ads-report")
     const config = normalizeGoogleAdsConfig(input)
+    if (!isGoogleAdsReportKind(kind)) throw new Error("Choose a Google Ads report.")
     if (!/^\d{10}$/.test(customerId) || customerId === config.manager_customer_id) throw new Error("Choose the connected advertising account.")
     const token = await authorizeGoogleAds(config, fetcher)
     const detail = await adsCall(config, token, customerId, "googleAds:search", { query: "SELECT customer.id, customer.currency_code, customer.time_zone, customer.manager, customer.test_account FROM customer LIMIT 1" }, fetcher, "report_access")
     const account = detail?.results?.[0]?.customer
     if (!account || String(account.id) !== customerId || account.manager || account.testAccount || !/^[A-Z]{3}$/.test(account.currencyCode ?? "") || !account.timeZone) throw new Error("Google could not confirm this account’s reporting settings. Check the connection and retry.")
     const range = googleAdsDateRange(period, account.timeZone, now)
-    const payload = await adsCall(config, token, customerId, "googleAds:search", { query: `SELECT metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions FROM customer WHERE segments.date BETWEEN '${range.startDate}' AND '${range.endDate}' LIMIT 1` }, fetcher, "report")
-    return { customerId, currency: account.currencyCode!, timeZone: account.timeZone, ...range, ...parseGoogleAdsMetrics(payload) }
+    if (kind === "search") {
+        const payload = await adsCall(config, token, customerId, "googleAds:search", { query: `SELECT metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions FROM campaign WHERE campaign.advertising_channel_type = 'SEARCH' AND segments.date BETWEEN '${range.startDate}' AND '${range.endDate}' LIMIT 1001` }, fetcher, "report")
+        return { kind, customerId, currency: account.currencyCode!, timeZone: account.timeZone, ...range, ...parseGoogleAdsCampaignMetrics(payload) }
+    }
+    const [performance, leads] = await Promise.all([
+        adsCall(config, token, customerId, "googleAds:search", { query: `SELECT metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions FROM campaign WHERE (campaign.advertising_channel_type = 'LOCAL_SERVICES' OR campaign.pmax_campaign_settings.local_services_enabled = TRUE) AND segments.date BETWEEN '${range.startDate}' AND '${range.endDate}' LIMIT 1001` }, fetcher, "local_services_performance"),
+        adsCall(config, token, customerId, "googleAds:search", { query: `SELECT local_services_lead.id, local_services_lead.lead_type, local_services_lead.lead_status, local_services_lead.lead_charged, local_services_lead.credit_details.credit_state, local_services_lead.creation_date_time FROM local_services_lead WHERE local_services_lead.creation_date_time >= '${range.startDate} 00:00:00' AND local_services_lead.creation_date_time <= '${range.endDate} 23:59:59' LIMIT 1001` }, fetcher, "local_services_leads"),
+    ])
+    const spend = parseGoogleAdsCampaignMetrics(performance).spend
+    return { kind, customerId, currency: account.currencyCode!, timeZone: account.timeZone, ...range, spend, ...parseGoogleLocalServicesLeads(leads, spend) }
 }

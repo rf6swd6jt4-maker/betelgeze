@@ -29,6 +29,22 @@ export const SERVICES: Record<string, ServiceDefinition> = {
         requiredModuleKeys: ["google-search-ads"],
         sopSteps: [],
     },
+    "google-search-ads": {
+        key: "google-search-ads",
+        title: "Google Search Ads",
+        description:
+            "Fulfilment work for Google Search Ads setup, tracking, launch, and ongoing campaign preparation.",
+        requiredModuleKeys: ["google-search-ads"],
+        sopSteps: [],
+    },
+    "google-local-services-ads": {
+        key: "google-local-services-ads",
+        title: "Google Local Services Ads",
+        description:
+            "Fulfilment work for Local Services Ads setup, verification, lead handling, and ongoing performance management.",
+        requiredModuleKeys: [],
+        sopSteps: [],
+    },
     "full-website-design": {
         key: "full-website-design",
         title: "Full Website Design",

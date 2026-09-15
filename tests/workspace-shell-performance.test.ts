@@ -57,3 +57,14 @@ test("top-level panels rewrite to the shell while framed panels bypass shell boo
     assert.ok(frameCheck >= 0 && firstShellQuery > frameCheck)
     assert.match(topBar.slice(frameCheck, firstShellQuery), /return <WorkspaceTabBridge/)
 })
+
+test("every non-standalone navigation destination and Library tab enters the shell", async () => {
+    const { WORKSPACE_PANELS } = await import("../lib/workspace-panels.ts")
+    for (const panel of WORKSPACE_PANELS) {
+        const hosted = !("standalone" in panel && panel.standalone)
+        const routes = [panel.route, ...("activeRoutes" in panel ? panel.activeRoutes : [])]
+        for (const route of routes) {
+            assert.equal(workspaceRouteUsesShell(`/fixture/${route}`), hosted, `${panel.label}: ${route}`)
+        }
+    }
+})

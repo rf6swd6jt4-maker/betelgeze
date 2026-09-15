@@ -9,8 +9,10 @@ const WORKSPACE_SHELL_SECTIONS = new Set([
     "leadgen",
     "no-access",
     "onboarding",
+    "queue",
     "relationships",
     "settings",
+    "sops",
     "work",
     "work-items",
 ])

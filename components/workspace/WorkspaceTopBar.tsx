@@ -13,7 +13,7 @@ import { createOkrFromModal } from "@/app/[workspaceSlug]/admin/actions"
 import { profileAvatarUrl } from "@/lib/profile-avatar"
 import { loadWorkspaceAccess, type WorkspaceAccess } from "@/lib/workspace-access"
 import type { WorkspaceShellBootstrapTiming } from "@/lib/workspace-launch"
-import { workspaceTabIdFromUrl, workspaceTabTitleForUrl, type WorkspaceInitialTab } from "@/lib/workspace-tabs"
+import { normalizeWorkspaceUrl, workspaceTabIdFromUrl, workspaceTabTitleForUrl, type WorkspaceInitialTab } from "@/lib/workspace-tabs"
 
 type Product = "client-work" | "leadgen"
 
@@ -45,7 +45,10 @@ export async function WorkspaceTopBar({ userId, workspace, workspaceAccess, shel
     const workspaceRole = normalizeWorkspaceRole(membership?.role) ?? "staff"
     const access = workspaceAccess ?? await loadWorkspaceAccess({ workspaceId: workspace.id, workspaceSlug: workspace.slug, userId, role: workspaceRole })
     const avatarSrc = profile?.avatar_path ? profileAvatarUrl(username, profile.avatar_path) : null
-    const initialUrl = initialWorkspaceUrl ?? `/${workspace.slug}`
+    // A page rendered outside the rewrite still owns its actual destination.
+    // Starting it at the workspace root creates a redirecting frame beneath
+    // the page, and can recursively mount another shell after that redirect.
+    const initialUrl = initialWorkspaceUrl ?? normalizeWorkspaceUrl(currentPath ?? `/${workspace.slug}`, workspace.slug, "http://localhost")
     const launchTab = initialTab ?? {
         id: randomUUID(),
         title: workspaceTabTitleForUrl(initialUrl, workspace.slug),

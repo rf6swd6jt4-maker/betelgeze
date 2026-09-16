@@ -106,6 +106,7 @@ test("canonical auth routing and recovery preserve MFA", () => {
     const origin = source("lib/auth/origin.ts")
     const recovery = source("app/api/auth/recovery/route.ts")
     const loginPage = source("app/login/page.tsx")
+    const onboardingStepPage = source("app/sign-up/[step]/page.tsx")
     const login = source("components/auth/LoginV2.tsx")
     assert.match(proxy, /"\/sign-up", "\/invitation"/)
     assert.match(proxy, /sessionState\.aal !== "aal2"/)
@@ -124,6 +125,8 @@ test("canonical auth routing and recovery preserve MFA", () => {
     assert.match(login, /password-reset-complete/)
     assert.doesNotMatch(login, /postMessage\([^\n]*password[^\n]*value/i)
     assert.match(loginPage, /accountFlowV2Enabled\(\) \? <LoginV2 \/> : <LegacyLogin \/>/)
+    assert.match(onboardingStepPage, /if \(step !== context\.currentStep\) redirect\(`\/sign-up\/\$\{context\.currentStep\}`\)/)
+    assert.doesNotMatch(onboardingStepPage, /authStepIndex\(step\) > authStepIndex\(context\.currentStep\)/)
 })
 
 test("account emails share one template and verify both webhook boundaries", () => {

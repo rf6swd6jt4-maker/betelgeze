@@ -1,4 +1,4 @@
-const CACHE_NAME = "betelgeze-pwa-v2";
+const CACHE_NAME = "betelgeze-pwa-v3";
 const STATIC_ASSETS = [
   "/icons/betelgeze-icon-192.png",
   "/icons/betelgeze-icon-512.png",
@@ -30,8 +30,10 @@ self.addEventListener("activate", (event) => {
         )
       )
       .then(async () => {
-        // Start online document requests alongside worker startup when supported.
-        if (self.registration.navigationPreload) await self.registration.navigationPreload.enable().catch(() => undefined);
+        // WebKit can return a successful navigation-preload response with an
+        // empty body when reopening an installed app. Disable preload for both
+        // this worker and registrations upgraded from the previous version.
+        if (self.registration.navigationPreload) await self.registration.navigationPreload.disable().catch(() => undefined);
         await self.clients.claim();
       })
   );
@@ -43,11 +45,10 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (event.request.mode === "navigate") {
     // Network-first documents retain the ordinary online response and auth
-    // redirects. Only a failed connection opens the static recovery document.
-    event.respondWith((async () => {
-      const preloaded = await event.preloadResponse;
-      return preloaded || fetch(event.request);
-    })().catch(async () => {
+    // redirects. Do not consume navigationPreload: WebKit has returned an
+    // empty 200 document here on installed-app relaunches. Only a failed
+    // ordinary request opens the static recovery document.
+    event.respondWith(fetch(event.request).catch(async () => {
       const fallback = await caches.match("/offline.html");
       return fallback || Response.error();
     }));

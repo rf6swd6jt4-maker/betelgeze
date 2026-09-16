@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
+import { runInNewContext } from "node:vm"
 import { deliveryOutcome } from "../public/offline-store.js"
 import { AppointmentDraftQueue, type PersistedAppointmentDraft } from "../lib/appointment-draft-queue.ts"
 
@@ -69,7 +70,55 @@ test("offline queue writes are constrained to the original account and workspace
         }
     }
     const worker = readFileSync("public/sw.js", "utf8")
+    assert.match(worker, /CACHE_NAME = "betelgeze-pwa-v3"/)
     assert.match(worker, /event\.request\.mode === "navigate"/)
-    assert.match(worker, /return preloaded \|\| fetch\(event\.request\)/)
+    assert.match(worker, /navigationPreload\.disable\(\)/)
+    assert.doesNotMatch(worker, /navigationPreload\.enable\(\)|event\.preloadResponse/)
+    assert.match(worker, /event\.respondWith\(fetch\(event\.request\)\.catch/)
     assert.doesNotMatch(worker, /cache\.put\(event\.request/)
+})
+
+test("a controlled PWA launch ignores an empty navigation preload response", async () => {
+    const listeners = new Map<string, (event: unknown) => void>()
+    let preloadReads = 0
+    let networkFails = false
+    const offline = new Response("offline recovery")
+    runInNewContext(readFileSync("public/sw.js", "utf8"), {
+        URL,
+        Response,
+        fetch: async () => {
+            if (networkFails) throw new Error("offline")
+            return new Response("live app document", { headers: { "content-type": "text/html" } })
+        },
+        caches: {
+            open: async () => ({ addAll: async () => undefined }),
+            keys: async () => [],
+            delete: async () => true,
+            match: async () => offline,
+        },
+        self: {
+            location: { origin: "https://app.betelgeze.com" },
+            registration: { navigationPreload: { disable: async () => undefined }, showNotification: async () => undefined, getNotifications: async () => [] },
+            clients: { claim: async () => undefined },
+            skipWaiting: async () => undefined,
+            addEventListener: (type: string, listener: (event: unknown) => void) => listeners.set(type, listener),
+        },
+    })
+    const request = { method: "GET", mode: "navigate", url: "https://app.betelgeze.com/" }
+    async function navigate() {
+        let response: Promise<Response> | undefined
+        const listener = listeners.get("fetch")
+        assert.ok(listener)
+        listener({
+            request,
+            get preloadResponse() { preloadReads++; return Promise.resolve(new Response("")) },
+            respondWith(value: Promise<Response>) { response = value },
+        })
+        assert.ok(response)
+        return response
+    }
+    assert.equal(await (await navigate()).text(), "live app document")
+    assert.equal(preloadReads, 0)
+    networkFails = true
+    assert.equal(await (await navigate()).text(), "offline recovery")
 })

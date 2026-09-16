@@ -47,9 +47,13 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
     const [stage, setStage] = useState<string>(row?.stage ?? "negotiating")
     const [assignee, setAssignee] = useState(row?.assignee_user_id ?? "")
     const [people, setPeople] = useState<Array<{id: string; name: string}> | null>(null)
+    const [seller, setSeller] = useState("")
+    const [manager, setManager] = useState("")
+    const [responsibility, setResponsibility] = useState<{ sellers: Array<{id: string; name: string}>; managers: Array<{id: string; name: string}> } | null>(null)
     const [reason, setReason] = useState("")
     const [error, setError] = useState("")
     const [peopleError, setPeopleError] = useState("")
+    const [responsibilityError, setResponsibilityError] = useState("")
     const [retry, setRetry] = useState(0)
     const [pending, startTransition] = useTransition()
     const [uncertain, setUncertain] = useState(false)
@@ -64,16 +68,25 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
         void read<Array<{id: string; name: string}>>(`${endpoint}?kind=assignees&service=${encodeURIComponent(serviceId)}`, controller.signal).then(setPeople).catch(error => { if (!controller.signal.aborted) setPeopleError(error.message) })
         return () => controller.abort()
     }, [endpoint, serviceId, retry])
+    const completedImport = !row && origin === "already_onboarded" && stage === "completed"
+    useEffect(() => {
+        if (!completedImport) return
+        const controller = new AbortController()
+        void read<{ sellers: Array<{id: string; name: string}>; managers: Array<{id: string; name: string}> }>(`${endpoint}?kind=responsibility`, controller.signal)
+            .then(value => { if (!controller.signal.aborted) { setResponsibility(value); setResponsibilityError("") } })
+            .catch(error => { if (!controller.signal.aborted) setResponsibilityError(error.message) })
+        return () => controller.abort()
+    }, [completedImport, endpoint, retry])
     function submit(event: FormEvent) {
         event.preventDefault()
-        if (!serviceId || !people || peopleError) return
+        if (!serviceId || !people || peopleError || (completedImport && (!responsibility || responsibilityError || !seller || !manager))) return
         requestId.current ??= crypto.randomUUID()
         setError("")
         if (stage === "setup") { onBusyChange(true); setProgressBusy(true); setGeneration({ instanceId: null }); onGenerating(true) }
         startTransition(async () => {
             try {
                 const result = await runWorkspaceMutation(() => row ? changeRelationshipService(props.workspaceSlug, props.relationshipId, { requestId: requestId.current!, expectedUserId: props.userId, instanceId: row.id, version: row.version, stage, assigneeId: assignee, reason })
-                    : addRelationshipService(props.workspaceSlug, props.relationshipId, { requestId: requestId.current!, expectedUserId: props.userId, serviceId, revisionId: service!.revision_id, origin, stage, assigneeId: assignee }), { category: "services" })
+                    : addRelationshipService(props.workspaceSlug, props.relationshipId, { requestId: requestId.current!, expectedUserId: props.userId, serviceId, revisionId: service!.revision_id, origin, stage, assigneeId: assignee, sellerId: completedImport ? seller : "", managerId: completedImport ? manager : "" }), { category: "services" })
                 if (!result.ok) { setError(result.error ?? "Could not save service"); setUncertain("uncertain" in result && result.uncertain === true); if (!("uncertain" in result && result.uncertain)) requestId.current = null; return }
                 if (result.generation) { setGeneration({ instanceId: result.id! }); onGenerating(true) } else onDone()
             } catch { setUncertain(true); setError("The save could not be confirmed. Retry this same change to avoid a duplicate.") }
@@ -88,13 +101,17 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
                 {!row ? <DetailField label="Start from" icon="status"><Selector ariaLabel="Service entry" disabled={pending || uncertain} value={origin} onChange={value => { setOrigin(value); setStage(value === "negotiation" ? "negotiating" : "setup") }} options={[{value:"negotiation",label:"Negotiating",description:"Discuss this service before selling it"}, ...(props.canImport ? [{value:"already_onboarded",label:"Already onboarded",description:"Record existing delivery without checkout"}] : [])]} /></DetailField> : null}
                 {row || origin === "already_onboarded" ? <DetailField label="Stage" icon="status"><Selector ariaLabel="Service stage" disabled={pending || uncertain} value={stage} onChange={setStage} options={stages.map(s => ({ value: s.key, label: s.label }))} /></DetailField> : null}
                 <DetailField label="Assignee" icon="user"><AssignmentSelector ariaLabel="Service assignee" disabled={!people || pending || uncertain} value={assignee} onChange={setAssignee} clearLabel="Unassigned" people={people ?? []} />{serviceId && !people && !peopleError ? <p className="text-xs text-neutral-500">Loading eligible people…</p> : null}</DetailField>
+                {completedImport ? <>
+                    <DetailField label="Seller" icon="user"><AssignmentSelector required ariaLabel="Relationship seller" disabled={!responsibility || pending || uncertain} value={seller} onChange={setSeller} clearLabel="Choose seller" placeholder="Choose seller" people={responsibility?.sellers ?? []} /></DetailField>
+                    <DetailField label="Manager" icon="user"><AssignmentSelector required ariaLabel="Relationship manager" disabled={!responsibility || pending || uncertain} value={manager} onChange={setManager} clearLabel="Choose manager" placeholder="Choose manager" people={responsibility?.managers ?? []} />{!responsibility && !responsibilityError ? <p className="text-xs text-neutral-500">Loading responsibility choices…</p> : null}</DetailField>
+                </> : null}
                 {row ? <DetailField label="Reason" icon="description"><input aria-label="Reason for service change" required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} className={inputClass} /></DetailField> : null}
             </DetailFields> : null}
         </fieldset>
         {origin === "already_onboarded" && !row ? <p className="my-3 text-sm leading-6 text-neutral-400">Records existing work. No checkout or onboarding link is sent. {stage === "completed" ? "This service has no unfinished setup work." : stage === "maintenance" ? "Historical setup is not repeated." : "The service is ready for setup work."}</p> : null}
-        {peopleError ? <p role="alert" className="py-2 text-sm text-red-200">{peopleError}<button type="button" onClick={() => { setPeopleError(""); setRetry(retry + 1) }} className="ml-2 min-h-11 underline">Retry choices</button></p> : null}
+        {peopleError || responsibilityError ? <p role="alert" className="py-2 text-sm text-red-200">{peopleError || responsibilityError}<button type="button" onClick={() => { setPeopleError(""); setResponsibilityError(""); setRetry(retry + 1) }} className="ml-2 min-h-11 underline">Retry choices</button></p> : null}
         {error ? <p role="alert" className="py-3 text-sm text-red-200">{error}</p> : null}
-        <div className="mt-3 flex flex-wrap justify-end gap-3"><button type="button" disabled={pending || uncertain} onClick={onClose} className="min-h-11 px-3 text-sm text-neutral-400">Close</button><button disabled={pending || !serviceId || !people || Boolean(peopleError)} className={buttonClass}>{pending ? "Saving…" : uncertain ? "Retry same change" : row ? "Save change" : "Add service"}</button></div>
+        <div className="mt-3 flex flex-wrap justify-end gap-3"><button type="button" disabled={pending || uncertain} onClick={onClose} className="min-h-11 px-3 text-sm text-neutral-400">Close</button><button disabled={pending || !serviceId || !people || Boolean(peopleError) || (completedImport && (!responsibility || !seller || !manager || Boolean(responsibilityError)))} className={buttonClass}>{pending ? "Saving…" : uncertain ? "Retry same change" : row ? "Save change" : "Add service"}</button></div>
     </form>
 }
 

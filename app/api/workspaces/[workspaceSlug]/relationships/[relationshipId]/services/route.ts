@@ -41,10 +41,11 @@ export async function GET(request: Request, context: { params: Promise<{workspac
         }
         const result = kind === "catalogue" ? await supabaseAdmin.rpc("relationship_service_catalogue", { ...parameters, p_query: (query.get("q") ?? "").slice(0, 100), p_offset: offset })
             : kind === "assignees" ? await supabaseAdmin.rpc("relationship_service_assignees", { ...parameters, p_relationship_id: relationshipId, p_service_id: query.get("service") })
+            : kind === "responsibility" ? await supabaseAdmin.rpc("relationship_service_responsibility_choices", { ...parameters, p_relationship_id: relationshipId })
             : ["work", "history"].includes(kind) ? await supabaseAdmin.rpc("relationship_service_activity", { ...parameters, p_relationship_id: relationshipId, p_kind: kind, p_offset: offset }) : null
         if (!result) return Response.json({ error: "Unknown section" }, { status: 400, headers })
         if (result.error) return Response.json({ error: "This section could not be loaded. Check your access and retry." }, { status: 400, headers })
-        const data = kind === "catalogue" ? { items: result.data.slice(0, 30), hasMore: result.data.length > 30 } : kind === "assignees" ? result.data : { ...result.data, items: result.data.items.slice(0, 30) }
+        const data = kind === "catalogue" ? { items: result.data.slice(0, 30), hasMore: result.data.length > 30 } : ["assignees", "responsibility"].includes(kind ?? "") ? result.data : { ...result.data, items: result.data.items.slice(0, 30) }
         return Response.json(data, { headers })
     } catch (error) {
         unstable_rethrow(error)

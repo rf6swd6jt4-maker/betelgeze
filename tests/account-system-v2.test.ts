@@ -152,8 +152,12 @@ test("account field feedback opts into wrapping status content", () => {
 
 test("profile customization and MFA setup use separate guided surfaces", () => {
     const onboarding = source("components/auth/AccountOnboardingFlow.tsx")
+    const shell = source("components/auth/AuthFlowShell.tsx")
     const mfa = source("components/auth/MfaGuide.tsx")
     const avatarEditor = source("components/account/ProfileAvatarEditor.tsx")
+    assert.match(shell, /min-h-dvh items-start justify-center overflow-x-hidden/)
+    assert.match(shell, /relative my-auto w-full max-w-md/)
+    assert.doesNotMatch(shell, /min-h-dvh items-center justify-center overflow-hidden/)
     assert.match(onboarding, /sm:h-36 sm:w-36/)
     assert.match(onboarding, /Your display name is shown in conversations/)
     assert.match(onboarding, /Your username, @\$\{fallbackName\}, is your unique Betelgeze account address/)

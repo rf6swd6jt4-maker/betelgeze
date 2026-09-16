@@ -25,9 +25,9 @@ export function AuthFlowShell({
     const progressIndex = step ? GUIDED_STEPS.indexOf(step) : -1
     const progress = progressIndex >= 0 ? ((progressIndex + 1) / GUIDED_STEPS.length) * 100 : 0
     return (
-        <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-neutral-950 px-5 py-10 text-white sm:px-6">
+        <main className="relative flex min-h-dvh items-start justify-center overflow-x-hidden bg-neutral-950 px-5 py-10 text-white sm:px-6">
             <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.11),transparent_68%)]" />
-            <section className="relative w-full max-w-md overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/95 shadow-2xl shadow-black/40">
+            <section className="relative my-auto w-full max-w-md overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/95 shadow-2xl shadow-black/40">
                 {showProgress && progressIndex >= 0 ? (
                     <div className="h-1 bg-neutral-800" role="progressbar" aria-valuemin={1} aria-valuemax={GUIDED_STEPS.length} aria-valuenow={progressIndex + 1} aria-label={`Account setup step ${progressIndex + 1} of ${GUIDED_STEPS.length}`}>
                         <div className="h-full bg-emerald-300 transition-[width] duration-300" style={{ width: `${progress}%` }} />

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useTransition } from "react"
+import { useCallback, useEffect, useRef, useState, useTransition } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
     isWorkspaceOnboardingBuilderUrl,
@@ -17,6 +17,7 @@ import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorksp
 import { openOnboardingBuilderWindow } from "@/lib/onboarding-builder-window"
 import { WORKSPACE_FRAME_NAVIGATION_EVENT } from "@/lib/workspace-frame-navigation"
 import { focusedChatComposer } from "@/lib/workspace-composer-viewport"
+import { PullToRefresh } from "@/components/workspace/PullToRefresh"
 import { parseWorkspaceDetailPreview, storeWorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 import {
     flushWorkspaceAutosaves,
@@ -31,12 +32,14 @@ type Props = {
 }
 
 export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
+    const [active, setActive] = useState(false)
     const pathname = usePathname()
     const router = useRouter()
     const searchParams = useSearchParams()
     const startedPollNoticeRef = useRef("")
     const refreshStartedRef = useRef(false)
     const [refreshPending, startRefreshTransition] = useTransition()
+    const refresh = useCallback(() => startRefreshTransition(() => router.refresh()), [router])
 
     useEffect(() => {
         if (refreshPending) {
@@ -225,6 +228,7 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
                 }
                 window.parent.postMessage(reply, window.location.origin)
             } else if (message.type === "activate") {
+                setActive(Boolean(message.active))
                 if (!message.active) focusedChatComposer(document)?.blur()
                 document.body.dataset.workspaceTabActive = message.active ? "true" : "false"
                 window.dispatchEvent(new Event(WORKSPACE_TAB_VISIBILITY_EVENT))
@@ -323,5 +327,5 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
         }
     }, [router, startRefreshTransition, tabId, workspaceSlug])
 
-    return null
+    return <PullToRefresh active={active} refreshing={refreshPending} onRefresh={refresh} />
 }

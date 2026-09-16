@@ -2735,9 +2735,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                     <button data-icon-button type="button" onClick={() => { goForward(); closeSidebarAfterNavigation() }} disabled={!canGoForward} aria-label="Go forward" className={navButtonClass}>
                         <ArrowRightIcon />
                     </button>
-                    <button data-icon-button type="button" onClick={reloadWorkspace} aria-label="Reload workspace" className={navButtonClass}>
-                        <ReloadIcon />
-                    </button>
                     <button data-icon-button type="button" onClick={openMobileSearch} aria-label="Search Betelgeze" className={`${navButtonClass} ml-auto`}>
                         <SearchIcon />
                     </button>

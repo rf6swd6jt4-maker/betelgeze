@@ -12,6 +12,7 @@ import type { NativeWorkSnapshot } from "@/lib/workspace-native-work"
 import type { NativeAppointmentSnapshot } from "@/lib/workspace-native-appointment"
 import type { NativeLibrarySnapshot } from "@/lib/workspace-native-library"
 import { WorkspacePanelChrome } from "./WorkspacePanelChrome"
+import { PullToRefresh } from "./PullToRefresh"
 import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
 import { flushWorkspaceAutosaves } from "@/lib/workspace-mutations"
 import { WORKSPACE_TAB_MESSAGE_SOURCE, workspaceRouteIsRecordDetail, type WorkspaceTabFrameMessage, type WorkspaceTabParentMessage } from "@/lib/workspace-tabs"
@@ -130,6 +131,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     banner?: ReactNode
 }) {
     const root = useRef<HTMLDivElement>(null)
+    const getScrollElement = useCallback(() => root.current, [])
     const restoredScrollKey = useRef<string | null>(null)
     const prefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const prefetchReads = useRef(new Set<string>())
@@ -308,6 +310,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
             if (anchor && event.pointerType === "mouse") prefetchTimer.current = setTimeout(() => navigation.prefetch(anchor.href), 200)
         }}
         onPointerLeave={() => { if (prefetchTimer.current) clearTimeout(prefetchTimer.current) }}>
+        <PullToRefresh active={active && !blockedByAccess} refreshing={snapshot.loading} onRefresh={refresh} getScrollElement={getScrollElement} />
         {navigationError ? <div role="alert" className="px-4 py-2 text-sm text-red-200">{navigationError}</div> : null}
         {blockedByAccess ? <div role="alert" className="px-4 py-2 text-sm text-red-200">{accountCleared ? "Your workspace session changed. Reload to continue." : accessError?.message} <button type="button" onClick={() => window.location.reload()} className="underline">Reload workspace</button></div> : null}
         {snapshot.error ? <div role="alert" className="border-b border-red-900/50 px-4 py-2 text-sm text-red-200">{snapshot.error} <button type="button" onClick={refresh} className="underline">Retry</button></div> : null}

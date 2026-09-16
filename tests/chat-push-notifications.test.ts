@@ -1,6 +1,30 @@
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import test from "node:test"
+import { declarativeChatPushPayload } from "../lib/push/declarative-notification.ts"
+
+test("chat push payload is declarative and remains compatible with older workers", () => {
+    const payload = JSON.parse(declarativeChatPushPayload({
+        title: "Client chat",
+        body: "2 new messages · Hello",
+        url: "/acme/communications?conversation=one",
+        tag: "chat:one",
+        conversationId: "one",
+        messageId: "message-one",
+        messageCreatedAt: "2026-09-16T22:20:51.916Z",
+        unreadCount: 2,
+    }))
+    assert.equal(payload.web_push, 8030)
+    assert.equal(payload.notification.title, "Client chat")
+    assert.equal(payload.notification.navigate, "https://app.betelgeze.com/acme/communications?conversation=one")
+    assert.equal(payload.notification.silent, false)
+    assert.equal(payload.notification.renotify, true)
+    assert.equal(payload.notification.data.conversationId, "one")
+    assert.equal(payload.title, payload.notification.title)
+    assert.equal(payload.body, payload.notification.body)
+    assert.equal(payload.url, payload.notification.data.url)
+    assert.equal("mutable" in payload, false)
+})
 
 test("chat push subscriptions and Communications sessions use server-only durable storage", async () => {
     const migration = await readFile("supabase/migrations/20260816170000_chat_web_push.sql", "utf8")
@@ -23,6 +47,7 @@ test("profile toggle registers from the user gesture and recovers after returnin
     assert.match(settings, /window\.addEventListener\("focus", refresh\)/)
     assert.match(settings, /document\.addEventListener\("visibilitychange", refresh\)/)
     assert.doesNotMatch(settings, /if \(permission !== "granted"\)/)
+    assert.ok(settings.indexOf('Notification.permission === "denied"') < settings.indexOf('Notification.permission === "granted" && result.subscribed && browserSubscription'))
     assert.match(settings, /h-11 min-h-0 w-14/)
     assert.match(settings, /sm:h-7 sm:w-12/)
     assert.match(settings, /relative block h-7 w-12 rounded-full/)
@@ -82,14 +107,15 @@ test("native, WhatsApp, and Twilio message writes schedule chat pushes after the
     assert.match(whatsappRoute, /notify\(content\.body, content\.media\)/)
     assert.match(twilioRoute, /previewBody: body/)
     assert.match(worker, /self\.addEventListener\("push"/)
-    assert.match(worker, /payload\.url\.startsWith\("\/"\)/)
+    assert.match(worker, /payload\.notification/)
+    assert.match(worker, /proposedData\.url/)
     assert.match(worker, /conversationId/)
     assert.match(worker, /new URL\(targetPath, self\.location\.origin\)\.href/)
     assert.match(worker, /await existingClient\.navigate\(targetUrl\)/)
     assert.match(worker, /navigatedClient \? navigatedClient\.focus\(\)/)
 })
 
-test("chat notifications aggregate per conversation, quiet rapid replacements, and clear only after reads persist", async () => {
+test("chat notifications have a declarative fallback, renotify replacements, and clear only after reads persist", async () => {
     const [delivery, worker, clientWorkspace, teamWorkspace, browserNotifications, initialNotificationGate, replacementNotificationGate] = await Promise.all([
         readFile("lib/push/chat-notifications.ts", "utf8"),
         readFile("public/sw.js", "utf8"),
@@ -106,8 +132,9 @@ test("chat notifications aggregate per conversation, quiet rapid replacements, a
     assert.match(delivery, /messageCreatedAt/)
     assert.match(delivery, /claimChatPush\(subscription\.id, push\)/)
     assert.match(delivery, /clear_read_chat_push_notifications/)
-    assert.match(worker, /getNotifications\(\{ tag \}\)/)
-    assert.match(worker, /now - previousMessageAt >= 60_000/)
+    assert.match(delivery, /declarativeChatPushPayload/)
+    assert.doesNotMatch(worker, /getNotifications/)
+    assert.match(worker, /event\.waitUntil\(self\.registration\.showNotification\(title, options\)\)/)
     assert.match(worker, /unreadCount/)
     assert.match(clientWorkspace, /dismissReadChatNotification\(cursor\.relationshipId, result\.notificationReadThrough\)/)
     assert.match(teamWorkspace, /dismissReadChatNotification\(cursor\.conversationId, result\.notificationReadThrough\)/)

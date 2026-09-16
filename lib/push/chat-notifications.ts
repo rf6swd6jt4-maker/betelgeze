@@ -5,6 +5,7 @@ import { clientConversationParticipants } from "@/lib/communications/access"
 import { createHash } from "node:crypto"
 import webPush, { WebPushError, type PushSubscription } from "web-push"
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import { declarativeChatPushPayload } from "@/lib/push/declarative-notification"
 
 const ACTIVE_WINDOW_MS = 60_000
 const PUSH_TTL_SECONDS = 24 * 60 * 60
@@ -174,19 +175,23 @@ async function deliverChatPush(recipientUserIds: string[], push: ChatPush) {
     await Promise.all(subscriptions.filter((subscription) => !activeUsers.has(subscription.user_id) && (counts.get(subscription.user_id) ?? 1) > 0).map(async (subscription) => {
         const unreadCount = counts.get(subscription.user_id) ?? 1
         if (!await claimChatPush(subscription.id, push)) return
+        const body = chatNotificationBody(push.mentionUserIds?.includes(subscription.user_id) ? push.mentionBody ?? push.body : push.body, unreadCount)
+        const tag = `chat:${push.conversationId}`
         // `web-push` encrypts this payload separately for the subscription's
         // p256dh/auth keys. The Push service receives ciphertext and only the
         // recipient browser can expose the preview to this app's service worker.
-        const payload = JSON.stringify({
-            category: "chat",
+        // The declarative notification is also a user-visible fallback when
+        // WebKit cannot run the worker. Top-level fields keep already-installed
+        // older workers compatible until their next update check.
+        const payload = declarativeChatPushPayload({
             title: push.title,
-            body: chatNotificationBody(push.mentionUserIds?.includes(subscription.user_id) ? push.mentionBody ?? push.body : push.body, unreadCount),
+            body,
             url: push.url,
-            tag: `chat:${push.conversationId}`,
+            tag,
+            conversationId: push.conversationId,
             messageId: push.messageId,
             messageCreatedAt: push.messageCreatedAt,
             unreadCount,
-            conversationId: push.conversationId,
         })
         const browserSubscription: PushSubscription = {
             endpoint: subscription.endpoint,

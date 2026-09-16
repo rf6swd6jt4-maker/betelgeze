@@ -50,14 +50,14 @@ export function PushNotificationSettings() {
             setPublicKey(result.publicKey)
             const registration = await navigator.serviceWorker.getRegistration("/")
             const browserSubscription = await registration?.pushManager.getSubscription()
-            if (result.subscribed && browserSubscription) {
-                setState("on")
-                setDetail("This device will notify you when none of your devices has Communications open.")
-                return
-            }
             if (Notification.permission === "denied") {
                 setState("blocked")
                 setDetail("Notifications are blocked. Allow Betelgeze in this device’s settings, then select the toggle again to finish enabling them.")
+                return
+            }
+            if (Notification.permission === "granted" && result.subscribed && browserSubscription) {
+                setState("on")
+                setDetail("This device will notify you when none of your devices has Communications open.")
                 return
             }
             setState("off")
@@ -80,6 +80,11 @@ export function PushNotificationSettings() {
 
     async function enable() {
         if (!publicKey || state === "saving") return
+        if (Notification.permission === "denied") {
+            setState("blocked")
+            setDetail("Notifications are blocked. Allow Betelgeze in this device’s settings, then select the toggle again to finish enabling them.")
+            return
+        }
         setState("saving")
         setDetail(Notification.permission === "default" ? "Opening this device’s notification permission prompt…" : "Enabling notifications on this device…")
         try {

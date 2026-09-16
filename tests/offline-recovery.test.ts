@@ -70,7 +70,7 @@ test("offline queue writes are constrained to the original account and workspace
         }
     }
     const worker = readFileSync("public/sw.js", "utf8")
-    assert.match(worker, /CACHE_NAME = "betelgeze-pwa-v3"/)
+    assert.match(worker, /CACHE_NAME = "betelgeze-pwa-v4"/)
     assert.match(worker, /event\.request\.mode === "navigate"/)
     assert.match(worker, /navigationPreload\.disable\(\)/)
     assert.doesNotMatch(worker, /navigationPreload\.enable\(\)|event\.preloadResponse/)
@@ -98,7 +98,7 @@ test("a controlled PWA launch ignores an empty navigation preload response", asy
         },
         self: {
             location: { origin: "https://app.betelgeze.com" },
-            registration: { navigationPreload: { disable: async () => undefined }, showNotification: async () => undefined, getNotifications: async () => [] },
+            registration: { navigationPreload: { disable: async () => undefined }, showNotification: async () => undefined },
             clients: { claim: async () => undefined },
             skipWaiting: async () => undefined,
             addEventListener: (type: string, listener: (event: unknown) => void) => listeners.set(type, listener),
@@ -121,4 +121,56 @@ test("a controlled PWA launch ignores an empty navigation preload response", asy
     assert.equal(preloadReads, 0)
     networkFails = true
     assert.equal(await (await navigate()).text(), "offline recovery")
+})
+
+test("the legacy worker immediately displays the declarative notification without enumerating existing notifications", async () => {
+    const listeners = new Map<string, (event: { data?: { json(): unknown }; waitUntil(value: Promise<void>): void }) => void>()
+    let displayed: { title: string; options: Record<string, unknown> } | null = null
+    runInNewContext(readFileSync("public/sw.js", "utf8"), {
+        URL,
+        Response,
+        fetch: async () => new Response(),
+        caches: { open: async () => ({ addAll: async () => undefined }), keys: async () => [], delete: async () => true, match: async () => null },
+        self: {
+            location: { origin: "https://app.betelgeze.com" },
+            registration: {
+                navigationPreload: { disable: async () => undefined },
+                showNotification: async (title: string, options: Record<string, unknown>) => { displayed = { title, options } },
+            },
+            clients: { claim: async () => undefined },
+            skipWaiting: async () => undefined,
+            addEventListener: (type: string, listener: (event: { data?: { json(): unknown }; waitUntil(value: Promise<void>): void }) => void) => listeners.set(type, listener),
+        },
+    })
+    const push = listeners.get("push")
+    assert.ok(push)
+    let completion: Promise<void> | undefined
+    push({
+        data: { json: () => ({
+            web_push: 8030,
+            notification: {
+                title: "Client chat",
+                body: "A new message",
+                navigate: "https://app.betelgeze.com/acme/communications?conversation=one",
+                tag: "chat:one",
+                renotify: true,
+                silent: false,
+                data: { url: "/acme/communications?conversation=one", category: "chat", conversationId: "one", unreadCount: 2 },
+            },
+        }) },
+        waitUntil: (value) => { completion = value },
+    })
+    assert.ok(completion)
+    await completion
+    assert.equal(displayed?.title, "Client chat")
+    assert.equal(displayed?.options.body, "A new message")
+    assert.equal(displayed?.options.renotify, true)
+    assert.deepEqual(JSON.parse(JSON.stringify(displayed?.options.data)), {
+        url: "/acme/communications?conversation=one",
+        category: "chat",
+        conversationId: "one",
+        messageId: null,
+        messageCreatedAt: null,
+        unreadCount: 2,
+    })
 })

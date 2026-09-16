@@ -12,7 +12,7 @@ export async function GET(_request: Request, context: { params: Promise<{ worksp
     const relationshipIds = await accessibleRelationshipIds(access)
     const workItemIds = await accessibleWorkItemIds(access, relationshipIds)
     let workItemsQuery = supabaseAdmin.from("work_items").select("id, title, status").eq("workspace_id", workspace.id).eq("visibility", "workspace").order("title").limit(200)
-    let relationshipsQuery = supabaseAdmin.from("relationships").select("id, primary_person_name, business_name").eq("workspace_id", workspace.id).order("updated_at", { ascending: false }).limit(200)
+    let relationshipsQuery = supabaseAdmin.from("relationships").select("id, primary_person_name, business_name").eq("workspace_id", workspace.id).neq("status", "archived").order("updated_at", { ascending: false }).limit(200)
     if (workItemIds) workItemsQuery = workItemIds.size ? workItemsQuery.in("id", [...workItemIds]) : workItemsQuery.eq("id", "00000000-0000-0000-0000-000000000000")
     if (relationshipIds) relationshipsQuery = relationshipIds.size ? relationshipsQuery.in("id", [...relationshipIds]) : relationshipsQuery.eq("id", "00000000-0000-0000-0000-000000000000")
     const [{ data: workItems }, { data: relationships }, { data: adminMemberships }] = await Promise.all([

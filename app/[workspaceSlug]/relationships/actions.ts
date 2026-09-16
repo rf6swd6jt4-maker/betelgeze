@@ -664,6 +664,18 @@ export async function createAssetFromModal(slug: string, formData: FormData, rel
     const storagePath = nullableFormString(formData, "storage_path")
     if (!storagePath) return { ok: false, error: "missing-upload" }
 
+    const submittedRelationshipId = nullableFormString(formData, "relationship_id")
+    const relationshipToLink = relationshipId ?? submittedRelationshipId
+    if (relationshipToLink) {
+        const { data: relationship } = await supabaseAdmin.from("relationships")
+            .select("id")
+            .eq("workspace_id", workspace.id)
+            .eq("id", relationshipToLink)
+            .neq("status", "archived")
+            .maybeSingle()
+        if (!relationship) return { ok: false, error: "This relationship is archived or unavailable." }
+    }
+
     const { data: asset, error } = await supabaseAdmin.from("assets").insert({
         workspace_id: workspace.id,
         title,
@@ -685,8 +697,6 @@ export async function createAssetFromModal(slug: string, formData: FormData, rel
 
     if (error || !asset) return { ok: false, error: "create-failed" }
 
-    const submittedRelationshipId = nullableFormString(formData, "relationship_id")
-    const relationshipToLink = relationshipId ?? submittedRelationshipId
     if (relationshipToLink) {
         await supabaseAdmin.from("asset_relationships").insert({
             workspace_id: workspace.id,

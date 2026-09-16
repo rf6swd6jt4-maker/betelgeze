@@ -337,6 +337,16 @@ test("service-role query paths explicitly exclude private work for Staff surface
     assert.match(detail, /item\.visibility === "admins_only" && role === "staff"/)
 })
 
+test("asset creation only offers and accepts active relationships", async () => {
+    const [createOptions, actions] = await Promise.all([
+        readFile("app/api/workspaces/[workspaceSlug]/shell-create-options/route.ts", "utf8"),
+        readFile("app/[workspaceSlug]/relationships/actions.ts", "utf8"),
+    ])
+    assert.match(createOptions, /from\("relationships"\)[^\n]*\.neq\("status", "archived"\)/)
+    assert.match(actions, /createAssetFromModal[\s\S]*from\("relationships"\)[\s\S]*\.eq\("id", relationshipToLink\)[\s\S]*\.neq\("status", "archived"\)[\s\S]*This relationship is archived or unavailable\./)
+    assert.ok(actions.indexOf('if (!relationship) return { ok: false, error: "This relationship is archived or unavailable." }') < actions.indexOf('supabaseAdmin.from("assets").insert'))
+})
+
 test("maintenance is event-driven and logs to console before creating Work Items", async () => {
     const [maintenance, migration] = await Promise.all([
         readFile("lib/admin/maintenance.ts", "utf8"),

@@ -90,13 +90,14 @@ test("native, WhatsApp, and Twilio message writes schedule chat pushes after the
 })
 
 test("chat notifications aggregate per conversation, quiet rapid replacements, and clear only after reads persist", async () => {
-    const [delivery, worker, clientWorkspace, teamWorkspace, browserNotifications, notificationGate] = await Promise.all([
+    const [delivery, worker, clientWorkspace, teamWorkspace, browserNotifications, initialNotificationGate, replacementNotificationGate] = await Promise.all([
         readFile("lib/push/chat-notifications.ts", "utf8"),
         readFile("public/sw.js", "utf8"),
         readFile("components/communications/CommunicationsWorkspace.tsx", "utf8"),
         readFile("components/communications/TeamCommunicationsWorkspace.tsx", "utf8"),
         readFile("lib/push/browser-notifications.ts", "utf8"),
         readFile("supabase/migrations/20260817190000_ios_chat_notification_gate.sql", "utf8"),
+        readFile("supabase/migrations/20260916220000_chat_push_notification_replacements.sql", "utf8"),
     ])
     assert.match(delivery, /chatNotificationBody\(push\.mentionUserIds\?\.includes\(subscription\.user_id\).*unreadCount\)/)
     assert.match(delivery, /communication_read_cursors/)
@@ -113,8 +114,11 @@ test("chat notifications aggregate per conversation, quiet rapid replacements, a
     assert.match(browserNotifications, /getNotifications\(\)/)
     assert.match(browserNotifications, /data\.conversationId !== conversationId/)
     assert.match(browserNotifications, /messageCreatedAt <= readThroughCreatedAt/)
-    assert.match(notificationGate, /primary key \(subscription_id, conversation_kind, conversation_id\)/)
-    assert.match(notificationGate, /on conflict \(subscription_id, conversation_kind, conversation_id\) do nothing/)
-    assert.match(notificationGate, /read_through >= p_message_created_at/)
-    assert.match(notificationGate, /clear_read_chat_push_notifications/)
+    assert.match(initialNotificationGate, /primary key \(subscription_id, conversation_kind, conversation_id\)/)
+    assert.match(initialNotificationGate, /clear_read_chat_push_notifications/)
+    assert.match(replacementNotificationGate, /on conflict \(subscription_id, conversation_kind, conversation_id\) do update/)
+    assert.match(replacementNotificationGate, /excluded\.message_created_at > current_state\.message_created_at/)
+    assert.match(replacementNotificationGate, /read_through >= p_message_created_at/)
+    assert.match(replacementNotificationGate, /return affected_count = 1/)
+    assert.doesNotMatch(replacementNotificationGate, /on conflict \(subscription_id, conversation_kind, conversation_id\) do nothing/)
 })

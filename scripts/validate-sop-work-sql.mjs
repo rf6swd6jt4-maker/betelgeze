@@ -354,5 +354,6 @@ try {
     await (await import('./sop-image-sql-checks.mjs')).validateSopImageSql({db,id,w,foreign,admin,staff,sop,revision,fixture})
     await (await import('./sop-reliability-sql-checks.mjs')).validateSopReliabilitySql({db,id,w,admin,staff,sop,revision,fixture})
     await (await import('./sop-evidence-title-sql-checks.mjs')).validateSopEvidenceTitles({db,id,w,admin,staff,sop,revision,fixture})
+    await (await import('./relationship-context-assets-sql-checks.mjs')).validateRelationshipContextAssets({db,id,w,admin,staff,sop,revision,fixture})
     console.log(JSON.stringify({checks,publicationMs,ordinaryPublicationMs,relationshipPlan:relPlan,evidencePlan}))
 } finally { await db.close() }

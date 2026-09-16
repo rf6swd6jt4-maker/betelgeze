@@ -1,0 +1,6 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {documentFile,signDocumentTicket,readDocumentTicket} from '../lib/relationship-assets/policy.ts'
+const file={name:'Brief.docx',type:'',size:500},t={id:'00000000-0000-4000-8000-000000000001',workspaceId:'workspace',relationshipId:'andy',userId:'manager',file,description:'New booking page',expires:Date.now()+100000}
+test('document uploads validate type and bounded size',()=>{assert.match(documentFile(file).type,/wordprocessingml/);assert.throws(()=>documentFile({...file,name:'brief.html'}));assert.throws(()=>documentFile({...file,size:21000000}));assert.throws(()=>documentFile({...file,name:'../brief.pdf'}))})
+test('upload receipts bind document and corrections to one account and relationship',()=>{const receipt=signDocumentTicket(t,'secret');assert.equal(readDocumentTicket(receipt,'secret','workspace','andy','manager').description,t.description);for(const [w,r,u]of [['other','andy','manager'],['workspace','bruce','manager'],['workspace','andy','staff']])assert.throws(()=>readDocumentTicket(receipt,'secret',w,r,u));assert.throws(()=>readDocumentTicket(receipt+'changed','secret','workspace','andy','manager'));assert.throws(()=>readDocumentTicket(signDocumentTicket({...t,expires:0},'secret'),'secret','workspace','andy','manager'))})

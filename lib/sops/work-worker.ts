@@ -1,3 +1,4 @@
+import type { RelationshipGenerationContext } from "@/lib/relationship-assets/context"
 import "server-only"
 import { workFailureMessage, workDatabaseError } from "./work-errors"
 import { revalidatePath } from "next/cache"
@@ -56,11 +57,13 @@ export async function processSopWork(id?: string, instanceId?: string) {
             // Extraction can take time. Recheck revocation and evidence before the second paid call.
             const current = await supabaseAdmin.rpc("prepare_sop_work", { p_id: job.id, p_lease: job.lease_token })
             if (current.error || !current.data || !sopWorkConfiguration().ready) throw new Error("Client information or access changed before generation. No work was published.")
+            const context = (current.data as {mode?:string;client_context?:RelationshipGenerationContext}).client_context
+            if ((current.data as {mode?:string}).mode !== 'relationship_context_v1' || !context?.relationship || !Array.isArray(context.documents)) throw new Error('Client context could not be loaded; no work was generated.')
             const candidateRead=await supabaseAdmin.rpc('sop_work_asset_candidates',{p_id:job.id,p_lease:job.lease_token,p_image_ids:[...new Set(interpretation.steps.flatMap(step=>step.image_ids??[]))]})
             if(candidateRead.error)throw new Error('Could not read permitted asset candidates.')
             const assets=(candidateRead.data as AssetCandidate[]).map(a=>({...a,description:Array.from(a.description).slice(0,1000).join(''),source_steps:interpretation.steps.flatMap((s,i)=>s.image_ids?.includes(a.id)?[i+1]:[])})).filter(a=>a.kind!=='extracted_image'||a.source_steps.length)
             await save({asset_candidates:assets})
-            const plan = await generateSopWork({ model: job.model, source: interpretation,assets }, sopLedgerRequest({ id: job.lease_token, workspaceId: job.workspace_id, model: job.model, stage: "generation", runId: job.id }), async output => {
+            const plan = await generateSopWork({ model: job.model, source: interpretation,assets, context }, sopLedgerRequest({ id: job.lease_token, workspaceId: job.workspace_id, model: job.model, stage: "generation", runId: job.id }), async output => {
                 await save({ raw_output: output, source_snapshot: interpretation, schema_version: SOP_WORK_VERSION })
             })
             // Save before publication. A lost acknowledgement can retry publication without paying again.

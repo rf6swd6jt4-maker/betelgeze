@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url)
 function load(file: string, mocks: Record<string, unknown> = {}): Record<string, unknown> {
     const m = { exports: {} }
     const code = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
-    new Function("require", "module", "exports", code)((name: string) => name in mocks ? mocks[name] : name === "server-only" ? {} : name.startsWith("./") ? load(path.join(path.dirname(file), name + ".ts"), mocks) : require(name), m, m.exports)
+    new Function("require", "module", "exports", code)((name: string) => name in mocks ? mocks[name] : name === "server-only" ? {} : (name.startsWith("./") || name.startsWith("../")) ? load(path.join(path.dirname(file), name + ".ts"), mocks) : require(name), m, m.exports)
     return m.exports
 }
 const pricing=load("lib/sops/pricing.ts") as typeof import("../lib/sops/pricing")
@@ -73,7 +73,7 @@ test("generation sends bounded evidence and strict source-only instructions with
     assert.equal(result.tasks.length,2);assert.deepEqual(result.warnings,[])
 })
 
-function workerFixture(options:{revoked?:boolean;cached?:boolean;savedPlan?:boolean;failPublish?:boolean;acceptNone?:boolean;lostAck?:boolean;invalidSaved?:boolean}={}) {
+function workerFixture(options:{revoked?:boolean;cached?:boolean;savedPlan?:boolean;failPublish?:boolean;acceptNone?:boolean;lostAck?:boolean;invalidSaved?:boolean;missingContext?:boolean}={}) {
     const calls={accepted:0,source:0,generation:0,publish:0,prepares:0,saves:[] as Record<string,unknown>[]}
     const job={id:"run",workspace_id:"workspace",relationship_id:"relationship",sop_id:"sop",interpretation_id:"interpretation",requested_by:"admin",model:"gpt-5.4-mini",lease_token:"lease",schema_version:work.SOP_WORK_VERSION,plan:options.invalidSaved?{...plan,tasks:[{...task,completion_requirements:[]}]}:options.savedPlan?plan:null,source_snapshot:options.savedPlan||options.invalidSaved?source:null}
     let sourceReady=Boolean(options.cached)
@@ -91,7 +91,7 @@ function workerFixture(options:{revoked?:boolean;cached?:boolean;savedPlan?:bool
         "@/lib/supabase/admin":{supabaseAdmin:{from:query,rpc:async(name:string)=>{
             if(name==="accept_sop_work_request"){calls.accepted++;return {data:options.acceptNone?null:"run"}}
             if(name==="claim_sop_work")return {data:[job]}
-            if(name==="prepare_sop_work"){calls.prepares++;return options.revoked?{error:{message:"revoked"}}:{data:{goal:"Bookings"}}}
+            if(name==="prepare_sop_work"){calls.prepares++;return options.revoked?{error:{message:"revoked"}}:{data:options.missingContext?{}:{mode:"relationship_context_v1",client_context:{documents:[],relationship:{name:"Client",description:"Current notes"}}}}}
             if(name==='sop_work_asset_candidates')return {data:[]}
             if(name==="publish_sop_work"){calls.publish++;return options.failPublish||options.lostAck?{error:{message:"offline"}}:{data:["work1","work2"]}}
             throw new Error(name)
@@ -411,4 +411,24 @@ test('worker recovers a lost publication acknowledgement and rejects invalid sav
   assert.deepEqual(await invalid.worker.processSopWork('run'),{claimed:1,published:0})
   assert.equal(invalid.calls.generation,0);assert.equal(invalid.calls.publish,0)
  }finally{if(previous===undefined)delete process.env.SOP_WORK_PILOT_ENABLED;else process.env.SOP_WORK_PILOT_ENABLED=previous}
+})
+
+test('generation receives document evidence and later corrections without extra provider calls',async()=>{
+ const generator=load('lib/sops/work-generator.ts') as typeof import('../lib/sops/work-generator')
+ const context={documents:[{id:'brief',title:'Old brief',document_text:'The website has no booking page.',description:'The booking page has been built.',source_hash:'abc',extractor_version:'relationship-text-v1'}],relationship:{name:'Andy',company:'Example',industry:'Lighting',website:'https://example.com',location:null,contact_role:null,description:'The booking page is live at /book; verify it, do not rebuild it.'}}
+ let calls=0
+ await generator.generateSopWork({model:'fixture',source,context},async(_url,init)=>{
+  calls++;const body=JSON.parse(String(init?.body)),payload=JSON.parse(body.input[0].content[0].text)
+  assert.deepEqual(payload.client_context,context)
+  assert.match(body.instructions,/description have the highest factual precedence/)
+  assert.doesNotMatch(body.instructions,/No relationship profile|without optimising or personalising|value has NOT been supplied/)
+  assert.equal(body.tools,undefined);assert.equal(body.store,false)
+  return Response.json({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({...plan,tasks:plan.tasks.map(task=>({...task,depends_on:[]}))})}]}]})
+ },async()=>{})
+ assert.equal(calls,1)
+})
+
+test('worker stops before a paid call if relationship context is unavailable',async()=>{
+ const previous=process.env.SOP_WORK_PILOT_ENABLED;process.env.SOP_WORK_PILOT_ENABLED='true'
+ try{const fixture=workerFixture({cached:true,missingContext:true});await fixture.worker.processSopWork('run');assert.equal(fixture.calls.generation,0);assert.equal(fixture.calls.publish,0);assert.match(String(fixture.calls.saves.at(-1)?.error_summary),/Client context/)}finally{if(previous===undefined)delete process.env.SOP_WORK_PILOT_ENABLED;else process.env.SOP_WORK_PILOT_ENABLED=previous}
 })

@@ -1,3 +1,4 @@
+import { withChatPerformance } from "@/lib/communications/performance-server"
 import { clientConversationCanAccess } from "@/lib/communications/access"
 import { NextRequest } from "next/server"
 
@@ -9,7 +10,7 @@ import { communicationFileKeyForCurrentUser, createCommunicationMediaGrant } fro
 import { communicationAttachmentFromValue, MAX_COMMUNICATION_MEDIA_CAPTION_LENGTH } from "@/lib/communications/attachments"
 import { verifyClientMessageUpload } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { requireCommunicationsWorkspace } from "@/lib/communications/workspace-access"
 import type { CommunicationAttachment } from "@/lib/communications/types"
 
 export const runtime = "nodejs"
@@ -23,9 +24,9 @@ async function scopedRelationship(workspaceId: string, relationshipId: string) {
     return data?.status === "archived" ? null : data
 }
 
-export async function GET(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
+async function handleGET(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
-    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const { workspace, user } = await requireCommunicationsWorkspace(workspaceSlug)
     const relationshipId = request.nextUrl.searchParams.get("relationshipId") ?? ""
     if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const messageId = request.nextUrl.searchParams.get("messageId") ?? ""
@@ -46,9 +47,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
     return Response.json(await loadCommunicationMessages({ workspaceId: workspace.id, relationshipId, currentUserId: user.id, limit: 500 }), { headers: { "Cache-Control": "no-store" } })
 }
 
-export async function POST(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
+async function handlePOST(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
-    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const { workspace, user } = await requireCommunicationsWorkspace(workspaceSlug)
     const input = await request.json().catch(() => null) as { offlineUserId?: unknown; offlineWorkspaceId?: unknown; relationshipId?: unknown; body?: unknown; clientRequestId?: unknown; retry?: unknown; attachment?: unknown; replyToMessageId?: unknown; stickerId?: unknown } | null
     if (input?.offlineWorkspaceId && input.offlineWorkspaceId !== workspace.id) return Response.json({ error: "This workspace is no longer available at this address." }, { status: 409 })
     if (input?.offlineUserId && input.offlineUserId !== user.id) return Response.json({ error: "Sign in with the account that wrote this message." }, { status: 409 })
@@ -189,3 +190,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
         return Response.json({ error: errorMessage, message, retryable: true }, { status: 502 })
     }
 }
+
+export const GET = withChatPerformance("message.receive", handleGET)
+
+export const POST = withChatPerformance("message.send", handlePOST)

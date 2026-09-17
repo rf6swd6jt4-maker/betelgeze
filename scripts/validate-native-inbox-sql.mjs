@@ -74,17 +74,39 @@ try {
     assert.equal(recent.rows[0].n,60)
     assert.ok(value.messages[0].body.startsWith("Synthetic body"))
     console.log(JSON.stringify({oldDecoded:old.rows[0].n,oldMs:old.ms,newDecoded:61,newMs:inbox.ms+recent.ms,unreadCount:value.unread[0].messages.length,limitation:"Synthetic encrypted data in local PGlite, not production latency"}))
+    // Exact-message wrappers retain the actual encrypted decoder and access gates.
+    await db.exec(`alter table workspace_native_messages add column edited_at timestamptz;
+        create table communication_message_deliveries(client_message_id uuid,workspace_id uuid,provider text,provider_message_id text,status text,error text,sent_at timestamptz,delivered_at timestamptz,read_at timestamptz,failed_at timestamptz,created_at timestamptz);
+        create index delivery_message on communication_message_deliveries(client_message_id);
+        update workspace_native_messages set edited_at='2026-09-17' where id=md5('native-5993')::uuid;
+        insert into communication_message_deliveries(client_message_id,workspace_id,provider,status,created_at) values(md5('client-5993')::uuid,'${w}','meta_whatsapp','read',now());`)
+    const latency=await migration('20260917210000_chat_latency.sql')
+    for (const name of ['communication_native_message_detail','communication_client_message_detail']) await db.exec(definition(latency,`public.${name}`))
+    const nativeDetail=async(workspace=w,n=5993)=>(await db.query("select communication_native_message_detail($1,md5('native-'||$2)::uuid) result",[workspace,String(n)])).rows[0].result
+    const clientDetail=async(workspace=w,n=5993)=>(await db.query("select communication_client_message_detail($1,md5('client-'||$2)::uuid) result",[workspace,String(n)])).rows[0].result
+    const detail=await nativeDetail();assert.ok(detail.body.startsWith('Synthetic body'));assert.ok(detail.edited_at);assert.equal(detail.quote.text,'Synthetic')
+    const clientMessage=await clientDetail();assert.ok(clientMessage.message.body.startsWith('Synthetic body'));assert.equal(clientMessage.deliveries[0].status,'read')
+    assert.equal(await nativeDetail(w,6000),null,'corrupt ciphertext stays unavailable');assert.equal(await clientDetail(w,6000),null)
+    assert.equal(await nativeDetail(c),null,'wrong workspace');assert.equal(await clientDetail(c),null)
+    await db.exec(`delete from workspace_native_conversation_participants where conversation_id='${c}'; update relationships set seller_user_id=null;`)
+    assert.equal(await nativeDetail(),null,'removed participant');assert.equal(await clientDetail(),null,'removed client responsibility')
+    await db.exec(`insert into workspace_native_conversation_participants values('${c}','00000000-0000-4000-8000-000000000002'); update relationships set seller_user_id='00000000-0000-4000-8000-000000000002';`)
+    const plan=(await db.query("explain (analyze,format json) select id from workspace_native_messages where workspace_id=$1 and id=md5('native-5993')::uuid",[w])).rows[0]['QUERY PLAN']
+    assert.match(JSON.stringify(plan),/Index Scan/)
+    console.log('PASS exact encrypted detail: body, quote, edit/delivery metadata, corrupt ciphertext, workspace isolation, participant revocation and indexed message lookup')
     await db.exec(`insert into workspace_native_read_cursors values('${c}','00000000-0000-4000-8000-000000000002',md5('native-5900')::uuid,'2026-01-02');`)
     assert.equal((await db.query("select communication_native_inbox($1) inbox",[w])).rows[0].inbox.unread[0].messages.length,100,"message cursor wins over later client clock")
     await db.exec(`insert into workspace_native_conversation_visibility values('${c}','00000000-0000-4000-8000-000000000002',timestamptz '2026-01-01' + interval '5950 seconds');`)
     assert.equal((await db.query("select communication_native_inbox($1) inbox",[w])).rows[0].inbox.unread[0].messages.length,50,"cleared messages stay absent")
     await db.exec(`update workspace_native_conversation_visibility set cleared_at = '2027-01-01';`)
     const cleared=(await db.query("select communication_native_inbox($1) inbox",[w])).rows[0].inbox
+    assert.equal(await nativeDetail(),null,"cleared messages stay unavailable through detail wrapper")
     assert.equal(cleared.messages.length,0); assert.equal(cleared.unread[0].messages.length,0)
     for(const claims of [{sub:'00000000-0000-4000-8000-000000000002',role:'authenticated',aal:'aal1'},{sub:'00000000-0000-4000-8000-000000000008',role:'authenticated',aal:'aal2'},{role:'anon'}]) {
         await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify(claims)])
         const denied=(await db.query("select communication_native_inbox($1) inbox",[w])).rows[0].inbox
         assert.deepEqual(denied,{messages:[],unread:[]})
+        assert.equal(await nativeDetail(),null);assert.equal(await clientDetail(),null)
     }
     console.log("PASS: encrypted preview, 60-message window, full unread metadata, cursor, clear history, AAL1, non-member and anonymous denial")
 } catch (error) {

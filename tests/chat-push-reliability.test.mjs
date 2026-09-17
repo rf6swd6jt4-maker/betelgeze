@@ -68,7 +68,7 @@ function deliveryHarness({states={},providerFailures={}}={}) {
  const db={
   rpc:async(name,input)=>{
    if(name==='claim_chat_push_deliveries')return {data:jobs,error:null}
-   if(name==='prepare_chat_push_delivery'){const sequence=states[input.p_id]??['send','send'];const state=sequence.shift()??'send';return {data:{state,unreadCount:2},error:null}}
+   if(name==='prepare_chat_push_delivery'||name==='prepare_chat_push_subscription'){const sequence=states[input.p_id]??['send','send'];const state=sequence.shift()??'send';return {data:{state,unreadCount:2,subscription:{endpoint:`https://push.test/${input.p_id}`,p256dh:`key-${input.p_id}`,auth:`auth-${input.p_id}`}},error:null}}
    if(name==='finish_chat_push_delivery'){outcomes.push(input);return {data:true,error:null}}
    if(name==='increment_web_push_failure')return {error:null}
    throw new Error(`Unexpected RPC ${name}`)
@@ -81,10 +81,10 @@ function deliveryHarness({states={},providerFailures={}}={}) {
   },
  }
  const mod=load('lib/push/delivery.ts',{
-  'server-only':{},'node:crypto':{createHash:()=>({update:()=>({digest:()=> 'topic'})})},
+  '@/lib/communications/performance-server':{beginChatServerMeasurement:()=>({mark:()=>{},finish:()=>null}),withChatPerformance:(_command,handler)=>handler,markChatBoundary:()=>{}},'server-only':{},'node:crypto':{createHash:()=>({update:()=>({digest:()=> 'topic'})})},
   'web-push':{__esModule:true,WebPushError,default:{sendNotification:async(sub,body,options)=>{sent.push({sub,payload:JSON.parse(body),options});const id=sub.endpoint.split('/').at(-1);if(providerFailures[id])throw new WebPushError(providerFailures[id])}}},
   '@/lib/supabase/admin':{supabaseAdmin:db},'@/lib/push/declarative-notification':{declarativeChatPushPayload:JSON.stringify},'@/lib/push/recipients':{chatPushSchemaMissing:()=>false},
- },{process:{env:{WEB_PUSH_VAPID_PUBLIC_KEY:'public',WEB_PUSH_VAPID_PRIVATE_KEY:'private'}},console:{warn:()=>undefined}})
+ },{process:{env:{WEB_PUSH_VAPID_PUBLIC_KEY:'public',WEB_PUSH_VAPID_PRIVATE_KEY:'private'}},console:{warn:()=>undefined,info:()=>undefined}})
  const run=()=>mod.processChatPushDeliveries({messageId:'message',push:{messageId:'message',conversationId:'chat',workspaceId:'workspace',conversationKind:'native',title:'Chat',body:'Hello',url:'/workspace/communications'}})
  return {run,sent,outcomes,deleted}
 }
@@ -106,12 +106,12 @@ test('worker defers active users and rechecks revocation immediately before exte
 test('a saved message schedules delivery even if loading its encrypted confirmation fails',async()=>{
  const source=readFileSync('app/api/workspaces/[workspaceSlug]/communications/native/messages/route.ts','utf8')
  const ast=ts.createSourceFile('route.ts',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
- const fn=ast.statements.find(s=>ts.isFunctionDeclaration(s)&&s.name?.text==='POST')
+ const fn=ast.statements.find(s=>ts.isFunctionDeclaration(s)&&s.name?.text==='handlePOST')
  const callbacks=[]
  const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:null,error:null}),insert:()=>q,single:async()=>({data:{id:'saved-message'},error:null})}
- const deps={Response,UUID_PATTERN:/^[0-9a-f-]{36}$/,requireWorkspacePanel:async()=>({workspace:{id:'workspace',slug:'workspace'},user:{id:'sender'}}),nativeAttachmentFromInput:()=>null,messageQuoteFromValue:()=>null,assertNativeConversationAccess:async()=>true,supabaseAdmin:{from:()=>q},attachmentBatch:()=>[],packAttachments:()=>null,after:fn=>callbacks.push(fn),notifyNativeChatMessage:async input=>input,loadNativeMessageForCurrentUser:async()=>{throw new Error('decrypt unavailable')}}
+ const deps={Response,UUID_PATTERN:/^[0-9a-f-]{36}$/,markChatBoundary:()=>{},requireCommunicationsWorkspace:async()=>({workspace:{id:'workspace',slug:'workspace'},user:{id:'sender'}}),nativeAttachmentFromInput:()=>null,messageQuoteFromValue:()=>null,assertNativeConversationAccess:async()=>true,supabaseAdmin:{from:()=>q},attachmentBatch:()=>[],packAttachments:()=>null,after:fn=>callbacks.push(fn),notifyNativeChatMessage:async input=>input,loadNativeMessageForCurrentUser:async()=>{throw new Error('decrypt unavailable')}}
  const code=ts.transpileModule(fn.getText(ast).replace('export async','async'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText
- const post=new Function(...Object.keys(deps),`${code};return POST`)(...Object.values(deps))
+ const post=new Function(...Object.keys(deps),`${code};return handlePOST`)(...Object.values(deps))
  const response=await post(new Request('https://app.test',{method:'POST',body:JSON.stringify({conversationId:'00000000-0000-4000-8000-000000000001',clientRequestId:'00000000-0000-4000-8000-000000000002',body:'Hello'})}),{params:Promise.resolve({workspaceSlug:'workspace'})})
  assert.equal(response.status,503);assert.equal(callbacks.length,1);assert.equal((await callbacks[0]()).messageId,'saved-message')
 })

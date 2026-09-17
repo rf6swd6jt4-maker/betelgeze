@@ -16,6 +16,8 @@ try {
         insert into user_profiles(user_id) select id from auth.users;
         insert into auth.sessions(id,user_id,user_agent) values('${id(10)}','${id(1)}','desktop'),('${id(11)}','${id(1)}','phone'),('${id(12)}','${id(2)}','private');`)
     await db.exec(await readFile(`${root}/supabase/migrations/20260917190000_account_devices.sql`,'utf8'))
+    await db.exec(await readFile(`${root}/supabase/migrations/20260917211000_account_devices_signin_order.sql`,'utf8'))
+    await db.exec(`update auth.sessions set created_at='2026-09-17 10:00:00Z' where id='${id(10)}'; update auth.sessions set created_at='2026-09-17 09:00:00Z' where id='${id(11)}';`)
     const claims = async (user=1,session=10,aal='aal2') => db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:id(user),session_id:id(session),aal,role:'authenticated'})])
     const list = async (device=20) => (await db.query('select account_devices($1,$2,true) result',[id(device),'desktop'])).rows[0].result.devices
     await claims()
@@ -33,6 +35,9 @@ try {
     await list()
     assert.deepEqual((await db.query('select last_seen_at from account_session_devices where session_id=$1',[id(10)])).rows[0].last_seen_at,before,'presence writes are throttled')
     await claims(1,11); await list(20); await claims(); assert.equal((await list()).length,1,'same installation sessions deduplicate')
+    // Last seen and the current session must not displace a newer sign-in.
+    await db.exec(`insert into auth.sessions(id,user_id,created_at,updated_at,user_agent) values('${id(13)}','${id(1)}','2026-09-17 11:00:00Z','2026-09-17 11:00:00Z','new phone');`)
+    assert.equal((await list())[0].id,id(13)); assert.equal((await list())[1].is_current,true)
     await claims(1,12); await assert.rejects(list(),/verified session/)
     await claims(1,10,'aal1'); await assert.rejects(list(),/verified session/)
     await claims(); await db.exec(`update user_profiles set mfa_reenrollment_required=true where user_id='${id(1)}'`); await assert.rejects(list(),/Authenticator/)

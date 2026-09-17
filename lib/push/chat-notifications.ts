@@ -1,10 +1,9 @@
+import { beginChatServerMeasurement } from "@/lib/communications/performance-server"
 import "server-only"
 import { mentionedRecipients, mentionPreview } from "@/lib/chat-formatting"
-import { clientConversationParticipants } from "@/lib/communications/access"
 
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { deliverChatPush } from "@/lib/push/delivery"
-import { nativeChatPushRecipients } from "@/lib/push/recipients"
 
 type ChatPushAttachment = {
     kind?: unknown
@@ -59,40 +58,25 @@ export async function notifyNativeChatMessage(input: {
     previewBody: string
     attachment?: ChatPushAttachment | null
 }) {
-    const [
-        { data: participants, error: participantsError },
-        { data: profile, error: profileError },
-        { data: conversation, error: conversationError },
-        { data: message, error: messageError },
-    ] = await Promise.all([
-        nativeChatPushRecipients(input.workspaceId, input.conversationId),
-        supabaseAdmin.from("user_profiles").select("display_name, username").eq("user_id", input.senderUserId).maybeSingle(),
-        supabaseAdmin.from("workspace_native_conversations").select("kind, team_id").eq("workspace_id", input.workspaceId).eq("id", input.conversationId).maybeSingle(),
-        supabaseAdmin.from("workspace_native_messages").select("created_at").eq("workspace_id", input.workspaceId).eq("conversation_id", input.conversationId).eq("id", input.messageId).maybeSingle(),
-    ])
-    if (participantsError || profileError || conversationError || messageError || !conversation || !message) {
-        console.error("Could not prepare native chat push", participantsError ?? profileError ?? conversationError ?? messageError)
-        return
-    }
-    const senderName = profile?.display_name?.trim() || profile?.username || "A workspace member"
-    let chatName = senderName
-    if (conversation.kind === "team" && conversation.team_id) {
-        const { data: team, error: teamError } = await supabaseAdmin.from("workspace_teams").select("name").eq("workspace_id", input.workspaceId).eq("id", conversation.team_id).maybeSingle()
-        if (teamError) {
-            console.error("Could not resolve native chat name", teamError)
-            return
-        }
-        chatName = team?.name?.trim() || "Team chat"
-    }
+    const timing = beginChatServerMeasurement("message.push.context")
+    const { data: context, error } = await supabaseAdmin.rpc("chat_push_context", {
+        p_workspace: input.workspaceId, p_kind: "native", p_conversation: input.conversationId, p_message: input.messageId,
+    })
+    if (!error && context) timing.mark("data_ready")
+    console.info("Chat performance", timing.finish(error || !context ? "failed" : "completed", error || !context ? undefined : "data_ready"))
+    if (error || !context) { console.warn("Could not prepare native chat push"); return }
+    const senderName = context.senderName as string
+    const chatName = context.conversationKind === "team" ? context.teamName?.trim() || "Team chat" : senderName
+    const recipients = context.recipients as string[]
     const notification = chatNotificationText(chatName, mentionPreview(input.previewBody), input.attachment)
-    const mentionUserIds = conversation.kind === "team" ? mentionedRecipients(input.previewBody, (participants ?? []).map((participant: { user_id: string }) => participant.user_id), input.senderUserId) : []
+    const mentionUserIds = context.conversationKind === "team" ? mentionedRecipients(input.previewBody, recipients, input.senderUserId) : []
     await deliverChatPush(
-        (participants ?? []).map((participant: { user_id: string }) => participant.user_id).filter((userId: string) => userId !== input.senderUserId),
+        recipients.filter(userId => userId !== input.senderUserId),
         {
             workspaceId: input.workspaceId,
             conversationKind: "native",
             messageId: input.messageId,
-            messageCreatedAt: message.created_at,
+            messageCreatedAt: context.messageCreatedAt,
             conversationId: input.conversationId,
             mentionUserIds,
             mentionBody: `${notificationLine(senderName, 80)} mentioned you in ${notificationLine(chatName, 80)} group chat`,
@@ -111,32 +95,25 @@ export async function notifyClientChatMessage(input: {
     previewBody: string
     attachment?: ChatPushAttachment | null
 }) {
-    const [
-        { data: workspace, error: workspaceError },
-        { data: relationship, error: relationshipError },
-        { data: message, error: messageError },
-    ] = await Promise.all([
-        supabaseAdmin.from("workspaces").select("slug").eq("id", input.workspaceId).single(),
-        supabaseAdmin.from("relationships").select("primary_person_name, business_name").eq("workspace_id", input.workspaceId).eq("id", input.relationshipId).maybeSingle(),
-        supabaseAdmin.from("client_messages").select("created_at").eq("workspace_id", input.workspaceId).eq("relationship_id", input.relationshipId).eq("id", input.messageId).maybeSingle(),
-    ])
-    if (workspaceError || relationshipError || messageError || !workspace || !message) {
-        console.error("Could not prepare client chat push", workspaceError ?? relationshipError ?? messageError)
-        return
-    }
-    const primaryName = relationship?.primary_person_name?.trim() || input.senderName
-    const businessName = relationship?.business_name?.trim()
+    const timing = beginChatServerMeasurement("message.push.context")
+    const { data: context, error } = await supabaseAdmin.rpc("chat_push_context", {
+        p_workspace: input.workspaceId, p_kind: "client", p_conversation: input.relationshipId, p_message: input.messageId,
+    })
+    if (!error && context) timing.mark("data_ready")
+    console.info("Chat performance", timing.finish(error || !context ? "failed" : "completed", error || !context ? undefined : "data_ready"))
+    if (error || !context) { console.warn("Could not prepare client chat push"); return }
+    const primaryName = context.primaryName?.trim() || input.senderName
+    const businessName = context.businessName?.trim()
     const notification = chatNotificationText(businessName ? `${primaryName} – ${businessName}` : primaryName, input.previewBody, input.attachment)
-    const participants = await clientConversationParticipants(input.workspaceId, input.relationshipId)
-    await deliverChatPush(participants.memberIds, {
+    await deliverChatPush(context.recipients, {
         workspaceId: input.workspaceId,
         conversationKind: "client",
         messageId: input.messageId,
-        messageCreatedAt: message.created_at,
+        messageCreatedAt: context.messageCreatedAt,
         conversationId: input.relationshipId,
         title: notification.title,
         body: notification.body,
-        url: `/${encodeURIComponent(workspace.slug)}/communications?conversation=${encodeURIComponent(input.relationshipId)}`,
+        url: `/${encodeURIComponent(context.workspaceSlug)}/communications?conversation=${encodeURIComponent(input.relationshipId)}`,
     })
 }
 

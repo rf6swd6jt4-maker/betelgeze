@@ -160,32 +160,28 @@ export async function loadCommunicationMessage({
     messageId: string
 }): Promise<CommunicationMessage | null> {
     const supabase = await createSupabaseServerClient()
-    const current = await supabase.rpc("communication_client_message", {
+    const current = await supabase.rpc("communication_client_message_detail", {
         p_workspace_id: workspaceId,
         p_message_id: messageId,
     })
     if (current.error) throw new Error(`Could not load communication message: ${current.error.message}`)
-    const message = (current.data ?? []).flatMap((row: unknown) => communicationMessageFromRow(row) ?? [])[0] ?? null
+    const message = current.data ? communicationMessageFromRow(current.data.message) : null
     if (!message) return null
-    const deliveries = await supabaseAdmin
-        .from("communication_message_deliveries")
-        .select("provider, provider_message_id, status, error, sent_at, delivered_at, read_at, failed_at")
-        .eq("workspace_id", workspaceId)
-        .eq("client_message_id", messageId)
-        .order("created_at", { ascending: true })
-    if (deliveries.error && deliveries.error.code !== "42P01") throw new Error(`Could not load communication deliveries: ${deliveries.error.message}`)
     return {
         ...message,
-        deliveries: (deliveries.data ?? []).flatMap((delivery) => delivery.provider === "meta_whatsapp" || delivery.provider === "twilio_sms" ? [{
-            provider: delivery.provider,
-            providerMessageId: delivery.provider_message_id,
-            status: delivery.status,
-            error: delivery.error,
-            sentAt: delivery.sent_at,
-            deliveredAt: delivery.delivered_at,
-            readAt: delivery.read_at,
-            failedAt: delivery.failed_at,
-        }] : []),
+        deliveries: (current.data.deliveries ?? []).flatMap((value: unknown) => {
+            const delivery = record(value)
+            return delivery.provider === "meta_whatsapp" || delivery.provider === "twilio_sms" ? [{
+                provider: delivery.provider,
+                providerMessageId: text(delivery.provider_message_id),
+                status: text(delivery.status) ?? "sending",
+                error: text(delivery.error),
+                sentAt: text(delivery.sent_at),
+                deliveredAt: text(delivery.delivered_at),
+                readAt: text(delivery.read_at),
+                failedAt: text(delivery.failed_at),
+            }] : []
+        }),
     }
 }
 

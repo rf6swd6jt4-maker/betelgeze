@@ -6,6 +6,7 @@ import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabAct
 import { chatDocumentHasAttention, useChatDocumentAttention } from "./useChatDocumentAttention"
 import { workspaceDocumentIsActive } from "@/lib/workspace-tab-activity"
 import { CHAT_READING_VISIBILITY_EVENT, latestMessageIsVisible } from "@/lib/communications/reading-visibility"
+import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
 import { createChatReadQueue } from "@/lib/communications/read-queue"
 import { compareReadPositions, publishChatRead, type ChatReadPosition, type ChatReadUpdate } from "@/lib/communications/read-state"
 import { dismissReadChatNotification } from "@/lib/push/browser-notifications"
@@ -41,14 +42,22 @@ export function useConversationRead(input: {
             },
             store: rows => { if (rows.length) sessionStorage.setItem(storageKey, JSON.stringify(rows)); else sessionStorage.removeItem(storageKey) },
             save: async read => {
-                const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/communications/${kind === "native" ? "native/" : ""}read`, {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
-                    body: JSON.stringify({ [kind === "native" ? "conversationId" : "relationshipId"]: read.conversationId, messageId: read.lastReadMessageId }),
-                })
-                const result = await response.json()
-                if (!response.ok || !result.cursor) throw new Error("Read save failed")
-                return { ...read, ...result.cursor }
+                const timing = beginWorkspaceInteraction({ workspaceSlug, operation: "command", command: "message.read", routeSection: "communications", cacheState: "network", background: !chatDocumentHasAttention() || !workspaceDocumentIsActive(tabId) })
+                try {
+                    const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/communications/${kind === "native" ? "native/" : ""}read`, {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
+                        body: JSON.stringify({ [kind === "native" ? "conversationId" : "relationshipId"]: read.conversationId, messageId: read.lastReadMessageId }),
+                    })
+                    const result = await response.json()
+                    if (!response.ok || !result.cursor) throw new Error("Read save failed")
+                    const confirmed = { ...read, ...result.cursor }
+                    if (confirmed.userId !== read.userId || confirmed.workspaceId !== read.workspaceId || confirmed.kind !== read.kind
+                        || confirmed.conversationId !== read.conversationId || compareReadPositions(confirmed, read) < 0) throw new Error("Read position was not acknowledged")
+                    timing.mark("server_ack")
+                    timing.finish("completed", "server_ack")
+                    return confirmed
+                } catch (error) { timing.finish(controller.signal.aborted ? "aborted" : "failed"); throw error }
             },
             acknowledge: read => {
                 publishChatRead(read)

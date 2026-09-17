@@ -26,6 +26,7 @@ export function AccountDevices() {
     const [devices, setDevices] = useState<AccountDevice[] | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(true)
+    const [expanded, setExpanded] = useState(false)
     const active = useRef<AbortController | null>(null)
     const load = useCallback(async () => {
         active.current?.abort()
@@ -53,7 +54,8 @@ export function AccountDevices() {
         <p className="mt-1 text-sm leading-6 text-neutral-400">Each browser or installed app has its own notification setting. Change a setting on that device.</p>
         {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error}</p> : null}
         {!devices && loading ? <p role="status" className="mt-4 text-sm text-neutral-500">Loading signed-in devices…</p> : null}
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">{devices?.map((device) => <DeviceCard key={device.id} device={device} />)}</div>
-        {devices?.length === 100 ? <p className="mt-3 text-xs text-neutral-500">Showing the 100 most recently active devices.</p> : null}
+        <div id="signed-in-devices" className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">{(expanded ? devices : devices?.slice(0, 2))?.map((device) => <DeviceCard key={device.id} device={device} />)}</div>
+        {devices && devices.length > 2 ? <button type="button" aria-expanded={expanded} aria-controls="signed-in-devices" onClick={() => setExpanded(value => !value)} className="mt-2 min-h-11 px-2 text-sm text-neutral-400 hover:text-white">{expanded ? "See less" : `See more (${devices.length - 2})`}</button> : null}
+        {expanded && devices?.length === 100 ? <p className="mt-3 text-xs text-neutral-500">Showing the 100 most recently signed-in devices.</p> : null}
     </section>
 }

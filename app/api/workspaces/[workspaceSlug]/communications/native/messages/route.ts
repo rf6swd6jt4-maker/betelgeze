@@ -1,9 +1,10 @@
+import { withChatPerformance, markChatBoundary } from "@/lib/communications/performance-server"
 import { attachmentBatch, packAttachments } from "@/lib/communications/attachment-batch"
 import { nativeAttachmentFromInput, assertNativeConversationAccess, loadNativeMessageForCurrentUser, loadNativeMessagesForCurrentUser, loadNativeMessagePage } from "@/lib/teams/server"
 import { communicationHistoryCursor } from "@/lib/communications/history-page"
 import { deleteOnboardingUploads, inspectStoredCommunicationSticker, verifyNativeMessageUpload } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { requireCommunicationsWorkspace } from "@/lib/communications/workspace-access"
 import { after } from "next/server"
 import { notifyNativeChatMessage } from "@/lib/push/chat-notifications"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
@@ -16,9 +17,9 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-export async function GET(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
+async function handleGET(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
-    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const { workspace, user } = await requireCommunicationsWorkspace(workspaceSlug)
     const searchParams = new URL(request.url).searchParams
     const conversationId = searchParams.get("conversationId") ?? ""
     const messageId = searchParams.get("messageId") ?? ""
@@ -43,9 +44,9 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
     }
 }
 
-export async function POST(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
+async function handlePOST(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
-    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const { workspace, user } = await requireCommunicationsWorkspace(workspaceSlug)
     const input = await request.json().catch(() => null) as Record<string, unknown> | null
     if (input?.offlineWorkspaceId && input.offlineWorkspaceId !== workspace.id) return Response.json({ error: "This workspace is no longer available at this address." }, { status: 409 })
     if (input?.offlineUserId && input.offlineUserId !== user.id) return Response.json({ error: "Sign in with the account that wrote this message." }, { status: 409 })
@@ -108,6 +109,7 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     const storedAttachment = packAttachments(verifiedAttachments)
     const { data, error } = await supabaseAdmin.from("workspace_native_messages").insert({ workspace_id: workspace.id, conversation_id: conversationId, sender_user_id: user.id, client_request_id: clientRequestId, body: body || null, reply_to_message_id: replyToMessageId || null, quote, attachment: storedAttachment }).select("id").single()
     if (error || !data) return Response.json({ error: error?.message ?? "Could not create message." }, { status: 503 })
+    markChatBoundary("message_saved")
     after(() => notifyNativeChatMessage({
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
@@ -129,7 +131,7 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
 
 export async function PATCH(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
-    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const { workspace, user } = await requireCommunicationsWorkspace(workspaceSlug)
     const input = await request.json().catch(() => null) as Record<string, unknown> | null
     const conversationId = typeof input?.conversationId === "string" ? input.conversationId : ""
     const messageId = typeof input?.messageId === "string" ? input.messageId : ""
@@ -173,7 +175,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ works
 
 export async function DELETE(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
-    const { user } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const { user } = await requireCommunicationsWorkspace(workspaceSlug)
     const url = new URL(request.url)
     const conversationId = url.searchParams.get("conversationId") ?? ""
     const messageId = url.searchParams.get("messageId") ?? ""
@@ -192,3 +194,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ work
     if (paths.length) await deleteOnboardingUploads(paths).catch(() => undefined)
     return Response.json({ deleted: true, conversationId, messageId })
 }
+
+export const GET = withChatPerformance("message.receive", handleGET)
+
+export const POST = withChatPerformance("message.send", handlePOST)

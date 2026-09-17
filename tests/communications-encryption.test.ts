@@ -47,9 +47,9 @@ test("new Communications content is encrypted with non-database root keys", asyn
     // caller's authenticated client. Runtime dispatch/fallback is tested in
     // communications-bounded-read.test.ts and real decoder parity in SQL.
     assert.match(clientServer, /loadBoundedCommunicationRows<unknown\[\]>\(\{[\s\S]*?kind: "client",[\s\S]*?read: \(name\) => supabase\.rpc\(name/)
-    assert.match(clientServer, /rpc\("communication_client_message"/)
+    assert.match(clientServer, /rpc\("communication_client_message_detail"/)
     assert.match(nativeServer, /loadBoundedCommunicationRows<[\s\S]*?kind: "native",[\s\S]*?read: \(name\) => supabase\.rpc\(name/)
-    assert.match(nativeServer, /rpc\("communication_native_message"/)
+    assert.match(nativeServer, /rpc\("communication_native_message_detail"/)
     assert.match(clientWorkspace, /messageId=\$\{encodeURIComponent\(messageId\)\}/)
     assert.match(nativeWorkspace, /native\/messages\?conversationId=.*&messageId=/)
     assert.match(nativeRoute, /\.eq\("client_request_id", clientRequestId\)/)

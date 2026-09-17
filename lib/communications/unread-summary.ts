@@ -14,6 +14,7 @@ export function createUnreadSummaryResource(load: () => Promise<UnreadSummary[]>
     return {
         invalidate() { revision++ },
         refresh() {
+            if (disposed) return Promise.resolve()
             if (pending) return pending
             pending = (async () => {
                 let requested: number
@@ -22,7 +23,12 @@ export function createUnreadSummaryResource(load: () => Promise<UnreadSummary[]>
                     try {
                         const rows = await load()
                         if (!disposed && requested === revision) receive(rows)
-                    } catch { if (!disposed && requested === revision) failed(); return }
+                    } catch {
+                        if (disposed) return
+                        if (requested === revision) { failed(); return }
+                        // A newer event still needs its one coalesced refresh,
+                        // even if the superseded request failed.
+                    }
                 } while (!disposed && requested !== revision)
             })().finally(() => { pending = null })
             return pending

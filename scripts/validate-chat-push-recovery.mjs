@@ -156,6 +156,46 @@ try {
  await db.exec('set role authenticated');await assert.rejects(claim(),/permission denied/);await db.exec('reset role')
  console.log('PASS rollback leaves no orphan notifications; browser roles cannot claim delivery jobs')
 
+ // Apply the latency migration against the real eligibility/recipient rules.
+ // Decoder security is covered with real encrypted data by native-inbox SQL.
+ await db.exec(`
+ alter table workspaces add column slug text default 'fixture';
+ alter table workspace_teams add column name text default 'Fixture team';
+ alter table workspace_native_messages add column edited_at timestamptz;
+ alter table relationships add column primary_person_name text default 'Fixture client';
+ alter table relationships add column business_name text default 'Fixture business';
+ create table user_profiles(user_id uuid primary key,display_name text,username text);
+ insert into user_profiles values('${sender}','Fixture sender','fixture');
+ create table communication_message_deliveries(client_message_id uuid,workspace_id uuid,provider text,provider_message_id text,status text,error text,sent_at timestamptz,delivered_at timestamptz,read_at timestamptz,failed_at timestamptz,created_at timestamptz);
+ create function communication_native_message(uuid,uuid) returns table(id uuid) language sql as $$select null::uuid where false$$;
+ create function communication_client_message(uuid,uuid) returns table(id uuid) language sql as $$select null::uuid where false$$;
+ `)
+ await migration('20260917210000_chat_latency')
+ await reset();message=await addMessage();jobs=await claim(message)
+ const context=(await query("select chat_push_context($1,'native',$2,$3) result",[w,direct,message]))[0].result
+ assert.equal(context.senderName,'Fixture sender');assert.equal(context.workspaceSlug,'fixture')
+ assert.ok(context.recipients.includes(recipient));assert.ok(!context.recipients.includes(outsider))
+ assert.equal((await query("select chat_push_context($1,'native',$2,$3) result",[w,team,message]))[0].result,null,'wrong conversation cannot reveal metadata')
+ const sub=async(job,lease=job.lease_token)=>(await query('select prepare_chat_push_subscription($1,$2) result',[job.id,lease]))[0].result
+ assert.equal((await sub(jobs[0])).state,'send');assert.ok((await sub(jobs[0])).subscription.endpoint)
+ assert.equal((await sub(jobs[0],id(999))).subscription,undefined,'wrong lease cannot expose capability')
+ await activity(1,true);assert.equal((await sub(jobs[0])).subscription,undefined,'active reading does not expose subscription')
+ await activity(2,false);await query('select wake_chat_push_for_user($1)',[recipient]);jobs=await claim(message)
+ await query('delete from workspace_native_conversation_participants where conversation_id=$1 and user_id=$2',[direct,recipient])
+ assert.equal((await sub(jobs[0])).subscription,undefined,'revocation still prevents delivery')
+ await query('insert into workspace_native_conversation_participants values($1,$2,$3)',[w,direct,recipient])
+ for(const role of ['anon','authenticated']) {
+  await db.exec(`set role ${role}`)
+  await assert.rejects(query("select chat_push_context($1,'native',$2,$3)",[w,direct,message]),/permission denied/)
+  await assert.rejects(sub(jobs[0]),/permission denied/)
+  await db.exec('reset role')
+ }
+ await reset();message=await addMessage('client',client)
+ const clientContext=(await query("select chat_push_context($1,'client',$2,$3) result",[w,client,message]))[0].result
+ assert.equal(clientContext.primaryName,'Fixture client');assert.equal(clientContext.businessName,'Fixture business')
+ await reset()
+ console.log('PASS consolidated context/subscription: exact message scope, recipients, lease, active reading, revocation and service-role-only capabilities')
+
  // Scheduler contracts run against local network/cron substitutes. No real
  // provider, business message, database credential or HTTP request is used.
  await db.exec(`

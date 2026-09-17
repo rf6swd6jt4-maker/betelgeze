@@ -1,4 +1,5 @@
 import "server-only"
+import { beginChatServerMeasurement } from "@/lib/communications/performance-server"
 import { createHash } from "node:crypto"
 import webPush, { WebPushError } from "web-push"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -71,7 +72,10 @@ async function finish(job: Delivery, outcome: "accepted" | "retry" | "revoked", 
 }
 
 export async function processChatPushDeliveries(input: { messageId?: string; userId?: string; limit?: number; push?: ChatPush } = {}) {
+    const claimTiming = beginChatServerMeasurement("message.push.claim")
     const result = await supabaseAdmin.rpc("claim_chat_push_deliveries", { p_message: input.messageId ?? null, p_user: input.userId ?? null, p_limit: input.limit ?? 50 })
+    if (!result.error) claimTiming.mark("push_claimed")
+    console.info("Chat performance", claimTiming.finish(result.error ? "failed" : "completed", result.error ? undefined : "push_claimed"))
     if (chatPushSchemaMissing(result.error)) throw new PushMigrationMissing("push_migration_missing")
     if (result.error) throw new Error("push_jobs_unavailable")
     const jobs = (result.data ?? []) as Delivery[]
@@ -82,21 +86,24 @@ export async function processChatPushDeliveries(input: { messageId?: string; use
     let failed = 0
     // Bound provider concurrency. A failing device does not stop other devices.
     for (let offset = 0; offset < jobs.length; offset += 8) await Promise.all(jobs.slice(offset, offset + 8).map(async (job) => {
+        const timing = beginChatServerMeasurement("message.push")
+        let outcome: "completed" | "failed" | "aborted" = "aborted"
         try {
-            const prepared = await supabaseAdmin.rpc("prepare_chat_push_delivery", { p_id: job.id, p_lease: job.lease_token })
+            const prepared = await supabaseAdmin.rpc("prepare_chat_push_subscription", { p_id: job.id, p_lease: job.lease_token })
             if (prepared.error) throw new Error("push_eligibility_unavailable")
             if (prepared.data?.state !== "send") { if (prepared.data?.state === "deferred") deferred++; return }
             if (!details) throw new Error("push_not_configured")
-            const subscription = await supabaseAdmin.from("web_push_subscriptions").select("endpoint,p256dh,auth").eq("id", job.subscription_id!).eq("user_id", job.user_id).maybeSingle()
-            if (subscription.error) throw new Error("push_subscription_unavailable")
-            if (!subscription.data) { await finish(job, "revoked", "subscription_removed"); return }
+            const subscription = prepared.data.subscription
+            if (!subscription) { await finish(job, "revoked", "subscription_removed"); return }
             if (!previews.has(job.message_id)) previews.set(job.message_id, input.push?.messageId === job.message_id ? Promise.resolve(input.push) : recoveryPush(job))
             const push = await previews.get(job.message_id)!
+            timing.mark("push_prepared")
             // Authorization is checked again after metadata reads, immediately
             // before handing an encrypted payload to the external provider.
             const check = await supabaseAdmin.rpc("prepare_chat_push_delivery", { p_id: job.id, p_lease: job.lease_token })
             if (check.error) throw new Error("push_eligibility_unavailable")
             if (check.data?.state !== "send") { if (check.data?.state === "deferred") deferred++; return }
+            timing.mark("push_authorized")
             const unreadCount = check.data.unreadCount as number
             const preview = push.mentionUserIds?.includes(job.user_id) ? push.mentionBody ?? push.body : push.body
             const payload = declarativeChatPushPayload({
@@ -104,14 +111,18 @@ export async function processChatPushDeliveries(input: { messageId?: string; use
                 body: unreadCount > 1 ? `${unreadCount >= 100 ? "100+" : unreadCount} new messages · ${preview}` : preview,
                 deliveryId: job.id, receiptToken: job.receipt_token,
             })
-            await webPush.sendNotification({ endpoint: subscription.data.endpoint, keys: { p256dh: subscription.data.p256dh, auth: subscription.data.auth } }, payload, {
+            await webPush.sendNotification({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, payload, {
                 vapidDetails: details, TTL: 24 * 60 * 60, urgency: "high", timeout: 10_000,
                 topic: createHash("sha256").update(`${job.conversation_kind}:${job.conversation_id}`).digest("base64url").slice(0, 32),
             })
+            timing.mark("external_completed")
             await finish(job, "accepted")
+            timing.mark("server_ack")
+            outcome = "completed"
             accepted++
             await supabaseAdmin.from("web_push_subscriptions").update({ last_success_at: new Date().toISOString(), failure_count: 0, updated_at: new Date().toISOString() }).eq("id", job.subscription_id!).eq("user_id", job.user_id)
         } catch (error) {
+            outcome = "failed"
             failed++
             const status = error instanceof WebPushError ? error.statusCode : null
             // Never log WebPushError itself: it contains capability endpoints.
@@ -124,6 +135,8 @@ export async function processChatPushDeliveries(input: { messageId?: string; use
                 if (job.subscription_id) await supabaseAdmin.rpc("increment_web_push_failure", { subscription_id: job.subscription_id })
             }
             console.warn("Chat push attempt requires recovery", { reason })
+        } finally {
+            console.info("Chat performance", timing.finish(outcome, outcome === "completed" ? "external_completed" : undefined))
         }
     }))
     return { processed: jobs.length, accepted, deferred, failed }

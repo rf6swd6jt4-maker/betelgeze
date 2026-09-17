@@ -3,7 +3,7 @@ export const WORKSPACE_PERFORMANCE_OPERATIONS = [
     "navigation", "panel_load", "tab_switch", "field_edit", "draft_save", "command", "launch", "media", "conversation_switch",
 ] as const
 export const WORKSPACE_PERFORMANCE_BOUNDARIES = [
-    "code_ready", "data_ready", "meaningful_ready", "local_persisted", "server_ack", "external_completed", "visual_response",
+    "code_ready", "data_ready", "meaningful_ready", "local_persisted", "server_ack", "external_completed", "visual_response", "access_ready", "message_saved", "push_claimed", "push_prepared", "push_authorized",
 ] as const
 export const WORKSPACE_PERFORMANCE_SECTIONS = [
     "queue", "workspace", "relationships", "work", "work-items", "assets", "appointment-setting", "onboarding",
@@ -11,7 +11,7 @@ export const WORKSPACE_PERFORMANCE_SECTIONS = [
 ] as const
 export const WORKSPACE_PERFORMANCE_COMMANDS = [
     "unknown", "relationship.update", "relationship.create", "relationship.archive", "work-item.update",
-    "appointment.draft", "appointment.submit", "settings.update", "message.send", "message.edit", "message.checklist",
+    "appointment.draft", "appointment.submit", "settings.update", "message.send", "message.edit", "message.checklist", "message.receive", "message.read", "message.unread", "message.push", "message.push.claim", "message.push.context",
 ] as const
 
 export type WorkspacePerformanceOperation = typeof WORKSPACE_PERFORMANCE_OPERATIONS[number]

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
 import { subscribeChatReads } from "@/lib/communications/read-state"
 import { publishUnreadSummary } from "@/lib/communications/unread-broadcast"
 import { applyReadToSummary, createUnreadSummaryResource, type UnreadSummary } from "@/lib/communications/unread-summary"
@@ -20,19 +21,24 @@ export function useCommunicationsUnread(workspaceId: string, workspaceSlug: stri
 
     useEffect(() => {
         if (!enabled) return
-        let timer: ReturnType<typeof setTimeout> | null = null
         const controller = new AbortController()
         const resource = createUnreadSummaryResource(async () => {
-            const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/communications/unread`, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) })
-            const result = await response.json()
-            if (!response.ok || !Array.isArray(result.conversations)) throw new Error("Unread counts unavailable")
-            return result.conversations as UnreadSummary[]
+            const timing = beginWorkspaceInteraction({ workspaceSlug, operation: "command", command: "message.unread", routeSection: "communications", cacheState: "network" })
+            try {
+                const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/communications/unread`, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) })
+                const result = await response.json()
+                if (!response.ok || !Array.isArray(result.conversations)) throw new Error("Unread counts unavailable")
+                timing.mark("data_ready")
+                timing.finish("completed", "data_ready")
+                return result.conversations as UnreadSummary[]
+            } catch (error) { timing.finish(controller.signal.aborted ? "aborted" : "failed"); throw error }
         }, next => { setSnapshot({ scope, rows: next, loaded: true }); setStale(false) }, () => setStale(true))
         const schedule = () => {
             resource.invalidate()
-            if (document.visibilityState !== "visible" || timer !== null) return
-            // Coalesce messages/read acknowledgements from multiple resident tabs.
-            timer = setTimeout(() => { timer = null; void resource.refresh() }, 250)
+            if (document.visibilityState !== "visible") return
+            // Leading event starts immediately. The resource serializes requests
+            // and coalesces all in-flight invalidations into the next refresh.
+            void resource.refresh()
         }
         invalidateRef.current = schedule
         const unsubscribe = subscribeChatReads(workspaceId, userId, read => {
@@ -45,7 +51,6 @@ export function useCommunicationsUnread(workspaceId: string, workspaceSlug: stri
         schedule()
         return () => {
             invalidateRef.current = () => undefined
-            if (timer !== null) clearTimeout(timer)
             controller.abort(); resource.dispose(); unsubscribe()
             window.removeEventListener("focus", schedule)
             window.removeEventListener("online", schedule)

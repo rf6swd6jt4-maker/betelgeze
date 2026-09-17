@@ -72,6 +72,7 @@ function fixture(options: { access?: boolean; original?: boolean; originalBody?:
     const verified: string[] = []
     const route = load("app/api/workspaces/[workspaceSlug]/communications/native/messages/route.ts", {
         "@/lib/communications/attachment-batch": attachmentBatches,
+        "@/lib/communications/performance-server": { withChatPerformance: (_command: unknown, handler: unknown) => handler, markChatBoundary: () => {} },
         "@/lib/teams/server": {
             nativeAttachmentFromInput: attachmentBatches.nativeAttachmentBatchFromValue,
             assertNativeConversationAccess: async () => options.access === false ? null : conversationId,
@@ -87,7 +88,7 @@ function fixture(options: { access?: boolean; original?: boolean; originalBody?:
             return query
         } } },
         "@/lib/workspace-native": workspaceNative,
-        "@/lib/workspace-access": { requireWorkspacePanel: async () => ({ workspace: { id: "workspace", slug: "test" }, user: { id: "user" } }) },
+        "@/lib/communications/workspace-access": { requireCommunicationsWorkspace: async () => ({ workspace: { id: "workspace", slug: "test" }, user: { id: "user" } }) },
         "next/server": { after: () => undefined },
         "@/lib/push/chat-notifications": {}, "@/lib/onboarding/uploads": {
             verifyNativeMessageUpload: async ({ storagePath }: { storagePath: string }) => {

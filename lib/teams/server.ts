@@ -256,17 +256,12 @@ export async function loadNativeMessageForCurrentUser(input: {
     messageId: string
 }) {
     const supabase = await createSupabaseServerClient()
-    const { data, error } = await supabase.rpc("communication_native_message", {
+    const { data, error } = await supabase.rpc("communication_native_message_detail", {
         p_workspace_id: input.workspaceId,
         p_message_id: input.messageId,
     })
     if (error) throw new Error(error.message)
-    const source = record((data ?? [])[0])
-    const id = text(source.id)
-    if (!id) return null
-    const editResult = await supabaseAdmin.from("workspace_native_messages").select("edited_at").eq("workspace_id", input.workspaceId).eq("id", id).maybeSingle()
-    if (editResult.error) throw new Error(editResult.error.message)
-    return nativeMessageFromRow({ ...source, edited_at: editResult.data?.edited_at ?? null })
+    return data ? nativeMessageFromRow(record(data)) : null
 }
 
 export async function loadNativeMessagePage(workspaceId: string, conversationId: string, before: CommunicationHistoryCursor, currentUserId?: string) {

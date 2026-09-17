@@ -46,6 +46,10 @@ try{
  await page.getByRole('button',{name:'Profile options'}).click();await page.getByRole('menu').waitFor();const menu=await page.getByRole('menu').boundingBox();assert.ok(menu.x>=0&&menu.x+menu.width<=width)
  await page.waitForTimeout(180);await page.screenshot({path:join(output,`${engine}-${width}-profile.png`),fullPage:true})
  await page.getByRole('menuitem',{name:'Security',exact:true}).click();const current=page.getByRole('switch',{name:'Chat notifications on this device',exact:true});await current.waitFor();await page.getByText('Disabled',{exact:true}).first().waitFor()
+ assert.equal(await page.getByRole('switch').count(),2);
+ const more=page.getByRole('button',{name:'See more (1)',exact:true});assert.equal(await more.getAttribute('aria-expanded'),'false');
+ await page.screenshot({path:join(output,`${engine}-${width}-devices-collapsed.png`),fullPage:true});
+ await more.click();assert.equal(await page.getByRole('switch').count(),3);await page.getByRole('button',{name:'See less',exact:true}).click();assert.equal(await page.getByRole('switch').count(),2);await page.getByRole('button',{name:'See more (1)',exact:true}).click();
  assert.equal(await page.getByRole('switch').count(),3);assert.equal(await page.getByRole('switch').nth(1).isDisabled(),true);assert.equal(await page.getByRole('switch').nth(1).getAttribute('aria-checked'),'true');assert.equal(await page.getByRole('switch').nth(2).getAttribute('aria-checked'),'false')
  await current.click();await page.waitForFunction(()=>document.querySelector('[aria-label="Chat notifications on this device"]')?.getAttribute('aria-checked')==='true');assert.equal(writes,1)
  fail=true;await current.click();await page.getByText('Could not save this device.',{exact:true}).waitFor();assert.equal(await current.getAttribute('aria-checked'),'true','failed off must retain enabled state')

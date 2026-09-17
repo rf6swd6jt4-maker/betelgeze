@@ -1,4 +1,4 @@
-const CACHE_NAME = "betelgeze-pwa-v5";
+const CACHE_NAME = "betelgeze-pwa-v6";
 const STATIC_ASSETS = [
   "/icons/betelgeze-icon-192.png",
   "/icons/betelgeze-icon-512.png",
@@ -44,14 +44,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   if (event.request.mode === "navigate") {
-    // Network-first documents retain the ordinary online response and auth
-    // redirects. Do not consume navigationPreload: WebKit has returned an
-    // empty 200 document here on installed-app relaunches. Only a failed
-    // ordinary request opens the static recovery document.
-    event.respondWith(fetch(event.request).catch(async () => {
-      const fallback = await caches.match("/offline.html");
-      return fallback || Response.error();
-    }));
+    // Leave documents to the browser's native navigation pipeline. WebKit can
+    // commit an empty document when a standalone launch is fulfilled through
+    // a service-worker FetchEvent, even when the worker performs an ordinary
+    // fetch. The cached recovery document remains available explicitly at
+    // /offline.html without putting every online launch behind respondWith().
     return;
   }
   if (!STATIC_ASSETS.includes(url.pathname)) return;

@@ -34,7 +34,14 @@ export function ServiceWorkerRegistrar() {
       void navigator.serviceWorker.register("/sw.js", {
         scope: "/",
         updateViaCache: "none",
-      }).then((value) => { registration = value; reconcile(); }).catch(() => {
+      }).then((value) => {
+        registration = value;
+        // A previously controlled iOS app can remain on an older worker until
+        // WebKit performs its next soft update. Check immediately after a
+        // successful document load; this never blocks launch or rendering.
+        void value.update().catch(() => undefined);
+        reconcile();
+      }).catch(() => {
         // A failed registration should not block the authenticated app.
       });
     };

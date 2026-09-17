@@ -70,31 +70,33 @@ test("offline queue writes are constrained to the original account and workspace
         }
     }
     const worker = readFileSync("public/sw.js", "utf8")
-    assert.match(worker, /CACHE_NAME = "betelgeze-pwa-v5"/)
+    assert.match(worker, /CACHE_NAME = "betelgeze-pwa-v6"/)
     assert.match(worker, /event\.request\.mode === "navigate"/)
     assert.match(worker, /navigationPreload\.disable\(\)/)
     assert.doesNotMatch(worker, /navigationPreload\.enable\(\)|event\.preloadResponse/)
-    assert.match(worker, /event\.respondWith\(fetch\(event\.request\)\.catch/)
+    assert.doesNotMatch(worker, /event\.respondWith\(fetch\(event\.request/)
     assert.doesNotMatch(worker, /cache\.put\(event\.request/)
+    const registrar = readFileSync("components/pwa/ServiceWorkerRegistrar.tsx", "utf8")
+    assert.match(registrar, /void value\.update\(\)\.catch/)
 })
 
-test("a controlled PWA launch ignores an empty navigation preload response", async () => {
+test("a controlled PWA launch leaves document navigation to the browser", () => {
     const listeners = new Map<string, (event: unknown) => void>()
     let preloadReads = 0
-    let networkFails = false
-    const offline = new Response("offline recovery")
+    let fetches = 0
+    let interceptedResponses = 0
     runInNewContext(readFileSync("public/sw.js", "utf8"), {
         URL,
         Response,
         fetch: async () => {
-            if (networkFails) throw new Error("offline")
+            fetches++
             return new Response("live app document", { headers: { "content-type": "text/html" } })
         },
         caches: {
             open: async () => ({ addAll: async () => undefined }),
             keys: async () => [],
             delete: async () => true,
-            match: async () => offline,
+            match: async () => null,
         },
         self: {
             location: { origin: "https://app.betelgeze.com" },
@@ -105,22 +107,16 @@ test("a controlled PWA launch ignores an empty navigation preload response", asy
         },
     })
     const request = { method: "GET", mode: "navigate", url: "https://app.betelgeze.com/" }
-    async function navigate() {
-        let response: Promise<Response> | undefined
-        const listener = listeners.get("fetch")
-        assert.ok(listener)
-        listener({
-            request,
-            get preloadResponse() { preloadReads++; return Promise.resolve(new Response("")) },
-            respondWith(value: Promise<Response>) { response = value },
-        })
-        assert.ok(response)
-        return response
-    }
-    assert.equal(await (await navigate()).text(), "live app document")
+    const listener = listeners.get("fetch")
+    assert.ok(listener)
+    listener({
+        request,
+        get preloadResponse() { preloadReads++; return Promise.resolve(new Response("")) },
+        respondWith() { interceptedResponses++ },
+    })
     assert.equal(preloadReads, 0)
-    networkFails = true
-    assert.equal(await (await navigate()).text(), "offline recovery")
+    assert.equal(fetches, 0)
+    assert.equal(interceptedResponses, 0)
 })
 
 test("the legacy worker immediately displays the declarative notification without enumerating existing notifications", async () => {

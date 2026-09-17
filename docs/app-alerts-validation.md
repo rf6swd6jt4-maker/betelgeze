@@ -52,3 +52,14 @@ Authorized by the user's subsequent profile/Security request in the same convers
 - Performance assessment: the profile drops the authenticator-list provider request. Device settings are fetched only within Security and cannot block its other controls. Account/workspace foreground presence adds one small post-paint RPC at most once per five minutes per mounted document, with no timers or hidden-frame work; the SQL skips redundant updates. Security returns at most 100 device records. Queries use the Auth user index and the new user/device mapping index. Browser fixture timings do not establish production latency; no production speed claim is made.
 - Older sessions have real Auth platform/last-activity data, but show notification state as unknown until they open the updated app and are linked to the installation cookie. Remote cards show saved server enrollment, not remote OS permission or delivery health.
 - Release requires the preceding alerts migration plus `20260917190000_account_devices.sql`, then application deployment. Live Auth-schema compatibility, signed-in production device lists, provider delivery, physical Android Chrome and iOS Safari/PWA checks remain release verification work. No real password change, account deletion, logout or message delivery was performed for these tests.
+
+
+## Authorized production rollout — 17 September 2026
+
+The user approved deployment after reviewing the profile preview. Both reviewed migrations were applied through the signed-in production Supabase SQL editor before pushing the application. Live Auth session columns were verified first. Function bodies match the local migrations after whitespace normalization:
+
+- `record_chat_reading_activity`: `f7be531b8c7980e9faf46846131bcbcd`; executable by service_role, not authenticated/anon.
+- `prepare_chat_push_delivery`: `6185665ccf66bbeff3c358ddbde51e82`; executable by service_role, not authenticated/anon.
+- `account_devices`: `827f34c3ea77d260143d37b388b16a94`; authenticated execution with live-session/AAL2 checks; no anonymous execution.
+
+The earlier “not deployed” entries above describe pre-release validation. This rollout includes the reviewed application payload through `ae6e1480`, with this documentation update. The remote production baseline was rechecked at `7627cbe7`, requiring no merge or unrelated changes. Application Ready/alias verification is performed after push and recorded in the release handoff; physical notification receipt remains for the user's testing.

@@ -33,6 +33,8 @@ import type { WorkspaceCreateActionState } from "@/app/[workspaceSlug]/relations
 import { WorkspaceTabBridge } from "@/components/workspace/WorkspaceTabBridge"
 import { WorkspaceSuccessNotice } from "@/components/workspace/WorkspaceSuccessNotice"
 import { WorkspaceTabOpeningState } from "@/components/workspace/WorkspaceTabOpeningState"
+import { useCommunicationsUnread } from "@/components/communications/useCommunicationsUnread"
+import { publishWorkspaceTabActivity } from "@/lib/workspace-tab-activity"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
 import { LEADGEN_POLLING_SYSTEM_VERSION_LABEL } from "@/lib/leadgen/version"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
@@ -444,7 +446,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     const [createTarget, setCreateTarget] = useState<"relationship" | "work-item" | "asset" | "okr" | null>(null)
     const [creationNotice, setCreationNotice] = useState<CreationNotice | null>(null)
     const [profileUserId, setProfileUserId] = useState<string | null>(null)
-    const [communicationsUnreadCount, setCommunicationsUnreadCount] = useState(0)
+    const { count: communicationsUnreadCount, stale: communicationsUnreadStale, invalidate: refreshCommunicationsUnread } = useCommunicationsUnread(
+        workspace.id, workspace.slug, currentUserId, canAccessWorkspacePanel(workspacePanelByKey("communications"), workspaceRole, workspaceCapabilities),
+    )
     const [workspaceLogoSrc, setWorkspaceLogoSrc] = useState<string | null>(null)
     const [email, setEmail] = useState("")
     const [workspaceMembers, setWorkspaceMembers] = useState<Array<{ id: string; name: string; avatarSrc: string | null }>>([
@@ -474,6 +478,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     const canOpenWorkspaceUrl = useCallback((value: string) => canAccessWorkspaceUrl(value, workspace.slug, workspaceRole, workspaceCapabilities), [workspace.slug, workspaceRole, workspaceCapabilities])
     const activateWorkspaceTab = useCallback((tabId: string) => {
         activeTabIdRef.current = tabId
+        publishWorkspaceTabActivity(iframeRefs.current, tabId)
         for (const timeout of navigationTimeoutRef.current.values()) timeout.update()
         nativeNavigationPerformance.activate(tabId)
         setMobileContextKey(null)
@@ -1363,7 +1368,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             }
 
             if (message.type === "communications-unread" && Number.isFinite(message.unreadCount)) {
-                setCommunicationsUnreadCount(Math.max(0, Math.floor(message.unreadCount ?? 0)))
+                refreshCommunicationsUnread()
             }
 
             if (message.type === "navigation-start") {
@@ -1423,7 +1428,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         const receive = (event: MessageEvent<WorkspaceTabFrameMessage>) => receiveFrameMessage(event)
         window.addEventListener("message", receive)
         return () => { nativeMessageRef.current = () => {}; window.removeEventListener("message", receive) }
-    }, [openCreate, traverseHistory, beginTabNavigation, completeTabNavigation, markTabFrameReady, normalizeWorkspaceUrl, openWorkspaceTab, postToTab, reopenClosedTab, reportInitialPanelReady, requestTabFrameNavigation, routeCanShowRelationshipContext, saveTabsState, scheduleSoftNavigationFallback, setTabContextOpen, setTabContextStatus, showCreationNotice, titleForUrl, updateTabForShellNavigation, workspace.slug, nativeNavigationPerformance, startNativeNavigation])
+    }, [refreshCommunicationsUnread, openCreate, traverseHistory, beginTabNavigation, completeTabNavigation, markTabFrameReady, normalizeWorkspaceUrl, openWorkspaceTab, postToTab, reopenClosedTab, reportInitialPanelReady, requestTabFrameNavigation, routeCanShowRelationshipContext, saveTabsState, scheduleSoftNavigationFallback, setTabContextOpen, setTabContextStatus, showCreationNotice, titleForUrl, updateTabForShellNavigation, workspace.slug, nativeNavigationPerformance, startNativeNavigation])
 
     useEffect(() => {
         if (!tabsHydrated || loadedTabIdsRef.current.has(activeTabId)) return
@@ -2358,6 +2363,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 channel = candidate
                 presenceChannelRef.current = candidate
                 candidate
+                    .on("postgres_changes", { event: "*", schema: "public", table: "client_messages", filter: `workspace_id=eq.${workspace.id}` }, refreshCommunicationsUnread)
+                    .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_messages", filter: `workspace_id=eq.${workspace.id}` }, refreshCommunicationsUnread)
+                    .on("postgres_changes", { event: "*", schema: "public", table: "communication_read_cursors", filter: `workspace_id=eq.${workspace.id}` }, refreshCommunicationsUnread)
+                    .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_read_cursors", filter: `workspace_id=eq.${workspace.id}` }, refreshCommunicationsUnread)
                     .on("presence", { event: "sync" }, () => {
                         if (disposed || channel !== candidate) return
                         setActiveWorkspaceUsers(visibleWorkspacePresence(candidate.presenceState<WorkspacePresencePayload>(), currentUserId, workspaceMembersRef.current))
@@ -2367,6 +2376,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                         if (status === "SUBSCRIBED") {
                             reconnectAttempt = 0
                             updateState("live")
+                            refreshCommunicationsUnread()
                             try {
                                 await track(candidate)
                             } catch {
@@ -2407,7 +2417,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             setActiveWorkspaceUsers([])
             if (channel) void supabase.removeChannel(channel)
         }
-    }, [currentUserId, workspace.slug])
+    }, [currentUserId, workspace.id, workspace.slug, refreshCommunicationsUnread])
 
     useEffect(() => {
         workspaceMembersRef.current = workspaceMembers
@@ -2751,6 +2761,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                         <Link key={item.key} aria-disabled={offlineBlocked} title={offlineBlocked ? "Connect to open this panel" : undefined} href={item.href} target={item.standalone ? "_blank" : undefined} rel={item.standalone ? "noopener noreferrer" : undefined} data-global-loading="false" onClick={(event) => { if (offlineBlocked) { event.preventDefault(); return }; if (!online) { event.preventDefault(); if (!activePathname.includes("/communications")) window.location.assign("/offline.html"); closeSidebarAfterNavigation(); return }; if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateWorkspaceDestination(item.href); closeSidebarAfterNavigation() }} className={`${itemClassName} ${offlineBlocked ? "opacity-40 cursor-not-allowed" : ""}`}>
                             <span className="shrink-0">{item.icon}</span>
                             <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                            {item.key === "communications" && !visibleTabs.some(tab => workspaceTabIsCommunications(tab.url, workspace.slug, "http://localhost")) ? <span title={communicationsUnreadStale ? "Unread count may be out of date; reconnect to update." : undefined}><UnreadMessageCount count={communicationsUnreadCount} label="unread Communications messages" /></span> : null}
                             {item.meta && <span className="shrink-0 font-mono text-[11px] text-neutral-500">{item.meta}</span>}
                         </Link>
                     )

@@ -1,6 +1,6 @@
 "use client"
 
-import { useChatDocumentAttention } from "@/components/communications/useChatDocumentAttention"
+import { chatDocumentHasAttention, useChatDocumentAttention } from "@/components/communications/useChatDocumentAttention"
 
 import { readChatDraft, writeChatDraft } from "@/lib/communications/offline-drafts"
 import { useOfflineChat } from "@/components/communications/useOfflineChat"
@@ -43,6 +43,8 @@ import { createCoordinatedChat, chatMutationRequest, ChatMutationError, type Cha
 import { requestChatCheckbox } from "@/lib/communications/checklist-updates"
 import { useMessagePaneInteractions } from "@/components/communications/useMessagePaneInteractions"
 import { useReliableCommunicationsRealtime, type CommunicationsConnectionState } from "@/components/communications/useReliableCommunicationsRealtime"
+import { workspaceDocumentIsActive } from "@/lib/workspace-tab-activity"
+import { mergeChatReadCursor, publishChatRead, subscribeChatReads } from "@/lib/communications/read-state"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
 import { mentionPreview } from "@/lib/chat-formatting"
@@ -140,10 +142,7 @@ function messageAnimationKey(message: NativeMessage) {
 }
 
 function mergeCursor(current: NativeReadCursor[], incoming: NativeReadCursor) {
-    const existing = current.find((cursor) => cursor.conversationId === incoming.conversationId && cursor.userId === incoming.userId)
-    if (existing && existing.lastReadAt > incoming.lastReadAt) return current
-    if (existing && existing.lastReadAt === incoming.lastReadAt && existing.lastReadMessageId === incoming.lastReadMessageId) return current
-    return [...current.filter((cursor) => !(cursor.conversationId === incoming.conversationId && cursor.userId === incoming.userId)), incoming]
+    return mergeChatReadCursor(current, incoming, cursor => cursor.conversationId)
 }
 
 function realtimeMessage(value: unknown): NativeMessage | null {
@@ -172,6 +171,9 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [schemaReady, setSchemaReady] = useState(bootstrap.schemaReady)
     const [teams, setTeams] = useState(bootstrap.teams)
     const [readCursors, setReadCursors] = useState(bootstrap.readCursors)
+    useEffect(() => subscribeChatReads(bootstrap.workspaceId, bootstrap.currentUser.id, update => {
+        if (update.kind === "native") setReadCursors(current => mergeCursor(current, { conversationId: update.conversationId, userId: update.userId, lastReadAt: update.lastReadAt, lastReadMessageId: update.lastReadMessageId }))
+    }), [bootstrap.workspaceId, bootstrap.currentUser.id])
     const [selectedId, setSelectedId] = useState(bootstrap.requestedConversationId)
     const [loadedHistoryIds, setLoadedHistoryIds] = useState(() => new Set(bootstrap.requestedConversationId ? [bootstrap.requestedConversationId] : []))
     const bootstrappedSelection = useRef(bootstrap.requestedConversationId)
@@ -308,12 +310,13 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
             const result = await response.json().catch(() => null) as { cursor?: NativeReadCursor; notificationReadThrough?: string; error?: string } | null
             if (!response.ok || !result?.cursor) throw new Error(result?.error ?? "Could not save the read position.")
             setReadCursors((current) => mergeCursor(current, result.cursor!))
+            publishChatRead({ ...result.cursor!, kind: "native", conversationId: cursor.conversationId, workspaceId: bootstrap.workspaceId })
             if (result.notificationReadThrough) void dismissReadChatNotification(cursor.conversationId, result.notificationReadThrough)
             if (pendingReadRef.current?.conversationId === cursor.conversationId && pendingReadRef.current.lastReadMessageId === cursor.lastReadMessageId) pendingReadRef.current = null
         } finally {
             if (readRequestRef.current === cursor.lastReadMessageId) readRequestRef.current = null
         }
-    }, [bootstrap.workspaceSlug])
+    }, [bootstrap.workspaceId, bootstrap.workspaceSlug])
 
     const flushPendingRead = useCallback(async () => {
         const pending = pendingReadRef.current
@@ -426,7 +429,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     if (payload.eventType === "DELETE") updates.receiveReaction(`${messageId}:${reactorUserId}`, null, text(row.updated_at) ?? undefined)
                     else { const id = text(row.id); const conversationId = text(row.conversation_id); const emoji = text(row.emoji); const updatedAt = text(row.updated_at); if (id && conversationId && emoji && updatedAt) updates.receiveReaction(`${messageId}:${reactorUserId}`, { id, conversationId, messageId, reactorUserId, emoji, updatedAt }) }
                 })
-                .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_read_cursors", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => { const row = record(payload.new); const conversationId = text(row.conversation_id); const userId = text(row.user_id); const lastReadAt = text(row.last_read_at); if (conversationId && userId && lastReadAt) setReadCursors((current) => [...current.filter((cursor) => !(cursor.conversationId === conversationId && cursor.userId === userId)), { conversationId, userId, lastReadMessageId: text(row.last_read_message_id), lastReadAt }]) })
+                .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_read_cursors", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => { const row = record(payload.new); const conversationId = text(row.conversation_id); const userId = text(row.user_id); const lastReadAt = text(row.last_read_at); if (conversationId && userId && lastReadAt) setReadCursors((current) => mergeCursor(current, { conversationId, userId, lastReadMessageId: text(row.last_read_message_id), lastReadAt })) })
                 .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_conversations", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, () => { void refresh().catch(() => undefined) })
                 .on("postgres_changes", { event: "*", schema: "public", table: "workspace_team_members", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, () => { void refresh().catch(() => undefined) })
         , [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, refresh, supabase, updateConversationMessages, updates])
@@ -492,7 +495,10 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
             return
         }
         const cursor: NativeReadCursor = { conversationId: selectedId, userId: bootstrap.currentUser.id, lastReadMessageId: latest.id, lastReadAt: latest.createdAt }
-        const timer = window.setTimeout(() => { void persistReadCursor(cursor).catch(() => undefined) }, 0)
+        const timer = window.setTimeout(() => {
+            // A tab can change after this effect schedules its read.
+            if (workspaceDocumentIsActive() && chatDocumentHasAttention() && selectedRef.current === selectedId) void persistReadCursor(cursor).catch(() => undefined)
+        }, 0)
         return () => window.clearTimeout(timer)
     }, [active, atLatest, bootstrap.currentUser.id, documentAttentive, persistReadCursor, readCursors, schemaReady, selected?.messages, selectedId, workspaceTabActive])
 

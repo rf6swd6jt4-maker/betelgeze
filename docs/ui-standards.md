@@ -670,3 +670,17 @@ beneath them. Following items retain the normal two-band list anatomy. This feat
 execution area is the only intentional expanded record; opening a dispute never
 inserts content into the list. Use `CenteredDialog` with native focus containment,
 Escape/backdrop dismissal and focus restoration. The dispute popup uses the shorter internally scrolling variant, has a fixed-footer Submit dispute control, required details for Other, and an explicit internal-team routing explanation. Pending and failed submissions retain the draft; acknowledgement advances the queue. Ready items display one qualitative urgency band; execution state replaces it while in progress or blocked.
+
+## Communications unread navigation
+
+A chat counts as read only in the selected workspace tab, in a visible focused
+app window, with the latest messages in view. Retaining a chat in another tab
+does not mark new messages read or suppress its notifications. Confirmed read
+positions propagate to every open copy of the conversation.
+
+Use `UnreadMessageCount` for navigation counts. Inactive Communications tabs show
+the combined unread total; when no Communications tabs exist, show that total to
+the right of Communications in the sidebar. Hide zero and display `99+` above
+99. Section and conversation counts clear only for the corresponding read
+messages; unrelated conversations and later arrivals remain unread. The shell's
+summary is independent of whether a chat panel is mounted.

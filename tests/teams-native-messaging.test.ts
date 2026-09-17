@@ -97,7 +97,7 @@ test("native messaging supports realtime messages, replies, reactions, reads, fi
     assert.match(messages, /return Response\.json\(\{ deleted: true, conversationId, messageId \}\)/)
     assert.match(reactions, /onConflict: "message_id,reactor_user_id"/)
     assert.match(reactions, /Intl\.Segmenter/)
-    assert.match(reads, /current\.last_read_at >= message\.created_at/)
+    assert.match(reads, /advance_communication_read/)
     assert.match(attachments, /createSignedNativeMessageUpload/)
     assert.match(media, /assertNativeConversationAccess\(conversationId, user\.id, "read"\)/)
     assert.match(workspace, /sendSticker/)

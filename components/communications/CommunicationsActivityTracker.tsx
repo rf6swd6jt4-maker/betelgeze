@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react"
 import type { CommunicationsConnectionState } from "@/components/communications/useReliableCommunicationsRealtime"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import { chatActivityIsActive, createChatActivitySequence } from "@/lib/push/activity"
+import { workspaceDocumentIsActive } from "@/lib/workspace-tab-activity"
+import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/lib/workspace-tabs"
 
 const HEARTBEAT_MS = 20_000
 
@@ -28,7 +30,7 @@ export function CommunicationsActivityTracker({ connectionState, conversationId,
         // Retained iframe tabs share the top-level window's focus. Focus moving
         // from a composer to app chrome must not be confused with leaving the app.
         const host = window.top ?? window
-        const isActive = () => chatActivityIsActive(contextRef.current, document.visibilityState === "visible", host.document.hasFocus())
+        const isActive = () => workspaceDocumentIsActive() && chatActivityIsActive(contextRef.current, document.visibilityState === "visible", host.document.hasFocus())
         const publish = (transition: boolean, close = false) => {
             const active = !close && isActive()
             const payload = JSON.stringify(sequence(contextRef.current, active, transition))
@@ -46,6 +48,7 @@ export function CommunicationsActivityTracker({ connectionState, conversationId,
         document.addEventListener("visibilitychange", reconcile)
         window.addEventListener("pageshow", reconcile)
         window.addEventListener("pagehide", close)
+        window.addEventListener(WORKSPACE_TAB_VISIBILITY_EVENT, reconcile)
         host.addEventListener("focus", reconcile)
         host.addEventListener("blur", reconcile)
         return () => {
@@ -54,6 +57,7 @@ export function CommunicationsActivityTracker({ connectionState, conversationId,
             document.removeEventListener("visibilitychange", reconcile)
             window.removeEventListener("pageshow", reconcile)
             window.removeEventListener("pagehide", close)
+            window.removeEventListener(WORKSPACE_TAB_VISIBILITY_EVENT, reconcile)
             host.removeEventListener("focus", reconcile)
             host.removeEventListener("blur", reconcile)
             close()

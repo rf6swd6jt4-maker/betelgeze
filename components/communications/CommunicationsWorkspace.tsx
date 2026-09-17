@@ -1,6 +1,6 @@
 "use client"
 
-import { useChatDocumentAttention } from "@/components/communications/useChatDocumentAttention"
+import { chatDocumentHasAttention, useChatDocumentAttention } from "@/components/communications/useChatDocumentAttention"
 
 import { readChatDraft, writeChatDraft } from "@/lib/communications/offline-drafts"
 import { useOfflineChat } from "@/components/communications/useOfflineChat"
@@ -43,6 +43,8 @@ import { requestChatCheckbox } from "@/lib/communications/checklist-updates"
 import { useMessagePaneInteractions } from "@/components/communications/useMessagePaneInteractions"
 import { useReliableCommunicationsRealtime, type CommunicationsConnectionState } from "@/components/communications/useReliableCommunicationsRealtime"
 import { SquarePill } from "@/components/ui"
+import { workspaceDocumentIsActive } from "@/lib/workspace-tab-activity"
+import { mergeChatReadCursor, publishChatRead, subscribeChatReads } from "@/lib/communications/read-state"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import type { ClientConversation, CommunicationAttachment, CommunicationDelivery, CommunicationMessage, CommunicationReaction, CommunicationReadCursor, CommunicationSticker, CommunicationsBootstrap } from "@/lib/communications/types"
 import { communicationAttachmentFromRawPayload } from "@/lib/communications/attachments"
@@ -214,10 +216,7 @@ function MessageActionTray({ view, canInteract, currentEmoji, recentEmoji, onRea
 }
 
 function mergeCursor(current: CommunicationReadCursor[], incoming: CommunicationReadCursor) {
-    const existing = current.find((cursor) => cursor.relationshipId === incoming.relationshipId && cursor.userId === incoming.userId)
-    if (existing && existing.lastReadAt > incoming.lastReadAt) return current
-    if (existing && existing.lastReadAt === incoming.lastReadAt && existing.lastReadMessageId === incoming.lastReadMessageId) return current
-    return [...current.filter((cursor) => !(cursor.relationshipId === incoming.relationshipId && cursor.userId === incoming.userId)), incoming]
+    return mergeChatReadCursor(current, incoming, cursor => cursor.relationshipId)
 }
 
 export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateChange, onOpenTeam, onSelectedConversationChange, onUnreadCountChange, teamUnreadCount, conversationListWidth, onConversationListWidthChange }: {
@@ -263,6 +262,9 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const [enteringMessageIds, setEnteringMessageIds] = useState<Set<string>>(() => new Set())
     const [reactionCutoff] = useState(() => Date.now() - 30 * 24 * 60 * 60 * 1_000)
     const [readCursors, setReadCursors] = useState(bootstrap.readCursors)
+    useEffect(() => subscribeChatReads(bootstrap.workspaceId, bootstrap.currentUser.id, update => {
+        if (update.kind === "client") setReadCursors(current => mergeCursor(current, { relationshipId: update.conversationId, userId: update.userId, lastReadAt: update.lastReadAt, lastReadMessageId: update.lastReadMessageId }))
+    }), [bootstrap.workspaceId, bootstrap.currentUser.id])
     const messagePaneRef = useRef<HTMLDivElement | null>(null)
     const followLatestRef = useRef(true)
     const messageAnimationTimersRef = useRef<number[]>([])
@@ -360,12 +362,13 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
             const result = await response.json().catch(() => null) as { cursor?: CommunicationReadCursor; notificationReadThrough?: string; error?: string } | null
             if (!response.ok || !result?.cursor) throw new Error(result?.error ?? "Could not save the read position.")
             setReadCursors((current) => mergeCursor(current, result.cursor!))
+            publishChatRead({ ...result.cursor!, kind: "client", conversationId: cursor.relationshipId, workspaceId: bootstrap.workspaceId })
             if (result.notificationReadThrough) void dismissReadChatNotification(cursor.relationshipId, result.notificationReadThrough)
             if (pendingReadRef.current?.relationshipId === cursor.relationshipId && pendingReadRef.current.lastReadMessageId === cursor.lastReadMessageId) pendingReadRef.current = null
         } finally {
             if (readRequestRef.current === cursor.lastReadMessageId) readRequestRef.current = null
         }
-    }, [bootstrap.workspaceSlug])
+    }, [bootstrap.workspaceId, bootstrap.workspaceSlug])
 
     const flushPendingRead = useCallback(async () => {
         const pending = pendingReadRef.current
@@ -781,7 +784,10 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
             return
         }
         const cursor: CommunicationReadCursor = { relationshipId: selectedId, userId: bootstrap.currentUser.id, lastReadMessageId: latest.id, lastReadAt: latest.createdAt }
-        const timer = window.setTimeout(() => { void persistReadCursor(cursor).catch(() => undefined) }, 0)
+        const timer = window.setTimeout(() => {
+            // A tab can change after this effect schedules its read.
+            if (workspaceDocumentIsActive() && chatDocumentHasAttention() && selectedRef.current === selectedId) void persistReadCursor(cursor).catch(() => undefined)
+        }, 0)
         return () => window.clearTimeout(timer)
     }, [active, atLatest, bootstrap.currentUser.id, documentAttentive, persistReadCursor, readCursors, schemaReady, selected?.messages, selectedId, workspaceTabActive])
 

@@ -129,6 +129,7 @@ test('tracker publishes ordered departures for tab hiding, window blur, pagehide
  const document={visibilityState:'visible',addEventListener:(n,fn)=>listeners.set(n,fn),removeEventListener:n=>listeners.delete(n)}
  const {CommunicationsActivityTracker}=load('components/communications/CommunicationsActivityTracker.tsx',{
   react,'@/components/workspace/useWorkspaceTabActive':{useWorkspaceTabActive:()=>workspaceTabActive},'@/lib/push/activity':{chatActivityIsActive,createChatActivitySequence},
+  '@/lib/workspace-tab-activity':{workspaceDocumentIsActive:()=>workspaceTabActive},'@/lib/workspace-tabs':{WORKSPACE_TAB_VISIBILITY_EVENT:'tab-visibility'},
  },{window,document,Blob,crypto:{randomUUID:()=> 'tab'},navigator:{sendBeacon:(_url,blob)=>{beacons.push(blob);return true}},fetch:async(_url,init)=>{requests.push(JSON.parse(init.body));return new Response()}})
  const render=()=>{hook=0;CommunicationsActivityTracker({workspaceId:'workspace',conversationId:'chat',conversationKind:'native',connectionState:'live'});pendingEffects.splice(0).forEach(fn=>fn())}
  render();assert.equal(requests.length,1);assert.equal(requests[0].active,true)
@@ -136,7 +137,7 @@ test('tracker publishes ordered departures for tab hiding, window blur, pagehide
  listeners.get('blur')();assert.equal(requests.at(-1).active,true);assert.equal(beacons.length,0)
  focused=false;listeners.get('blur')();assert.equal(JSON.parse(await beacons.at(-1).text()).active,false)
  focused=true;listeners.get('focus')();assert.equal(requests.at(-1).active,true)
- workspaceTabActive=false;render();assert.equal(requests.at(-1).active,false)
+ workspaceTabActive=false;listeners.get('tab-visibility')();assert.equal(JSON.parse(await beacons.at(-1).text()).active,false);render();assert.equal(requests.at(-1).active,false)
  workspaceTabActive=true;render();assert.equal(requests.at(-1).active,true)
  listeners.get('pagehide')();assert.equal(JSON.parse(await beacons.at(-1).text()).active,false)
  hooks.forEach(h=>h?.cleanup?.());assert.equal(listeners.size,0)

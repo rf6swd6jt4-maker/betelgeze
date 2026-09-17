@@ -152,7 +152,7 @@ test("client and team chats reconcile missed Realtime events without a reload", 
     assert.match(clients, /topic: `communications-client:\$\{bootstrap\.workspaceSlug\}`/)
     assert.match(team, /privateChannel: true/)
     assert.match(team, /topic: `communications:\$\{bootstrap\.workspaceSlug\}`/)
-    assert.match(unread, /message\.createdAt > ownCursor\.lastReadAt/)
+    assert.match(unread, /recordVersionKey\(message\.createdAt\)/)
     assert.match(hook, /window\.addEventListener\("online", recoverWhenAvailable\)/)
     assert.match(hook, /window\.addEventListener\("focus", recoverWhenAvailable\)/)
     assert.match(hook, /document\.addEventListener\("visibilitychange", recoverWhenAvailable\)/)
@@ -165,7 +165,7 @@ test("client and team chats reconcile missed Realtime events without a reload", 
     assert.match(syncRoute, /loadClientCommunicationsBootstrap/)
     for (const workspace of [clients, team]) {
         assert.match(workspace, /persistReadCursor/)
-        assert.match(workspace, /lastReadAt > incoming\.lastReadAt/)
+        assert.match(workspace, /mergeChatReadCursor/)
         assert.match(workspace, /const visiblyReading = conversation\.id === selectedId && active && workspaceTabActive && documentAttentive && atLatest/)
         assert.match(workspace, /ConversationUnreadCount\(conversation, ownCursor/)
         assert.match(workspace, /<CommunicationsConnectionStatus/)

@@ -35,14 +35,14 @@ function textValue(value: unknown, keys: string[]) {
     return null
 }
 
-function rows(payload: unknown): unknown[] {
-    if (Array.isArray(payload)) return payload
-    if (!payload || typeof payload !== "object") throw new Error("Windsor returned an unreadable account response. Please try again.")
-    const record = payload as Record<string, unknown>
-    for (const key of ["data", "results", "accounts", "linked_accounts"]) if (Array.isArray(record[key])) return record[key] as unknown[]
-    // Log field names/types only; never provider values, tokens or account data.
-    console.error("Windsor linked-account response format", Object.fromEntries(Object.entries(record).slice(0, 12).map(([key, value]) => [key, Array.isArray(value) ? "array" : typeof value])))
-    throw new Error("Windsor returned an unexpected account response. Please try again.")
+// Provider metadata only: never log account values or authorization tokens.
+function responseShape(value: unknown, depth = 0): unknown {
+    if (depth > 5) return typeof value
+    if (Array.isArray(value)) return { length: value.length, item: responseShape(value[0], depth + 1) }
+    if (!value || typeof value !== "object") return typeof value
+    return Object.fromEntries(Object.entries(value).slice(0, 15).map(([key, child]) => [
+        /^[a-z_]{1,40}$/.test(key) ? key : "other_field", responseShape(child, depth + 1),
+    ]))
 }
 
 export async function createWindsorMetaAdsAuthorization(apiKey: string) {
@@ -65,25 +65,34 @@ export async function listWindsorMetaAdsAccounts(apiKey: string, accessToken: st
     url.searchParams.set("api_key", apiKey)
     url.searchParams.set("access_token", accessToken)
     const payload = await windsorJson(url)
-    const linkedRows = rows(payload)
-    console.info("Windsor linked-account lookup", {
-        rowCount: linkedRows.length,
-        rows: linkedRows.slice(0, 3).map((row) => {
-            const record = row && typeof row === "object" ? row as Record<string, unknown> : {}
-            const source = textValue(record, ["datasource", "ds_id", "source"])
-            return { source: source && /^[a-z_]{1,40}$/.test(source) ? source : "unknown", idType: typeof (record.account_id ?? record.id), tokenMatches: typeof record.access_token === "string" ? record.access_token === accessToken : null }
-        }),
-    })
-    const accounts = linkedRows.flatMap((item): WindsorMetaAdsAccount[] => {
-        if (!item || typeof item !== "object") throw new Error("Windsor returned an invalid account. Please try again.")
-        const record = item as Record<string, unknown>
-        if (typeof record.access_token === "string" && record.access_token !== accessToken) return []
-        const datasource = textValue(item, ["datasource", "ds_id", "source"])
-        if (datasource !== "facebook_ads" && datasource !== "facebook") return []
+    const accounts: WindsorMetaAdsAccount[] = []
+    function visit(value: unknown, inheritedSource: string | null = null, depth = 0) {
+        if (depth > 8) throw new Error("Windsor returned an unexpected account response. Please try again.")
+        if (Array.isArray(value)) { for (const item of value) visit(item, inheritedSource, depth + 1); return }
+        if (!value || typeof value !== "object") throw new Error("Windsor returned an invalid account. Please try again.")
+        const record = value as Record<string, unknown>
+        if (typeof record.access_token === "string" && record.access_token !== accessToken) return
+        const datasource = textValue(record, ["datasource", "ds_id", "source"]) || inheritedSource
+        if (datasource && datasource !== "facebook_ads" && datasource !== "facebook") return
         const rawId = record.account_id ?? record.id
-        const id = typeof rawId === "string" ? rawId.trim() : typeof rawId === "number" && Number.isSafeInteger(rawId) ? String(rawId) : ""
-        if (!id || id.length > 200) throw new Error("Windsor returned an invalid account identifier. Please try again.")
-        return [{ id, name: textValue(item, ["account_name", "name"]) || `Meta Ads account ${id.replace(/^act_/, "")}`, datasource }]
-    })
+        if (rawId !== undefined && datasource) {
+            const id = typeof rawId === "string" ? rawId.trim() : typeof rawId === "number" && Number.isSafeInteger(rawId) ? String(rawId) : ""
+            if (!id || id.length > 200) throw new Error("Windsor returned an invalid account identifier. Please try again.")
+            accounts.push({ id, name: textValue(record, ["account_name", "name"]) || `Meta Ads account ${id.replace(/^act_/, "")}`, datasource })
+            return
+        }
+        let recognized = false
+        for (const key of ["data", "results", "accounts", "linked_accounts", "facebook_ads", "facebook"]) {
+            if (record[key] !== undefined) {
+                recognized = true
+                visit(record[key], key === "facebook_ads" || key === "facebook" ? key : datasource, depth + 1)
+            }
+        }
+        if (!recognized) {
+            console.error("Windsor account response format", responseShape(record))
+            throw new Error("Windsor returned an unexpected account response. Please try again.")
+        }
+    }
+    visit(payload)
     return [...new Map(accounts.map((account) => [account.id, account])).values()]
 }

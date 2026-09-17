@@ -40,3 +40,10 @@ test("Meta datasource aliases are accepted without relying on the provider filte
  const p = provider({data:[{account_id:"one",datasource:"facebook",account_name:"Alias account"},{account_id:"two",datasource:"google_ads"}]})
  assert.deepEqual(await p.listWindsorMetaAdsAccounts("agency","link"),[{id:"one",name:"Alias account",datasource:"facebook"}])
 })
+
+test("grouped Windsor accounts inherit only their explicit Meta source", async () => {
+ const p = provider({data:[{access_token:"link",accounts:{facebook_ads:[{account_id:"one",account_name:"Grouped account"}]}}]})
+ assert.deepEqual(await p.listWindsorMetaAdsAccounts("agency","link"),[{id:"one",name:"Grouped account",datasource:"facebook_ads"}])
+ const foreign = provider({data:[{access_token:"other",accounts:{facebook_ads:[{account_id:"one"}]}}]})
+ assert.deepEqual(await foreign.listWindsorMetaAdsAccounts("agency","link"),[])
+})

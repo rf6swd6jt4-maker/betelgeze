@@ -63,3 +63,5 @@ The user approved deployment after reviewing the profile preview. Both reviewed 
 - `account_devices`: `827f34c3ea77d260143d37b388b16a94`; authenticated execution with live-session/AAL2 checks; no anonymous execution.
 
 The earlier “not deployed” entries above describe pre-release validation. This rollout includes the reviewed application payload through `ae6e1480`, with this documentation update. The remote production baseline was rechecked at `7627cbe7`, requiring no merge or unrelated changes. Application Ready/alias verification is performed after push and recorded in the release handoff; physical notification receipt remains for the user's testing.
+
+The live `chat-push-recovery` cron job was active and its three latest runs (20:50, 20:51 and 20:52 UTC) all succeeded. A post-migration delivery sample contained no pending/processing jobs or reported display failures. No new test message was sent. This confirms scheduler execution and an empty sampled backlog, not physical-device receipt.

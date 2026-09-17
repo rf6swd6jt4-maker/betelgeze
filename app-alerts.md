@@ -106,7 +106,7 @@ Keep these facts separate: message committed; notification job captured; eligibl
 
 ## Release and verification gate
 
-This file describes the authorized contract and the local implementation. It is not a production-completion claim. The changes from this task have not been deployed, and the new migration has not been applied.
+The user approved production deployment on 17 September 2026. Both migrations have been applied and verified against the reviewed source. The application is released through the production GitHub/Vercel pipeline; deployment status and device receipt remain separate evidence. See `docs/app-alerts-validation.md` and the release handoff.
 
 1. Verify baseline delivery-recovery, subscription-integrity, scheduler and atomic-read migrations are present. Apply `20260917180000_app_alerts_reading_contract.sql` before releasing this application revision. It adds a separately named version-3 activity function and replaces preparation; it does not rewrite message history, read cursors or existing deliveries. Database-first temporarily favors extra alerts from old clients over missing alerts.
 2. Verify the exact deployed commit, health of cron/pg_net recovery, and read/summary RPC availability. An enabled scheduler flag alone is insufficient. Do not use the legacy fallback as evidence of durable delivery.

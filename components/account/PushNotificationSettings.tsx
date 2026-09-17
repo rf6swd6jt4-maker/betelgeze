@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { NotificationSwitch } from "@/components/ui/NotificationSwitch"
-import { browserPushManager } from "@/lib/push/browser-push-manager"
+import { browserPushManager, pushApplicationServerKey } from "@/lib/push/browser-push-manager"
 import { subscriptionFingerprint } from "@/lib/push/subscription-fingerprint"
 
 type PushSettingsResponse = {
@@ -21,13 +21,6 @@ function isIos() {
 
 function isStandalone() {
     return window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone)
-}
-
-function applicationServerKey(value: string) {
-    const padding = "=".repeat((4 - value.length % 4) % 4)
-    const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/")
-    const raw = window.atob(base64)
-    return Uint8Array.from(raw, (character) => character.charCodeAt(0))
 }
 
 export function PushNotificationSettings({ compact = false }: { compact?: boolean }) {
@@ -72,7 +65,7 @@ export function PushNotificationSettings({ compact = false }: { compact?: boolea
             if (Notification.permission === "granted" && result.subscribed && matches) {
                 setConfirmedEnabled(true)
                 setState("on")
-                setDetail("Notifications stay on when you close or quit Betelgeze. Log out stops them on this device.")
+                setDetail("Notifications stay on when you close or quit Betelgeze. Log out pauses delivery; your next sign-in resumes it.")
                 return
             }
             setConfirmedEnabled(false)
@@ -88,11 +81,13 @@ export function PushNotificationSettings({ compact = false }: { compact?: boolea
         refresh()
         window.addEventListener("focus", refresh)
         window.addEventListener("pageshow", refresh)
+        window.addEventListener("betelgeze:push-setting-changed", refresh)
         document.addEventListener("visibilitychange", refresh)
         return () => {
             cancelled = true
             window.removeEventListener("focus", refresh)
             window.removeEventListener("pageshow", refresh)
+            window.removeEventListener("betelgeze:push-setting-changed", refresh)
             document.removeEventListener("visibilitychange", refresh)
         }
     }, [retry])
@@ -116,13 +111,13 @@ export function PushNotificationSettings({ compact = false }: { compact?: boolea
                 pushManager = registration.pushManager
             }
             const existing = await pushManager.getSubscription()
-            const subscription = existing ?? await pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey(publicKey) })
+            const subscription = existing ?? await pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushApplicationServerKey(publicKey) })
             const response = await fetch("/api/push/subscriptions", { signal: AbortSignal.timeout(10_000), method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(subscription) })
             const result = await response.json().catch(() => null) as PushSettingsResponse | null
             if (!response.ok) throw new Error(result?.error ?? "Could not save this device.")
             setConfirmedEnabled(true)
                 setState("on")
-            setDetail("Notifications stay on when you close or quit Betelgeze. Log out stops them on this device.")
+            setDetail("Notifications stay on when you close or quit Betelgeze. Log out pauses delivery; your next sign-in resumes it.")
         } catch (error) {
             if (error instanceof DOMException && error.name === "NotAllowedError") {
                 setState("blocked")

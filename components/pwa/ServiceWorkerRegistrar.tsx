@@ -27,10 +27,23 @@ export function ServiceWorkerRegistrar() {
     let registration: ServiceWorkerRegistration | undefined;
     let lastCheck = 0;
     let lastUpdate = 0;
+    let reconciling = false;
+    let observedWhileReconciling = false;
     const reconcile = () => {
-      if (cancelled || window.top !== window || document.visibilityState !== "visible" || !browserPushManager(registration) || Date.now() - lastCheck < 60_000) return;
+      if (cancelled || window.top !== window || document.visibilityState !== "visible" || reconciling || !browserPushManager(registration) || Date.now() - lastCheck < 60_000) return;
       lastCheck = Date.now();
-      void reconcilePushSubscription(registration).catch(() => undefined);
+      reconciling = true;
+      void reconcilePushSubscription(registration).catch(() => undefined).finally(() => {
+        reconciling = false;
+        if (observedWhileReconciling) { observedWhileReconciling = false; lastCheck = 0; reconcile(); }
+      });
+    };
+    const observed = () => {
+      // Login can finish in the same document after an earlier anonymous check.
+      // Complete device binding before retrying, without a polling loop.
+      if (reconciling) { observedWhileReconciling = true; return; }
+      lastCheck = 0;
+      reconcile();
     };
     const resume = () => {
       if (cancelled || document.visibilityState !== "visible") return;
@@ -67,11 +80,13 @@ export function ServiceWorkerRegistrar() {
     reconcile();
     register();
     window.addEventListener("focus", resume);
+    window.addEventListener("betelgeze:device-observed", observed);
     document.addEventListener("visibilitychange", resume);
 
     return () => {
       cancelled = true;
       window.removeEventListener("focus", resume);
+      window.removeEventListener("betelgeze:device-observed", observed);
       document.removeEventListener("visibilitychange", resume);
     };
   }, []);

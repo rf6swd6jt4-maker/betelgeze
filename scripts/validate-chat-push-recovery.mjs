@@ -196,6 +196,22 @@ try {
  await reset()
  console.log('PASS consolidated context/subscription: exact message scope, recipients, lease, active reading, revocation and service-role-only capabilities')
 
+ // Exercise the real enqueue/claim/final eligibility bodies with binding
+ // epochs, including a delayed old enqueue after the logout cleanup snapshot.
+ const installationSql=await readFile(`${repositoryRoot}/supabase/migrations/20260917230000_installation_push_consent.sql`,'utf8')
+ await db.exec('alter table web_push_subscriptions add column binding_version bigint not null default 0; alter table chat_push_deliveries add column binding_version bigint not null default 0;')
+ for(const name of ['enqueue_message_chat_push','claim_chat_push_deliveries','prepare_chat_push_delivery']) {
+  await db.exec(installationSql.match(new RegExp(`create or replace function public\\.${name}\\([\\s\\S]*?\\$\\$;`))[0])
+ }
+ await reset();message=await addMessage();jobs=await claim(message)
+ await query('update web_push_subscriptions set binding_version=binding_version+1 where user_id=$1',[recipient])
+ assert.equal((await prepare(jobs[0])).state,'revoked','old captured jobs cannot cross a binding interval')
+ await reset();message=await addMessage();jobs=await claim(message)
+ assert.equal((await prepare(jobs[0])).state,'send','new messages capture the current interval')
+ await query('update chat_push_deliveries set binding_version=binding_version-1 where id=$1',[jobs[1].id])
+ assert.equal((await prepare(jobs[1])).state,'revoked','a delayed old enqueue cannot survive A-B-A routing')
+ console.log('PASS binding epochs: current capture, stale queued jobs and delayed old enqueue rejected at final authorization')
+
  // Scheduler contracts run against local network/cron substitutes. No real
  // provider, business message, database credential or HTTP request is used.
  await db.exec(`

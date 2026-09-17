@@ -5,7 +5,6 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { webPushPublicKey } from "@/lib/push/chat-notifications"
 import { PUSH_DEVICE_COOKIE, PUSH_DEVICE_COOKIE_MAX_AGE, UUID_PATTERN } from "@/lib/push/device"
 import { subscriptionFingerprint } from "@/lib/push/subscription-fingerprint"
-import { chatPushSchemaMissing } from "@/lib/push/recipients"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -14,6 +13,7 @@ type SubscriptionInput = {
     endpoint?: unknown
     keys?: { p256dh?: unknown; auth?: unknown }
     reconcile?: unknown
+    recover?: unknown
 }
 
 function deviceId(request: NextRequest) {
@@ -36,12 +36,13 @@ export async function GET(request: NextRequest) {
     if (!user) return Response.json({ error: "Authentication required." }, { status: 401 })
     const publicKey = webPushPublicKey()
     const currentDeviceId = request.cookies.get(PUSH_DEVICE_COOKIE)?.value
-    const { data: subscription, error } = currentDeviceId && UUID_PATTERN.test(currentDeviceId)
-        ? await supabaseAdmin.from("web_push_subscriptions").select("id,endpoint,p256dh,auth").eq("user_id", user.id).eq("device_id", currentDeviceId).order("updated_at", { ascending: false }).limit(1).maybeSingle()
+    const { data: status, error } = currentDeviceId && UUID_PATTERN.test(currentDeviceId)
+        ? await supabaseAdmin.rpc("chat_push_device_status", { p_device: currentDeviceId })
         : { data: null, error: null }
     if (error) return Response.json({ error: "Could not check this device." }, { status: 503 })
+    const subscription = status?.subscription
     const fingerprint = subscription ? await subscriptionFingerprint({ endpoint: subscription.endpoint, keys: subscription }) : null
-    return Response.json({ configured: Boolean(publicKey), publicKey, subscribed: Boolean(subscription), fingerprint }, { headers: { "Cache-Control": "no-store" } })
+    return Response.json({ configured: Boolean(publicKey), publicKey, subscribed: Boolean(subscription), enabled: status?.enabled ?? null, fingerprint }, { headers: { "Cache-Control": "no-store" } })
 }
 
 export async function POST(request: NextRequest) {
@@ -66,21 +67,11 @@ export async function POST(request: NextRequest) {
 
     // Updating in place preserves pending deliveries; deleting before saving
     // could lose both the subscription and its delivery jobs on a failed write.
-    let { error } = await supabaseAdmin.rpc("register_chat_push_subscription", {
+    const { error } = await supabaseAdmin.rpc("register_chat_push_subscription", {
         p_user: user.id, p_device: currentDeviceId, p_endpoint: endpoint, p_key: p256dh, p_auth: auth,
-        p_agent: request.headers.get("user-agent")?.slice(0, 500) ?? null, p_reconcile: input?.reconcile === true,
+        p_agent: request.headers.get("user-agent")?.slice(0, 500) ?? null, p_reconcile: input?.reconcile === true, p_recover: input?.recover === true,
     })
-    if (chatPushSchemaMissing(error)) {
-        if (input?.reconcile === true) return Response.json({ error: "Subscription reconciliation is being upgraded." }, { status: 503 })
-        // Application-first rollout: never delete the old row before a save.
-        const saved = await supabaseAdmin.from("web_push_subscriptions").upsert({ user_id: user.id, device_id: currentDeviceId, endpoint, p256dh, auth, user_agent: request.headers.get("user-agent")?.slice(0, 500) ?? null, updated_at: new Date().toISOString() }, { onConflict: "endpoint" }).select("id").single()
-        error = saved.error
-        if (!error && saved.data) {
-            const cleanup = await supabaseAdmin.rpc("revoke_chat_push_device", { p_device: currentDeviceId, p_user: user.id }).neq("id", saved.data.id)
-            error = cleanup.error
-        }
-    }
-    if (error?.code === "42501") return Response.json({ error: "Select the toggle to enable this device for this account." }, { status: 409 })
+    if (error?.code === "42501") return Response.json({ error: "This installation is signed out or a newer account is active. Reopen Betelgeze and retry." }, { status: 409 })
     if (error) return Response.json({ error: "Could not save this device." }, { status: 503 })
     const response = NextResponse.json({ subscribed: true })
     setDeviceCookie(response, currentDeviceId)

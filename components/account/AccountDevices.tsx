@@ -36,7 +36,7 @@ export function AccountDevices() {
             const response = await fetch("/api/account/devices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ list: true }), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) })
             const body = await response.json()
             if (!response.ok) throw new Error(body.error ?? "Could not load signed-in devices.")
-            if (!controller.signal.aborted) { setDevices(body.devices); setError(null) }
+            if (!controller.signal.aborted) { setDevices(body.devices); setError(null); window.dispatchEvent(new Event("betelgeze:device-observed")) }
         } catch (error) {
             if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Could not load signed-in devices.")
         } finally { if (!controller.signal.aborted) setLoading(false) }
@@ -45,9 +45,11 @@ export function AccountDevices() {
         // load only updates React state after the network promise settles.
         // eslint-disable-next-line react-hooks/set-state-in-effect
         void load()
-        const resume = () => { if (document.visibilityState === "visible") void load() }
+        let lastResume = 0
+        const resume = () => { if (document.visibilityState === "visible" && Date.now() - lastResume > 1000) { lastResume = Date.now(); void load() } }
         document.addEventListener("visibilitychange", resume)
-        return () => { active.current?.abort(); document.removeEventListener("visibilitychange", resume) }
+        window.addEventListener("focus", resume)
+        return () => { active.current?.abort(); document.removeEventListener("visibilitychange", resume); window.removeEventListener("focus", resume) }
     }, [load])
     return <section className="mb-7" aria-labelledby="devices-heading">
         <div className="flex items-center justify-between gap-4"><h2 id="devices-heading" className="text-lg font-semibold">Signed-in devices</h2><button type="button" onClick={() => { setLoading(true); void load() }} disabled={loading} className="min-h-11 px-2 text-sm text-neutral-400 hover:text-white disabled:opacity-40">{loading ? "Checking…" : "Refresh"}</button></div>
@@ -56,6 +58,6 @@ export function AccountDevices() {
         {!devices && loading ? <p role="status" className="mt-4 text-sm text-neutral-500">Loading signed-in devices…</p> : null}
         <div id="signed-in-devices" className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">{(expanded ? devices : devices?.slice(0, 2))?.map((device) => <DeviceCard key={device.id} device={device} />)}</div>
         {devices && devices.length > 2 ? <button type="button" aria-expanded={expanded} aria-controls="signed-in-devices" onClick={() => setExpanded(value => !value)} className="mt-2 min-h-11 px-2 text-sm text-neutral-400 hover:text-white">{expanded ? "See less" : `See more (${devices.length - 2})`}</button> : null}
-        {expanded && devices?.length === 100 ? <p className="mt-3 text-xs text-neutral-500">Showing the 100 most recently signed-in devices.</p> : null}
+        {expanded && devices?.length === 100 ? <p className="mt-3 text-xs text-neutral-500">Showing the 100 most recently visited devices.</p> : null}
     </section>
 }

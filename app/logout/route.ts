@@ -19,11 +19,10 @@ export async function POST(request: NextRequest) {
     const auth = createSupabaseRouteClient(request, response)
     const pushDeviceId = request.cookies.get(PUSH_DEVICE_COOKIE)?.value
     if (pushDeviceId && UUID_PATTERN.test(pushDeviceId)) {
-        const { error } = await supabaseAdmin.rpc("revoke_chat_push_device", { p_device: pushDeviceId })
+        const { error } = await supabaseAdmin.rpc("pause_chat_push_device", { p_device: pushDeviceId })
         if (error) return NextResponse.json({ error: "Could not stop this device’s notifications. Please retry Log out." }, { status: 503 })
     }
     await auth.auth.signOut({ scope: "local" }).catch(() => undefined)
-    response.cookies.set(PUSH_DEVICE_COOKIE, "", { path: "/", maxAge: 0 })
     response.cookies.set(WORKSPACE_LAUNCH_COOKIE, "", { path: "/", maxAge: 0 })
     response.cookies.set(WORKSPACE_LAUNCH_COOKIE, "", { domain: WORKSPACE_LAUNCH_COOKIE_DOMAIN, path: "/", maxAge: 0 })
     clearCurrentDeviceAuthCookies(request, response)

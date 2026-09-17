@@ -174,10 +174,11 @@ function logoutHarness(fail=false) {
  const request={url:'https://app.betelgeze.com/logout',nextUrl:{origin:'https://app.betelgeze.com'},headers:new Headers({origin:'https://app.betelgeze.com'}),cookies:{get:()=>({value:'device-id'})}}
  return {route,effects,request}
 }
-test('explicit logout revokes this installation even without a live HTTP login, before clearing its cookie',async()=>{
+test('explicit logout pauses this installation without forgetting enrollment or its cookie',async()=>{
  const h=logoutHarness();const response=await h.route.POST(h.request)
  assert.equal(response.status,303)
- assert.equal(h.effects[0][0],'revoke_chat_push_device');assert.equal(h.effects[0][1].p_device,'device-id')
+ assert.equal(h.effects[0][0],'pause_chat_push_device');assert.equal(h.effects[0][1].p_device,'device-id')
+ assert.ok(!h.effects.some(e=>e[0]==='cookie' && e[1]==='device'),'installation cookie survives logout');
  assert.equal(h.effects[1][0],'logout');assert.equal(h.effects.at(-1)[0],'clear-auth')
 })
 test('failed push revocation cannot silently claim a successful logout; foreign-origin requests cannot revoke',async()=>{
@@ -199,4 +200,42 @@ test('logout reaches its original host with the device cookie before auth refres
   const result=await mod.proxy({nextUrl:new URL(`https://${host}/logout`),headers:new Headers({host,cookie:'betelgeze_push_device=installation',origin:`https://${host}`})})
   assert.equal(result.kind,'next');assert.equal(result.options.request.headers.get('cookie'),'betelgeze_push_device=installation')
  }
+})
+
+function reconciliationFixture({enabled=true,subscribed=true,local=true,permission='granted',fingerprint='different',saveStatus=200}={}) {
+ const events=[],actions=[],requests=[]
+ const subscription={toJSON:()=>({endpoint:'https://push.test/device',keys:{p256dh:'key',auth:'auth'}}),unsubscribe:async()=>actions.push('unsubscribe')}
+ const manager={getSubscription:async()=>local?subscription:null,subscribe:async()=>{actions.push('subscribe');return subscription}}
+ const mod=load('lib/push/reconcile-subscription.ts',{'./browser-push-manager':{browserPushManager:()=>manager,pushApplicationServerKey:()=>new Uint8Array()},'./subscription-fingerprint':{subscriptionFingerprint:async()=> 'same'}},{Event,Notification:{permission},window:{Notification:{},dispatchEvent:e=>events.push(e.type)},fetch:async(_url,init)=>{requests.push(init);return init.method==='POST'?new Response(null,{status:saveStatus}):Response.json({enabled,subscribed,configured:true,publicKey:'public',fingerprint})}})
+ return {run:()=>mod.reconcilePushSubscription(),actions,requests,events}
+}
+test('installation repair never infers consent from permission or overwrites explicit off',async()=>{
+ for(const settings of [{enabled:false},{enabled:null,local:false},{permission:'denied'}]){
+  const h=reconciliationFixture(settings);await h.run();assert.equal(h.actions.length,0);assert.ok(!h.requests.some(r=>r.method==='POST'))
+ }
+})
+test('missing browser transport and provider-expired transport recover under stored consent',async()=>{
+ let h=reconciliationFixture({local:false});await h.run();assert.deepEqual(h.actions,['subscribe']);assert.equal(JSON.parse(h.requests.at(-1).body).reconcile,true)
+ h=reconciliationFixture({subscribed:false});await h.run();assert.deepEqual(h.actions,['unsubscribe','subscribe']);assert.deepEqual(h.events,['betelgeze:push-setting-changed'])
+})
+test('existing browser enrollment recovers an unknown legacy installation without another subscribe prompt',async()=>{
+ const h=reconciliationFixture({enabled:null,subscribed:false});await h.run();assert.equal(h.actions.length,0)
+ assert.equal(JSON.parse(h.requests.at(-1).body).recover,true)
+})
+test('matching transport is quiet and failed persistence never publishes enabled state',async()=>{
+ let h=reconciliationFixture({fingerprint:'same'});await h.run();assert.equal(h.requests.length,1);assert.equal(h.events.length,0)
+ h=reconciliationFixture({saveStatus:409});await h.run();assert.equal(h.events.length,0)
+})
+
+test('device visits coalesce duplicate events and serialize later visits without polling',async()=>{
+ let effect,now=10_000;const events=new Map(),requests=[],signals=[]
+ const window={location:{pathname:'/workspace'},addEventListener:(k,f)=>events.set(k,f),removeEventListener:k=>events.delete(k),dispatchEvent:e=>signals.push(e.type)};window.top=window
+ const document={visibilityState:'visible',addEventListener:(k,f)=>events.set(k,f),removeEventListener:k=>events.delete(k)}
+ const mod=load('components/account/AccountDevicePresence.tsx',{react:{useEffect:f=>effect=f}},{window,document,Event,AbortController,Date:{now:()=>now},fetch:()=>new Promise(resolve=>requests.push(resolve))})
+ mod.AccountDevicePresence();const stop=effect();assert.equal(requests.length,1)
+ events.get('focus')();events.get('visibilitychange')();assert.equal(requests.length,1)
+ now+=2000;events.get('focus')();assert.equal(requests.length,1)
+ requests[0](new Response());await new Promise(r=>setImmediate(r));assert.equal(requests.length,2);assert.deepEqual(signals,['betelgeze:device-observed'])
+ document.visibilityState='hidden';now+=2000;requests[1](new Response());await new Promise(r=>setImmediate(r));events.get('visibilitychange')();assert.equal(requests.length,2)
+ stop();assert.equal(events.size,0)
 })

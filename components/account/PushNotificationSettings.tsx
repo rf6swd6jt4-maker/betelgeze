@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { NotificationSwitch } from "@/components/ui/NotificationSwitch"
+import { browserPushManager } from "@/lib/push/browser-push-manager"
 import { subscriptionFingerprint } from "@/lib/push/subscription-fingerprint"
 
 type PushSettingsResponse = {
@@ -57,8 +58,8 @@ export function PushNotificationSettings({ compact = false }: { compact?: boolea
             if (!response.ok) { setState("error"); setDetail(result?.error ?? "Could not check notification settings."); return }
             if (!result?.configured || !result.publicKey) { setState("unavailable"); setDetail("Chat notifications are not configured on this Betelgeze deployment yet."); return }
             setPublicKey(result.publicKey)
-            const registration = await navigator.serviceWorker.getRegistration("/")
-            const browserSubscription = await registration?.pushManager.getSubscription()
+            const pushManager = browserPushManager() ?? browserPushManager(await navigator.serviceWorker.getRegistration("/"))
+            const browserSubscription = await pushManager?.getSubscription()
             if (cancelled || version !== inspection.current || mutation.current) return
             if (Notification.permission === "denied") {
                 setConfirmedEnabled(false)
@@ -71,7 +72,7 @@ export function PushNotificationSettings({ compact = false }: { compact?: boolea
             if (Notification.permission === "granted" && result.subscribed && matches) {
                 setConfirmedEnabled(true)
                 setState("on")
-                setDetail("This device will notify you when none of your devices is actively showing that chat.")
+                setDetail("Notifications stay on when you close or quit Betelgeze. Log out stops them on this device.")
                 return
             }
             setConfirmedEnabled(false)
@@ -109,16 +110,19 @@ export function PushNotificationSettings({ compact = false }: { compact?: boolea
         setState("saving")
         setDetail(Notification.permission === "default" ? "Opening this device’s notification permission prompt…" : "Enabling notifications on this device…")
         try {
-            let registration = await navigator.serviceWorker.getRegistration("/")
-            if (!registration) registration = await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" })
-            const existing = await registration.pushManager.getSubscription()
-            const subscription = existing ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey(publicKey) })
+            let pushManager = browserPushManager()
+            if (!pushManager) {
+                const registration = await navigator.serviceWorker.getRegistration("/") ?? await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" })
+                pushManager = registration.pushManager
+            }
+            const existing = await pushManager.getSubscription()
+            const subscription = existing ?? await pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey(publicKey) })
             const response = await fetch("/api/push/subscriptions", { signal: AbortSignal.timeout(10_000), method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(subscription) })
             const result = await response.json().catch(() => null) as PushSettingsResponse | null
             if (!response.ok) throw new Error(result?.error ?? "Could not save this device.")
             setConfirmedEnabled(true)
                 setState("on")
-            setDetail("This device will notify you when none of your devices is actively showing that chat.")
+            setDetail("Notifications stay on when you close or quit Betelgeze. Log out stops them on this device.")
         } catch (error) {
             if (error instanceof DOMException && error.name === "NotAllowedError") {
                 setState("blocked")
@@ -143,8 +147,8 @@ export function PushNotificationSettings({ compact = false }: { compact?: boolea
             // Server deletion is authoritative. Browser cleanup failure cannot
             // turn an acknowledged off setting into an apparent failed save.
             try {
-                const registration = await navigator.serviceWorker.getRegistration("/")
-                const subscription = await registration?.pushManager.getSubscription()
+                const pushManager = browserPushManager() ?? browserPushManager(await navigator.serviceWorker.getRegistration("/"))
+                const subscription = await pushManager?.getSubscription()
                 if (subscription) await subscription.unsubscribe()
             } catch { /* Reconciliation never restores a deleted server row. */ }
             setConfirmedEnabled(false)

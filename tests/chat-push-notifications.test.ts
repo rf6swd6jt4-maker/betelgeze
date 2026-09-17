@@ -15,6 +15,10 @@ test("chat push payload is declarative and remains compatible with older workers
         unreadCount: 2,
     }))
     assert.equal(payload.web_push, 8030)
+    assert.equal(payload.mutable, false, "system display must not wake JavaScript")
+    for (const field of ["navigate", "icon", "badge"]) {
+        assert.equal(new URL(payload.notification[field]).origin, "https://app.betelgeze.com", `${field} must be an absolute URL accepted by WebKit`)
+    }
     assert.equal(payload.notification.title, "Client chat")
     assert.equal(payload.notification.navigate, "https://app.betelgeze.com/acme/communications?conversation=one")
     assert.equal(payload.notification.silent, false)
@@ -23,7 +27,6 @@ test("chat push payload is declarative and remains compatible with older workers
     assert.equal(payload.title, payload.notification.title)
     assert.equal(payload.body, payload.notification.body)
     assert.equal(payload.url, payload.notification.data.url)
-    assert.equal(payload.mutable, true)
 })
 
 test("chat push subscriptions and Communications sessions use server-only durable storage", async () => {

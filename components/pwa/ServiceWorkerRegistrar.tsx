@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { clearOfflineData } from "@/public/offline-store.js";
+import { browserPushManager } from "@/lib/push/browser-push-manager";
 import { reconcilePushSubscription } from "@/lib/push/reconcile-subscription";
 
 export function ServiceWorkerRegistrar() {
@@ -27,7 +28,7 @@ export function ServiceWorkerRegistrar() {
     let lastCheck = 0;
     let lastUpdate = 0;
     const reconcile = () => {
-      if (cancelled || window.top !== window || document.visibilityState !== "visible" || !registration || Date.now() - lastCheck < 60_000) return;
+      if (cancelled || window.top !== window || document.visibilityState !== "visible" || !browserPushManager(registration) || Date.now() - lastCheck < 60_000) return;
       lastCheck = Date.now();
       void reconcilePushSubscription(registration).catch(() => undefined);
     };
@@ -62,6 +63,8 @@ export function ServiceWorkerRegistrar() {
 
     // Hydration is sufficient: window.load also waits for every iframe and
     // image, including the stalled tab that may need this worker update.
+    // Declarative push can reconcile even if worker installation fails.
+    reconcile();
     register();
     window.addEventListener("focus", resume);
     document.addEventListener("visibilitychange", resume);

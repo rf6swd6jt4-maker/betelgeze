@@ -66,6 +66,7 @@ function workerFixture(options: { frame?: boolean; rejected?: boolean; pending?:
         navigator: { serviceWorker: { register: () => { registrations++; return options.rejected ? Promise.reject(new Error("unavailable")) : options.pending ? pending : Promise.resolve(registration) } } },
         useEffect: (callback: () => (() => void) | undefined) => { const result = callback(); if (result) cleanup.push(result) },
         clearOfflineData: async () => undefined,
+        browserPushManager: (registration: unknown) => registration,
         reconcilePushSubscription: async () => { reconciliations++ },
     })
     evaluated.ServiceWorkerRegistrar()

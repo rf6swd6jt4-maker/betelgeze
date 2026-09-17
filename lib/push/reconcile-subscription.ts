@@ -1,10 +1,11 @@
+import { browserPushManager } from "./browser-push-manager"
 import { subscriptionFingerprint } from "./subscription-fingerprint"
 
-// Repair an already enabled device only. Account changes and an explicit off
-// setting must never silently subscribe the browser to a different user.
-export async function reconcilePushSubscription(registration: ServiceWorkerRegistration) {
+// Repair only the current enabled binding. The verified device observation
+// owns account changes; reconciliation must never undo an explicit off setting.
+export async function reconcilePushSubscription(registration?: ServiceWorkerRegistration) {
     if (!("Notification" in window) || Notification.permission !== "granted") return
-    const subscription = await registration.pushManager.getSubscription()
+    const subscription = await browserPushManager(registration)?.getSubscription()
     if (!subscription) return
     const response = await fetch("/api/push/subscriptions", { cache: "no-store", signal: AbortSignal.timeout(8_000) })
     if (!response.ok) return

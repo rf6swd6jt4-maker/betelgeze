@@ -146,3 +146,43 @@ test('tracker publishes ordered departures for tab hiding, window blur, pagehide
  const all=[...requests,...await Promise.all(beacons.map(async b=>JSON.parse(await b.text())))].sort((a,b)=>a.revision-b.revision)
  assert.deepEqual(all.map(p=>p.revision),all.map((_,n)=>n+1));assert.equal(all.at(-1).active,false)
 })
+
+test('declarative subscription survives missing worker registration; legacy browsers use the root worker',()=>{
+ const modern={getSubscription:async()=>({endpoint:'native'})},legacy={getSubscription:async()=>({endpoint:'worker'})}
+ let mod=load('lib/push/browser-push-manager.ts',{}, {window:{pushManager:modern}})
+ assert.equal(mod.browserPushManager(),modern)
+ assert.equal(mod.browserPushManager({pushManager:legacy}),modern)
+ mod=load('lib/push/browser-push-manager.ts',{}, {window:{}})
+ assert.equal(mod.browserPushManager({pushManager:legacy}),legacy)
+ assert.equal(mod.browserPushManager(),undefined)
+})
+
+function logoutHarness(fail=false) {
+ const effects=[]
+ class NextResponse extends Response {
+  cookies={set:(...args)=>effects.push(['cookie',...args])}
+  static json(body,init){return new NextResponse(JSON.stringify(body),init)}
+  static redirect(url,status){return new NextResponse(null,{status,headers:{location:String(url)}})}
+ }
+ const route=load('app/logout/route.ts',{
+  'next/server':{NextResponse},'@/lib/supabase/route':{createSupabaseRouteClient:()=>({auth:{signOut:async()=>effects.push(['logout'])}})},
+  '@/lib/supabase/legacy-cookies':{clearCurrentDeviceAuthCookies:()=>effects.push(['clear-auth'])},
+  '@/lib/supabase/admin':{supabaseAdmin:{rpc:async(name,args)=>{effects.push([name,args]);return {error:fail?{code:'timeout'}:null}}}},
+  '@/lib/push/device':{PUSH_DEVICE_COOKIE:'device',UUID_PATTERN:/^device-id$/},
+  '@/lib/workspace-launch':{WORKSPACE_LAUNCH_COOKIE:'launch',WORKSPACE_LAUNCH_COOKIE_DOMAIN:'.betelgeze.com'},
+ })
+ const request={url:'https://app.betelgeze.com/logout',nextUrl:{origin:'https://app.betelgeze.com'},headers:new Headers({origin:'https://app.betelgeze.com'}),cookies:{get:()=>({value:'device-id'})}}
+ return {route,effects,request}
+}
+test('explicit logout revokes this installation even without a live HTTP login, before clearing its cookie',async()=>{
+ const h=logoutHarness();const response=await h.route.POST(h.request)
+ assert.equal(response.status,303)
+ assert.equal(h.effects[0][0],'revoke_chat_push_device');assert.equal(h.effects[0][1].p_device,'device-id')
+ assert.equal(h.effects[1][0],'logout');assert.equal(h.effects.at(-1)[0],'clear-auth')
+})
+test('failed push revocation cannot silently claim a successful logout; foreign-origin requests cannot revoke',async()=>{
+ let h=logoutHarness(true);assert.equal((await h.route.POST(h.request)).status,503)
+ assert.equal(h.effects.length,1)
+ h=logoutHarness();h.request.headers.set('origin','https://other.test')
+ assert.equal((await h.route.POST(h.request)).status,403);assert.equal(h.effects.length,0)
+})

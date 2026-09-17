@@ -30,12 +30,14 @@ try{
  try{for(const width of [1280,390,320]){
  const context=await browser.newContext({viewport:{width,height:900}}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message))
  let enabled=false,fail=false,writes=0
- await context.addInitScript(()=>{
+ await context.addInitScript((modern)=>{
    const subscription={endpoint:'https://example.test/push',keys:{p256dh:'public',auth:'auth'},toJSON(){return {endpoint:this.endpoint,keys:this.keys}},async unsubscribe(){return true}}
    Object.defineProperty(window,'Notification',{value:{permission:'granted'},configurable:true})
    Object.defineProperty(window,'PushManager',{value:function(){},configurable:true})
-   Object.defineProperty(navigator,'serviceWorker',{value:{async getRegistration(){return {pushManager:{async getSubscription(){return subscription},async subscribe(){return subscription}}}}},configurable:true})
- })
+   const manager={async getSubscription(){return subscription},async subscribe(){return subscription}}
+   Object.defineProperty(window,'pushManager',{value:modern?manager:undefined,configurable:true})
+   Object.defineProperty(navigator,'serviceWorker',{value:{async getRegistration(){if(modern)throw new Error('No worker registration');return {pushManager:manager}}},configurable:true})
+ },engine==='webkit')
  await context.route('**/api/account/devices',route=>route.fulfill({json:{devices:[{id:'current',platform:'macOS',browser:'Chrome',mobile:false,is_current:true,last_seen_at:'2026-09-17T19:00:00Z',notifications_enabled:enabled},{id:'phone',platform:'iPhone',browser:'Safari',mobile:true,is_current:false,last_seen_at:'2026-09-17T17:30:00Z',notifications_enabled:true},{id:'android',platform:'Android',browser:'Chrome',mobile:true,is_current:false,last_seen_at:'2026-09-16T12:00:00Z',notifications_enabled:false}]}}))
  await context.route('**/api/push/subscriptions',async route=>{
   const method=route.request().method();if(method==='POST'||method==='DELETE'){writes++;if(fail)return route.fulfill({status:503,json:{error:'Could not save this device.'}});enabled=method==='POST';return route.fulfill({json:{subscribed:enabled}})}

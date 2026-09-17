@@ -45,6 +45,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+    if (request.headers.get("origin") !== request.nextUrl.origin) return Response.json({ error: "Invalid request origin." }, { status: 403 })
     const user = await getCurrentUser()
     if (!user) return Response.json({ error: "Authentication required." }, { status: 401 })
     if (!webPushPublicKey()) return Response.json({ error: "Push notifications are not configured." }, { status: 503 })
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
         const saved = await supabaseAdmin.from("web_push_subscriptions").upsert({ user_id: user.id, device_id: currentDeviceId, endpoint, p256dh, auth, user_agent: request.headers.get("user-agent")?.slice(0, 500) ?? null, updated_at: new Date().toISOString() }, { onConflict: "endpoint" }).select("id").single()
         error = saved.error
         if (!error && saved.data) {
-            const cleanup = await supabaseAdmin.from("web_push_subscriptions").delete().eq("user_id", user.id).eq("device_id", currentDeviceId).neq("id", saved.data.id)
+            const cleanup = await supabaseAdmin.rpc("revoke_chat_push_device", { p_device: currentDeviceId, p_user: user.id }).neq("id", saved.data.id)
             error = cleanup.error
         }
     }
@@ -87,11 +88,12 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+    if (request.headers.get("origin") !== request.nextUrl.origin) return Response.json({ error: "Invalid request origin." }, { status: 403 })
     const user = await getCurrentUser()
     if (!user) return Response.json({ error: "Authentication required." }, { status: 401 })
     const currentDeviceId = request.cookies.get(PUSH_DEVICE_COOKIE)?.value
     if (currentDeviceId && UUID_PATTERN.test(currentDeviceId)) {
-        const { error } = await supabaseAdmin.from("web_push_subscriptions").delete().eq("user_id", user.id).eq("device_id", currentDeviceId)
+        const { error } = await supabaseAdmin.rpc("revoke_chat_push_device", { p_device: currentDeviceId, p_user: user.id })
         if (error) return Response.json({ error: "Could not disable notifications on this device." }, { status: 503 })
     }
     return Response.json({ subscribed: false })

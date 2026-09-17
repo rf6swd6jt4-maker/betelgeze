@@ -26,13 +26,14 @@ export function declarativeChatPushPayload(input: DeclarativeChatPushInput) {
     }
     return JSON.stringify({
         web_push: 8030,
-        mutable: true,
+        // The server supplies the complete display: modern WebKit need not wake JS.
+        mutable: false,
         notification: {
             title: input.title,
             body: input.body,
             navigate: new URL(input.url, PUSH_APP_ORIGIN).href,
-            icon: "/icons/betelgeze-icon-192.png",
-            badge: "/icons/betelgeze-icon-192.png",
+            icon: `${PUSH_APP_ORIGIN}/icons/betelgeze-icon-192.png`,
+            badge: `${PUSH_APP_ORIGIN}/icons/betelgeze-icon-192.png`,
             tag: input.tag,
             renotify: true,
             silent: false,

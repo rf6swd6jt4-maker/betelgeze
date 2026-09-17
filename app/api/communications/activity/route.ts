@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     const receivedAt = new Date().toISOString()
     const user = await getCurrentUser()
     if (!user) return Response.json({ error: "Authentication required." }, { status: 401 })
-    const input = await request.json().catch(() => null) as { tabId?: unknown; active?: unknown; workspaceId?: unknown; conversationId?: unknown; conversationKind?: unknown; connectionLive?: unknown; revision?: unknown; transition?: unknown } | null
+    const input = await request.json().catch(() => null) as { tabId?: unknown; active?: unknown; workspaceId?: unknown; conversationId?: unknown; conversationKind?: unknown; connectionLive?: unknown; revision?: unknown; transition?: unknown; readingVersion?: unknown } | null
     const tabId = typeof input?.tabId === "string" ? input.tabId : ""
     if (!UUID_PATTERN.test(tabId) || typeof input?.active !== "boolean") return Response.json({ error: "Invalid activity session." }, { status: 400 })
 
@@ -20,11 +20,14 @@ export async function POST(request: Request) {
     // keep receiving notifications until their next reload.
     const revision = input.revision
     if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1) return Response.json({ active: false, refreshRequired: true })
+    // Older clients report selection, not latest-message visibility. Revoke
+    // their suppression lease until they reload this contract version.
+    const active = input.active && input.readingVersion === 3
     const workspaceId = typeof input.workspaceId === "string" ? input.workspaceId : ""
     const conversationId = typeof input.conversationId === "string" ? input.conversationId : ""
     const conversationKind = input.conversationKind === "client" || input.conversationKind === "native" ? input.conversationKind : null
-    if (input.active && (!UUID_PATTERN.test(workspaceId) || !UUID_PATTERN.test(conversationId) || !conversationKind || input.connectionLive !== true)) return Response.json({ error: "Invalid active conversation." }, { status: 400 })
-    if (input.active) {
+    if (active && (!UUID_PATTERN.test(workspaceId) || !UUID_PATTERN.test(conversationId) || !conversationKind || input.connectionLive !== true)) return Response.json({ error: "Invalid active conversation." }, { status: 400 })
+    if (active) {
         const { data: membership } = await supabaseAdmin.from("workspace_memberships").select("user_id").eq("workspace_id", workspaceId).eq("user_id", user.id).maybeSingle()
         if (!membership) return Response.json({ error: "Workspace not found." }, { status: 404 })
         const canRead = conversationKind === "client"
@@ -32,8 +35,8 @@ export async function POST(request: Request) {
             : Boolean(await assertNativeConversationAccess(conversationId, user.id, "read"))
         if (!canRead) return Response.json({ error: "Conversation not found." }, { status: 404 })
     }
-    const { data: changed, error } = await supabaseAdmin.rpc("record_chat_activity", {
-        p_user: user.id, p_tab: tabId, p_revision: revision, p_active: input.active,
+    const { data: changed, error } = await supabaseAdmin.rpc("record_chat_reading_activity", {
+        p_user: user.id, p_tab: tabId, p_revision: revision, p_active: active,
         p_workspace: UUID_PATTERN.test(workspaceId) ? workspaceId : null,
         p_kind: conversationKind, p_conversation: UUID_PATTERN.test(conversationId) ? conversationId : null,
         p_seen_at: receivedAt,
@@ -46,5 +49,5 @@ export async function POST(request: Request) {
             await processChatPushDeliveries({ userId: user.id, limit: 50 })
         } catch { console.warn("Chat activity changed; notification recovery remains scheduled") }
     })
-    return Response.json({ active: input.active, revision, applied: changed === true })
+    return Response.json({ active, revision, applied: changed === true })
 }

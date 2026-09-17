@@ -1,5 +1,5 @@
 import { clientConversationCanAccess } from "@/lib/communications/access"
-import { NextRequest } from "next/server"
+import { after, NextRequest } from "next/server"
 
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { clearReadChatPushNotifications } from "@/lib/push/chat-notifications"
@@ -19,6 +19,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     const supabase = await createSupabaseServerClient()
     const { data: position, error } = await supabase.rpc("advance_communication_read", { p_workspace_id: workspace.id, p_kind: "client", p_conversation_id: relationshipId, p_message_id: messageId })
     if (error || !position) return Response.json({ error: "Could not save the read position." }, { status: 503 })
-    await clearReadChatPushNotifications({ userId: user.id, conversationKind: "client", conversationId: relationshipId, readThroughCreatedAt: position.lastReadAt })
+    after(async () => {
+        try { await clearReadChatPushNotifications({ userId: user.id, conversationKind: "client", conversationId: relationshipId, readThroughCreatedAt: position.lastReadAt }) }
+        catch { console.warn("Confirmed chat read; legacy notification cleanup remains pending") }
+    })
     return Response.json({ cursor: { ...position, relationshipId }, notificationReadThrough: position.lastReadAt })
 }

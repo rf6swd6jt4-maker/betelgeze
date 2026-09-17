@@ -2,16 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { subscribeChatReads } from "@/lib/communications/read-state"
+import { publishUnreadSummary } from "@/lib/communications/unread-broadcast"
 import { applyReadToSummary, createUnreadSummaryResource, type UnreadSummary } from "@/lib/communications/unread-summary"
 
 // The shell owns one metadata summary; mounted chat copies never overwrite it
 // with their independently loaded (and potentially stale) local totals.
 export function useCommunicationsUnread(workspaceId: string, workspaceSlug: string, userId: string, enabled: boolean) {
     const scope = `${workspaceId}:${userId}`
-    const [snapshot, setSnapshot] = useState<{ scope: string; rows: UnreadSummary[] }>({ scope, rows: [] })
+    const [snapshot, setSnapshot] = useState<{ scope: string; rows: UnreadSummary[]; loaded: boolean }>({ scope, rows: [], loaded: false })
     const [stale, setStale] = useState(false)
     const invalidateRef = useRef<() => void>(() => undefined)
     const invalidate = useCallback(() => invalidateRef.current(), [])
+
+    useEffect(() => {
+        if (enabled && snapshot.loaded && snapshot.scope === scope) publishUnreadSummary({ workspaceId, userId, rows: snapshot.rows, stale })
+    }, [enabled, scope, snapshot, stale, userId, workspaceId])
 
     useEffect(() => {
         if (!enabled) return
@@ -22,7 +27,7 @@ export function useCommunicationsUnread(workspaceId: string, workspaceSlug: stri
             const result = await response.json()
             if (!response.ok || !Array.isArray(result.conversations)) throw new Error("Unread counts unavailable")
             return result.conversations as UnreadSummary[]
-        }, next => { setSnapshot({ scope, rows: next }); setStale(false) }, () => setStale(true))
+        }, next => { setSnapshot({ scope, rows: next, loaded: true }); setStale(false) }, () => setStale(true))
         const schedule = () => {
             resource.invalidate()
             if (document.visibilityState !== "visible" || timer !== null) return
@@ -31,7 +36,7 @@ export function useCommunicationsUnread(workspaceId: string, workspaceSlug: stri
         }
         invalidateRef.current = schedule
         const unsubscribe = subscribeChatReads(workspaceId, userId, read => {
-            setSnapshot(current => ({ scope, rows: applyReadToSummary(current.scope === scope ? current.rows : [], read) }))
+            setSnapshot(current => ({ scope, rows: applyReadToSummary(current.scope === scope ? current.rows : [], read), loaded: current.scope === scope && current.loaded }))
             schedule()
         })
         window.addEventListener("focus", schedule)

@@ -2,7 +2,8 @@
 import { WORKSPACE_TAB_FRAME_NAME_PREFIX, WORKSPACE_TAB_FRAME_PARAM, WORKSPACE_TAB_VISIBILITY_EVENT } from "./workspace-tabs.ts"
 
 /** Check the shell's current selection, even before a queued activate message arrives. */
-export function workspaceDocumentIsActive() {
+export function workspaceDocumentIsActive(nativeTabId?: string) {
+    if (nativeTabId && window.parent === window) return document.body.dataset.workspaceActiveTabId === nativeTabId
     if (window.parent !== window) {
         try {
             const frame = window.frameElement as HTMLIFrameElement | null

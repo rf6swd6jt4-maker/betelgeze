@@ -3,11 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import { PanelRouteLoading } from "@/components/workspace/PanelRouteLoading"
+import { useCommunicationsUnread } from "./useCommunicationsUnread"
 import { Status } from "@/components/ui"
 import { createCommunicationsModeResource, type CommunicationsMode } from "@/lib/communications/mode-resource"
-import { CommunicationsActivityTracker } from "@/components/communications/CommunicationsActivityTracker"
 import { DEFAULT_CONVERSATION_LIST_WIDTH } from "@/components/communications/ResizableConversationColumns"
-import type { CommunicationsConnectionState } from "@/components/communications/useReliableCommunicationsRealtime"
 import type { CommunicationsBootstrap } from "@/lib/communications/types"
 import type { NativeCommunicationsBootstrap } from "@/lib/teams/types"
 import { WORKSPACE_TAB_FRAME_PARAM, WORKSPACE_TAB_MESSAGE_SOURCE, type WorkspaceTabFrameMessage } from "@/lib/workspace-tabs"
@@ -26,6 +25,10 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
     const initialBootstrap = initialClientBootstrap ?? initialNativeBootstrap!
     const { workspaceId, workspaceSlug } = initialBootstrap
     const userId = initialBootstrap.currentUser.id
+    const [standalone, setStandalone] = useState(false)
+    useEffect(() => { setStandalone(window.top === window && document.body.dataset.workspaceTabsHosted !== "true") }, [])
+    // Hosted panels consume the shell's owner. Standalone routes need one owner.
+    useCommunicationsUnread(workspaceId, workspaceSlug, userId, standalone)
     const [clientBootstrap, setClientBootstrap] = useState(initialClientBootstrap)
     const [nativeBootstrap, setNativeBootstrap] = useState(initialNativeBootstrap)
     const [loadErrors, setLoadErrors] = useState<Partial<Record<CommunicationsMode, string>>>({})
@@ -76,8 +79,6 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
             resource.dispose()
         }
     }, [initialConversationId, initialDmUserId, initialMode, initialNativeConversationId, loadMode, userId, workspaceId, workspaceSlug])
-    const [clientConnectionState, setClientConnectionState] = useState<CommunicationsConnectionState>("connecting")
-    const [nativeConnectionState, setNativeConnectionState] = useState<CommunicationsConnectionState>("connecting")
     const [clientUnreadCount, setClientUnreadCount] = useState(0)
     const [nativeUnreadCount, setNativeUnreadCount] = useState(0)
     const [conversationListWidth, setConversationListWidth] = useState(DEFAULT_CONVERSATION_LIST_WIDTH)
@@ -138,17 +139,10 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
         localStorage.setItem(`betelgeze:communications:list-width:${workspaceId}`, String(width))
     }, [workspaceId])
     return <div data-communications-panel className="fixed inset-0 isolate overflow-hidden overscroll-none bg-black [contain:paint]">
-        <CommunicationsActivityTracker
-            connectionState={mode === "clients" ? clientConnectionState : nativeConnectionState}
-            conversationId={mode === "clients" ? clientSelectedId : nativeSelectedId}
-            conversationKind={mode === "clients" ? "client" : "native"}
-            workspaceId={workspaceId}
-        />
         {clientBootstrap ? <div className={mode === "clients" ? "absolute inset-0" : "hidden"} aria-hidden={mode !== "clients"}>
             <CommunicationsWorkspace
                 active={mode === "clients"}
                 bootstrap={clientBootstrap}
-                onConnectionStateChange={setClientConnectionState}
                 onOpenTeam={() => setMode("team")}
                 onSelectedConversationChange={setClientSelectedId}
                 onUnreadCountChange={setClientUnreadCount}
@@ -161,7 +155,6 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
             <TeamCommunicationsWorkspace
                 active={mode === "team"}
                 bootstrap={nativeBootstrap}
-                onConnectionStateChange={setNativeConnectionState}
                 onOpenClients={() => setMode("clients")}
                 onSelectedConversationChange={setNativeSelectedId}
                 onUnreadCountChange={setNativeUnreadCount}

@@ -58,3 +58,7 @@ unauthorized readers, AAL2, older reads, microseconds, own/system messages and
 cleared history. A 10,000-message fixture caps at 100; its conversation range
 uses an index. Local database timing is not a production or physical-device
 performance measurement.
+
+## Superseding contract
+
+`app-alerts.md` is the protected source of truth for reading and notifications. The 17 September alerts rebuild replaces optimistic local badge clearing and single-slot pending reads with the shared acknowledged reader, per-conversation recovery, shared summary publication and latest-row visibility. The release status and evidence for that rebuild are in `docs/app-alerts-validation.md`.

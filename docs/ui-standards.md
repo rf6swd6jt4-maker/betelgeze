@@ -684,3 +684,8 @@ the right of Communications in the sidebar. Hide zero and display `99+` above
 99. Section and conversation counts clear only for the corresponding read
 messages; unrelated conversations and later arrivals remain unread. The shell's
 summary is independent of whether a chat panel is mounted.
+
+`app-alerts.md` governs these behaviors and requires explicit permission for
+changes. Conversation rows and section counts consume the shell's scoped
+summary after it arrives; use the same `UnreadMessageCount` primitive for `99+`
+in all three places. A selected chat is never itself a zero-unread override.

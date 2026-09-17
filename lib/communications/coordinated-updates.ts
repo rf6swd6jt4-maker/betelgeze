@@ -1,3 +1,5 @@
+
+import { compareChatMessages } from "../record-version.js"
 /** Coordinates HTTP reads, live events, and local writes without changing transport. */
 export type ChatRead = { revision: number; sequence: number }
 export class ChatMutationError extends Error {
@@ -130,7 +132,7 @@ export function createCoordinatedChat<M extends Message, C extends Conversation<
             grouped.set(owner, group)
         }
         const conversations = metadata.map((conversation) => {
-            const rows = [...(grouped.get(conversation.id)?.values() ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+            const rows = [...(grouped.get(conversation.id)?.values() ?? [])].sort(compareChatMessages)
             const pinnedMessageId = pins.get(conversation.id)?.messageId ?? null
             return { ...conversation, ...(conversation.unreadMessages ? { unreadMessages: conversation.unreadMessages.filter((message) => !messages.has(message.id) || messages.get(message.id)) } : {}), messages: rows, pinnedMessageId: pinnedMessageId && messages.has(pinnedMessageId) && !messages.get(pinnedMessageId) ? null : pinnedMessageId }
         })

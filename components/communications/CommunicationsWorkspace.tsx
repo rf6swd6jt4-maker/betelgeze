@@ -1,6 +1,8 @@
 "use client"
 
-import { chatDocumentHasAttention, useChatDocumentAttention } from "@/components/communications/useChatDocumentAttention"
+import { compareChatMessages } from "@/lib/record-version.js"
+
+import { useChatDocumentAttention } from "@/components/communications/useChatDocumentAttention"
 
 import { readChatDraft, writeChatDraft } from "@/lib/communications/offline-drafts"
 import { useOfflineChat } from "@/components/communications/useOfflineChat"
@@ -43,13 +45,14 @@ import { requestChatCheckbox } from "@/lib/communications/checklist-updates"
 import { useMessagePaneInteractions } from "@/components/communications/useMessagePaneInteractions"
 import { useReliableCommunicationsRealtime, type CommunicationsConnectionState } from "@/components/communications/useReliableCommunicationsRealtime"
 import { SquarePill } from "@/components/ui"
-import { workspaceDocumentIsActive } from "@/lib/workspace-tab-activity"
-import { mergeChatReadCursor, publishChatRead, subscribeChatReads } from "@/lib/communications/read-state"
+import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
+import { useConversationRead } from "./useConversationRead"
+import { CommunicationsActivityTracker } from "./CommunicationsActivityTracker"
+import { mergeChatReadCursor, readCursorCoversMessage, subscribeChatReads } from "@/lib/communications/read-state"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import type { ClientConversation, CommunicationAttachment, CommunicationDelivery, CommunicationMessage, CommunicationReaction, CommunicationReadCursor, CommunicationSticker, CommunicationsBootstrap } from "@/lib/communications/types"
 import { communicationAttachmentFromRawPayload } from "@/lib/communications/attachments"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
-import { dismissReadChatNotification } from "@/lib/push/browser-notifications"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { clientConversationUnreadCount } from "@/lib/communications/unread"
 import { clientMessageSupportsReaction } from "@/lib/communications/interactions"
@@ -124,7 +127,7 @@ function mergeMessages(current: CommunicationMessage[], incoming: CommunicationM
         if (existing && existing.id !== existing.clientRequestId && message.id === message.clientRequestId) continue
         byKey.set(requestKey, existing ? { ...existing, ...message } : message)
     }
-    return [...byKey.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    return [...byKey.values()].sort(compareChatMessages)
 }
 
 function messageAnimationKey(message: CommunicationMessage) {
@@ -230,6 +233,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     conversationListWidth: number
     onConversationListWidthChange: (width: number) => void
 }) {
+    const unreadSummary = useSharedUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
+    const unreadByConversation = useMemo(() => unreadSummary ? new Map(unreadSummary.rows.filter(row => row.kind === "client").map(row => [row.conversationId, row.count])) : null, [unreadSummary])
     const supabase = useMemo(() => createSupabaseBrowserClient(), [])
     const [updates] = useState(() => createCoordinatedChat<CommunicationMessage, ClientConversation, CommunicationReaction>(bootstrap, (reaction) => `${reaction.messageId}:${reaction.direction}`))
     const { conversations, reactions } = useSyncExternalStore(updates.subscribe, updates.getSnapshot, updates.getSnapshot)
@@ -258,7 +263,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const [previewMedia, setPreviewMedia] = useState<MessageMediaPreview | null>(null)
     const [showJumpToLatest, setShowJumpToLatest] = useState(false)
     const [atLatest, setAtLatest] = useState(true)
-    const { visible: documentVisible, attentive: documentAttentive } = useChatDocumentAttention()
+    const { visible: documentVisible } = useChatDocumentAttention()
     const [enteringMessageIds, setEnteringMessageIds] = useState<Set<string>>(() => new Set())
     const [reactionCutoff] = useState(() => Date.now() - 30 * 24 * 60 * 60 * 1_000)
     const [readCursors, setReadCursors] = useState(bootstrap.readCursors)
@@ -278,8 +283,6 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const draftRef = useRef(draft)
     const whatsAppTypingTimerRef = useRef<number | null>(null)
     const whatsAppTypingCooldownTimersRef = useRef<Record<string, number>>({})
-    const pendingReadRef = useRef<CommunicationReadCursor | null>(null)
-    const readRequestRef = useRef<string | null>(null)
     const workspaceTabActive = useWorkspaceTabActive()
     const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null
     const history = useConversationHistory(selectedId, selected?.messages ?? [], {
@@ -348,32 +351,13 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     })
     const enqueueingRef = useRef(false)
 
-    const persistReadCursor = useCallback(async (cursor: CommunicationReadCursor) => {
-        pendingReadRef.current = cursor
-        setReadCursors((current) => mergeCursor(current, cursor))
-        if (readRequestRef.current === cursor.lastReadMessageId) return
-        readRequestRef.current = cursor.lastReadMessageId
-        try {
-            const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/read`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ relationshipId: cursor.relationshipId, messageId: cursor.lastReadMessageId }),
-            })
-            const result = await response.json().catch(() => null) as { cursor?: CommunicationReadCursor; notificationReadThrough?: string; error?: string } | null
-            if (!response.ok || !result?.cursor) throw new Error(result?.error ?? "Could not save the read position.")
-            setReadCursors((current) => mergeCursor(current, result.cursor!))
-            publishChatRead({ ...result.cursor!, kind: "client", conversationId: cursor.relationshipId, workspaceId: bootstrap.workspaceId })
-            if (result.notificationReadThrough) void dismissReadChatNotification(cursor.relationshipId, result.notificationReadThrough)
-            if (pendingReadRef.current?.relationshipId === cursor.relationshipId && pendingReadRef.current.lastReadMessageId === cursor.lastReadMessageId) pendingReadRef.current = null
-        } finally {
-            if (readRequestRef.current === cursor.lastReadMessageId) readRequestRef.current = null
-        }
-    }, [bootstrap.workspaceId, bootstrap.workspaceSlug])
-
-    const flushPendingRead = useCallback(async () => {
-        const pending = pendingReadRef.current
-        if (pending) await persistReadCursor(pending)
-    }, [persistReadCursor])
+    const reading = useConversationRead({
+        workspaceId: bootstrap.workspaceId, workspaceSlug: bootstrap.workspaceSlug, userId: bootstrap.currentUser.id,
+        kind: "client", conversationId: selectedId, latest: selected?.messages.findLast(message => message.id !== message.clientRequestId),
+        cursor: readCursors.find(cursor => cursor.relationshipId === selectedId && cursor.userId === bootstrap.currentUser.id),
+        active: active && schemaReady, atLatest, pane: messagePaneRef,
+    })
+    const flushPendingRead = reading.flush
 
     const selectConversation = useCallback((conversationId: string | null) => {
         closeWorkspaceComposer(composerRef.current)
@@ -767,29 +751,14 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
 
     useEffect(() => onConnectionStateChange?.(connection.state), [connection.state, onConnectionStateChange])
 
-    const unreadCount = useMemo(() => conversations.reduce((total, conversation) => {
+    const unreadCount = useMemo(() => unreadByConversation ? [...unreadByConversation.values()].reduce((total, count) => total + count, 0) : conversations.reduce((total, conversation) => {
         const ownCursor = readCursors.find((cursor) => cursor.relationshipId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-        const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentAttentive && atLatest
-        return total + clientConversationUnreadCount(conversation, ownCursor, visiblyReading)
-    }, 0), [active, atLatest, bootstrap.currentUser.id, conversations, documentAttentive, readCursors, selectedId, workspaceTabActive])
+        return total + clientConversationUnreadCount(conversation, ownCursor)
+    }, 0), [bootstrap.currentUser.id, conversations, readCursors, unreadByConversation])
 
     useEffect(() => onUnreadCountChange?.(unreadCount), [onUnreadCountChange, unreadCount])
 
-    useEffect(() => {
-        if (!active || !workspaceTabActive || !documentAttentive || !atLatest || !selectedId || !selected?.messages.length || !schemaReady) return
-        const latest = selected.messages.at(-1)!
-        const current = readCursors.find((cursor) => cursor.relationshipId === selectedId && cursor.userId === bootstrap.currentUser.id)
-        if (current?.lastReadMessageId === latest.id) {
-            void dismissReadChatNotification(selectedId, latest.createdAt)
-            return
-        }
-        const cursor: CommunicationReadCursor = { relationshipId: selectedId, userId: bootstrap.currentUser.id, lastReadMessageId: latest.id, lastReadAt: latest.createdAt }
-        const timer = window.setTimeout(() => {
-            // A tab can change after this effect schedules its read.
-            if (workspaceDocumentIsActive() && chatDocumentHasAttention() && selectedRef.current === selectedId) void persistReadCursor(cursor).catch(() => undefined)
-        }, 0)
-        return () => window.clearTimeout(timer)
-    }, [active, atLatest, bootstrap.currentUser.id, documentAttentive, persistReadCursor, readCursors, schemaReady, selected?.messages, selectedId, workspaceTabActive])
+
 
     async function sendMessage(messageToRetry?: CommunicationMessage) {
         if (!messageToRetry && uploads.blocked) return
@@ -853,6 +822,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const pinnedPreview = pinnedMessage ? messagePreview(pinnedMessage).split(/\r?\n/, 1)[0] : selected?.pinnedMessageId ? "Pinned message unavailable" : null
 
     return <section data-workspace-record-title={active ? selected?.title : undefined} aria-label="Client communications" className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-black">
+        {active ? <CommunicationsActivityTracker workspaceId={bootstrap.workspaceId} conversationKind="client" conversationId={selectedId} connectionState={connection.state} isReading={reading.isReading} /> : null}
         {!schemaReady ? <div className="shrink-0 border-b border-amber-900 bg-amber-950 px-4 py-2 text-center text-xs text-amber-100">The Communications database update must be applied before live sending and read tracking are available.</div> : null}
 
         <ResizableConversationColumns listWidth={conversationListWidth} onListWidthChange={onConversationListWidthChange}>
@@ -861,18 +831,17 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                     <div role="tablist" aria-label="Communication conversations" className="flex items-center gap-1">
                         <button type="button" role="tab" aria-selected="true" className="inline-flex h-8 items-center rounded-lg bg-neutral-800 px-3 text-xs font-semibold text-white">Clients</button>
                         <button type="button" role="tab" aria-selected="false" onClick={onOpenTeam} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-medium text-neutral-400 hover:bg-neutral-900 hover:text-white">Team<UnreadMessageCount count={teamUnreadCount ?? 0} label="unread Team messages" /></button>
-                        <span className="ml-auto"><CommunicationsConnectionStatus state={connection.state} error={connection.error} /></span>
+                        <span className="ml-auto"><CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} /></span>
                     </div>
                     <label className="relative mt-3 block"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"><SearchIcon /></span><input ref={searchRef} type="search" value={search} onChange={(event) => setSearch(event.target.value)} aria-label="Search conversations" placeholder="Search conversations" className="h-10 w-full rounded-lg border border-neutral-800 bg-black pl-9 pr-3 text-sm outline-none placeholder:text-neutral-600 focus:border-neutral-600" /></label>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{visibleConversations.length ? visibleConversations.map((conversation) => {
                     const latest = conversation.messages.at(-1)
                     const ownCursor = readCursors.find((cursor) => cursor.relationshipId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-                    const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentAttentive && atLatest
-                    const unread = clientConversationUnreadCount(conversation, ownCursor, visiblyReading)
+                    const unread = unreadByConversation ? unreadByConversation.get(conversation.id) ?? 0 : clientConversationUnreadCount(conversation, ownCursor)
                     return <button key={conversation.id} type="button" onClick={() => selectConversation(conversation.id)} aria-current={selectedId === conversation.id ? "page" : undefined} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left transition ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}>
                         <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-800 text-sm font-semibold text-neutral-200">{initials(conversation.title)}</span>
-                        <span className="min-w-0"><span className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{conversation.title}</span><span className="flex shrink-0 items-center gap-2">{conversation.isTest ? <SquarePill tone="yellow" className="!min-h-5 !px-2 !py-0.5 !text-[10px] !leading-3">Test</SquarePill> : null}{latest ? <time dateTime={latest.createdAt} className={`text-[11px] ${unread ? "text-white" : "text-neutral-600"}`}>{formatRelativeTime(latest.createdAt)}</time> : null}</span></span><span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-neutral-500">{latest?.direction === "outbound" ? <DeliveryTicks message={latest} /> : null}<span className="truncate">{latest?.body || "No messages yet"}</span>{unread ? <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-black">{unread}</span> : null}</span></span>
+                        <span className="min-w-0"><span className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{conversation.title}</span><span className="flex shrink-0 items-center gap-2">{conversation.isTest ? <SquarePill tone="yellow" className="!min-h-5 !px-2 !py-0.5 !text-[10px] !leading-3">Test</SquarePill> : null}{latest ? <time dateTime={latest.createdAt} className={`text-[11px] ${unread ? "text-white" : "text-neutral-600"}`}>{formatRelativeTime(latest.createdAt)}</time> : null}</span></span><span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-neutral-500">{latest?.direction === "outbound" ? <DeliveryTicks message={latest} /> : null}<span className="truncate">{latest?.body || "No messages yet"}</span>{unread ? <span className="ml-auto"><UnreadMessageCount count={unread} label="unread messages" /></span> : null}</span></span>
                     </button>
                 }) : <div className="p-6 text-center"><p className="text-sm font-medium text-neutral-300">{conversations.length ? "No matching conversations" : "No clients yet"}</p><p className="mt-2 text-xs leading-5 text-neutral-600">{conversations.length ? "Try another name or message." : "Client relationships will appear here automatically."}</p></div>}</div>
             </aside>
@@ -886,7 +855,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                             <span className="min-w-0"><span className="flex min-w-0 items-center gap-2"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{selected.title}</span>{selected.isTest ? <SquarePill tone="yellow" className="!min-h-5 !px-2 !py-0.5 !text-[10px] !leading-3">Test</SquarePill> : null}</span><span className="block truncate text-[11px] text-neutral-600">{selected.subtitle ?? "WhatsApp client"}</span></span>
                         </Link>
                         <ClientChatParticipants key={selected.id} workspaceSlug={bootstrap.workspaceSlug} conversation={selected} userId={bootstrap.currentUser.id} people={bootstrap.people} onSaved={synchronize} />
-                        <CommunicationsConnectionStatus state={connection.state} error={connection.error} />
+                        <CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} />
                     </header>
                     {selected.pinnedMessageId && pinnedPreview ? <PinnedMessageBar preview={pinnedPreview} onClick={() => jumpToMessage(selected.pinnedMessageId!)} /> : null}
 
@@ -918,7 +887,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                             const saveAttachmentDisabled = stickerSaved || savingStickerMessageId === message.id || downloadingMessageId === message.id
                             const canPin = message.clientRequestId !== message.id
                             const showActions = actionMessageId === message.id
-                            const readers = readCursors.filter((cursor) => cursor.relationshipId === selected.id && cursor.userId !== message.senderUserId && cursor.lastReadAt >= message.createdAt).flatMap((cursor) => peopleById.get(cursor.userId) ?? [])
+                            const readers = readCursors.filter((cursor) => cursor.relationshipId === selected.id && cursor.userId !== message.senderUserId && readCursorCoversMessage(cursor, message)).flatMap((cursor) => peopleById.get(cursor.userId) ?? [])
                             return <Fragment key={messageAnimationKey(message)}>
                                 {showDay ? <div className="my-3 flex justify-center"><time dateTime={message.createdAt} className="rounded-full border border-neutral-800 bg-neutral-950 px-3 py-1 text-[10px] text-neutral-500">{messageDay(message.createdAt)}</time></div> : null}
                                 <div data-message-scroll-anchor={messageAnimationKey(message)} data-message-interaction={message.id} className={`relative flex items-center gap-2 transition-[filter,opacity,transform] duration-150 ${message.direction === "outbound" ? "justify-end origin-right" : "justify-start origin-left"} ${replyingTo ? replyingTo.id === message.id ? "pointer-events-none z-10 scale-[1.03]" : "pointer-events-none opacity-30 blur-[1px]" : ""} ${enteringMessageIds.has(message.id) ? message.direction === "outbound" ? "betelgeze-message-enter-right" : "betelgeze-message-enter-left" : ""}`}>

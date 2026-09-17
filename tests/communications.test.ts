@@ -17,8 +17,8 @@ test("combined unread helpers follow read message IDs and exclude sent messages"
 
     assert.equal(clientConversationUnreadCount(clientConversation, { lastReadMessageId: "c1", lastReadAt: clientConversation.messages[0].createdAt }, false), 1)
     assert.equal(nativeConversationUnreadCount(nativeConversation, { lastReadMessageId: "n1", lastReadAt: nativeConversation.messages[0].createdAt }, "current", false), 1)
-    assert.equal(clientConversationUnreadCount(clientConversation, undefined, true), 0)
-    assert.equal(nativeConversationUnreadCount(nativeConversation, undefined, "current", true), 0)
+    assert.equal(clientConversationUnreadCount(clientConversation, undefined, true), 2)
+    assert.equal(nativeConversationUnreadCount(nativeConversation, undefined, "current", true), 2)
 })
 
 test("Communications is an opaque local-first client chat workspace", async () => {
@@ -99,7 +99,7 @@ test("client and native unread chat indicators use the neutral white accent", as
 
     for (const workspace of [clients, team]) {
         assert.match(workspace, /unread \? "[^"]*text-white"/)
-        assert.match(workspace, /\{unread \? <span className="[^"]*bg-white[^"]*text-black"/)
+        assert.match(workspace, /<UnreadMessageCount count=\{unread\}/)
         assert.doesNotMatch(workspace, /unread[^\n]*emerald/)
     }
 })
@@ -164,9 +164,9 @@ test("client and team chats reconcile missed Realtime events without a reload", 
     assert.match(team, /communications\/native\/conversations/)
     assert.match(syncRoute, /loadClientCommunicationsBootstrap/)
     for (const workspace of [clients, team]) {
-        assert.match(workspace, /persistReadCursor/)
+        assert.match(workspace, /useConversationRead/)
         assert.match(workspace, /mergeChatReadCursor/)
-        assert.match(workspace, /const visiblyReading = conversation\.id === selectedId && active && workspaceTabActive && documentAttentive && atLatest/)
+        assert.match(workspace, /useSharedUnreadSummary/)
         assert.match(workspace, /ConversationUnreadCount\(conversation, ownCursor/)
         assert.match(workspace, /<CommunicationsConnectionStatus/)
     }
@@ -298,7 +298,7 @@ test("compact native inbox keeps full unread counts, deduplicates loaded history
     const cursor = { lastReadMessageId: messages[50].id, lastReadAt: messages[50].createdAt }
     assert.equal(nativeConversationUnreadCount(conversation, cursor, "current", false), 49)
     assert.equal(nativeConversationUnreadCount({ ...conversation, messages: messages.slice(-60) }, cursor, "current", false), 49)
-    assert.equal(nativeConversationUnreadCount(conversation, cursor, "current", true), 0)
+    assert.equal(nativeConversationUnreadCount(conversation, cursor, "current", true), 49)
     const incoming = { id: "new", senderUserId: "other", createdAt: "2026-02-01T00:00:00.000Z" }
     assert.equal(nativeConversationUnreadCount({ ...conversation, messages: [...conversation.messages, incoming] }, cursor, "current", false), 50)
 })

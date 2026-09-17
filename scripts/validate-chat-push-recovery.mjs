@@ -15,7 +15,7 @@ const addMessage=async(kind='native',conversation=direct,who=sender,request=null
 const claim=async(message=null,user=null) => query('select * from claim_chat_push_deliveries($1,$2,100)',[message,user])
 const prepare=async(job) => (await query('select prepare_chat_push_delivery($1,$2) as result',[job.id,job.lease_token]))[0].result
 const finish=async(job,outcome='accepted') => (await query('select finish_chat_push_delivery($1,$2,$3) as applied',[job.id,job.lease_token,outcome]))[0].applied
-const activity=async(revision,active,conversation=direct) => (await query('select record_chat_activity($1,$2,$3,$4,$5,$6,$7) applied',[recipient,tab,revision,active,w,'native',conversation]))[0].applied
+const activity=async(revision,active,conversation=direct) => (await query('select record_chat_reading_activity($1,$2,$3,$4,$5,$6,$7) applied',[recipient,tab,revision,active,w,'native',conversation]))[0].applied
 const reset=async() => db.exec('truncate chat_push_deliveries; truncate communications_active_sessions; truncate workspace_native_read_cursors; truncate communication_read_cursors;')
 try {
  await db.exec(`
@@ -31,7 +31,7 @@ try {
  create table workspace_native_messages(id uuid primary key,workspace_id uuid,conversation_id uuid,sender_user_id uuid,client_request_id uuid,created_at timestamptz default clock_timestamp());
  create table client_messages(id uuid primary key,workspace_id uuid,relationship_id uuid,direction text,created_at timestamptz default clock_timestamp());
  create table work_queue_disputes(id uuid primary key,workspace_id uuid,resolver_id uuid);
- create table workspace_native_read_cursors(workspace_id uuid,conversation_id uuid,user_id uuid,last_read_at timestamptz,primary key(workspace_id,conversation_id,user_id));
+ create table workspace_native_read_cursors(workspace_id uuid,conversation_id uuid,user_id uuid,last_read_at timestamptz,last_read_message_id uuid,primary key(workspace_id,conversation_id,user_id));
  create table communication_read_cursors(workspace_id uuid,relationship_id uuid,user_id uuid,last_read_message_id uuid,last_read_at timestamptz,primary key(workspace_id,relationship_id,user_id));
  create table relationships(id uuid primary key,workspace_id uuid,status text,seller_user_id uuid,fulfilment_manager_user_id uuid);
  create table relationship_client_chat_members(workspace_id uuid,relationship_id uuid,user_id uuid);
@@ -42,6 +42,7 @@ try {
  await migration('20260817160000_reliable_communications_sessions')
  await migration('20260917090000_chat_push_delivery_recovery')
  await migration('20260917090500_chat_subscription_integrity')
+ await migration('20260917180000_app_alerts_reading_contract')
  await query('insert into workspaces values($1)',[w])
  for(const user of [sender,recipient,outsider,removed]) {
   await query('insert into auth.users values($1)',[user]);await query('insert into workspace_memberships values($1,$2)',[w,user])
@@ -83,11 +84,11 @@ try {
  await query("update chat_push_deliveries set available_at=now()-interval '1 second'")
  jobs=await claim(message);assert.equal(jobs.length,2);assert.equal((await prepare(jobs[0])).state,'send')
  await reset();await activity(1,true);
- await query('select record_chat_activity($1,$2,1,true,$3,\'native\',$4)',[recipient,id(31),w,direct]);await activity(2,false)
+ await query('select record_chat_reading_activity($1,$2,1,true,$3,\'native\',$4)',[recipient,id(31),w,direct]);await activity(2,false)
  message=await addMessage();jobs=await claim(message);assert.equal((await prepare(jobs[0])).state,'deferred')
  await reset();await query("insert into communications_active_sessions(user_id,tab_id,workspace_id,conversation_kind,conversation_id,connection_live,last_seen_at) values($1,$2,$3,'native',$4,true,now())",[recipient,tab,w,direct])
  message=await addMessage();jobs=await claim(message);assert.equal((await prepare(jobs[0])).state,'send')
- await reset();await query("select record_chat_activity($1,$2,1,true,$3,'native',$4,now()-interval '46 seconds')",[recipient,tab,w,direct])
+ await reset();await query("select record_chat_reading_activity($1,$2,1,true,$3,'native',$4,now()-interval '46 seconds')",[recipient,tab,w,direct])
  message=await addMessage();jobs=await claim(message);assert.equal((await prepare(jobs[0])).state,'send')
  console.log('PASS delayed heartbeat cannot undo departure; other chat does not suppress; close without beacon recovers after lease')
 
@@ -113,6 +114,35 @@ try {
  jobs=(await claim(newer)).filter(j=>j.user_id===recipient);assert.equal(jobs.length,2);assert.equal((await prepare(jobs[0])).state,'send')
  await query('update communication_read_cursors set last_read_message_id=$1 where user_id=$2',[newer,recipient]);assert.equal((await prepare(jobs[1])).state,'read')
  console.log('PASS delayed client read timestamp cannot swallow a newer unseen message')
+
+ // Equal timestamps must retain the same ordering as inbox counts and reads.
+ for (const kind of ['native','client']) {
+  await reset()
+  const conversation=kind==='native'?direct:client
+  const first=await addMessage(kind,conversation),second=await addMessage(kind,conversation)
+  const table=kind==='native'?'workspace_native_messages':'client_messages'
+  await query(`update ${table} set created_at=now() where id in($1,$2)`,[first,second])
+  const at=(await query(`select created_at from ${table} where id=$1`,[first]))[0].created_at
+  await query('update chat_push_deliveries set message_created_at=$1 where message_id in($2,$3)',[at,first,second])
+  if(kind==='native')await query('insert into workspace_native_read_cursors(workspace_id,conversation_id,user_id,last_read_message_id,last_read_at) values($1,$2,$3,$4,$5)',[w,conversation,recipient,first,at])
+  else await query('insert into communication_read_cursors values($1,$2,$3,$4,$5)',[w,conversation,recipient,first,at])
+  const sameTimeJobs=(await claim(second)).filter(j=>j.user_id===recipient)
+  assert.equal(sameTimeJobs.length,2)
+  assert.deepEqual(await prepare(sameTimeJobs[0]),{state:'send',unreadCount:1})
+  const cursors=kind==='native'?'workspace_native_read_cursors':'communication_read_cursors'
+  await query(`update ${cursors} set last_read_message_id=$1 where user_id=$2`,[second,recipient])
+  assert.equal((await prepare(sameTimeJobs[1])).state,'read')
+ }
+ await reset();await activity(1,true)
+ await query("select record_chat_activity($1,$2,2,true,$3,'native',$4)",[recipient,tab,w,direct])
+ message=await addMessage();jobs=await claim(message)
+ assert.equal((await prepare(jobs[0])).state,'send')
+ console.log('PASS timestamp ties use message IDs; old selection-only leases cannot suppress alerts')
+ await reset();await activity(1,true);message=await addMessage()
+ await query("update chat_push_deliveries set created_at=now()-interval '46 seconds' where message_id=$1",[message])
+ jobs=await claim(message);assert.equal((await prepare(jobs[0])).state,'send')
+ console.log('PASS an unacknowledged read cannot defer its job indefinitely through fresh heartbeats')
+
 
  await reset();const dispute=id(90);await query('insert into work_queue_disputes values($1,$2,$3)',[dispute,w,recipient]);message=await addMessage('native',team,sender,dispute);jobs=await claim(message);assert.equal(jobs.length,2);assert.ok(jobs.every(j=>j.user_id===recipient))
  await query('select record_chat_push_receipt($1,$2,\'shown\')',[jobs[0].id,id(99)]);assert.equal((await query('select display_reported_at from chat_push_deliveries where id=$1',[jobs[0].id]))[0].display_reported_at,null)

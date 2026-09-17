@@ -16,14 +16,14 @@ function isAfterRead(message: MessagePosition, cursor: ReadCursor | undefined, r
     return comparison > 0 || (comparison === 0 && Boolean(cursor.lastReadMessageId) && message.id > cursor.lastReadMessageId!)
 }
 
-export function clientConversationUnreadCount(conversation: ClientUnreadConversation, ownCursor: ReadCursor | undefined, visiblyReading: boolean) {
-    if (visiblyReading) return 0
+export function clientConversationUnreadCount(conversation: ClientUnreadConversation, ownCursor: ReadCursor | undefined, _visiblyReading?: boolean) {
+    void _visiblyReading // Older callers cannot bypass acknowledged read state.
     const readMessage = conversation.messages.find(message => message.id === ownCursor?.lastReadMessageId)
     return conversation.messages.filter(message => message.direction === "inbound" && isAfterRead(message, ownCursor, readMessage)).length
 }
 
-export function nativeConversationUnreadCount(conversation: NativeUnreadConversation, ownCursor: ReadCursor | undefined, currentUserId: string, visiblyReading: boolean) {
-    if (visiblyReading) return 0
+export function nativeConversationUnreadCount(conversation: NativeUnreadConversation, ownCursor: ReadCursor | undefined, currentUserId: string, _visiblyReading?: boolean) {
+    void _visiblyReading
     // Merge compact unread identifiers and loaded history without fetching bodies.
     const messages = [...new Map([...(conversation.unreadMessages ?? []), ...conversation.messages].map(message => [message.id, message])).values()]
     const readMessage = messages.find(message => message.id === ownCursor?.lastReadMessageId)

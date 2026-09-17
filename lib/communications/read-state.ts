@@ -6,6 +6,11 @@ export function compareReadPositions(a: ChatReadPosition, b: ChatReadPosition) {
         || (a.lastReadMessageId ?? "").localeCompare(b.lastReadMessageId ?? "")
 }
 
+export function readCursorCoversMessage(cursor: ChatReadPosition, message: { id: string; createdAt: string }) {
+    const time = recordVersionKey(cursor.lastReadAt).localeCompare(recordVersionKey(message.createdAt))
+    return time > 0 || (time === 0 && (!cursor.lastReadMessageId || cursor.lastReadMessageId >= message.id))
+}
+
 export function mergeChatReadCursor<T extends ChatReadPosition & { userId: string }>(current: T[], incoming: T, conversation: (cursor: T) => string): T[] {
     const matches = (cursor: T) => conversation(cursor) === conversation(incoming) && cursor.userId === incoming.userId
     const existing = current.find(matches)

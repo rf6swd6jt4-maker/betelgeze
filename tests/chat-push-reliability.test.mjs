@@ -118,7 +118,7 @@ test('a saved message schedules delivery even if loading its encrypted confirmat
 
 test('tracker publishes ordered departures for tab hiding, window blur, pagehide and unmount',async()=>{
  const hooks=[],pendingEffects=[],listeners=new Map(),requests=[],beacons=[]
- let hook=0,focused=true,workspaceTabActive=true
+ let hook=0,focused=true,workspaceTabActive=true,latestVisible=true
  const react={
   useState:initialize=>{const i=hook++;if(!(i in hooks))hooks[i]=typeof initialize==='function'?initialize():initialize;return [hooks[i],()=>undefined]},
   useRef:initial=>{const i=hook++;if(!(i in hooks))hooks[i]={current:initial};return hooks[i]},
@@ -129,15 +129,17 @@ test('tracker publishes ordered departures for tab hiding, window blur, pagehide
  const document={visibilityState:'visible',addEventListener:(n,fn)=>listeners.set(n,fn),removeEventListener:n=>listeners.delete(n)}
  const {CommunicationsActivityTracker}=load('components/communications/CommunicationsActivityTracker.tsx',{
   react,'@/components/workspace/useWorkspaceTabActive':{useWorkspaceTabActive:()=>workspaceTabActive},'@/lib/push/activity':{chatActivityIsActive,createChatActivitySequence},
-  '@/lib/workspace-tab-activity':{workspaceDocumentIsActive:()=>workspaceTabActive},'@/lib/workspace-tabs':{WORKSPACE_TAB_VISIBILITY_EVENT:'tab-visibility'},
+  '@/lib/workspace-tab-activity':{workspaceDocumentIsActive:()=>workspaceTabActive},'@/lib/workspace-tabs':{WORKSPACE_TAB_VISIBILITY_EVENT:'tab-visibility'},'@/lib/communications/reading-visibility':{CHAT_READING_VISIBILITY_EVENT:'reading-visibility'},
  },{window,document,Blob,crypto:{randomUUID:()=> 'tab'},navigator:{sendBeacon:(_url,blob)=>{beacons.push(blob);return true}},fetch:async(_url,init)=>{requests.push(JSON.parse(init.body));return new Response()}})
- const render=()=>{hook=0;CommunicationsActivityTracker({workspaceId:'workspace',conversationId:'chat',conversationKind:'native',connectionState:'live'});pendingEffects.splice(0).forEach(fn=>fn())}
- render();assert.equal(requests.length,1);assert.equal(requests[0].active,true)
+ const render=()=>{hook=0;CommunicationsActivityTracker({workspaceId:'workspace',conversationId:'chat',conversationKind:'native',connectionState:'live',isReading:()=>workspaceTabActive&&latestVisible});pendingEffects.splice(0).forEach(fn=>fn())}
+ render();assert.equal(requests.length,1);assert.equal(requests[0].active,true);assert.equal(requests[0].readingVersion,3)
+ latestVisible=false;render();assert.equal(requests.at(-1).active,false)
+ latestVisible=true;render();assert.equal(requests.at(-1).active,true)
  // Focusing an iframe may blur its host window, while its document stays focused.
  listeners.get('blur')();assert.equal(requests.at(-1).active,true);assert.equal(beacons.length,0)
  focused=false;listeners.get('blur')();assert.equal(JSON.parse(await beacons.at(-1).text()).active,false)
  focused=true;listeners.get('focus')();assert.equal(requests.at(-1).active,true)
- workspaceTabActive=false;listeners.get('tab-visibility')();assert.equal(JSON.parse(await beacons.at(-1).text()).active,false);render();assert.equal(requests.at(-1).active,false)
+ workspaceTabActive=false;listeners.get('tab-visibility')();assert.equal(JSON.parse(await beacons.at(-1).text()).active,false);render();assert.equal(JSON.parse(await beacons.at(-1).text()).active,false)
  workspaceTabActive=true;render();assert.equal(requests.at(-1).active,true)
  listeners.get('pagehide')();assert.equal(JSON.parse(await beacons.at(-1).text()).active,false)
  hooks.forEach(h=>h?.cleanup?.());assert.equal(listeners.size,0)

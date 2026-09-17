@@ -1,6 +1,8 @@
 "use client"
 
-import { chatDocumentHasAttention, useChatDocumentAttention } from "@/components/communications/useChatDocumentAttention"
+import { compareChatMessages } from "@/lib/record-version.js"
+
+import { useChatDocumentAttention } from "@/components/communications/useChatDocumentAttention"
 
 import { readChatDraft, writeChatDraft } from "@/lib/communications/offline-drafts"
 import { useOfflineChat } from "@/components/communications/useOfflineChat"
@@ -43,12 +45,13 @@ import { createCoordinatedChat, chatMutationRequest, ChatMutationError, type Cha
 import { requestChatCheckbox } from "@/lib/communications/checklist-updates"
 import { useMessagePaneInteractions } from "@/components/communications/useMessagePaneInteractions"
 import { useReliableCommunicationsRealtime, type CommunicationsConnectionState } from "@/components/communications/useReliableCommunicationsRealtime"
-import { workspaceDocumentIsActive } from "@/lib/workspace-tab-activity"
-import { mergeChatReadCursor, publishChatRead, subscribeChatReads } from "@/lib/communications/read-state"
+import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
+import { useConversationRead } from "./useConversationRead"
+import { CommunicationsActivityTracker } from "./CommunicationsActivityTracker"
+import { mergeChatReadCursor, readCursorCoversMessage, subscribeChatReads } from "@/lib/communications/read-state"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
 import { mentionPreview } from "@/lib/chat-formatting"
-import { dismissReadChatNotification } from "@/lib/push/browser-notifications"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { openWorkspaceMemberProfile } from "@/lib/workspace-member-profile"
 import type { CommunicationAttachment, CommunicationSticker } from "@/lib/communications/types"
@@ -134,7 +137,7 @@ function mergeMessages(current: NativeMessage[], incoming: NativeMessage[]) {
         if (existing?.editedAt && existing.editedAt > (message.editedAt ?? "")) continue
         keyed.set(key, { ...existing, ...message })
     }
-    return [...keyed.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    return [...keyed.values()].sort(compareChatMessages)
 }
 
 function messageAnimationKey(message: NativeMessage) {
@@ -164,6 +167,8 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     conversationListWidth: number
     onConversationListWidthChange: (width: number) => void
 }) {
+    const unreadSummary = useSharedUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
+    const unreadByConversation = useMemo(() => unreadSummary ? new Map(unreadSummary.rows.filter(row => row.kind === "native").map(row => [row.conversationId, row.count])) : null, [unreadSummary])
     const supabase = useMemo(() => createSupabaseBrowserClient(), [])
     const [updates] = useState(() => createCoordinatedChat<NativeMessage, NativeConversation, NativeReaction>(bootstrap, (reaction) => `${reaction.messageId}:${reaction.reactorUserId}`))
     const { conversations, reactions } = useSyncExternalStore(updates.subscribe, updates.getSnapshot, updates.getSnapshot)
@@ -203,7 +208,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [editingTeam, setEditingTeam] = useState<WorkspaceTeam | null | undefined>(undefined)
     const [showJumpToLatest, setShowJumpToLatest] = useState(false)
     const [atLatest, setAtLatest] = useState(true)
-    const { visible: documentVisible, attentive: documentAttentive } = useChatDocumentAttention()
+    const { visible: documentVisible } = useChatDocumentAttention()
     const [enteringMessageIds, setEnteringMessageIds] = useState<Set<string>>(() => new Set())
     const [typingByConversation, setTypingByConversation] = useState<NativeTypingByConversation>({})
     const messagePaneRef = useRef<HTMLDivElement | null>(null)
@@ -218,9 +223,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const conversationsRef = useRef(conversations)
     const sentTypingConversationRef = useRef<string | null>(null)
     const lastTypingBroadcastAtRef = useRef(0)
-    const pendingReadRef = useRef<NativeReadCursor | null>(null)
     const editingDraftSnapshotRef = useRef("")
-    const readRequestRef = useRef<string | null>(null)
     const workspaceTabActive = useWorkspaceTabActive()
     const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null
     const history = useConversationHistory(selectedId, selectedId && loadedHistoryIds.has(selectedId) ? selected?.messages ?? [] : [], {
@@ -300,28 +303,13 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     })
     const enqueueingRef = useRef(false)
 
-    const persistReadCursor = useCallback(async (cursor: NativeReadCursor) => {
-        pendingReadRef.current = cursor
-        setReadCursors((current) => mergeCursor(current, cursor))
-        if (readRequestRef.current === cursor.lastReadMessageId) return
-        readRequestRef.current = cursor.lastReadMessageId
-        try {
-            const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/read`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: cursor.conversationId, messageId: cursor.lastReadMessageId }) })
-            const result = await response.json().catch(() => null) as { cursor?: NativeReadCursor; notificationReadThrough?: string; error?: string } | null
-            if (!response.ok || !result?.cursor) throw new Error(result?.error ?? "Could not save the read position.")
-            setReadCursors((current) => mergeCursor(current, result.cursor!))
-            publishChatRead({ ...result.cursor!, kind: "native", conversationId: cursor.conversationId, workspaceId: bootstrap.workspaceId })
-            if (result.notificationReadThrough) void dismissReadChatNotification(cursor.conversationId, result.notificationReadThrough)
-            if (pendingReadRef.current?.conversationId === cursor.conversationId && pendingReadRef.current.lastReadMessageId === cursor.lastReadMessageId) pendingReadRef.current = null
-        } finally {
-            if (readRequestRef.current === cursor.lastReadMessageId) readRequestRef.current = null
-        }
-    }, [bootstrap.workspaceId, bootstrap.workspaceSlug])
-
-    const flushPendingRead = useCallback(async () => {
-        const pending = pendingReadRef.current
-        if (pending) await persistReadCursor(pending)
-    }, [persistReadCursor])
+    const reading = useConversationRead({
+        workspaceId: bootstrap.workspaceId, workspaceSlug: bootstrap.workspaceSlug, userId: bootstrap.currentUser.id,
+        kind: "native", conversationId: selectedId, latest: selected?.messages.findLast(message => message.id !== message.clientRequestId),
+        cursor: readCursors.find(cursor => cursor.conversationId === selectedId && cursor.userId === bootstrap.currentUser.id),
+        active: active && schemaReady, atLatest, pane: messagePaneRef,
+    })
+    const flushPendingRead = reading.flush
 
     const refresh = useCallback(async (selectId?: string | null) => {
         const read = updates.beginRead()
@@ -444,7 +432,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         void sendRealtimeBroadcast(NATIVE_TYPING_EVENT, { conversationId, userId: bootstrap.currentUser.id, typing: false })
     }, [bootstrap.currentUser.id, sendRealtimeBroadcast])
 
-    function handleDraftChange(value: string) {
+    const handleDraftChange = useCallback((value: string) => {
         setDraft(value)
         if (editingMessage) {
             stopNativeTyping(sentTypingConversationRef.current)
@@ -459,7 +447,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         sentTypingConversationRef.current = selected.id
         lastTypingBroadcastAtRef.current = now
         void sendRealtimeBroadcast(NATIVE_TYPING_EVENT, { conversationId: selected.id, userId: bootstrap.currentUser.id, typing: true })
-    }
+    }, [active, bootstrap.currentUser.id, connection.state, documentVisible, editingMessage, selected, sendRealtimeBroadcast, stopNativeTyping, workspaceTabActive])
 
     useEffect(() => {
         const sentConversationId = sentTypingConversationRef.current
@@ -478,29 +466,14 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 
     useEffect(() => onConnectionStateChange?.(connection.state), [connection.state, onConnectionStateChange])
 
-    const unreadCount = useMemo(() => conversations.reduce((total, conversation) => {
+    const unreadCount = useMemo(() => unreadByConversation ? [...unreadByConversation.values()].reduce((total, count) => total + count, 0) : conversations.reduce((total, conversation) => {
         const ownCursor = readCursors.find((cursor) => cursor.conversationId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-        const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentAttentive && atLatest
-        return total + nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id, visiblyReading)
-    }, 0), [active, atLatest, bootstrap.currentUser.id, conversations, documentAttentive, readCursors, selectedId, workspaceTabActive])
+        return total + nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id)
+    }, 0), [bootstrap.currentUser.id, conversations, readCursors, unreadByConversation])
 
     useEffect(() => onUnreadCountChange?.(unreadCount), [onUnreadCountChange, unreadCount])
 
-    useEffect(() => {
-        if (!active || !workspaceTabActive || !documentAttentive || !atLatest || !selectedId || !selected?.messages.length || !schemaReady) return
-        const latest = selected.messages.at(-1)!
-        const current = readCursors.find((cursor) => cursor.conversationId === selectedId && cursor.userId === bootstrap.currentUser.id)
-        if (current?.lastReadMessageId === latest.id) {
-            void dismissReadChatNotification(selectedId, latest.createdAt)
-            return
-        }
-        const cursor: NativeReadCursor = { conversationId: selectedId, userId: bootstrap.currentUser.id, lastReadMessageId: latest.id, lastReadAt: latest.createdAt }
-        const timer = window.setTimeout(() => {
-            // A tab can change after this effect schedules its read.
-            if (workspaceDocumentIsActive() && chatDocumentHasAttention() && selectedRef.current === selectedId) void persistReadCursor(cursor).catch(() => undefined)
-        }, 0)
-        return () => window.clearTimeout(timer)
-    }, [active, atLatest, bootstrap.currentUser.id, documentAttentive, persistReadCursor, readCursors, schemaReady, selected?.messages, selectedId, workspaceTabActive])
+
 
     async function uploadSticker(file: File) {
         if (stickerUploadState === "uploading") return
@@ -762,11 +735,12 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         : `${selectedTypingPeople[0]?.name ?? selected?.title ?? "Someone"} is typing`
 
     return <section data-workspace-record-title={active ? selected?.title : undefined} aria-label="Team communications" className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-black">
+        {active ? <CommunicationsActivityTracker workspaceId={bootstrap.workspaceId} conversationKind="native" conversationId={selectedId} connectionState={connection.state} isReading={reading.isReading} /> : null}
         {!schemaReady ? <div className="shrink-0 border-b border-amber-900 bg-amber-950 px-4 py-2 text-center text-xs text-amber-100">Apply the Teams database migration to enable native messaging.</div> : null}
         <ResizableConversationColumns listWidth={conversationListWidth} onListWidthChange={onConversationListWidthChange}>
             <aside className={`${selected ? "hidden lg:flex" : "flex"} min-h-0 flex-col border-r border-neutral-800 bg-neutral-950`}>
                 <div className="shrink-0 border-b border-neutral-800 p-3">
-                    <div className="flex items-center gap-1"><div role="tablist" className="flex items-center gap-1"><button type="button" role="tab" aria-selected="false" onClick={onOpenClients} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-medium text-neutral-400 hover:bg-neutral-900 hover:text-white">Clients<UnreadMessageCount count={clientUnreadCount ?? 0} label="unread Client messages" /></button><button type="button" role="tab" aria-selected="true" className="inline-flex h-8 items-center rounded-lg bg-neutral-800 px-3 text-xs font-semibold text-white">Team</button></div><span className="ml-auto"><CommunicationsConnectionStatus state={connection.state} error={connection.error} /></span></div>
+                    <div className="flex items-center gap-1"><div role="tablist" className="flex items-center gap-1"><button type="button" role="tab" aria-selected="false" onClick={onOpenClients} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-medium text-neutral-400 hover:bg-neutral-900 hover:text-white">Clients<UnreadMessageCount count={clientUnreadCount ?? 0} label="unread Client messages" /></button><button type="button" role="tab" aria-selected="true" className="inline-flex h-8 items-center rounded-lg bg-neutral-800 px-3 text-xs font-semibold text-white">Team</button></div><span className="ml-auto"><CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} /></span></div>
                     <label className="relative mt-3 block"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"><SearchIcon /></span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search team conversations" className="h-10 w-full rounded-lg border border-neutral-800 bg-black pl-9 pr-3 text-sm outline-none placeholder:text-neutral-600" /></label>
                     {bootstrap.canManageTeams && teams.some((team) => team.archivedAt) ? <button type="button" onClick={() => { setShowArchived((value) => !value); setSelectedId(null) }} className={`mt-2 text-[11px] ${showArchived ? "text-white" : "text-neutral-500"}`}>{showArchived ? "← Active conversations" : "View archived groups"}</button> : null}
                 </div>
@@ -774,10 +748,9 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     const latest = conversation.messages.at(-1)
                     const showTypingPreview = conversation.id !== selectedId && Object.keys(typingByConversation[conversation.id] ?? {}).length > 0
                     const ownCursor = readCursors.find((cursor) => cursor.conversationId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-                    const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentAttentive && atLatest
-                    const unread = nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id, visiblyReading)
-                    const latestRead = Boolean(latest && readCursors.some((cursor) => cursor.conversationId === conversation.id && cursor.userId !== latest.senderUserId && cursor.lastReadAt >= latest.createdAt))
-                    return <button key={conversation.id} type="button" onClick={() => selectConversation(conversation.id)} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}><TeamAvatar conversation={conversation} currentUserId={bootstrap.currentUser.id} /><span className="min-w-0"><span className="flex items-start justify-between gap-3"><span className="truncate text-sm font-semibold">{conversation.title}</span>{latest ? <time className={unread ? "text-[11px] text-white" : "text-[11px] text-neutral-600"}>{formatRelativeTime(latest.createdAt)}</time> : null}</span><span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">{!showTypingPreview && latest?.senderUserId === bootstrap.currentUser.id ? <NativeDeliveryTicks message={latest} read={latestRead} /> : null}<span className={`truncate ${showTypingPreview ? "font-medium text-neutral-300" : ""}`}>{showTypingPreview ? "typing…" : latest ? `${latest.senderUserId === bootstrap.currentUser.id ? "You: " : ""}${messagePreview(latest)}` : conversation.subtitle}</span>{unread ? <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-black">{unread}</span> : null}</span></span></button>
+                    const unread = unreadByConversation ? unreadByConversation.get(conversation.id) ?? 0 : nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id)
+                    const latestRead = Boolean(latest && readCursors.some((cursor) => cursor.conversationId === conversation.id && cursor.userId !== latest.senderUserId && readCursorCoversMessage(cursor, latest)))
+                    return <button key={conversation.id} type="button" onClick={() => selectConversation(conversation.id)} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}><TeamAvatar conversation={conversation} currentUserId={bootstrap.currentUser.id} /><span className="min-w-0"><span className="flex items-start justify-between gap-3"><span className="truncate text-sm font-semibold">{conversation.title}</span>{latest ? <time className={unread ? "text-[11px] text-white" : "text-[11px] text-neutral-600"}>{formatRelativeTime(latest.createdAt)}</time> : null}</span><span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">{!showTypingPreview && latest?.senderUserId === bootstrap.currentUser.id ? <NativeDeliveryTicks message={latest} read={latestRead} /> : null}<span className={`truncate ${showTypingPreview ? "font-medium text-neutral-300" : ""}`}>{showTypingPreview ? "typing…" : latest ? `${latest.senderUserId === bootstrap.currentUser.id ? "You: " : ""}${messagePreview(latest)}` : conversation.subtitle}</span>{unread ? <span className="ml-auto"><UnreadMessageCount count={unread} label="unread messages" /></span> : null}</span></span></button>
                 }) : <div className="p-6 text-center"><p className="text-sm text-neutral-300">{showArchived ? "No archived teams" : "No team conversations yet"}</p><p className="mt-2 text-xs text-neutral-600">{showArchived ? "Archived team history will appear here." : "Open a profile to start a DM or create a team."}</p></div>}</div>
             </aside>
             <ConversationMedia active={active && workspaceTabActive && documentVisible}><NativeChatViewport className={`${selected ? "flex" : "hidden lg:flex"} min-h-0 min-w-0 flex-col overflow-hidden bg-black`}>
@@ -789,7 +762,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                             <span className="min-w-0"><span className="block truncate text-sm font-semibold">{selected.title}</span><span className="block truncate text-[11px] text-neutral-600">{selected.archived ? "Archived · read-only" : selected.subtitle}</span></span>
                         </button>
                         {selected.kind === "direct" ? <button type="button" onClick={() => void clearPrivateChat()} className="h-8 px-2 text-[11px] font-medium text-neutral-500 hover:text-white">Clear</button> : null}
-                        <CommunicationsConnectionStatus state={connection.state} error={connection.error} />
+                        <CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} />
                     </header>
                     {selected.pinnedMessageId && pinnedPreview ? <PinnedMessageBar preview={pinnedPreview} onClick={() => jumpToMessage(selected.pinnedMessageId!)} /> : null}
                     <ChatMotionViewport key={selectedId}>
@@ -805,7 +778,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         const reply = message.replyToMessageId ? selected.messages.find((candidate) => candidate.id === message.replyToMessageId) ?? null : null
                         const messageReactions = reactions.filter((reaction) => reaction.messageId === message.id)
                         const ownReaction = messageReactions.find((reaction) => reaction.reactorUserId === bootstrap.currentUser.id)
-                        const readers = readCursors.filter((cursor) => cursor.conversationId === selected.id && cursor.userId !== message.senderUserId && cursor.lastReadAt >= message.createdAt).flatMap((cursor) => peopleById.get(cursor.userId) ?? [])
+                        const readers = readCursors.filter((cursor) => cursor.conversationId === selected.id && cursor.userId !== message.senderUserId && readCursorCoversMessage(cursor, message)).flatMap((cursor) => peopleById.get(cursor.userId) ?? [])
                         const showDay = index === 0 || !sameDay(selected.messages[index - 1].createdAt, message.createdAt)
                         const swipeOffset = swipePosition?.id === message.id ? swipePosition.offset : 0
                         const canModerate = bootstrap.currentUserRole === "owner"

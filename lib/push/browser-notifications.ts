@@ -1,4 +1,6 @@
-export async function dismissReadChatNotification(conversationId: string, readThroughCreatedAt: string) {
+import { recordVersionKey } from "../record-version.js"
+
+export async function dismissReadChatNotification(conversationId: string, readThroughCreatedAt: string, readThroughMessageId: string | null = null) {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return
 
     try {
@@ -11,7 +13,9 @@ export async function dismissReadChatNotification(conversationId: string, readTh
                 : {}
             if (data.conversationId !== conversationId && notification.tag !== `chat:${conversationId}`) continue
             const messageCreatedAt = typeof data.messageCreatedAt === "string" ? data.messageCreatedAt : null
-            if (!messageCreatedAt || messageCreatedAt <= readThroughCreatedAt) notification.close()
+            if (!messageCreatedAt) continue
+            const order = recordVersionKey(messageCreatedAt).localeCompare(recordVersionKey(readThroughCreatedAt))
+            if (order < 0 || (order === 0 && readThroughMessageId && typeof data.messageId === "string" && data.messageId <= readThroughMessageId)) notification.close()
         }
     } catch {
         // Notification cleanup is best-effort and must never interrupt read persistence.

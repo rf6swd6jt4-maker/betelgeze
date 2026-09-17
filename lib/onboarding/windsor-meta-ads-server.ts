@@ -68,9 +68,13 @@ export async function prepareWindsorMetaAdsAuthorization(token: string, blockId:
 export async function checkWindsorMetaAdsOnboarding(token: string, blockId: string, selectedAccountId?: string | null) {
     const { resolved, integration, apiKey } = await windsorContext(token, blockId, true)
     const { data: pending, error: pendingError } = await supabaseAdmin.from("relationship_windsor_meta_ads_connections")
-        .select("authorization_encrypted, integration_fingerprint, status")
+        .select("authorization_encrypted, authorization_hash, integration_fingerprint, status, account_id, account_name, datasource, connected_at")
         .eq("workspace_id", resolved.session.workspace_id).eq("relationship_id", resolved.session.relationship_id).maybeSingle()
-    if (pendingError || !pending?.authorization_encrypted) throw new Error("Open Windsor.ai from this step and finish connecting Facebook Ads before checking.")
+    if (pendingError) throw new Error("Your saved Meta Ads connection could not be loaded. Please try again.")
+    if (pending?.status === "connected" && resolved.satisfiedBlockIds.has(blockId)) {
+        return { connection: savedConnection(pending), accounts: [], satisfied: true }
+    }
+    if (!pending?.authorization_encrypted) throw new Error("Start the Meta Ads connection and finish selecting your account in Windsor.")
     if (pending.integration_fingerprint !== createHash("sha256").update(integration.config_encrypted).digest("hex")) throw new Error("Your agency changed its Windsor.ai connection. Start the Meta Ads connection again.")
     let accessToken = ""
     try { accessToken = decryptWorkspaceIntegration(pending.authorization_encrypted).access_token?.trim() || "" } catch { /* handled below */ }
@@ -81,15 +85,21 @@ export async function checkWindsorMetaAdsOnboarding(token: string, blockId: stri
     if (selectedAccountId) selected = accounts.find((account) => account.id === selectedAccountId)
     else if (accounts.length === 1) selected = accounts[0]
     if (!selected) return { connection: savedConnection({ status: "pending" }), accounts, satisfied: false }
-    const { data, error } = await supabaseAdmin.rpc("finish_windsor_meta_ads_onboarding", {
+    const { data, error } = await supabaseAdmin.rpc("complete_windsor_meta_ads_onboarding", {
         p_token: token,
         p_block_id: blockId,
+        p_authorization_hash: pending.authorization_hash,
         p_account_id: selected.id,
         p_account_name: selected.name,
         p_datasource: selected.datasource,
         p_integration_fingerprint: pending.integration_fingerprint,
     })
-    if (error) throw new Error(error.code === "P0001" ? error.message : "Windsor.ai connected the account, but Betelgeze could not save it. Check again.")
+    if (error) {
+        // Another tab may have committed while this provider request was in flight.
+        const saved = await loadWindsorMetaAdsOnboarding(token, blockId)
+        if (saved.satisfied) return { ...saved, accounts: [] }
+        throw new Error(error.code === "P0001" ? error.message : "Windsor connected the account, but we could not save it. Please try again.")
+    }
     const response = data && typeof data === "object" ? data as Record<string, unknown> : null
     return { connection: savedConnection({ status: "connected", account_id: response?.accountId, account_name: response?.accountName, datasource: response?.datasource, connected_at: response?.connectedAt }), accounts: [], satisfied: true }
 }

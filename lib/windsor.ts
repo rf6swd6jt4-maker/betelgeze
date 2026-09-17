@@ -37,10 +37,12 @@ function textValue(value: unknown, keys: string[]) {
 
 function rows(payload: unknown): unknown[] {
     if (Array.isArray(payload)) return payload
-    if (!payload || typeof payload !== "object") return []
+    if (!payload || typeof payload !== "object") throw new Error("Windsor returned an unreadable account response. Please try again.")
     const record = payload as Record<string, unknown>
     for (const key of ["data", "results", "accounts", "linked_accounts"]) if (Array.isArray(record[key])) return record[key] as unknown[]
-    return []
+    // Log field names/types only; never provider values, tokens or account data.
+    console.error("Windsor linked-account response format", Object.fromEntries(Object.entries(record).slice(0, 12).map(([key, value]) => [key, Array.isArray(value) ? "array" : typeof value])))
+    throw new Error("Windsor returned an unexpected account response. Please try again.")
 }
 
 export async function createWindsorMetaAdsAuthorization(apiKey: string) {
@@ -65,8 +67,12 @@ export async function listWindsorMetaAdsAccounts(apiKey: string, accessToken: st
     url.searchParams.set("access_token", accessToken)
     const payload = await windsorJson(url)
     const accounts = rows(payload).flatMap((item): WindsorMetaAdsAccount[] => {
-        const id = textValue(item, ["account_id", "id"])
-        if (!id) return []
+        if (!item || typeof item !== "object") throw new Error("Windsor returned an invalid account. Please try again.")
+        const record = item as Record<string, unknown>
+        if (typeof record.access_token === "string" && record.access_token !== accessToken) return []
+        const rawId = record.account_id ?? record.id
+        const id = typeof rawId === "string" ? rawId.trim() : typeof rawId === "number" && Number.isSafeInteger(rawId) ? String(rawId) : ""
+        if (!id || id.length > 200) throw new Error("Windsor returned an invalid account identifier. Please try again.")
         const datasource = textValue(item, ["datasource", "ds_id", "source"]) || "facebook_ads"
         if (datasource !== "facebook_ads" && datasource !== "facebook") return []
         return [{ id, name: textValue(item, ["account_name", "name"]) || `Meta Ads account ${id.replace(/^act_/, "")}`, datasource }]

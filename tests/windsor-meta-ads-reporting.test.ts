@@ -23,9 +23,9 @@ test("client authorization is Facebook-only, token-bound, encrypted, and explici
     assert.match(server, /encryptIntegrationCredential/u)
     assert.match(server, /p_authorization_hash/u)
     assert.match(server, /listWindsorMetaAdsAccounts/u)
-    assert.match(component, /Check connection/u)
+    assert.doesNotMatch(component, /Check connection|Open secure connection|setExpanded/u)
     assert.match(component, /press <strong>Finish<\/strong>/u)
-    assert.doesNotMatch(component, /setInterval|poll/iu)
+    assert.match(component, /popup.current.closed/u)
 })
 
 test("completion is server verified and binds one account to one relationship", () => {

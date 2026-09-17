@@ -319,6 +319,8 @@ A list tab must not insert a page-specific summary, capacity note, explanatory p
 
 ## List
 
+Account Security device controls are a settings form: use wide, rounded device cards, one column on phones and two on desktop, with a fixed 44px icon container, platform/browser, last-seen time and a notification setting. Use `NotificationSwitch` for both current and remote devices. Its 44px hit target contains a 48×28px track and centered circular thumb; disabled controls remain visible with reduced opacity. Only the current device is editable. The account profile uses its explicitly requested centered avatar/name/username header and a box-less three-dot `AnchoredPopup` trigger. Workspace memberships retain `List`.
+
 Client-facing collections use `List surface="light"`. This retains the same two-row structure, borders, and interactions with the onboarding theme's surface and text colours. The surface propagates to its shared row/title primitives. Client-facing detail panels likewise use `DetailFields surface="light"` and `Status surface="light"`; workspace defaults remain dark. Use `DetailFields columns={1}` in narrow side panels so fields do not split into two columns at desktop viewport widths.
 
 The client portal dashboard fits within the dynamic viewport. Appointment history, file history, and chat scroll inside their panels; the document does not scroll. Keep upload controls and upload feedback outside the file-history scroller. Results shows appointments alongside provider connections on desktop and stacked on smaller screens. Files remains a separate top-bar destination on every screen size. Keep both panels mounted when switching so uploads continue, and keep Chat available in the header without duplicate appointment/file anchor links.

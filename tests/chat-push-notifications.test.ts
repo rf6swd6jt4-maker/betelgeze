@@ -35,11 +35,12 @@ test("chat push subscriptions and Communications sessions use server-only durabl
     assert.match(migration, /references auth\.users\(id\) on delete cascade/)
 })
 
-test("profile toggle registers from the user gesture and recovers after returning from device settings", async () => {
-    const [settings, profile, subscriptionRoute] = await Promise.all([
+test("security device toggle registers from the user gesture and recovers after returning from device settings", async () => {
+    const [settings, profile, subscriptionRoute, toggle] = await Promise.all([
         readFile("components/account/PushNotificationSettings.tsx", "utf8"),
-        readFile("components/account/ProfileSettings.tsx", "utf8"),
+        readFile("components/account/AccountDevices.tsx", "utf8"),
         readFile("app/api/push/subscriptions/route.ts", "utf8"),
+        readFile("components/ui/NotificationSwitch.tsx", "utf8"),
     ])
     assert.match(profile, /<PushNotificationSettings/)
     assert.match(settings, /userVisibleOnly: true/)
@@ -47,13 +48,12 @@ test("profile toggle registers from the user gesture and recovers after returnin
     assert.match(settings, /window\.addEventListener\("focus", refresh\)/)
     assert.match(settings, /document\.addEventListener\("visibilitychange", refresh\)/)
     assert.doesNotMatch(settings, /if \(permission !== "granted"\)/)
-    assert.ok(settings.indexOf('Notification.permission === "denied"') < settings.indexOf('Notification.permission === "granted" && result.subscribed && browserSubscription'))
-    assert.match(settings, /h-11 min-h-0 w-14/)
-    assert.match(settings, /sm:h-7 sm:w-12/)
-    assert.match(settings, /relative block h-7 w-12 rounded-full/)
+    assert.ok(settings.indexOf('Notification.permission === "denied"') < settings.indexOf('Notification.permission === "granted" && result.subscribed && matches'))
+    assert.match(toggle, /h-11 w-14/)
+    assert.match(toggle, /relative block h-7 w-12/)
     assert.match(settings, /Add Betelgeze to your Home Screen/)
     assert.match(settings, /Notification previews show the chat name and message/)
-    assert.match(settings, /role="switch"/)
+    assert.match(toggle, /role="switch"/)
     assert.match(subscriptionRoute, /getCurrentUser\(\)/)
     assert.match(subscriptionRoute, /WEB_PUSH|webPushPublicKey/)
     assert.match(subscriptionRoute, /httpOnly: true/)

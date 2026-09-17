@@ -14,6 +14,18 @@ The 17 September 2026 conversation authorizes this assessment and rebuild. The u
 
 `app_speed.md` and existing authorization/encryption requirements remain mandatory.
 
+### Authorized addition: profile and device settings
+
+The user subsequently explicitly requested a centered profile, a three-dot Edit profile/Security/Log out menu, moving password and account deletion to Security, and independent device notification switches with other devices disabled. This scope authorizes the following changes without weakening the chat-reading contract:
+
+- Security lists real `auth.sessions`, scoped by the signed JWT user and live session, requiring AAL2 and no pending MFA re-enrollment. `account_session_devices` links observed browser installations to sessions and is removed by the session's deletion cascade. It is RLS-protected; only the narrow authenticated RPC exposes the user's safe display fields, never refresh tokens, IPs, endpoints or subscription keys.
+- A foreground mount/resume observation, throttled to five minutes, links the current HTTP-only device cookie and updates last seen. No polling or hidden iframe observations. Security loads devices independently of the password/authenticator UI; profile rendering no longer requests the authenticator list. Auth's latest refresh/creation time is the fallback for older installations. Last seen is an observation, not a continuous online indicator.
+- Cards represent browsers or installed apps, not unique physical hardware. Known installations deduplicate repeated sessions. The current card validates browser permission and subscription fingerprint before reporting enabled. Remote cards show the saved server subscription setting; they cannot attest to the remote OS permission or physical delivery. Previously signed-in installations show “Not checked yet” until they open the updated app; never infer a subscription match from a shared user-agent. The list is scoped to this account, filters explicitly expired/deleted sessions and returns at most 100 devices. Auth-provider inactivity/timebox policy can additionally invalidate a retained session at its next refresh.
+- Only the current device can request push enrollment/deletion. Existing push routes derive the target from the HTTP-only cookie and authenticated user, never a supplied remote device ID. Remote controls are disabled. Browser reconciliation cannot restore a server subscription deliberately deleted by the toggle. Failed saves keep the previously confirmed switch value; stale inspections cannot override a newer save.
+- Apply `20260917190000_account_devices.sql` before releasing this addition. If unavailable, Security shows a retryable device error; it never substitutes subscriptions for a session inventory. Existing chat push continues independently. Rollback the UI first; the additive device table/function may remain without changing read, suppression, recipient or delivery policy. No live migration or deployment has yet occurred.
+
+The Auth session columns and refresh-time interpretation were checked against [Supabase's session model](https://github.com/supabase/auth/blob/master/internal/models/sessions.go). See the validation report for fixture and device evidence boundaries.
+
 ## What the assessment found
 
 The primary checkout was at `00f37493` with extensive unrelated edits. It was not the current release source. GitHub's main branch was verified at `7627cbe74d9c12f90869a34df6d35a2040a9e42a`. The rebuild is isolated on `codex/app-alerts`; no unrelated edits were copied or overwritten.

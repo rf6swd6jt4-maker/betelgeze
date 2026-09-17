@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { NotificationSwitch } from "@/components/ui/NotificationSwitch"
 import { subscriptionFingerprint } from "@/lib/push/subscription-fingerprint"
 
 type PushSettingsResponse = {
@@ -28,7 +29,11 @@ function applicationServerKey(value: string) {
     return Uint8Array.from(raw, (character) => character.charCodeAt(0))
 }
 
-export function PushNotificationSettings() {
+export function PushNotificationSettings({ compact = false }: { compact?: boolean }) {
+    const mutation = useRef(false)
+    const inspection = useRef(0)
+    const [retry, setRetry] = useState(0)
+    const [confirmedEnabled, setConfirmedEnabled] = useState(false)
     const [state, setState] = useState<State>("loading")
     const [publicKey, setPublicKey] = useState<string | null>(null)
     const [detail, setDetail] = useState("Checking this device…")
@@ -36,6 +41,8 @@ export function PushNotificationSettings() {
     useEffect(() => {
         let cancelled = false
         async function inspect() {
+            if (mutation.current) return
+            const version = ++inspection.current
             if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
                 if (!cancelled) { setState("unsupported"); setDetail("This browser does not support Web Push notifications.") }
                 return
@@ -44,29 +51,38 @@ export function PushNotificationSettings() {
                 if (!cancelled) { setState("install"); setDetail("Add Betelgeze to your Home Screen, open the installed app, then enable notifications here.") }
                 return
             }
-            const response = await fetch("/api/push/subscriptions", { cache: "no-store" })
+            const response = await fetch("/api/push/subscriptions", { signal: AbortSignal.timeout(10_000), cache: "no-store" })
             const result = await response.json().catch(() => null) as PushSettingsResponse | null
-            if (cancelled) return
+            if (cancelled || version !== inspection.current || mutation.current) return
             if (!response.ok) { setState("error"); setDetail(result?.error ?? "Could not check notification settings."); return }
             if (!result?.configured || !result.publicKey) { setState("unavailable"); setDetail("Chat notifications are not configured on this Betelgeze deployment yet."); return }
             setPublicKey(result.publicKey)
             const registration = await navigator.serviceWorker.getRegistration("/")
             const browserSubscription = await registration?.pushManager.getSubscription()
+            if (cancelled || version !== inspection.current || mutation.current) return
             if (Notification.permission === "denied") {
+                setConfirmedEnabled(false)
                 setState("blocked")
                 setDetail("Notifications are blocked. Allow Betelgeze in this device’s settings, then select the toggle again to finish enabling them.")
                 return
             }
-            if (Notification.permission === "granted" && result.subscribed && browserSubscription && result.fingerprint === await subscriptionFingerprint(browserSubscription.toJSON())) {
+            const matches = browserSubscription && result.fingerprint === await subscriptionFingerprint(browserSubscription.toJSON())
+            if (cancelled || version !== inspection.current || mutation.current) return
+            if (Notification.permission === "granted" && result.subscribed && matches) {
+                setConfirmedEnabled(true)
                 setState("on")
                 setDetail("This device will notify you when none of your devices is actively showing that chat.")
                 return
             }
+            setConfirmedEnabled(false)
             setState("off")
             setDetail(Notification.permission === "granted" ? "Notification permission is allowed. Select the toggle to finish enabling chats on this device." : "Enable notifications for chats on this device.")
         }
         const refresh = () => {
-            if (document.visibilityState === "visible") void inspect().catch(() => { if (!cancelled) { setState("error"); setDetail("Could not check notification settings.") } })
+            if (document.visibilityState !== "visible" || mutation.current) return
+            const pending = inspect()
+            const version = inspection.current
+            void pending.catch(() => { if (!cancelled && version === inspection.current && !mutation.current) { setState("error"); setDetail("Could not check notification settings.") } })
         }
         refresh()
         window.addEventListener("focus", refresh)
@@ -78,15 +94,18 @@ export function PushNotificationSettings() {
             window.removeEventListener("pageshow", refresh)
             document.removeEventListener("visibilitychange", refresh)
         }
-    }, [])
+    }, [retry])
 
     async function enable() {
-        if (!publicKey || state === "saving") return
+        if (mutation.current) return
+        if (!publicKey) { setState("loading"); setRetry((value) => value + 1); return }
         if (Notification.permission === "denied") {
             setState("blocked")
             setDetail("Notifications are blocked. Allow Betelgeze in this device’s settings, then select the toggle again to finish enabling them.")
             return
         }
+        mutation.current = true
+        inspection.current++
         setState("saving")
         setDetail(Notification.permission === "default" ? "Opening this device’s notification permission prompt…" : "Enabling notifications on this device…")
         try {
@@ -94,10 +113,11 @@ export function PushNotificationSettings() {
             if (!registration) registration = await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" })
             const existing = await registration.pushManager.getSubscription()
             const subscription = existing ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey(publicKey) })
-            const response = await fetch("/api/push/subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(subscription) })
+            const response = await fetch("/api/push/subscriptions", { signal: AbortSignal.timeout(10_000), method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(subscription) })
             const result = await response.json().catch(() => null) as PushSettingsResponse | null
             if (!response.ok) throw new Error(result?.error ?? "Could not save this device.")
-            setState("on")
+            setConfirmedEnabled(true)
+                setState("on")
             setDetail("This device will notify you when none of your devices is actively showing that chat.")
         } catch (error) {
             if (error instanceof DOMException && error.name === "NotAllowedError") {
@@ -107,42 +127,45 @@ export function PushNotificationSettings() {
             }
             setState("error")
             setDetail(error instanceof Error ? error.message : "Could not enable notifications on this device.")
-        }
+        } finally { mutation.current = false }
     }
 
     async function disable() {
-        if (state === "saving") return
+        if (mutation.current) return
+        mutation.current = true
+        inspection.current++
         setState("saving")
         setDetail("Disabling notifications on this device…")
         try {
-            const response = await fetch("/api/push/subscriptions", { method: "DELETE" })
+            const response = await fetch("/api/push/subscriptions", { signal: AbortSignal.timeout(10_000), method: "DELETE" })
             const result = await response.json().catch(() => null) as PushSettingsResponse | null
             if (!response.ok) throw new Error(result?.error ?? "Could not disable this device.")
-            const registration = await navigator.serviceWorker.getRegistration("/")
-            const subscription = await registration?.pushManager.getSubscription()
-            if (subscription) await subscription.unsubscribe()
+            // Server deletion is authoritative. Browser cleanup failure cannot
+            // turn an acknowledged off setting into an apparent failed save.
+            try {
+                const registration = await navigator.serviceWorker.getRegistration("/")
+                const subscription = await registration?.pushManager.getSubscription()
+                if (subscription) await subscription.unsubscribe()
+            } catch { /* Reconciliation never restores a deleted server row. */ }
+            setConfirmedEnabled(false)
             setState("off")
             setDetail("Enable notifications for chats on this device.")
         } catch (error) {
             setState("error")
             setDetail(error instanceof Error ? error.message : "Could not disable notifications on this device.")
-        }
+        } finally { mutation.current = false }
     }
 
-    const enabled = state === "on"
+    const enabled = confirmedEnabled
     const disabled = state === "loading" || state === "saving" || state === "install" || state === "unsupported" || state === "unavailable"
-    return <section className="mt-7 border-t border-neutral-800 pt-5">
+    return <section className={compact ? "mt-3 border-t border-neutral-800 pt-2" : "mt-7 border-t border-neutral-800 pt-5"}>
         <div className="flex items-center justify-between gap-5">
             <div>
-                <h3 className="font-medium">Chat notifications</h3>
-                <p className="mt-1 text-sm text-neutral-400">Native and incoming WhatsApp chats. Notification previews show the chat name and message.</p>
+                <h3 className={compact ? "text-sm text-neutral-300" : "font-medium"}>{compact ? "Notifications" : "Chat notifications"}</h3>
+                {compact ? <p className="mt-0.5 text-xs text-neutral-500">{state === "on" ? "Enabled" : state === "off" ? "Disabled" : state === "saving" ? "Saving…" : state === "loading" ? "Checking…" : state === "blocked" ? "Blocked by device" : "Needs attention"}</p> : <p className="mt-1 text-sm text-neutral-400">Native and incoming WhatsApp chats. Notification previews show the chat name and message.</p>}
             </div>
-            <button type="button" role="switch" aria-checked={enabled} aria-label="Chat notifications on this device" disabled={disabled} onClick={() => enabled ? void disable() : void enable()} className="flex h-11 min-h-0 w-14 shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-50 sm:h-7 sm:w-12">
-                <span aria-hidden="true" className={`relative block h-7 w-12 rounded-full border transition ${enabled ? "border-white bg-white" : "border-neutral-600 bg-neutral-800"}`}>
-                    <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full transition-transform ${enabled ? "translate-x-5 bg-black" : "translate-x-0 bg-neutral-400"}`} />
-                </span>
-            </button>
+            <NotificationSwitch checked={enabled} disabled={disabled} label="Chat notifications on this device" onChange={() => enabled ? void disable() : void enable()} />
         </div>
-        <p className={`mt-3 text-sm ${state === "error" || state === "blocked" ? "text-red-300" : "text-neutral-500"}`}>{detail}</p>
+        <p role="status" className={`${compact ? "mt-1 text-xs leading-5" : "mt-3 text-sm"} ${state === "error" || state === "blocked" ? "text-red-300" : "text-neutral-500"}`}>{compact && (state === "on" || state === "off") ? null : detail}</p>
     </section>
 }

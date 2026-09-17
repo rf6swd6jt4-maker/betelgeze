@@ -155,6 +155,12 @@ async function getCustomDomainWorkspace(domain: string) {
 export async function proxy(request: NextRequest) {
     const path = request.nextUrl.pathname
     const domain = requestHostname(request)
+    // Logout must see this host's HTTP-only device cookie before clearing auth.
+    // Redirecting POST to the auth host loses that capability and its Origin.
+    // The route enforces same-origin POST and handles expired sessions itself.
+    if (domain && isPlatformHost(domain) && path === "/logout") {
+        return NextResponse.next({ request: { headers: requestHeadersWithCurrentPath(request) } })
+    }
     // Legal pages are public documents, including for reviewers without a session.
     // Keep them on the requested platform host rather than routing through auth.
     if (domain && isPlatformHost(domain) && (path === "/privacy" || path === "/terms")) {

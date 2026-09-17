@@ -186,3 +186,17 @@ test('failed push revocation cannot silently claim a successful logout; foreign-
  h=logoutHarness();h.request.headers.set('origin','https://other.test')
  assert.equal((await h.route.POST(h.request)).status,403);assert.equal(h.effects.length,0)
 })
+
+test('logout reaches its original host with the device cookie before auth refresh or central-domain redirects',async()=>{
+ const mod=load('proxy.ts',{
+  '@supabase/ssr':{createServerClient:()=>{throw new Error('Logout must not depend on auth refresh')}},
+  'next/server':{NextResponse:{next:options=>({kind:'next',options}),redirect:()=>{throw new Error('Device cookie would be lost')}}},
+  '@/lib/supabase/legacy-cookies':{},'@/lib/supabase/session-cookies':{},
+  '@/lib/auth/origin':{authHostname:()=> 'auth.betelgeze.com',authOrigin:()=> 'https://auth.betelgeze.com'},
+  '@/lib/workspace-tabs':{},'@/lib/workspace-shell':{},'@/lib/workspace-launch':{},
+ },{Headers,process:{env:{}}})
+ for(const host of ['app.betelgeze.com','dashboard.betelgeze.com','auth.betelgeze.com']){
+  const result=await mod.proxy({nextUrl:new URL(`https://${host}/logout`),headers:new Headers({host,cookie:'betelgeze_push_device=installation',origin:`https://${host}`})})
+  assert.equal(result.kind,'next');assert.equal(result.options.request.headers.get('cookie'),'betelgeze_push_device=installation')
+ }
+})

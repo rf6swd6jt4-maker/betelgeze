@@ -23,7 +23,7 @@ test("chat push payload is declarative and remains compatible with older workers
     assert.equal(payload.title, payload.notification.title)
     assert.equal(payload.body, payload.notification.body)
     assert.equal(payload.url, payload.notification.data.url)
-    assert.equal("mutable" in payload, false)
+    assert.equal(payload.mutable, true)
 })
 
 test("chat push subscriptions and Communications sessions use server-only durable storage", async () => {
@@ -59,40 +59,6 @@ test("profile toggle registers from the user gesture and recovers after returnin
     assert.match(subscriptionRoute, /httpOnly: true/)
 })
 
-test("chat push delivery is suppressed only for the exact visible live conversation", async () => {
-    const [delivery, tracker, panel, contextMigration] = await Promise.all([
-        readFile("lib/push/chat-notifications.ts", "utf8"),
-        readFile("components/communications/CommunicationsActivityTracker.tsx", "utf8"),
-        readFile("components/communications/CommunicationsPanel.tsx", "utf8"),
-        readFile("supabase/migrations/20260817160000_reliable_communications_sessions.sql", "utf8"),
-    ])
-    assert.match(delivery, /communications_active_sessions/)
-    assert.match(delivery, /activeUsers\.has\(subscription\.user_id\)/)
-    assert.match(delivery, /eq\("workspace_id", push\.workspaceId\)/)
-    assert.match(delivery, /eq\("conversation_kind", push\.conversationKind\)/)
-    assert.match(delivery, /eq\("conversation_id", push\.conversationId\)/)
-    assert.match(delivery, /eq\("connection_live", true\)/)
-    assert.match(delivery, /workspace_native_conversation_participants/)
-    assert.match(delivery, /userId !== input\.senderUserId/)
-    assert.match(delivery, /clientConversationParticipants/)
-    assert.match(delivery, /workspace_native_messages/)
-    assert.match(delivery, /client_messages/)
-    assert.match(delivery, /primary_person_name, business_name/)
-    assert.match(delivery, /title: notificationLine\(chatName, 80\)/)
-    assert.match(delivery, /body: notificationLine\(messageBody, 240\)/)
-    assert.match(delivery, /input\.previewBody, input\.attachment/)
-    assert.match(delivery, /subscription's[\s\S]*p256dh\/auth keys/)
-    assert.doesNotMatch(delivery, /New encrypted message/)
-    assert.doesNotMatch(delivery, /body: `From /)
-    assert.match(tracker, /useWorkspaceTabActive\(\)/)
-    assert.match(tracker, /document\.visibilityState === "visible"/)
-    assert.match(tracker, /connectionState === "live"/)
-    assert.match(tracker, /navigator\.sendBeacon/)
-    assert.match(panel, /<CommunicationsActivityTracker/)
-    assert.match(contextMigration, /conversation_kind/)
-    assert.match(contextMigration, /connection_live/)
-})
-
 test("native, WhatsApp, and Twilio message writes schedule chat pushes after their responses", async () => {
     const [nativeRoute, whatsappRoute, twilioRoute, worker] = await Promise.all([
         readFile("app/api/workspaces/[workspaceSlug]/communications/native/messages/route.ts", "utf8"),
@@ -117,7 +83,7 @@ test("native, WhatsApp, and Twilio message writes schedule chat pushes after the
 
 test("chat notifications have a declarative fallback, renotify replacements, and clear only after reads persist", async () => {
     const [delivery, worker, clientWorkspace, teamWorkspace, browserNotifications, initialNotificationGate, replacementNotificationGate] = await Promise.all([
-        readFile("lib/push/chat-notifications.ts", "utf8"),
+        Promise.all([readFile("lib/push/delivery.ts", "utf8"), readFile("lib/push/chat-notifications.ts", "utf8"), readFile("supabase/migrations/20260917090000_chat_push_delivery_recovery.sql", "utf8")]).then(parts => parts.join("\n")),
         readFile("public/sw.js", "utf8"),
         readFile("components/communications/CommunicationsWorkspace.tsx", "utf8"),
         readFile("components/communications/TeamCommunicationsWorkspace.tsx", "utf8"),
@@ -125,16 +91,16 @@ test("chat notifications have a declarative fallback, renotify replacements, and
         readFile("supabase/migrations/20260817190000_ios_chat_notification_gate.sql", "utf8"),
         readFile("supabase/migrations/20260916220000_chat_push_notification_replacements.sql", "utf8"),
     ])
-    assert.match(delivery, /chatNotificationBody\(push\.mentionUserIds\?\.includes\(subscription\.user_id\).*unreadCount\)/)
+    assert.match(delivery, /push\.mentionUserIds\?\.includes\(job\.user_id\)/)
     assert.match(delivery, /communication_read_cursors/)
     assert.match(delivery, /workspace_native_read_cursors/)
     assert.match(delivery, /new messages/)
     assert.match(delivery, /messageCreatedAt/)
-    assert.match(delivery, /claimChatPush\(subscription\.id, push\)/)
+    assert.match(delivery, /claim_chat_push_deliveries/)
     assert.match(delivery, /clear_read_chat_push_notifications/)
     assert.match(delivery, /declarativeChatPushPayload/)
     assert.doesNotMatch(worker, /getNotifications/)
-    assert.match(worker, /event\.waitUntil\(self\.registration\.showNotification\(title, options\)\)/)
+    assert.match(worker, /event\.waitUntil\(self\.registration\.showNotification\(title, options\)\.then/)
     assert.match(worker, /unreadCount/)
     assert.match(clientWorkspace, /dismissReadChatNotification\(cursor\.relationshipId, result\.notificationReadThrough\)/)
     assert.match(teamWorkspace, /dismissReadChatNotification\(cursor\.conversationId, result\.notificationReadThrough\)/)

@@ -70,7 +70,7 @@ test("offline queue writes are constrained to the original account and workspace
         }
     }
     const worker = readFileSync("public/sw.js", "utf8")
-    assert.match(worker, /CACHE_NAME = "betelgeze-pwa-v4"/)
+    assert.match(worker, /CACHE_NAME = "betelgeze-pwa-v5"/)
     assert.match(worker, /event\.request\.mode === "navigate"/)
     assert.match(worker, /navigationPreload\.disable\(\)/)
     assert.doesNotMatch(worker, /navigationPreload\.enable\(\)|event\.preloadResponse/)

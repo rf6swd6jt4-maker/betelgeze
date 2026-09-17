@@ -26,7 +26,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
             return Response.json({ cursor: { relationshipId, userId: user.id, lastReadMessageId: current.last_read_message_id, lastReadAt: current.last_read_at }, notificationReadThrough: previous.created_at })
         }
     }
-    const lastReadAt = new Date().toISOString()
+    const lastReadAt = target.created_at
     const { error } = await supabaseAdmin.from("communication_read_cursors").upsert({ workspace_id: workspace.id, relationship_id: relationshipId, user_id: user.id, last_read_message_id: messageId, last_read_at: lastReadAt }, { onConflict: "workspace_id,relationship_id,user_id" })
     if (error) return Response.json({ error: error.message }, { status: 503 })
     await clearReadChatPushNotifications({ userId: user.id, conversationKind: "client", conversationId: relationshipId, readThroughCreatedAt: target.created_at })

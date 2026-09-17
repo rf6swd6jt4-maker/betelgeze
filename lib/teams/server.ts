@@ -112,6 +112,8 @@ export async function loadNativeCommunications(input: {
         loadCommunicationPeople(input.workspaceId, input.currentUserId),
         loadCommunicationStickers(input.workspaceId),
     ])
+    const currentMemberIds = new Set(peopleResult.people.map((person) => person.id))
+    const chatTeams = teams.map((team) => ({ ...team, memberIds: team.memberIds.filter((id) => currentMemberIds.has(id)) }))
     const currentUserRole: NativeCommunicationsBootstrap["currentUserRole"] = input.role === "owner" || input.role === "admin" ? input.role : "staff"
     const base = {
         workspaceId: input.workspaceId,
@@ -120,7 +122,7 @@ export async function loadNativeCommunications(input: {
         people: peopleResult.people,
         formerPeople: [] as CommunicationPerson[],
         stickers: stickerResult.stickers,
-        teams: teams.filter((team) => team.memberIds.includes(input.currentUserId)),
+        teams: chatTeams.filter((team) => team.memberIds.includes(input.currentUserId)),
         services,
         maintenanceCategories: MAINTENANCE_CATEGORIES.map((key) => ({ key, label: maintenanceCategoryLabel(key) })),
         canManageTeams: input.role === "owner" || input.role === "admin",
@@ -184,7 +186,7 @@ export async function loadNativeCommunications(input: {
         former: Boolean(profile.removed_at),
     }))
     const peopleById = new Map([...peopleResult.people, ...formerPeople].map((person) => [person.id, person]))
-    const teamById = new Map(teams.map((team) => [team.id, team]))
+    const teamById = new Map(chatTeams.map((team) => [team.id, team]))
     const participants = new Map<string, string[]>()
     for (const participant of participantResult.data ?? []) participants.set(participant.conversation_id, [...(participants.get(participant.conversation_id) ?? []), participant.user_id])
     const messages = new Map<string, NativeMessage[]>()
@@ -204,7 +206,7 @@ export async function loadNativeCommunications(input: {
     }))
     const conversations = (conversationResult.data ?? []).flatMap<NativeConversation>((conversation) => {
         if (conversation.kind === "direct") {
-            const memberIds = participants.get(conversation.id) ?? []
+            const memberIds = (participants.get(conversation.id) ?? []).filter((id) => id === conversation.direct_user_one || id === conversation.direct_user_two)
             if (!memberIds.includes(input.currentUserId)) return []
             if (conversation.is_system) return [{ id: conversation.id, kind: "direct" as const, system: true, teamId: null, title: "BE", subtitle: "Private updates from Betelgeze", avatarSrc: "/brand/betelgeze-logo.svg", memberIds, archived: false, canWrite: false, pinnedMessageId: null, updatedAt: conversation.updated_at, messages: conversationMessages(conversation.id), messageWindowStart: conversationWindowStart(conversation.id) }]
             const otherId = [conversation.direct_user_one, conversation.direct_user_two].find((id) => id && id !== input.currentUserId)

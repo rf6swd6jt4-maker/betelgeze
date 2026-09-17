@@ -1,4 +1,4 @@
-const CACHE_NAME = "betelgeze-pwa-v4";
+const CACHE_NAME = "betelgeze-pwa-v5";
 const STATIC_ASSETS = [
   "/icons/betelgeze-icon-192.png",
   "/icons/betelgeze-icon-512.png",
@@ -89,6 +89,8 @@ self.addEventListener("push", (event) => {
     renotify: Boolean(tag && proposed.renotify),
     data: {
       url: dataUrl,
+      deliveryId: proposedData.deliveryId,
+      receiptToken: proposedData.receiptToken,
       category: typeof proposedData.category === "string" ? proposedData.category : (typeof payload.category === "string" ? payload.category : "update"),
       conversationId: typeof proposedData.conversationId === "string" ? proposedData.conversationId : (typeof payload.conversationId === "string" ? payload.conversationId : null),
       messageId: typeof proposedData.messageId === "string" ? proposedData.messageId : (typeof payload.messageId === "string" ? payload.messageId : null),
@@ -101,7 +103,20 @@ self.addEventListener("push", (event) => {
   // WebKit can revoke original Web Push subscriptions when a handler wakes the
   // device but fails to display promptly. Declarative-capable WebKit uses the
   // payload itself as a fallback if this imperative replacement ever fails.
-  event.waitUntil(self.registration.showNotification(title, options));
+  const report = async (outcome) => {
+    if (typeof options.data.deliveryId !== "string" || typeof options.data.receiptToken !== "string") return;
+    try {
+      await fetch("/api/push/receipts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deliveryId: options.data.deliveryId, receiptToken: options.data.receiptToken, outcome }),
+        signal: AbortSignal.timeout(3000),
+      });
+    } catch { /* Receipt transport cannot prevent notification display. */ }
+  };
+  event.waitUntil(self.registration.showNotification(title, options).then(
+    () => report("shown"),
+    async (error) => { await report("failed"); throw error; }
+  ));
 });
 
 self.addEventListener("notificationclick", (event) => {

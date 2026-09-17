@@ -166,7 +166,7 @@ test("client and team chats reconcile missed Realtime events without a reload", 
     for (const workspace of [clients, team]) {
         assert.match(workspace, /persistReadCursor/)
         assert.match(workspace, /lastReadAt > incoming\.lastReadAt/)
-        assert.match(workspace, /const visiblyReading = conversation\.id === selectedId && active && workspaceTabActive && documentVisible && atLatest/)
+        assert.match(workspace, /const visiblyReading = conversation\.id === selectedId && active && workspaceTabActive && documentAttentive && atLatest/)
         assert.match(workspace, /ConversationUnreadCount\(conversation, ownCursor/)
         assert.match(workspace, /<CommunicationsConnectionStatus/)
     }

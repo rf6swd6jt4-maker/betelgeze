@@ -1,11 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { subscriptionFingerprint } from "@/lib/push/subscription-fingerprint"
 
 type PushSettingsResponse = {
     configured?: boolean
     publicKey?: string | null
     subscribed?: boolean
+    fingerprint?: string | null
     error?: string
 }
 
@@ -55,9 +57,9 @@ export function PushNotificationSettings() {
                 setDetail("Notifications are blocked. Allow Betelgeze in this device’s settings, then select the toggle again to finish enabling them.")
                 return
             }
-            if (Notification.permission === "granted" && result.subscribed && browserSubscription) {
+            if (Notification.permission === "granted" && result.subscribed && browserSubscription && result.fingerprint === await subscriptionFingerprint(browserSubscription.toJSON())) {
                 setState("on")
-                setDetail("This device will notify you when none of your devices has Communications open.")
+                setDetail("This device will notify you when none of your devices is actively showing that chat.")
                 return
             }
             setState("off")
@@ -96,7 +98,7 @@ export function PushNotificationSettings() {
             const result = await response.json().catch(() => null) as PushSettingsResponse | null
             if (!response.ok) throw new Error(result?.error ?? "Could not save this device.")
             setState("on")
-            setDetail("This device will notify you when none of your devices has Communications open.")
+            setDetail("This device will notify you when none of your devices is actively showing that chat.")
         } catch (error) {
             if (error instanceof DOMException && error.name === "NotAllowedError") {
                 setState("blocked")

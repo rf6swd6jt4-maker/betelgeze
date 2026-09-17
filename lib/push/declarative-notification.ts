@@ -9,10 +9,14 @@ type DeclarativeChatPushInput = {
     messageId: string
     messageCreatedAt: string
     unreadCount: number
+    deliveryId?: string
+    receiptToken?: string
 }
 
 export function declarativeChatPushPayload(input: DeclarativeChatPushInput) {
     const data = {
+        deliveryId: input.deliveryId,
+        receiptToken: input.receiptToken,
         url: input.url,
         category: "chat",
         conversationId: input.conversationId,
@@ -22,6 +26,7 @@ export function declarativeChatPushPayload(input: DeclarativeChatPushInput) {
     }
     return JSON.stringify({
         web_push: 8030,
+        mutable: true,
         notification: {
             title: input.title,
             body: input.body,

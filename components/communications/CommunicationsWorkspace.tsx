@@ -1,5 +1,7 @@
 "use client"
 
+import { useChatDocumentAttention } from "@/components/communications/useChatDocumentAttention"
+
 import { readChatDraft, writeChatDraft } from "@/lib/communications/offline-drafts"
 import { useOfflineChat } from "@/components/communications/useOfflineChat"
 import { ChatOutboxStatus } from "@/components/communications/ChatOutboxStatus"
@@ -257,7 +259,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const [previewMedia, setPreviewMedia] = useState<MessageMediaPreview | null>(null)
     const [showJumpToLatest, setShowJumpToLatest] = useState(false)
     const [atLatest, setAtLatest] = useState(true)
-    const [documentVisible, setDocumentVisible] = useState(() => typeof document !== "undefined" && document.visibilityState === "visible")
+    const { visible: documentVisible, attentive: documentAttentive } = useChatDocumentAttention()
     const [enteringMessageIds, setEnteringMessageIds] = useState<Set<string>>(() => new Set())
     const [reactionCutoff] = useState(() => Date.now() - 30 * 24 * 60 * 60 * 1_000)
     const [readCursors, setReadCursors] = useState(bootstrap.readCursors)
@@ -299,12 +301,6 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     }, [onSelectedConversationChange, selectedId])
 
     useEffect(() => { draftRef.current = draft }, [draft])
-
-    useEffect(() => {
-        const update = () => setDocumentVisible(document.visibilityState === "visible")
-        document.addEventListener("visibilitychange", update)
-        return () => document.removeEventListener("visibilitychange", update)
-    }, [])
 
     useEffect(() => {
         const timer = window.setTimeout(() => setRecentReaction(localStorage.getItem(`betelgeze:communications:recent-reaction:${bootstrap.workspaceId}`)), 0)
@@ -770,14 +766,14 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
 
     const unreadCount = useMemo(() => conversations.reduce((total, conversation) => {
         const ownCursor = readCursors.find((cursor) => cursor.relationshipId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-        const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentVisible && atLatest
+        const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentAttentive && atLatest
         return total + clientConversationUnreadCount(conversation, ownCursor, visiblyReading)
-    }, 0), [active, atLatest, bootstrap.currentUser.id, conversations, documentVisible, readCursors, selectedId, workspaceTabActive])
+    }, 0), [active, atLatest, bootstrap.currentUser.id, conversations, documentAttentive, readCursors, selectedId, workspaceTabActive])
 
     useEffect(() => onUnreadCountChange?.(unreadCount), [onUnreadCountChange, unreadCount])
 
     useEffect(() => {
-        if (!active || !workspaceTabActive || !documentVisible || !atLatest || !selectedId || !selected?.messages.length || !schemaReady) return
+        if (!active || !workspaceTabActive || !documentAttentive || !atLatest || !selectedId || !selected?.messages.length || !schemaReady) return
         const latest = selected.messages.at(-1)!
         const current = readCursors.find((cursor) => cursor.relationshipId === selectedId && cursor.userId === bootstrap.currentUser.id)
         if (current?.lastReadMessageId === latest.id) {
@@ -787,7 +783,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         const cursor: CommunicationReadCursor = { relationshipId: selectedId, userId: bootstrap.currentUser.id, lastReadMessageId: latest.id, lastReadAt: latest.createdAt }
         const timer = window.setTimeout(() => { void persistReadCursor(cursor).catch(() => undefined) }, 0)
         return () => window.clearTimeout(timer)
-    }, [active, atLatest, bootstrap.currentUser.id, documentVisible, persistReadCursor, readCursors, schemaReady, selected?.messages, selectedId, workspaceTabActive])
+    }, [active, atLatest, bootstrap.currentUser.id, documentAttentive, persistReadCursor, readCursors, schemaReady, selected?.messages, selectedId, workspaceTabActive])
 
     async function sendMessage(messageToRetry?: CommunicationMessage) {
         if (!messageToRetry && uploads.blocked) return
@@ -866,7 +862,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{visibleConversations.length ? visibleConversations.map((conversation) => {
                     const latest = conversation.messages.at(-1)
                     const ownCursor = readCursors.find((cursor) => cursor.relationshipId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-                    const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentVisible && atLatest
+                    const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentAttentive && atLatest
                     const unread = clientConversationUnreadCount(conversation, ownCursor, visiblyReading)
                     return <button key={conversation.id} type="button" onClick={() => selectConversation(conversation.id)} aria-current={selectedId === conversation.id ? "page" : undefined} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left transition ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}>
                         <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-800 text-sm font-semibold text-neutral-200">{initials(conversation.title)}</span>

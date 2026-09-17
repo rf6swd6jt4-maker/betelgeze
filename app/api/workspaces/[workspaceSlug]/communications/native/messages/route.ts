@@ -108,6 +108,15 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     const storedAttachment = packAttachments(verifiedAttachments)
     const { data, error } = await supabaseAdmin.from("workspace_native_messages").insert({ workspace_id: workspace.id, conversation_id: conversationId, sender_user_id: user.id, client_request_id: clientRequestId, body: body || null, reply_to_message_id: replyToMessageId || null, quote, attachment: storedAttachment }).select("id").single()
     if (error || !data) return Response.json({ error: error?.message ?? "Could not create message." }, { status: 503 })
+    after(() => notifyNativeChatMessage({
+        workspaceId: workspace.id,
+        workspaceSlug: workspace.slug,
+        conversationId,
+        messageId: data.id,
+        senderUserId: user.id,
+        previewBody: body,
+        attachment: storedAttachment ? { kind: storedAttachment.kind, fileName: storedAttachment.fileName } : null,
+    }))
     let message: Awaited<ReturnType<typeof loadNativeMessageForCurrentUser>> = null
     try {
         message = await loadNativeMessageForCurrentUser({ workspaceId: workspace.id, messageId: data.id })
@@ -115,15 +124,6 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
         return Response.json({ error: error instanceof Error ? `Message saved, but encrypted confirmation failed: ${error.message}` : "Message saved, but encrypted confirmation failed." }, { status: 503 })
     }
     if (!message) return Response.json({ error: "Message saved, but its encrypted copy could not be confirmed. Refresh the conversation before retrying." }, { status: 503 })
-    if (message) after(() => notifyNativeChatMessage({
-        workspaceId: workspace.id,
-        workspaceSlug: workspace.slug,
-        conversationId,
-        messageId: message.id,
-        senderUserId: user.id,
-        previewBody: body,
-        attachment: storedAttachment ? { kind: storedAttachment.kind, fileName: storedAttachment.fileName } : null,
-    }))
     return Response.json({ message })
 }
 

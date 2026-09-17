@@ -1,5 +1,7 @@
 "use client"
 
+import { useChatDocumentAttention } from "@/components/communications/useChatDocumentAttention"
+
 import { readChatDraft, writeChatDraft } from "@/lib/communications/offline-drafts"
 import { useOfflineChat } from "@/components/communications/useOfflineChat"
 import { ChatOutboxStatus } from "@/components/communications/ChatOutboxStatus"
@@ -199,7 +201,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [editingTeam, setEditingTeam] = useState<WorkspaceTeam | null | undefined>(undefined)
     const [showJumpToLatest, setShowJumpToLatest] = useState(false)
     const [atLatest, setAtLatest] = useState(true)
-    const [documentVisible, setDocumentVisible] = useState(() => typeof document !== "undefined" && document.visibilityState === "visible")
+    const { visible: documentVisible, attentive: documentAttentive } = useChatDocumentAttention()
     const [enteringMessageIds, setEnteringMessageIds] = useState<Set<string>>(() => new Set())
     const [typingByConversation, setTypingByConversation] = useState<NativeTypingByConversation>({})
     const messagePaneRef = useRef<HTMLDivElement | null>(null)
@@ -248,7 +250,6 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 
     useEffect(() => { selectedRef.current = selectedId; onSelectedConversationChange?.(selectedId) }, [onSelectedConversationChange, selectedId])
     useEffect(() => { conversationsRef.current = conversations }, [conversations])
-    useEffect(() => { const update = () => setDocumentVisible(document.visibilityState === "visible"); document.addEventListener("visibilitychange", update); return () => document.removeEventListener("visibilitychange", update) }, [])
     useEffect(() => { const timer = window.setTimeout(() => setRecentReaction(localStorage.getItem(`betelgeze:communications:recent-reaction:${bootstrap.workspaceId}`)), 0); return () => window.clearTimeout(timer) }, [bootstrap.workspaceId])
     useConversationLayout(messagePaneRef, followLatestRef, selectedId, active && workspaceTabActive && documentVisible, setAtLatest, setShowJumpToLatest)
     useEffect(() => () => messageAnimationTimersRef.current.forEach((timer) => window.clearTimeout(timer)), [])
@@ -476,14 +477,14 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 
     const unreadCount = useMemo(() => conversations.reduce((total, conversation) => {
         const ownCursor = readCursors.find((cursor) => cursor.conversationId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-        const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentVisible && atLatest
+        const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentAttentive && atLatest
         return total + nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id, visiblyReading)
-    }, 0), [active, atLatest, bootstrap.currentUser.id, conversations, documentVisible, readCursors, selectedId, workspaceTabActive])
+    }, 0), [active, atLatest, bootstrap.currentUser.id, conversations, documentAttentive, readCursors, selectedId, workspaceTabActive])
 
     useEffect(() => onUnreadCountChange?.(unreadCount), [onUnreadCountChange, unreadCount])
 
     useEffect(() => {
-        if (!active || !workspaceTabActive || !documentVisible || !atLatest || !selectedId || !selected?.messages.length || !schemaReady) return
+        if (!active || !workspaceTabActive || !documentAttentive || !atLatest || !selectedId || !selected?.messages.length || !schemaReady) return
         const latest = selected.messages.at(-1)!
         const current = readCursors.find((cursor) => cursor.conversationId === selectedId && cursor.userId === bootstrap.currentUser.id)
         if (current?.lastReadMessageId === latest.id) {
@@ -493,7 +494,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         const cursor: NativeReadCursor = { conversationId: selectedId, userId: bootstrap.currentUser.id, lastReadMessageId: latest.id, lastReadAt: latest.createdAt }
         const timer = window.setTimeout(() => { void persistReadCursor(cursor).catch(() => undefined) }, 0)
         return () => window.clearTimeout(timer)
-    }, [active, atLatest, bootstrap.currentUser.id, documentVisible, persistReadCursor, readCursors, schemaReady, selected?.messages, selectedId, workspaceTabActive])
+    }, [active, atLatest, bootstrap.currentUser.id, documentAttentive, persistReadCursor, readCursors, schemaReady, selected?.messages, selectedId, workspaceTabActive])
 
     async function uploadSticker(file: File) {
         if (stickerUploadState === "uploading") return
@@ -767,7 +768,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     const latest = conversation.messages.at(-1)
                     const showTypingPreview = conversation.id !== selectedId && Object.keys(typingByConversation[conversation.id] ?? {}).length > 0
                     const ownCursor = readCursors.find((cursor) => cursor.conversationId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-                    const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentVisible && atLatest
+                    const visiblyReading = conversation.id === selectedId && active && workspaceTabActive && documentAttentive && atLatest
                     const unread = nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id, visiblyReading)
                     const latestRead = Boolean(latest && readCursors.some((cursor) => cursor.conversationId === conversation.id && cursor.userId !== latest.senderUserId && cursor.lastReadAt >= latest.createdAt))
                     return <button key={conversation.id} type="button" onClick={() => selectConversation(conversation.id)} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}><TeamAvatar conversation={conversation} currentUserId={bootstrap.currentUser.id} /><span className="min-w-0"><span className="flex items-start justify-between gap-3"><span className="truncate text-sm font-semibold">{conversation.title}</span>{latest ? <time className={unread ? "text-[11px] text-white" : "text-[11px] text-neutral-600"}>{formatRelativeTime(latest.createdAt)}</time> : null}</span><span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">{!showTypingPreview && latest?.senderUserId === bootstrap.currentUser.id ? <NativeDeliveryTicks message={latest} read={latestRead} /> : null}<span className={`truncate ${showTypingPreview ? "font-medium text-neutral-300" : ""}`}>{showTypingPreview ? "typing…" : latest ? `${latest.senderUserId === bootstrap.currentUser.id ? "You: " : ""}${messagePreview(latest)}` : conversation.subtitle}</span>{unread ? <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-black">{unread}</span> : null}</span></span></button>

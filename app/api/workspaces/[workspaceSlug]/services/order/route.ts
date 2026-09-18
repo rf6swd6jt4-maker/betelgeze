@@ -1,5 +1,5 @@
 import { unstable_rethrow } from "next/navigation"
-import { configurationRpc, revalidateOnboardingConfiguration } from "@/lib/onboarding/configuration-actions"
+import { configurationRpc } from "@/lib/onboarding/configuration-actions"
 import { validServiceOrder, type ReorderedServices } from "@/lib/onboarding/service-order"
 import { requireWorkspace } from "@/lib/workspaces"
 
@@ -37,7 +37,6 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
             p_actor_user_id: user.id,
             p_service_ids: serviceIds,
         })
-        if (outcome.ok) revalidateOnboardingConfiguration(workspaceSlug)
         return Response.json(outcome, {
             status: outcome.ok ? 200 : 400,
             headers: { ...headers, "Server-Timing": `commit;dur=${(performance.now() - started).toFixed(1)}` },

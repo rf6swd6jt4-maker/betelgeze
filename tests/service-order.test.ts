@@ -29,4 +29,5 @@ test("service order autosaves through a background command with animated local f
     assert.match(route, /requireWorkspace\(workspaceSlug, "admin"\)/)
     assert.match(route, /configurationRpc<ReorderedServices>\("reorder_onboarding_services"/)
     assert.match(route, /Invalid save origin/)
+    assert.doesNotMatch(route, /revalidateOnboardingConfiguration/)
 })

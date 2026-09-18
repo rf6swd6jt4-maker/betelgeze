@@ -86,6 +86,8 @@ export type OnboardingServiceDefinition = {
     checkoutDescription?: string
     thumbnailPath?: string | null
     thumbnailUrl?: string | null
+    /** The trusted template whose public cover is used when no uploaded thumbnail replaces it. */
+    thumbnailTemplateId?: string | null
     state: OnboardingServiceState
     version: number
     isTest: boolean

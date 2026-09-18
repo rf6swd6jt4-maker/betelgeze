@@ -168,6 +168,7 @@ export function normalizeServiceDefinition(input: unknown) {
             defaultBillingInterval,
             defaultBillingIntervalCount,
             thumbnailPath: cleanText(value.thumbnailPath, 2_000) || null,
+            thumbnailTemplateId: cleanText(value.thumbnailTemplateId, 120) || null,
             defaultUpfrontPriceCents,
             defaultRecurringPriceCents,
             currency,

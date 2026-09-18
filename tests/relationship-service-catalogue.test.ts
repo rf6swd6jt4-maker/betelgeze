@@ -110,6 +110,7 @@ test("deal catalogue exposes Active services and keeps selected retired revision
         checkoutDisplayName: "Original purchased name",
         checkoutDescription: "Original revision",
         thumbnailPath: null,
+        thumbnailUrl: "/service-templates/appointment-setting.png",
         defaultUpfrontPriceCents: 90_00,
         defaultRecurringPriceCents: 10_00,
         currency: "EUR",
@@ -135,6 +136,7 @@ test("deal catalogue exposes Active services and keeps selected retired revision
     assert.equal(retained?.name, "Original purchased name")
     assert.equal(retained?.revisionId, frozenRevision.id)
     assert.equal(retained?.selected?.upfront_price_cents, 85_00)
+    assert.equal(retained?.thumbnailUrl, "/service-templates/appointment-setting.png")
     assert.equal(retained?.selected?.recurring_price_cents, 15_00)
 })
 
@@ -164,6 +166,7 @@ test("deal catalogue advances selected Active services to their current revision
         checkoutDisplayName: "Old service name",
         checkoutDescription: "Old description",
         thumbnailPath: null,
+        thumbnailUrl: null,
         defaultUpfrontPriceCents: 100_00,
         defaultRecurringPriceCents: 0,
         currency: "EUR",
@@ -208,6 +211,7 @@ test("relationship labels prefer the frozen revision and retain legacy keys", ()
         checkoutDisplayName: "Frozen service name",
         checkoutDescription: "",
         thumbnailPath: null,
+        thumbnailUrl: null,
         defaultUpfrontPriceCents: 0,
         defaultRecurringPriceCents: 0,
         currency: "USD",

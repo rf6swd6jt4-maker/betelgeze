@@ -3,6 +3,7 @@ import { handleCompletedStripeCheckout } from "@/lib/client-sales/automation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { createPrivateUploadSignedUrl, createServiceThumbnailPublicUrl } from "@/lib/onboarding/uploads"
+import { serviceTemplateThumbnailSrc } from "@/lib/onboarding/service-templates"
 import { defaultOnboardingPaymentDefinition, type OnboardingPaymentDefinitionV2 } from "@/lib/onboarding/block-definition"
 import { normalizeVisualPaymentGate } from "@/lib/onboarding/block-validation"
 import { getOnboardingUrl } from "@/lib/onboarding/custom-domain"
@@ -105,7 +106,9 @@ async function frozenCheckoutLineItems(context: PaymentContext, expiresAt: numbe
         const recurringDescription = String(definition.recurringDescription ?? definition.recurring_description ?? definition.checkoutDescription ?? definition.checkout_description ?? item.description ?? recurringName)
         const thumbnailPath = typeof definition.thumbnailPath === "string" ? definition.thumbnailPath : typeof definition.thumbnail_path === "string" ? definition.thumbnail_path : null
         const publicImage = createServiceThumbnailPublicUrl(thumbnailPath)
-        const imageUrl = publicImage ?? (thumbnailPath ? await createPrivateUploadSignedUrl(thumbnailPath, Math.max(60, expiresAt - Math.floor(Date.now() / 1_000))) : null)
+        const imageUrl = publicImage ?? (thumbnailPath
+            ? await createPrivateUploadSignedUrl(thumbnailPath, Math.max(60, expiresAt - Math.floor(Date.now() / 1_000)))
+            : serviceTemplateThumbnailSrc(typeof definition.thumbnailTemplateId === "string" ? definition.thumbnailTemplateId : null))
         return [
             item.upfront_amount_cents > 0 ? {
                 serviceKey: item.service_code,

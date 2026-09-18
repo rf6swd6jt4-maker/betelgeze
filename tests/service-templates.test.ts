@@ -1,9 +1,10 @@
 import assert from "node:assert/strict"
 import { existsSync, readFileSync } from "node:fs"
 import test from "node:test"
-import { SERVICE_TEMPLATES } from "../lib/onboarding/service-templates.ts"
+import { SERVICE_TEMPLATES, serviceTemplateThumbnailSrc } from "../lib/onboarding/service-templates.ts"
 
 const servicesUi = readFileSync("components/settings/ServiceCatalogue.tsx", "utf8")
+const thumbnailMigration = readFileSync("supabase/migrations/20260918090000_template_service_thumbnails.sql", "utf8")
 
 test("the service template catalogue starts with the Meta Ads template", () => {
     assert.equal(SERVICE_TEMPLATES.length, 4)
@@ -36,6 +37,15 @@ test("Search and Local Services Ads share the trusted Google connection process"
         assert.deepEqual(service.onboardingBlocks, [{ kind: "google_ads_connection", label: "Google Ads connection" }])
         assert.equal(existsSync(`public${service.thumbnail.src}`), true)
     }
+})
+
+test("template covers persist until an uploaded thumbnail replaces them", () => {
+    for (const template of SERVICE_TEMPLATES) {
+        assert.equal(serviceTemplateThumbnailSrc(template.id), template.thumbnail.src)
+    }
+    assert.equal(serviceTemplateThumbnailSrc("unknown"), null)
+    assert.match(thumbnailMigration, /thumbnailTemplateId/)
+    assert.match(thumbnailMigration, /definition->>'thumbnailPath'/)
 })
 
 test("the onboarding builder offers one shared connection block for both Google Ads services", () => {

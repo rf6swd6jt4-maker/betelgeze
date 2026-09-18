@@ -2,6 +2,7 @@ import "server-only"
 
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { OnboardingServiceRevisionDisplay } from "@/lib/onboarding/service-display"
+import { serviceTemplateThumbnailSrc } from "@/lib/onboarding/service-templates"
 
 export async function loadOnboardingServiceRevisionDisplays(workspaceId: string, revisionIds: Array<string | null | undefined>) {
     const ids = [...new Set(revisionIds.filter((id): id is string => Boolean(id)))]
@@ -42,6 +43,7 @@ export async function loadOnboardingServiceRevisionDisplays(workspaceId: string,
         checkoutDisplayName: typeof definition.checkoutDisplayName === "string" ? definition.checkoutDisplayName : "",
         checkoutDescription: typeof definition.checkoutDescription === "string" ? definition.checkoutDescription : "",
         thumbnailPath: typeof definition.thumbnailPath === "string" ? definition.thumbnailPath : null,
+        thumbnailUrl: serviceTemplateThumbnailSrc(typeof definition.thumbnailTemplateId === "string" ? definition.thumbnailTemplateId : null),
         defaultUpfrontPriceCents: hasExplicitUpfrontDefault
             ? Number(definition.defaultUpfrontPriceCents ?? definition.default_upfront_price_cents) || 0
             : storedUpfrontDefault > 0 ? storedUpfrontDefault : Number(revision.default_price_cents) || 0,

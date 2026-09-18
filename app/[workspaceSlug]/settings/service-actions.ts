@@ -3,7 +3,7 @@
 import type { ConfigurationActionResult, OnboardingServiceDefinition, OnboardingServiceState } from "@/lib/onboarding/configuration-types"
 import { configurationRpc, configurationSchemaUnavailable, revalidateOnboardingConfiguration, unexpectedConfigurationError } from "@/lib/onboarding/configuration-actions"
 import { normalizeServiceDefinition } from "@/lib/onboarding/configuration-validation"
-import { SERVICE_TEMPLATES } from "@/lib/onboarding/service-templates"
+import { SERVICE_TEMPLATES, serviceTemplateThumbnailSrc } from "@/lib/onboarding/service-templates"
 import { DEFAULT_SERVICE_CAPABILITIES } from "@/lib/workspace-capabilities"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
@@ -26,6 +26,12 @@ export async function saveOnboardingService(slug: string, serviceId: string | nu
         const definition = {
             ...normalized.definition,
             templateId: template?.id ?? normalized.definition.templateId,
+            thumbnailTemplateId: normalized.definition.thumbnailPath
+                ? null
+                : normalized.definition.thumbnailTemplateId === normalized.definition.templateId
+                    && serviceTemplateThumbnailSrc(normalized.definition.thumbnailTemplateId)
+                    ? normalized.definition.thumbnailTemplateId
+                    : null,
             requiredConnectionKeys: template?.setup.kind === "connection" ? [template.setup.connectionKey] : normalized.definition.requiredConnectionKeys,
             defaultPriceCents: normalized.definition.defaultUpfrontPriceCents,
         }

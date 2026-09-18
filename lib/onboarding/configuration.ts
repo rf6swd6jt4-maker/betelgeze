@@ -21,6 +21,7 @@ import type {
 } from "@/lib/onboarding/configuration-types"
 import { DEFAULT_ONBOARDING_THEME } from "@/lib/onboarding/theme"
 import { createPrivateUploadSignedUrl } from "@/lib/onboarding/uploads"
+import { serviceTemplateThumbnailSrc } from "@/lib/onboarding/service-templates"
 import { modulePublishDiff } from "@/lib/onboarding/publish-impact"
 import {
     defaultOnboardingPaymentDefinition,
@@ -642,6 +643,7 @@ function mapServices(rows: UnknownRow[], revisions: UnknownRow[], assignments: U
             checkoutDescription: text(definition.checkoutDescription, definition.checkout_description) ?? "",
             thumbnailPath: text(definition.thumbnailPath, definition.thumbnail_path) ?? null,
             thumbnailUrl: null,
+            thumbnailTemplateId: text(definition.thumbnailTemplateId, definition.thumbnail_template_id) ?? null,
             state: status === "archived" || row.archived_at ? "archived" : status === "retired" || row.retired_at ? "retired" : "active",
             version: Math.max(1, integer(revision.version, revision.revision_number, row.version)),
             isTest: bool(revision.is_test, definition.isTest, definition.is_test, row.is_test),
@@ -669,7 +671,7 @@ async function hydrateServiceThumbnails(services: OnboardingServiceDefinition[])
         ...service,
         thumbnailUrl: service.thumbnailPath
             ? await createPrivateUploadSignedUrl(service.thumbnailPath)
-            : null,
+            : serviceTemplateThumbnailSrc(service.thumbnailTemplateId),
     })))
 }
 

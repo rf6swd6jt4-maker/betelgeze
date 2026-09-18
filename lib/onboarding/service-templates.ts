@@ -119,3 +119,9 @@ export const SERVICE_TEMPLATES: readonly ServiceTemplateDefinition[] = [{
     capabilities: ["onboarding.manage", "fulfilment.manage"],
     onboardingBlocks: [{ kind: "google_ads_connection", label: "Google Ads connection" }],
 }]
+
+/** Resolves a template-owned public cover without treating it as a workspace upload. */
+export function serviceTemplateThumbnailSrc(templateId: string | null | undefined) {
+    if (templateId === "google-ads") return googleAdsThumbnail
+    return SERVICE_TEMPLATES.find((template) => template.id === templateId)?.thumbnail.src ?? null
+}

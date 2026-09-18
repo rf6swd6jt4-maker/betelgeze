@@ -33,6 +33,7 @@ function blankService(template?: ServiceTemplateDefinition): OnboardingServiceDe
         defaultBillingIntervalCount: template?.serviceDefaults.defaultBillingIntervalCount ?? 1,
         thumbnailPath: null,
         thumbnailUrl: template?.serviceDefaults.thumbnailSrc ?? null,
+        thumbnailTemplateId: template?.id ?? null,
         state: "active",
         version: 0,
         isTest: false,
@@ -228,7 +229,7 @@ function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schem
             if (!prepared.ok || !payload.uploadUrl || !payload.thumbnail?.path) throw new Error(payload.error ?? "Could not prepare the thumbnail upload.")
             const uploaded = await fetch(payload.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file })
             if (!uploaded.ok) throw new Error("The thumbnail upload did not complete.")
-            setDraft((current) => ({ ...current, thumbnailPath: payload.thumbnail!.path!, thumbnailUrl: payload.previewUrl ?? null }))
+            setDraft((current) => ({ ...current, thumbnailPath: payload.thumbnail!.path!, thumbnailUrl: payload.previewUrl ?? null, thumbnailTemplateId: null }))
         } catch (uploadError) {
             setError(uploadError instanceof Error ? uploadError.message : "The thumbnail could not be uploaded.")
         } finally {
@@ -264,7 +265,7 @@ function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schem
                         <p className="text-sm font-medium text-neutral-200">Thumbnail <span className="font-normal text-neutral-600">(optional)</span></p>
                         <div className="mt-2 flex items-center gap-2">
                             <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-800 bg-black text-[9px] uppercase tracking-wide text-neutral-600">{draft.thumbnailUrl ? <Image src={draft.thumbnailUrl} alt="" width={56} height={56} unoptimized className="h-full w-full object-cover" /> : "Service"}</div>
-                            <div className="flex min-w-0 flex-col items-start gap-1"><label className="cursor-pointer text-xs text-neutral-300 underline underline-offset-4 hover:text-white">{uploading ? "Uploading…" : draft.thumbnailPath ? "Replace" : "Upload"}<input type="file" accept="image/*" disabled={uploading || pending} onChange={(event) => { void uploadThumbnail(event.target.files?.[0] ?? null); event.currentTarget.value = "" }} className="sr-only" /></label>{draft.thumbnailPath ? <button type="button" onClick={() => setDraft((current) => ({ ...current, thumbnailPath: null, thumbnailUrl: null }))} className="text-xs text-neutral-600 hover:text-white">Remove</button> : null}</div>
+                            <div className="flex min-w-0 flex-col items-start gap-1"><label className="cursor-pointer text-xs text-neutral-300 underline underline-offset-4 hover:text-white">{uploading ? "Uploading…" : draft.thumbnailUrl ? "Replace" : "Upload"}<input type="file" accept="image/*" disabled={uploading || pending} onChange={(event) => { void uploadThumbnail(event.target.files?.[0] ?? null); event.currentTarget.value = "" }} className="sr-only" /></label>{draft.thumbnailUrl ? <button type="button" onClick={() => setDraft((current) => ({ ...current, thumbnailPath: null, thumbnailUrl: null, thumbnailTemplateId: null }))} className="text-xs text-neutral-600 hover:text-white">Remove</button> : null}</div>
                         </div>
                     </div>
                 </div>

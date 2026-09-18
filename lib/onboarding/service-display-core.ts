@@ -30,6 +30,7 @@ export type OnboardingServiceRevisionDisplay = {
     checkoutDisplayName: string
     checkoutDescription: string
     thumbnailPath: string | null
+    thumbnailUrl: string | null
     defaultUpfrontPriceCents: number
     defaultRecurringPriceCents: number
     currency: string
@@ -172,7 +173,7 @@ export function buildRelationshipDealServiceOptionsCore(input: {
             checkoutDisplayName: revision?.name || current?.name || legacyServices[selected.service_key]?.title || selected.service_key,
             checkoutDescription: revision?.description || current?.description || legacyServices[selected.service_key]?.description || "Existing relationship service",
             thumbnailPath: revision?.thumbnailPath ?? current?.thumbnailPath ?? null,
-            thumbnailUrl: current?.thumbnailUrl ?? null,
+            thumbnailUrl: revision?.thumbnailUrl ?? current?.thumbnailUrl ?? null,
             defaultUpfrontPriceCents: revision?.defaultUpfrontPriceCents ?? current?.defaultUpfrontPriceCents ?? 0,
             defaultRecurringPriceCents: revision?.defaultRecurringPriceCents ?? current?.defaultRecurringPriceCents ?? 0,
             currency: (revision?.currency ?? current?.currency ?? selected.currency ?? "USD").toUpperCase(),

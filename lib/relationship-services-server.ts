@@ -34,9 +34,16 @@ export function relationshipBackgroundDraft(r: RelationshipRecord): Relationship
 }
 
 /** Optional card data: called after the gallery is visible, never on header entry. */
-export async function hydrateRelationshipServiceThumbnails<T extends { thumbnailPath?: string | null }>(items: T[]): Promise<Array<T & { thumbnailUrl: string | null }>> {
-    const { createPrivateUploadSignedUrl } = await import("@/lib/onboarding/uploads")
-    const paths = [...new Set(items.flatMap(item => item.thumbnailPath ? [item.thumbnailPath] : []))]
-    const urls = new Map(await Promise.all(paths.map(async path => [path, await createPrivateUploadSignedUrl(path)] as const)))
-    return items.map(item => ({ ...item, thumbnailUrl: item.thumbnailPath ? urls.get(item.thumbnailPath) ?? null : null }))
+export async function hydrateRelationshipServiceThumbnails<T extends { service_revision_id?: string | null; thumbnailPath?: string | null; templateId?: string | null }>(items: T[]): Promise<Array<T & { thumbnailUrl: string | null }>> {
+    const revisionIds = [...new Set(items.flatMap(item => item.service_revision_id ? [item.service_revision_id] : []))]
+    const { data } = revisionIds.length
+        ? await supabaseAdmin.from("onboarding_service_revisions").select("id, definition").in("id", revisionIds)
+        : { data: [] }
+    const definitions = new Map((data ?? []).map(revision => [revision.id, revision.definition && typeof revision.definition === "object" && !Array.isArray(revision.definition) ? revision.definition as Record<string, unknown> : {}]))
+    const { resolveServiceThumbnailUrl } = await import("@/lib/onboarding/service-thumbnail")
+    return Promise.all(items.map(async item => {
+        const stored = item.service_revision_id ? definitions.get(item.service_revision_id) : null
+        const definition = stored ?? { thumbnailPath: item.thumbnailPath, templateId: item.templateId }
+        return { ...item, thumbnailUrl: await resolveServiceThumbnailUrl(definition) }
+    }))
 }

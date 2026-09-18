@@ -4,6 +4,9 @@ import test from "node:test"
 import { SERVICE_TEMPLATES, serviceTemplateThumbnailSrc, serviceTemplateThumbnailSrcFromDefinition } from "../lib/onboarding/service-templates.ts"
 
 const servicesUi = readFileSync("components/settings/ServiceCatalogue.tsx", "utf8")
+const relationshipThumbnail = readFileSync("components/relationships/ServiceThumbnail.tsx", "utf8")
+const thumbnailResolver = readFileSync("lib/onboarding/service-thumbnail.ts", "utf8")
+const checkout = readFileSync("lib/client-sales/onboarding-checkout.ts", "utf8")
 const thumbnailMigration = readFileSync("supabase/migrations/20260918090000_template_service_thumbnails.sql", "utf8")
 const reorderMigration = readFileSync("supabase/migrations/20260918120000_reorder_onboarding_services.sql", "utf8")
 
@@ -51,6 +54,11 @@ test("template covers persist until an uploaded thumbnail replaces them", () => 
     assert.equal(serviceTemplateThumbnailSrcFromDefinition({ templateId: "meta-ads", thumbnailTemplateId: "appointment-setting" }), "/service-templates/appointment-setting.png")
     assert.match(thumbnailMigration, /thumbnailTemplateId/)
     assert.match(thumbnailMigration, /definition->>'thumbnailPath'/)
+    assert.match(relationshipThumbnail, /const source = service\.thumbnailUrl/)
+    assert.doesNotMatch(relationshipThumbnail, /SERVICE_TEMPLATES/)
+    assert.match(thumbnailResolver, /serviceTemplateThumbnailSrcFromDefinition/)
+    assert.match(thumbnailResolver, /new URL\(source, origin\)/)
+    assert.match(checkout, /frozenCheckoutLineItems\(context, expiresAt, input\.origin\)/)
 })
 
 test("the onboarding builder offers one shared connection block for both Google Ads services", () => {

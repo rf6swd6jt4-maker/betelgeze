@@ -2,7 +2,7 @@ import "server-only"
 
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { OnboardingServiceRevisionDisplay } from "@/lib/onboarding/service-display"
-import { serviceTemplateThumbnailSrcFromDefinition } from "@/lib/onboarding/service-templates"
+import { resolveServiceThumbnailUrl } from "@/lib/onboarding/service-thumbnail"
 
 export async function loadOnboardingServiceRevisionDisplays(workspaceId: string, revisionIds: Array<string | null | undefined>) {
     const ids = [...new Set(revisionIds.filter((id): id is string => Boolean(id)))]
@@ -13,7 +13,7 @@ export async function loadOnboardingServiceRevisionDisplays(workspaceId: string,
         .eq("workspace_id", workspaceId)
         .in("id", ids)
     if (error) return new Map<string, OnboardingServiceRevisionDisplay>()
-    return new Map<string, OnboardingServiceRevisionDisplay>((data ?? []).map((revision): [string, OnboardingServiceRevisionDisplay] => {
+    const displays = await Promise.all((data ?? []).map(async (revision): Promise<[string, OnboardingServiceRevisionDisplay]> => {
         const definition = revision.definition && typeof revision.definition === "object" && !Array.isArray(revision.definition)
             ? revision.definition as Record<string, unknown>
             : {}
@@ -43,7 +43,7 @@ export async function loadOnboardingServiceRevisionDisplays(workspaceId: string,
         checkoutDisplayName: typeof definition.checkoutDisplayName === "string" ? definition.checkoutDisplayName : "",
         checkoutDescription: typeof definition.checkoutDescription === "string" ? definition.checkoutDescription : "",
         thumbnailPath: typeof definition.thumbnailPath === "string" ? definition.thumbnailPath : null,
-        thumbnailUrl: serviceTemplateThumbnailSrcFromDefinition(definition),
+        thumbnailUrl: await resolveServiceThumbnailUrl(definition),
         defaultUpfrontPriceCents: hasExplicitUpfrontDefault
             ? Number(definition.defaultUpfrontPriceCents ?? definition.default_upfront_price_cents) || 0
             : storedUpfrontDefault > 0 ? storedUpfrontDefault : Number(revision.default_price_cents) || 0,
@@ -52,4 +52,5 @@ export async function loadOnboardingServiceRevisionDisplays(workspaceId: string,
         isTest: Boolean(revision.is_test),
     }]
     }))
+    return new Map<string, OnboardingServiceRevisionDisplay>(displays)
 }

@@ -2,8 +2,7 @@ import { createStripeMixedCheckout, retrieveStripeCheckoutSession, getCheckoutFi
 import { handleCompletedStripeCheckout } from "@/lib/client-sales/automation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
-import { createPrivateUploadSignedUrl, createServiceThumbnailPublicUrl } from "@/lib/onboarding/uploads"
-import { serviceTemplateThumbnailSrcFromDefinition } from "@/lib/onboarding/service-templates"
+import { resolveServiceThumbnailUrl } from "@/lib/onboarding/service-thumbnail"
 import { defaultOnboardingPaymentDefinition, type OnboardingPaymentDefinitionV2 } from "@/lib/onboarding/block-definition"
 import { normalizeVisualPaymentGate } from "@/lib/onboarding/block-validation"
 import { getOnboardingUrl } from "@/lib/onboarding/custom-domain"
@@ -88,7 +87,7 @@ export async function getFrozenOnboardingPaymentDefinition(context: PaymentConte
     return normalized.ok ? normalized.definition : defaultOnboardingPaymentDefinition()
 }
 
-async function frozenCheckoutLineItems(context: PaymentContext, expiresAt: number): Promise<StripeCheckoutLineItemInput[]> {
+async function frozenCheckoutLineItems(context: PaymentContext, expiresAt: number, publicOrigin: string): Promise<StripeCheckoutLineItemInput[]> {
     const { data: items, error } = await supabaseAdmin.from("client_sale_items")
         .select("service_code, service_name, service_revision_id, description, upfront_amount_cents, recurring_amount_cents")
         .eq("workspace_id", context.workspaceId).eq("client_sale_id", context.sale.id).order("sort_order")
@@ -104,11 +103,10 @@ async function frozenCheckoutLineItems(context: PaymentContext, expiresAt: numbe
         const upfrontDescription = String(item.description ?? upfrontName)
         const recurringName = String(definition.recurringName ?? definition.recurring_name ?? definition.checkoutDisplayName ?? definition.checkout_display_name ?? upfrontName)
         const recurringDescription = String(definition.recurringDescription ?? definition.recurring_description ?? definition.checkoutDescription ?? definition.checkout_description ?? item.description ?? recurringName)
-        const thumbnailPath = typeof definition.thumbnailPath === "string" ? definition.thumbnailPath : typeof definition.thumbnail_path === "string" ? definition.thumbnail_path : null
-        const publicImage = createServiceThumbnailPublicUrl(thumbnailPath)
-        const imageUrl = publicImage ?? (thumbnailPath
-            ? await createPrivateUploadSignedUrl(thumbnailPath, Math.max(60, expiresAt - Math.floor(Date.now() / 1_000)))
-            : serviceTemplateThumbnailSrcFromDefinition(definition))
+        const imageUrl = await resolveServiceThumbnailUrl(definition, {
+            expiresInSeconds: Math.max(60, expiresAt - Math.floor(Date.now() / 1_000)),
+            publicOrigin,
+        })
         return [
             item.upfront_amount_cents > 0 ? {
                 serviceKey: item.service_code,
@@ -162,7 +160,7 @@ export async function createOrReuseOnboardingCheckout(input: { token: string; or
     }
     if (!context.sale.client_email) throw new Error("A billing email is required before payment can begin")
     const expiresAt = Math.floor(Date.now() / 1_000) + 24 * 60 * 60 - 60
-    const lineItems = await frozenCheckoutLineItems(context, expiresAt)
+    const lineItems = await frozenCheckoutLineItems(context, expiresAt, input.origin)
     const generation = context.sale.stripe_checkout_expires_at ?? "initial"
     const shared = {
         saleId: context.sale.id,

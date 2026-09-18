@@ -434,9 +434,11 @@ function InspectorPanel({ currentGroup, step, block, field, help, helpSelected, 
     </div>
     if (block.kind === "connection") return <div className="space-y-4">
         <label className="block text-xs text-neutral-500">Element name<input value={blockName(block)} disabled={!editable} onChange={(event) => updateBlock({ ...block, name: event.target.value })} className={inspectorInputClass} /></label>
-        <label className="block text-xs text-neutral-500">Button text<input value={block.label} disabled={!editable} onChange={(event) => updateBlock({ ...block, label: event.target.value })} className={inspectorInputClass} /></label>
-        <label className="block text-xs text-neutral-500">Description<textarea value={block.description} disabled={!editable} onChange={(event) => updateBlock({ ...block, description: event.target.value })} rows={4} className={inspectorTextareaClass} /></label>
-        <p className="text-xs leading-5 text-neutral-600">{block.provider === "google_ads" ? "Clients enter their account ID, approve the manager request in Google Ads, then return to verify access. The agency service account needs Admin access to send requests automatically." : "This required action completes only after Facebook authorization succeeds."}</p>
+        {block.provider === "google_ads" ? <p className="text-xs leading-5 text-neutral-600">The Customer ID field and its connection states use the fixed client-facing layout.</p> : <>
+            <label className="block text-xs text-neutral-500">Button text<input value={block.label} disabled={!editable} onChange={(event) => updateBlock({ ...block, label: event.target.value })} className={inspectorInputClass} /></label>
+            <label className="block text-xs text-neutral-500">Description<textarea value={block.description} disabled={!editable} onChange={(event) => updateBlock({ ...block, description: event.target.value })} rows={4} className={inspectorTextareaClass} /></label>
+            <p className="text-xs leading-5 text-neutral-600">This required action completes only after Facebook authorization succeeds.</p>
+        </>}
         <button type="button" disabled={!editable} onClick={deleteSelection} className="text-xs text-red-300 disabled:opacity-30">Delete connection</button>
     </div>
     if (block.kind === "appointment_medium") return <div className="space-y-4">

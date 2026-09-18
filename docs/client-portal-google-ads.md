@@ -4,7 +4,9 @@
 
 The same `GoogleAdsConnection` component and server connection runner power both surfaces and both Google Ads service templates. Google Search Ads and Google Local Services Ads therefore require one relationship-level account connection, not two OAuth approvals. Existing inherited manager access is verified against the exact client account. Invitation retries reuse pending links. No ads, budgets or campaigns are modified.
 
-The current customer-facing connection starts with the Google Ads customer ID and an explicit **Connect** action. Google sign-in and the account picker are not exposed. If manager access is not already active, the same UI retains the accurate manager-approval instructions and status check.
+The customer-facing connection shows only the **Customer ID** field and an explicit **Connect** action. Google sign-in and the account picker are not exposed. A successful request locks the field with a pencil edit control, shows **Invitation pending**, and changes the action to **I have approved the invitation**. A failed request shows **Invitation failed**. Verified access shows a green **Connected** status and no action button; the pencil remains available to change accounts. The interface deliberately contains no approval instructions.
+
+Changing the customer ID creates or reuses the replacement invitation first. Once Google confirms that replacement request, BE makes a best-effort cancellation of an older pending invitation. A failed replacement leaves the old invitation untouched. Existing active manager access is not removed automatically.
 
 Onboarding keeps its active-session, block, consent and completion guards. The portal independently checks its active bearer session and relationship. Both use `relationship_google_ads_connections`, with one account per relationship and one relationship per account within a workspace. A portal-origin connection does not require or submit onboarding. Later onboarding can verify that same connection and satisfy its own requirement.
 
@@ -24,7 +26,7 @@ Operation leases, one-minute per-period-and-service cooldowns, exact account/man
 
 ## Google setup and testing
 
-The workspace manager uses its existing service account. The key's Cloud project must have production Google Ads API access, and the service account must have suitable access in the manager (Admin for requesting invitations). Developer tokens were sunset on 9 September 2026; new setup no longer asks for or sends one. Existing encrypted configurations remain readable.
+The workspace manager uses its existing service account. The key's Cloud project must have production Google Ads API access, and the service account must have suitable access in the manager (Admin for requesting invitations). The Google user accepting an invitation must have direct Admin access to the client account, or use a linked manager that owns the client account administratively. Developer tokens were sunset on 9 September 2026; new setup no longer asks for or sends one. Existing encrypted configurations remain readable.
 
 OAuth infrastructure remains present for a future verified rollout, but no current customer-facing UI invokes it. When re-enabled, Production requires `GOOGLE_ADS_OAUTH_CLIENT_ID` and `GOOGLE_ADS_OAUTH_CLIENT_SECRET`. Create a Web application client with the exact authorized redirect URI `https://app.betelgeze.com/api/google-ads/oauth/callback`. Its Cloud project must have Google Ads API enabled and approved access. Configure the OAuth audience and test users or publish/verify it as required by Google. Credentials stay in Vercel secrets.
 

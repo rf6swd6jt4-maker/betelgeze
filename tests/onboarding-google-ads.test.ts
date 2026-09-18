@@ -9,6 +9,7 @@ import { formatGoogleAdsCustomerId, googleAdsOnboardingResponse, normalizeGoogle
 const key = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" }).toString()
 const config = { manager_customer_id: "1234567890", developer_token: "A".repeat(22), client_email: "ads@example.iam.gserviceaccount.com", private_key: key }
 const customerId = "0987654321"
+const previousCustomerId = "0876543210"
 const empty = { results: [] }
 const hierarchy = { results: [{ customerClient: { id: customerId, level: "2", status: "ENABLED", manager: false } }] }
 const detail = { results: [{ customer: { id: customerId, descriptiveName: "Client", currencyCode: "EUR", timeZone: "Europe/Dublin" } }] }
@@ -94,6 +95,42 @@ test("retries reuse pending invitations and verification never sends a new reque
     assert.equal(absent.calls.length, 2)
 })
 
+test("changing customer ID creates the replacement before canceling the old pending invitation", async () => {
+    const oldResource = `customers/${config.manager_customer_id}/customerClientLinks/${previousCustomerId}~41`
+    const newResource = `customers/${config.manager_customer_id}/customerClientLinks/${customerId}~42`
+    const { calls, fetcher } = mock([
+        empty,
+        empty,
+        { result: { resourceName: newResource } },
+        { results: [{ customerClientLink: { resourceName: oldResource, status: "PENDING" } }] },
+        { result: { resourceName: oldResource } },
+    ])
+    assert.deepEqual(await connectGoogleAdsClient(config, customerId, true, fetcher, false, previousCustomerId), { status: "pending" })
+    assert.equal(calls[2].body.operation && (calls[2].body.operation as { create?: unknown }).create ? true : false, true)
+    assert.deepEqual(calls[4].body, { operation: { update: { resourceName: oldResource, status: "CANCELED" }, updateMask: "status" } })
+    assert.equal(calls.filter((call) => call.url.includes("customerClientLinks:mutate")).length, 2)
+})
+
+test("a failed replacement never cancels the old invitation", async () => {
+    const { calls, fetcher } = mock([empty, empty, Response.json({ error: { details: [{ errors: [{ errorCode: { managerLinkError: "TOO_MANY_MANAGERS" } }] }] } }, { status: 400 })])
+    await assert.rejects(connectGoogleAdsClient(config, customerId, true, fetcher, false, previousCustomerId))
+    assert.equal(calls.length, 3)
+})
+
+test("a confirmed replacement remains pending when old invitation cancellation fails", async () => {
+    const oldResource = `customers/${config.manager_customer_id}/customerClientLinks/${previousCustomerId}~41`
+    const { fetcher } = mock([
+        empty,
+        empty,
+        { result: { resourceName: `customers/${config.manager_customer_id}/customerClientLinks/${customerId}~42` } },
+        { results: [{ customerClientLink: { resourceName: oldResource, status: "PENDING" } }] },
+        Response.json({ error: { details: [{ errors: [{ errorCode: { managerLinkError: "CANNOT_CANCEL_LINK" } }] }] } }, { status: 400 }),
+    ])
+    const result = await connectGoogleAdsClient(config, customerId, true, fetcher, false, previousCustomerId)
+    assert.equal(result.status, "pending")
+    assert.match(result.replacementWarning ?? "", /invitation_cancel/)
+})
+
 test("existing inherited access must also pass a read against the exact client before connection", async () => {
     const { calls, fetcher } = mock([hierarchy, detail])
     assert.deepEqual(await connectGoogleAdsClient(config, customerId, false, fetcher), { status: "connected", accountName: "Client", currency: "EUR", timeZone: "Europe/Dublin" })
@@ -139,4 +176,9 @@ test("database completion is service-only, token-bound, race-checked, and preser
     assert.match(sql, /v_block->>'kind' = 'calendar'/)
     const guard = readdirSync("supabase/migrations").sort().map((file) => readFileSync(`supabase/migrations/${file}`, "utf8")).findLast((source) => source.includes("create or replace function public.enforce_onboarding_block_requirements()"))!
     assert.match(guard, /and not session\.is_test/)
+    const replacement = readFileSync("supabase/migrations/20260918150000_google_ads_account_replacement.sql", "utf8")
+    assert.match(replacement, /'previousCustomerId', case when v_replaced then v_previous_customer_id else null end/)
+    assert.match(replacement, /delete from public\.relationship_google_ads_reports where connection_id = v_connection\.id/)
+    assert.match(replacement, /requirement\.requirement_kind = 'google_ads_connected'/)
+    assert.doesNotMatch(replacement, /An account is already linked or awaiting approval/)
 })

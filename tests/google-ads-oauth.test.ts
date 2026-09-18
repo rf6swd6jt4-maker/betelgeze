@@ -115,13 +115,19 @@ test('OAuth selection requires explicit consent and an account from the saved Go
     }finally{f.restore()}
 })
 
-test('customer-facing connection starts with customer ID and does not expose OAuth', () => {
+test('customer-facing connection uses compact editable invitation states and does not expose OAuth', () => {
     const connection = readFileSync('components/google-ads/GoogleAdsConnection.tsx', 'utf8')
+    const block = readFileSync('components/onboarding/GoogleAdsConnectionBlock.tsx', 'utf8')
     const picker = readFileSync('components/google-ads/GoogleAdsAccountPicker.tsx', 'utf8')
-    assert.match(connection, /Google Ads customer ID<input/)
+    assert.match(connection, />Customer ID<span/)
     assert.match(connection, /<span>Connect<\/span><GoogleAdsLogo/)
+    assert.match(connection, /Invitation pending/)
+    assert.match(connection, /I have approved the invitation/)
+    assert.match(connection, /Invitation failed/)
+    assert.match(connection, /aria-label="Edit customer ID"/)
     assert.match(connection, /consented: action === "request" \? true : undefined/)
-    assert.doesNotMatch(connection, /oauth_start|Sign in with Google|Use customer ID instead|Find the 10-digit ID|type="checkbox"/)
+    assert.doesNotMatch(connection, /oauth_start|Sign in with Google|Use customer ID instead|Find the 10-digit ID|Open Google Ads|type="checkbox"/)
+    assert.doesNotMatch(block, />Google Ads<|block\.description/)
     assert.match(picker, /Approve and connect/)
     assert.match(picker, /consented: true/)
     assert.match(picker, /window\.opener\?\.postMessage[\s\S]*window\.close\(\)/)

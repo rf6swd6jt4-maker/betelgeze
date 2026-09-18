@@ -161,6 +161,7 @@ export async function connectGoogleAdsClient(
     sendRequest: boolean,
     fetcher: typeof fetch = fetch,
     validateOnly = false,
+    replaceCustomerId?: string | null,
 ) {
     if (!/^\d{10}$/.test(customerId)) throw new Error("Enter your 10-digit Google Ads customer ID.")
     const config = normalizeGoogleAdsConfig(input)
@@ -168,6 +169,21 @@ export async function connectGoogleAdsClient(
     const token = await authorizeGoogleAds(config, fetcher)
     const search = (query: string, id = config.manager_customer_id) => adsCall(config, token, id, "googleAds:search", { query }, fetcher,
         id !== config.manager_customer_id ? "client_access" : query.includes("FROM customer_client_link") ? "invitation_lookup" : "account_hierarchy")
+    const finishReplacement = async <T extends { status: "pending" | "connected" }>(result: T) => {
+        if (!sendRequest || validateOnly || !replaceCustomerId || replaceCustomerId === customerId || !/^\d{10}$/.test(replaceCustomerId)) return result
+        try {
+            const previous = await search(`SELECT customer_client_link.resource_name, customer_client_link.status FROM customer_client_link WHERE customer_client_link.client_customer = 'customers/${replaceCustomerId}' AND customer_client_link.status = 'PENDING' LIMIT 1`)
+            const link = previous?.results?.find((row) => row.customerClientLink?.status === "PENDING")?.customerClientLink
+            if (!link?.resourceName?.startsWith(`customers/${config.manager_customer_id}/customerClientLinks/${replaceCustomerId}~`)) return result
+            const canceled = await adsCall(config, token, config.manager_customer_id, "customerClientLinks:mutate", {
+                operation: { update: { resourceName: link.resourceName, status: "CANCELED" }, updateMask: "status" },
+            }, fetcher, "invitation_cancel")
+            if (!canceled?.result?.resourceName) throw new GoogleAdsApiError("Google did not confirm the old invitation was canceled.", ["CANCEL_NOT_CONFIRMED"], 502, "invitation_cancel")
+            return result
+        } catch (error) {
+            return { ...result, replacementWarning: googleAdsDiagnosticError(error) }
+        }
+    }
     const hierarchy = await search(`SELECT customer_client.id, customer_client.level, customer_client.manager, customer_client.status FROM customer_client WHERE customer_client.id = ${customerId} LIMIT 1`)
     const child = hierarchy?.results?.[0]?.customerClient
     if (child && String(child.id) === customerId && Number(child.level) > 0) {
@@ -178,11 +194,11 @@ export async function connectGoogleAdsClient(
         const account = detail?.results?.[0]?.customer
         if (!account || String(account.id) !== customerId || account.manager) throw new Error("Google could not confirm access to the selected advertising account. Try again.")
         if (account.testAccount) throw new Error("Use a real Google Ads account. A Betelgeze test relationship can connect a real account.")
-        return { status: "connected" as const, accountName: account.descriptiveName ?? null, currency: account.currencyCode ?? null, timeZone: account.timeZone ?? null }
+        return finishReplacement({ status: "connected" as const, accountName: account.descriptiveName ?? null, currency: account.currencyCode ?? null, timeZone: account.timeZone ?? null })
     }
     const links = await search(`SELECT customer_client_link.status FROM customer_client_link WHERE customer_client_link.client_customer = 'customers/${customerId}' AND customer_client_link.status IN ('ACTIVE', 'PENDING')`)
     const statuses = links?.results?.map((row) => row.customerClientLink?.status) ?? []
-    if (statuses.includes("ACTIVE") || statuses.includes("PENDING")) return { status: "pending" as const }
+    if (statuses.includes("ACTIVE") || statuses.includes("PENDING")) return finishReplacement({ status: "pending" as const })
     if (!sendRequest) throw new Error("There is no active or pending invitation for this account. Send an access request, then approve it in Google Ads.")
     try {
         const invitation = await adsCall(config, token, config.manager_customer_id, "customerClientLinks:mutate", {
@@ -192,10 +208,10 @@ export async function connectGoogleAdsClient(
         if (!validateOnly && !invitation?.result?.resourceName) throw new Error("Google did not confirm the access request. Try again before approving in Google Ads.")
     } catch (error) {
         // Another tab or a response lost in transit may already have created the invitation.
-        if (error instanceof GoogleAdsApiError && error.codes.some((code) => ["ALREADY_INVITED_BY_THIS_MANAGER", "ALREADY_MANAGED_BY_THIS_MANAGER"].includes(code))) return { status: "pending" as const }
+        if (error instanceof GoogleAdsApiError && error.codes.some((code) => ["ALREADY_INVITED_BY_THIS_MANAGER", "ALREADY_MANAGED_BY_THIS_MANAGER"].includes(code))) return finishReplacement({ status: "pending" as const })
         throw error
     }
-    return { status: "pending" as const }
+    return finishReplacement({ status: "pending" as const })
 }
 
 export function googleAdsClientError(error: unknown) {

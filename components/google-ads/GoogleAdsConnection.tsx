@@ -6,6 +6,7 @@ import { formatGoogleAdsCustomerId, googleAdsOnboardingResponse, type GoogleAdsO
 
 export const adsPrimary = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--onboarding-primary,#1E3A5F)] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
 export const adsSecondary = "inline-flex min-h-11 items-center justify-center px-3 py-2 text-sm font-semibold text-[var(--onboarding-primary,#1E3A5F)] hover:bg-black/5 rounded-lg disabled:opacity-50"
+function PencilIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-2"><path d="M4 20h4l10.5-10.5a2.12 2.12 0 0 0-3-3L5 17v3Z" /><path d="m13.5 8.5 3 3" /></svg> }
 export async function adsFetch(api: string, body?: unknown, signal?: AbortSignal) {
     const response = await fetch(api, { cache: "no-store", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(70_000)]) : AbortSignal.timeout(70_000), ...(body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) })
     const result = await response.json()
@@ -21,14 +22,16 @@ export function GoogleAdsConnection({ api, active = true, preview = false, locke
     const initial = googleAdsOnboardingResponse(initialResponse)
     const [connection, setConnection] = useState(initial), [customerId, setCustomerId] = useState(initial?.customerId ?? "")
     const [manager, setManager] = useState({ id: initial?.managerId ?? (preview ? "9876543210" : ""), name: initial?.managerName ?? "Your agency" })
-    const [verified, setVerified] = useState(satisfied)
-    const [loading, setLoading] = useState(!preview && !locked), [pending, setPending] = useState(false), [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null)
+    const [verified, setVerified] = useState(satisfied), [editing, setEditing] = useState(!initial), [requestFailed, setRequestFailed] = useState(initial?.status === "needs_attention")
+    const [loading, setLoading] = useState(!preview && !locked), [pending, setPending] = useState(false), [error, setError] = useState<string | null>(null)
     const callbacks = useRef(onState), mounted = useRef(true), read = useRef<AbortController | null>(null), write = useRef(false), version = useRef(0), lastRead = useRef(0)
     useEffect(() => { callbacks.current = onState }, [onState])
     useEffect(() => { const counter = version; mounted.current = true; return () => { mounted.current = false; counter.current++; read.current?.abort(); read.current = null; lastRead.current = 0 } }, [])
     const apply = useCallback((value: GoogleAdsOnboardingConnection | null, ok: boolean, details?: { reportKinds?: string[] }) => {
         setConnection(value); setVerified(ok); callbacks.current(value, ok, details)
-        if (value) { setCustomerId(value.customerId); setManager({ id: value.managerId, name: value.managerName }) }
+        setRequestFailed(value?.status === "needs_attention")
+        if (value) { setCustomerId(value.customerId); setManager({ id: value.managerId, name: value.managerName }); setEditing(false) }
+        else setEditing(true)
     }, [])
     const load = useCallback(async () => {
         if (!api || preview || locked || read.current || write.current) return
@@ -51,7 +54,7 @@ export function GoogleAdsConnection({ api, active = true, preview = false, locke
     async function connect(action: "request" | "verify") {
         if (write.current || locked || loading) return
         write.current = true; version.current++; read.current?.abort(); read.current = null
-        setPending(true); setError(null); setNotice(null)
+        setPending(true); setError(null); setRequestFailed(false)
         try {
             if (preview) {
                 apply({ customerId: customerId.replace(/[-\s]/g, "") || "1234567890", managerId: "9876543210", managerName: "Your agency", status: action === "verify" ? "connected" : "pending", accountName: action === "verify" ? "Example advertising account" : null, verifiedAt: action === "verify" ? new Date().toISOString() : null }, action === "verify")
@@ -63,28 +66,25 @@ export function GoogleAdsConnection({ api, active = true, preview = false, locke
             if (!next) throw new Error("The saved connection could not be confirmed. Please reload its status.")
             if (!mounted.current) return
             apply(next, next.status === "connected"); lastRead.current = Date.now()
-            if (next.status === "pending") setNotice(action === "verify" ? "Approval is still pending. If you just accepted, give Google a moment and check again." : "Your access request is ready to approve in Google Ads.")
         } catch (e) {
-            if (mounted.current) { setError(e instanceof Error && !["TimeoutError", "AbortError"].includes(e.name) ? e.message : "The request did not finish here. Reload status to check whether it completed before retrying."); setVerified(false); callbacks.current(connection, false) }
+            if (mounted.current) { setError(e instanceof Error && !["TimeoutError", "AbortError"].includes(e.name) ? e.message : "The invitation could not be checked. Please try again."); setRequestFailed(true); setEditing(false); setVerified(false); callbacks.current(connection, false) }
         } finally { write.current = false; if (mounted.current) setPending(false) }
     }
-    const connected = verified && connection?.status === "connected", awaiting = connection?.status === "pending" || connection?.status === "connected" && !verified
+    function editCustomerId() {
+        setEditing(true); setError(null); setRequestFailed(false)
+        if (verified) { setVerified(false); callbacks.current(connection, false) }
+    }
+    const connected = !editing && verified && connection?.status === "connected"
+    const awaiting = !editing && !requestFailed && (connection?.status === "pending" || connection?.status === "connected" && !verified)
+    const failed = !editing && (requestFailed || connection?.status === "needs_attention")
+    const displayCustomerId = editing ? customerId : formatGoogleAdsCustomerId(customerId)
     return <div className="min-w-0" aria-busy={pending}>
-        <Status surface="light" tone={connected ? "green" : awaiting ? "yellow" : "grey"} label={connected ? "Connected" : awaiting ? "Awaiting approval" : loading ? "Checking connection…" : "Not connected"} />
-        {connected ? <div className="mt-3 flex items-center gap-3"><GoogleAdsLogo className="h-7 w-7 shrink-0" /><div className="min-w-0"><p className="break-words text-sm font-medium">{connection.accountName || "Google Ads account"}</p><p className="text-xs text-[var(--onboarding-muted,#475569)]">{formatGoogleAdsCustomerId(connection.customerId)}</p></div></div> : locked ? <p className="mt-3 text-sm">This step has been submitted.</p> : <div className="mt-4 space-y-4">
-            {awaiting ? <>
-                <p className="text-sm leading-6">Approve <strong>{manager.name}</strong>{manager.id ? <> ({formatGoogleAdsCustomerId(manager.id)})</> : null} for account <strong>{formatGoogleAdsCustomerId(connection.customerId)}</strong>.</p>
-                <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-[var(--onboarding-muted,#475569)]"><li>Open that account in Google Ads.</li><li>Go to <strong>Admin → Access and security → Managers</strong>.</li><li>Accept the request from {manager.name}. You need administrator access to approve it.</li><li>Return here and check the connection.</li></ol>
-                <div className="flex flex-wrap gap-2"><a className={adsSecondary} href="https://ads.google.com/aw/accountaccess" target="_blank" rel="noopener noreferrer">Open Google Ads ↗</a><button type="button" disabled={pending || loading} className={adsPrimary} onClick={() => void connect("verify")}>{pending ? "Checking…" : "Check connection"}</button></div>
-                <button type="button" className={adsSecondary} disabled={pending || loading} onClick={() => void connect("request")}>No invitation showing? Retry request</button>
-            </> : <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void connect("request") }}>
-                <label className="block text-sm font-medium">Google Ads customer ID<input value={customerId} onChange={(e) => setCustomerId(e.target.value)} inputMode="numeric" autoComplete="off" maxLength={20} placeholder="123-456-7890" required disabled={pending} className="mt-2 block min-h-12 w-full min-w-0 rounded-xl border border-black/20 bg-white px-3 py-2 text-base text-[var(--onboarding-text,#0F172A)] focus:outline-[var(--onboarding-primary,#1E3A5F)]" /></label>
-                <button type="submit" disabled={pending || loading || !manager.id} className={adsPrimary}>{pending ? "Connecting…" : <><span>Connect</span><GoogleAdsLogo /></>}</button>
-                {connection?.status === "needs_attention" ? <button type="button" className={adsSecondary} disabled={pending || loading} onClick={() => void connect("verify")}>Already approved? Check connection</button> : null}
-            </form>}
-        </div>}
-        {notice ? <p role="status" className="mt-3 text-sm leading-6 text-[var(--onboarding-muted,#475569)]">{notice}</p> : null}
-        {error ? <div role="alert" className="mt-4 text-sm leading-6 text-red-700"><p>{error}</p><button type="button" className={adsSecondary} disabled={pending || loading} onClick={() => void load()}>Reload status</button></div> : null}
+        {connected ? <Status surface="light" tone="green" label="Connected" /> : awaiting ? <Status surface="light" tone="yellow" label="Invitation pending" /> : failed ? <Status surface="light" tone="red" label="Invitation failed" /> : null}
+        {locked ? <p className="mt-3 text-sm">This step has been submitted.</p> : <form className={`${connected || awaiting || failed ? "mt-4" : ""} space-y-4`} onSubmit={(event) => { event.preventDefault(); void connect(awaiting ? "verify" : "request") }}>
+            <label className="block text-sm font-medium">Customer ID<span className="relative mt-2 block"><input value={displayCustomerId} onChange={(event) => setCustomerId(event.target.value)} inputMode="numeric" autoComplete="off" maxLength={20} placeholder="123-456-7890" required readOnly={!editing} disabled={pending} className={`block min-h-12 w-full min-w-0 rounded-xl border border-black/20 px-3 py-2 pr-12 text-base text-[var(--onboarding-text,#0F172A)] focus:outline-[var(--onboarding-primary,#1E3A5F)] ${editing ? "bg-white" : "bg-black/5"}`} />{!editing ? <button data-icon-button type="button" aria-label="Edit customer ID" disabled={pending} onClick={editCustomerId} className="absolute inset-y-1 right-1 inline-flex w-10 items-center justify-center rounded-lg text-[var(--onboarding-muted,#475569)] transition hover:bg-black/5 hover:text-[var(--onboarding-text,#0F172A)] disabled:opacity-50"><PencilIcon /></button> : null}</span></label>
+            {!connected ? <button type="submit" disabled={pending || loading || !manager.id} className={adsPrimary}>{pending ? awaiting ? "Checking…" : "Connecting…" : awaiting ? "I have approved the invitation" : <><span>Connect</span><GoogleAdsLogo /></>}</button> : null}
+        </form>}
+        {error ? <p role="alert" className="mt-3 text-sm leading-6 text-red-700">{error}</p> : null}
         {preview && !locked ? <p className="mt-3 text-xs text-[var(--onboarding-muted,#475569)]">Preview only. No Google account will be contacted.</p> : null}
     </div>
 }

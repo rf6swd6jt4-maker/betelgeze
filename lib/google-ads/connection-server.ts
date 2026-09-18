@@ -12,15 +12,19 @@ export async function runGoogleAdsConnection(integration: { config_encrypted: st
     const onboarding = "blockId" in scope
     const params = { p_token: scope.token, ...(onboarding ? { p_block_id: scope.blockId } : { p_workspace_id: scope.workspaceId }) }
     const attemptId = randomUUID()
-    const { error: beginError } = await supabaseAdmin.rpc(onboarding ? "begin_google_ads_onboarding" : "begin_google_ads_portal", {
+    const { data: prepared, error: beginError } = await supabaseAdmin.rpc(onboarding ? "begin_google_ads_onboarding" : "begin_google_ads_portal", {
         ...params, p_customer_id: customerId, p_manager_id: config.manager_customer_id, p_attempt_id: attemptId,
     })
     if (beginError) throw new Error(beginError.code === "P0001" || beginError.code === "22023" ? beginError.message : "The connection could not be prepared. Please try again.")
+    const previousCustomerId = prepared && typeof prepared === "object" && typeof (prepared as Record<string, unknown>).previousCustomerId === "string"
+        ? String((prepared as Record<string, unknown>).previousCustomerId)
+        : null
     let result: Awaited<ReturnType<typeof connectGoogleAdsClient>> | null = null
     let message: string | null = null, diagnostic: string | null = null
     try {
         const budget = AbortSignal.timeout(50_000)
-        result = await runner(config, customerId, sendRequest, (url, init) => fetch(url, { ...init, signal: AbortSignal.any([budget, init?.signal ?? budget]) }))
+        result = await runner(config, customerId, sendRequest, (url, init) => fetch(url, { ...init, signal: AbortSignal.any([budget, init?.signal ?? budget]) }), false, previousCustomerId)
+        if ("replacementWarning" in result && typeof result.replacementWarning === "string") diagnostic = result.replacementWarning
     }
     catch (error) { message = googleAdsClientError(error); diagnostic = googleAdsDiagnosticError(error) }
     const { data, error: finishError } = await supabaseAdmin.rpc(onboarding ? "finish_google_ads_onboarding" : "finish_google_ads_portal", {

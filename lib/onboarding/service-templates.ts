@@ -125,3 +125,23 @@ export function serviceTemplateThumbnailSrc(templateId: string | null | undefine
     if (templateId === "google-ads") return googleAdsThumbnail
     return SERVICE_TEMPLATES.find((template) => template.id === templateId)?.thumbnail.src ?? null
 }
+
+/**
+ * Older template-created revisions only stored templateId. A present
+ * thumbnailTemplateId (including null) is authoritative so removing a cover
+ * remains distinct from a legacy revision that has never chosen one.
+ */
+export function serviceTemplateThumbnailId(definition: Record<string, unknown>) {
+    if (Object.hasOwn(definition, "thumbnailTemplateId")) {
+        return typeof definition.thumbnailTemplateId === "string" ? definition.thumbnailTemplateId : null
+    }
+    if (Object.hasOwn(definition, "thumbnail_template_id")) {
+        return typeof definition.thumbnail_template_id === "string" ? definition.thumbnail_template_id : null
+    }
+    const legacyTemplateId = definition.templateId ?? definition.template_id
+    return typeof legacyTemplateId === "string" ? legacyTemplateId : null
+}
+
+export function serviceTemplateThumbnailSrcFromDefinition(definition: Record<string, unknown>) {
+    return serviceTemplateThumbnailSrc(serviceTemplateThumbnailId(definition))
+}

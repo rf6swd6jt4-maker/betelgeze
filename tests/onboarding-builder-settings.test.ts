@@ -317,8 +317,9 @@ test("module configuration has moved out of Settings and into the Builder", () =
     assert.match(builderUi, /Linked services/)
 })
 
-test("service authoring explains priority, portals an accessible full-shell dialog, and permits reviewed Retired reactivation", () => {
-    assert.match(servicesUi, /Higher numbers compose earlier in onboarding/)
+test("service ordering is list-owned while authoring portals an accessible full-shell dialog and permits reviewed Retired reactivation", () => {
+    assert.match(servicesUi, /Drag services to change the order in which they appear in onboarding/)
+    assert.doesNotMatch(servicesUi, /Display priority|Higher numbers compose earlier/)
     assert.match(servicesUi, /createPortal/)
     assert.match(servicesUi, /window\.parent\.document\.body/)
     assert.match(servicesUi, /role="dialog"/)

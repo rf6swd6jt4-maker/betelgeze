@@ -9,6 +9,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
 
 type SavedService = { service_id: string; revision_id: string; revision_number: number; state: OnboardingServiceState }
+type ReorderedServices = { service_count: number }
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export async function saveOnboardingService(slug: string, serviceId: string | null, input: OnboardingServiceDefinition, eligibleUserIds: string[] = []): Promise<ConfigurationActionResult<SavedService>> {
     try {
@@ -60,6 +62,25 @@ export async function saveOnboardingService(slug: string, serviceId: string | nu
             )
             if (capabilityError) return { ok: false, error: "The service was saved, but its Staff access profile could not be synchronized. Open it and save again before assigning it." }
         }
+        if (outcome.ok) revalidateOnboardingConfiguration(slug)
+        return outcome
+    } catch (error) {
+        return unexpectedConfigurationError(error)
+    }
+}
+
+export async function reorderOnboardingServices(slug: string, serviceIds: string[]): Promise<ConfigurationActionResult<ReorderedServices>> {
+    try {
+        const { workspace, user } = await requireWorkspace(slug, "admin")
+        if (!Array.isArray(serviceIds) || !serviceIds.length || serviceIds.length > 10_000) return { ok: false, error: "Choose a valid service order." }
+        if (serviceIds.some((serviceId) => !UUID_PATTERN.test(serviceId)) || new Set(serviceIds).size !== serviceIds.length) {
+            return { ok: false, error: "Choose each service exactly once." }
+        }
+        const outcome = await configurationRpc<ReorderedServices>("reorder_onboarding_services", {
+            p_workspace_id: workspace.id,
+            p_actor_user_id: user.id,
+            p_service_ids: serviceIds,
+        })
         if (outcome.ok) revalidateOnboardingConfiguration(slug)
         return outcome
     } catch (error) {

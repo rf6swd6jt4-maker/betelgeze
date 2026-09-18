@@ -1,11 +1,11 @@
 "use client"
 
 import { DeliveryUserPicker } from "@/components/settings/DeliveryUserPicker"
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { saveOnboardingService, setOnboardingServiceState } from "@/app/[workspaceSlug]/settings/service-actions"
+import { reorderOnboardingServices, saveOnboardingService, setOnboardingServiceState } from "@/app/[workspaceSlug]/settings/service-actions"
 import { SquarePill, Status, StatusStat, type StatusTone } from "@/components/ui"
 import type { OnboardingAssigneeOption, OnboardingModuleSummary, OnboardingServiceDefinition, OnboardingServiceState, OnboardingServiceType } from "@/lib/onboarding/configuration-types"
 import { SERVICE_TEMPLATES, type ServiceTemplateDefinition } from "@/lib/onboarding/service-templates"
@@ -66,6 +66,14 @@ function intervalLabel(service: OnboardingServiceDefinition) {
 
 function intervalCountMaximum(interval: OnboardingServiceDefinition["defaultBillingInterval"]) {
     return interval === "year" ? 3 : interval === "month" ? 36 : 156
+}
+
+function serviceOrder(services: OnboardingServiceDefinition[]) {
+    return [...services].sort((left, right) => right.displayPriority - left.displayPriority || left.code.localeCompare(right.code))
+}
+
+function sameOrder(left: string[], right: string[]) {
+    return left.length === right.length && left.every((id, index) => id === right[index])
 }
 
 function ServiceTemplatesModal({ onClose, onCreateCustom, onSelectTemplate }: { onClose: () => void; onCreateCustom: () => void; onSelectTemplate: (template: ServiceTemplateDefinition) => void }) {
@@ -294,7 +302,6 @@ function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schem
                 <div className="mt-5 grid gap-3 sm:grid-cols-2">
                     <label className="text-xs text-neutral-500">Currency<input value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value.toUpperCase().slice(0, 3) })} maxLength={3} className={`${inputClass} uppercase`} /></label>
                     <fieldset className="sm:col-span-2"><legend className="text-sm font-medium text-neutral-300">Eligible fulfilment people</legend><p className="mt-1 text-xs text-neutral-500">Choose who can deliver this service. Select the client’s person during POS.</p><DeliveryUserPicker people={assignees} selected={deliveryUsers} onChange={setDeliveryUsers} disabled={pending} /></fieldset>
-                    <label className="text-xs text-neutral-500">Display priority<input value={draft.displayPriority} onChange={(event) => setDraft({ ...draft, displayPriority: Math.max(0, Math.round(Number(event.target.value) || 0)) })} type="number" min="0" className={inputClass} /><span className="mt-1 block text-[11px] text-neutral-700">Higher numbers compose earlier in onboarding.</span></label>
                     <label className="mt-auto flex h-10 items-center gap-2 rounded-lg border border-neutral-800 bg-black px-3 text-sm text-neutral-300"><input type="checkbox" checked={draft.isTest} onChange={(event) => setDraft({ ...draft, isTest: event.target.checked })} className="h-4 w-4 accent-white" />Test service</label>
                 </div>
 
@@ -337,6 +344,14 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
 }) {
     const [selectedId, setSelectedId] = useState<string | null>(initialServiceId && initialServiceId !== "new" ? initialServiceId : null)
     const [templatesOpen, setTemplatesOpen] = useState(false)
+    const [orderedOverride, setOrderedOverride] = useState<string[] | null>(null)
+    const [draggingId, setDraggingId] = useState<string | null>(null)
+    const [keyboardDraggingId, setKeyboardDraggingId] = useState<string | null>(null)
+    const [orderError, setOrderError] = useState<string | null>(null)
+    const [orderAnnouncement, setOrderAnnouncement] = useState("")
+    const [orderPending, startOrderTransition] = useTransition()
+    const orderRef = useRef(serviceOrder(services).map((service) => service.id))
+    const dragOriginRef = useRef<string[]>(serviceOrder(services).map((service) => service.id))
     const selectedTemplate = selectedId?.startsWith("template:")
         ? SERVICE_TEMPLATES.find((template) => template.id === selectedId.slice("template:".length))
         : null
@@ -344,6 +359,122 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
     const assigneeById = useMemo(() => new Map(assignees.map((assignee) => [assignee.id, assignee])), [assignees])
     const portalTarget = typeof window !== "undefined" ? (window.parent !== window ? window.parent.document.body : document.body) : null
     const closeEditor = useCallback(() => setSelectedId(null), [])
+    const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services])
+    const propOrderedIds = useMemo(() => serviceOrder(services).map((service) => service.id), [services])
+    const orderedIds = orderedOverride
+        ? [...orderedOverride.filter((id) => serviceById.has(id)), ...propOrderedIds.filter((id) => !orderedOverride.includes(id))]
+        : propOrderedIds
+    const orderedServices = orderedIds.flatMap((id) => {
+        const service = serviceById.get(id)
+        return service ? [service] : []
+    })
+
+    function moveService(serviceId: string, targetId: string) {
+        const current = orderRef.current
+        const from = current.indexOf(serviceId)
+        const to = current.indexOf(targetId)
+        if (from < 0 || to < 0 || from === to) return
+        const next = [...current]
+        const [moved] = next.splice(from, 1)
+        next.splice(to, 0, moved)
+        orderRef.current = next
+        setOrderedOverride(next)
+        setOrderAnnouncement(`Moved service to position ${to + 1} of ${next.length}.`)
+    }
+
+    function saveServiceOrder(previous: string[]) {
+        const next = orderRef.current
+        if (sameOrder(previous, next)) return
+        setOrderError(null)
+        startOrderTransition(async () => {
+            const outcome = await reorderOnboardingServices(workspaceSlug, next)
+            if (outcome.ok) {
+                setOrderedOverride(null)
+                setOrderAnnouncement("Service order saved.")
+                return
+            }
+            orderRef.current = previous
+            setOrderedOverride(previous)
+            setOrderError(outcome.error ?? "The service order could not be saved.")
+            setOrderAnnouncement("The service order was restored because it could not be saved.")
+        })
+    }
+
+    function startPointerDrag(event: ReactPointerEvent<HTMLButtonElement>, serviceId: string) {
+        if (!schemaReady || orderPending || event.button !== 0) return
+        event.preventDefault()
+        orderRef.current = [...orderedIds]
+        dragOriginRef.current = [...orderedIds]
+        setDraggingId(serviceId)
+        event.currentTarget.setPointerCapture(event.pointerId)
+    }
+
+    function movePointerDrag(event: ReactPointerEvent<HTMLButtonElement>, serviceId: string) {
+        if (draggingId !== serviceId) return
+        event.preventDefault()
+        const target = event.currentTarget.ownerDocument.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-service-id]")
+        if (target?.dataset.serviceId) moveService(serviceId, target.dataset.serviceId)
+    }
+
+    function finishPointerDrag(event: ReactPointerEvent<HTMLButtonElement>, cancelled = false) {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+        const previous = dragOriginRef.current
+        setDraggingId(null)
+        if (cancelled) {
+            orderRef.current = previous
+            setOrderedOverride(previous)
+            setOrderAnnouncement("Service move cancelled.")
+            return
+        }
+        saveServiceOrder(previous)
+    }
+
+    function dragHandle(service: OnboardingServiceDefinition, index: number) {
+        const disabled = !schemaReady || orderPending
+        return <button
+            type="button"
+            aria-label={`Reorder ${service.name}, position ${index + 1} of ${orderedServices.length}`}
+            aria-pressed={keyboardDraggingId === service.id}
+            title="Drag to reorder"
+            disabled={disabled}
+            onPointerDown={(event) => startPointerDrag(event, service.id)}
+            onPointerMove={(event) => movePointerDrag(event, service.id)}
+            onPointerUp={(event) => finishPointerDrag(event)}
+            onPointerCancel={(event) => finishPointerDrag(event, true)}
+            onKeyDown={(event) => {
+                if (disabled) return
+                if (event.key === " " || event.key === "Enter") {
+                    event.preventDefault()
+                    if (keyboardDraggingId === service.id) {
+                        setKeyboardDraggingId(null)
+                        saveServiceOrder(dragOriginRef.current)
+                        setOrderAnnouncement("Service dropped.")
+                    } else {
+                        orderRef.current = [...orderedIds]
+                        dragOriginRef.current = [...orderedIds]
+                        setKeyboardDraggingId(service.id)
+                        setOrderAnnouncement("Service picked up. Use the arrow keys to move it.")
+                    }
+                    return
+                }
+                if (event.key === "Escape" && keyboardDraggingId === service.id) {
+                    event.preventDefault()
+                    orderRef.current = dragOriginRef.current
+                    setOrderedOverride(dragOriginRef.current)
+                    setKeyboardDraggingId(null)
+                    setOrderAnnouncement("Service move cancelled.")
+                    return
+                }
+                if (keyboardDraggingId !== service.id || !["ArrowUp", "ArrowDown"].includes(event.key)) return
+                event.preventDefault()
+                const targetIndex = Math.max(0, Math.min(orderedServices.length - 1, index + (event.key === "ArrowUp" ? -1 : 1)))
+                if (targetIndex !== index) moveService(service.id, orderedServices[targetIndex].id)
+            }}
+            className={`inline-flex h-9 w-8 shrink-0 touch-none select-none items-center justify-center rounded-md text-neutral-600 outline-none transition hover:bg-neutral-900 hover:text-neutral-300 focus-visible:ring-1 focus-visible:ring-white disabled:cursor-not-allowed disabled:opacity-30 ${draggingId === service.id || keyboardDraggingId === service.id ? "cursor-grabbing bg-neutral-900 text-white" : "cursor-grab"}`}
+        >
+            <svg aria-hidden="true" viewBox="0 0 12 18" className="h-[18px] w-3 fill-current"><circle cx="3" cy="4" r="1.25" /><circle cx="9" cy="4" r="1.25" /><circle cx="3" cy="9" r="1.25" /><circle cx="9" cy="9" r="1.25" /><circle cx="3" cy="14" r="1.25" /><circle cx="9" cy="14" r="1.25" /></svg>
+        </button>
+    }
 
     return <>
         <section className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 text-white">
@@ -351,7 +482,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
                 <div className="flex min-w-0 flex-col justify-between gap-3 sm:flex-row sm:items-start">
                     <div className="min-w-0">
                         <h2 className="text-base font-semibold leading-6 sm:text-lg">Services</h2>
-                        <p className="mt-1 text-sm leading-5 text-neutral-400">Manage the services your agency offers and the default prices used when preparing client work.</p>
+                        <p className="mt-1 text-sm leading-5 text-neutral-400">Manage the services your agency offers and the default prices used when preparing client work. Drag services to change the order in which they appear in onboarding.</p>
                     </div>
                     <div className="flex shrink-0 flex-col gap-3 sm:items-end">
                         <ServiceStatusSummary services={services} />
@@ -361,15 +492,18 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
             </div>
 
             {!schemaReady ? <p className="border-b border-neutral-800 bg-yellow-500/[0.06] px-3 py-2.5 text-xs text-yellow-200 sm:px-5">Showing compatible hard-coded definitions while the editable catalogue schema is applied.</p> : null}
+            {orderError ? <p role="alert" className="border-b border-red-500/20 bg-red-500/[0.06] px-3 py-2.5 text-xs text-red-200 sm:px-5">{orderError}</p> : null}
 
             <div role="list" aria-label="Services" className="divide-y divide-neutral-900">
-            {services.map((service) => {
+            {orderedServices.map((service, index) => {
                 const status = serviceStatus(service.state)
                 const eligibleNames = (eligibleUsers[service.id] ?? []).map((id) => assigneeById.get(id)?.name).filter(Boolean)
                 const pricing = service.serviceType === "retainer"
                     ? `${priceLabel(service.defaultUpfrontPriceCents, service.currency)} upfront · ${priceLabel(service.defaultRecurringPriceCents, service.currency)} ${intervalLabel(service)}`
                     : `${priceLabel(service.defaultUpfrontPriceCents, service.currency)} one-time`
-                return <article role="listitem" key={service.id} className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-2 transition sm:gap-3 sm:px-4 ${service.state === "active" ? "bg-emerald-300/[0.035]" : "bg-neutral-950 hover:bg-black"}`}>
+                return <article role="listitem" data-service-id={service.id} key={service.id} className={`grid min-h-14 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 px-2 py-2 transition sm:gap-3 sm:px-4 ${service.state === "active" ? "bg-emerald-300/[0.035]" : "bg-neutral-950 hover:bg-black"} ${draggingId === service.id ? "opacity-60" : ""}`}>
+                    {dragHandle(service, index)}
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-800 bg-black text-[7px] uppercase tracking-wide text-neutral-600 sm:h-10 sm:w-10">{service.thumbnailUrl ? <Image src={service.thumbnailUrl} alt="" width={40} height={40} unoptimized className="h-full w-full object-cover" /> : "Service"}</div>
                     <div className="min-w-0">
                         <div className="flex min-w-0 items-center gap-2 overflow-hidden">
                             <p className="min-w-0 truncate text-sm font-medium leading-5 text-white">{service.name}</p>
@@ -389,6 +523,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
                 </article>
             })}
             {!services.length ? <div className="bg-neutral-950 px-4 py-5"><p className="font-medium">No services yet.</p><p className="mt-1 text-sm text-neutral-500">Create the first service to make it available in the POS.</p></div> : null}
+            <p className="sr-only" aria-live="polite">{orderAnnouncement}</p>
             </div>
         </section>
         {templatesOpen && portalTarget ? createPortal(<ServiceTemplatesModal onClose={() => setTemplatesOpen(false)} onCreateCustom={() => { setTemplatesOpen(false); setSelectedId("new") }} onSelectTemplate={(template) => { setTemplatesOpen(false); setSelectedId(`template:${template.id}`) }} />, portalTarget) : null}

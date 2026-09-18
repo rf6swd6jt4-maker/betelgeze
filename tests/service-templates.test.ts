@@ -1,10 +1,11 @@
 import assert from "node:assert/strict"
 import { existsSync, readFileSync } from "node:fs"
 import test from "node:test"
-import { SERVICE_TEMPLATES, serviceTemplateThumbnailSrc } from "../lib/onboarding/service-templates.ts"
+import { SERVICE_TEMPLATES, serviceTemplateThumbnailSrc, serviceTemplateThumbnailSrcFromDefinition } from "../lib/onboarding/service-templates.ts"
 
 const servicesUi = readFileSync("components/settings/ServiceCatalogue.tsx", "utf8")
 const thumbnailMigration = readFileSync("supabase/migrations/20260918090000_template_service_thumbnails.sql", "utf8")
+const reorderMigration = readFileSync("supabase/migrations/20260918120000_reorder_onboarding_services.sql", "utf8")
 
 test("the service template catalogue starts with the Meta Ads template", () => {
     assert.equal(SERVICE_TEMPLATES.length, 4)
@@ -44,6 +45,10 @@ test("template covers persist until an uploaded thumbnail replaces them", () => 
         assert.equal(serviceTemplateThumbnailSrc(template.id), template.thumbnail.src)
     }
     assert.equal(serviceTemplateThumbnailSrc("unknown"), null)
+    assert.equal(serviceTemplateThumbnailSrcFromDefinition({ templateId: "meta-ads" }), "/service-templates/meta-ads.png")
+    assert.equal(serviceTemplateThumbnailSrcFromDefinition({ template_id: "appointment-setting" }), "/service-templates/appointment-setting.png")
+    assert.equal(serviceTemplateThumbnailSrcFromDefinition({ templateId: "meta-ads", thumbnailTemplateId: null }), null)
+    assert.equal(serviceTemplateThumbnailSrcFromDefinition({ templateId: "meta-ads", thumbnailTemplateId: "appointment-setting" }), "/service-templates/appointment-setting.png")
     assert.match(thumbnailMigration, /thumbnailTemplateId/)
     assert.match(thumbnailMigration, /definition->>'thumbnailPath'/)
 })
@@ -76,7 +81,17 @@ test("Services uses a compact Settings option list with popup editing", () => {
     assert.match(servicesUi, /label="Retired" tone="yellow"/)
     assert.match(servicesUi, /label="Archived" tone="grey"/)
     assert.match(servicesUi, /role="list" aria-label="Services"/)
-    assert.match(servicesUi, /role="listitem" key=\{service\.id\}/)
+    assert.match(servicesUi, /role="listitem" data-service-id=\{service\.id\}/)
+    assert.match(servicesUi, /service\.thumbnailUrl \? <Image/)
+    assert.match(servicesUi, /title="Drag to reorder"/)
+    assert.match(servicesUi, /reorderOnboardingServices\(workspaceSlug, next\)/)
+    assert.match(servicesUi, /Drag services to change the order in which they appear in onboarding\./)
+    assert.doesNotMatch(servicesUi, />Display priority</)
+    assert.match(reorderMigration, /create or replace function public\.reorder_onboarding_services/)
+    assert.match(reorderMigration, /perform public\.require_onboarding_admin_actor/)
+    assert.match(reorderMigration, /revision\.revision_number desc/)
+    assert.match(reorderMigration, /set display_priority = v_service_count - requested\.ordinality \+ 1/)
+    assert.match(reorderMigration, /grant execute on function public\.reorder_onboarding_services\(uuid, uuid, uuid\[\]\) to service_role/)
     assert.match(servicesUi, /onClick=\{\(\) => setSelectedId\(service\.id\)\}/)
     assert.match(servicesUi, /aria-label=\{`Edit \$\{service\.name\}`\}/)
     assert.match(servicesUi, /createPortal\(<ServiceEditor/)

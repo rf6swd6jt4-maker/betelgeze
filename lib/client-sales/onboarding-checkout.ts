@@ -3,7 +3,7 @@ import { handleCompletedStripeCheckout } from "@/lib/client-sales/automation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { createPrivateUploadSignedUrl, createServiceThumbnailPublicUrl } from "@/lib/onboarding/uploads"
-import { serviceTemplateThumbnailSrc } from "@/lib/onboarding/service-templates"
+import { serviceTemplateThumbnailSrcFromDefinition } from "@/lib/onboarding/service-templates"
 import { defaultOnboardingPaymentDefinition, type OnboardingPaymentDefinitionV2 } from "@/lib/onboarding/block-definition"
 import { normalizeVisualPaymentGate } from "@/lib/onboarding/block-validation"
 import { getOnboardingUrl } from "@/lib/onboarding/custom-domain"
@@ -108,7 +108,7 @@ async function frozenCheckoutLineItems(context: PaymentContext, expiresAt: numbe
         const publicImage = createServiceThumbnailPublicUrl(thumbnailPath)
         const imageUrl = publicImage ?? (thumbnailPath
             ? await createPrivateUploadSignedUrl(thumbnailPath, Math.max(60, expiresAt - Math.floor(Date.now() / 1_000)))
-            : serviceTemplateThumbnailSrc(typeof definition.thumbnailTemplateId === "string" ? definition.thumbnailTemplateId : null))
+            : serviceTemplateThumbnailSrcFromDefinition(definition))
         return [
             item.upfront_amount_cents > 0 ? {
                 serviceKey: item.service_code,

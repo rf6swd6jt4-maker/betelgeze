@@ -5,6 +5,7 @@ import { validServiceOrder } from "../lib/onboarding/service-order.ts"
 
 const catalogue = readFileSync("components/settings/ServiceCatalogue.tsx", "utf8")
 const route = readFileSync("app/api/workspaces/[workspaceSlug]/services/order/route.ts", "utf8")
+const revisionFix = readFileSync("supabase/migrations/20260918140000_fix_service_order_revisions.sql", "utf8")
 
 test("service ordering accepts PostgreSQL UUIDs with deterministic legacy bits", () => {
     assert.equal(validServiceOrder([
@@ -33,9 +34,17 @@ test("service order autosaves through a background command with animated local f
     assert.doesNotMatch(catalogue, /onPointerMove=/)
     assert.match(route, /requireWorkspace\(workspaceSlug, "admin"\)/)
     assert.match(route, /supabaseAdmin\.rpc\("reorder_onboarding_services"/)
-    assert.match(route, /schemaUnavailable[\s\S]*reorderWithoutRpc/)
-    assert.match(route, /revision_fallback/)
-    assert.match(route, /confirmedOrder/)
+    assert.doesNotMatch(route, /reorderWithoutRpc|onboarding_service_revisions[\s\S]*\.update\(/)
     assert.match(route, /Invalid save origin/)
     assert.doesNotMatch(route, /revalidateOnboardingConfiguration/)
+})
+
+test("service ordering appends immutable revisions and preserves module assignments", () => {
+    assert.match(revisionFix, /security invoker/)
+    assert.match(revisionFix, /for update/)
+    assert.match(revisionFix, /insert into public\.onboarding_service_revisions/)
+    assert.match(revisionFix, /insert into public\.onboarding_service_revision_modules/)
+    assert.match(revisionFix, /'moduleIds',[\s\S]*onboarding_service_revision_modules/)
+    assert.match(revisionFix, /'displayPriority', v_service_count - v_service\.requested_position \+ 1/)
+    assert.doesNotMatch(revisionFix, /update public\.onboarding_service_revisions/)
 })

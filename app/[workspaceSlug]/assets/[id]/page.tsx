@@ -3,7 +3,7 @@ import { CollapsedPillLinks } from "@/components/ui/CollapsedPillLinks"
 
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, DetailFields, DetailPageHeader } from "@/components/detail"
+import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, DetailPageHeader } from "@/components/detail"
 import { RoundPill, SquarePill } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
@@ -19,6 +19,7 @@ import {
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { accessibleAssetIds, accessibleRelationshipIds, accessibleWorkItemIds, requireWorkspaceAccess, workspaceAccessHasCapability } from "@/lib/workspace-access"
+import { AssetFieldsEditor } from "./AssetFieldsEditor"
 
 export const dynamic = "force-dynamic"
 
@@ -119,11 +120,10 @@ export default async function AssetDetailPage({ params }: PageProps) {
                             updated={formatRelativeTime(asset.updated_at)}
                         />
 
-                        <DetailFields>
-                            <DetailField label="Type" icon="file">{asset.content_type ?? asset.asset_kind.replace(/_/g, " ")}</DetailField>
-                            <DetailField label="Size" icon="size" className="lg:border-l lg:border-neutral-900 lg:pl-8">{formatFileSize(asset.file_size)}</DetailField>
-                            <DetailField label="Source" icon="source">{asset.source_kind.replace(/_/g, " ")}</DetailField>
-                            <DetailField label="Reference" icon="identity" className="lg:border-l lg:border-neutral-900 lg:pl-8"><span className="font-mono">{shortId(asset.id)}</span></DetailField>
+                        <AssetFieldsEditor workspaceSlug={workspace.slug} assetId={asset.id} userId={user.id} initialTitle={asset.title} initialDescription={asset.description ?? ""} updatedAt={asset.updated_at} canEdit>
+                            <DetailField label="Type" icon="file" className="lg:border-l lg:border-neutral-900 lg:pl-8">{asset.content_type ?? asset.asset_kind.replace(/_/g, " ")}</DetailField>
+                            <DetailField label="Size" icon="size">{formatFileSize(asset.file_size)}</DetailField>
+                            <DetailField label="Source" icon="source" className="lg:border-l lg:border-neutral-900 lg:pl-8">{asset.source_kind.replace(/_/g, " ")}</DetailField>
                             <DetailField label="Relationships" icon="relationship" className="lg:col-span-2">
                                 <div className="flex flex-wrap gap-1.5">
                                     {scopedRelationships.length ? scopedRelationships.map((link) => role === "staff" ? <RoundPill key={link.relationship_id} tone="sky">{link.relationship?.business_name ?? link.relationship?.primary_person_name ?? "Relationship"}</RoundPill> : <Link key={link.relationship_id} href={relationshipHubHref(workspace.slug, link.relationship_id)}><RoundPill tone="sky">{link.relationship?.business_name ?? link.relationship?.primary_person_name ?? "Relationship"}</RoundPill></Link>) : <span className="text-neutral-600">Workspace only</span>}
@@ -132,8 +132,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
                             <DetailField label="Work items" icon="activity" className="lg:col-span-2">
                                 <CollapsedPillLinks label="linked work items" items={scopedWorkItems.map(link => ({ id: link.work_item_id, label: link.work_item?.title ?? "Work item", href: workItemHref(workspace.slug, link.work_item_id) }))} />
                             </DetailField>
-                            <DetailField label="Description" icon="description" className="lg:col-span-2">{asset.description || <span className="text-neutral-600">No description</span>}</DetailField>
-                        </DetailFields>
+                        </AssetFieldsEditor>
 
                         {onboardingBackHref ? (
                             <section className="mt-6 rounded-xl border border-sky-500/20 bg-sky-950/10 p-4">

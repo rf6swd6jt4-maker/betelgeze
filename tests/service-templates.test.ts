@@ -92,7 +92,7 @@ test("Services uses a compact Settings option list with popup editing", () => {
     assert.match(servicesUi, /role="listitem" data-service-id=\{service\.id\}/)
     assert.match(servicesUi, /service\.thumbnailUrl \? <Image/)
     assert.match(servicesUi, /title="Drag to reorder"/)
-    assert.match(servicesUi, /reorderOnboardingServices\(workspaceSlug, next\)/)
+    assert.match(servicesUi, /sendServiceOrder\(workspaceSlug, next\)/)
     assert.match(servicesUi, /Drag services to change the order in which they appear in onboarding\./)
     assert.doesNotMatch(servicesUi, />Display priority</)
     assert.match(reorderMigration, /create or replace function public\.reorder_onboarding_services/)

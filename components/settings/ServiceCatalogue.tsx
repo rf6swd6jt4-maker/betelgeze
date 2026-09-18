@@ -1,14 +1,15 @@
 "use client"
 
 import { DeliveryUserPicker } from "@/components/settings/DeliveryUserPicker"
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { reorderOnboardingServices, saveOnboardingService, setOnboardingServiceState } from "@/app/[workspaceSlug]/settings/service-actions"
+import { saveOnboardingService, setOnboardingServiceState } from "@/app/[workspaceSlug]/settings/service-actions"
 import { SquarePill, Status, StatusStat, type StatusTone } from "@/components/ui"
 import type { OnboardingAssigneeOption, OnboardingModuleSummary, OnboardingServiceDefinition, OnboardingServiceState, OnboardingServiceType } from "@/lib/onboarding/configuration-types"
 import { SERVICE_TEMPLATES, type ServiceTemplateDefinition } from "@/lib/onboarding/service-templates"
+import { sendServiceOrder } from "@/lib/onboarding/service-order"
 
 const inputClass = "mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-sm text-white outline-none focus:border-neutral-500"
 const textareaClass = "mt-1.5 w-full resize-none rounded-lg border border-neutral-700 bg-black px-3 py-2 text-sm leading-5 text-white outline-none focus:border-neutral-500"
@@ -348,10 +349,19 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
     const [draggingId, setDraggingId] = useState<string | null>(null)
     const [keyboardDraggingId, setKeyboardDraggingId] = useState<string | null>(null)
     const [orderError, setOrderError] = useState<string | null>(null)
+    const [orderSaveState, setOrderSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
     const [orderAnnouncement, setOrderAnnouncement] = useState("")
-    const [orderPending, startOrderTransition] = useTransition()
+    const [dragPreview, setDragPreview] = useState<{ id: string; left: number; top: number; width: number; height: number } | null>(null)
     const orderRef = useRef(serviceOrder(services).map((service) => service.id))
     const dragOriginRef = useRef<string[]>(serviceOrder(services).map((service) => service.id))
+    const pendingOrderRef = useRef<string[] | null>(null)
+    const failedOrderRef = useRef<string[] | null>(null)
+    const savingOrderRef = useRef(false)
+    const rowRefs = useRef(new Map<string, HTMLElement>())
+    const flipRectsRef = useRef(new Map<string, DOMRect>())
+    const listRef = useRef<HTMLDivElement>(null)
+    const dragPreviewRef = useRef<HTMLDivElement>(null)
+    const dragGeometryRef = useRef<{ startTop: number; grabOffsetY: number; minTop: number; maxTop: number } | null>(null)
     const selectedTemplate = selectedId?.startsWith("template:")
         ? SERVICE_TEMPLATES.find((template) => template.id === selectedId.slice("template:".length))
         : null
@@ -368,12 +378,44 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
         const service = serviceById.get(id)
         return service ? [service] : []
     })
+    const orderedIdsKey = orderedIds.join("|")
+
+    useEffect(() => {
+        if (orderedOverride || savingOrderRef.current || pendingOrderRef.current) return
+        orderRef.current = propOrderedIds
+    }, [orderedOverride, propOrderedIds])
+
+    useLayoutEffect(() => {
+        const before = flipRectsRef.current
+        if (!before.size || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            before.clear()
+            return
+        }
+        for (const [id, previous] of before) {
+            if (id === draggingId) continue
+            const row = rowRefs.current.get(id)
+            const current = row?.getBoundingClientRect()
+            if (!row || !current) continue
+            const delta = previous.top - current.top
+            if (Math.abs(delta) < 1) continue
+            row.animate([
+                { transform: `translate3d(0, ${delta}px, 0)` },
+                { transform: "translate3d(0, 0, 0)" },
+            ], { duration: 190, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" })
+        }
+        before.clear()
+    }, [orderedIdsKey, draggingId])
+
+    function captureServiceRects() {
+        flipRectsRef.current = new Map([...rowRefs.current].flatMap(([id, row]) => row.isConnected ? [[id, row.getBoundingClientRect()] as const] : []))
+    }
 
     function moveService(serviceId: string, targetId: string) {
         const current = orderRef.current
         const from = current.indexOf(serviceId)
         const to = current.indexOf(targetId)
         if (from < 0 || to < 0 || from === to) return
+        captureServiceRects()
         const next = [...current]
         const [moved] = next.splice(from, 1)
         next.splice(to, 0, moved)
@@ -382,29 +424,61 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
         setOrderAnnouncement(`Moved service to position ${to + 1} of ${next.length}.`)
     }
 
+    async function drainServiceOrderSaves() {
+        if (savingOrderRef.current) return
+        savingOrderRef.current = true
+        while (pendingOrderRef.current) {
+            const next = pendingOrderRef.current
+            pendingOrderRef.current = null
+            setOrderSaveState("saving")
+            setOrderError(null)
+            try {
+                const outcome = await sendServiceOrder(workspaceSlug, next)
+                if (!outcome.ok) throw new Error(outcome.error ?? "The service order could not be saved automatically.")
+                failedOrderRef.current = null
+                if (!pendingOrderRef.current) {
+                    setOrderSaveState("saved")
+                    setOrderAnnouncement("Service order saved automatically.")
+                }
+            } catch (error) {
+                failedOrderRef.current = next
+                if (!pendingOrderRef.current) {
+                    setOrderSaveState("error")
+                    setOrderError(error instanceof Error ? error.message : "The service order could not be saved automatically.")
+                    setOrderAnnouncement("Service order is not saved yet. Retry when ready.")
+                }
+            }
+        }
+        savingOrderRef.current = false
+    }
+
     function saveServiceOrder(previous: string[]) {
-        const next = orderRef.current
+        const next = [...orderRef.current]
         if (sameOrder(previous, next)) return
         setOrderError(null)
-        startOrderTransition(async () => {
-            const outcome = await reorderOnboardingServices(workspaceSlug, next)
-            if (outcome.ok) {
-                setOrderedOverride(null)
-                setOrderAnnouncement("Service order saved.")
-                return
-            }
-            orderRef.current = previous
-            setOrderedOverride(previous)
-            setOrderError(outcome.error ?? "The service order could not be saved.")
-            setOrderAnnouncement("The service order was restored because it could not be saved.")
-        })
+        setOrderSaveState("saving")
+        failedOrderRef.current = null
+        pendingOrderRef.current = next
+        void drainServiceOrderSaves()
     }
 
     function startPointerDrag(event: ReactPointerEvent<HTMLButtonElement>, serviceId: string) {
-        if (!schemaReady || orderPending || event.button !== 0) return
+        if (!schemaReady || event.button !== 0) return
         event.preventDefault()
         orderRef.current = [...orderedIds]
         dragOriginRef.current = [...orderedIds]
+        const row = rowRefs.current.get(serviceId)
+        const list = listRef.current?.getBoundingClientRect()
+        const rect = row?.getBoundingClientRect()
+        if (rect && list) {
+            dragGeometryRef.current = {
+                startTop: rect.top,
+                grabOffsetY: event.clientY - rect.top,
+                minTop: list.top,
+                maxTop: Math.max(list.top, list.bottom - rect.height),
+            }
+            setDragPreview({ id: serviceId, left: rect.left, top: rect.top, width: rect.width, height: rect.height })
+        }
         setDraggingId(serviceId)
         event.currentTarget.setPointerCapture(event.pointerId)
     }
@@ -412,6 +486,11 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
     function movePointerDrag(event: ReactPointerEvent<HTMLButtonElement>, serviceId: string) {
         if (draggingId !== serviceId) return
         event.preventDefault()
+        const geometry = dragGeometryRef.current
+        if (geometry && dragPreviewRef.current) {
+            const top = Math.min(Math.max(event.clientY - geometry.grabOffsetY, geometry.minTop), geometry.maxTop)
+            dragPreviewRef.current.style.transform = `translate3d(0, ${top - geometry.startTop}px, 0)`
+        }
         const target = event.currentTarget.ownerDocument.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-service-id]")
         if (target?.dataset.serviceId) moveService(serviceId, target.dataset.serviceId)
     }
@@ -420,7 +499,10 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
         const previous = dragOriginRef.current
         setDraggingId(null)
+        setDragPreview(null)
+        dragGeometryRef.current = null
         if (cancelled) {
+            captureServiceRects()
             orderRef.current = previous
             setOrderedOverride(previous)
             setOrderAnnouncement("Service move cancelled.")
@@ -430,7 +512,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
     }
 
     function dragHandle(service: OnboardingServiceDefinition, index: number) {
-        const disabled = !schemaReady || orderPending
+        const disabled = !schemaReady
         return <button
             type="button"
             aria-label={`Reorder ${service.name}, position ${index + 1} of ${orderedServices.length}`}
@@ -483,6 +565,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
                     <div className="min-w-0">
                         <h2 className="text-base font-semibold leading-6 sm:text-lg">Services</h2>
                         <p className="mt-1 text-sm leading-5 text-neutral-400">Manage the services your agency offers and the default prices used when preparing client work. Drag services to change the order in which they appear in onboarding.</p>
+                        <p aria-live="polite" data-workspace-autosave="true" className={`min-h-4 pt-1 text-xs ${orderSaveState === "error" ? "text-red-300" : "text-neutral-500"}`}>{orderSaveState === "saving" ? "Saving order…" : orderSaveState === "saved" ? "Order saved automatically" : orderSaveState === "error" ? <>{orderError} <button type="button" className="underline underline-offset-2 hover:text-white" onClick={() => { pendingOrderRef.current = failedOrderRef.current ?? [...orderRef.current]; setOrderSaveState("saving"); void drainServiceOrderSaves() }}>Retry</button></> : "Order saves automatically"}</p>
                     </div>
                     <div className="flex shrink-0 flex-col gap-3 sm:items-end">
                         <ServiceStatusSummary services={services} />
@@ -492,16 +575,14 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
             </div>
 
             {!schemaReady ? <p className="border-b border-neutral-800 bg-yellow-500/[0.06] px-3 py-2.5 text-xs text-yellow-200 sm:px-5">Showing compatible hard-coded definitions while the editable catalogue schema is applied.</p> : null}
-            {orderError ? <p role="alert" className="border-b border-red-500/20 bg-red-500/[0.06] px-3 py-2.5 text-xs text-red-200 sm:px-5">{orderError}</p> : null}
-
-            <div role="list" aria-label="Services" className="divide-y divide-neutral-900">
+            <div ref={listRef} role="list" aria-label="Services" className="divide-y divide-neutral-900">
             {orderedServices.map((service, index) => {
                 const status = serviceStatus(service.state)
                 const eligibleNames = (eligibleUsers[service.id] ?? []).map((id) => assigneeById.get(id)?.name).filter(Boolean)
                 const pricing = service.serviceType === "retainer"
                     ? `${priceLabel(service.defaultUpfrontPriceCents, service.currency)} upfront · ${priceLabel(service.defaultRecurringPriceCents, service.currency)} ${intervalLabel(service)}`
                     : `${priceLabel(service.defaultUpfrontPriceCents, service.currency)} one-time`
-                return <article role="listitem" data-service-id={service.id} key={service.id} className={`grid min-h-14 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 px-2 py-2 transition sm:gap-3 sm:px-4 ${service.state === "active" ? "bg-emerald-300/[0.035]" : "bg-neutral-950 hover:bg-black"} ${draggingId === service.id ? "opacity-60" : ""}`}>
+                return <article ref={(node) => { if (node) rowRefs.current.set(service.id, node); else rowRefs.current.delete(service.id) }} role="listitem" data-service-id={service.id} key={service.id} className={`grid min-h-14 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 px-2 py-2 transition-[opacity,background-color] duration-150 sm:gap-3 sm:px-4 ${service.state === "active" ? "bg-emerald-300/[0.035]" : "bg-neutral-950 hover:bg-black"} ${draggingId === service.id ? "opacity-0" : ""}`}>
                     {dragHandle(service, index)}
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-800 bg-black text-[7px] uppercase tracking-wide text-neutral-600 sm:h-10 sm:w-10">{service.thumbnailUrl ? <Image src={service.thumbnailUrl} alt="" width={40} height={40} unoptimized className="h-full w-full object-cover" /> : "Service"}</div>
                     <div className="min-w-0">
@@ -526,6 +607,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
             <p className="sr-only" aria-live="polite">{orderAnnouncement}</p>
             </div>
         </section>
+        {dragPreview ? <div ref={dragPreviewRef} aria-hidden="true" className="pointer-events-none fixed z-[120] flex items-center gap-3 rounded-xl border border-neutral-600 bg-neutral-900/95 px-4 shadow-2xl shadow-black/70 backdrop-blur" style={{ left: dragPreview.left, top: dragPreview.top, width: dragPreview.width, height: dragPreview.height, willChange: "transform" }}><span className="text-lg leading-none text-neutral-400">⠿</span>{(() => { const service = serviceById.get(dragPreview.id); return service ? <><div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-700 bg-black text-[7px] uppercase tracking-wide text-neutral-600">{service.thumbnailUrl ? <Image src={service.thumbnailUrl} alt="" width={40} height={40} unoptimized className="h-full w-full object-cover" /> : "Service"}</div><p className="min-w-0 truncate text-sm font-medium text-white">{service.name}</p></> : null })()}</div> : null}
         {templatesOpen && portalTarget ? createPortal(<ServiceTemplatesModal onClose={() => setTemplatesOpen(false)} onCreateCustom={() => { setTemplatesOpen(false); setSelectedId("new") }} onSelectTemplate={(template) => { setTemplatesOpen(false); setSelectedId(`template:${template.id}`) }} />, portalTarget) : null}
         {selected && portalTarget ? createPortal(<ServiceEditor key={selectedId ?? "new"} workspaceSlug={workspaceSlug} service={selected} assignees={assignees} eligibleUsers={eligibleUsers[selected.id] ?? []} schemaReady={schemaReady} onClose={closeEditor} />, portalTarget) : null}
 

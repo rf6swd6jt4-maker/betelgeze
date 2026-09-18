@@ -4,13 +4,12 @@ import type { ConfigurationActionResult, OnboardingServiceDefinition, Onboarding
 import { configurationRpc, configurationSchemaUnavailable, revalidateOnboardingConfiguration, unexpectedConfigurationError } from "@/lib/onboarding/configuration-actions"
 import { normalizeServiceDefinition } from "@/lib/onboarding/configuration-validation"
 import { SERVICE_TEMPLATES, serviceTemplateThumbnailSrc } from "@/lib/onboarding/service-templates"
+import { POSTGRES_UUID_PATTERN, type ReorderedServices } from "@/lib/onboarding/service-order"
 import { DEFAULT_SERVICE_CAPABILITIES } from "@/lib/workspace-capabilities"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
 
 type SavedService = { service_id: string; revision_id: string; revision_number: number; state: OnboardingServiceState }
-type ReorderedServices = { service_count: number }
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export async function saveOnboardingService(slug: string, serviceId: string | null, input: OnboardingServiceDefinition, eligibleUserIds: string[] = []): Promise<ConfigurationActionResult<SavedService>> {
     try {
@@ -73,7 +72,7 @@ export async function reorderOnboardingServices(slug: string, serviceIds: string
     try {
         const { workspace, user } = await requireWorkspace(slug, "admin")
         if (!Array.isArray(serviceIds) || !serviceIds.length || serviceIds.length > 10_000) return { ok: false, error: "Choose a valid service order." }
-        if (serviceIds.some((serviceId) => !UUID_PATTERN.test(serviceId)) || new Set(serviceIds).size !== serviceIds.length) {
+        if (serviceIds.some((serviceId) => !POSTGRES_UUID_PATTERN.test(serviceId)) || new Set(serviceIds).size !== serviceIds.length) {
             return { ok: false, error: "Choose each service exactly once." }
         }
         const outcome = await configurationRpc<ReorderedServices>("reorder_onboarding_services", {

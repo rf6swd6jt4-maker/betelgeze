@@ -362,6 +362,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
     const listRef = useRef<HTMLDivElement>(null)
     const dragPreviewRef = useRef<HTMLDivElement>(null)
     const dragGeometryRef = useRef<{ startTop: number; grabOffsetY: number; minTop: number; maxTop: number } | null>(null)
+    const activePointerDragRef = useRef<{ cancel: () => void } | null>(null)
     const selectedTemplate = selectedId?.startsWith("template:")
         ? SERVICE_TEMPLATES.find((template) => template.id === selectedId.slice("template:".length))
         : null
@@ -385,6 +386,8 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
         orderRef.current = propOrderedIds
     }, [orderedOverride, propOrderedIds])
 
+    useEffect(() => () => activePointerDragRef.current?.cancel(), [])
+
     useLayoutEffect(() => {
         const before = flipRectsRef.current
         if (!before.size || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -407,21 +410,28 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
     }, [orderedIdsKey, draggingId])
 
     function captureServiceRects() {
-        flipRectsRef.current = new Map([...rowRefs.current].flatMap(([id, row]) => row.isConnected ? [[id, row.getBoundingClientRect()] as const] : []))
+        const connectedRows = [...rowRefs.current].filter(([, row]) => row.isConnected)
+        flipRectsRef.current = new Map(connectedRows.map(([id, row]) => [id, row.getBoundingClientRect()] as const))
+        for (const [, row] of connectedRows) row.getAnimations().forEach((animation) => animation.cancel())
     }
 
-    function moveService(serviceId: string, targetId: string) {
+    function moveServiceToIndex(serviceId: string, to: number) {
         const current = orderRef.current
         const from = current.indexOf(serviceId)
-        const to = current.indexOf(targetId)
-        if (from < 0 || to < 0 || from === to) return
+        const boundedTo = Math.max(0, Math.min(current.length - 1, to))
+        if (from < 0 || from === boundedTo) return
         captureServiceRects()
         const next = [...current]
         const [moved] = next.splice(from, 1)
-        next.splice(to, 0, moved)
+        next.splice(boundedTo, 0, moved)
         orderRef.current = next
         setOrderedOverride(next)
-        setOrderAnnouncement(`Moved service to position ${to + 1} of ${next.length}.`)
+        setOrderAnnouncement(`Moved service to position ${boundedTo + 1} of ${next.length}.`)
+    }
+
+    function moveService(serviceId: string, targetId: string) {
+        const targetIndex = orderRef.current.indexOf(targetId)
+        if (targetIndex >= 0) moveServiceToIndex(serviceId, targetIndex)
     }
 
     async function drainServiceOrderSaves() {
@@ -465,50 +475,80 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
     function startPointerDrag(event: ReactPointerEvent<HTMLButtonElement>, serviceId: string) {
         if (!schemaReady || event.button !== 0) return
         event.preventDefault()
-        orderRef.current = [...orderedIds]
-        dragOriginRef.current = [...orderedIds]
+        activePointerDragRef.current?.cancel()
+        const origin = [...orderedIds]
+        orderRef.current = origin
+        dragOriginRef.current = origin
         const row = rowRefs.current.get(serviceId)
-        const list = listRef.current?.getBoundingClientRect()
+        const captureTarget = listRef.current
+        const host = captureTarget?.ownerDocument.defaultView
+        const list = captureTarget?.getBoundingClientRect()
         const rect = row?.getBoundingClientRect()
-        if (rect && list) {
-            dragGeometryRef.current = {
-                startTop: rect.top,
-                grabOffsetY: event.clientY - rect.top,
-                minTop: list.top,
-                maxTop: Math.max(list.top, list.bottom - rect.height),
-            }
-            setDragPreview({ id: serviceId, left: rect.left, top: rect.top, width: rect.width, height: rect.height })
+        if (!rect || !list || !captureTarget || !host) return
+        dragGeometryRef.current = {
+            startTop: rect.top,
+            grabOffsetY: event.clientY - rect.top,
+            minTop: list.top,
+            maxTop: Math.max(list.top, list.bottom - rect.height),
         }
+        setDragPreview({ id: serviceId, left: rect.left, top: rect.top, width: rect.width, height: rect.height })
         setDraggingId(serviceId)
-        event.currentTarget.setPointerCapture(event.pointerId)
-    }
-
-    function movePointerDrag(event: ReactPointerEvent<HTMLButtonElement>, serviceId: string) {
-        if (draggingId !== serviceId) return
-        event.preventDefault()
-        const geometry = dragGeometryRef.current
-        if (geometry && dragPreviewRef.current) {
-            const top = Math.min(Math.max(event.clientY - geometry.grabOffsetY, geometry.minTop), geometry.maxTop)
-            dragPreviewRef.current.style.transform = `translate3d(0, ${top - geometry.startTop}px, 0)`
+        const pointerId = event.pointerId
+        let finished = false
+        const move = (pointerEvent: PointerEvent) => {
+            if (pointerEvent.pointerId !== pointerId) return
+            if (pointerEvent.cancelable) pointerEvent.preventDefault()
+            const geometry = dragGeometryRef.current
+            const listRect = captureTarget.getBoundingClientRect()
+            if (geometry && dragPreviewRef.current) {
+                const top = Math.min(Math.max(pointerEvent.clientY - geometry.grabOffsetY, geometry.minTop), geometry.maxTop)
+                dragPreviewRef.current.style.transform = `translate3d(0, ${top - geometry.startTop}px, 0)`
+            }
+            const localY = pointerEvent.clientY - listRect.top + captureTarget.scrollTop
+            const otherIds = orderRef.current.filter((id) => id !== serviceId)
+            let insertionIndex = 0
+            for (const id of otherIds) {
+                const candidate = rowRefs.current.get(id)
+                if (!candidate || localY < candidate.offsetTop + candidate.offsetHeight / 2) break
+                insertionIndex += 1
+            }
+            moveServiceToIndex(serviceId, insertionIndex)
         }
-        const target = event.currentTarget.ownerDocument.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-service-id]")
-        if (target?.dataset.serviceId) moveService(serviceId, target.dataset.serviceId)
-    }
-
-    function finishPointerDrag(event: ReactPointerEvent<HTMLButtonElement>, cancelled = false) {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-        const previous = dragOriginRef.current
-        setDraggingId(null)
-        setDragPreview(null)
-        dragGeometryRef.current = null
-        if (cancelled) {
-            captureServiceRects()
-            orderRef.current = previous
-            setOrderedOverride(previous)
-            setOrderAnnouncement("Service move cancelled.")
-            return
+        const finish = (cancelled: boolean) => {
+            if (finished) return
+            finished = true
+            host.removeEventListener("pointermove", move)
+            host.removeEventListener("pointerup", up)
+            host.removeEventListener("pointercancel", cancel)
+            host.removeEventListener("blur", abort)
+            host.removeEventListener("keydown", keydown)
+            captureTarget.removeEventListener("lostpointercapture", abort)
+            if (captureTarget.hasPointerCapture(pointerId)) captureTarget.releasePointerCapture(pointerId)
+            if (activePointerDragRef.current?.cancel === abort) activePointerDragRef.current = null
+            setDraggingId(null)
+            setDragPreview(null)
+            dragGeometryRef.current = null
+            if (cancelled) {
+                captureServiceRects()
+                orderRef.current = origin
+                setOrderedOverride(origin)
+                setOrderAnnouncement("Service move cancelled.")
+            } else {
+                saveServiceOrder(origin)
+            }
         }
-        saveServiceOrder(previous)
+        const up = (pointerEvent: PointerEvent) => { if (pointerEvent.pointerId === pointerId) finish(false) }
+        const cancel = (pointerEvent: PointerEvent) => { if (pointerEvent.pointerId === pointerId) finish(true) }
+        const abort = () => finish(true)
+        const keydown = (keyEvent: KeyboardEvent) => { if (keyEvent.key === "Escape") finish(true) }
+        activePointerDragRef.current = { cancel: abort }
+        host.addEventListener("pointermove", move, { passive: false })
+        host.addEventListener("pointerup", up)
+        host.addEventListener("pointercancel", cancel)
+        host.addEventListener("blur", abort)
+        host.addEventListener("keydown", keydown)
+        captureTarget.addEventListener("lostpointercapture", abort)
+        captureTarget.setPointerCapture(pointerId)
     }
 
     function dragHandle(service: OnboardingServiceDefinition, index: number) {
@@ -520,9 +560,6 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
             title="Drag to reorder"
             disabled={disabled}
             onPointerDown={(event) => startPointerDrag(event, service.id)}
-            onPointerMove={(event) => movePointerDrag(event, service.id)}
-            onPointerUp={(event) => finishPointerDrag(event)}
-            onPointerCancel={(event) => finishPointerDrag(event, true)}
             onKeyDown={(event) => {
                 if (disabled) return
                 if (event.key === " " || event.key === "Enter") {
@@ -575,7 +612,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
             </div>
 
             {!schemaReady ? <p className="border-b border-neutral-800 bg-yellow-500/[0.06] px-3 py-2.5 text-xs text-yellow-200 sm:px-5">Showing compatible hard-coded definitions while the editable catalogue schema is applied.</p> : null}
-            <div ref={listRef} role="list" aria-label="Services" className="divide-y divide-neutral-900">
+            <div ref={listRef} role="list" aria-label="Services" className="relative divide-y divide-neutral-900">
             {orderedServices.map((service, index) => {
                 const status = serviceStatus(service.state)
                 const eligibleNames = (eligibleUsers[service.id] ?? []).map((id) => assigneeById.get(id)?.name).filter(Boolean)

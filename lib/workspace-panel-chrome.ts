@@ -15,6 +15,7 @@ export function workspaceRouteUsesSharedBanner(pathname: string) {
         "assets",
         "sops",
         "onboarding",
+        "notes",
         "relationships",
         "work",
         "work-items",

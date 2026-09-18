@@ -16,12 +16,15 @@ export { StatusStat } from "./StatusStat"
 export type { StatusTone } from "./status-styles"
 export { Selector, SelectorDrawer, SelectorOption, SelectorTrigger } from "./Selector"
 export type { SelectorAppearance, SelectorOptionDefinition } from "./Selector"
+export { MultiSelector } from "./MultiSelector"
+export type { MultiSelectorOption } from "./MultiSelector"
 export { TrendChart } from "./TrendChart"
 export type { TrendChartBand, TrendChartLabel, TrendChartPoint, TrendChartTick } from "./TrendChart"
 
 export { ServiceStage } from "./ServiceStage"
 export { CenteredDialog } from "./CenteredDialog"
 export { AttachmentCards, AttachmentCard, AddAttachmentCard } from "./AttachmentCards"
+export { AttachmentsBlock, AttachmentPreview } from "./AttachmentsBlock"
 
 export { DocumentCatalogue, DocumentCard, AddDocumentCard } from "./DocumentCatalogue"
 

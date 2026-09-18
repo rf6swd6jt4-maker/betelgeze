@@ -17,7 +17,18 @@ export type NoteRelationshipLink = {
 
 export type NoteAssetLink = {
     asset_id: string
-    asset: { id: string; title: string; asset_kind: string } | null
+    asset: {
+        id: string
+        title: string
+        asset_kind: string
+        source_kind: string
+        storage_path: string | null
+        external_url: string | null
+        content_type: string | null
+        file_size: number | null
+        native_kind: string | null
+        updated_at: string
+    } | null
 }
 
 export function noteHref(workspaceSlug: string, noteId: string) {
@@ -62,7 +73,7 @@ export async function listNoteRelationships(workspaceId: string, noteId: string)
 export async function listNoteAssets(workspaceId: string, noteId: string) {
     const { data, error } = await supabaseAdmin
         .from("note_assets")
-        .select("asset_id,asset:assets(id,title,asset_kind)")
+        .select("asset_id,asset:assets(id,title,asset_kind,source_kind,storage_path,external_url,content_type,file_size,native_kind,updated_at)")
         .eq("workspace_id", workspaceId)
         .eq("note_id", noteId)
         .order("created_at")

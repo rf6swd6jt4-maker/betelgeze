@@ -1,10 +1,9 @@
-import Link from "next/link"
 import { notFound } from "next/navigation"
 import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailPageHeader } from "@/components/detail"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
 import { workItemStatusPresentation } from "@/components/list/work-item-presentation"
-import { SquarePill } from "@/components/ui"
+import { AttachmentPreview, AttachmentsBlock, SquarePill } from "@/components/ui"
 import {
     getWorkItem,
     getWorkItemPlanningContext,
@@ -51,15 +50,25 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     const scopedRelationships = relationships.filter((relationship) => !allowedRelationshipIds || allowedRelationshipIds.has(relationship.relationship_id))
     const contextRelationshipId = scopedRelationships[0]?.relationship_id
     const waitsForParent = planning.dependencies.some((dependency) => dependency.source === "parent_auto" && dependency.work_item_id === item.parent_work_item_id)
-    const [contextRelationship, avatarUrls] = await Promise.all([
+    const imageStoragePaths = assets.flatMap((asset) => asset.storage_path && asset.content_type?.startsWith("image/") && asset.source_kind !== "message" && asset.native_kind !== "sop_extracted_image" ? [asset.storage_path] : []).slice(0, 24)
+    const [contextRelationship, signedUrls] = await Promise.all([
         contextRelationshipId ? getRelationship(workspace.id, contextRelationshipId) : Promise.resolve(null),
-        createUploadSignedUrls([...planning.members, ...(planning.creator ? [planning.creator] : [])].map((person) => person.avatar_path).filter((path): path is string => Boolean(path))),
+        createUploadSignedUrls([
+            ...[...planning.members, ...(planning.creator ? [planning.creator] : [])].map((person) => person.avatar_path).filter((path): path is string => Boolean(path)),
+            ...imageStoragePaths,
+        ]),
     ])
     const personProps = (person: typeof planning.members[number]) => ({
         user_id: person.user_id,
         username: person.username,
-        avatar_url: person.avatar_path ? avatarUrls.get(person.avatar_path) ?? null : null,
+        avatar_url: person.avatar_path ? signedUrls.get(person.avatar_path) ?? null : null,
     })
+    const attachmentPreview = (asset: typeof assets[number]) => {
+        if (!asset.storage_path || !asset.content_type?.startsWith("image/")) return null
+        if (asset.native_kind === "sop_extracted_image") return `/api/workspaces/${workspace.slug}/sop-images/${asset.id}?thumbnail=1`
+        if (asset.source_kind === "message") return `/api/client-messages/media/${asset.storage_path.split("/").map(encodeURIComponent).join("/")}`
+        return signedUrls.get(asset.storage_path) ?? null
+    }
 
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
@@ -93,22 +102,9 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                     linksLocked={item.native_kind === "onboarding_step"}
                 />
 
-                <section className="mt-6 rounded-2xl border border-neutral-800 bg-black p-5">
-                    <h2 className="text-lg font-semibold">Assets and updates</h2>
-                    <div className="mt-4 divide-y divide-neutral-900 rounded-xl border border-neutral-900">
-                        {assets.length ? assets.map((asset) => (
-                            <Link key={asset.id} href={assetHref(workspace.slug, asset.id)} className="grid gap-2 px-3 py-3 hover:bg-neutral-900/70 sm:grid-cols-[1fr_120px] sm:items-center">
-                                <div className="min-w-0">
-                                    <p className="truncate font-medium text-neutral-100">{asset.title}</p>
-                                    <p className="mt-1 font-mono text-xs text-neutral-600">{shortId(asset.id)}</p>
-                                </div>
-                                <p className="text-sm text-neutral-500 sm:text-right">{formatRelativeTime(asset.updated_at)}</p>
-                            </Link>
-                        )) : (
-                            <p className="px-3 py-4 text-sm text-neutral-500">No assets are attached to this work item yet.</p>
-                        )}
-                    </div>
-                </section>
+                <AttachmentsBlock empty="No assets are attached to this work item yet.">
+                    {assets.length ? assets.map((asset) => <AttachmentPreview key={asset.id} href={assetHref(workspace.slug, asset.id)} title={asset.title} subtitle={`${asset.asset_kind.replace(/_/g, " ")} · ${formatRelativeTime(asset.updated_at)}`} previewUrl={attachmentPreview(asset)} contentType={asset.content_type} />) : null}
+                </AttachmentsBlock>
 
                         {role === "owner" || role === "admin" ? <DetailDangerZone>
                             <DetailDangerAction

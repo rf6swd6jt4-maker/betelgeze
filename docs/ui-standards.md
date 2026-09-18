@@ -440,7 +440,8 @@ A detail page is the canonical destination for one durable record. Relationship,
 1. Mandatory `DetailPageHeader`.
 2. Optional `DetailFields` when the record has attributes worth inspecting or editing.
 3. Record-specific content such as a Gantt chart, onboarding timeline, asset preview, poll funnel, updates, or diagnostics.
-4. Mandatory `DetailDangerZone` at the bottom of the primary content column for records that can participate in the shared archive lifecycle.
+4. Shared `AttachmentsBlock` when files or media are linked to the record.
+5. Mandatory `DetailDangerZone` at the bottom of the primary content column for records that can participate in the shared archive lifecycle.
 
 The record-specific middle remains flexible. The header, fields, and destructive-action anatomy do not.
 
@@ -515,6 +516,31 @@ Work item details separate Description (a short goal), Instructions (the editabl
 - Unique content follows the fields block at the normal `mt-5` or `mt-6` page rhythm and may use the surface best suited to its interaction.
 - A relationship Gantt, onboarding timeline, asset preview, poll funnel, or diagnostic payload is allowed to retain its own internal design because it is not interchangeable record metadata.
 - Do not repeat the record name, category, ID, overall status, or general details heading inside this content.
+
+### AttachmentsBlock
+
+`AttachmentsBlock` is the canonical linked-asset treatment on detail pages and other record surfaces. It replaces page-local “Assets”, “Assets and updates”, file rows, and pill-only asset collections when the linked asset itself is the thing a person needs to recognize or open.
+
+```tsx
+<AttachmentsBlock empty="No assets are attached to this work item yet.">
+    {assets.map((asset) => <AttachmentPreview
+        key={asset.id}
+        href={assetHref(workspace.slug, asset.id)}
+        title={asset.title}
+        subtitle={`${asset.asset_kind} · ${formatRelativeTime(asset.updated_at)}`}
+        previewUrl={previewUrlById.get(asset.id)}
+        contentType={asset.content_type}
+    />)}
+</AttachmentsBlock>
+```
+
+- The visible heading is always `Attachments`. Supporting copy and compact actions such as Attach, Refresh, Edit, or Download may sit in the block header or individual card footer.
+- The block is one clean neutral box with a restrained border. Do not nest a second bordered list or card around the preview grid.
+- `AttachmentPreview` uses the authorized thumbnail when one already exists. It falls back to a quiet file-type preview; the block must not generate, download, sign, or decode full originals merely to fill the grid.
+- The grid always shows at least two cards per row on mobile. Wider screens use compact auto-filling columns; previews remain secondary to the record details above them.
+- Titles may wrap to two lines. Subtitles are one short line for type, date, size, or description. Internal references do not belong in this presentation unless they are the only useful identity.
+- Keep reads bounded and preserve the record's existing authorization. Media remains lazy, and offscreen attachment blocks may retain their established visibility-triggered loading.
+- On a detail page, this block comes after fields and other ordinary record content, immediately before `DetailDangerZone`. Nothing except the danger zone follows it in the primary column.
 
 ### DetailDangerZone
 

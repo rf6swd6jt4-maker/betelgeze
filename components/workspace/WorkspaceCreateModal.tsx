@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useTransition, type FormEvent } from "react"
+import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import type { WorkspaceCreateActionState } from "@/app/[workspaceSlug]/relationships/actions"
 import { usePathname } from "@/components/workspace/WorkspaceNavigation"
-import { AssignmentSelector, AutoGrowTextarea, SelectorDrawer, SelectorOption, SelectorTrigger } from "@/components/ui"
+import { AssignmentSelector, AutoGrowTextarea, MultiSelector } from "@/components/ui"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 
 export type WorkspaceCreateTarget = "relationship" | "work-item" | "asset" | "note" | "okr"
@@ -31,34 +31,6 @@ type Props = {
 }
 
 const EMPTY_OPTIONS: CreateOptions = { workItemOptions: [], relationshipOptions: [], assetOptions: [], okrOwnerOptions: [] }
-
-function MultiLinkSelector({ name, label, placeholder, options, selected, onChange, disabled }: {
-    name: string
-    label: string
-    placeholder: string
-    options: Array<{ id: string; label: string; description?: string }>
-    selected: string[]
-    onChange: (ids: string[]) => void
-    disabled?: boolean
-}) {
-    const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-    const [query, setQuery] = useState("")
-    const visible = useMemo(() => {
-        const normalized = query.trim().toLowerCase()
-        return normalized ? options.filter((option) => `${option.label} ${option.description ?? ""}`.toLowerCase().includes(normalized)) : options
-    }, [options, query])
-    const selectedSet = useMemo(() => new Set(selected), [selected])
-    return <>
-        {selected.map((id) => <input key={id} type="hidden" name={name} value={id} />)}
-        <SelectorTrigger open={Boolean(anchor)} appearance="input" disabled={disabled} aria-label={label} onClick={(event) => { setQuery(""); setAnchor((current) => current ? null : event.currentTarget) }}>
-            {selected.length ? `${selected.length} selected` : <span className="text-neutral-600">{placeholder}</span>}
-        </SelectorTrigger>
-        {anchor ? <SelectorDrawer anchor={anchor} ariaLabel={label} title={label} description="Choose any records that belong with this note." search={query} onSearch={options.length >= 7 ? setQuery : undefined} onDismiss={() => { setAnchor(null); setQuery("") }} footer={<button type="button" onClick={() => setAnchor(null)} className="min-h-9 w-full rounded-lg px-2 text-sm text-neutral-300 hover:bg-neutral-900">Done</button>}>
-            {visible.map((option) => <SelectorOption key={option.id} selected={selectedSet.has(option.id)} description={option.description} onClick={() => onChange(selectedSet.has(option.id) ? selected.filter((id) => id !== option.id) : [...selected, option.id])}>{option.label}</SelectorOption>)}
-            {!visible.length ? <p className="px-2.5 py-3 text-xs text-neutral-500">No matching records.</p> : null}
-        </SelectorDrawer> : null}
-    </>
-}
 
 function defaultOkrPeriod() {
     const start = new Date()
@@ -211,8 +183,8 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
                         <label className="block text-sm text-neutral-300">Description<textarea name="description" required maxLength={20000} rows={7} placeholder="Record the useful context here." className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white placeholder:text-neutral-600" /></label>
                     </section>
                     <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2">
-                        <div className="text-sm text-neutral-300"><p className="mb-1.5">Relationships</p><MultiLinkSelector name="relationship_ids" label="Linked relationships" placeholder={optionsLoading ? "Loading…" : "Choose relationships"} options={options.relationshipOptions.map((item) => ({ id: item.id, label: item.label }))} selected={noteRelationshipIds} onChange={setNoteRelationshipIds} disabled={optionsLoading} /></div>
-                        <div className="text-sm text-neutral-300"><p className="mb-1.5">Assets</p><MultiLinkSelector name="asset_ids" label="Linked assets" placeholder={optionsLoading ? "Loading…" : "Choose assets"} options={options.assetOptions.map((item) => ({ id: item.id, label: item.title, description: item.assetKind.replace(/_/g, " ") }))} selected={noteAssetIds} onChange={setNoteAssetIds} disabled={optionsLoading} /></div>
+                        <div className="text-sm text-neutral-300"><p className="mb-1.5">Relationships</p><MultiSelector name="relationship_ids" label="Linked relationships" description="Choose up to 20 relationships that belong with this note." placeholder={optionsLoading ? "Loading…" : "Choose relationships"} options={options.relationshipOptions.map((item) => ({ id: item.id, label: item.label }))} selected={noteRelationshipIds} onChange={setNoteRelationshipIds} disabled={optionsLoading} maxSelections={20} /></div>
+                        <div className="text-sm text-neutral-300"><p className="mb-1.5">Assets</p><MultiSelector name="asset_ids" label="Linked assets" description="Choose up to 20 assets that belong with this note." placeholder={optionsLoading ? "Loading…" : "Choose assets"} options={options.assetOptions.map((item) => ({ id: item.id, label: item.title, description: item.assetKind.replace(/_/g, " ") }))} selected={noteAssetIds} onChange={setNoteAssetIds} disabled={optionsLoading} maxSelections={20} /></div>
                     </section>
                 </div> : null}
 

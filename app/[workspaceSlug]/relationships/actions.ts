@@ -21,8 +21,10 @@ import { sendSaleSmsConfirmationIfOptedIn } from "@/lib/client-sales/sms-consent
 import type { StripeRecurringInterval } from "@/lib/stripe/api"
 import { WORKSPACE_TAB_FRAME_PARAM, workspaceTabFrameUrl } from "@/lib/workspace-tabs"
 import { resolvePrimaryMessagingProvider } from "@/lib/client-messages/addresses"
+import { noteHref } from "@/lib/notes"
 
 const creatableAssetKinds = new Set(["file", "media", "document"])
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export type WorkspaceCreateActionState = {
     ok: boolean
@@ -717,4 +719,58 @@ export async function createAssetFromModal(slug: string, formData: FormData, rel
 
     relationshipRevalidatePaths(slug, relationshipToLink ?? undefined)
     return { ok: true, href: assetHref(slug, asset.id) }
+}
+
+export async function createNoteFromModal(slug: string, formData: FormData): Promise<WorkspaceCreateActionState> {
+    const { workspace, user } = await requireWorkspace(slug, "admin")
+    const name = formString(formData, "name")
+    const description = formString(formData, "description")
+    if (!name || name.length > 160) return { ok: false, error: "Add a note name of 160 characters or fewer." }
+    if (!description || description.length > 20_000) return { ok: false, error: "Add a note description of 20,000 characters or fewer." }
+
+    const relationshipIds = [...new Set(formData.getAll("relationship_ids").map(String).filter((id) => uuidPattern.test(id)))].slice(0, 20)
+    const assetIds = [...new Set(formData.getAll("asset_ids").map(String).filter((id) => uuidPattern.test(id)))].slice(0, 20)
+    if (relationshipIds.length !== formData.getAll("relationship_ids").filter(Boolean).length || assetIds.length !== formData.getAll("asset_ids").filter(Boolean).length) {
+        return { ok: false, error: "One or more selected links are invalid." }
+    }
+
+    const [relationshipsResult, assetsResult] = await Promise.all([
+        relationshipIds.length
+            ? supabaseAdmin.from("relationships").select("id").eq("workspace_id", workspace.id).neq("status", "archived").in("id", relationshipIds)
+            : Promise.resolve({ data: [], error: null }),
+        assetIds.length
+            ? supabaseAdmin.from("assets").select("id").eq("workspace_id", workspace.id).in("id", assetIds)
+            : Promise.resolve({ data: [], error: null }),
+    ])
+    if (relationshipsResult.error || (relationshipsResult.data ?? []).length !== relationshipIds.length) return { ok: false, error: "One or more relationships are archived or unavailable." }
+    if (assetsResult.error || (assetsResult.data ?? []).length !== assetIds.length) return { ok: false, error: "One or more assets are unavailable." }
+
+    const { data: note, error } = await supabaseAdmin.from("notes").insert({
+        workspace_id: workspace.id,
+        name,
+        description,
+        created_by: user.id,
+    }).select("id").single()
+    if (error || !note) return { ok: false, error: "The note could not be created." }
+
+    const [relationshipLinks, assetLinks] = await Promise.all([
+        relationshipIds.length ? supabaseAdmin.from("note_relationships").insert(relationshipIds.map((relationshipId) => ({
+            workspace_id: workspace.id,
+            note_id: note.id,
+            relationship_id: relationshipId,
+        }))) : Promise.resolve({ error: null }),
+        assetIds.length ? supabaseAdmin.from("note_assets").insert(assetIds.map((assetId) => ({
+            workspace_id: workspace.id,
+            note_id: note.id,
+            asset_id: assetId,
+        }))) : Promise.resolve({ error: null }),
+    ])
+    if (relationshipLinks.error || assetLinks.error) {
+        await supabaseAdmin.from("notes").delete().eq("workspace_id", workspace.id).eq("id", note.id)
+        return { ok: false, error: "The note links could not be saved. Nothing was created." }
+    }
+
+    revalidatePath(workspaceHref(slug, "notes"))
+    for (const relationshipId of relationshipIds) relationshipRevalidatePaths(slug, relationshipId)
+    return { ok: true, href: noteHref(slug, note.id) }
 }

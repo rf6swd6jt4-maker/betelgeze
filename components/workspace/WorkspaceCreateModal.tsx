@@ -1,16 +1,17 @@
 "use client"
 
-import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition, type FormEvent } from "react"
 import type { WorkspaceCreateActionState } from "@/app/[workspaceSlug]/relationships/actions"
 import { usePathname } from "@/components/workspace/WorkspaceNavigation"
-import { AssignmentSelector, AutoGrowTextarea } from "@/components/ui"
+import { AssignmentSelector, AutoGrowTextarea, SelectorDrawer, SelectorOption, SelectorTrigger } from "@/components/ui"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 
-export type WorkspaceCreateTarget = "relationship" | "work-item" | "asset" | "okr"
+export type WorkspaceCreateTarget = "relationship" | "work-item" | "asset" | "note" | "okr"
 
 type CreateOptions = {
     workItemOptions: Array<{ id: string; title: string; status: string }>
     relationshipOptions: Array<{ id: string; label: string }>
+    assetOptions: Array<{ id: string; title: string; assetKind: string }>
     okrOwnerOptions: Array<{ id: string; label: string; role: string; avatarSrc?: string | null }>
 }
 
@@ -23,12 +24,41 @@ type Props = {
     createRelationshipAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
     createWorkItemAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
     createAssetAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
+    createNoteAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
     createOkrAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
     onClose: () => void
     onCreated: (result: WorkspaceCreateActionState, target: WorkspaceCreateTarget) => void
 }
 
-const EMPTY_OPTIONS: CreateOptions = { workItemOptions: [], relationshipOptions: [], okrOwnerOptions: [] }
+const EMPTY_OPTIONS: CreateOptions = { workItemOptions: [], relationshipOptions: [], assetOptions: [], okrOwnerOptions: [] }
+
+function MultiLinkSelector({ name, label, placeholder, options, selected, onChange, disabled }: {
+    name: string
+    label: string
+    placeholder: string
+    options: Array<{ id: string; label: string; description?: string }>
+    selected: string[]
+    onChange: (ids: string[]) => void
+    disabled?: boolean
+}) {
+    const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+    const [query, setQuery] = useState("")
+    const visible = useMemo(() => {
+        const normalized = query.trim().toLowerCase()
+        return normalized ? options.filter((option) => `${option.label} ${option.description ?? ""}`.toLowerCase().includes(normalized)) : options
+    }, [options, query])
+    const selectedSet = useMemo(() => new Set(selected), [selected])
+    return <>
+        {selected.map((id) => <input key={id} type="hidden" name={name} value={id} />)}
+        <SelectorTrigger open={Boolean(anchor)} appearance="input" disabled={disabled} aria-label={label} onClick={(event) => { setQuery(""); setAnchor((current) => current ? null : event.currentTarget) }}>
+            {selected.length ? `${selected.length} selected` : <span className="text-neutral-600">{placeholder}</span>}
+        </SelectorTrigger>
+        {anchor ? <SelectorDrawer anchor={anchor} ariaLabel={label} title={label} description="Choose any records that belong with this note." search={query} onSearch={options.length >= 7 ? setQuery : undefined} onDismiss={() => { setAnchor(null); setQuery("") }} footer={<button type="button" onClick={() => setAnchor(null)} className="min-h-9 w-full rounded-lg px-2 text-sm text-neutral-300 hover:bg-neutral-900">Done</button>}>
+            {visible.map((option) => <SelectorOption key={option.id} selected={selectedSet.has(option.id)} description={option.description} onClick={() => onChange(selectedSet.has(option.id) ? selected.filter((id) => id !== option.id) : [...selected, option.id])}>{option.label}</SelectorOption>)}
+            {!visible.length ? <p className="px-2.5 py-3 text-xs text-neutral-500">No matching records.</p> : null}
+        </SelectorDrawer> : null}
+    </>
+}
 
 function defaultOkrPeriod() {
     const start = new Date()
@@ -37,7 +67,7 @@ function defaultOkrPeriod() {
     return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) }
 }
 
-export function WorkspaceCreateModal({ target, workspace, currentUserId, username, currentUserRole, createRelationshipAction, createWorkItemAction, createAssetAction, createOkrAction, onClose, onCreated }: Props) {
+export function WorkspaceCreateModal({ target, workspace, currentUserId, username, currentUserRole, createRelationshipAction, createWorkItemAction, createAssetAction, createNoteAction, createOkrAction, onClose, onCreated }: Props) {
     const dialogRef = useRef<HTMLDialogElement | null>(null)
     // Other create modes retain their established host for portalled selectors.
     const ModalTag = target === "relationship" ? "dialog" : "div"
@@ -46,6 +76,8 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
     const linkedRelationshipId = pathname.match(/\/relationships\/([a-f0-9-]{36})(?:\/|$)/i)?.[1] ?? ""
     const relationshipRequestId = useRef<string | null>(null)
     const [okrOwnerId, setOkrOwnerId] = useState(currentUserId)
+    const [noteRelationshipIds, setNoteRelationshipIds] = useState<string[]>([])
+    const [noteAssetIds, setNoteAssetIds] = useState<string[]>([])
     const [options, setOptions] = useState<CreateOptions>(EMPTY_OPTIONS)
     const [optionsLoading, setOptionsLoading] = useState(target !== "relationship")
     const [optionsError, setOptionsError] = useState<string | null>(null)
@@ -57,13 +89,17 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
     useEffect(() => {
         if (target === "relationship") return
         const controller = new AbortController()
-        void fetch(`/api/workspaces/${encodeURIComponent(workspace.slug)}/shell-create-options`, { signal: controller.signal })
+        const optionsRequest = target === "note"
+            ? fetch(`/api/workspaces/${encodeURIComponent(workspace.slug)}/shell-create-options?include=assets`, { signal: controller.signal })
+            : fetch(`/api/workspaces/${encodeURIComponent(workspace.slug)}/shell-create-options`, { signal: controller.signal })
+        void optionsRequest
             .then(async (response) => {
                 const result = await response.json().catch(() => null) as Partial<CreateOptions> & { error?: string } | null
                 if (!response.ok || !result) throw new Error(result?.error ?? "Could not load linked record choices.")
                 setOptions({
                     workItemOptions: result.workItemOptions ?? [],
                     relationshipOptions: result.relationshipOptions ?? [],
+                    assetOptions: result.assetOptions ?? [],
                     okrOwnerOptions: result.okrOwnerOptions ?? [],
                 })
             })
@@ -121,7 +157,9 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
                     ? createWorkItemAction(formData)
                     : target === "asset"
                         ? createAssetAction(formData)
-                        : createOkrAction(formData), { category: target === "okr" ? "maintenance" : target === "asset" ? "system" : target === "work-item" ? "gantt" : "services" })
+                        : target === "note"
+                            ? createNoteAction(formData)
+                            : createOkrAction(formData), { category: target === "okr" ? "maintenance" : target === "asset" || target === "note" ? "system" : target === "work-item" ? "gantt" : "services" })
             if (!result.ok) {
                 setCreateError(result.error ?? "Could not create this item.")
                 return
@@ -132,12 +170,12 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
         })
     }
 
-    const title = target === "relationship" ? "Add relationship" : target === "work-item" ? "Add work item" : target === "asset" ? "Add asset" : "Create OKR"
+    const title = target === "relationship" ? "Add relationship" : target === "work-item" ? "Add work item" : target === "asset" ? "Add asset" : target === "note" ? "Add note" : "Create OKR"
     const submitLabel = target === "relationship"
         ? "Create relationship"
         : target === "work-item" ? "Create work item"
             : target === "asset" ? "Create asset"
-                : "Create OKR"
+                : target === "note" ? "Create note" : "Create OKR"
     const ownerOptions = options.okrOwnerOptions.length ? options.okrOwnerOptions : [{ id: currentUserId, label: username, role: currentUserRole }]
 
     return <ModalTag ref={(node: HTMLElement | null) => { dialogRef.current = node instanceof HTMLDialogElement ? node : null }} role="dialog" aria-modal="true" className={`fixed inset-0 z-[90] m-0 h-dvh max-h-none w-full max-w-none items-center justify-center border-0 bg-black/70 px-4 py-6 backdrop-blur-sm ${target === "relationship" ? "open:flex" : "flex"}`} aria-labelledby="workspace-create-title" onCancel={event => { event.preventDefault(); if (!isCreating) onClose() }} onMouseDown={event => { if (!isCreating && event.target === event.currentTarget) onClose() }}>
@@ -166,6 +204,17 @@ export function WorkspaceCreateModal({ target, workspace, currentUserId, usernam
                 </div> : null}
 
                 {target === "asset" ? <div className="space-y-5"><section className="space-y-3"><label className="block text-sm text-neutral-300">File<input name="asset_file" type="file" required autoFocus className="mt-1.5 block w-full rounded-lg border border-dashed border-neutral-700 bg-black px-3 py-3 text-sm text-neutral-300 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-black" /></label><label className="block text-sm text-neutral-300">Title<input name="title" placeholder="Defaults to the file name" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label></section><section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Link to relationship<select name="relationship_id" defaultValue={linkedRelationshipId} disabled={optionsLoading} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white disabled:opacity-60"><option value="">{optionsLoading ? "Loading…" : "None"}</option>{options.relationshipOptions.map((relationship) => <option key={relationship.id} value={relationship.id}>{relationship.label}</option>)}</select></label><label className="block text-sm text-neutral-300">Link to work item<select name="work_item_id" defaultValue="" disabled={optionsLoading} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white disabled:opacity-60"><option value="">{optionsLoading ? "Loading…" : "None"}</option>{options.workItemOptions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label></section><label className="block border-t border-neutral-900 pt-4 text-sm text-neutral-300">Description<AutoGrowTextarea name="description" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label></div> : null}
+
+                {target === "note" ? <div className="space-y-5">
+                    <section className="space-y-3">
+                        <label className="block text-sm text-neutral-300">Name<input name="name" required maxLength={160} autoFocus placeholder="Call notes, campaign context…" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label>
+                        <label className="block text-sm text-neutral-300">Description<textarea name="description" required maxLength={20000} rows={7} placeholder="Record the useful context here." className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white placeholder:text-neutral-600" /></label>
+                    </section>
+                    <section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2">
+                        <div className="text-sm text-neutral-300"><p className="mb-1.5">Relationships</p><MultiLinkSelector name="relationship_ids" label="Linked relationships" placeholder={optionsLoading ? "Loading…" : "Choose relationships"} options={options.relationshipOptions.map((item) => ({ id: item.id, label: item.label }))} selected={noteRelationshipIds} onChange={setNoteRelationshipIds} disabled={optionsLoading} /></div>
+                        <div className="text-sm text-neutral-300"><p className="mb-1.5">Assets</p><MultiLinkSelector name="asset_ids" label="Linked assets" placeholder={optionsLoading ? "Loading…" : "Choose assets"} options={options.assetOptions.map((item) => ({ id: item.id, label: item.title, description: item.assetKind.replace(/_/g, " ") }))} selected={noteAssetIds} onChange={setNoteAssetIds} disabled={optionsLoading} /></div>
+                    </section>
+                </div> : null}
 
                 {target === "okr" ? <div className="space-y-5"><section className="grid gap-3 sm:grid-cols-2"><label className="block text-sm text-neutral-300 sm:col-span-2">Objective<input name="objective" required autoFocus placeholder="Increase reliable monthly sales" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white placeholder:text-neutral-600" /></label><label className="block text-sm text-neutral-300 sm:col-span-2">Description<AutoGrowTextarea name="description" rows={2} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label></section><section className="grid gap-3 border-t border-neutral-900 pt-4 sm:grid-cols-2"><label className="block text-sm text-neutral-300">Starts<input name="period_start" type="date" defaultValue={okrPeriod.start} required className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><label className="block text-sm text-neutral-300">Deadline<input name="period_end" type="date" defaultValue={okrPeriod.end} required className="mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-white" /></label><div className="text-sm text-neutral-300"><p>Owner</p><span className="mt-1.5 block"><AssignmentSelector name="owner_user_id" value={okrOwnerId} onChange={setOkrOwnerId} people={ownerOptions.map((owner) => ({ id: owner.id, name: owner.label, avatarSrc: owner.avatarSrc, description: owner.role }))} required appearance="input" ariaLabel="Objective owner" title="Assign Objective owner" /></span></div></section><p className="text-xs leading-5 text-neutral-500">This will be saved as a fully editable draft. Add and review its Key Results from the OKRs table before committing it.</p></div> : null}
 

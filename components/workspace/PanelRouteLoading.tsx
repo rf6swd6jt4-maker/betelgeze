@@ -18,6 +18,7 @@ export type PanelLoadingVariant =
     | "leadgen"
     | "leadgen-polls"
     | "onboarding"
+    | "notes"
     | "relationships"
     | "queue"
     | "sops"
@@ -123,7 +124,7 @@ function OnboardingLoading() {
 function WorkItemsLoading({ fulfilment = false }: { fulfilment?: boolean }) {
     const title = fulfilment ? "Fulfilment" : "Work Items"
     return <PanelFrame title={title}>
-        <PanelHeader title={title} action={!fulfilment} tabs={fulfilment ? [] : ["Work Items", "Assets"]} activeTab="Work Items" />
+        <PanelHeader title={title} action={!fulfilment} tabs={fulfilment ? [] : ["Work Items", "Assets", "Notes"]} activeTab="Work Items" />
         <StatsSkeleton />
         <FilterSkeleton widths={fulfilment ? [70, 74, 86] : [54, 62, 74, 92]} />
         <ListSkeleton />
@@ -182,7 +183,7 @@ function LeadgenLoading({ polls = false }: { polls?: boolean }) {
 
 function AssetsLoading() {
     return <PanelFrame title="Assets">
-        <PanelHeader title="Assets" action tabs={["Work Items", "Assets"]} activeTab="Assets" />
+        <PanelHeader title="Assets" action tabs={["Work Items", "Assets", "Notes"]} activeTab="Assets" />
         <StatsSkeleton />
         <section aria-label="Loading assets" className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {Array.from({ length: 10 }, (_, index) => <article key={index} className="overflow-hidden rounded-xl border border-neutral-800 bg-black">
@@ -190,6 +191,14 @@ function AssetsLoading() {
                 <div className="p-4"><Pulse className="h-5 w-4/5" /><Pulse className="mt-2 h-3 w-16" /><div className="mt-4 flex justify-between"><Pulse className="h-3 w-20" /><Pulse className="h-3 w-12" /></div></div>
             </article>)}
         </section>
+    </PanelFrame>
+}
+
+function NotesLoading() {
+    return <PanelFrame title="Notes">
+        <PanelHeader title="Notes" action tabs={["Work Items", "Assets", "Notes"]} activeTab="Notes" />
+        <StatsSkeleton count={3} />
+        <ListSkeleton rows={5} />
     </PanelFrame>
 }
 
@@ -246,6 +255,7 @@ export function PanelRouteLoading({ variant, title }: { variant: PanelLoadingVar
     if (variant === "fulfilment") return <WorkItemsLoading fulfilment />
     if (variant === "appointment-setting") return <AppointmentSettingLoading />
     if (variant === "assets") return <AssetsLoading />
+    if (variant === "notes") return <NotesLoading />
     if (variant === "leadgen") return <LeadgenLoading />
     if (variant === "leadgen-polls") return <LeadgenLoading polls />
     if (variant === "admin-activity") return <AdminLoading section="activity" />

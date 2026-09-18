@@ -150,6 +150,7 @@ type Props = {
     createRelationshipAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
     createWorkItemAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
     createAssetAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
+    createNoteAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
     createOkrAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
 }
 
@@ -255,6 +256,10 @@ function AssetsIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8" cy="10" r="1.5" /><path d="m4 17 5-5 4 4 2-2 5 5" /></svg>
 }
 
+function NoteIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M6 3h9l3 3v15H6z" /><path d="M15 3v4h4M9 11h6M9 15h6" /></svg>
+}
+
 function OkrIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /><path d="m14 10 6-6" /><path d="M16 4h4v4" /></svg>
 }
@@ -337,7 +342,7 @@ export function WorkspaceTopBarClient(props: Props) {
     return <WorkspaceTabsShell {...props} />
 }
 
-function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootstrapTab, nativePanelsEnabled = false, nativeBanner, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createOkrAction }: Props) {
+function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootstrapTab, nativePanelsEnabled = false, nativeBanner, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createNoteAction, createOkrAction }: Props) {
     // Revalidation may supply a new launch ID. The mounted shell already owns
     // its tabs: changing this ID detaches frame refs and erases their readiness.
     const [initialTab] = useState(() => bootstrapTab)
@@ -443,7 +448,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     const [searchLoading, setSearchLoading] = useState(false)
     const [searchResults, setSearchResults] = useState<SearchResult[]>([])
     const [searchShortcutLabel, setSearchShortcutLabel] = useState("Ctrl+J")
-    const [createTarget, setCreateTarget] = useState<"relationship" | "work-item" | "asset" | "okr" | null>(null)
+    const [createTarget, setCreateTarget] = useState<WorkspaceCreateTarget | null>(null)
     const [creationNotice, setCreationNotice] = useState<CreationNotice | null>(null)
     const [profileUserId, setProfileUserId] = useState<string | null>(null)
     const { count: communicationsUnreadCount, stale: communicationsUnreadStale, invalidate: refreshCommunicationsUnread } = useCommunicationsUnread(
@@ -1160,9 +1165,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         requestTabFrameNavigation(tabId, destination.url, "replace")
     }, [prepareNativeLeave, beginTabNavigation, titleForUrl, saveTabsState, requestTabFrameNavigation, startNativeNavigation, nativeNavigationPerformance])
 
-    const openCreate = useCallback((target: "relationship" | "work-item" | "asset" | "okr") => {
+    const openCreate = useCallback((target: WorkspaceCreateTarget) => {
         if (target === "relationship" && !canAccessWorkspacePanel(workspacePanelByKey("relationships"), workspaceRole, workspaceCapabilities)) return
-        if ((target === "work-item" || target === "asset") && !canAccessPrivateWorkspacePanels(workspaceRole)) return
+        if ((target === "work-item" || target === "asset" || target === "note") && !canAccessPrivateWorkspacePanels(workspaceRole)) return
         if (target === "okr" && !canAccessPrivateWorkspacePanels(workspaceRole)) return
         window.dispatchEvent(new CustomEvent("betelgeze:dropdown-open", { detail: "workspace-create" }))
         setCreateTarget(target)
@@ -1375,7 +1380,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 if (native && message.url) {
                     const destination = new URL(message.url, window.location.origin)
                     const creation = destination.searchParams.get("create")
-                    if (creation === "relationship" || creation === "work-item" || creation === "asset" || creation === "okr") {
+                    if (creation === "relationship" || creation === "work-item" || creation === "asset" || creation === "note" || creation === "okr") {
                         openCreate(creation)
                         return
                     }
@@ -1754,9 +1759,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         if (!tab) return
         const url = new URL(tab.url, window.location.origin)
         const intent = url.searchParams.get("create")
-        if (intent !== "relationship" && intent !== "work-item" && intent !== "asset" && intent !== "okr") return
+        if (intent !== "relationship" && intent !== "work-item" && intent !== "asset" && intent !== "note" && intent !== "okr") return
         if ((intent === "relationship" && !canAccessWorkspacePanel(workspacePanelByKey("relationships"), workspaceRole, workspaceCapabilities))
-            || ((intent === "work-item" || intent === "asset") && !canAccessPrivateWorkspacePanels(workspaceRole))
+            || ((intent === "work-item" || intent === "asset" || intent === "note") && !canAccessPrivateWorkspacePanels(workspaceRole))
             || (intent === "okr" && !canAccessPrivateWorkspacePanels(workspaceRole))) return
         const key = `${tab.id}:${url.pathname}:${intent}`
         if (createIntentHandledRef.current === key) return
@@ -1891,7 +1896,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         })
         postToTab(tabId, { type: "activate", active: true, refresh: true })
         showCreationNotice({
-            label: result.notice ?? (target === "relationship" ? "Relationship added" : target === "work-item" ? "Work item added" : target === "asset" ? "Asset added" : "OKR created"),
+            label: result.notice ?? (target === "relationship" ? "Relationship added" : target === "work-item" ? "Work item added" : target === "asset" ? "Asset added" : target === "note" ? "Note added" : "OKR created"),
             href: result.href,
         })
     }
@@ -2566,6 +2571,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                         {canCreateLibraryItem && <button data-icon-button type="button" onClick={() => openCreate("asset")} aria-label="Add asset" title="Add asset" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <AssetsIcon />
                         </button>}
+                        {canCreateLibraryItem && <button data-icon-button type="button" onClick={() => openCreate("note")} aria-label="Add note" title="Add note" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
+                            <NoteIcon />
+                        </button>}
                         {canCreateOkr && <button data-icon-button type="button" onClick={() => openCreate("okr")} aria-label="Create OKR" title="Create OKR" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <OkrIcon />
                         </button>}
@@ -2600,6 +2608,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             createRelationshipAction={createRelationshipAction}
             createWorkItemAction={createWorkItemAction}
             createAssetAction={createAssetAction}
+            createNoteAction={createNoteAction}
             createOkrAction={createOkrAction}
             onClose={() => setCreateTarget(null)}
             onCreated={handleCreated}
@@ -2778,6 +2787,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                     {canCreateLibraryItem && <button type="button" onClick={() => { openCreate("asset"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
                         <AssetsIcon />
                         <span>Add asset</span>
+                    </button>}
+                    {canCreateLibraryItem && <button type="button" onClick={() => { openCreate("note"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                        <NoteIcon />
+                        <span>Add note</span>
                     </button>}
                     {canCreateOkr && <button type="button" onClick={() => { openCreate("okr"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
                         <OkrIcon />

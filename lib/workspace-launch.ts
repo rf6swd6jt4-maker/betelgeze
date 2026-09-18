@@ -39,7 +39,7 @@ export function workspaceLaunchUrlForRestore(value: string, workspaceSlug: strin
     const parsed = new URL(normalized, "http://localhost")
     const prefix = `/${workspaceSlug}/`
     const segments = parsed.pathname.slice(prefix.length).split("/").filter(Boolean)
-    if (segments.length === 2 && ["relationships", "onboarding", "work", "appointment-setting", "work-items", "assets"].includes(segments[0])) {
+    if (segments.length === 2 && ["relationships", "onboarding", "work", "appointment-setting", "work-items", "assets", "notes"].includes(segments[0])) {
         return `${prefix}${segments[0]}`
     }
     if (segments.length === 3 && segments[0] === "leadgen" && segments[1] === "poll") return `${prefix}leadgen/polls`

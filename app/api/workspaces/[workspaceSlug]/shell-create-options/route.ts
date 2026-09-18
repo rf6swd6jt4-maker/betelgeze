@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
 
-export async function GET(_request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
     const { workspace, user, role, access } = await requireWorkspaceAccess(workspaceSlug)
     if (role !== "owner" && role !== "admin") return Response.json({ error: "Not authorized" }, { status: 403 })
@@ -15,10 +15,14 @@ export async function GET(_request: Request, context: { params: Promise<{ worksp
     let relationshipsQuery = supabaseAdmin.from("relationships").select("id, primary_person_name, business_name").eq("workspace_id", workspace.id).neq("status", "archived").order("updated_at", { ascending: false }).limit(200)
     if (workItemIds) workItemsQuery = workItemIds.size ? workItemsQuery.in("id", [...workItemIds]) : workItemsQuery.eq("id", "00000000-0000-0000-0000-000000000000")
     if (relationshipIds) relationshipsQuery = relationshipIds.size ? relationshipsQuery.in("id", [...relationshipIds]) : relationshipsQuery.eq("id", "00000000-0000-0000-0000-000000000000")
-    const [{ data: workItems }, { data: relationships }, { data: adminMemberships }] = await Promise.all([
+    const includeAssets = new URL(request.url).searchParams.get("include") === "assets"
+    const [{ data: workItems }, { data: relationships }, { data: adminMemberships }, { data: assets }] = await Promise.all([
         workItemsQuery,
         relationshipsQuery,
         supabaseAdmin.from("workspace_memberships").select("user_id, role").eq("workspace_id", workspace.id).in("role", ["owner", "admin"]).order("created_at"),
+        includeAssets
+            ? supabaseAdmin.from("assets").select("id,title,asset_kind").eq("workspace_id", workspace.id).order("updated_at", { ascending: false }).limit(200)
+            : Promise.resolve({ data: [] }),
     ])
     const adminIds = (adminMemberships ?? []).map((item) => item.user_id)
     const { data: adminProfiles } = adminIds.length
@@ -30,6 +34,7 @@ export async function GET(_request: Request, context: { params: Promise<{ worksp
     return Response.json({
         workItemOptions: (workItems ?? []).map((item) => ({ id: item.id, title: item.title, status: item.status })),
         relationshipOptions: (relationships ?? []).map((relationship) => ({ id: relationship.id, label: relationship.business_name ?? relationship.primary_person_name ?? "Relationship" })),
+        assetOptions: (assets ?? []).map((asset) => ({ id: asset.id, title: asset.title, assetKind: asset.asset_kind })),
         okrOwnerOptions: (adminMemberships ?? []).map((item) => ({ id: item.user_id, label: adminNames.get(item.user_id) ?? (item.user_id === user.id ? "Account" : item.role), role: item.role, avatarSrc: adminAvatars.get(item.user_id) ?? null })),
     }, { headers: { "Cache-Control": "private, no-store" } })
 }

@@ -24,6 +24,7 @@ function panelLoadingForUrl(value: string, workspaceSlug: string): { variant: Pa
         assets: "assets",
         communications: "communications",
         onboarding: "onboarding",
+        notes: "notes",
         relationships: "relationships",
         queue: "queue",
         sops: "sops",

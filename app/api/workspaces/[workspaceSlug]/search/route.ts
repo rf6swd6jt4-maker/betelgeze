@@ -18,6 +18,7 @@ import { canAccessPrivateWorkspacePanels, canAccessWorkspacePanel, WORKSPACE_PAN
 import { normalizeWorkspaceRole } from "@/lib/workspaces"
 import { getAal2User } from "@/lib/auth/aal"
 import { accessibleRelationshipIds, accessibleWorkItemIds, loadWorkspaceAccess, workspaceAccessHasCapability, type WorkspaceAccess } from "@/lib/workspace-access"
+import { noteHref } from "@/lib/notes"
 
 export const dynamic = "force-dynamic"
 
@@ -71,6 +72,8 @@ function staticNavigationResults(workspace: { name: string; slug: string }, quer
         ...(canAccessLibrary ? [
             { id: "tab-work-items", type: "Tab", label: "Work Items", description: "Workspace-native task IDs and work item list", href: workspaceHref(workspace.slug, "work-items"), path: `${libraryPath} > Work Items`, keywords: ["tasks", "work item ids", "work ids"] },
             { id: "tab-assets", type: "Tab", label: "Assets", description: "Workspace asset IDs and file gallery", href: workspaceHref(workspace.slug, "assets"), path: `${libraryPath} > Assets`, keywords: ["files", "uploads", "asset ids", "gallery"] },
+            { id: "tab-notes", type: "Tab", label: "Notes", description: "Call notes and durable relationship context", href: workspaceHref(workspace.slug, "notes"), path: `${libraryPath} > Notes`, keywords: ["call notes", "context", "notes"] },
+            { id: "action-new-note", type: "Action", label: "Add Note", description: "Create a note and link relationships or assets", href: workspaceHref(workspace.slug, "notes?create=note"), path: `${libraryPath} > Notes > New`, keywords: ["new note", "call note", "add context"] },
         ] : []),
         ...(canAccessRelationships ? [{ id: "action-new-relationship", type: "Action", label: "Start New Relationship", description: "Create a relationship manually at any lifecycle stage", href: workspaceHref(workspace.slug, "relationships?create=relationship"), path: `${workspace.name} > Relationships > New`, keywords: ["manual relationship", "new relationship", "add relationship", "manual client", "new client", "add client"] }] : []),
         ...(canAccessPrivatePanels ? [
@@ -265,6 +268,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
         { data: channels, error: channelError },
         { data: activities, error: activityError },
         { data: assets, error: assetError },
+        { data: notes, error: noteError },
     ] = await Promise.all([
         canAccessPrivatePanels ? supabaseAdmin
             .from("clients")
@@ -306,6 +310,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
             .eq("workspace_id", workspace.id)
             .order("created_at", { ascending: false })
             .limit(80) : Promise.resolve({ data: [], error: null }),
+        canAccessLibrary ? supabaseAdmin
+            .from("notes")
+            .select("id,name,description")
+            .eq("workspace_id", workspace.id)
+            .order("updated_at", { ascending: false })
+            .limit(80) : Promise.resolve({ data: [], error: null }),
     ])
 
     if (!clientError) {
@@ -340,6 +350,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                     recordId: shortId(asset.id),
                 }
             ))
+        }
+    }
+
+    if (!noteError) {
+        for (const note of (notes ?? []).filter((note) => includesQuery([note.id, note.name, note.description], query)).slice(0, 6)) {
+            results.push(result(`note-${note.id}`, "Note", note.name, note.description, noteHref(workspace.slug, note.id), {
+                path: `${workspace.name} > Library > Notes`, recordId: shortId(note.id),
+            }))
         }
     }
 

@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto"
 import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 import { WorkspaceTopBarClient } from "@/components/workspace/WorkspaceTopBarClient"
 import { WorkspaceTabBridge } from "@/components/workspace/WorkspaceTabBridge"
-import { createAssetFromModal, createRelationshipFromModal, createWorkItemFromModal } from "@/app/[workspaceSlug]/relationships/actions"
+import { createAssetFromModal, createNoteFromModal, createRelationshipFromModal, createWorkItemFromModal } from "@/app/[workspaceSlug]/relationships/actions"
 import { headers } from "next/headers"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { leaveWorkspace } from "@/app/users/[username]/actions"
@@ -75,6 +75,7 @@ export async function WorkspaceTopBar({ userId, workspace, workspaceAccess, shel
         createRelationshipAction={createRelationshipFromModal.bind(null, workspace.slug)}
         createWorkItemAction={createWorkItemFromModal.bind(null, workspace.slug)}
         createAssetAction={createAssetFromModal.bind(null, workspace.slug)}
+        createNoteAction={createNoteFromModal.bind(null, workspace.slug)}
         createOkrAction={createOkrFromModal.bind(null, workspace.slug)}
     />
 }

@@ -178,7 +178,7 @@ test("route loading UI reflects each panel's real composition", () => {
     assert.match(loading, /function OkrTableSkeleton/)
     assert.match(loading, /tabs=\{\["Work", "OKRs", "Maintenance", "Activity"\]\} activeTab=\{activeTab\}/)
     assert.match(loading, /tabs=\{\["Leads", "Polls"\]\} activeTab=\{title\}/)
-    assert.match(loading, /tabs=\{\["Work Items", "Assets"\]\} activeTab="Assets"/)
+    assert.match(loading, /tabs=\{\["Work Items", "Assets", "Notes"\]\} activeTab="Assets"/)
     assert.match(loading, /variant === "admin-okrs"[\s\S]*?<AdminLoading section="okrs"/)
     assert.match(currentLoading, /searchParams\.get\("view"\) === "okrs"[\s\S]*?"admin-okrs"/)
     assert.match(currentLoading, /searchParams\.get\("mode"\) === "team"[\s\S]*?"communications-team"/)

@@ -21,7 +21,7 @@ export const WORKSPACE_PANELS = [
     { key: "onboarding", label: "Onboarding", route: "onboarding", capability: "onboarding.manage", minimumRole: "admin", description: "Relationship onboarding status and submissions", keywords: ["forms", "submissions", "portal"] },
     { key: "appointment-setting", label: "Appointment Setting", route: "appointment-setting", capability: "appointment_setting.manage", requiresService: true, description: "Leads, bookings, setter availability, and appointment outcomes", keywords: ["appointments", "bookings", "setters", "calendar", "leads"] },
     { key: "communications", label: "Communications", route: "communications", capability: "communications.manage", allMembers: true, description: "Relationship communication summaries", keywords: ["messages", "chat", "whatsapp", "communication"] },
-    { key: "library", label: "Library", route: "work-items", activeRoutes: ["work-items", "sops", "assets"], capability: "library.manage", allMembers: true, description: "Workspace procedures, work items and assets", keywords: ["tasks", "files", "uploads", "gallery", "sop", "procedures"] },
+    { key: "library", label: "Library", route: "work-items", activeRoutes: ["work-items", "sops", "assets", "notes"], capability: "library.manage", allMembers: true, description: "Workspace procedures, work items, assets and notes", keywords: ["tasks", "files", "uploads", "gallery", "sop", "procedures", "call notes", "context"] },
     { key: "onboarding-builder", label: "Onboarding Builder", route: "onboarding-builder", capability: "onboarding_builder.manage", minimumRole: "admin", standalone: true, description: "Build workspace onboarding modules and session structure", keywords: ["onboarding modules", "session builder", "forms builder", "form fields", "welcome", "completion", "visual builder"] },
     { key: "leadgen", label: "Lead Gen", route: "leadgen", capability: "leadgen.manage", minimumRole: "admin", description: "Lead generation dashboard", keywords: ["leads", "lead generation"] },
     { key: "admin", label: "Admin", route: "admin", capability: "admin.manage", minimumRole: "admin", description: "Private OKRs, activity, maintenance, and automation-failure follow-up", keywords: ["admin tools", "okr", "objectives", "key results", "metrics", "activity console", "automation history", "maintenance", "automation failures", "admin work items", "goals"] },
@@ -74,11 +74,11 @@ export function canAccessWorkspaceUrl(
     const root = `/${workspaceSlug}`
     if (pathname === root || pathname === `${root}/no-access`) return true
     const suffix = pathname.startsWith(`${root}/`) ? pathname.slice(root.length + 1) : ""
-    if (/^work-items\/[^/]+$/.test(suffix) || /^assets\/[^/]+$/.test(suffix)) {
+    if (/^work-items\/[^/]+$/.test(suffix) || /^assets\/[^/]+$/.test(suffix) || /^notes\/[^/]+$/.test(suffix)) {
         const set = new Set(capabilities)
         return set.has("onboarding.manage") || set.has("fulfilment.manage")
     }
-    if (suffix === "assets") return false
+    if (suffix === "assets" || suffix === "notes") return false
     const panel = workspacePanelForUrl(value, workspaceSlug)
     return panel ? canAccessWorkspacePanel(panel, role, capabilities) : false
 }

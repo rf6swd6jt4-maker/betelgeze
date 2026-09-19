@@ -16,6 +16,8 @@ type Links = {
 const retained = new Map<string, { links: Links; at: number }>()
 
 export function RelationshipLinks({ workspaceSlug, relationshipId, userId }: { workspaceSlug: string; relationshipId: string; userId: string }) {
+    const sectionRef = useRef<HTMLElement>(null)
+    const [visible, setVisible] = useState(false)
     const navigation = useWorkspaceNavigation()
     const active = navigation?.active !== false
     const key = `${userId}:${workspaceSlug}:${relationshipId}`
@@ -30,7 +32,14 @@ export function RelationshipLinks({ workspaceSlug, relationshipId, userId }: { w
     const [checkingWhatsApp, setCheckingWhatsApp] = useState(false)
     const sendRequestId = useRef<string | null>(null)
     useEffect(() => {
-        if (!active) return
+        const node = sectionRef.current
+        if (!node) return
+        const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { setVisible(true); observer.disconnect() } }, { rootMargin: "240px" })
+        observer.observe(node)
+        return () => observer.disconnect()
+    }, [])
+    useEffect(() => {
+        if (!active || !visible) return
         const previous = retained.get(key)
         if (previous && Date.now() - previous.at < 60_000) return
         const controller = new AbortController()
@@ -39,7 +48,7 @@ export function RelationshipLinks({ workspaceSlug, relationshipId, userId }: { w
             return response.json() as Promise<Links>
         }).then((next) => { retained.set(key, { links: next, at: Date.now() }); setLinks(next); setError(null) }).catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Client links could not load.") })
         return () => controller.abort()
-    }, [active, key, workspaceSlug, relationshipId, userId])
+    }, [active, visible, key, workspaceSlug, relationshipId, userId])
 
     const checkWhatsApp = async () => {
         setWhatsAppReady(false); setWhatsAppReason(null); setCheckingWhatsApp(true)
@@ -80,7 +89,7 @@ export function RelationshipLinks({ workspaceSlug, relationshipId, userId }: { w
         } catch { setError("The send status is unknown. Check Comms before sending again.") }
         finally { setBusy(false) }
     }
-    return <section className="mt-5" aria-label="Client access links">
+    return <section ref={sectionRef} className="mt-5" aria-label="Client access links">
         <h2 className="text-sm font-medium text-neutral-300">Client access links</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <button type="button" disabled={!links?.onboardingAvailable} onClick={(event) => open(event, "onboarding")} className="min-h-28 rounded-xl border border-neutral-800 bg-black p-4 text-left transition hover:border-neutral-500 disabled:cursor-not-allowed disabled:border-neutral-900 disabled:bg-neutral-900/50 disabled:text-neutral-600">

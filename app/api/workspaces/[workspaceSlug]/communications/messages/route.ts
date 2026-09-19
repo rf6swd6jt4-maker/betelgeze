@@ -12,6 +12,7 @@ import { verifyClientMessageUpload } from "@/lib/onboarding/uploads"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireCommunicationsWorkspace } from "@/lib/communications/workspace-access"
 import type { CommunicationAttachment } from "@/lib/communications/types"
+import { whatsappWindowIsOpen } from "@/lib/client-messages/whatsapp-window"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic"
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 async function scopedRelationship(workspaceId: string, relationshipId: string) {
-    const { data, error } = await supabaseAdmin.from("relationships").select("id, client_id, primary_phone, whatsapp_phone, status").eq("workspace_id", workspaceId).eq("id", relationshipId).maybeSingle()
+    const { data, error } = await supabaseAdmin.from("relationships").select("id, client_id, primary_phone, whatsapp_phone, status, last_whatsapp_inbound_at, whatsapp_opted_out_at").eq("workspace_id", workspaceId).eq("id", relationshipId).maybeSingle()
     if (error) throw new Error(error.message)
     return data?.status === "archived" ? null : data
 }
@@ -79,6 +80,12 @@ async function handlePOST(request: NextRequest, context: { params: Promise<{ wor
         return Response.json({ error: error instanceof Error ? error.message : "Could not resolve communication channels." }, { status: 409 })
     }
     if (!resolved.destinations.length) return Response.json({ error: "This client has no connected SMS or WhatsApp destination." }, { status: 409 })
+    if (resolved.destinations.some((destination) => destination.provider === "meta_whatsapp") &&
+        (!whatsappWindowIsOpen(relationship.last_whatsapp_inbound_at) || relationship.whatsapp_opted_out_at)) {
+        return Response.json({ error: relationship.whatsapp_opted_out_at
+            ? "This client opted out of WhatsApp messages."
+            : "The 24-hour WhatsApp response window has expired. Send the reconfirmation template first." }, { status: 409 })
+    }
     const { data: profile, error: profileError } = await supabaseAdmin
         .from("user_profiles")
         .select("display_name, username")

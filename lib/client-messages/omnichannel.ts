@@ -179,7 +179,7 @@ async function sendProvider(input: {
     attachment?: CommunicationAttachment | null
     attachmentAccessUrl?: string | null
     replyToMessageId?: string | null
-    whatsappTemplate?: { name: string; language: string } | null
+    whatsappTemplate?: { name: string; language: string; components?: unknown[] } | null
     smsConsentContext?: "web_opt_in" | "relationship_confirmation"
 }) {
     if (input.destination.provider === "client_portal") return null
@@ -218,6 +218,7 @@ async function sendProvider(input: {
             to: input.destination.address,
             templateName: input.whatsappTemplate.name,
             languageCode: input.whatsappTemplate.language,
+            components: input.whatsappTemplate.components,
             callbackData: input.messageId,
         })
     }
@@ -264,7 +265,7 @@ export async function sendCommunicationDeliveries(input: {
     attachment?: CommunicationAttachment | null
     attachmentAccessUrl?: string | null
     replyToMessageId?: string | null
-    whatsappTemplate?: { name: string; language: string } | null
+    whatsappTemplate?: { name: string; language: string; components?: unknown[] } | null
     destinations?: ResolvedCommunicationDestination[]
     smsConsentContext?: "web_opt_in" | "relationship_confirmation"
 }) {

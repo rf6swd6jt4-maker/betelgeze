@@ -11,6 +11,7 @@ import {
     sanitizeOnboardingOutboxError,
 } from "@/lib/onboarding/outbox-safety"
 import { secureDeliveryLogBody } from "@/lib/onboarding/secure-link-display"
+import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 
 export { sanitizeOnboardingOutboxError } from "@/lib/onboarding/outbox-safety"
 
@@ -238,6 +239,24 @@ async function deliveryHasConfirmedSmsConsent(row: DeliveryOutboxRow) {
     return Boolean(data)
 }
 
+async function linkTemplateForDelivery(row: DeliveryOutboxRow, publicUrl: string) {
+    if (row.kind !== "onboarding_link" && row.kind !== "client_portal_link") return null
+    const config = await getWorkspaceProviderConfig(row.workspace_id, "meta_whatsapp")
+    // These templates belong to this WABA and have a fixed URL-button prefix.
+    // Never substitute another workspace's URL into their approved copy.
+    if (config.waba_id !== "1928719317836909") return null
+    const expectedHost = row.kind === "onboarding_link" ? "onboarding.scaylup.com" : "portal.scaylup.com"
+    const url = new URL(publicUrl)
+    if (url.protocol !== "https:" || url.hostname !== expectedHost || !/^\/[0-9a-f]{64}$/i.test(url.pathname) || url.search || url.hash) {
+        throw new Error(`The ${row.kind} URL does not match the approved WhatsApp template button.`)
+    }
+    return {
+        name: row.kind === "onboarding_link" ? "scaylup_onboarding_access" : "scaylup_client_portal_access",
+        language: "en",
+        components: [{ type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: url.pathname.slice(1) }] }],
+    }
+}
+
 function deliveryAutomationLabel(kind: DeliveryKind) {
     if (kind === "onboarding_link_revoked") return "Onboarding link revoked"
     if (kind === "module_update") return "Onboarding update"
@@ -279,13 +298,20 @@ async function processDeliveryRow(row: DeliveryOutboxRow) {
         const body = deliveryBody(row, context.publicUrl, context.workspaceName, await deliveryHasConfirmedSmsConsent(row))
         const logBody = secureDeliveryLogBody(body, context.publicUrl, row.kind)
         const selected = row.payload?.delivery_choices
+        let whatsappTemplate = Array.isArray(selected) && selected.some((choice) =>
+            choice && typeof choice === "object" && choice.provider === "meta_whatsapp")
+            ? await linkTemplateForDelivery(row, context.publicUrl)
+            : null
         let channels
         if (selected) {
             const current = await supabaseAdmin.rpc("relationship_messaging_choices", { p_workspace_id: row.workspace_id, p_relationship_id: context.relationshipId })
             if (current.error) throw new Error("Could not verify the selected delivery channels.")
-            channels = { destinations: selectedOnboardingDestinations(row.payload, current.data)! }
+            channels = { destinations: selectedOnboardingDestinations(row.payload, current.data, Boolean(whatsappTemplate))! }
         } else channels = await resolveCommunicationDestinations({ workspaceId: row.workspace_id, relationshipId: context.relationshipId })
         if (!channels.destinations.length) throw new Error("The relationship has no connected messaging destination")
+        if (!selected && channels.destinations.some((destination) => destination.provider === "meta_whatsapp")) {
+            whatsappTemplate = await linkTemplateForDelivery(row, context.publicUrl)
+        }
         const primaryDestination = channels.destinations.find((destination) => destination.primary) ?? channels.destinations[0]
         const payload = payloadRecord(row.payload)
         const clientId = payloadId(payload, "client_id")
@@ -341,6 +367,7 @@ async function processDeliveryRow(row: DeliveryOutboxRow) {
             messageId: messageLogId,
             body,
             destinations: channels.destinations,
+            whatsappTemplate,
         })
         const successful = delivery.results.filter((result) => result.ok)
         providerSent = row.payload?.delivery_choices ? successful.length === delivery.results.length : successful.length > 0

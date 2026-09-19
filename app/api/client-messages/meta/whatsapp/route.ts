@@ -817,6 +817,26 @@ async function handleInboundMessage({
 
     if (existingMessage) return
 
+    const destination = await resolveInboundDestination(from, workspaceId)
+    const { data: client } = destination?.clientId
+        ? await supabaseAdmin.from("clients").select("name, workspace_id, relationship_id")
+            .eq("id", destination.clientId).eq("workspace_id", workspaceId).single()
+        : { data: null }
+    const relationshipId = destination?.relationshipId ?? client?.relationship_id ?? null
+    if (relationshipId) {
+        const providerSeconds = Number(message.timestamp)
+        const sentAt = Number.isFinite(providerSeconds) && providerSeconds > 0
+            ? new Date(Math.min(providerSeconds * 1_000, Date.now())).toISOString()
+            : new Date().toISOString()
+        const { error: windowError } = await supabaseAdmin.rpc("record_relationship_whatsapp_inbound", {
+            p_workspace_id: workspaceId,
+            p_relationship_id: relationshipId,
+            p_sent_at: sentAt,
+            p_body: getInboundText(message) ?? "",
+        })
+        if (windowError) throw new Error(`Could not record the WhatsApp service window: ${windowError.message}`)
+    }
+
     const pendingSaleConfirmation = await handleSaleConsentConfirmation({
         workspaceId,
         fromAddress: from,
@@ -826,8 +846,6 @@ async function handleInboundMessage({
     })
 
     if (pendingSaleConfirmation.handled) return
-
-    const destination = await resolveInboundDestination(from, workspaceId)
 
     if (!destination) {
         const unmatchedBody =
@@ -858,16 +876,6 @@ async function handleInboundMessage({
         return
     }
 
-    const { data: client } = destination.clientId
-        ? await supabaseAdmin
-              .from("clients")
-              .select("name, workspace_id, relationship_id")
-              .eq("id", destination.clientId)
-              .eq("workspace_id", workspaceId)
-              .single()
-        : { data: null }
-    const relationshipId =
-        destination.relationshipId ?? client?.relationship_id ?? null
     const initialBody =
         getInboundText(message) || `[${titleCase(message.type ?? "message")}]`
     const { data: insertedMessage, error: insertError } = await supabaseAdmin

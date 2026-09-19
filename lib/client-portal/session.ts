@@ -48,10 +48,10 @@ export async function loadClientPortalSessionByToken(token: string) {
             .eq("relationship_id", resolved.session.relationship_id)
             .eq("status", "connected")
             .maybeSingle(),
-        supabaseAdmin.from("client_portal_sessions")
-            .update({ last_accessed_at: new Date().toISOString() })
-            .eq("workspace_id", resolved.session.workspace_id)
-            .eq("id", resolved.session.id),
+        supabaseAdmin.rpc("record_client_portal_access", {
+            p_workspace_id: resolved.session.workspace_id,
+            p_portal_session_id: resolved.session.id,
+        }),
     ])
     const reporting = reportingResult.data
     return {

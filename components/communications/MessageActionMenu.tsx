@@ -56,7 +56,7 @@ function ActionButton({ label, onClick, children, tooltip, danger = false, disab
     return <button data-icon-button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={tooltip} aria-pressed={pressed} className={`${ACTION_BUTTON_CLASS} disabled:cursor-default disabled:hover:bg-transparent ${danger ? "text-red-500 hover:bg-red-500/10 hover:text-red-400" : ""}`}>{children}</button>
 }
 
-export function PrimaryMessageActions({ onDelete, onEdit, onSave, saveLabel = "Save attachment", saveDisabled = false, saveActive = false, onReply, onQuote, onCopy, onPin, onReact, pinned }: {
+export function PrimaryMessageActions({ onDelete, onEdit, onSave, saveLabel = "Save attachment", saveDisabled = false, saveActive = false, onReply, onQuote, onCopy, onPin, onReact, replyDisabled = false, reactDisabled = false, pinned }: {
     onDelete: (() => void) | null
     onEdit: (() => void) | null
     onSave: (() => void) | null
@@ -68,17 +68,19 @@ export function PrimaryMessageActions({ onDelete, onEdit, onSave, saveLabel = "S
     onCopy: () => void
     onPin: (() => void) | null
     onReact: (() => void) | null
+    replyDisabled?: boolean
+    reactDisabled?: boolean
     pinned: boolean
 }) {
     return <div className="flex max-w-full flex-wrap items-center rounded-full border border-neutral-800 bg-neutral-950 p-1 shadow-xl">
         {onDelete ? <ActionButton label="Delete message" onClick={onDelete} danger><DeleteIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
         {onEdit ? <ActionButton label="Edit message" onClick={onEdit}><EditIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
         {onSave ? <ActionButton label={saveLabel} onClick={onSave} disabled={saveDisabled} pressed={saveActive}><SaveIcon className={`h-5 w-5 lg:h-4 lg:w-4 ${saveActive ? "text-emerald-400" : ""}`} /></ActionButton> : null}
-        {onReply && !onQuote ? <ActionButton label="Reply" onClick={onReply}><ReplyIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
+        {onReply && !onQuote ? <ActionButton label="Reply" onClick={onReply} disabled={replyDisabled}><ReplyIcon className={`h-5 w-5 lg:h-4 lg:w-4 ${replyDisabled ? "text-neutral-700" : ""}`} /></ActionButton> : null}
         {onQuote ? <ActionButton label="Quote" tooltip="Reply to the whole message, or highlight text to quote a passage" onClick={onQuote}><ReplyIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
         <ActionButton label="Copy message" onClick={onCopy}><CopyIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton>
         {onPin ? <ActionButton label={pinned ? "Unpin message" : "Pin message"} onClick={onPin} pressed={pinned}><PinIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
-        {onReact ? <ActionButton label="React to message" onClick={onReact}><ReactIcon className="h-5 w-5 lg:h-4 lg:w-4" /></ActionButton> : null}
+        {onReact ? <ActionButton label="React to message" onClick={onReact} disabled={reactDisabled}><ReactIcon className={`h-5 w-5 lg:h-4 lg:w-4 ${reactDisabled ? "text-neutral-700" : ""}`} /></ActionButton> : null}
     </div>
 }
 

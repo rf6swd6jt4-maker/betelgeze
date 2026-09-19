@@ -4,6 +4,7 @@ import { NextRequest } from "next/server"
 import { sendMetaWhatsAppReaction } from "@/lib/client-messages/meta-whatsapp"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { whatsappWindowIsOpen } from "@/lib/client-messages/whatsapp-window"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -51,6 +52,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     if (!portalNative) {
         if (message.provider !== "meta_whatsapp") {
             return Response.json({ error: "This message source does not support reactions." }, { status: 409 })
+        }
+        const windowState = await supabaseAdmin.from("relationships")
+            .select("last_whatsapp_inbound_at, whatsapp_opted_out_at")
+            .eq("workspace_id", workspace.id).eq("id", relationshipId).maybeSingle()
+        if (windowState.error) return Response.json({ error: "Could not check the WhatsApp response window." }, { status: 503 })
+        if (!whatsappWindowIsOpen(windowState.data?.last_whatsapp_inbound_at) || windowState.data?.whatsapp_opted_out_at) {
+            return Response.json({ error: "The 24-hour WhatsApp response window has expired." }, { status: 409 })
         }
         if (Date.now() - new Date(message.created_at).getTime() > 30 * 24 * 60 * 60 * 1_000) {
             return Response.json({ error: "WhatsApp reactions are available for messages up to 30 days old." }, { status: 409 })

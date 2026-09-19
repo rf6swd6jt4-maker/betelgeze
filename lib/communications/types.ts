@@ -94,6 +94,8 @@ export type ClientConversation = {
     canSend: boolean
     channels?: Array<"meta_whatsapp" | "twilio_sms">
     primaryProvider?: "meta_whatsapp" | "twilio_sms"
+    lastWhatsAppInboundAt?: string | null
+    whatsappOptedOutAt?: string | null
     pinnedMessageId: string | null
     messages: CommunicationMessage[]
     messageWindowStart?: string | null

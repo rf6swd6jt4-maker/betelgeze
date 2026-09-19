@@ -14,6 +14,12 @@ The 17 September 2026 conversation authorizes this assessment and rebuild. The u
 
 `app_speed.md` and existing authorization/encryption requirements remain mandatory.
 
+### Authorized WhatsApp-window notices (19 September 2026)
+
+The user authorized Team-chat warnings to a relationship's seller and manager as a WhatsApp response window nears expiry. `20260919082000_whatsapp_window_warnings.sql` adds a narrowly typed internal Team notice, an indexed/deduplicated 23–24-hour scheduler, and a guard permitting a null system sender only for this notice in an active relationship Team chat. It does not change read cursors, unread calculations, recipient selection, Web Push jobs, subscriptions, or existing system-conversation policy. The existing push trigger deliberately skips null-sender notices; these are Team-chat messages, not a guarantee of a device alert. Only an unanswered client inbound qualifies. The notice contains no client message body or access token.
+
+Apply the window-state migration before the warning migration, then the application. Rollback by disabling the `whatsapp-window-warnings` cron job and restoring the previous `guard_native_system_message` function/trigger; preserve already-written notices and dedup receipts as history. Isolated PostgreSQL validation is in `scripts/validate-whatsapp-handoffs-sql.mjs`; production scheduler execution, authenticated Team display, and device notification receipt require separate verification.
+
 ### Authorized addition: profile and device settings
 
 The user subsequently explicitly requested a centered profile, a three-dot Edit profile/Security/Log out menu, moving password and account deletion to Security, and independent device notification switches with other devices disabled. This scope authorizes the following changes without weakening the chat-reading contract:

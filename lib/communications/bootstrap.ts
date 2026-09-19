@@ -61,6 +61,8 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
             connectedProviders.has("twilio_sms") && relationship.primary_phone ? "twilio_sms" : null,
         ].filter(Boolean) as Array<"meta_whatsapp" | "twilio_sms">),
         primaryProvider: (relationship.communication_primary_provider === "twilio_sms" ? "twilio_sms" : "meta_whatsapp") as "twilio_sms" | "meta_whatsapp",
+        lastWhatsAppInboundAt: relationship.last_whatsapp_inbound_at ?? null,
+        whatsappOptedOutAt: relationship.whatsapp_opted_out_at ?? null,
         pinnedMessageId: relationship.communication_pinned_message_id,
         messages: relationship.id === requestedConversationId && selectedMessages ? selectedMessages.messages : messagesByRelationship.get(relationship.id) ?? [],
         messageWindowStart: relationship.id === requestedConversationId && selectedMessages

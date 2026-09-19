@@ -6,6 +6,7 @@ import { ArchiveRelationshipForm } from "@/app/[workspaceSlug]/relationships/[re
 import { RelationshipServicesWorkspace } from "@/components/relationships/RelationshipServicesWorkspace"
 import { RelationshipAssets } from "@/components/relationships/RelationshipAssets"
 import { RelationshipBackgroundEditor } from "@/components/relationships/RelationshipBackgroundEditor"
+import { RelationshipEngagement } from "@/components/relationships/RelationshipEngagement"
 import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailPageHeader } from "@/components/detail"
 import { ListActionMenu, type ListAction } from "@/components/list/ListActionMenu"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
@@ -81,6 +82,7 @@ function RelationshipDetail({ data }: { data: DetailSnapshot }) {
         <DetailPageHeader category="Relationship" reference={shortId(record.id)} title={record.name} subtitle={record.businessName ?? "No company saved"} labels={<>{record.isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}</>} updated={formatRelativeTime(record.updatedAt)} summary={<RelationshipValues values={data.services.values} />} />
         <RelationshipBackgroundEditor key={`${data.userId}:${record.id}:background`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.background} updatedAt={record.updatedAt} canEdit={data.canEdit} commandsEnabled={data.backgroundCommandsEnabled}>
         <RelationshipServicesWorkspace key={`${data.userId}:${record.id}:services`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.services} canAdd={data.canAdd} canImport={data.canImport} canSeeHistory={data.canSeeHistory} legacy={data.legacy} />
+        <RelationshipEngagement key={`${data.userId}:${record.id}:engagement`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} />
         <RelationshipAssets key={`${data.userId}:${record.id}:assets`} slug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} />
         </RelationshipBackgroundEditor>
         {data.canArchive ? <DetailDangerZone>

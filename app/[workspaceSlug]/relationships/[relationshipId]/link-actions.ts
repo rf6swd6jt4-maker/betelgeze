@@ -15,7 +15,7 @@ export async function generateRelationshipPortalLink(slug: string, relationshipI
     if (existing.error) return { ok: false as const, error: "The existing portal session could not be checked." }
     const token = randomBytes(32).toString("hex")
     const { error } = existing.data
-        ? await supabaseAdmin.from("client_portal_sessions").update({ session_token: token, status: "active", token_revoked_at: null, last_accessed_at: null }).eq("workspace_id", workspace.id).eq("id", existing.data.id).eq("status", "revoked")
+        ? await supabaseAdmin.from("client_portal_sessions").update({ session_token: token, status: "active", token_revoked_at: null }).eq("workspace_id", workspace.id).eq("id", existing.data.id).eq("status", "revoked")
         : await supabaseAdmin.from("client_portal_sessions").insert({ workspace_id: workspace.id, relationship_id: relationshipId, session_token: token, status: "active" })
     // Concurrent clicks may race the unique relationship key. Read the winner.
     const after = await loadRelationshipLinks(workspace, relationshipId)
@@ -26,7 +26,7 @@ export async function generateRelationshipPortalLink(slug: string, relationshipI
 export async function checkRelationshipPortalWhatsAppReadiness(slug: string, relationshipId: string) {
     const { workspace } = await requireWorkspace(slug, "admin")
     const links = await loadRelationshipLinks(workspace, relationshipId)
-    if (!links.portal) return { ready: false as const, reason: "Generate an active portal link first." }
+    if (!links.portal || !links.canGeneratePortal) return { ready: false as const, reason: "Generate an active portal link after onboarding first." }
     try {
         const { data, error } = await supabaseAdmin.rpc("relationship_messaging_choices", { p_workspace_id: workspace.id, p_relationship_id: relationshipId })
         if (error) throw error
@@ -42,7 +42,7 @@ export async function sendRelationshipPortalLinkOnWhatsApp(slug: string, relatio
     const { workspace } = await requireWorkspace(slug, "admin")
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) return { ok: false as const, error: "Try sending again." }
     const links = await loadRelationshipLinks(workspace, relationshipId)
-    if (!links.portal) return { ok: false as const, error: "Generate an active portal link first." }
+    if (!links.portal || !links.canGeneratePortal) return { ok: false as const, error: "Generate an active portal link after onboarding first." }
     const readiness = await checkRelationshipPortalWhatsAppReadiness(slug, relationshipId)
     if (!readiness.ready) return { ok: false as const, error: readiness.reason }
     const [choices, relationship] = await Promise.all([

@@ -3,7 +3,8 @@ import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailPageHea
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
 import { workItemStatusPresentation } from "@/components/list/work-item-presentation"
-import { AttachmentPreview, AttachmentsBlock, SquarePill } from "@/components/ui"
+import { SquarePill } from "@/components/ui"
+import { RecordAttachments } from "@/components/detail/RecordAttachments"
 import {
     getWorkItem,
     getWorkItemPlanningContext,
@@ -102,9 +103,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                     linksLocked={item.native_kind === "onboarding_step"}
                 />
 
-                <AttachmentsBlock empty="No assets are attached to this work item yet.">
-                    {assets.length ? assets.map((asset) => <AttachmentPreview key={asset.id} href={assetHref(workspace.slug, asset.id)} title={asset.title} subtitle={`${asset.asset_kind.replace(/_/g, " ")} · ${formatRelativeTime(asset.updated_at)}`} previewUrl={attachmentPreview(asset)} contentType={asset.content_type} />) : null}
-                </AttachmentsBlock>
+                <RecordAttachments workspaceSlug={workspace.slug} userId={user.id} owner="work-item" ownerId={item.id} canEdit={role === "owner" || role === "admin"} />
 
                         {role === "owner" || role === "admin" ? <DetailDangerZone>
                             <DetailDangerAction

@@ -668,6 +668,8 @@ export async function createAssetFromModal(slug: string, formData: FormData, rel
 
     const submittedRelationshipId = nullableFormString(formData, "relationship_id")
     const relationshipToLink = relationshipId ?? submittedRelationshipId
+    const workItemToLink = workItemId ?? nullableFormString(formData, "work_item_id")
+    const noteToLink = nullableFormString(formData, "note_id")
     if (relationshipToLink) {
         const { data: relationship } = await supabaseAdmin.from("relationships")
             .select("id")
@@ -676,6 +678,14 @@ export async function createAssetFromModal(slug: string, formData: FormData, rel
             .neq("status", "archived")
             .maybeSingle()
         if (!relationship) return { ok: false, error: "This relationship is archived or unavailable." }
+    }
+    if (workItemToLink) {
+        const { data: workItem } = await supabaseAdmin.from("work_items").select("id").eq("workspace_id", workspace.id).eq("id", workItemToLink).maybeSingle()
+        if (!workItem) return { ok: false, error: "This work item is unavailable." }
+    }
+    if (noteToLink) {
+        const { data: note } = await supabaseAdmin.from("notes").select("id").eq("workspace_id", workspace.id).eq("id", noteToLink).maybeSingle()
+        if (!note) return { ok: false, error: "This note is unavailable." }
     }
 
     const { data: asset, error } = await supabaseAdmin.from("assets").insert({
@@ -699,22 +709,14 @@ export async function createAssetFromModal(slug: string, formData: FormData, rel
 
     if (error || !asset) return { ok: false, error: "create-failed" }
 
-    if (relationshipToLink) {
-        await supabaseAdmin.from("asset_relationships").insert({
-            workspace_id: workspace.id,
-            asset_id: asset.id,
-            relationship_id: relationshipToLink,
-        })
-    }
-
-    const submittedWorkItemId = nullableFormString(formData, "work_item_id")
-    const workItemToLink = workItemId ?? submittedWorkItemId
-    if (workItemToLink) {
-        await supabaseAdmin.from("asset_work_items").insert({
-            workspace_id: workspace.id,
-            asset_id: asset.id,
-            work_item_id: workItemToLink,
-        })
+    const links = await Promise.all([
+        relationshipToLink ? supabaseAdmin.from("asset_relationships").insert({ workspace_id: workspace.id, asset_id: asset.id, relationship_id: relationshipToLink }) : Promise.resolve({ error: null }),
+        workItemToLink ? supabaseAdmin.from("asset_work_items").insert({ workspace_id: workspace.id, asset_id: asset.id, work_item_id: workItemToLink }) : Promise.resolve({ error: null }),
+        noteToLink ? supabaseAdmin.from("note_assets").insert({ workspace_id: workspace.id, asset_id: asset.id, note_id: noteToLink }) : Promise.resolve({ error: null }),
+    ])
+    if (links.some((link) => link.error)) {
+        await supabaseAdmin.from("assets").delete().eq("workspace_id", workspace.id).eq("id", asset.id)
+        return { ok: false, error: "The asset links could not be saved. Nothing was created." }
     }
 
     relationshipRevalidatePaths(slug, relationshipToLink ?? undefined)
@@ -730,6 +732,9 @@ export async function createNoteFromModal(slug: string, formData: FormData): Pro
 
     const relationshipIds = [...new Set(formData.getAll("relationship_ids").map(String).filter((id) => uuidPattern.test(id)))].slice(0, 20)
     const assetIds = [...new Set(formData.getAll("asset_ids").map(String).filter((id) => uuidPattern.test(id)))].slice(0, 20)
+    const workItemId = nullableFormString(formData, "work_item_id")
+    const parentNoteId = nullableFormString(formData, "parent_note_id")
+    if ((workItemId && !uuidPattern.test(workItemId)) || (parentNoteId && !uuidPattern.test(parentNoteId))) return { ok: false, error: "The attached record is invalid." }
     if (relationshipIds.length !== formData.getAll("relationship_ids").filter(Boolean).length || assetIds.length !== formData.getAll("asset_ids").filter(Boolean).length) {
         return { ok: false, error: "One or more selected links are invalid." }
     }
@@ -744,6 +749,14 @@ export async function createNoteFromModal(slug: string, formData: FormData): Pro
     ])
     if (relationshipsResult.error || (relationshipsResult.data ?? []).length !== relationshipIds.length) return { ok: false, error: "One or more relationships are archived or unavailable." }
     if (assetsResult.error || (assetsResult.data ?? []).length !== assetIds.length) return { ok: false, error: "One or more assets are unavailable." }
+    if (workItemId) {
+        const { data } = await supabaseAdmin.from("work_items").select("id").eq("workspace_id", workspace.id).eq("id", workItemId).maybeSingle()
+        if (!data) return { ok: false, error: "The work item is unavailable." }
+    }
+    if (parentNoteId) {
+        const { data } = await supabaseAdmin.from("notes").select("id").eq("workspace_id", workspace.id).eq("id", parentNoteId).maybeSingle()
+        if (!data) return { ok: false, error: "The parent note is unavailable." }
+    }
 
     const { data: note, error } = await supabaseAdmin.from("notes").insert({
         workspace_id: workspace.id,
@@ -753,7 +766,7 @@ export async function createNoteFromModal(slug: string, formData: FormData): Pro
     }).select("id").single()
     if (error || !note) return { ok: false, error: "The note could not be created." }
 
-    const [relationshipLinks, assetLinks] = await Promise.all([
+    const [relationshipLinks, assetLinks, workItemLink, parentNoteLink] = await Promise.all([
         relationshipIds.length ? supabaseAdmin.from("note_relationships").insert(relationshipIds.map((relationshipId) => ({
             workspace_id: workspace.id,
             note_id: note.id,
@@ -764,8 +777,10 @@ export async function createNoteFromModal(slug: string, formData: FormData): Pro
             note_id: note.id,
             asset_id: assetId,
         }))) : Promise.resolve({ error: null }),
+        workItemId ? supabaseAdmin.from("note_work_items").insert({ workspace_id: workspace.id, note_id: note.id, work_item_id: workItemId }) : Promise.resolve({ error: null }),
+        parentNoteId ? supabaseAdmin.from("note_notes").insert({ workspace_id: workspace.id, parent_note_id: parentNoteId, attached_note_id: note.id }) : Promise.resolve({ error: null }),
     ])
-    if (relationshipLinks.error || assetLinks.error) {
+    if (relationshipLinks.error || assetLinks.error || workItemLink.error || parentNoteLink.error) {
         await supabaseAdmin.from("notes").delete().eq("workspace_id", workspace.id).eq("id", note.id)
         return { ok: false, error: "The note links could not be saved. Nothing was created." }
     }

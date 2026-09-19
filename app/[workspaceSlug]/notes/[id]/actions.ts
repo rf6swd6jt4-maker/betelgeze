@@ -79,3 +79,41 @@ export async function updateNote(slug: string, noteId: string, formData: FormDat
     for (const relationshipId of new Set([...existingRelationshipIds, ...relationships.valid])) revalidatePath(`/${slug}/relationships/${relationshipId}`)
     return { ok: true }
 }
+
+
+export async function saveNoteFields(slug: string, noteId: string, formData: FormData): Promise<NoteEditActionState> {
+    const { workspace } = await requireWorkspace(slug, "admin")
+    if (!uuidPattern.test(noteId)) return { ok: false, error: "This note is unavailable." }
+    const name = formText(formData, "name")
+    const description = formText(formData, "description")
+    if (!name || name.length > 160) return { ok: false, error: "Add a note name of 160 characters or fewer." }
+    if (!description || description.length > 20_000) return { ok: false, error: "Add a note description of 20,000 characters or fewer." }
+    const { data, error } = await supabaseAdmin.from("notes").update({ name, description }).eq("workspace_id", workspace.id).eq("id", noteId).select("id").maybeSingle()
+    if (error || !data) return { ok: false, error: "The note could not be saved." }
+    revalidatePath(noteHref(slug, noteId))
+    return { ok: true }
+}
+
+export async function updateNoteRelationships(slug: string, noteId: string, selected: string[]): Promise<NoteEditActionState> {
+    const { workspace } = await requireWorkspace(slug, "admin")
+    if (!uuidPattern.test(noteId) || selected.length > 20 || selected.some(id => !uuidPattern.test(id)) || new Set(selected).size !== selected.length) return { ok: false, error: "Invalid relationship selection." }
+    const [note, available, current] = await Promise.all([
+        supabaseAdmin.from("notes").select("id").eq("workspace_id", workspace.id).eq("id", noteId).maybeSingle(),
+        selected.length ? supabaseAdmin.from("relationships").select("id").eq("workspace_id", workspace.id).neq("status", "archived").in("id", selected) : Promise.resolve({ data: [], error: null }),
+        supabaseAdmin.from("note_relationships").select("relationship_id").eq("workspace_id", workspace.id).eq("note_id", noteId),
+    ])
+    if (note.error || !note.data || available.error || available.data?.length !== selected.length || current.error) return { ok: false, error: "One or more linked relationships are unavailable." }
+    const prior = (current.data ?? []).map(item => item.relationship_id)
+    const add = selected.filter(id => !prior.includes(id))
+    const remove = prior.filter(id => !selected.includes(id))
+    if (add.length) {
+        const result = await supabaseAdmin.from("note_relationships").insert(add.map(id => ({ workspace_id: workspace.id, note_id: noteId, relationship_id: id })))
+        if (result.error) return { ok: false, error: "The relationships could not be linked." }
+    }
+    if (remove.length) {
+        const result = await supabaseAdmin.from("note_relationships").delete().eq("workspace_id", workspace.id).eq("note_id", noteId).in("relationship_id", remove)
+        if (result.error) return { ok: false, error: "The relationships could not be unlinked." }
+    }
+    revalidatePath(noteHref(slug, noteId))
+    return { ok: true }
+}

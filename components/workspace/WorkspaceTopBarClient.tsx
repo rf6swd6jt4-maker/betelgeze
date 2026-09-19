@@ -2601,6 +2601,14 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         {createTarget ? <WorkspaceCreateModal
             key={createTarget}
             target={createTarget}
+            initialAttachment={(() => {
+                const activeUrl = tabs.find((tab) => tab.id === activeTabId)?.url
+                if (!activeUrl) return null
+                const query = new URL(activeUrl, "https://workspace.local").searchParams
+                const owner = query.get("attachTo")
+                const id = query.get("attachId")
+                return query.get("create") === createTarget && (owner === "relationship" || owner === "work-item" || owner === "note") && id && /^[0-9a-f-]{36}$/i.test(id) ? { owner, id } : null
+            })()}
             workspace={workspace}
             currentUserId={currentUserId}
             username={username}

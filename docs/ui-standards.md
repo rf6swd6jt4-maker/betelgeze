@@ -507,6 +507,16 @@ The record-specific middle remains flexible. The header, fields, and destructive
 - Omit fields that do not apply. Do not render decorative empty rows to balance the columns.
 - Long descriptions may span both columns. Record-specific analytical summaries such as poll funnel statistics remain content, not fields.
 
+### Autosave in field blocks
+
+Editable `DetailFields` use one field-block save contract across record pages. Keep the visible field value in the mounted record owner and show local edits immediately. Debounce ordinary typing (about 800 ms), save selections immediately, flush on blur and workspace navigation, and serialize writes for the same record. Do not make the field wait for a page reload. `WorkspaceAutosaveForm` is the shared form implementation for simple records such as Notes; record draft queues are appropriate when conflict resolution, offline persistence, or dependent mutations require them. Both implementations must obey the same feedback, validation, and navigation rules.
+
+A save validates authorization and record ownership on the server, writes only the submitted fields, and returns a confirmed result. Show `Saving…`, `Saved`, and a recoverable inline error only when each state is true. Never erase the edited value on a failed request. Keep a failed draft available to retry. A server revalidation or background refresh must not overwrite a pending local edit. Records with concurrent editors should use a revision or updated-at precondition and expose a conflict choice instead of silently replacing another editor's work.
+
+The field block renders from the initial detail read. Autosave must not add an extra read or provider call to the useful-content path. Reuse the authenticated record owner; keep requests scoped to one record, coalesce repeat edits, and avoid rebuilding the entire detail page for every keystroke. Use `AutoGrowTextarea` for editable descriptions. Preserve exact validation limits from the server in the control. Read-only fields remain ordinary `DetailField` values and do not trigger writes.
+
+Relationship, work-item, asset, and Note detail pages apply this contract wherever their fields are editable. A record-specific mutation may keep its own queue, but it must share the contract above and the field primitives. New editable detail fields must be wired into autosave before release; a separate Save button in a modal is reserved for multi-record or irreversible operations.
+
 ### Work item content
 
 Work item details separate Description (a short goal), Instructions (the editable procedure and completion requirements), and Evidence (immutable source text). Description and Instructions use the same quiet multiline editor and preserve independent drafts/conflict recovery. Evidence uses plain, selectable, tightly spaced text with no editor, blank paragraphs, cards or source badges. `DetailField stackOnMobile` places the label above long text below the small breakpoint so instructions remain readable; other fields retain their label track. The original SOP remains a linked asset. Full Instructions and Evidence belong only to the selected detail read; list and queue summaries use Description.
@@ -517,30 +527,13 @@ Work item details separate Description (a short goal), Instructions (the editabl
 - A relationship Gantt, onboarding timeline, asset preview, poll funnel, or diagnostic payload is allowed to retain its own internal design because it is not interchangeable record metadata.
 - Do not repeat the record name, category, ID, overall status, or general details heading inside this content.
 
-### AttachmentsBlock
+### Record attachments
 
-`AttachmentsBlock` is the canonical linked-asset treatment on detail pages and other record surfaces. It replaces page-local “Assets”, “Assets and updates”, file rows, and pill-only asset collections when the linked asset itself is the thing a person needs to recognize or open.
+`RecordAttachments` is the shared attachment block on relationship, work-item, and Note details. It uses `DocumentCatalogue` cards for linked assets and notes: a name, short type or context, and an authorized preview when available. The final Add card opens an anchored choice popup for creating an asset or Note with the parent record selected, or linking an existing one. The popup must float without moving detail content. Creation and linking validate workspace ownership on the server. A Note cannot attach itself.
 
-```tsx
-<AttachmentsBlock empty="No assets are attached to this work item yet.">
-    {assets.map((asset) => <AttachmentPreview
-        key={asset.id}
-        href={assetHref(workspace.slug, asset.id)}
-        title={asset.title}
-        subtitle={`${asset.asset_kind} · ${formatRelativeTime(asset.updated_at)}`}
-        previewUrl={previewUrlById.get(asset.id)}
-        contentType={asset.content_type}
-    />)}
-</AttachmentsBlock>
-```
+The heading is `Attachments`. Do not add Refresh or Upload header buttons. Cards use the same square document language as SOP pages. Fetch this optional block when it nears the viewport; bound rows and signed previews and keep originals on demand. Reuse a recent authorized result when switching tabs, refresh quietly, and show errors without blanking existing cards. Place attachments after ordinary record content and before `DetailDangerZone`.
 
-- The visible heading is always `Attachments`. Supporting copy and compact actions such as Attach, Refresh, Edit, or Download may sit in the block header or individual card footer.
-- The block is one clean neutral box with a restrained border. Do not nest a second bordered list or card around the preview grid.
-- `AttachmentPreview` uses the authorized thumbnail when one already exists. It falls back to a quiet file-type preview; the block must not generate, download, sign, or decode full originals merely to fill the grid.
-- The grid always shows at least two cards per row on mobile. Wider screens use compact auto-filling columns; previews remain secondary to the record details above them.
-- Titles may wrap to two lines. Subtitles are one short line for type, date, size, or description. Internal references do not belong in this presentation unless they are the only useful identity.
-- Keep reads bounded and preserve the record's existing authorization. Media remains lazy, and offscreen attachment blocks may retain their established visibility-triggered loading.
-- On a detail page, this block comes after fields and other ordinary record content, immediately before `DetailDangerZone`. Nothing except the danger zone follows it in the primary column.
+`AttachmentsBlock` and `AttachmentPreview` remain for legacy surfaces until those surfaces move to the catalogue. Do not introduce a new detail-page variant.
 
 ### DetailDangerZone
 

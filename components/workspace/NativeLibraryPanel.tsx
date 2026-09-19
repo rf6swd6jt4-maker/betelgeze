@@ -1,4 +1,5 @@
 "use client"
+import { RecordAttachments } from "@/components/detail/RecordAttachments"
 import { AssetGallery, AssetGalleryCard } from "@/components/ui/AssetGallery"
 import { CollapsedPillLinks } from "@/components/ui/CollapsedPillLinks"
 /* eslint-disable @next/next/no-img-element */
@@ -16,6 +17,7 @@ import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { RelationshipStage, SquarePill, RoundPill, Status } from "@/components/ui"
 import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, DetailFields, DetailPageHeader } from "@/components/detail"
+import { AssetFieldsEditor } from "@/app/[workspaceSlug]/assets/[id]/AssetFieldsEditor"
 import { InlineWorkItemFields } from "@/app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { serializeWorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
@@ -90,7 +92,7 @@ function AssetDetail({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "a
                             updated={formatRelativeTime(asset.updated_at)}
                         />
 
-                        <DetailFields>
+                        <AssetFieldsEditor workspaceSlug={data.workspaceSlug} assetId={asset.id} userId={data.userId} initialTitle={asset.title} initialDescription={asset.description ?? ""} updatedAt={asset.updated_at} canEdit={role === "owner" || role === "admin"}>
                             <DetailField label="Type" icon="file">{asset.content_type ?? asset.asset_kind.replace(/_/g, " ")}</DetailField>
                             <DetailField label="Size" icon="size" className="lg:border-l lg:border-neutral-900 lg:pl-8">{formatFileSize(asset.file_size)}</DetailField>
                             <DetailField label="Source" icon="source">{asset.source_kind.replace(/_/g, " ")}</DetailField>
@@ -103,8 +105,7 @@ function AssetDetail({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "a
                             <DetailField label="Work items" icon="activity" className="lg:col-span-2">
                                 <CollapsedPillLinks label="linked work items" items={scopedWorkItems.map(link => ({ id: link.work_item_id, label: link.work_item?.title ?? "Work item", href: workItemHref(data.workspaceSlug, link.work_item_id) }))} />
                             </DetailField>
-                            <DetailField label="Description" icon="description" className="lg:col-span-2">{asset.description || <span className="text-neutral-600">No description</span>}</DetailField>
-                        </DetailFields>
+                        </AssetFieldsEditor>
 
                         {onboardingBackHref ? (
                             <section className="mt-6 rounded-xl border border-sky-500/20 bg-sky-950/10 p-4">
@@ -281,22 +282,7 @@ function WorkItemDetail({ data }: { data: Extract<NativeLibrarySnapshot, { kind:
 
                 <InlineWorkItemFields {...data.fields} />
 
-                <section className="mt-6 rounded-2xl border border-neutral-800 bg-black p-5">
-                    <h2 className="text-lg font-semibold">Assets and updates</h2>
-                    <div className="mt-4 divide-y divide-neutral-900 rounded-xl border border-neutral-900">
-                        {assets.length ? assets.map((asset) => (
-                            <Link key={asset.id} href={assetHref(data.workspaceSlug, asset.id)} className="grid gap-2 px-3 py-3 hover:bg-neutral-900/70 sm:grid-cols-[1fr_120px] sm:items-center">
-                                <div className="min-w-0">
-                                    <p className="truncate font-medium text-neutral-100">{asset.title}</p>
-                                    <p className="mt-1 font-mono text-xs text-neutral-600">{shortId(asset.id)}</p>
-                                </div>
-                                <p className="text-sm text-neutral-500 sm:text-right">{formatRelativeTime(asset.updated_at)}</p>
-                            </Link>
-                        )) : (
-                            <p className="px-3 py-4 text-sm text-neutral-500">No assets are attached to this work item yet.</p>
-                        )}
-                    </div>
-                </section>
+                <RecordAttachments workspaceSlug={data.workspaceSlug} userId={data.userId} owner="work-item" ownerId={item.id} canEdit={role === "owner" || role === "admin"} />
 
                         {role === "owner" || role === "admin" ? <DetailDangerZone>
                             <DetailDangerAction

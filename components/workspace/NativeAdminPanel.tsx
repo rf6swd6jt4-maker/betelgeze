@@ -1,8 +1,8 @@
 "use client"
 
 import Link from "@/components/workspace/WorkspaceLink"
-import { useEffect, useRef, useState } from "react"
-import { ActivityTrends, ActivityTrendsLoading } from "@/components/admin/ActivityTrends"
+import { useEffect } from "react"
+import { ActivityTrendsRemote } from "@/components/admin/ActivityTrendsRemote"
 import { AdminPanelNav } from "@/components/admin/AdminPanelNav"
 import { AdminWorkQueue } from "@/components/admin/AdminWorkQueue"
 import { OkrWorkspace } from "@/components/admin/OkrWorkspace"
@@ -18,12 +18,12 @@ import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { Assignee, SquarePill, Status, type StatusTone } from "@/components/ui"
 import { MAINTENANCE_CATEGORIES, ADMIN_ACTIVITY_CATEGORIES, maintenanceCategoryLabel, adminActivityCategoryLabel } from "@/lib/admin/presentation"
-import { formatActivityCount, type AdminActivityMetricBundle } from "@/lib/admin/activity-metrics"
+import { formatActivityCount } from "@/lib/admin/activity-metrics"
 import type { MaintenanceCategory } from "@/lib/admin/maintenance"
 import type { AdminActivityCategory, AdminActivityLevel } from "@/lib/admin/activity"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { workItemPriorityLabel } from "@/lib/work-item-priority"
-import type { NativeAdminSnapshot, loadNativeAdminTrends } from "@/lib/workspace-native-admin"
+import type { NativeAdminSnapshot } from "@/lib/workspace-native-admin"
 import { usePathname, useRouter, useSearchParams, useWorkspaceNavigation } from "./WorkspaceNavigation"
 function eventStatus(level: AdminActivityLevel): { label: string; tone: StatusTone } {
     if (level === "error") return { label: "Error", tone: "red" }
@@ -55,31 +55,7 @@ const activityStatus = eventStatus
 
 function DeferredActivityTrends({ data }: { data: Extract<NativeAdminSnapshot, { kind: "admin-activity" }> }) {
     const navigation = useWorkspaceNavigation()
-    const active = navigation?.active !== false
-    const [metrics, setMetrics] = useState<AdminActivityMetricBundle | null>(null)
-    const loadedFor = useRef<typeof data | null>(null)
-    const [error, setError] = useState(false)
-    const [retry, setRetry] = useState(0)
-    useEffect(() => {
-        if (!active || loadedFor.current === data) return
-        const controller = new AbortController()
-        let cancelled = false
-        const run = async () => {
-            try {
-                const response = await fetch(`/api/workspaces/${encodeURIComponent(data.workspaceSlug)}/panels/admin?section=activity-trends`, { cache: "no-store", signal: controller.signal, headers: { "x-workspace-user": data.userId } })
-                if (!response.ok) throw new Error("Activity charts unavailable")
-                const result = await response.json() as Awaited<ReturnType<typeof loadNativeAdminTrends>>
-                if (result.userId !== data.userId || result.workspaceId !== data.workspaceId) throw new Error("Session changed")
-                if (!cancelled) { loadedFor.current = data; setError(false); setMetrics(result.metrics) }
-            } catch { if (!cancelled) setError(true) }
-        }
-        void run()
-        return () => { cancelled = true; controller.abort() }
-    }, [active, data, retry])
-    const errorNotice = error ? <p role="alert" className="mt-5 text-sm text-red-400">Activity charts could not {metrics ? "refresh. Showing the previous data." : "load."} <button type="button" className="underline" onClick={() => { setError(false); setRetry((value) => value + 1) }}>Retry</button></p> : null
-    if (metrics) return <>{errorNotice}<ActivityTrends initialRange={data.range} metrics={metrics} /></>
-    if (error) return errorNotice
-    return <ActivityTrendsLoading />
+    return <ActivityTrendsRemote identity={{ workspaceId: data.workspaceId, workspaceSlug: data.workspaceSlug, userId: data.userId }} initialRange={data.range} active={navigation?.active !== false} />
 }
 
 function AdminWork({ data }: { data: Extract<NativeAdminSnapshot, { kind: "admin-work" }> }) {

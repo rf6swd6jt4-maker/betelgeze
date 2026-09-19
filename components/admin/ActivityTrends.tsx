@@ -49,15 +49,22 @@ function ActivityMetricCard({ metric, range }: { metric: AdminActivityMetric; ra
     </article>
 }
 
-export function ActivityTrends({ metrics, initialRange }: { metrics: AdminActivityMetricBundle; initialRange: AdminActivityRange }) {
-    const [range, setRange] = useState(initialRange)
+const savedRanges = new Map<string, AdminActivityRange>()
+
+export function ActivityTrends({ metrics, initialRange, stateKey, refreshing = false, onRefresh }: { metrics: AdminActivityMetricBundle; initialRange: AdminActivityRange; stateKey?: string; refreshing?: boolean; onRefresh?: () => void }) {
+    const [range, setRange] = useState(() => stateKey ? savedRanges.get(stateKey) ?? initialRange : initialRange)
+    const selectRange = (next: AdminActivityRange) => {
+        if (stateKey) savedRanges.set(stateKey, next)
+        setRange(next)
+    }
     return <div data-workspace-mutation-scope="local">
         <FilterRail ariaLabel="Activity time range">
-            {(Object.keys(ACTIVITY_RANGES) as AdminActivityRange[]).map((item) => <FilterRailButton key={item} selected={range === item} onClick={() => setRange(item)}>{ACTIVITY_RANGES[item].label}</FilterRailButton>)}
+            {(Object.keys(ACTIVITY_RANGES) as AdminActivityRange[]).map((item) => <FilterRailButton key={item} selected={range === item} onClick={() => selectRange(item)}>{ACTIVITY_RANGES[item].label}</FilterRailButton>)}
+            {onRefresh ? <button type="button" disabled={refreshing} onClick={onRefresh} className="ml-auto text-xs text-neutral-400 underline underline-offset-4 hover:text-white disabled:opacity-50">{refreshing ? "Updating…" : "Update charts"}</button> : null}
         </FilterRail>
         <section className="mt-5" aria-label="Activity trends">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{metrics[range].map((metric) => <ActivityMetricCard key={metric.key} metric={metric} range={range} />)}</div>
-            <p className="mt-2 min-h-10 text-[11px] text-neutral-500">Volume: {ACTIVITY_RANGES[range].smoothing} moving average per {ACTIVITY_RANGES[range].bucketLabel} bucket. Error rate: {ACTIVITY_RANGES[range].errorWindow} rolling average; dashed line shows the selected period average. Gaps mean no completed requests. Reload the tab for fresh data.</p>
+            <div className="grid gap-3 md:grid-cols-2">{metrics[range].map((metric) => <ActivityMetricCard key={metric.key} metric={metric} range={range} />)}</div>
+            <p className="mt-2 min-h-10 text-[11px] text-neutral-500">Volume: {ACTIVITY_RANGES[range].smoothing} moving average per {ACTIVITY_RANGES[range].bucketLabel} bucket. Error rate: {ACTIVITY_RANGES[range].errorWindow} rolling average; dashed line shows the selected period average. Gaps mean no completed requests.</p>
         </section>
     </div>
 }
@@ -65,6 +72,6 @@ export function ActivityTrends({ metrics, initialRange }: { metrics: AdminActivi
 export function ActivityTrendsLoading() {
     return <section className="mt-5" aria-label="Loading activity trends" aria-busy="true">
         <div className="h-12 rounded border border-neutral-800 motion-safe:animate-pulse" />
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((index) => <div key={index} className="aspect-[1.6/1] rounded-xl border border-neutral-800 bg-neutral-900 motion-safe:animate-pulse" />)}</div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">{[0, 1, 2, 3].map((index) => <div key={index} className="aspect-[2/1] rounded-xl border border-neutral-800 bg-neutral-900 motion-safe:animate-pulse" />)}</div>
     </section>
 }

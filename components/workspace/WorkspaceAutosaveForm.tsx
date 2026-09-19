@@ -43,7 +43,7 @@ export function WorkspaceAutosaveForm({
     const timerRef = useRef<number | null>(null)
     const pendingRef = useRef<FormData | null>(null)
     const failedRef = useRef<FormData | null>(null)
-    const savingPromiseRef = useRef<Promise<void> | null>(null)
+    const savingPromiseRef = useRef<Promise<boolean> | null>(null)
     const lastSavedRef = useRef("")
     const mountedRef = useRef(true)
     const [saveState, setSaveState] = useState<SaveState>("idle")
@@ -51,7 +51,7 @@ export function WorkspaceAutosaveForm({
 
     const saveLatest = useCallback(async () => {
         const form = formRef.current
-        if (!form || !form.checkValidity()) return
+        if (!form || !form.checkValidity()) return false
         if (timerRef.current) {
             window.clearTimeout(timerRef.current)
             timerRef.current = null
@@ -60,7 +60,7 @@ export function WorkspaceAutosaveForm({
         if (formSnapshot(next) !== lastSavedRef.current) pendingRef.current = next
         if (savingPromiseRef.current) return savingPromiseRef.current
 
-        const drain = async () => {
+        const drain = async (): Promise<boolean> => {
             while (pendingRef.current) {
                 const submitted = pendingRef.current
                 pendingRef.current = null
@@ -79,7 +79,7 @@ export function WorkspaceAutosaveForm({
                             setSaveState("error")
                             setSaveError(rejected.error)
                         }
-                        break
+                        return false
                     }
                     failedRef.current = null
                     lastSavedRef.current = submittedSnapshot
@@ -95,9 +95,10 @@ export function WorkspaceAutosaveForm({
                         setSaveState("error")
                         setSaveError(error instanceof Error ? error.message : "These changes could not be saved.")
                     }
-                    break
+                    return false
                 }
             }
+            return true
         }
 
         savingPromiseRef.current = drain().finally(() => {

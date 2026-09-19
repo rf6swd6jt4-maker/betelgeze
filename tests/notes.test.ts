@@ -57,27 +57,23 @@ test("note routes participate in Library navigation, record tabs, restore, searc
     assert.match(chrome, /"notes"/)
 })
 
-test("note details are editable and follow the shared detail and attachment anatomy", async () => {
-    const [page, editor, actions, attachmentBlock, workItem, relationshipAssets, standards] = await Promise.all([
+test("note fields autosave and all record attachments use the shared gallery", async () => {
+    const [page, fields, actions, attachments, workItem, relationship, standards] = await Promise.all([
         readFile("app/[workspaceSlug]/notes/[id]/page.tsx", "utf8"),
-        readFile("app/[workspaceSlug]/notes/[id]/NoteEditor.tsx", "utf8"),
+        readFile("app/[workspaceSlug]/notes/[id]/NoteFieldsEditor.tsx", "utf8"),
         readFile("app/[workspaceSlug]/notes/[id]/actions.ts", "utf8"),
-        readFile("components/ui/AttachmentsBlock.tsx", "utf8"),
+        readFile("components/detail/RecordAttachments.tsx", "utf8"),
         readFile("app/[workspaceSlug]/work-items/[id]/page.tsx", "utf8"),
-        readFile("components/relationships/RelationshipAssets.tsx", "utf8"),
+        readFile("components/workspace/NativeRelationshipsPanel.tsx", "utf8"),
         readFile("docs/ui-standards.md", "utf8"),
     ])
-    assert.match(editor, />Edit note</)
-    assert.match(editor, /updateNote\(workspaceSlug, noteId, formData\)/)
-    assert.match(actions, /requireWorkspace\(slug, "admin"\)/)
-    assert.match(actions, /from\("notes"\)\.update/)
-    assert.ok(page.indexOf('label="Created"') < page.indexOf('label="Description"'))
-    assert.ok(page.indexOf('label="Created by"') < page.indexOf('label="Description"'))
-    assert.doesNotMatch(page, /label="Reference"/)
-    assert.ok(page.indexOf("<AttachmentsBlock") < page.indexOf("<DetailDangerZone"))
-    assert.match(attachmentBlock, /grid-cols-2/)
-    assert.match(workItem, /<AttachmentsBlock/)
-    assert.doesNotMatch(workItem, /Assets and updates/)
-    assert.match(relationshipAssets, /<AttachmentsBlock/)
-    assert.match(standards, /### AttachmentsBlock/)
+    assert.match(page, /<NoteFieldsEditor/)
+    assert.match(fields, /WorkspaceAutosaveForm/)
+    assert.match(fields, /AutoGrowTextarea/)
+    assert.match(actions, /saveNoteFields/)
+    assert.match(page, /<RecordAttachments/)
+    assert.match(workItem, /<RecordAttachments/)
+    assert.match(relationship, /<RecordAttachments/)
+    assert.match(attachments, /<DocumentCatalogue/)
+    assert.match(standards, /### Autosave in field blocks/)
 })

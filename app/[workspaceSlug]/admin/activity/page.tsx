@@ -1,6 +1,5 @@
 import Link from "next/link"
-import { Suspense } from "react"
-import { ActivityTrends, ActivityTrendsLoading } from "@/components/admin/ActivityTrends"
+import { ActivityTrendsRemote } from "@/components/admin/ActivityTrendsRemote"
 
 import { AdminPanelNav } from "@/components/admin/AdminPanelNav"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
@@ -11,8 +10,8 @@ import { FilterRail, FilterRailCount, FilterRailLink } from "@/components/panel/
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { Assignee, SquarePill, Status, type StatusTone } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
-import { ADMIN_ACTIVITY_CATEGORIES, adminActivityCategoryLabel, decodeAdminActivityCursor, encodeAdminActivityCursor, getAdminActivityFacets, listAdminActivityPage, listAdminActivitySince, type AdminActivityCategory, type AdminActivityLevel } from "@/lib/admin/activity"
-import { ACTIVITY_RANGES, formatActivityCount, buildAdminActivityMetricBundle, type AdminActivityRange } from "@/lib/admin/activity-metrics"
+import { ADMIN_ACTIVITY_CATEGORIES, adminActivityCategoryLabel, decodeAdminActivityCursor, encodeAdminActivityCursor, getAdminActivityFacets, listAdminActivityPage, type AdminActivityCategory, type AdminActivityLevel } from "@/lib/admin/activity"
+import { ACTIVITY_RANGES, formatActivityCount, type AdminActivityRange } from "@/lib/admin/activity-metrics"
 import { profileAvatarUrl } from "@/lib/profile-avatar"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
@@ -35,17 +34,6 @@ function activityStatus(level: AdminActivityLevel): { label: string; tone: Statu
     return { label: "Info", tone: "grey" }
 }
 
-async function loadActivityTrends(workspaceId: string, initialRange: AdminActivityRange, now: Date) {
-    // Include three days of history to warm up the longest rolling average.
-    const since = new Date(now.getTime() - 33 * 24 * 60 * 60 * 1000).toISOString()
-    try {
-        const events = await listAdminActivitySince(workspaceId, since, now.toISOString())
-        return <ActivityTrends initialRange={initialRange} metrics={buildAdminActivityMetricBundle(events, now)} />
-    } catch {
-        return <p role="alert" className="mt-5 text-sm text-red-400">Activity charts could not load. Reload the tab to try again.</p>
-    }
-}
-
 export default async function AdminActivityPage({ params, searchParams }: PageProps) {
     const [{ workspaceSlug }, query] = await Promise.all([params, searchParams])
     const { workspace, user } = await requireWorkspace(workspaceSlug, "admin")
@@ -53,8 +41,6 @@ export default async function AdminActivityPage({ params, searchParams }: PagePr
     const level = ["info", "warning", "error"].includes(query.level ?? "") ? query.level as AdminActivityLevel : null
     const cursor = decodeAdminActivityCursor(query.cursor)
     const range: AdminActivityRange = Object.hasOwn(ACTIVITY_RANGES, query.range ?? "") ? query.range as AdminActivityRange : "24h"
-    const now = new Date()
-    const trends = loadActivityTrends(workspace.id, range, now)
     const [activityPage, facets] = await Promise.all([
         listAdminActivityPage(workspace.id, { limit: 100, category, level, cursor }),
         getAdminActivityFacets(workspace.id, category, level),
@@ -84,7 +70,7 @@ export default async function AdminActivityPage({ params, searchParams }: PagePr
                 tabs={<AdminPanelNav workspaceSlug={workspace.slug} active="activity" />}
             />
 
-            <Suspense fallback={<ActivityTrendsLoading />}>{trends}</Suspense>
+            <ActivityTrendsRemote identity={{ workspaceId: workspace.id, workspaceSlug: workspace.slug, userId: user.id }} initialRange={range} />
 
             <FilterRail ariaLabel="Filter activity by level">
                 <FilterRailLink href={filterHref(category, null)} selected={!level}>All <FilterRailCount>{formatActivityCount(facets.levelTotal)}</FilterRailCount></FilterRailLink>

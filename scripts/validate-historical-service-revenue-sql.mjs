@@ -36,5 +36,27 @@ try {
   await db.query('insert into stripe_events values($1,$2,$3,$4)', ['evt1',w,'invoice.paid',invoice])
   await db.query('insert into stripe_events values($1,$2,$3,$4)', ['evt2',w,'invoice.payment_succeeded',invoice])
   assert.equal((await value('select amount_cents from relationship_recorded_revenue($1,$2)',[w,r])).amount_cents,42000)
-  console.log('PASS historical amount, replay, conflict, aggregate')
+  await db.exec(`alter table relationship_service_instances add column assignee_user_id uuid, add column version integer not null default 1;
+    create table service_instance_stage_events(id uuid primary key default gen_random_uuid(),workspace_id uuid,instance_id uuid,request_id uuid);
+    create function change_relationship_service_with_sop(w uuid,r uuid,i uuid,u uuid,q uuid,v integer,s text,d text,a uuid,reason text,g boolean)
+      returns jsonb language plpgsql as $$ begin
+        if exists(select 1 from service_instance_stage_events where instance_id=i and request_id=q) then return jsonb_build_object('id',i,'generation',false); end if;
+        update relationship_service_instances set assignee_user_id=a, version=version+1 where id=i and version=v;
+        if not found then raise exception 'Service instance changed'; end if;
+        insert into service_instance_stage_events(workspace_id,instance_id,request_id) values(w,i,q);
+        return jsonb_build_object('id',i,'generation',false);
+      end $$;`)
+  const editMigration=await readFile(`${repositoryRoot}/supabase/migrations/20260920143000_edit_completed_service_cash_collected.sql`,'utf8')
+  await db.exec(editMigration)
+  await db.exec(editMigration)
+  const q3='00000000-0000-4000-8000-000000000009', q4='00000000-0000-4000-8000-000000000010'
+  await value('select edit_completed_relationship_service_with_cash($1,$2,$3,$4,$5,1,\'completed\',null,\'\',2,14000)',[w,r,i,u,q3])
+  assert.equal((await value('select amount_cents from relationship_recorded_revenue($1,$2)',[w,r])).amount_cents,43000)
+  await assert.rejects(db.query('select edit_completed_relationship_service_with_cash($1,$2,$3,$4,$5,1,\'completed\',$6,\'Reassigned\',2,15000)',[w,r,i,u,q4,v]),/changed/)
+  assert.equal((await value('select version from relationship_service_instances where id=$1',[i])).version,1)
+  await value('select edit_completed_relationship_service_with_cash($1,$2,$3,$4,$5,1,\'completed\',$6,\'Reassigned\',3,15000)',[w,r,i,u,q4,v])
+  assert.equal((await value('select version from relationship_service_instances where id=$1',[i])).version,2)
+  await value('select edit_completed_relationship_service_with_cash($1,$2,$3,$4,$5,1,\'completed\',$6,\'Reassigned\',3,15000)',[w,r,i,u,q4,v])
+  assert.equal((await value('select amount_cents from relationship_recorded_revenue($1,$2)',[w,r])).amount_cents,44000)
+  console.log('PASS historical amount, replay, conflict, aggregate, combined edit rollback')
 } finally { await db.close() }

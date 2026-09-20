@@ -613,7 +613,7 @@ Portal titles may use a contact name and city only through the appointment's exp
 
 ## Service progress and relationship details
 
-Relationship value summaries use `CRV` for current monthly recurring value, `PRV` for estimated monthly recurring value of negotiating services, and `ARV` for gross recorded all-time revenue. Explain each abbreviation on hover/focus. Show ARV only to owners and admins, and load its historical aggregate after the detail header appears without delaying initial relationship content. Historical completed services show their recorded amount earned instead of current catalogue pricing; owners and admins may correct that amount without creating a sale or charge.
+Relationship value summaries use `CRV` for current monthly recurring value, `PRV` for estimated monthly recurring value of negotiating services, and `ARV` for gross recorded all-time revenue. Explain each abbreviation on hover/focus. Show ARV only to owners and admins, and load its historical aggregate after the detail header appears without delaying initial relationship content. Completed historical services omit catalogue prices in their detail dialog. Their Edit service form places Cash collected immediately under Assignee; the existing Save change action updates it with any service edit, without creating a sale or charge.
 
 `ServiceStage` uses the established stage geometry for the progress of one assigned service instance: Negotiating, Awaiting payment, Onboarding, Setup, Maintenance, Completed, For later or Declined. The relationship itself has no aggregate stage badge. Legacy stage controls remain only on workflow surfaces awaiting their own cutover. Unknown historical service progress displays Review needed instead of guessing a delivery stage.
 

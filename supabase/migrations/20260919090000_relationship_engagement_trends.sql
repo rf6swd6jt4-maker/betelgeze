@@ -29,16 +29,8 @@ begin
 end;
 $$;
 
-create index if not exists client_messages_engagement_recent
-    on public.client_messages(workspace_id, relationship_id, created_at desc)
-    where direction in ('inbound', 'outbound');
-
-create index if not exists client_messages_engagement_inbound
-    on public.client_messages(workspace_id, relationship_id, created_at desc)
-    where direction = 'inbound';
-create index if not exists client_messages_engagement_staff
-    on public.client_messages(workspace_id, relationship_id, created_at desc)
-    where direction = 'outbound' and sender_kind = 'staff';
+-- Existing client_messages_relationship_id_idx, client_messages_workspace_inbound_unread_idx,
+-- and client_messages_staff_reply_recent cover the bounded relationship reads.
 
 create or replace function public.read_relationship_engagement(
     p_workspace_id uuid, p_relationship_id uuid

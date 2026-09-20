@@ -14,6 +14,8 @@ The user explicitly authorized creating a relationship Team chat for any active 
 
 Validation: `scripts/service-work-chat-sql-checks.mjs` exercises creation, conversation reuse, new assignee membership, and the completed-service exclusion in an isolated PostgreSQL fixture. This is not authenticated production chat or device alert evidence. Rollout applies the migration before application code; verify an eligible real relationship shows one Team conversation and the newly assigned person can access it. Rollback disables the new service trigger and restores the prior SOP scope functions; preserve created teams, memberships, conversations, and history rather than deleting them.
 
+Production rollout: on 20 September 2026 the exact migration passed a SQL Editor rehearsal ending in `rollback`, then committed on the production Supabase project. Follow-up read checks found the real-relationship gate removed, both new triggers enabled, the deliberately removed LSA instance still absent, and two eligible relationships each with one Team chat. GitHub `main` advanced to `b824a607`; Vercel deployment `9ac9d3kptWzTABomZMogZfUossn6` reported Ready and the production overview identified that commit. This proves schema and deployment state, not a newly added real service's generated queue, authenticated Team access, or device alert receipt.
+
 The 17 September 2026 conversation authorizes this assessment and rebuild. The user explicitly selected:
 
 - Read only when the newest message is visible in the active foreground chat.

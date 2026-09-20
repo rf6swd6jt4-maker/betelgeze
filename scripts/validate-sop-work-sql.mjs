@@ -355,5 +355,6 @@ try {
     await (await import('./sop-reliability-sql-checks.mjs')).validateSopReliabilitySql({db,id,w,admin,staff,sop,revision,fixture})
     await (await import('./sop-evidence-title-sql-checks.mjs')).validateSopEvidenceTitles({db,id,w,admin,staff,sop,revision,fixture})
     await (await import('./relationship-context-assets-sql-checks.mjs')).validateRelationshipContextAssets({db,id,w,admin,staff,sop,revision,fixture})
+    await (await import('./service-work-chat-sql-checks.mjs')).validateServiceWorkChat({db,id,w,admin,staff,sop,revision,fixture})
     console.log(JSON.stringify({checks,publicationMs,ordinaryPublicationMs,relationshipPlan:relPlan,evidencePlan}))
 } finally { await db.close() }

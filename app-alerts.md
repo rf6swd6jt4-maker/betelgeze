@@ -6,6 +6,14 @@ Established 17 September 2026. This is the protected behavioral contract for sta
 
 Read this document before changing anything that can affect message reading, unread counts, read receipts, foreground/active-chat detection, notification recipients, push subscriptions, delivery/retry/suppression, notification display/click handling, or their database functions and schedulers. **Do not edit this document or change those behaviors without the user's explicit permission for that scope.** An unrelated UI, performance, shell, authentication or cleanup task does not authorize changing these rules. Trace indirect effects before editing shared dependencies. Record the authorized scope, evidence, rollout and rollback here with any authorized change. Do not use a historical repair document to supersede this contract.
 
+### Service fulfilment Team chats (20 September 2026)
+
+Seller and fulfilment manager changes also add the new responsible person to an existing active service Team chat.
+
+The user explicitly authorized creating a relationship Team chat for any active service whose fulfilment is unfinished, and adding new fulfilment people to an existing chat. Migration `20260920150000_service_work_and_fulfilment_chat.sql` creates or reuses that one Team conversation for active onboarding, setup, or maintenance services and adds the relationship seller, fulfilment manager, and eligible current service assignees who are workspace members. It leaves existing members and message history intact. A newly added member can receive future Team messages under the existing membership-based alert rules; no past alerts are replayed. The migration does not modify read cursors, unread calculations, message insertion, push jobs, subscriptions, or provider dispatch.
+
+Validation: `scripts/service-work-chat-sql-checks.mjs` exercises creation, conversation reuse, new assignee membership, and the completed-service exclusion in an isolated PostgreSQL fixture. This is not authenticated production chat or device alert evidence. Rollout applies the migration before application code; verify an eligible real relationship shows one Team conversation and the newly assigned person can access it. Rollback disables the new service trigger and restores the prior SOP scope functions; preserve created teams, memberships, conversations, and history rather than deleting them.
+
 The 17 September 2026 conversation authorizes this assessment and rebuild. The user explicitly selected:
 
 - Read only when the newest message is visible in the active foreground chat.

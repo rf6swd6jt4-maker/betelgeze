@@ -73,8 +73,8 @@ test("generation sends bounded evidence and strict source-only instructions with
     assert.equal(result.tasks.length,2);assert.deepEqual(result.warnings,[])
 })
 
-function workerFixture(options:{revoked?:boolean;cached?:boolean;savedPlan?:boolean;failPublish?:boolean;acceptNone?:boolean;lostAck?:boolean;invalidSaved?:boolean;missingContext?:boolean}={}) {
-    const calls={accepted:0,source:0,generation:0,publish:0,prepares:0,saves:[] as Record<string,unknown>[]}
+function workerFixture(options:{revoked?:boolean;cached?:boolean;savedPlan?:boolean;failPublish?:boolean;acceptNone?:boolean;lostAck?:boolean;invalidSaved?:boolean;missingContext?:boolean;context?:unknown}={}) {
+    const calls={accepted:0,source:0,generation:0,publish:0,prepares:0,saves:[] as Record<string,unknown>[],generationInput:null as Record<string,unknown>|null}
     const job={id:"run",workspace_id:"workspace",relationship_id:"relationship",sop_id:"sop",interpretation_id:"interpretation",requested_by:"admin",model:"gpt-5.4-mini",lease_token:"lease",schema_version:work.SOP_WORK_VERSION,plan:options.invalidSaved?{...plan,tasks:[{...task,completion_requirements:[]}]}:options.savedPlan?plan:null,source_snapshot:options.savedPlan||options.invalidSaved?source:null}
     let sourceReady=Boolean(options.cached)
     const query=(table:string)=>{
@@ -86,12 +86,12 @@ function workerFixture(options:{revoked?:boolean;cached?:boolean;savedPlan?:bool
         "next/cache":{revalidatePath:()=>{}},
         "./interpreter":{sopAiConfiguration:()=>({ready:true})},
         "./interpretation-worker":{processSopInterpretation:async()=>{calls.source++;sourceReady=true}},
-        "./work-generator":{generateSopWork:async()=>{calls.generation++;return plan}},
+        "./work-generator":{generateSopWork:async(input:Record<string,unknown>)=>{calls.generation++;calls.generationInput=input;return plan}},
         "./usage-ledger":{sopLedgerRequest:()=>async()=>new Response()},
         "@/lib/supabase/admin":{supabaseAdmin:{from:query,rpc:async(name:string)=>{
             if(name==="accept_sop_work_request"){calls.accepted++;return {data:options.acceptNone?null:"run"}}
             if(name==="claim_sop_work")return {data:[job]}
-            if(name==="prepare_sop_work"){calls.prepares++;return options.revoked?{error:{message:"revoked"}}:{data:options.missingContext?{}:{mode:"relationship_context_v1",client_context:{documents:[],relationship:{name:"Client",description:"Current notes"}}}}}
+            if(name==="prepare_sop_work"){calls.prepares++;return options.revoked?{error:{message:"revoked"}}:{data:options.missingContext?{}:{mode:"relationship_context_v1",client_context:options.context??{documents:[],relationship:{name:"Client",description:"Current notes"}}}}}
             if(name==='sop_work_asset_candidates')return {data:[]}
             if(name==="publish_sop_work"){calls.publish++;return options.failPublish||options.lostAck?{error:{message:"offline"}}:{data:["work1","work2"]}}
             throw new Error(name)
@@ -426,6 +426,19 @@ test('generation receives document evidence and later corrections without extra 
   return Response.json({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({...plan,tasks:plan.tasks.map(task=>({...task,depends_on:[]}))})}]}]})
  },async()=>{})
  assert.equal(calls,1)
+})
+
+test('worker passes the prepared relationship fields and document text to generation',async()=>{
+ const previous=process.env.SOP_WORK_PILOT_ENABLED;process.env.SOP_WORK_PILOT_ENABLED='true'
+ const context={documents:[{id:'brief',title:'Client brief',document_text:'The booking page is live.',description:'Use the current booking page.',source_hash:'abc',extractor_version:'relationship-text-v1'}],relationship:{name:'Andy',company:'Example',industry:'Lighting',website:'https://example.com',location:'Dublin',contact_role:'Owner',description:'Confirm the booking flow before proposing changes.'}}
+ try {
+  const fixture=workerFixture({cached:true,context})
+  assert.deepEqual(await fixture.worker.processSopWork('run'),{claimed:1,published:1})
+  assert.equal(fixture.calls.prepares,2)
+  assert.equal(fixture.calls.generation,1)
+  assert.deepEqual(fixture.calls.generationInput?.context,context)
+  assert.deepEqual(fixture.calls.generationInput?.source,source)
+ }finally{if(previous===undefined)delete process.env.SOP_WORK_PILOT_ENABLED;else process.env.SOP_WORK_PILOT_ENABLED=previous}
 })
 
 test('worker stops before a paid call if relationship context is unavailable',async()=>{

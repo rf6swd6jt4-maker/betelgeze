@@ -50,10 +50,12 @@ export function SopWorkProgress({ endpoint, instanceId, userId, initialError, on
         return () => { stopped = true; clearTimeout(timer); controller?.abort(); document.removeEventListener("visibilitychange", visibility) }
     }, [endpoint, instanceId, userId, active, retry])
     const error = compactWorkError(state.error || readError || initialError || "")
-    const busy = !error && state.status !== "published"
+    // Once the request has an ID, the database owns it and the user can leave
+    // this dialog while the worker (and its recovery cron) finish the work.
+    const busy = !instanceId && !error && state.status !== "published"
     useEffect(() => { onBusyChange?.(busy) }, [busy, onBusyChange])
     return <div aria-label="Work generation progress"><div className="mb-3 flex items-center justify-between gap-3 text-sm"><p role="status" className="text-neutral-300">{state.label}</p><span className="text-neutral-500">{state.progress}%</span></div><div role="progressbar" aria-label="Generating work" aria-valuemin={0} aria-valuemax={100} aria-valuenow={state.progress} aria-valuetext={`${state.progress}% — ${state.label}`} className="h-2 overflow-hidden rounded-full bg-neutral-800"><div className="h-full rounded-full bg-white" style={{ width: `${state.progress}%` }} /></div>
         {error ? <p role="alert" title={error} className="mt-3 truncate text-sm leading-6 text-red-300">{error}</p> : null}
-        <div className="mt-4 flex flex-wrap justify-end gap-3">{recovery}{readError ? <button type="button" className="min-h-11 text-sm text-neutral-300 underline" onClick={() => setRetry(n => n + 1)}>Check progress again</button> : null}{!busy ? <button type="button" className="min-h-11 px-3 text-sm text-neutral-400" onClick={onClose}>Close</button> : null}</div>
+        <div className="mt-4 flex flex-wrap justify-end gap-3">{recovery}{readError ? <button type="button" className="min-h-11 text-sm text-neutral-300 underline" onClick={() => setRetry(n => n + 1)}>Check progress again</button> : null}{!busy ? <button type="button" className="min-h-11 px-3 text-sm text-neutral-400" onClick={onClose}>{instanceId && !error && state.status !== "published" ? "Continue in background" : "Close"}</button> : null}</div>
     </div>
 }

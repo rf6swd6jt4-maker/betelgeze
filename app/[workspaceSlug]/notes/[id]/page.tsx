@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, DetailFields, DetailPageHeader } from "@/components/detail"
+import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, DetailPageHeader } from "@/components/detail"
 import { Assignee, RoundPill } from "@/components/ui"
 import { RecordAttachments } from "@/components/detail/RecordAttachments"
 import { NoteFieldsEditor } from "./NoteFieldsEditor"
@@ -30,13 +30,13 @@ export default async function NoteDetailPage({ params }: { params: Promise<{ wor
     if (!note) notFound()
     const linkCount = relationships.length + assets.length
     const creatorAvatarSrc = creator?.avatar_path && creator.username ? profileAvatarUrl(creator.username, creator.avatar_path) : null
-    const relationshipLinks = <DetailField label="Relationships" icon="relationship" className="lg:col-span-2"><div className="flex flex-wrap items-center gap-2">{relationships.map(link => <Link key={link.relationship_id} href={relationshipHubHref(workspace.slug, link.relationship_id)}><RoundPill tone="sky">{link.relationship?.business_name ?? link.relationship?.primary_person_name ?? "Relationship"}</RoundPill></Link>)}<NoteEditor workspaceSlug={workspace.slug} noteId={note.id} relationships={relationships.map(link => ({ id: link.relationship_id, label: link.relationship?.business_name ?? link.relationship?.primary_person_name ?? "Relationship" }))} /></div></DetailField>
+    const relationshipLinks = <DetailField label="Relationships" icon="relationship"><div className="flex flex-wrap items-center gap-2">{relationships.map(link => <Link key={link.relationship_id} href={relationshipHubHref(workspace.slug, link.relationship_id)}><RoundPill tone="sky">{link.relationship?.business_name ?? link.relationship?.primary_person_name ?? "Relationship"}</RoundPill></Link>)}<NoteEditor workspaceSlug={workspace.slug} noteId={note.id} relationships={relationships.map(link => ({ id: link.relationship_id, label: link.relationship?.business_name ?? link.relationship?.primary_person_name ?? "Relationship" }))} /></div></DetailField>
+    const creatorField = creator ? <Assignee userId={creator.user_id} name={creator.username} avatarSrc={creatorAvatarSrc} /> : <span className="text-neutral-600">System or imported</span>
     return <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
         <WorkspaceTopBar userId={user.id} workspace={workspace} workspaceAccess={access} currentProduct="client-work" />
         <div className="mx-auto max-w-[92rem]">
             <DetailPageHeader category="Note" reference={shortId(note.id)} title={note.name} facts={[{ label: linkCount === 1 ? "link" : "links", value: linkCount }]} updated={formatRelativeTime(note.updated_at)} />
-            <NoteFieldsEditor slug={workspace.slug} noteId={note.id} name={note.name} description={note.description} createdAt={note.created_at} reference={shortId(note.id)} links={relationshipLinks} />
-            <DetailFields><DetailField label="Created by" icon="user">{creator ? <Assignee userId={creator.user_id} name={creator.username} avatarSrc={creatorAvatarSrc} /> : <span className="text-neutral-600">System or imported</span>}</DetailField></DetailFields>
+            <NoteFieldsEditor slug={workspace.slug} noteId={note.id} name={note.name} description={note.description} createdAt={note.created_at} creator={creatorField} links={relationshipLinks} />
             <RecordAttachments workspaceSlug={workspace.slug} userId={user.id} owner="note" ownerId={note.id} canEdit={access.role === "owner" || access.role === "admin"} />
             <DetailDangerZone>
                 <DetailDangerAction title="Archive note" description="Archive will remove this note from the active Library while preserving its linked relationships and assets." control={<DetailDangerButton type="button" disabled>Archive note</DetailDangerButton>} />

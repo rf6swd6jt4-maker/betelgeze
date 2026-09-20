@@ -15,6 +15,26 @@ export async function GET(request: Request, context: { params: Promise<{workspac
     try {
         const kind = query.get("kind")
         if (!kind) return Response.json(await readRelationshipServices(workspace.id, relationshipId, user.id, offset), { headers })
+        if (kind === "all_time") {
+            if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })
+            if (access.role !== "owner" && access.role !== "admin") return Response.json({ error: "Financial access required." }, { status: 403, headers })
+            const { data, error } = await supabaseAdmin.rpc("relationship_recorded_revenue", { p_workspace_id: workspace.id, p_relationship_id: relationshipId })
+            if (error) return Response.json({ error: "All-time value could not load." }, { status: 503, headers })
+            return Response.json({ values: data }, { headers })
+        }
+        if (kind === "historical") {
+            if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })
+            if (access.role !== "owner" && access.role !== "admin") return Response.json({ error: "Service import access required." }, { status: 403, headers })
+            const instanceId = query.get("id") ?? ""
+            if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(instanceId)) return Response.json({ error: "Invalid service." }, { status: 400, headers })
+            const [instance, revenue] = await Promise.all([
+                supabaseAdmin.from("relationship_service_instances").select("id").eq("workspace_id", workspace.id).eq("relationship_id", relationshipId).eq("id", instanceId).eq("origin", "already_onboarded").eq("stage", "completed").maybeSingle(),
+                supabaseAdmin.from("relationship_historical_service_revenue").select("amount_cents,version").eq("workspace_id", workspace.id).eq("relationship_id", relationshipId).eq("instance_id", instanceId).maybeSingle(),
+            ])
+            if (instance.error || revenue.error) return Response.json({ error: "Historical amount could not load." }, { status: 503, headers })
+            if (!instance.data) return Response.json({ error: "Completed historical service not found." }, { status: 404, headers })
+            return Response.json({ amount_cents: revenue.data?.amount_cents ?? null, version: revenue.data?.version ?? 0 }, { headers })
+        }
         const parameters = { p_workspace_id: workspace.id, p_user_id: user.id }
         if (kind === "generation") {
             if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })

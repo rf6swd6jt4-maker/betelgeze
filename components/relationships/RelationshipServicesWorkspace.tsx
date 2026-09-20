@@ -11,7 +11,7 @@ import { ServiceThumbnail } from "./ServiceThumbnail"
 import { RelationshipContactCards } from "./RelationshipContactCards"
 const PosDialog = dynamic(() => import("./RelationshipPosDialog").then(module => module.RelationshipPosDialog))
 import { DetailField, DetailFields } from "@/components/detail"
-import { addRelationshipService, changeRelationshipService } from "@/app/[workspaceSlug]/relationships/service-actions"
+import { addRelationshipService, changeRelationshipService, setCompletedServiceRevenue } from "@/app/[workspaceSlug]/relationships/service-actions"
 import { SERVICE_STAGES, type RelationshipServicePage, type RelationshipServiceRow, type ServiceCatalogueChoice } from "@/lib/service-stages"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 
@@ -49,6 +49,7 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
     const [people, setPeople] = useState<Array<{id: string; name: string}> | null>(null)
     const [seller, setSeller] = useState("")
     const [manager, setManager] = useState("")
+    const [historicalAmount, setHistoricalAmount] = useState("")
     const [responsibility, setResponsibility] = useState<{ sellers: Array<{id: string; name: string}>; managers: Array<{id: string; name: string}> } | null>(null)
     const [reason, setReason] = useState("")
     const [error, setError] = useState("")
@@ -79,14 +80,15 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
     }, [completedImport, endpoint, retry])
     function submit(event: FormEvent) {
         event.preventDefault()
-        if (!serviceId || !people || peopleError || (completedImport && (!responsibility || responsibilityError || !seller || !manager))) return
+        const historicalAmountCents = Math.round(Number(historicalAmount) * 100)
+        if (!serviceId || !people || peopleError || (completedImport && (!responsibility || responsibilityError || !seller || !manager || !historicalAmount.trim() || !Number.isSafeInteger(historicalAmountCents) || historicalAmountCents < 0))) return
         requestId.current ??= crypto.randomUUID()
         setError("")
         if (stage === "setup") { onBusyChange(true); setProgressBusy(true); setGeneration({ instanceId: null }); onGenerating(true) }
         startTransition(async () => {
             try {
                 const result = await runWorkspaceMutation(() => row ? changeRelationshipService(props.workspaceSlug, props.relationshipId, { requestId: requestId.current!, expectedUserId: props.userId, instanceId: row.id, version: row.version, stage, assigneeId: assignee, reason })
-                    : addRelationshipService(props.workspaceSlug, props.relationshipId, { requestId: requestId.current!, expectedUserId: props.userId, serviceId, revisionId: service!.revision_id, origin, stage, assigneeId: assignee, sellerId: completedImport ? seller : "", managerId: completedImport ? manager : "" }), { category: "services" })
+                    : addRelationshipService(props.workspaceSlug, props.relationshipId, { requestId: requestId.current!, expectedUserId: props.userId, serviceId, revisionId: service!.revision_id, origin, stage, assigneeId: assignee, sellerId: completedImport ? seller : "", managerId: completedImport ? manager : "", historicalAmountCents: completedImport ? historicalAmountCents : undefined }), { category: "services" })
                 if (!result.ok) { setError(result.error ?? "Could not save service"); setUncertain("uncertain" in result && result.uncertain === true); if (!("uncertain" in result && result.uncertain)) requestId.current = null; return }
                 if (result.generation) { setGeneration({ instanceId: result.id! }); onGenerating(true) } else onDone()
             } catch { setUncertain(true); setError("The save could not be confirmed. Retry this same change to avoid a duplicate.") }
@@ -102,6 +104,7 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
                 {row || origin === "already_onboarded" ? <DetailField label="Stage" icon="status"><Selector ariaLabel="Service stage" disabled={pending || uncertain} value={stage} onChange={setStage} options={stages.map(s => ({ value: s.key, label: s.label }))} /></DetailField> : null}
                 <DetailField label="Assignee" icon="user"><AssignmentSelector ariaLabel="Service assignee" disabled={!people || pending || uncertain} value={assignee} onChange={setAssignee} clearLabel="Unassigned" people={people ?? []} />{serviceId && !people && !peopleError ? <p className="text-xs text-neutral-500">Loading eligible people…</p> : null}</DetailField>
                 {completedImport ? <>
+                    <DetailField label="Earned to date" icon="status"><div><input aria-label="Historical service revenue" type="number" min="0" step="0.01" required value={historicalAmount} onChange={event => setHistoricalAmount(event.target.value)} className={inputClass} /><p className="mt-1 text-xs text-neutral-500">Amount actually earned from this completed service. No charge is created.</p></div></DetailField>
                     <DetailField label="Seller" icon="user"><AssignmentSelector required ariaLabel="Relationship seller" disabled={!responsibility || pending || uncertain} value={seller} onChange={setSeller} clearLabel="Choose seller" placeholder="Choose seller" people={responsibility?.sellers ?? []} /></DetailField>
                     <DetailField label="Manager" icon="user"><AssignmentSelector required ariaLabel="Relationship manager" disabled={!responsibility || pending || uncertain} value={manager} onChange={setManager} clearLabel="Choose manager" placeholder="Choose manager" people={responsibility?.managers ?? []} />{!responsibility && !responsibilityError ? <p className="text-xs text-neutral-500">Loading responsibility choices…</p> : null}</DetailField>
                 </> : null}
@@ -111,7 +114,7 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
         {origin === "already_onboarded" && !row ? <p className="my-3 text-sm leading-6 text-neutral-400">Records existing work. No checkout or onboarding link is sent. {stage === "completed" ? "This service has no unfinished setup work." : stage === "maintenance" ? "Historical setup is not repeated." : "The service is ready for setup work."}</p> : null}
         {peopleError || responsibilityError ? <p role="alert" className="py-2 text-sm text-red-200">{peopleError || responsibilityError}<button type="button" onClick={() => { setPeopleError(""); setResponsibilityError(""); setRetry(retry + 1) }} className="ml-2 min-h-11 underline">Retry choices</button></p> : null}
         {error ? <p role="alert" className="py-3 text-sm text-red-200">{error}</p> : null}
-        <div className="mt-3 flex flex-wrap justify-end gap-3"><button type="button" disabled={pending || uncertain} onClick={onClose} className="min-h-11 px-3 text-sm text-neutral-400">Close</button><button disabled={pending || !serviceId || !people || Boolean(peopleError) || (completedImport && (!responsibility || !seller || !manager || Boolean(responsibilityError)))} className={buttonClass}>{pending ? "Saving…" : uncertain ? "Retry same change" : row ? "Save change" : "Add service"}</button></div>
+        <div className="mt-3 flex flex-wrap justify-end gap-3"><button type="button" disabled={pending || uncertain} onClick={onClose} className="min-h-11 px-3 text-sm text-neutral-400">Close</button><button disabled={pending || !serviceId || !people || Boolean(peopleError) || (completedImport && (!responsibility || !seller || !manager || !historicalAmount.trim() || Boolean(responsibilityError)))} className={buttonClass}>{pending ? "Saving…" : uncertain ? "Retry same change" : row ? "Save change" : "Add service"}</button></div>
     </form>
 }
 
@@ -165,23 +168,51 @@ export function RelationshipServicesWorkspace(props: Props) {
         {adding ? <CenteredDialog title={generating ? "Generating work…" : "Add service"} busy={serviceBusy} onClose={() => setAdding(false)}><ServiceForm onGenerating={setGenerating} onBusyChange={setServiceBusy} endpoint={endpoint} props={props} onDone={saved} onClose={() => setAdding(false)} /></CenteredDialog> : null}
         {editing ? <CenteredDialog title={generating ? "Generating work…" : "Edit service"} busy={serviceBusy} onClose={() => setEditing(null)}><ServiceForm onGenerating={setGenerating} onBusyChange={setServiceBusy} key={editing.id} row={editing} endpoint={endpoint} props={props} onDone={saved} onClose={() => setEditing(null)} /></CenteredDialog> : null}
         {resumedGeneration ? <CenteredDialog title="Generating work…" busy={serviceBusy} onClose={() => setResumedGeneration(null)}><SopWorkProgress onBusyChange={setServiceBusy} endpoint={endpoint} instanceId={resumedGeneration} userId={props.userId} onComplete={saved} onClose={() => setResumedGeneration(null)} /></CenteredDialog> : null}
-        {opened ? <ServiceDetailDialog row={opened} endpoint={endpoint} userId={props.userId} onClose={() => setOpened(null)} onEdit={editable(opened) ? () => { setEditing(opened); setOpened(null) } : undefined} onSell={canSell(opened) ? () => { setPos(opened.id); setOpened(null) } : undefined} /> : null}
+        {opened ? <ServiceDetailDialog row={opened} endpoint={endpoint} userId={props.userId} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} showHistorical={opened.origin === "already_onboarded" && opened.stage === "completed"} canEditRevenue={props.canImport && opened.origin === "already_onboarded" && opened.stage === "completed"} onRevenueSaved={() => saved()} onClose={() => setOpened(null)} onEdit={editable(opened) ? () => { setEditing(opened); setOpened(null) } : undefined} onSell={canSell(opened) ? () => { setPos(opened.id); setOpened(null) } : undefined} /> : null}
         {requestedPos ? <PosDialog workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} selectedId={requestedPos === "1" ? undefined : requestedPos} onClose={closePos} /> : null}
     </section>
 }
-function ServiceDetailDialog({ row, endpoint, userId, onClose, onEdit, onSell }: { row: ServiceCardDetail; endpoint: string; userId: string; onClose: () => void; onEdit?: () => void; onSell?: () => void }) {
+function ServiceDetailDialog({ row, endpoint, userId, workspaceSlug, relationshipId, showHistorical, canEditRevenue, onRevenueSaved, onClose, onEdit, onSell }: { row: ServiceCardDetail; endpoint: string; userId: string; workspaceSlug: string; relationshipId: string; showHistorical: boolean; canEditRevenue: boolean; onRevenueSaved: () => void; onClose: () => void; onEdit?: () => void; onSell?: () => void }) {
     const [data, setData] = useState(row)
     const [error, setError] = useState("")
+    const [historical, setHistorical] = useState<{ amount_cents: number | null; version: number } | null>(null)
+    const [amount, setAmount] = useState("")
+    const [savingAmount, setSavingAmount] = useState(false)
+    const amountRequest = useRef<string | null>(null)
     useEffect(() => {
         const controller = new AbortController()
         fetch(`${endpoint}?kind=detail&id=${encodeURIComponent(row.id)}`, { headers: { "x-workspace-user": userId }, cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]) }).then(async response => { const value = await response.json(); if (!response.ok || !value.items[0]) throw new Error(value.error ?? "Service no longer available"); return value.items[0] }).then(value => { if (!controller.signal.aborted) setData(value) }).catch(error => { if (!controller.signal.aborted) setError(error.message) })
         return () => controller.abort()
     }, [endpoint, row, userId])
+    useEffect(() => {
+        if (!canEditRevenue) return
+        const controller = new AbortController()
+        void read<{ amount_cents: number | null; version: number }>(`${endpoint}?kind=historical&id=${encodeURIComponent(row.id)}`, controller.signal)
+            .then(value => { if (!controller.signal.aborted) { setHistorical(value); setAmount(value.amount_cents === null ? "" : (value.amount_cents / 100).toFixed(2)) } })
+            .catch(cause => { if (!controller.signal.aborted) setError(cause.message) })
+        return () => controller.abort()
+    }, [canEditRevenue, endpoint, row.id])
+    async function saveHistorical(event: FormEvent) {
+        event.preventDefault()
+        if (!historical || !amount.trim()) return
+        const amountCents = Math.round(Number(amount) * 100)
+        if (!Number.isSafeInteger(amountCents) || amountCents < 0) { setError("Choose a valid amount."); return }
+        amountRequest.current ??= crypto.randomUUID()
+        setSavingAmount(true); setError("")
+        try {
+            const result = await runWorkspaceMutation(() => setCompletedServiceRevenue(workspaceSlug, relationshipId, { expectedUserId: userId, requestId: amountRequest.current!, instanceId: row.id, version: historical.version, amountCents }), { category: "services" })
+            if (!result.ok) { setError(result.error); return }
+            amountRequest.current = null
+            onRevenueSaved()
+        } catch { setError("The amount could not be confirmed. Retry this same change.") }
+        finally { setSavingAmount(false) }
+    }
     const money = (cents: number) => new Intl.NumberFormat("en", { style: "currency", currency: data.sold_currency ?? data.currency }).format(cents / 100)
     return <CenteredDialog title={row.name} onClose={onClose} footer={onSell || onEdit ? <div className="flex justify-end gap-3">{onEdit ? <button className="min-h-11 px-3 text-sm text-neutral-300" onClick={onEdit}>Edit service</button> : null}{onSell ? <button className={buttonClass} onClick={onSell}>Sell service</button> : null}</div> : undefined}>
         <ServiceStage stage={data.stage} />
         {data.description ? <p className="mt-3 text-sm leading-6 text-neutral-400">{data.description}</p> : null}
-        <DetailFields columns={1}><DetailField label="Upfront" icon="status">{money(data.sold_upfront_cents ?? data.upfront_cents)}</DetailField><DetailField label="Recurring" icon="status">{money(data.sold_recurring_cents ?? data.recurring_cents)} / {data.billing_interval_count ?? 1} {data.billing_interval ?? "month"}</DetailField><DetailField label="Assigned to" icon="person">{data.assignee_name}</DetailField>{data.manager ? <DetailField label="Manager" icon="person">{data.manager}</DetailField> : null}{data.seller ? <DetailField label="Seller" icon="person">{data.seller}</DetailField> : null}<DetailField label="Notes" icon="description">{data.notes || "No notes"}</DetailField></DetailFields>
+        <DetailFields columns={1}>{showHistorical ? <DetailField label="Historical service" icon="status">{canEditRevenue ? historical ? historical.amount_cents === null ? "Amount not recorded" : money(historical.amount_cents) : "Loading…" : "Completed historical service"}</DetailField> : <><DetailField label="Upfront" icon="status">{money(data.sold_upfront_cents ?? data.upfront_cents)}</DetailField><DetailField label="Recurring" icon="status">{money(data.sold_recurring_cents ?? data.recurring_cents)} / {data.billing_interval_count ?? 1} {data.billing_interval ?? "month"}</DetailField></>}<DetailField label="Assigned to" icon="person">{data.assignee_name}</DetailField>{data.manager ? <DetailField label="Manager" icon="person">{data.manager}</DetailField> : null}{data.seller ? <DetailField label="Seller" icon="person">{data.seller}</DetailField> : null}<DetailField label="Notes" icon="description">{data.notes || "No notes"}</DetailField></DetailFields>
+        {canEditRevenue ? <form onSubmit={event => void saveHistorical(event)} className="mt-4 border-t border-neutral-800 pt-4"><label className="block text-sm text-neutral-300">Historical amount earned ({data.currency})<input type="number" min="0" step="0.01" required aria-label="Historical service revenue" disabled={!historical || savingAmount} value={amount} onChange={event => { setAmount(event.target.value); amountRequest.current = null }} className={`mt-2 ${inputClass}`} /></label><p className="mt-1 text-xs text-neutral-500">This corrects recorded past revenue only. It does not change a sale or charge the client.</p><button disabled={!historical || savingAmount || !amount.trim()} className={`mt-3 ${buttonClass}`}>{savingAmount ? "Saving…" : "Save historical amount"}</button></form> : null}
         {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error}</p> : null}
     </CenteredDialog>
 }

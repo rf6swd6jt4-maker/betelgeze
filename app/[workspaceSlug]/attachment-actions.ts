@@ -18,14 +18,18 @@ export async function attachExistingRecord(slug: string, owner: AttachmentOwner,
     if (existingOwner.error || existingTarget.error || !existingOwner.data || !existingTarget.data) return { ok: false as const, error: "One of these records is no longer available." }
     const error = owner === "relationship"
         ? kind === "asset"
-            ? (await supabaseAdmin.from("asset_relationships").upsert({ workspace_id: workspace.id, relationship_id: ownerId, asset_id: targetId }, { onConflict: "asset_id,relationship_id", ignoreDuplicates: true })).error
-            : (await supabaseAdmin.from("note_relationships").upsert({ workspace_id: workspace.id, relationship_id: ownerId, note_id: targetId }, { onConflict: "note_id,relationship_id", ignoreDuplicates: true })).error
+            ? (await supabaseAdmin.from("asset_relationships").insert({ workspace_id: workspace.id, relationship_id: ownerId, asset_id: targetId })).error
+            : (await supabaseAdmin.from("note_relationships").insert({ workspace_id: workspace.id, relationship_id: ownerId, note_id: targetId })).error
         : owner === "work-item"
             ? kind === "asset"
-                ? (await supabaseAdmin.from("asset_work_items").upsert({ workspace_id: workspace.id, work_item_id: ownerId, asset_id: targetId }, { onConflict: "asset_id,work_item_id", ignoreDuplicates: true })).error
-                : (await supabaseAdmin.from("note_work_items").upsert({ workspace_id: workspace.id, work_item_id: ownerId, note_id: targetId }, { onConflict: "note_id,work_item_id", ignoreDuplicates: true })).error
+                ? (await supabaseAdmin.from("asset_work_items").insert({ workspace_id: workspace.id, work_item_id: ownerId, asset_id: targetId })).error
+                : (await supabaseAdmin.from("note_work_items").insert({ workspace_id: workspace.id, work_item_id: ownerId, note_id: targetId })).error
             : kind === "asset"
-                ? (await supabaseAdmin.from("note_assets").upsert({ workspace_id: workspace.id, note_id: ownerId, asset_id: targetId }, { onConflict: "note_id,asset_id", ignoreDuplicates: true })).error
-                : (await supabaseAdmin.from("note_notes").upsert({ workspace_id: workspace.id, parent_note_id: ownerId, attached_note_id: targetId }, { onConflict: "parent_note_id,attached_note_id", ignoreDuplicates: true })).error
-    return error ? { ok: false as const, error: "This attachment could not be linked." } : { ok: true as const }
+                ? (await supabaseAdmin.from("note_assets").insert({ workspace_id: workspace.id, note_id: ownerId, asset_id: targetId })).error
+                : (await supabaseAdmin.from("note_notes").insert({ workspace_id: workspace.id, parent_note_id: ownerId, attached_note_id: targetId })).error
+    if (error && error.code !== "23505") {
+        console.error("Attachment link insert failed", { owner, kind, code: error.code, message: error.message })
+        return { ok: false as const, error: "This attachment could not be linked. Try again or contact support if it persists." }
+    }
+    return { ok: true as const }
 }

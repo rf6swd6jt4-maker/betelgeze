@@ -16,7 +16,7 @@ export type RelationshipServiceRow = {
     origin: string; assignee_user_id: string | null; assignee_name: string; version: number
     upfront_cents: number; recurring_cents: number; currency: string; created_at: string; legacy: boolean
 }
-export type ServiceValueSummary = { currency: string; kind: "catalogue_estimate" | "sold"; billing_interval: string | null; billing_interval_count: number | null; upfront_cents: number; recurring_cents: number }
+export type ServiceValueSummary = { currency: string; kind: "catalogue_estimate" | "sold" | "all_time"; billing_interval: string | null; billing_interval_count: number | null; upfront_cents: number; recurring_cents: number }
 export type RelationshipServicePage = { items: RelationshipServiceRow[]; hasMore: boolean; values?: ServiceValueSummary[] }
 export type ServiceCatalogueChoice = { id: string; revision_id: string; name: string; description: string; upfront_cents: number; recurring_cents: number; currency: string }
 export type RelationshipServiceSummary = { relationship_id: string; stages: ServiceStageKey[]; count: number; services: Array<{key: string; label: string}> }

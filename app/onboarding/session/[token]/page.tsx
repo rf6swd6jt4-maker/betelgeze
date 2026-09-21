@@ -15,6 +15,8 @@ import type { Metadata } from "next"
 import { clientFaviconIcons } from "@/lib/client-branding/favicon"
 import { agencyBrandedMetadata, currentPublicPageUrl, loadClientPagePublicBranding, loadWorkspacePublicBranding } from "@/lib/client-branding/public-branding"
 import { clientBrandLogoUrl, loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
+import { processWorkspaceOnboardingOutbox } from "@/lib/onboarding/outbox"
+import { after } from "next/server"
 
 export const dynamic = "force-dynamic"
 
@@ -63,7 +65,14 @@ export default async function CanonicalSessionPage({ params, searchParams }: Pag
             workspaceId: session.workspace_id,
             relationshipId: session.relationship_id,
         })
-        if (clientPortalUrl) redirect(clientPortalUrl)
+        if (clientPortalUrl) {
+            // Recover a queued handoff if the original completion request lost
+            // its post-response worker wake. The redirect remains immediate.
+            after(async () => {
+                await processWorkspaceOnboardingOutbox(session.workspace_id, 25)
+            })
+            redirect(clientPortalUrl)
+        }
     }
     const paymentContext = await getOnboardingPaymentContext(token)
     if (onboardingPaymentPending(paymentContext) && paymentContext) {

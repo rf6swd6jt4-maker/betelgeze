@@ -24,6 +24,8 @@ const portalSession = readFileSync("lib/client-portal/session.ts", "utf8")
 const portalDomain = readFileSync("lib/client-portal/domain.ts", "utf8")
 const onboardingRuntime = readFileSync("lib/onboarding/canonical.ts", "utf8")
 const onboardingActions = readFileSync("app/onboarding/session/[token]/actions.ts", "utf8")
+const onboardingPage = readFileSync("app/onboarding/session/[token]/page.tsx", "utf8")
+const relationshipLinkActions = readFileSync("app/[workspaceSlug]/relationships/[relationshipId]/link-actions.ts", "utf8")
 const onboardingForm = readFileSync("components/onboarding/OnboardingForm.tsx", "utf8")
 const outbox = readFileSync("lib/onboarding/outbox.ts", "utf8")
 const settings = readFileSync("app/[workspaceSlug]/settings/page.tsx", "utf8")
@@ -48,6 +50,19 @@ test("completion queues one idempotent portal link through the existing omnichan
     assert.match(outbox, /getClientPortalUrl/u)
     assert.match(outbox, /sendCommunicationDeliveries/u)
     assert.match(outbox, /Client portal link/u)
+    assert.match(onboardingRuntime, /after\(async \(\) => \{[\s\S]*processWorkspaceOnboardingOutbox\(session\.workspace_id, 25\)/u)
+    assert.match(onboardingPage, /session\.status === "completed"[\s\S]*after\(async \(\) => \{[\s\S]*processWorkspaceOnboardingOutbox\(session\.workspace_id, 25\)[\s\S]*redirect\(clientPortalUrl\)/u)
+})
+
+test("manual portal WhatsApp handoff accepts an active portal and reports provider processing", () => {
+    assert.match(relationshipLinkActions, /if \(!links\.portal\) return/u)
+    assert.doesNotMatch(relationshipLinkActions, /!links\.portal \|\| !links\.canGeneratePortal/u)
+    assert.match(relationshipLinkActions, /getWhatsAppClientPortalTemplate\(config\)/u)
+    assert.match(relationshipLinkActions, /whatsappOnboardingTemplateComponents\(template, links\.portal\.url\)/u)
+    assert.doesNotMatch(relationshipLinkActions, /1928719317836909/u)
+    assert.match(relationshipLinkActions, /processWorkspaceOnboardingOutbox\(workspace\.id, 1\)/u)
+    assert.match(relationshipLinkActions, /delivery\.data\.status !== "sent"[\s\S]*after\(async \(\) => \{[\s\S]*processWorkspaceOnboardingOutbox\(workspace\.id, 25\)/u)
+    assert.match(relationshipLinkActions, /delivery\.data\.status === "failed"/u)
 })
 
 test("portal custom domains have independent settings, verification, and routing", () => {

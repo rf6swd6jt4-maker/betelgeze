@@ -7,6 +7,8 @@ import type { OnboardingHelpSettings, OnboardingThemeDefinition } from "@/lib/on
 import type { OnboardingBlock } from "@/lib/onboarding/block-definition"
 import { legacyPublishedOnboardingConfiguration, loadPublishedOnboardingConfiguration } from "@/lib/onboarding/configuration"
 import { getClientPortalUrlForOnboardingSession } from "@/lib/client-portal/session"
+import { processWorkspaceOnboardingOutbox } from "@/lib/onboarding/outbox"
+import { after } from "next/server"
 import { getOnboardingRuntimeMode } from "@/lib/onboarding/runtime-mode"
 import {
     composeOnboardingSession,
@@ -938,6 +940,12 @@ async function maybeCompleteOnboarding(session: CanonicalOnboardingSession, work
         })
     }
     revalidatePath(`/${workspaceSlug}/work`)
+    // Completion already committed the portal session and durable outbox row.
+    // Wake delivery after the response so the client redirect is never held up
+    // by Meta while the outbox still owns retries and deduplication.
+    after(async () => {
+        await processWorkspaceOnboardingOutbox(session.workspace_id, 25)
+    })
     return getClientPortalUrlForOnboardingSession({
         workspaceId: session.workspace_id,
         relationshipId: session.relationship_id,

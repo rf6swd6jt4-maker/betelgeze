@@ -84,7 +84,7 @@ export function RelationshipLinks({ workspaceSlug, relationshipId, userId }: { w
         try {
             const result = await runWorkspaceMutation(() => sendRelationshipPortalLinkOnWhatsApp(workspaceSlug, relationshipId, sendRequestId.current!), { category: "communications" })
             if (!result.ok) { setError(result.error); if (!result.error.includes("did not confirm") && !result.error.includes("Check Comms")) sendRequestId.current = null; return }
-            setSendStatus("Portal message queued for WhatsApp delivery.")
+            setSendStatus(result.status === "sent" ? "Portal link sent via WhatsApp." : "Portal link queued for WhatsApp delivery.")
             sendRequestId.current = null
         } catch { setError("The send status is unknown. Check Comms before sending again.") }
         finally { setBusy(false) }

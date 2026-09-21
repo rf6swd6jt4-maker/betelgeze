@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
+import { whatsappIntegrationIsReady } from "../lib/onboarding/whatsapp-readiness.ts"
 
 const integrations = readFileSync("lib/workspace-integrations.ts", "utf8")
 const migration = readFileSync("supabase/migrations/20260812110000_universal_workspace_connections.sql", "utf8")
@@ -88,6 +89,15 @@ test("provider runtime operations use the workspace connection", () => {
     assert.match(saleAutomation, /sendCommunicationDeliveries/u)
     assert.match(outbox, /sendCommunicationDeliveries/u)
     assert.match(integrations, /onboarding_template_language: template\.language/u)
+    assert.match(integrations, /config_hint: \{ \.\.\.existingHint, \.\.\.integrationHint\("meta_whatsapp", config\) \}/u)
+})
+
+test("onboarding WhatsApp readiness uses canonical verified connection state", () => {
+    assert.equal(whatsappIntegrationIsReady({ enabled: true, mode: "connected", connection_status: "connected", last_verified_at: "2026-09-10T20:52:01.773Z", config_hint: {} }, false), true)
+    assert.equal(whatsappIntegrationIsReady({ enabled: true, mode: "connected", connection_status: "connected", last_verified_at: null, config_hint: { verified_at: "stale" } }, false), false)
+    assert.equal(whatsappIntegrationIsReady({ enabled: true, mode: "connected", connection_status: "needs_attention", last_verified_at: "2026-09-10T20:52:01.773Z" }, false), false)
+    assert.equal(whatsappIntegrationIsReady({ enabled: true, mode: "platform_legacy" }, true), true)
+    assert.equal(whatsappIntegrationIsReady({ enabled: true, mode: "platform_legacy" }, false), false)
 })
 
 test("webhooks resolve workspace identity before processing tenant data", () => {

@@ -21,6 +21,7 @@ import type {
 } from "@/lib/onboarding/configuration-types"
 import { DEFAULT_ONBOARDING_THEME } from "@/lib/onboarding/theme"
 import { createPrivateUploadSignedUrl } from "@/lib/onboarding/uploads"
+import { whatsappIntegrationIsReady } from "@/lib/onboarding/whatsapp-readiness"
 import { serviceTemplateThumbnailId, serviceTemplateThumbnailSrc } from "@/lib/onboarding/service-templates"
 import { modulePublishDiff } from "@/lib/onboarding/publish-impact"
 import {
@@ -449,10 +450,7 @@ function newestTheme(...themes: Array<OnboardingThemeDefinition | null>) {
 }
 
 function whatsappIntegrationVerified(value: unknown) {
-    const integration = record(value)
-    if (!bool(integration.enabled)) return false
-    if (text(integration.mode) === "platform_legacy") return Boolean(process.env.META_WHATSAPP_ACCESS_TOKEN && process.env.META_WHATSAPP_PHONE_NUMBER_ID)
-    return Boolean(record(integration.config_hint).verified_at)
+    return whatsappIntegrationIsReady(value, Boolean(process.env.META_WHATSAPP_ACCESS_TOKEN && process.env.META_WHATSAPP_PHONE_NUMBER_ID))
 }
 
 async function queryRawConfiguration(workspaceId: string, includeOperationalData = true) {
@@ -468,7 +466,7 @@ async function queryRawConfiguration(workspaceId: string, includeOperationalData
         supabaseAdmin.from("onboarding_configuration_revision_modules").select("*").eq("workspace_id", workspaceId),
         supabaseAdmin.from("onboarding_brand_swatches").select("*").eq("workspace_id", workspaceId),
         supabaseAdmin.from("onboarding_themes").select("*").eq("workspace_id", workspaceId).limit(1),
-        supabaseAdmin.from("workspace_integrations").select("provider, enabled, mode, config_hint").eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").maybeSingle(),
+        supabaseAdmin.from("workspace_integrations").select("provider, enabled, mode, config_hint, connection_status, last_verified_at").eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").maybeSingle(),
         includeOperationalData ? supabaseAdmin.from("relationship_services").select("service_id, relationship_id").eq("workspace_id", workspaceId).not("service_id", "is", null) : omittedRows,
         includeOperationalData ? supabaseAdmin.from("client_sale_items").select("service_id, client_sale_id").eq("workspace_id", workspaceId) : omittedRows,
         includeOperationalData ? supabaseAdmin.from("client_sales").select("id, relationship_id, status").eq("workspace_id", workspaceId) : omittedRows,

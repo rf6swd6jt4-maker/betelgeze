@@ -9,7 +9,13 @@ import type { RelationshipQueuePage } from "@/lib/relationship-service-plan"
 import { RelationshipServiceTimeline, RelationshipQueue } from "./RelationshipServiceTimeline"
 import { ServiceThumbnail } from "./ServiceThumbnail"
 import { RelationshipContactCards } from "./RelationshipContactCards"
-const PosDialog = dynamic(() => import("./RelationshipPosDialog").then(module => module.RelationshipPosDialog))
+// The POS uses browser storage and the relationship draft provider. Loading it
+// only after a seller asks for it keeps those browser-only dependencies out of
+// the native relationship panel's render path.
+const PosDialog = dynamic(
+    () => import("./RelationshipPosDialog").then(module => module.RelationshipPosDialog),
+    { ssr: false },
+)
 import { DetailField, DetailFields } from "@/components/detail"
 import { addRelationshipService, changeRelationshipService } from "@/app/[workspaceSlug]/relationships/service-actions"
 import { SERVICE_STAGES, type RelationshipServicePage, type RelationshipServiceRow, type ServiceCatalogueChoice } from "@/lib/service-stages"

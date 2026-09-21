@@ -61,6 +61,12 @@ test("card POS validates reviewed candidates and exact delivery destinations", (
  assert(validServiceSaleInput({...selected,delivery:[]})) // Preview may precede channel selection; commit requires it.
 })
 
+test("native service POS defers its browser-only dialog until it is opened", () => {
+ const workspace=readFileSync(new URL("../components/relationships/RelationshipServicesWorkspace.tsx",import.meta.url),"utf8")
+ assert.match(workspace,/const PosDialog = dynamic\([\s\S]*?\{ ssr: false \}/)
+ assert.match(workspace,/\{requestedPos \? <PosDialog/)
+})
+
 // The stepped POS always edits monthly prices, including services priced by another catalogue cadence.
 test("monthly POS defaults normalize cadence and reject stale or malformed drafts", async () => {
  const { monthlyServicePrice, validServiceSaleDraft } = await import("../lib/service-pos.ts")

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import ts from "typescript"
 
 const source = readFileSync(new URL("../lib/client-sales/automation.ts", import.meta.url), "utf8")
-const functionSource = source.slice(source.indexOf("export async function sendSaleConsentTemplate"), source.indexOf("export async function handleCompletedStripeCheckout"))
+const functionSource = source.slice(source.indexOf("export async function sendSaleConsentTemplate"), source.indexOf("export async function sendSaleOnboardingLinkTemplate"))
 const compiled = ts.transpileModule(functionSource.replace("export async", "async"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText
 
 async function runSend(finalized: boolean, advanced: boolean, delivered = true, earlyFailure = false) {

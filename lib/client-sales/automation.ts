@@ -5,6 +5,7 @@ import { processWorkspaceOnboardingOutbox } from "@/lib/onboarding/outbox"
 import { getEquivalentMessageAddresses } from "@/lib/client-messages/addresses"
 import {
     sendMetaWhatsAppMessage,
+    sendMetaWhatsAppTemplate,
     metaWhatsAppFailureIsUncertain,
 } from "@/lib/client-messages/meta-whatsapp"
 import { formatWhatsAppAttributedMessage } from "@/lib/client-messages/whatsapp-attribution"
@@ -13,7 +14,7 @@ import { isConsentConfirmationText } from "@/lib/client-sales/consent"
 import { activateRelationshipOnboardingAfterPayment } from "@/lib/relationship-workflow"
 import { recordAdminActivity } from "@/lib/admin/activity"
 import { platformFailureFingerprint, reportPlatformFailure } from "@/lib/admin/maintenance"
-import { getWhatsAppConsentTemplate, getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
+import { getWhatsAppConsentTemplate, getWhatsAppOnboardingTemplate, getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { markSmsConsentConfirmed, smsConsentForConfirmation } from "@/lib/client-sales/sms-consent-state"
 import { loadWorkspacePublicBranding } from "@/lib/client-branding/public-branding"
 import { secureDeliveryLogBody } from "@/lib/onboarding/secure-link-display"
@@ -523,6 +524,65 @@ export async function sendSaleConsentTemplate(saleId: string, expectedWorkspaceI
     }
 }
 
+/** A seller acknowledgement sends this approved Utility template; no reply is needed. */
+export async function sendSaleOnboardingLinkTemplate(saleId: string, expectedWorkspaceId: string) {
+    const { data: sale, error: saleError } = await supabaseAdmin.from("client_sales")
+        .select("id, client_id, relationship_id, client_name, client_email, client_phone, service_keys, project_timeframe_days, status, raw_payload, workspace_id, created_by, correlation_id, onboarding_session_id")
+        .eq("id", saleId).eq("workspace_id", expectedWorkspaceId).maybeSingle()
+    if (saleError || !sale) return { ok: false as const, error: saleError?.message ?? "Sale not found" }
+    if (getSaleFlow(sale.raw_payload) !== "onboarding_payment_gate") return { ok: false as const, error: "This sale does not use the onboarding payment flow." }
+    if (!sale.relationship_id) return { ok: false as const, error: "Sale relationship is missing" }
+    if (sale.status === "onboarding_link_sent") return { ok: true as const, skipped: true }
+
+    const [channels, workspace] = await Promise.all([
+        resolveCommunicationDestinations({ workspaceId: sale.workspace_id, relationshipId: sale.relationship_id, purpose: "confirmation" }),
+        supabaseAdmin.from("workspaces").select("slug, custom_onboarding_domain, custom_onboarding_domain_status").eq("id", sale.workspace_id).maybeSingle(),
+    ])
+    const destination = channels.destinations.find((item) => item.provider === "meta_whatsapp" && item.primary)
+        ?? channels.destinations.find((item) => item.provider === "meta_whatsapp")
+    if (!destination) return { ok: false as const, error: "This sale needs a connected WhatsApp delivery destination." }
+    if (workspace.error || !workspace.data) return { ok: false as const, error: workspace.error?.message ?? "Workspace not found" }
+    let template: Awaited<ReturnType<typeof getWhatsAppOnboardingTemplate>>
+    try { template = await getWhatsAppOnboardingTemplate(await getWorkspaceProviderConfig(sale.workspace_id, "meta_whatsapp")) } catch (error) {
+        const message = error instanceof Error ? error.message : "The WhatsApp onboarding-link template is unavailable."
+        await reportSaleAutomationFailure(sale, "load_onboarding_link_template", message)
+        return { ok: false as const, error: message }
+    }
+    let onboarding: Awaited<ReturnType<typeof ensurePaidOnboardingSession>>
+    try { onboarding = await ensurePaidOnboardingSession(sale) } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not prepare the onboarding session."
+        await reportSaleAutomationFailure(sale, "prepare_onboarding_for_direct_link", message)
+        return { ok: false as const, error: message }
+    }
+    const onboardingUrl = getOnboardingUrl(workspace.data.slug, onboarding.sessionToken, workspace.data.custom_onboarding_domain, workspace.data.custom_onboarding_domain_status === "verified")
+    const messageBody = secureDeliveryLogBody(`Open your secure onboarding: ${onboardingUrl}`, onboardingUrl, "onboarding_link")
+    const { data: existingMessage, error: existingError } = await supabaseAdmin.from("client_messages").select("id, status").eq("workspace_id", sale.workspace_id).contains("raw_payload", { client_sale_id: sale.id, kind: "onboarding_link_template" }).order("created_at", { ascending: false }).limit(1).maybeSingle()
+    if (existingError) return { ok: false as const, error: existingError.message }
+    if (existingMessage && ["whatsapp_sent", "whatsapp_delivered", "whatsapp_read", "send_uncertain"].includes(existingMessage.status)) return { ok: true as const, skipped: true }
+    const messageLog = existingMessage
+        ? await supabaseAdmin.from("client_messages").update({ body: messageBody, status: "sending", error: null }).eq("workspace_id", sale.workspace_id).eq("id", existingMessage.id).select("id").single()
+        : await supabaseAdmin.from("client_messages").insert({ workspace_id: sale.workspace_id, relationship_id: sale.relationship_id, client_id: sale.client_id, direction: "outbound", communication_channel_id: destination.channelId, provider: "meta_whatsapp", to_address: destination.address, body: messageBody, status: "sending", sender_kind: "automation", automation_kind: "onboarding_link", automation_label: "Onboarding link", raw_payload: { client_sale_id: sale.id, kind: "onboarding_link_template", template_name: template.name, onboarding_session_id: onboarding.sessionId } }).select("id").single()
+    if (messageLog.error || !messageLog.data) return { ok: false as const, error: messageLog.error?.message ?? "Could not prepare the onboarding-link message." }
+    try {
+        const response = await sendMetaWhatsAppTemplate({ workspaceId: sale.workspace_id, to: destination.address, templateName: template.name, languageCode: template.language, components: [{ type: "body", parameters: [{ type: "text", text: onboardingUrl }] }], callbackData: messageLog.data.id })
+        const providerMessageId = getWhatsAppMessageId(response)
+        const sentAt = new Date().toISOString()
+        const [messageUpdate, saleUpdate] = await Promise.all([
+            supabaseAdmin.from("client_messages").update({ status: "whatsapp_sent", sent_at: sentAt, provider_message_id: providerMessageId, whatsapp_message_id: providerMessageId }).eq("workspace_id", sale.workspace_id).eq("id", messageLog.data.id),
+            supabaseAdmin.from("client_sales").update({ status: "onboarding_link_sent", onboarding_link_sent_at: sentAt, onboarding_link_message_id: providerMessageId, onboarding_session_id: onboarding.sessionId, updated_at: sentAt }).eq("workspace_id", sale.workspace_id).eq("id", sale.id),
+        ])
+        if (messageUpdate.error || saleUpdate.error) return { ok: false as const, error: messageUpdate.error?.message ?? saleUpdate.error?.message ?? "WhatsApp accepted the link, but Betelgeze could not record it. Check Communications before retrying." }
+        await recordAdminActivity({ workspaceId: sale.workspace_id, category: "communications", eventKey: "client.onboarding_link_template.sent", summary: "Onboarding-link Utility template sent without client reply", entityType: "client_sale", entityId: sale.id, direction: "outbound", metadata: { relationship_id: sale.relationship_id, message_log_id: messageLog.data.id, template_name: template.name } })
+        return { ok: true as const, sent: true }
+    } catch (error) {
+        const uncertain = metaWhatsAppFailureIsUncertain(error)
+        const message = uncertain ? "WhatsApp did not confirm this send. Check Communications before retrying." : error instanceof Error ? error.message : "WhatsApp rejected the onboarding-link template."
+        await Promise.all([supabaseAdmin.from("client_messages").update({ status: uncertain ? "send_uncertain" : "send_failed", error: message }).eq("workspace_id", sale.workspace_id).eq("id", messageLog.data.id), uncertain ? Promise.resolve({ error: null }) : supabaseAdmin.from("client_sales").update({ status: "onboarding_link_failed", updated_at: new Date().toISOString() }).eq("workspace_id", sale.workspace_id).eq("id", sale.id)])
+        await reportSaleAutomationFailure(sale, "send_onboarding_link_template", message)
+        return { ok: false as const, error: message }
+    }
+}
+
 export async function handleCompletedStripeCheckout(checkout: StripeCheckoutLike, expectedWorkspaceId: string) {
     const saleId = typeof checkout.metadata?.client_sale_id === "string" ? checkout.metadata.client_sale_id : null
     if (!saleId) return { ok: true, skipped: true, reason: "not_betelgeze_checkout" as const }
@@ -781,7 +841,7 @@ export async function handleSaleConsentConfirmation({
     if (provider === "twilio_sms" && !smsConsent) return { handled: false }
 
     const flow = getSaleFlow(sale.raw_payload)
-    if (flow === "onboarding_payment_gate" && sale.status === "paid") {
+    if (flow === "onboarding_payment_gate" && ["paid", "onboarding_payment_pending", "onboarding_link_sent"].includes(sale.status)) {
         return { handled: true, ok: true, skipped: true }
     }
 

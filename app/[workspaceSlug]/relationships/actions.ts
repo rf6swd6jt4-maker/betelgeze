@@ -16,7 +16,7 @@ import {
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
 import { advanceRelationshipWorkflow, ensureSalesStage, finalizeRelationshipSaleConfirmation, prepareRelationshipSale } from "@/lib/relationship-workflow"
-import { sendSaleConsentTemplate } from "@/lib/client-sales/automation"
+import { sendSaleConsentTemplate, sendSaleOnboardingLinkTemplate } from "@/lib/client-sales/automation"
 import { sendSaleSmsConfirmationIfOptedIn } from "@/lib/client-sales/sms-consent"
 import type { StripeRecurringInterval } from "@/lib/stripe/api"
 import { WORKSPACE_TAB_FRAME_PARAM, workspaceTabFrameUrl } from "@/lib/workspace-tabs"
@@ -491,12 +491,10 @@ export async function proceedRelationshipCurrentWork(
                 }
                 await finalizeRelationshipSaleConfirmation({ workspaceId: workspace.id, relationshipId, workItemId, actorId: user.id, saleId: sale.saleId })
             } else {
-                const consent = await sendSaleConsentTemplate(sale.saleId, workspace.id)
-                if (!consent.ok) throw new Error(consent.error ?? "The client confirmation could not be sent")
+                const consent = await sendSaleOnboardingLinkTemplate(sale.saleId, workspace.id)
+                if (!consent.ok) throw new Error(consent.error ?? "The onboarding link could not be sent")
                 saleResult = { id: sale.saleId, kind: "whatsapp", sent: true }
-                if (!("inProgress" in consent && consent.inProgress)) {
-                    await finalizeRelationshipSaleConfirmation({ workspaceId: workspace.id, relationshipId, workItemId, actorId: user.id, saleId: sale.saleId })
-                }
+                await finalizeRelationshipSaleConfirmation({ workspaceId: workspace.id, relationshipId, workItemId, actorId: user.id, saleId: sale.saleId })
             }
         } else {
             if (workflowAction === "await_payment" || workflowAction === "await_onboarding") throw new Error("This stage advances automatically when the external step completes")

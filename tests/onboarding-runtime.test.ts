@@ -111,16 +111,18 @@ test("confirmed sales expose one fixed Payment step that creates hosted Stripe C
     assert.match(salePaymentGateMigration, /set lifecycle_phase = 'sold'/u)
 })
 
-test("selling retries reuse the frozen sale and never duplicate an in-flight or sent WhatsApp confirmation", () => {
+test("selling reuses a frozen sale and sends an onboarding-link Utility template without a WhatsApp reply", () => {
     assert.match(relationshipWorkflow, /"sold_confirmation_sending"/u)
     assert.match(relationshipWorkflow, /"sold_awaiting_whatsapp_confirm"/u)
     assert.match(relationshipWorkflow, /findResumableFrozenSale/u)
     assert.match(relationshipWorkflow, /status: "sale_confirmation_pending"/u)
-    assert.match(relationshipActions, /"inProgress" in consent && consent\.inProgress/u)
+    assert.match(relationshipActions, /sendSaleOnboardingLinkTemplate\(sale\.saleId, workspace\.id\)/u)
     assert.match(saleAutomation, /CONSENT_TEMPLATE_TERMINAL_STATUSES/u)
     assert.match(saleAutomation, /sale\.consent_template_sent_at/u)
-    assert.match(saleAutomation, /sale\.status === "paid"/u)
+    assert.match(saleAutomation, /\["paid", "onboarding_payment_pending", "onboarding_link_sent"\]\.includes\(sale\.status\)/u)
     assert.match(saleAutomation, /"onboarding_payment_pending",\s*"onboarding_link_sent"/u)
+    assert.match(saleAutomation, /onboarding_link_template/u)
+    assert.match(saleAutomation, /components: \[\{ type: "body", parameters: \[\{ type: "text", text: onboardingUrl \}\] \}\]/u)
 })
 
 test("selling freezes versioned configuration before Checkout can be created", () => {

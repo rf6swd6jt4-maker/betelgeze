@@ -19,6 +19,7 @@ import {
     verifyAndActivateWorkspaceIntegrationCandidate,
     verifyWorkspaceIntegration,
     updateWhatsAppConsentTemplate,
+    updateWhatsAppOnboardingTemplate,
 } from "@/lib/workspace-integrations"
 import { normalizeOnboardingDomain } from "@/lib/onboarding/custom-domain"
 import { normalizeClientPortalDomain } from "@/lib/client-portal/domain"
@@ -206,6 +207,14 @@ export async function saveWhatsAppConfirmationTemplate(slug: string, name: strin
     return connectionAction(async () => {
         const { workspace } = await requireWorkspace(slug, "owner")
         await updateWhatsAppConsentTemplate(workspace.id, name.trim(), language.trim())
+        refresh(slug)
+    })
+}
+
+export async function saveWhatsAppOnboardingTemplate(slug: string, name: string, language: string): Promise<WorkspaceConnectionActionResult> {
+    return connectionAction(async () => {
+        const { workspace } = await requireWorkspace(slug, "owner")
+        await updateWhatsAppOnboardingTemplate(workspace.id, name.trim(), language.trim())
         refresh(slug)
     })
 }

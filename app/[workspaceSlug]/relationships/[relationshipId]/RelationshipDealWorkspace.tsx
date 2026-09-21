@@ -291,7 +291,7 @@ export function RelationshipDealWorkspace({
     const saleUsesSms = twilioVerified && smsPhoneAvailable && (
         primaryMessagingProvider === "twilio_sms" || draft.communicationDeliveryMode === "mirror"
     )
-    const sendConfirmationLabel = `Send ${primaryMessagingProvider === "twilio_sms" ? "SMS" : "WhatsApp"} confirmation`
+    const sendConfirmationLabel = primaryMessagingProvider === "twilio_sms" ? "Sell and send SMS" : "Sell and send onboarding link"
     const invoiced = ["sold", "invoiced", "onboarding", "onboarding_review", "fulfilment", "retention", "completed_lost"].includes(details.lifecyclePhase)
     const backgroundDirty = backgroundDetailsKey(draft) !== backgroundDetailsKey(baseline)
     const commercialDirty = commercialDetailsKey(draft) !== commercialDetailsKey(baseline)
@@ -485,6 +485,7 @@ export function RelationshipDealWorkspace({
             setError(teamIssues[0] ?? pricingIssues[0])
             return
         }
+        if (!saleUsesSms && !window.confirm("Warning: the client has not opted in to this WhatsApp channel. Finishing this sale will send the approved Utility onboarding-link template without waiting for a client reply. Continue?")) return
         startTransition(() => {
             void (async () => {
                 if (!await saveDetails()) return
@@ -500,11 +501,11 @@ export function RelationshipDealWorkspace({
                 if (outcome.sale?.kind === "sms") {
                     setNotice({ label: outcome.sale.sent ? "Client sold and SMS confirmation sent" : "Client sold and waiting for SMS opt-in" })
                 } else {
-                    setNotice({ label: "Confirmation sent via WhatsApp" })
+                    setNotice({ label: "Client sold and onboarding link sent via WhatsApp" })
                 }
                 router.refresh()
                 postGanttSync(workspaceSlug)
-            })().catch(() => setError("The client confirmation could not be sent. Please try again."))
+            })().catch(() => setError("The onboarding link could not be sent. Please try again."))
         })
     }
 
@@ -599,7 +600,7 @@ export function RelationshipDealWorkspace({
                         {service.serviceType === "retainer" ? <label className="text-xs text-neutral-500">Recurring<input type="number" min="0" step="0.01" value={(draft.recurringPrices[service.code] ?? 0) / 100} onChange={(event) => setDraft((current) => ({ ...current, recurringPrices: { ...current.recurringPrices, [service.code]: Math.round(Number(event.target.value || 0) * 100) } }))} className="mt-1 h-9 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-2 text-sm text-white" /></label> : null}
                     </div>)}</div>
                     <div className="grid gap-3 border-t border-neutral-800 pt-4 sm:grid-cols-3"><div><p className="text-xs text-neutral-500">Upfront fees</p><p className="mt-1 text-lg font-semibold">{priceLabel(upfrontTotalCents, draft.currency)}</p></div><div><p className="text-xs text-neutral-500">Recurring total</p><p className="mt-1 text-lg font-semibold">{priceLabel(recurringTotalCents, draft.currency)}</p></div><div className="sm:text-right"><p className="text-xs text-neutral-500">Due at Checkout</p><p className="mt-1 text-2xl font-semibold">{priceLabel(dueTodayCents, draft.currency)}</p></div></div>
-                    <p className="text-right text-xs leading-5 text-neutral-600">Due at Checkout includes the upfront fees and the first recurring period. Sending the client confirmation freezes these services, prices and onboarding.</p>
+                    <p className="text-right text-xs leading-5 text-neutral-600">Due at Checkout includes the upfront fees and the first recurring period. Selling freezes these services, prices and onboarding, then sends the approved onboarding-link Utility template.</p>
                 </div> : null}
                 {error ? <p role="alert" className="mt-4 rounded-lg border border-red-500/20 bg-red-950/20 px-3 py-2.5 text-sm text-red-300">{error}</p> : null}
             </div>

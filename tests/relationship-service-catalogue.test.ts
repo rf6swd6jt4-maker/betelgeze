@@ -273,12 +273,12 @@ test("relationship selling uses the visible details workspace and four-stage rev
         "Sell client",
         "Primary messaging",
         "Outbound delivery",
-        "Confirmation sent via",
+        "onboarding link sent via WhatsApp",
         "Upfront fees",
         "Recurring total",
         "Due at Checkout",
     ]) assert.match(workspace, new RegExp(label))
-    assert.match(workspace, /Send \$\{primaryMessagingProvider/)
+    assert.match(workspace, /Sell and send onboarding link/)
     assert.match(workspace, /<BuilderPreview/)
     assert.match(workspace, /<BuilderPreview fullWindow modules=\{assignedModules\}/)
     assert.match(workspace, /const workspaceTabActive = useWorkspaceTabActive\(\)/)

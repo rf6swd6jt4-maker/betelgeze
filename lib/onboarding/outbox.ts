@@ -12,7 +12,7 @@ import {
 } from "@/lib/onboarding/outbox-safety"
 import { secureDeliveryLogBody } from "@/lib/onboarding/secure-link-display"
 import { whatsappOnboardingTemplateComponents } from "@/lib/client-messages/whatsapp-onboarding-template"
-import { getWhatsAppOnboardingTemplate, getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
+import { getWhatsAppClientPortalTemplate, getWhatsAppOnboardingTemplate, getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 
 export { sanitizeOnboardingOutboxError } from "@/lib/onboarding/outbox-safety"
 
@@ -245,6 +245,10 @@ async function linkTemplateForDelivery(row: DeliveryOutboxRow, publicUrl: string
     const config = await getWorkspaceProviderConfig(row.workspace_id, "meta_whatsapp")
     if (row.kind === "onboarding_link" && config.onboarding_template_name) {
         const template = await getWhatsAppOnboardingTemplate(config)
+        return { ...template, components: whatsappOnboardingTemplateComponents(template, publicUrl) }
+    }
+    if (row.kind === "client_portal_link" && config.client_portal_template_name) {
+        const template = await getWhatsAppClientPortalTemplate(config)
         return { ...template, components: whatsappOnboardingTemplateComponents(template, publicUrl) }
     }
     // These templates belong to this WABA and have a fixed URL-button prefix.

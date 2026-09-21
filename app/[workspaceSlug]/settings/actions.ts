@@ -18,8 +18,8 @@ import {
     stageWorkspaceIntegrationCandidate,
     verifyAndActivateWorkspaceIntegrationCandidate,
     verifyWorkspaceIntegration,
-    updateWhatsAppConsentTemplate,
-    updateWhatsAppOnboardingTemplate,
+    updateWhatsAppTemplates,
+    type WhatsAppTemplateSettings,
 } from "@/lib/workspace-integrations"
 import { normalizeOnboardingDomain } from "@/lib/onboarding/custom-domain"
 import { normalizeClientPortalDomain } from "@/lib/client-portal/domain"
@@ -203,18 +203,11 @@ async function connectionAction(run: () => Promise<void>): Promise<WorkspaceConn
     }
 }
 
-export async function saveWhatsAppConfirmationTemplate(slug: string, name: string, language: string): Promise<WorkspaceConnectionActionResult> {
+export async function saveWhatsAppTemplates(slug: string, templates: WhatsAppTemplateSettings): Promise<WorkspaceConnectionActionResult> {
     return connectionAction(async () => {
         const { workspace } = await requireWorkspace(slug, "owner")
-        await updateWhatsAppConsentTemplate(workspace.id, name.trim(), language.trim())
-        refresh(slug)
-    })
-}
-
-export async function saveWhatsAppOnboardingTemplate(slug: string, name: string, language: string): Promise<WorkspaceConnectionActionResult> {
-    return connectionAction(async () => {
-        const { workspace } = await requireWorkspace(slug, "owner")
-        await updateWhatsAppOnboardingTemplate(workspace.id, name.trim(), language.trim())
+        const trimmed = Object.fromEntries(Object.entries(templates).map(([key, value]) => [key, { name: value.name.trim(), language: value.language.trim() }])) as unknown as WhatsAppTemplateSettings
+        await updateWhatsAppTemplates(workspace.id, trimmed)
         refresh(slug)
     })
 }

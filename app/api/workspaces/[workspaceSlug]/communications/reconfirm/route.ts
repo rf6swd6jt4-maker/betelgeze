@@ -37,9 +37,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     if (!whatsappChoice?.confirmedAt || whatsappChoice.address !== address.slice("whatsapp:".length)) {
         return Response.json({ error: "This contact has not confirmed WhatsApp communications. Use the initial consent flow first." }, { status: 409 })
     }
+    let reconfirmationTemplate: { name: string; language: string }
     try {
         const config = await getWorkspaceProviderConfig(workspace.id, "meta_whatsapp")
-        if (config.waba_id !== "1928719317836909") return Response.json({ error: "The approved reconfirmation template is not configured for this WhatsApp account." }, { status: 409 })
+        if (!config.reconfirmation_template_name || !config.reconfirmation_template_language || !config.reconfirmation_template_validation) return Response.json({ error: "Save and verify the reconfirmation template in WhatsApp Settings first." }, { status: 409 })
+        reconfirmationTemplate = { name: config.reconfirmation_template_name, language: config.reconfirmation_template_language }
     } catch {
         return Response.json({ error: "WhatsApp is not connected for this workspace." }, { status: 409 })
     }
@@ -59,7 +61,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
         automation_kind: "whatsapp_reconfirmation",
         automation_label: "WhatsApp reconfirmation",
         client_request_id: clientRequestId,
-        raw_payload: { template_name: "scaylup_service_updates_preference" },
+        raw_payload: { template_name: reconfirmationTemplate.name },
     }).select("id").single()
     let messageId = inserted?.id as string | undefined
     if (insertError?.code === "23505") {
@@ -82,7 +84,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
         messageId,
         body,
         destinations: [{ provider: "meta_whatsapp", address, channelId: null, primary: true }],
-        whatsappTemplate: { name: "scaylup_service_updates_preference", language: "en" },
+        whatsappTemplate: reconfirmationTemplate,
     })
     return Response.json({ messageId, status: delivery.status, error: delivery.error }, { status: delivery.status === "sent" ? 200 : 502 })
 }

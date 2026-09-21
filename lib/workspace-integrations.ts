@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "crypto"
 import { validateWhatsAppConsentTemplate } from "@/lib/client-messages/whatsapp-consent-template"
-import { validateWhatsAppOnboardingTemplate } from "@/lib/client-messages/whatsapp-onboarding-template"
+import { validateWhatsAppLinkTemplate, type WhatsAppOnboardingTemplate } from "@/lib/client-messages/whatsapp-onboarding-template"
 import { getRequiredEnv } from "@/lib/env"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { stripeAccountMode } from "@/lib/stripe/mode"
@@ -12,6 +12,13 @@ export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number]
 export type IntegrationConfig = Record<string, string>
 export type ConnectionAuthMethod = "legacy" | "oauth" | "embedded_signup" | "manual"
 export type ConnectionStatus = "not_connected" | "connecting" | "connected" | "needs_attention" | "degraded"
+
+export type WhatsAppTemplateSettings = {
+    confirmation: { name: string; language: string }
+    reconfirmation: { name: string; language: string }
+    onboarding: { name: string; language: string }
+    clientPortal: { name: string; language: string }
+}
 
 export type WorkspaceConnection = {
     provider: IntegrationProvider
@@ -82,8 +89,13 @@ export function integrationHint(provider: IntegrationProvider, config: Integrati
         phone_number_id: config.phone_number_id || null,
         waba_id: config.waba_id || null,
         template: config.consent_template_name || null,
+        template_language: config.consent_template_language || null,
+        reconfirmation_template: config.reconfirmation_template_name || null,
+        reconfirmation_template_language: config.reconfirmation_template_language || null,
         onboarding_template: config.onboarding_template_name || null,
         onboarding_template_language: config.onboarding_template_language || null,
+        client_portal_template: config.client_portal_template_name || null,
+        client_portal_template_language: config.client_portal_template_language || null,
     }
     if (provider === "meta_ads") return {
         business_id: config.business_id || null,
@@ -359,14 +371,37 @@ async function verifyStripeCandidate(config: IntegrationConfig) {
 
 export async function getWhatsAppConsentTemplate(config: IntegrationConfig) {
     if (!config.waba_id || !config.consent_template_name) throw new Error("Configure a WhatsApp Business Account ID and an approved Utility confirmation template in Settings.")
+    if (config.consent_template_validation) {
+        try { return JSON.parse(config.consent_template_validation) as ReturnType<typeof validateWhatsAppConsentTemplate> } catch { /* verify the provider copy below */ }
+    }
     const result = await metaGet(`${encodeURIComponent(config.waba_id)}/message_templates?name=${encodeURIComponent(config.consent_template_name)}&fields=name,status,language,category,components`, config.access_token)
     return validateWhatsAppConsentTemplate(result.data, config.consent_template_name, config.consent_template_language || "en_US")
 }
 
+async function fetchWhatsAppLinkTemplate(config: IntegrationConfig, name: string, language: string, purpose: "onboarding" | "client portal") {
+    if (!config.waba_id || !name) throw new Error(`Configure a WhatsApp Business Account ID and an approved Utility ${purpose} template in Settings.`)
+    const result = await metaGet(`${encodeURIComponent(config.waba_id)}/message_templates?name=${encodeURIComponent(name)}&fields=name,status,language,category,components`, config.access_token)
+    return validateWhatsAppLinkTemplate(result.data, name, language, purpose)
+}
+
+function cachedWhatsAppLinkTemplate(config: IntegrationConfig, key: string): WhatsAppOnboardingTemplate | null {
+    if (!config[key]) return null
+    try {
+        const value = JSON.parse(config[key]) as WhatsAppOnboardingTemplate
+        return value?.name && value?.language && value?.linkParameter ? value : null
+    } catch { return null }
+}
+
 export async function getWhatsAppOnboardingTemplate(config: IntegrationConfig) {
     if (!config.waba_id || !config.onboarding_template_name) throw new Error("Configure an approved WhatsApp onboarding-link Utility template in Settings before selling.")
-    const result = await metaGet(`${encodeURIComponent(config.waba_id)}/message_templates?name=${encodeURIComponent(config.onboarding_template_name)}&fields=name,status,language,category,components`, config.access_token)
-    return validateWhatsAppOnboardingTemplate(result.data, config.onboarding_template_name, config.onboarding_template_language || "en_US")
+    return cachedWhatsAppLinkTemplate(config, "onboarding_template_validation")
+        ?? fetchWhatsAppLinkTemplate(config, config.onboarding_template_name, config.onboarding_template_language || "en_US", "onboarding")
+}
+
+export async function getWhatsAppClientPortalTemplate(config: IntegrationConfig) {
+    if (!config.waba_id || !config.client_portal_template_name) throw new Error("Configure an approved WhatsApp client-portal-link Utility template in Settings.")
+    return cachedWhatsAppLinkTemplate(config, "client_portal_template_validation")
+        ?? fetchWhatsAppLinkTemplate(config, config.client_portal_template_name, config.client_portal_template_language || "en_US", "client portal")
 }
 
 export async function updateWhatsAppConsentTemplate(workspaceId: string, name: string, language: string) {
@@ -388,6 +423,58 @@ export async function updateWhatsAppOnboardingTemplate(workspaceId: string, name
     config = { ...config, onboarding_template_language: template.language }
     const existingHint = connection.config_hint && typeof connection.config_hint === "object" && !Array.isArray(connection.config_hint) ? connection.config_hint : {}
     const saved = await supabaseAdmin.from("workspace_integrations").update({ config_encrypted: encrypt(config), config_hint: { ...existingHint, ...integrationHint("meta_whatsapp", config) }, last_error: null }).eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").eq("config_encrypted", connection.config_encrypted).select("workspace_id").maybeSingle()
+    if (saved.error || !saved.data) throw new Error("The connection changed while saving. Refresh and try again.")
+}
+
+function validWhatsAppTemplateSetting(value: { name: string; language: string }) {
+    return /^[a-z0-9_]{1,512}$/.test(value.name) && /^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(value.language)
+}
+
+export async function updateWhatsAppTemplates(workspaceId: string, templates: WhatsAppTemplateSettings) {
+    if (!Object.values(templates).every(validWhatsAppTemplateSetting)) throw new Error("Enter a valid name and language for all four WhatsApp templates.")
+    const { data: connection, error } = await supabaseAdmin.from("workspace_integrations").select("config_encrypted, config_hint").eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").eq("mode", "connected").eq("enabled", true).single()
+    if (error || !connection?.config_encrypted) throw new Error("Connect WhatsApp before updating its templates.")
+    let config: IntegrationConfig = {
+        ...decryptWorkspaceIntegration(connection.config_encrypted),
+        consent_template_name: templates.confirmation.name,
+        consent_template_language: templates.confirmation.language,
+        reconfirmation_template_name: templates.reconfirmation.name,
+        reconfirmation_template_language: templates.reconfirmation.language,
+        onboarding_template_name: templates.onboarding.name,
+        onboarding_template_language: templates.onboarding.language,
+        client_portal_template_name: templates.clientPortal.name,
+        client_portal_template_language: templates.clientPortal.language,
+    }
+    if (!config.waba_id || !config.access_token) throw new Error("Reconnect WhatsApp before verifying templates.")
+    const [confirmationPayload, reconfirmationPayload, onboarding, clientPortal] = await Promise.all([
+        metaGet(`${encodeURIComponent(config.waba_id)}/message_templates?name=${encodeURIComponent(config.consent_template_name)}&fields=name,status,language,category,components`, config.access_token),
+        metaGet(`${encodeURIComponent(config.waba_id)}/message_templates?name=${encodeURIComponent(config.reconfirmation_template_name)}&fields=name,status,language,category,components`, config.access_token),
+        fetchWhatsAppLinkTemplate(config, config.onboarding_template_name, config.onboarding_template_language, "onboarding"),
+        fetchWhatsAppLinkTemplate(config, config.client_portal_template_name, config.client_portal_template_language, "client portal"),
+    ])
+    const confirmation = validateWhatsAppConsentTemplate(confirmationPayload.data, config.consent_template_name, config.consent_template_language)
+    const reconfirmation = validateWhatsAppConsentTemplate(reconfirmationPayload.data, config.reconfirmation_template_name, config.reconfirmation_template_language)
+    config = {
+        ...config,
+        consent_template_language: confirmation.language,
+        reconfirmation_template_language: reconfirmation.language,
+        onboarding_template_language: onboarding.language,
+        client_portal_template_language: clientPortal.language,
+        consent_template_validation: JSON.stringify(confirmation),
+        reconfirmation_template_validation: JSON.stringify(reconfirmation),
+        onboarding_template_validation: JSON.stringify(onboarding),
+        client_portal_template_validation: JSON.stringify(clientPortal),
+    }
+    const hint = await verifyWhatsAppCandidate(config)
+    const existingHint = connection.config_hint && typeof connection.config_hint === "object" && !Array.isArray(connection.config_hint) ? connection.config_hint : {}
+    const saved = await supabaseAdmin.from("workspace_integrations").update({
+        config_encrypted: encrypt(config),
+        config_hint: { ...existingHint, ...hint },
+        capabilities: { ...hint.capabilities, reconfirmation_template_approved: true, onboarding_template_approved: true, client_portal_template_approved: true },
+        connection_status: "connected",
+        last_verified_at: hint.verified_at,
+        last_error: null,
+    }).eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").eq("config_encrypted", connection.config_encrypted).select("workspace_id").maybeSingle()
     if (saved.error || !saved.data) throw new Error("The connection changed while saving. Refresh and try again.")
 }
 

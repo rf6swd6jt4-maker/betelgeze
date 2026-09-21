@@ -12,11 +12,13 @@ export type WhatsAppOnboardingTemplate = {
     linkParameter: { location: "body" } | { location: "url_button"; index: number; prefix: string }
 }
 
+export type WhatsAppLinkTemplatePurpose = "onboarding" | "client portal"
+
 function placeholders(value: string) {
     return value.match(/\{\{\d+\}\}/g) ?? []
 }
 
-export function validateWhatsAppOnboardingTemplate(templates: unknown, name: string, language: string): WhatsAppOnboardingTemplate {
+export function validateWhatsAppLinkTemplate(templates: unknown, name: string, language: string, purpose: WhatsAppLinkTemplatePurpose): WhatsAppOnboardingTemplate {
     const named = (Array.isArray(templates) ? templates : []).filter((item: Template) => item.name === name) as Template[]
     const exact = named.find((item) => item.language === language)
     const template = exact ?? (named.length === 1 ? named[0] : undefined)
@@ -24,9 +26,9 @@ export function validateWhatsAppOnboardingTemplate(templates: unknown, name: str
         const available = named.flatMap((item) => typeof item.language === "string" ? [item.language] : [])
         throw new Error(available.length
             ? `The ${name} template is not available in ${language}. Available: ${available.join(", ")}.`
-            : `The ${name} WhatsApp onboarding Utility template was not found.`)
+            : `The ${name} WhatsApp ${purpose} Utility template was not found.`)
     }
-    if (template.status !== "APPROVED" || template.category !== "UTILITY") throw new Error(`The ${name} WhatsApp onboarding Utility template must be approved before selling.`)
+    if (template.status !== "APPROVED" || template.category !== "UTILITY") throw new Error(`The ${name} WhatsApp ${purpose} Utility template must be approved before use.`)
     if (!template.language) throw new Error(`The ${name} template did not provide a language code.`)
     const components = template.components ?? []
     const body = components.find((item) => item.type === "BODY")?.text ?? ""
@@ -53,6 +55,10 @@ export function validateWhatsAppOnboardingTemplate(templates: unknown, name: str
             ? { location: "body" }
             : { location: "url_button", index: urlButton!.index, prefix: urlButton!.url.slice(0, -"{{1}}".length) },
     }
+}
+
+export function validateWhatsAppOnboardingTemplate(templates: unknown, name: string, language: string): WhatsAppOnboardingTemplate {
+    return validateWhatsAppLinkTemplate(templates, name, language, "onboarding")
 }
 
 export function whatsappOnboardingTemplateComponents(template: WhatsAppOnboardingTemplate, onboardingUrl: string) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { validateWhatsAppOnboardingTemplate, whatsappOnboardingTemplateComponents } from "../lib/client-messages/whatsapp-onboarding-template.ts"
+import { validateWhatsAppLinkTemplate, validateWhatsAppOnboardingTemplate, whatsappOnboardingTemplateComponents } from "../lib/client-messages/whatsapp-onboarding-template.ts"
 
 const template = (body: string, status = "APPROVED", category = "UTILITY") => [{ name: "onboarding_link", language: "en_US", status, category, components: [{ type: "BODY", text: body }] }]
 
@@ -46,4 +46,13 @@ test("onboarding-link template rejects an unapproved, non-Utility, or incompatib
         name: "onboarding_link", language: "en_US", status: "APPROVED", category: "UTILITY",
         components: [{ type: "BODY", text: "Open {{1}}" }, { type: "BUTTONS", buttons: [{ type: "URL", url: "https://example.com/{{1}}" }] }],
     }], "onboarding_link", "en_US"))
+})
+
+test("client-portal templates use the same single secure-link contract with portal-specific errors", () => {
+    assert.deepEqual(validateWhatsAppLinkTemplate(template("Open your portal: {{1}}"), "onboarding_link", "en_US", "client portal"), {
+        name: "onboarding_link",
+        language: "en_US",
+        linkParameter: { location: "body" },
+    })
+    assert.throws(() => validateWhatsAppLinkTemplate([], "client_portal_link", "en_US", "client portal"), /client portal Utility template was not found/u)
 })

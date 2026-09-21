@@ -15,7 +15,7 @@ test("only a recent inbound client message opens the WhatsApp response window", 
     assert.equal(whatsappReconfirmationNeeded({ hasWhatsApp: false, lastInboundAt: null }, now), false)
 })
 
-test("approved Utility templates have distinct names and URL-button tokens", () => {
+test("approved Utility templates are workspace-configured with compatible legacy URL-button delivery", () => {
     const outbox = readFileSync("lib/onboarding/outbox.ts", "utf8")
     const reconfirm = readFileSync("app/api/workspaces/[workspaceSlug]/communications/reconfirm/route.ts", "utf8")
     assert.match(outbox, /scaylup_onboarding_access/u)
@@ -24,7 +24,9 @@ test("approved Utility templates have distinct names and URL-button tokens", () 
     assert.match(outbox, /portal\.scaylup\.com/u)
     assert.match(outbox, /sub_type: "url", index: "0"/u)
     assert.match(outbox, /text: url\.pathname\.slice\(1\)/u)
-    assert.match(reconfirm, /scaylup_service_updates_preference/u)
+    assert.match(reconfirm, /config\.reconfirmation_template_name/u)
+    assert.match(reconfirm, /config\.reconfirmation_template_language/u)
+    assert.doesNotMatch(reconfirm, /scaylup_service_updates_preference/u)
     assert.match(reconfirm, /relationship_messaging_choices/u)
 })
 

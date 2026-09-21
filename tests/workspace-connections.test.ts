@@ -21,6 +21,7 @@ const metaAdsStart = readFileSync("app/api/workspace-connections/meta-ads/start/
 const metaAdsCallback = readFileSync("app/api/workspace-connections/meta-ads/callback/route.ts", "utf8")
 const privacy = readFileSync("app/privacy/page.tsx", "utf8")
 const terms = readFileSync("app/terms/page.tsx", "utf8")
+const reconfirm = readFileSync("app/api/workspaces/[workspaceSlug]/communications/reconfirm/route.ts", "utf8")
 
 test("connection candidates activate atomically and keep a one-generation rollback", () => {
     assert.match(migration, /candidate_config_encrypted/u)
@@ -90,6 +91,26 @@ test("provider runtime operations use the workspace connection", () => {
     assert.match(outbox, /sendCommunicationDeliveries/u)
     assert.match(integrations, /onboarding_template_language: template\.language/u)
     assert.match(integrations, /config_hint: \{ \.\.\.existingHint, \.\.\.integrationHint\("meta_whatsapp", config\) \}/u)
+})
+
+test("WhatsApp Settings verifies four templates in one save without erasing connection metadata", () => {
+    assert.match(settingsUi, /Confirmation/u)
+    assert.match(settingsUi, /Reconfirmation/u)
+    assert.match(settingsUi, /Onboarding link/u)
+    assert.match(settingsUi, /Client portal link/u)
+    assert.match(settingsUi, /Save templates/u)
+    assert.equal((settingsUi.match(/Save templates/g) ?? []).length, 1)
+    assert.match(integrations, /Promise\.all\(\[/u)
+    assert.match(integrations, /config_hint: \{ \.\.\.existingHint, \.\.\.hint \}/u)
+    assert.match(integrations, /onboarding_template_validation: JSON\.stringify\(onboarding\)/u)
+    assert.match(integrations, /client_portal_template_validation: JSON\.stringify\(clientPortal\)/u)
+})
+
+test("onboarding and portal sends use saved validated link templates while reconfirmation is workspace configured", () => {
+    assert.match(integrations, /cachedWhatsAppLinkTemplate\(config, "onboarding_template_validation"\)/u)
+    assert.match(integrations, /cachedWhatsAppLinkTemplate\(config, "client_portal_template_validation"\)/u)
+    assert.match(reconfirm, /config\.reconfirmation_template_name/u)
+    assert.doesNotMatch(reconfirm, /scaylup_service_updates_preference/u)
 })
 
 test("onboarding WhatsApp readiness uses canonical verified connection state", () => {

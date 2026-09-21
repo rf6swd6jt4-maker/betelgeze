@@ -4,7 +4,10 @@ import test from "node:test"
 import { createConnectionBlock } from "../lib/onboarding/block-definition.ts"
 
 const runtime = readFileSync("components/onboarding/OnboardingBlocks.tsx", "utf8")
+const windsorConnection = readFileSync("components/onboarding/WindsorMetaAdsConnectionBlock.tsx", "utf8")
 const builder = readFileSync("components/onboarding-builder/OnboardingBuilderWorkspace.tsx", "utf8")
+const visualCanvas = readFileSync("components/onboarding-builder/VisualBuilderCanvas.tsx", "utf8")
+const facebookLogo = readFileSync("components/brand/FacebookLogo.tsx", "utf8")
 const start = readFileSync("app/api/onboarding/session/[token]/meta-ads/start/route.ts", "utf8")
 const callback = readFileSync("app/api/onboarding/meta-ads/callback/route.ts", "utf8")
 const migration = readFileSync("supabase/migrations/20260830170000_onboarding_meta_ads_connections.sql", "utf8")
@@ -17,6 +20,9 @@ test("the Builder exposes a required Meta Ads reporting connection block", () =>
     assert.equal(block.required, true)
     assert.match(builder, /Meta Ads reporting connection/u)
     assert.match(runtime, /WindsorMetaAdsConnectionBlock/u)
+    assert.match(windsorConnection, /<FacebookLogo \/>/u)
+    assert.match(visualCanvas, /<FacebookLogo \/>/u)
+    assert.match(facebookLogo, /aria-hidden="true"/u)
 })
 
 test("the dormant direct Meta OAuth remains short lived, single use, and bound to the onboarding block", () => {

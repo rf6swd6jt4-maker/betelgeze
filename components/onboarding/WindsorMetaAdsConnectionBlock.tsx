@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { FacebookLogo } from "@/components/brand/FacebookLogo"
 import { createWindsorReturnMonitor } from "@/lib/onboarding/windsor-return"
 import { RequestHelpLink } from "@/components/onboarding/RequestHelpLink"
 import { Status } from "@/components/ui"
@@ -16,7 +17,7 @@ type Connection = {
 
 type Account = { id: string; name: string; datasource: string }
 
-const primaryButton = "inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--onboarding-primary)] px-5 py-3 text-center font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+const primaryButton = "inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--onboarding-primary)] px-5 py-3 text-center font-medium text-white shadow-sm transition hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--onboarding-primary)]/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
 
 function initialConnection(value: unknown): Connection | null {
     if (!value || typeof value !== "object") return null
@@ -192,7 +193,7 @@ export function WindsorMetaAdsConnectionBlock({ block, token, sessionBlockId, in
                 <select id={`windsor-account-${block.id}`} value={selectedAccount} disabled={pending} onChange={(event) => { setSelectedAccount(event.target.value); if (event.target.value) choose.current(event.target.value) }} className="mt-2 min-h-12 w-full rounded-xl border border-black/20 bg-[var(--onboarding-surface)] px-4 text-base text-[var(--onboarding-text)]">
                     <option value="">Choose an account</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.id.replace(/^act_/, "")}</option>)}
                 </select>
-            </div> : <button type="button" disabled={loading || pending} onClick={() => openConnection()} className={primaryButton}><span aria-hidden="true" className="font-bold">f</span>{loading ? "Loading…" : pending ? "Confirming connection…" : recovery ? "Try again" : started ? "Continue in Windsor ↗" : block.label}</button>}
+            </div> : <button type="button" disabled={loading || pending} onClick={() => openConnection()} className={primaryButton}><FacebookLogo />{loading ? "Loading…" : pending ? "Confirming connection…" : recovery ? "Try again" : started ? "Continue in Windsor ↗" : block.label}</button>}
             {recovery && started ? <button type="button" disabled={pending} onClick={() => openConnection(true)} className="block text-sm underline text-[var(--onboarding-muted)]">Start a new connection</button> : null}
             {!started ? <p className="text-sm leading-6 text-[var(--onboarding-muted)]">Select your account and press <strong>Finish</strong> in Windsor. Your connection will be confirmed automatically when you return.</p> : null}
         </div>}

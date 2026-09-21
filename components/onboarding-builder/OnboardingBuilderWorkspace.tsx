@@ -39,6 +39,7 @@ import { uploadBuilderVideo } from "@/lib/onboarding/builder-video-upload"
 import { normalizedBuilderCursor } from "@/lib/onboarding/builder-presence"
 import type { OnboardingBuilderData, OnboardingHelpSettings, OnboardingThemeSlot } from "@/lib/onboarding/configuration-types"
 import { ONBOARDING_THEME_SLOTS } from "@/lib/onboarding/configuration-types"
+import { whatsappCommunicationMethodLabel } from "@/lib/onboarding/whatsapp-readiness"
 import { ONBOARDING_THEME_SLOT_LABELS, onboardingThemeWarnings } from "@/lib/onboarding/theme"
 
 type DefinitionGroup =
@@ -377,7 +378,7 @@ function InspectorPanel({ currentGroup, step, block, field, help, helpSelected, 
 }) {
     if (helpSelected) return <div data-builder-help-inspector className="space-y-4">
         <label className="block text-xs text-neutral-500">Help text<textarea value={help.text} disabled={!editable} onChange={(event) => updateHelp({ text: event.target.value })} rows={5} maxLength={2_000} className={inspectorTextareaClass} /></label>
-        <label className="block text-xs text-neutral-500">Communication method<select value={help.whatsappEnabled ? "whatsapp" : "none"} disabled={!editable} onChange={(event) => updateHelp({ whatsappEnabled: event.target.value === "whatsapp" })} className={inspectorInputClass}><option value="none">No contact action</option><option value="whatsapp" disabled={!help.whatsappVerified}>WhatsApp{help.whatsappVerified && help.whatsappNumber ? ` · ${help.whatsappNumber}` : " · unavailable"}</option></select></label>
+        <label className="block text-xs text-neutral-500">Communication method<select value={help.whatsappEnabled ? "whatsapp" : "none"} disabled={!editable} onChange={(event) => updateHelp({ whatsappEnabled: event.target.value === "whatsapp" })} className={inspectorInputClass}><option value="none">No contact action</option><option value="whatsapp" disabled={!help.whatsappVerified}>{whatsappCommunicationMethodLabel(help.whatsappVerified, help.whatsappNumber)}</option></select></label>
         <p className="text-xs leading-5 text-neutral-600">Additional methods will appear here when their Communications connections are available. Client help is fixed and cannot be moved or removed.</p>
         <button type="button" disabled={!editable || !helpDirty || helpPending} onClick={saveHelp} className="h-9 w-full rounded-lg bg-white text-xs font-semibold text-black disabled:opacity-30">{helpPending ? "Saving…" : "Save live help"}</button>
     </div>

@@ -14,3 +14,9 @@ export function whatsappIntegrationIsReady(value: unknown, legacyCredentialsAvai
         && typeof integration.last_verified_at === "string"
         && integration.last_verified_at.trim().length > 0
 }
+
+export function whatsappCommunicationMethodLabel(verified: boolean, number: string | null | undefined) {
+    if (!verified) return "WhatsApp · unavailable"
+    const displayNumber = number?.trim()
+    return displayNumber ? `WhatsApp · ${displayNumber}` : "WhatsApp"
+}

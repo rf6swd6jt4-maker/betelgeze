@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
-import { whatsappIntegrationIsReady } from "../lib/onboarding/whatsapp-readiness.ts"
+import { whatsappCommunicationMethodLabel, whatsappIntegrationIsReady } from "../lib/onboarding/whatsapp-readiness.ts"
 
 const integrations = readFileSync("lib/workspace-integrations.ts", "utf8")
 const migration = readFileSync("supabase/migrations/20260812110000_universal_workspace_connections.sql", "utf8")
@@ -98,6 +98,9 @@ test("onboarding WhatsApp readiness uses canonical verified connection state", (
     assert.equal(whatsappIntegrationIsReady({ enabled: true, mode: "connected", connection_status: "needs_attention", last_verified_at: "2026-09-10T20:52:01.773Z" }, false), false)
     assert.equal(whatsappIntegrationIsReady({ enabled: true, mode: "platform_legacy" }, true), true)
     assert.equal(whatsappIntegrationIsReady({ enabled: true, mode: "platform_legacy" }, false), false)
+    assert.equal(whatsappCommunicationMethodLabel(true, null), "WhatsApp")
+    assert.equal(whatsappCommunicationMethodLabel(true, " +353 1 234 5678 "), "WhatsApp · +353 1 234 5678")
+    assert.equal(whatsappCommunicationMethodLabel(false, "+353 1 234 5678"), "WhatsApp · unavailable")
 })
 
 test("webhooks resolve workspace identity before processing tenant data", () => {

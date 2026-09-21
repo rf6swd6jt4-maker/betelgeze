@@ -61,6 +61,15 @@ test("card POS validates reviewed candidates and exact delivery destinations", (
  assert(validServiceSaleInput({...selected,delivery:[]})) // Preview may precede channel selection; commit requires it.
 })
 
+test("card POS makes an unconfirmed WhatsApp Utility-template choice explicit", () => {
+ const pos=readFileSync(new URL("../components/relationships/RelationshipServicePos.tsx",import.meta.url),"utf8")
+ const migration=readFileSync(new URL("../supabase/migrations/20260921130000_allow_unconfirmed_whatsapp_onboarding_link.sql",import.meta.url),"utf8")
+ assert.match(pos,/window\.confirm\("Warning: the client has not opted in to this WhatsApp channel/u)
+ assert.match(pos,/Utility template · no reply needed/u)
+ assert.match(migration,/item->>'provider'='meta_whatsapp'/u)
+ assert.match(migration,/c->>'enabled'='true'/u)
+})
+
 test("native service POS defers its browser-only dialog until it is opened", () => {
  const workspace=readFileSync(new URL("../components/relationships/RelationshipServicesWorkspace.tsx",import.meta.url),"utf8")
  assert.match(workspace,/const PosDialog = dynamic\([\s\S]*?\{ ssr: false \}/)

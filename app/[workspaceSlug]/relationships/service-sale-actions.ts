@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { validServiceSaleInput, type ServiceSaleInput } from "@/lib/service-pos"
 import { resolveCommunicationDestinations } from "@/lib/client-messages/omnichannel"
 import { toE164Recipient } from "@/lib/client-messages/addresses"
-import { getWhatsAppConsentTemplate, getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
+import { getWhatsAppConsentTemplate, getWhatsAppOnboardingTemplate, getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { sendSaleConsentTemplate, retrySelectedServiceOnboardingLink } from "@/lib/client-sales/automation"
 import { sendSaleSmsConfirmationIfOptedIn } from "@/lib/client-sales/sms-consent"
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -91,8 +91,10 @@ export async function sellRelationshipServices(
             destination = saved.data.client_phone
             sms = saved.data.sms_recipient_e164
         } else if (request.input.uiVersion === 2) {
-            if (!request.input.delivery?.length) throw new Error("Choose a confirmed contact method.")
-            await Promise.all([getWorkspaceProviderConfig(workspace.id, "stripe"), ...request.input.delivery.map(choice => getWorkspaceProviderConfig(workspace.id, choice.provider))])
+            if (!request.input.delivery?.length) throw new Error("Choose a contact method.")
+            const configs = await Promise.all([getWorkspaceProviderConfig(workspace.id, "stripe"), ...request.input.delivery.map(choice => getWorkspaceProviderConfig(workspace.id, choice.provider))])
+            const whatsapp = request.input.delivery.find(choice => choice.provider === "meta_whatsapp")
+            if (whatsapp) await getWhatsAppOnboardingTemplate(configs[request.input.delivery.indexOf(whatsapp) + 1])
             destination = request.input.delivery[0].address
             sms = request.input.delivery.find(choice => choice.provider === "twilio_sms")?.address ?? null
         } else {

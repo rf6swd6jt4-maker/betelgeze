@@ -11,7 +11,7 @@ import {
     sanitizeOnboardingOutboxError,
 } from "@/lib/onboarding/outbox-safety"
 import { secureDeliveryLogBody } from "@/lib/onboarding/secure-link-display"
-import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
+import { getWhatsAppOnboardingTemplate, getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 
 export { sanitizeOnboardingOutboxError } from "@/lib/onboarding/outbox-safety"
 
@@ -242,6 +242,10 @@ async function deliveryHasConfirmedSmsConsent(row: DeliveryOutboxRow) {
 async function linkTemplateForDelivery(row: DeliveryOutboxRow, publicUrl: string) {
     if (row.kind !== "onboarding_link" && row.kind !== "client_portal_link") return null
     const config = await getWorkspaceProviderConfig(row.workspace_id, "meta_whatsapp")
+    if (row.kind === "onboarding_link" && config.onboarding_template_name) {
+        const template = await getWhatsAppOnboardingTemplate(config)
+        return { ...template, components: [{ type: "body", parameters: [{ type: "text", text: publicUrl }] }] }
+    }
     // These templates belong to this WABA and have a fixed URL-button prefix.
     // Never substitute another workspace's URL into their approved copy.
     if (config.waba_id !== "1928719317836909") return null

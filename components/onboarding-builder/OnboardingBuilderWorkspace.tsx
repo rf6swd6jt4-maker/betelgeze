@@ -32,10 +32,10 @@ import {
     type OnboardingModuleDefinitionV2,
     type OnboardingPaymentDefinitionV2,
     type OnboardingStepV2,
-    type VideoBlock,
 } from "@/lib/onboarding/block-definition"
 import { SERVICE_TEMPLATES } from "@/lib/onboarding/service-templates"
 import { visualStepTitle } from "@/lib/onboarding/block-validation"
+import { uploadBuilderVideo } from "@/lib/onboarding/builder-video-upload"
 import { normalizedBuilderCursor } from "@/lib/onboarding/builder-presence"
 import type { OnboardingBuilderData, OnboardingHelpSettings, OnboardingThemeSlot } from "@/lib/onboarding/configuration-types"
 import { ONBOARDING_THEME_SLOTS } from "@/lib/onboarding/configuration-types"
@@ -355,7 +355,7 @@ function OutlineTree({ groups, visibleModuleIds, selection, editable, onSelectSt
 const inspectorInputClass = "mt-1 h-9 w-full rounded-lg border border-neutral-700 bg-black px-2 text-xs text-white"
 const inspectorTextareaClass = "mt-1 w-full rounded-lg border border-neutral-700 bg-black p-2 text-sm text-white"
 
-function InspectorPanel({ currentGroup, step, block, field, help, helpSelected, helpDirty, helpPending, editable, updateStep, updateBlock, updateField, updateHelp, saveHelp, addField, uploadVideo, deleteSelection }: {
+function InspectorPanel({ currentGroup, step, block, field, help, helpSelected, helpDirty, helpPending, editable, uploadProgress, updateStep, updateBlock, updateField, updateHelp, saveHelp, addField, uploadVideo, deleteSelection }: {
     currentGroup: DefinitionGroup | undefined
     step: OnboardingStepV2 | undefined
     block: OnboardingBlock | null
@@ -365,6 +365,7 @@ function InspectorPanel({ currentGroup, step, block, field, help, helpSelected, 
     helpDirty: boolean
     helpPending: boolean
     editable: boolean
+    uploadProgress: number | null
     updateStep: (step: OnboardingStepV2) => void
     updateBlock: (block: OnboardingBlock) => void
     updateField: (values: Partial<OnboardingField>) => void
@@ -420,7 +421,7 @@ function InspectorPanel({ currentGroup, step, block, field, help, helpSelected, 
     </div>
     if (block.kind === "video") return <div className="space-y-4">
         <label className="block text-xs text-neutral-500">Element name<input value={blockName(block)} disabled={!editable} onChange={(event) => updateBlock({ ...block, name: event.target.value })} className={inspectorInputClass} /></label>
-        <label className="block text-xs text-neutral-500">Video<span className="mt-1 flex min-h-9 items-center justify-between gap-2 rounded-lg border border-neutral-700 bg-black px-2 text-xs text-neutral-300"><span className="min-w-0 truncate">{block.upload?.name ?? "No video uploaded"}</span><span className="shrink-0 font-medium text-white">{block.upload ? "Replace" : "Upload"}</span></span><input type="file" accept="video/*" disabled={!editable} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadVideo(file); event.currentTarget.value = "" }} className="sr-only" /></label>
+        <label className={`block text-xs text-neutral-500 ${uploadProgress === null ? "cursor-pointer" : "cursor-wait"}`}>Video<span className="mt-1 flex min-h-9 items-center justify-between gap-2 rounded-lg border border-neutral-700 bg-black px-2 text-xs text-neutral-300"><span className="min-w-0 truncate">{block.upload?.name ?? "No video uploaded"}</span><span className="shrink-0 font-medium text-white">{uploadProgress === null ? block.upload ? "Replace" : "Upload" : `Uploading ${uploadProgress}%`}</span></span><input type="file" accept="video/*" disabled={!editable || uploadProgress !== null} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadVideo(file); event.currentTarget.value = "" }} className="sr-only" /></label>
         <label className="flex items-center gap-2 rounded-lg border border-neutral-800 p-3 text-xs text-neutral-300"><input type="checkbox" checked={block.requirement === "finish"} disabled={!editable} onChange={(event) => updateBlock({ ...block, requirement: event.target.checked ? "finish" : "none" })} />Client must finish this video</label>
         <button type="button" disabled={!editable} onClick={deleteSelection} className="text-xs text-red-300 disabled:opacity-30">Delete video</button>
     </div>
@@ -644,6 +645,7 @@ export function OnboardingBuilderWorkspace({ workspaceSlug, workspaceName, logoS
     const [helpPending, startHelpTransition] = useTransition()
     const [helpDraft, setHelpDraft] = useState(data.help)
     const [savedHelp, setSavedHelp] = useState(data.help)
+    const [videoUpload, setVideoUpload] = useState<{ blockId: string; progress: number } | null>(null)
 
     useEffect(() => {
         if (!preview) return
@@ -1006,20 +1008,47 @@ export function OnboardingBuilderWorkspace({ workspaceSlug, workspaceName, logoS
     }
 
     async function uploadSelectedVideo(file: File) {
-        if (!currentGroup || selectedBlock?.kind !== "video") return
+        if (!currentGroup || !currentStep || selectedBlock?.kind !== "video" || videoUpload) return
+        const groupKey = currentGroup.key
+        const stepId = currentStep.id
+        const blockId = selectedBlock.id
         setError(null)
+        setVideoUpload({ blockId, progress: 0 })
         try {
-            const target = currentGroup.kind === "module" ? { kind: "module" as const, definition: currentGroup.definition } : { kind: "bookend" as const, definition: currentGroup.definition }
+            const target = currentGroup.kind === "module"
+                ? { kind: "module" as const, definition: currentGroup.definition }
+                : currentGroup.kind === "payment"
+                    ? { kind: "payment" as const, definition: currentGroup.definition }
+                    : { kind: "bookend" as const, definition: currentGroup.definition }
             const preparation = await prepareVisualBuilderVideoUpload(workspaceSlug, target, { name: file.name, size: file.size, type: file.type })
             if (!preparation.ok) throw new Error(preparation.error)
             if (!preparation.data) throw new Error("Betelgeze prepared the upload without returning its storage details. Try again.")
             const prepared = preparation.data
-            const response = await fetch(prepared.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file })
-            if (!response.ok) throw new Error(`Video storage rejected the upload (HTTP ${response.status}). Try again; if it continues, check the R2 CORS configuration.`)
-            updateCurrentRevisionId(prepared.draftRevisionId)
-            updateBlock({ ...selectedBlock, legacyEmbedUrl: null, upload: { ...prepared.storedVideo, resolvedUrl: prepared.previewUrl } } satisfies VideoBlock)
+            await uploadBuilderVideo({
+                uploadUrl: prepared.uploadUrl,
+                file,
+                onProgress: (progress) => setVideoUpload((current) => current?.blockId === blockId ? { ...current, progress } : current),
+            })
+            const upload = { ...prepared.storedVideo, resolvedUrl: prepared.previewUrl }
+            collaboration.updateDocument((document) => {
+                const updateDefinitionVideo = (definition: DefinitionGroup["definition"]) => ({
+                    ...definition,
+                    ...("revisionId" in definition ? { revisionId: prepared.draftRevisionId } : {}),
+                    steps: definition.steps.map((step) => step.id !== stepId ? step : {
+                        ...step,
+                        blocks: step.blocks.map((block) => block.id === blockId && block.kind === "video" ? { ...block, legacyEmbedUrl: null, upload } : block),
+                    }),
+                })
+                if (groupKey === "payment") return { ...document, payment: updateDefinitionVideo(document.payment) as OnboardingPaymentDefinitionV2 }
+                if (groupKey === "bookend:welcome") return { ...document, welcome: updateDefinitionVideo(document.welcome) as OnboardingBookendDefinitionV2 }
+                if (groupKey === "bookend:completion") return { ...document, completion: updateDefinitionVideo(document.completion) as OnboardingBookendDefinitionV2 }
+                const moduleId = groupKey.replace("module:", "")
+                return { ...document, modules: document.modules.map((module) => module.id === moduleId ? updateDefinitionVideo(module) as OnboardingModuleDefinitionV2 : module) }
+            })
         } catch (uploadError) {
             setError(uploadError instanceof TypeError && uploadError.message === "Failed to fetch" ? "The browser could not reach video storage. Check the R2 CORS configuration, then try again." : uploadError instanceof Error ? uploadError.message : "Video upload failed.")
+        } finally {
+            setVideoUpload((current) => current?.blockId === blockId ? null : current)
         }
     }
 
@@ -1120,7 +1149,7 @@ export function OnboardingBuilderWorkspace({ workspaceSlug, workspaceName, logoS
 
     if (preview) return <div data-builder-fullscreen-preview className="relative flex h-dvh w-full items-stretch justify-center overflow-hidden bg-black">
         <button type="button" onClick={() => setPreview(false)} className="fixed right-4 top-4 z-[100] rounded-full border border-white/20 bg-black/70 px-4 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur transition hover:bg-black focus:outline-none focus:ring-2 focus:ring-white/70">Exit preview</button>
-        {currentGroup && currentStep ? <VisualBuilderCanvas workspaceSlug={workspaceSlug} workspaceName={workspaceName} logoSrc={logoSrc} privacyPolicyUrl={privacyPolicyUrl} termsOfServiceUrl={termsOfServiceUrl} groupKey={currentGroup.key} target={currentGroup.kind === "module" ? { kind: "module", definition: currentGroup.definition } : { kind: "bookend", definition: currentGroup.definition }} step={currentStep} roadmapSteps={roadmapSteps} moduleTitles={moduleTitles} theme={collaboration.document.theme} help={helpDraft} selectedBlockId={null} selectedFieldId={null} selectBlock={() => undefined} selectField={() => undefined} selectHelp={() => undefined} helpSelected={false} selectRoadmapStep={selectRoadmapStep} updateStep={() => undefined} updateDraftRevisionId={() => undefined} viewport={viewport} readOnly fullScreen /> : <div className="flex h-full items-center justify-center text-sm text-white/60">Choose or create a module to preview.</div>}
+        {currentGroup && currentStep ? <VisualBuilderCanvas workspaceSlug={workspaceSlug} workspaceName={workspaceName} logoSrc={logoSrc} privacyPolicyUrl={privacyPolicyUrl} termsOfServiceUrl={termsOfServiceUrl} groupKey={currentGroup.key} target={currentGroup.kind === "module" ? { kind: "module", definition: currentGroup.definition } : currentGroup.kind === "payment" ? { kind: "payment", definition: currentGroup.definition } : { kind: "bookend", definition: currentGroup.definition }} step={currentStep} roadmapSteps={roadmapSteps} moduleTitles={moduleTitles} theme={collaboration.document.theme} help={helpDraft} selectedBlockId={null} selectedFieldId={null} selectBlock={() => undefined} selectField={() => undefined} selectHelp={() => undefined} helpSelected={false} selectRoadmapStep={selectRoadmapStep} updateStep={() => undefined} updateDraftRevisionId={() => undefined} viewport={viewport} readOnly fullScreen /> : <div className="flex h-full items-center justify-center text-sm text-white/60">Choose or create a module to preview.</div>}
     </div>
 
     return <div onPointerMove={(event) => collaboration.updateActivity({ cursor: normalizedBuilderCursor(event.clientX, event.clientY, window.innerWidth, window.innerHeight) })} onPointerLeave={() => collaboration.updateActivity({ cursor: null })} className="flex h-dvh min-h-[42rem] flex-col overflow-hidden bg-neutral-950 text-white">
@@ -1169,13 +1198,13 @@ export function OnboardingBuilderWorkspace({ workspaceSlug, workspaceName, logoS
             </aside> : null}
 
             <main className="min-h-0 overflow-auto bg-neutral-900/50 p-3 sm:p-5">
-                {currentGroup && currentStep ? <VisualBuilderCanvas workspaceSlug={workspaceSlug} workspaceName={workspaceName} logoSrc={logoSrc} privacyPolicyUrl={privacyPolicyUrl} termsOfServiceUrl={termsOfServiceUrl} groupKey={currentGroup.key} target={currentGroup.kind === "module" ? { kind: "module", definition: currentGroup.definition } : { kind: "bookend", definition: currentGroup.definition }} step={currentStep} roadmapSteps={roadmapSteps} moduleTitles={moduleTitles} theme={collaboration.document.theme} help={helpDraft} selectedBlockId={selection.blockId} selectedFieldId={selection.fieldId ?? null} selectBlock={(blockId) => { setSelection({ ...selection, blockId, fieldId: null }); setRightTab("inspect") }} selectField={(blockId, fieldId) => { setSelection({ ...selection, blockId, fieldId }); setRightTab("inspect") }} selectHelp={() => { setSelection({ ...selection, blockId: HELP_BLOCK_ID, fieldId: null }); setRightTab("inspect") }} helpSelected={helpSelected} selectRoadmapStep={selectRoadmapStep} updateStep={updateCurrentStep} updateDraftRevisionId={updateCurrentRevisionId} viewport={viewport} collaboratorSelections={collaboration.presence} /> : <div className="flex h-full items-center justify-center text-sm text-neutral-500">Show a module or choose a bookend to start building.</div>}
+                {currentGroup && currentStep ? <VisualBuilderCanvas workspaceSlug={workspaceSlug} workspaceName={workspaceName} logoSrc={logoSrc} privacyPolicyUrl={privacyPolicyUrl} termsOfServiceUrl={termsOfServiceUrl} groupKey={currentGroup.key} target={currentGroup.kind === "module" ? { kind: "module", definition: currentGroup.definition } : currentGroup.kind === "payment" ? { kind: "payment", definition: currentGroup.definition } : { kind: "bookend", definition: currentGroup.definition }} step={currentStep} roadmapSteps={roadmapSteps} moduleTitles={moduleTitles} theme={collaboration.document.theme} help={helpDraft} selectedBlockId={selection.blockId} selectedFieldId={selection.fieldId ?? null} selectBlock={(blockId) => { setSelection({ ...selection, blockId, fieldId: null }); setRightTab("inspect") }} selectField={(blockId, fieldId) => { setSelection({ ...selection, blockId, fieldId }); setRightTab("inspect") }} selectHelp={() => { setSelection({ ...selection, blockId: HELP_BLOCK_ID, fieldId: null }); setRightTab("inspect") }} helpSelected={helpSelected} selectRoadmapStep={selectRoadmapStep} updateStep={updateCurrentStep} updateDraftRevisionId={updateCurrentRevisionId} viewport={viewport} collaboratorSelections={collaboration.presence} /> : <div className="flex h-full items-center justify-center text-sm text-neutral-500">Show a module or choose a bookend to start building.</div>}
             </main>
 
             {!preview ? <aside className={`min-h-0 border-l border-neutral-800 bg-neutral-950 ${rightOpen ? "hidden xl:flex xl:flex-col" : "hidden xl:flex xl:items-start xl:justify-center xl:pt-3"}`}>
                 {rightOpen ? <>
                     <div data-builder-right-rail-header className="flex h-12 items-center gap-1 border-b border-neutral-800 px-2"><button type="button" onClick={() => setRightTab("inspect")} className={`h-8 rounded-md px-2 text-xs ${rightTab === "inspect" ? "bg-neutral-800 text-white" : "text-neutral-500"}`}>Inspect</button><button type="button" onClick={() => setRightTab("styles")} className={`h-8 rounded-md px-2 text-xs ${rightTab === "styles" ? "bg-neutral-800 text-white" : "text-neutral-500"}`}>Styles</button><span className="ml-auto"><RailToggleButton side="right" label="Collapse right rail" onClick={() => rememberRail("right", false)} /></span></div>
-                    <div className="min-h-0 flex-1 overflow-y-auto p-3">{rightTab === "inspect" ? <InspectorPanel currentGroup={currentGroup} step={currentStep} block={selectedBlock} field={selectedField} help={helpDraft} helpSelected={helpSelected} helpDirty={helpDirty} helpPending={helpPending} editable={collaboration.editable} updateStep={updateCurrentStep} updateBlock={updateBlock} updateField={updateSelectedField} updateHelp={(values) => setHelpDraft((current) => ({ ...current, ...values }))} saveHelp={saveHelp} addField={addFieldToSelectedForm} uploadVideo={(file) => void uploadSelectedVideo(file)} deleteSelection={confirmDeleteSelection} /> : <StylesPanel block={selectedBlock} field={selectedField} theme={collaboration.document.theme} updateBlock={updateBlock} updateThemeSwatch={updateThemeSwatch} addThemeSwatch={addThemeSwatch} updateAssignment={(slot, swatchId) => collaboration.updateDocument((document) => ({ ...document, theme: { ...document.theme, assignments: { ...document.theme.assignments, [slot]: swatchId } } }))} />}</div>
+                    <div className="min-h-0 flex-1 overflow-y-auto p-3">{rightTab === "inspect" ? <InspectorPanel currentGroup={currentGroup} step={currentStep} block={selectedBlock} field={selectedField} help={helpDraft} helpSelected={helpSelected} helpDirty={helpDirty} helpPending={helpPending} editable={collaboration.editable} uploadProgress={videoUpload && videoUpload.blockId === selectedBlock?.id ? videoUpload.progress : null} updateStep={updateCurrentStep} updateBlock={updateBlock} updateField={updateSelectedField} updateHelp={(values) => setHelpDraft((current) => ({ ...current, ...values }))} saveHelp={saveHelp} addField={addFieldToSelectedForm} uploadVideo={(file) => void uploadSelectedVideo(file)} deleteSelection={confirmDeleteSelection} /> : <StylesPanel block={selectedBlock} field={selectedField} theme={collaboration.document.theme} updateBlock={updateBlock} updateThemeSwatch={updateThemeSwatch} addThemeSwatch={addThemeSwatch} updateAssignment={(slot, swatchId) => collaboration.updateDocument((document) => ({ ...document, theme: { ...document.theme, assignments: { ...document.theme.assignments, [slot]: swatchId } } }))} />}</div>
                 </> : <RailToggleButton side="right" label="Expand right rail" onClick={() => rememberRail("right", true)} />}
             </aside> : null}
         </div>

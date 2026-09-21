@@ -383,8 +383,9 @@ export async function updateWhatsAppOnboardingTemplate(workspaceId: string, name
     if (!/^[a-z0-9_]{1,512}$/.test(name) || !/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(language)) throw new Error("Enter a valid template name and language code.")
     const { data: connection, error } = await supabaseAdmin.from("workspace_integrations").select("config_encrypted").eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").eq("mode", "connected").eq("enabled", true).single()
     if (error || !connection?.config_encrypted) throw new Error("Connect WhatsApp before updating its onboarding template.")
-    const config = { ...decryptWorkspaceIntegration(connection.config_encrypted), onboarding_template_name: name, onboarding_template_language: language }
-    await getWhatsAppOnboardingTemplate(config)
+    let config = { ...decryptWorkspaceIntegration(connection.config_encrypted), onboarding_template_name: name, onboarding_template_language: language }
+    const template = await getWhatsAppOnboardingTemplate(config)
+    config = { ...config, onboarding_template_language: template.language }
     const saved = await supabaseAdmin.from("workspace_integrations").update({ config_encrypted: encrypt(config), config_hint: integrationHint("meta_whatsapp", config), last_error: null }).eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").eq("config_encrypted", connection.config_encrypted).select("workspace_id").maybeSingle()
     if (saved.error || !saved.data) throw new Error("The connection changed while saving. Refresh and try again.")
 }

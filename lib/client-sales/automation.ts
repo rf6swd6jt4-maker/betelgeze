@@ -9,6 +9,7 @@ import {
     metaWhatsAppFailureIsUncertain,
 } from "@/lib/client-messages/meta-whatsapp"
 import { formatWhatsAppAttributedMessage } from "@/lib/client-messages/whatsapp-attribution"
+import { whatsappOnboardingTemplateComponents } from "@/lib/client-messages/whatsapp-onboarding-template"
 import { resolveCommunicationDestinations, sendCommunicationDeliveries } from "@/lib/client-messages/omnichannel"
 import { isConsentConfirmationText } from "@/lib/client-sales/consent"
 import { activateRelationshipOnboardingAfterPayment } from "@/lib/relationship-workflow"
@@ -564,7 +565,7 @@ export async function sendSaleOnboardingLinkTemplate(saleId: string, expectedWor
         : await supabaseAdmin.from("client_messages").insert({ workspace_id: sale.workspace_id, relationship_id: sale.relationship_id, client_id: sale.client_id, direction: "outbound", communication_channel_id: destination.channelId, provider: "meta_whatsapp", to_address: destination.address, body: messageBody, status: "sending", sender_kind: "automation", automation_kind: "onboarding_link", automation_label: "Onboarding link", raw_payload: { client_sale_id: sale.id, kind: "onboarding_link_template", template_name: template.name, onboarding_session_id: onboarding.sessionId } }).select("id").single()
     if (messageLog.error || !messageLog.data) return { ok: false as const, error: messageLog.error?.message ?? "Could not prepare the onboarding-link message." }
     try {
-        const response = await sendMetaWhatsAppTemplate({ workspaceId: sale.workspace_id, to: destination.address, templateName: template.name, languageCode: template.language, components: [{ type: "body", parameters: [{ type: "text", text: onboardingUrl }] }], callbackData: messageLog.data.id })
+        const response = await sendMetaWhatsAppTemplate({ workspaceId: sale.workspace_id, to: destination.address, templateName: template.name, languageCode: template.language, components: whatsappOnboardingTemplateComponents(template, onboardingUrl), callbackData: messageLog.data.id })
         const providerMessageId = getWhatsAppMessageId(response)
         const sentAt = new Date().toISOString()
         const [messageUpdate, saleUpdate] = await Promise.all([

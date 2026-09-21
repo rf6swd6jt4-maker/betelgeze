@@ -122,7 +122,7 @@ test("selling reuses a frozen sale and sends an onboarding-link Utility template
     assert.match(saleAutomation, /\["paid", "onboarding_payment_pending", "onboarding_link_sent"\]\.includes\(sale\.status\)/u)
     assert.match(saleAutomation, /"onboarding_payment_pending",\s*"onboarding_link_sent"/u)
     assert.match(saleAutomation, /onboarding_link_template/u)
-    assert.match(saleAutomation, /components: \[\{ type: "body", parameters: \[\{ type: "text", text: onboardingUrl \}\] \}\]/u)
+    assert.match(saleAutomation, /whatsappOnboardingTemplateComponents\(template, onboardingUrl\)/u)
 })
 
 test("selling freezes versioned configuration before Checkout can be created", () => {

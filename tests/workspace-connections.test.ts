@@ -87,6 +87,7 @@ test("provider runtime operations use the workspace connection", () => {
     assert.match(saleAutomation, /getWorkspaceProviderConfig\(sale\.workspace_id, "meta_whatsapp"\)/u)
     assert.match(saleAutomation, /sendCommunicationDeliveries/u)
     assert.match(outbox, /sendCommunicationDeliveries/u)
+    assert.match(integrations, /onboarding_template_language: template\.language/u)
 })
 
 test("webhooks resolve workspace identity before processing tenant data", () => {

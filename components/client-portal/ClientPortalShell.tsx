@@ -6,7 +6,7 @@ import { ClientPortalFulfilment } from "@/components/client-portal/ClientPortalF
 import { ClientPortalLeads } from "@/components/client-portal/ClientPortalLeads"
 import { ClientPortalResources } from "@/components/client-portal/ClientPortalResources"
 import { ClientPortalMetaAds, type ClientPortalMetaAdsReporting } from "@/components/client-portal/ClientPortalMetaAds"
-import { PortalIcon, portalPrimaryButton } from "@/components/client-portal/ClientPortalUI"
+import { PortalIcon, PortalSection, portalPrimaryButton } from "@/components/client-portal/ClientPortalUI"
 import { ClientBrandLogo } from "@/components/client-branding/ClientBrandLogo"
 import { DetailField, DetailFields } from "@/components/detail"
 import { appointmentDateLabels, type PortalAppointment } from "@/lib/client-portal/appointments"
@@ -103,11 +103,11 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
             <header className="shrink-0 border-b border-black/[0.07] bg-[var(--onboarding-surface,#FFFFFF)]">
                 <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 lg:h-20 lg:px-8">
                     <ClientBrandLogo logoSrc={logoSrc} workspaceName={workspaceName} className="h-9 min-w-0 max-w-[min(12rem,38vw)] shrink" fallbackClassName="min-w-0 truncate text-lg font-semibold tracking-tight" />
-                    <div className="flex shrink-0 items-center gap-1 sm:gap-3">
-                        <nav aria-label="Portal pages" data-surface="light" className="group/rail flex items-center">
-                            {overview.hasFulfilment ? <FilterRailButton selected={activePage === "fulfilment"} aria-controls="fulfilment" onClick={() => setActivePage("fulfilment")}>Fulfilment</FilterRailButton> : null}
+                    <div className="flex min-w-0 flex-1 items-center justify-end gap-1 sm:gap-3">
+                        <nav aria-label="Portal pages" data-surface="light" className="group/rail flex min-w-0 items-center overflow-x-auto overscroll-x-contain">
+                            <FilterRailButton selected={activePage === "fulfilment"} aria-controls="fulfilment" onClick={() => setActivePage("fulfilment")}>Fulfilment</FilterRailButton>
                             <FilterRailButton selected={activePage === "leads"} aria-controls="leads" onClick={() => setActivePage("leads")}>Leads</FilterRailButton>
-                            {metaAdsReporting ? <FilterRailButton selected={activePage === "ads"} aria-controls="ads" onClick={() => setActivePage("ads")}>Ads metrics</FilterRailButton> : null}
+                            <FilterRailButton selected={activePage === "ads"} aria-controls="ads" onClick={() => setActivePage("ads")}>Ads metrics</FilterRailButton>
                             <FilterRailButton selected={activePage === "resources"} aria-controls="resources" onClick={() => setActivePage("resources")}>Files</FilterRailButton>
                         </nav>
                         <button type="button" onClick={() => setPanel("chat")} className={portalPrimaryButton}><PortalIcon name="chat" /><span>Chat</span></button>
@@ -117,9 +117,9 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
             <main data-client-portal-main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6">
                 <section data-portal-greeting aria-labelledby="portal-greeting" className="mb-3 shrink-0 lg:mb-6"><p className="hidden text-sm font-medium text-[var(--onboarding-muted,#475569)] lg:block">Your client portal</p><h1 id="portal-greeting" className="truncate text-2xl font-semibold leading-tight tracking-tight lg:mt-2 lg:text-[2rem]">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-2 hidden text-sm leading-6 text-[var(--onboarding-muted,#475569)] lg:block">Keep up with fulfilment, leads and files from your team.</p></section>
                 <div className="grid min-h-0 flex-1 grid-cols-1 gap-4">
-                    {overview.hasFulfilment ? <div id="fulfilment" className={`min-h-0 min-w-0 ${activePage === "fulfilment" ? "block" : "hidden"}`}><ClientPortalFulfilment overview={overview} /></div> : null}
+                    <div id="fulfilment" className={`min-h-0 min-w-0 ${activePage === "fulfilment" ? "block" : "hidden"}`}><ClientPortalFulfilment overview={overview} /></div>
                     <div id="leads" className={`min-h-0 min-w-0 ${activePage === "leads" ? "block" : "hidden"}`}><ClientPortalLeads token={token} active={activePage === "leads" && panel === null} mode={overview.leadMode} onOpen={setPanel} /></div>
-                    {metaAdsReporting ? <div id="ads" className={`min-h-0 min-w-0 overflow-y-auto pb-4 ${activePage === "ads" ? "block" : "hidden"}`}><ClientPortalMetaAds reporting={metaAdsReporting} /></div> : null}
+                    <div id="ads" className={`min-h-0 min-w-0 overflow-y-auto pb-4 ${activePage === "ads" ? "block" : "hidden"}`}>{metaAdsReporting ? <ClientPortalMetaAds reporting={metaAdsReporting} /> : <PortalSection id="ads-metrics" title="Ads metrics" description="A clear view of advertising performance." icon="progress"><div className="flex min-h-0 flex-1 items-center justify-center px-4 py-10 text-center"><div><PortalIcon name="progress" className="mx-auto h-8 w-8 text-[var(--onboarding-muted,#475569)]" /><h3 className="mt-4 text-base font-semibold">Nothing here yet</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Advertising results will appear here when reporting is ready.</p></div></div></PortalSection>}</div>
                     {/* Keep the uploader mounted when changing panels so active transfers continue. */}
                     <div id="resources" className={`min-h-0 min-w-0 ${activePage === "resources" ? "block" : "hidden"}`}><ClientPortalResources token={token} /></div>
                 </div>

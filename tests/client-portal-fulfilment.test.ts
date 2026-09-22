@@ -37,6 +37,12 @@ test("the portal overview is token scoped, bounded, and staff-only", () => {
 
 test("portal landing and lead visibility follow onboarding state", () => {
     assert.match(shell, /overview\.hasFulfilment \? "fulfilment" : "leads"/u)
+    assert.match(shell, /<FilterRailButton selected=\{activePage === "fulfilment"\}/u)
+    assert.match(shell, /<FilterRailButton selected=\{activePage === "leads"\}/u)
+    assert.match(shell, /<FilterRailButton selected=\{activePage === "ads"\}/u)
+    assert.match(shell, /<FilterRailButton selected=\{activePage === "resources"\}/u)
+    assert.doesNotMatch(shell, /overview\.hasFulfilment \? <FilterRailButton/u)
+    assert.doesNotMatch(shell, /metaAdsReporting \? <FilterRailButton/u)
     assert.match(migration, /when portal\.onboarding_session_id is null then 'ghl'/u)
     assert.match(migration, /appointment_medium_count > 0 and appointment_fields_count > 0 then 'appointments'/u)
     assert.match(migration, /else 'empty'/u)

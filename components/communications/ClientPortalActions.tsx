@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useState, type FormEvent } from "react"
+import { ClientPortalProgressTimeline } from "@/components/client-portal/ClientPortalProgressTimeline"
 import { CenteredDialog, Status } from "@/components/ui"
 import { clientPortalOverview, progressLabels, type ClientPortalOverview, type PortalProgressStatus } from "@/lib/client-portal/overview"
 
@@ -69,7 +70,9 @@ export function ClientPortalActions({ workspaceSlug, relationshipId }: { workspa
             {progress ? <div className="mt-4">
                 <button type="button" onClick={() => setEditingProgress(null)} className="mb-2 inline-flex min-h-9 items-center text-sm text-neutral-400 hover:text-white">← Back</button>
                 <p className="truncate text-sm font-semibold">{progress.serviceName}</p>
-                <div className="mt-2 grid gap-1">{statusOptions.map((status) => <button key={status} type="button" disabled={pending === progress.id} onClick={() => void update({ kind: "progress", id: progress.id, status, updatedAt: progress.updatedAt })} className={`flex min-h-11 items-center justify-between rounded-lg px-3 text-left text-sm hover:bg-neutral-900 disabled:opacity-50 ${progress.status === status ? "bg-neutral-900 text-white" : "text-neutral-300"}`}><span>{progressLabels[status]}</span>{progress.status === status ? <span aria-hidden="true">✓</span> : null}</button>)}</div>
+                <div className="mt-4 rounded-xl border border-neutral-800 p-3"><ClientPortalProgressTimeline status={progress.status} surface="dark" /></div>
+                <p className="mb-1 mt-5 text-xs font-semibold text-neutral-500">Update current step</p>
+                <div className="grid gap-1">{statusOptions.map((status) => <button key={status} type="button" disabled={pending === progress.id} onClick={() => void update({ kind: "progress", id: progress.id, status, updatedAt: progress.updatedAt })} className={`flex min-h-11 items-center justify-between rounded-lg px-3 text-left text-sm hover:bg-neutral-900 disabled:opacity-50 ${progress.status === status ? "bg-neutral-900 text-white" : "text-neutral-300"}`}><span>{progressLabels[status]}</span>{progress.status === status ? <span aria-hidden="true">✓</span> : null}</button>)}</div>
             </div> : <div className="mt-5">
                 <p className="text-xs font-semibold text-neutral-500">Required actions</p>
                 {loading && !overview ? <p className="py-5 text-sm text-neutral-500">Loading actions…</p> : null}

@@ -1,5 +1,6 @@
 export const portalProgressStatuses = ["preparing", "in_progress", "in_review", "live", "complete"] as const
 export type PortalProgressStatus = (typeof portalProgressStatuses)[number]
+export type PortalProgressStepState = "complete" | "current" | "upcoming"
 export type PortalLeadMode = "ghl" | "appointments" | "empty"
 
 export type PortalAction = {
@@ -56,4 +57,11 @@ export const progressLabels: Record<PortalProgressStatus, string> = {
     in_review: "In review",
     live: "Live / ongoing",
     complete: "Complete",
+}
+
+export function portalProgressStepState(current: PortalProgressStatus, step: PortalProgressStatus): PortalProgressStepState {
+    const currentIndex = portalProgressStatuses.indexOf(current)
+    const stepIndex = portalProgressStatuses.indexOf(step)
+    if (stepIndex < currentIndex || current === "complete") return "complete"
+    return stepIndex === currentIndex ? "current" : "upcoming"
 }

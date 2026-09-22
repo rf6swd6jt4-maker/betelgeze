@@ -1,4 +1,5 @@
 import { PortalIcon, PortalSection } from "@/components/client-portal/ClientPortalUI"
+import { ClientPortalProgressTimeline } from "@/components/client-portal/ClientPortalProgressTimeline"
 import { Status } from "@/components/ui"
 import { progressLabels, type ClientPortalOverview, type PortalProgressStatus } from "@/lib/client-portal/overview"
 
@@ -25,8 +26,8 @@ export function ClientPortalFulfilment({ overview }: { overview: ClientPortalOve
         </PortalSection>
         <PortalSection id="fulfilment-progress" title="Fulfilment progress" description="A simple view of where each service currently stands." icon="progress">
             <div className="mt-5 min-h-0 overflow-y-auto">
-                {!overview.progress.length ? <div className="rounded-2xl bg-black/[0.025] px-4 py-9 text-center"><PortalIcon name="progress" className="mx-auto h-8 w-8 text-[var(--onboarding-muted,#475569)]" /><p className="mt-3 text-sm font-semibold">No fulfilment updates yet</p><p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Service progress will appear here when your team has an update to share.</p></div> : <ul className="divide-y divide-black/[0.07] rounded-xl border border-black/[0.08]">
-                    {overview.progress.map((service) => <li key={service.id} className="flex min-w-0 items-center justify-between gap-4 px-4 py-4"><span className="min-w-0 truncate text-sm font-semibold">{service.serviceName}</span><Status surface="light" label={progressLabels[service.status]} tone={tones[service.status]} /></li>)}
+                {!overview.progress.length ? <div className="rounded-2xl bg-black/[0.025] px-4 py-9 text-center"><PortalIcon name="progress" className="mx-auto h-8 w-8 text-[var(--onboarding-muted,#475569)]" /><p className="mt-3 text-sm font-semibold">No fulfilment updates yet</p><p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Service progress will appear here when your team has an update to share.</p></div> : <ul className="space-y-3">
+                    {overview.progress.map((service) => <li key={service.id} className="rounded-xl border border-black/[0.08] px-4 py-4"><div className="flex min-w-0 items-center justify-between gap-4"><span className="min-w-0 truncate text-sm font-semibold">{service.serviceName}</span><Status surface="light" label={progressLabels[service.status]} tone={tones[service.status]} /></div><div className="mt-4"><ClientPortalProgressTimeline status={service.status} /></div></li>)}
                 </ul>}
             </div>
         </PortalSection>

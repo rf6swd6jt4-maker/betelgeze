@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 
-import { clientPortalOverview } from "../lib/client-portal/overview.ts"
+import { clientPortalOverview, portalProgressStatuses, portalProgressStepState } from "../lib/client-portal/overview.ts"
 
 const migration = readFileSync("supabase/migrations/20260922100000_client_portal_fulfilment.sql", "utf8")
 const session = readFileSync("lib/client-portal/session.ts", "utf8")
@@ -10,6 +10,8 @@ const shell = readFileSync("components/client-portal/ClientPortalShell.tsx", "ut
 const leads = readFileSync("components/client-portal/ClientPortalLeads.tsx", "utf8")
 const actions = readFileSync("components/communications/ClientPortalActions.tsx", "utf8")
 const route = readFileSync("app/api/workspaces/[workspaceSlug]/relationships/[relationshipId]/portal/route.ts", "utf8")
+const fulfilment = readFileSync("components/client-portal/ClientPortalFulfilment.tsx", "utf8")
+const timeline = readFileSync("components/client-portal/ClientPortalProgressTimeline.tsx", "utf8")
 
 test("onboarding completion atomically provisions the portal, action, progress, and durable link", () => {
     const trigger = migration.slice(migration.indexOf("create or replace function public.provision_client_portal_after_onboarding"))
@@ -59,7 +61,16 @@ test("required actions are staff-managed and have no client completion control",
     assert.match(actions, /Fulfilment progress/u)
     assert.match(actions, /<CenteredDialog title="Client portal" short/u)
     assert.doesNotMatch(actions, /AnchoredPopup/u)
-    assert.doesNotMatch(readFileSync("components/client-portal/ClientPortalFulfilment.tsx", "utf8"), /method:\s*"PATCH"|onClick/u)
+    assert.doesNotMatch(fulfilment, /method:\s*"PATCH"|onClick/u)
+})
+
+test("each service shows a responsive, client-safe progress timeline", () => {
+    assert.match(fulfilment, /<ClientPortalProgressTimeline status=\{service\.status\}/u)
+    assert.match(actions, /<ClientPortalProgressTimeline status=\{progress\.status\} surface="dark"/u)
+    assert.match(timeline, /sm:grid-cols-5/u)
+    assert.match(timeline, /aria-current=\{current \? "step"/u)
+    assert.deepEqual(portalProgressStatuses.map((step) => portalProgressStepState("in_review", step)), ["complete", "complete", "current", "upcoming", "upcoming"])
+    assert.deepEqual(portalProgressStatuses.map((step) => portalProgressStepState("complete", step)), ["complete", "complete", "complete", "complete", "complete"])
 })
 
 test("overview parsing rejects malformed rows and defaults to the empty lead view", () => {

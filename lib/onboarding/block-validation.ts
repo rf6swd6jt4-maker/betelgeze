@@ -246,7 +246,7 @@ function normalizeStep(step: OnboardingStepV2, options: { bookend: boolean; firs
             if (appointmentFieldsCount > 1) throw new Error("A step can contain only one Appointment information block.")
             const allowed = new Set(APPOINTMENT_FIELD_OPTIONS.map((option) => option.key))
             const options = [...new Set((Array.isArray(block.options) ? block.options : []).filter((option) => allowed.has(option)))].slice(0, APPOINTMENT_FIELD_OPTIONS.length)
-            const maximumFields = Math.min(4, Math.max(1, Math.trunc(Number(block.maximumFields) || 4)))
+            const maximumFields = options.length
             if (!options.length) throw new Error("Appointment information must offer at least one field.")
             return {
                 id: blockId,

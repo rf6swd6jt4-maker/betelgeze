@@ -39,6 +39,7 @@ const realtimeFixMigration = readFileSync("supabase/migrations/20260810223000_fi
 const moduleMigration = readFileSync("supabase/migrations/20260811010000_migrate_onboarding_bookends_to_modules.sql", "utf8")
 const videoUploadFixMigration = readFileSync("supabase/migrations/20260811234500_fix_builder_video_uploads.sql", "utf8")
 const updateRoute = readFileSync("app/api/workspaces/[workspaceSlug]/onboarding-builder/updates/route.ts", "utf8")
+const appointmentOptionsMigration = readFileSync("supabase/migrations/20260922100000_allow_all_appointment_information_fields.sql", "utf8")
 
 test("version-two steps use a protected Header and compatible mixed blocks", () => {
     const ordinary = createOnboardingStepV2()
@@ -160,6 +161,15 @@ test("appointment-setting blocks autosave without local save buttons and step su
     assert.match(onboardingStepSubmit, /postOnboardingSubmission/)
     assert.match(onboardingStepSubmit, /role="alert"/)
     assert.match(publicSessionActions, /nextPath: outcome\.clientPortalUrl \?\? await onboardingPathForStep\(token, outcome\.nextStepKey\)/)
+})
+
+test("appointment onboarding accepts any mix through every available option", () => {
+    assert.match(appointmentSetupBlock, /availableFieldCount = block\.kind === "appointment_fields" \? block\.options\.length : 0/)
+    assert.match(appointmentSetupBlock, /saveVersionRef\.current \+= 1/)
+    assert.match(appointmentSetupBlock, /Choose any combination, including every available field\./)
+    assert.match(blockValidation, /const maximumFields = options\.length/)
+    assert.match(appointmentOptionsMigration, /jsonb_array_length\(requested_fields\) <= 5/)
+    assert.match(appointmentOptionsMigration, /jsonb_array_length\(v_block\.definition->''options''\)/)
 })
 
 test("Builder defaults expose bookends and mandatory modules with expanded modules and collapsed steps", () => {

@@ -39,7 +39,7 @@ export function normalizeAppointmentMediums(value: unknown): AppointmentMedium[]
     return [...new Set(value.filter((item): item is AppointmentMedium => typeof item === "string" && APPOINTMENT_MEDIUM_KEYS.has(item as AppointmentMedium)))].slice(0, APPOINTMENT_MEDIUM_OPTIONS.length)
 }
 
-export function normalizeAppointmentRequestedFields(value: unknown, maximum = 4): AppointmentRequestedField[] {
+export function normalizeAppointmentRequestedFields(value: unknown, maximum: number = APPOINTMENT_FIELD_OPTIONS.length): AppointmentRequestedField[] {
     if (!Array.isArray(value)) return []
     const seen = new Set<AppointmentFieldKey>()
     const normalized: AppointmentRequestedField[] = []

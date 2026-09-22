@@ -48,7 +48,7 @@ export function AppointmentSetupBlock({
     onUnsatisfied: () => void
 }) {
     const [mediums, setMediums] = useState<AppointmentMedium[]>(() => initialMediums(initialResponse))
-    const [fields, setFields] = useState<AppointmentRequestedField[]>(() => block.kind === "appointment_fields" ? initialFields(initialResponse, block.maximumFields) : [])
+    const [fields, setFields] = useState<AppointmentRequestedField[]>(() => block.kind === "appointment_fields" ? initialFields(initialResponse, block.options.length) : [])
     const [error, setError] = useState<string | null>(null)
     const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">(satisfied ? "saved" : "idle")
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -59,6 +59,7 @@ export function AppointmentSetupBlock({
     const onSatisfiedRef = useRef(onSatisfied)
     const onUnsatisfiedRef = useRef(onUnsatisfied)
     const selectedFields = useMemo(() => new Map(fields.map((field) => [field.key, field.required])), [fields])
+    const availableFieldCount = block.kind === "appointment_fields" ? block.options.length : 0
 
     useEffect(() => {
         onSatisfiedRef.current = onSatisfied
@@ -148,6 +149,9 @@ export function AppointmentSetupBlock({
         setError(null)
 
         if (block.kind === "appointment_medium" && "mediums" in payload && payload.mediums.length === 0) {
+            // Invalidate any request already in flight so its eventual success
+            // cannot re-enable Continue after the final option was cleared.
+            saveVersionRef.current += 1
             onUnsatisfiedRef.current()
             if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
             saveQueueRef.current = null
@@ -206,8 +210,8 @@ export function AppointmentSetupBlock({
     function setField(key: AppointmentFieldKey, value: "off" | "optional" | "required") {
         if (locked || block.kind !== "appointment_fields") return
         const alreadySelected = selectedFields.has(key)
-        if (value !== "off" && !alreadySelected && fields.length >= block.maximumFields) {
-            setError(`Choose up to ${block.maximumFields} extra fields.`)
+        if (value !== "off" && !alreadySelected && fields.length >= availableFieldCount) {
+            setError("All available fields are already selected.")
             return
         }
         const next = value === "off"
@@ -219,7 +223,9 @@ export function AppointmentSetupBlock({
 
     return <div className="rounded-2xl border border-black/10 bg-[var(--onboarding-page)] p-4 sm:p-5">
         <h2 className="font-semibold text-[var(--onboarding-text)]">{block.title}</h2>
-        {block.description ? <p className="mt-2 text-sm leading-6 text-[var(--onboarding-muted)]">{block.description}</p> : null}
+        {block.description ? <p className="mt-2 text-sm leading-6 text-[var(--onboarding-muted)]">{block.kind === "appointment_fields"
+            ? block.description.replace("Choose up to four extra details", "Choose any combination of extra details")
+            : block.description}</p> : null}
 
         {block.kind === "appointment_medium" ? <fieldset disabled={locked} className="mt-4 grid gap-3 sm:mt-5 sm:grid-cols-3">
             <legend className="sr-only">Appointment options</legend>
@@ -234,7 +240,7 @@ export function AppointmentSetupBlock({
                 const selected = selectedFields.get(option.key)
                 return <label key={option.key} className="grid gap-3 rounded-xl border border-black/10 bg-[var(--onboarding-surface)] px-3.5 py-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center sm:gap-2 sm:px-4"><span><span className="block text-sm font-semibold text-[var(--onboarding-text)]">{option.label}</span><span className="mt-1 block text-xs leading-5 text-[var(--onboarding-muted)]">{option.description}</span></span><select aria-label={`${option.label} requirement`} value={selected === undefined ? "off" : selected ? "required" : "optional"} onChange={(event) => setField(option.key, event.target.value as "off" | "optional" | "required")} className="h-12 w-full rounded-lg border border-black/15 bg-[var(--onboarding-page)] px-3 text-base text-[var(--onboarding-text)] sm:h-10 sm:text-sm"><option value="off">Not included</option><option value="optional">Optional</option><option value="required">Required</option></select></label>
             })}
-            <p className="pt-1 text-xs text-[var(--onboarding-muted)]">Choose up to {block.maximumFields} extra fields.</p>
+            <p className="pt-1 text-xs text-[var(--onboarding-muted)]">Choose any combination, including every available field.</p>
         </fieldset>}
 
         {error ? <p role="alert" className="mt-3 text-left text-sm text-red-700">{error} <RequestHelpLink />.</p> : null}

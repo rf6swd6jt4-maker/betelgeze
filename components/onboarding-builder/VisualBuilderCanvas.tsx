@@ -104,7 +104,7 @@ function AppointmentSetupPreview({ block, update }: { block: Extract<OnboardingB
         <InlineText value={block.title} update={(title) => update({ ...block, title })} className="font-semibold text-[var(--onboarding-text)]" />
         <InlineText value={block.description} update={(description) => update({ ...block, description })} multiline className="mt-2 text-sm leading-6 text-[var(--onboarding-muted)]" />
         <div className="mt-4 grid gap-2 sm:grid-cols-2">{options.map((option, index) => <div key={option.key} className="flex min-h-12 items-center gap-3 rounded-xl border border-black/10 bg-[var(--onboarding-surface)] px-4 py-3 text-sm text-[var(--onboarding-text)]"><span className="inline-flex h-5 w-5 items-center justify-center rounded border border-black/20 text-xs">{block.kind === "appointment_medium" ? index === 0 ? "✓" : "" : index === 0 ? "!" : "—"}</span><span>{option.label}</span>{block.kind === "appointment_fields" ? <span className="ml-auto text-xs text-[var(--onboarding-muted)]">{index === 0 ? "Required" : "Optional"}</span> : null}</div>)}</div>
-        <p className="mt-3 text-xs text-[var(--onboarding-muted)]">{block.kind === "appointment_medium" ? "Clients can select one or more." : `Name, date, and time are always included · up to ${block.maximumFields} extras`}</p>
+        <p className="mt-3 text-xs text-[var(--onboarding-muted)]">{block.kind === "appointment_medium" ? "Clients can select one or more." : "Name, date, and time are always included · any mix of the available extras"}</p>
     </div>
 }
 

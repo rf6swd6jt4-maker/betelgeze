@@ -79,6 +79,13 @@ test("Appointment Setting onboarding config drives table fields and remote links
 
     assert.deepEqual(normalizeAppointmentMediums(["phone", "zoom", "invalid", "zoom"]), ["phone", "zoom"])
     assert.deepEqual(normalizeAppointmentRequestedFields([{ key: "email", required: true }, { key: "notes", required: false }]), [{ key: "email", required: true }, { key: "notes", required: false }])
+    assert.equal(normalizeAppointmentRequestedFields([
+        { key: "phone", required: true },
+        { key: "email", required: false },
+        { key: "service", required: true },
+        { key: "address", required: false },
+        { key: "notes", required: true },
+    ]).length, 5)
     assert.equal(formatUsPhone("+1 214 555 0199"), "(214) 555-0199")
     assert.equal(formatUsPhone("123"), null)
     assert.match(migration, /relationship_appointment_setting_configs/)

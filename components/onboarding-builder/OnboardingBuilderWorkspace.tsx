@@ -454,8 +454,7 @@ function InspectorPanel({ currentGroup, step, block, field, help, helpSelected, 
         <label className="block text-xs text-neutral-500">Element name<input value={blockName(block)} disabled={!editable} onChange={(event) => updateBlock({ ...block, name: event.target.value })} className={inspectorInputClass} /></label>
         <label className="block text-xs text-neutral-500">Heading<input value={block.title} disabled={!editable} onChange={(event) => updateBlock({ ...block, title: event.target.value })} className={inspectorInputClass} /></label>
         <label className="block text-xs text-neutral-500">Description<textarea value={block.description} disabled={!editable} onChange={(event) => updateBlock({ ...block, description: event.target.value })} rows={4} className={inspectorTextareaClass} /></label>
-        <label className="block text-xs text-neutral-500">Maximum extra fields<select value={block.maximumFields} disabled={!editable} onChange={(event) => updateBlock({ ...block, maximumFields: Number(event.target.value) })} className={inspectorInputClass}>{[1, 2, 3, 4].map((count) => <option key={count} value={count}>{count}</option>)}</select></label>
-        <p className="text-xs leading-5 text-neutral-600">Name, date, and time are always included. Clients may add up to {block.maximumFields} simple fields and decide whether each is optional or required.</p>
+        <p className="text-xs leading-5 text-neutral-600">Name, date, and time are always included. Clients may choose any combination of the available fields and decide whether each is optional or required.</p>
         <button type="button" disabled={!editable} onClick={deleteSelection} className="text-xs text-red-300 disabled:opacity-30">Delete appointment information</button>
     </div>
     if (currentGroup.kind === "payment" && block.id === ONBOARDING_PAYMENT_BUTTON_ID) return <div className="space-y-4">

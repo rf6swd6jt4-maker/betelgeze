@@ -257,9 +257,9 @@ export function createAppointmentFieldsBlock(): AppointmentFieldsBlock {
         name: "Appointment information",
         kind: "appointment_fields",
         title: "What should setters add to each appointment?",
-        description: "Name and appointment date and time are always included. Choose up to four extra details and whether each one is optional or required.",
+        description: "Name and appointment date and time are always included. Choose any combination of extra details and whether each one is optional or required.",
         options: ["phone", "email", "service", "address", "notes"],
-        maximumFields: 4,
+        maximumFields: 5,
         required: true,
         layout: { ...DEFAULT_BLOCK_LAYOUT, width: "wide" },
     }

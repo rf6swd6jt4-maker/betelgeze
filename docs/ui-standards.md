@@ -568,6 +568,8 @@ When the archive lifecycle is implemented, active lists exclude archived records
 
 `TrendChart` is the canonical compact time-series graph. It owns the chart geometry, trend line, fading area gradient, axes, emphasized reference ticks, optional red exception bands, responsive labels, and keyboard/pointer tooltip behaviour. Feature code supplies normalized positions, numeric values, and already-formatted labels; it must not recreate the SVG treatment locally. The default dark surface retains the white line treatment; use `surface="light"` on public or onboarding-style light surfaces.
 
+The active point uses a vertical guide, a clearly outlined marker, and a near-black readout with a muted date and white bold value. Keep the readout value independent of the series colour so an agency's dark primary colour cannot reduce contrast. Pointer users hover; touch users tap and retain the value; keyboard users focus each day's hit target and may dismiss it with Escape. Hit targets span the plot height and must remain wide enough to select between adjacent days.
+
 Use the neutral white line for ordinary measurements and activity volume. Use `tone="red"` only when the series itself measures errors or critical failures; it changes both the line and its gradient. Red bands mark exceptional or missed periods behind another series and do not change the meaning of the measured line itself.
 
 ```tsx
@@ -584,6 +586,12 @@ Use the neutral white line for ordinary measurements and activity volume. Use `t
 Pass `reveal` to animate the trend line and gradient together from left to right on mount. Key the chart by the selected period to replay this on range changes. Axes remain steady; reduced-motion preferences disable the animation.
 
 Use `breakBefore` on a trend point when missing observations should interrupt the line and area. Do not turn periods with no denominator into a zero error rate.
+
+## Client portal reports
+
+Meta Ads, Google Search Ads, Google Local Services Ads, and future client-facing provider reports use `ClientPortalReport` inside their existing `PortalSection`. The shared order is report name and period/update metadata, optional account name or period control, three primary `QuickStats`, a labelled secondary-metric grid, an explicit no-activity state when every headline value is zero, optional charts, and a short provider-data note. Do not collapse secondary values into an unlabelled prose sentence or invent a provider-specific summary layout.
+
+Charts remain optional because providers do not all return the same time-series data. When daily points are available, label the group `Daily performance`, state that a day can be hovered or tapped, and use light-surface `TrendChart` cards. A reporting improvement must reuse already-loaded or already-returned data unless a separately assessed provider query is necessary; presentation controls, local ratios, and formatting must not add a request, polling loop, dependency, or startup work.
 
 ## Workspace tab gestures
 

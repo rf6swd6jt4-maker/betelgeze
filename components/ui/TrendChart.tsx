@@ -84,8 +84,11 @@ export function TrendChart({
         return result
     }, [])
     const activePoint = activeId === null ? null : points.find((point) => point.id === activeId) ?? null
-    const tooltipX = activePoint ? Math.max(plotLeft, Math.min(plotRight - 168, x(activePoint.position) - 84)) : 0
-    const tooltipY = activePoint ? Math.max(plotTop, y(activePoint.value) - 52) : 0
+    const tooltipWidth = 176
+    const tooltipHeight = 50
+    const tooltipX = activePoint ? Math.max(plotLeft, Math.min(plotRight - tooltipWidth, x(activePoint.position) - tooltipWidth / 2)) : 0
+    const tooltipY = activePoint ? Math.max(plotTop, y(activePoint.value) - 58) : 0
+    const hitWidth = Math.max(12, Math.min(28, (plotRight - plotLeft) / safeDomainEnd))
     const light = surface === "light"
     const lineColour = tone === "red" ? "rgb(248 113 113)" : light ? "var(--onboarding-primary, #1E3A5F)" : "white"
     const gridColour = light ? "rgb(15 23 42 / 0.09)" : "rgb(38 38 38)"
@@ -93,7 +96,7 @@ export function TrendChart({
     const labelColour = light ? "rgb(71 85 105)" : "rgb(82 82 82)"
 
     return <div className="min-w-0">
-        <svg viewBox={`0 0 ${chartWidth} 232`} className="aspect-[2.4/1] w-full overflow-visible" role="img" aria-label={ariaLabel} onPointerLeave={() => setActiveId(null)}>
+        <svg viewBox={`0 0 ${chartWidth} 232`} className="aspect-[2.4/1] w-full overflow-visible" role="img" aria-label={ariaLabel} onPointerLeave={(event) => { if (event.pointerType === "mouse") setActiveId(null) }}>
             <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={lineColour} stopOpacity="0.2" /><stop offset="100%" stopColor={lineColour} stopOpacity="0" /></linearGradient></defs>
             {ticks.map((tick) => <g key={tick.id}><line x1={plotLeft} x2={plotRight} y1={y(tick.value)} y2={y(tick.value)} stroke={tick.emphasized ? axisColour : gridColour} strokeWidth="1" strokeDasharray={tick.emphasized ? "4 5" : undefined} /><line x1={plotRight} x2={plotRight + 5} y1={y(tick.value)} y2={y(tick.value)} stroke={axisColour} /><text x={plotRight + 10} y={y(tick.value) + 4} fill={tick.emphasized ? (light ? "rgb(51 65 85)" : "rgb(212 212 212)") : (light ? "rgb(100 116 139)" : "rgb(115 115 115)")} className="text-[12px] sm:text-[9px]">{tick.label}</text></g>)}
             <line x1={plotRight} x2={plotRight} y1={plotTop} y2={plotBottom} stroke={gridColour} />
@@ -103,8 +106,14 @@ export function TrendChart({
                 {segment.length === 1 ? <circle cx={x(segment[0].position)} cy={y(segment[0].value)} r="2" fill={lineColour} /> : <polyline points={segment.map((point) => `${x(point.position)},${y(point.value)}`).join(" ")} fill="none" stroke={lineColour} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
             </g>)}</g> : null}
             {points.filter((point) => point.unchanged).map((point) => <line key={`same-${point.id}`} x1={x(point.position) - 4} x2={x(point.position) + 4} y1={y(point.value)} y2={y(point.value)} stroke="rgb(163 163 163)" strokeWidth="4" strokeLinecap="round" />)}
-            {points.map((point) => <rect key={`hit-${point.id}`} x={x(point.position) - 5} y={plotTop} width="10" height={plotBottom - plotTop} fill="transparent" tabIndex={0} className="outline-none" aria-label={point.ariaLabel} onPointerEnter={() => setActiveId(point.id)} onPointerDown={() => setActiveId(point.id)} onFocus={() => setActiveId(point.id)} onBlur={() => setActiveId(null)} />)}
-            {activePoint ? <g pointerEvents="none"><circle cx={x(activePoint.position)} cy={y(activePoint.value)} r="4" fill={lineColour} stroke="black" strokeWidth="2" /><rect x={tooltipX} y={tooltipY} width="168" height="44" rx="7" fill="rgb(23 23 23)" stroke="rgb(82 82 82)" /><text x={tooltipX + 9} y={tooltipY + 17} fill="rgb(163 163 163)" className="text-[12px] sm:text-[9px]">{activePoint.tooltipLabel}</text><text x={tooltipX + 9} y={tooltipY + 35} fill={lineColour} fontWeight="600" className="text-[14px] sm:text-[10px]">{activePoint.tooltipValue}</text></g> : null}
+            {points.map((point) => <rect key={`hit-${point.id}`} x={x(point.position) - hitWidth / 2} y={plotTop} width={hitWidth} height={plotBottom - plotTop} fill="transparent" tabIndex={0} className="outline-none focus-visible:stroke-slate-500" aria-label={point.ariaLabel} onPointerEnter={() => setActiveId(point.id)} onPointerDown={() => setActiveId(point.id)} onFocus={() => setActiveId(point.id)} onBlur={() => setActiveId(null)} onKeyDown={(event) => { if (event.key === "Escape") setActiveId(null) }} />)}
+            {activePoint ? <g pointerEvents="none">
+                <line x1={x(activePoint.position)} x2={x(activePoint.position)} y1={plotTop} y2={plotBottom} stroke={light ? "rgb(15 23 42 / 0.22)" : "rgb(163 163 163 / 0.45)"} strokeWidth="1" strokeDasharray="3 4" />
+                <circle cx={x(activePoint.position)} cy={y(activePoint.value)} r="4.5" fill={lineColour} stroke={light ? "white" : "black"} strokeWidth="2.5" />
+                <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx="8" fill="rgb(15 23 42)" stroke="rgb(71 85 105)" />
+                <text x={tooltipX + 11} y={tooltipY + 19} fill="rgb(203 213 225)" fontSize="11">{activePoint.tooltipLabel}</text>
+                <text x={tooltipX + 11} y={tooltipY + 39} fill="white" fontSize="13" fontWeight="700">{activePoint.tooltipValue}</text>
+            </g> : null}
             {!points.length ? <text x={(plotLeft + plotRight) / 2} y="76" textAnchor="middle" fill={labelColour} fontSize="11">{emptyLabel}</text> : null}
             {labels.map((label) => <text key={label.id} x={x(label.position)} y="222" textAnchor={label.anchor} fill={labelColour} className="text-[12px] sm:text-[9px]">{label.label}</text>)}
         </svg>

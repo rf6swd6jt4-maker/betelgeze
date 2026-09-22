@@ -1,8 +1,8 @@
 "use client"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { GoogleAdsConnection, adsFetch, adsPrimary, adsSecondary } from "@/components/google-ads/GoogleAdsConnection"
+import { ClientPortalReport, type ClientPortalReportMetric } from "./ClientPortalReport"
 import { ClientPortalDisconnect } from "./ClientPortalDisconnect"
-import { QuickStats } from "@/components/panel/QuickStats"
 import { PortalSection } from "./ClientPortalUI"
 import { Selector } from "@/components/ui"
 import { googleAdsPeriods, isGoogleAdsReportKind, type GoogleAdsPeriod, type GoogleAdsReportKind, type GoogleAdsReportSnapshot } from "@/lib/google-ads-report"
@@ -43,28 +43,46 @@ function Reports({ api, active, kind }: { api: string; active: boolean; kind: Go
         return () => { cancelled = true; controller.abort() }
     }, [api, period, kind, active, save, refresh])
     const snapshot = snapshots[period], report = snapshot?.report
-    const money = (value: number) => new Intl.NumberFormat(undefined, { style: "currency", currency: report!.currency, currencyDisplay: "narrowSymbol", maximumFractionDigits: 2 }).format(value)
+    const money = (value: number) => new Intl.NumberFormat(undefined, { style: "currency", currency: report?.currency || "USD", currencyDisplay: "narrowSymbol", maximumFractionDigits: 2 }).format(value)
     const count = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 })
-    return <div className="mt-5 border-t border-black/10 pt-4">
-        <h3 className="text-sm font-semibold">{reportLabels[kind]} results</h3>
-        <label className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm font-medium">Reporting period<select value={period} onChange={(e) => { setError(null); setPeriod(e.target.value as GoogleAdsPeriod) }} className="min-h-11 rounded-lg border border-black/15 bg-white px-3 text-sm">{Object.entries(googleAdsPeriods).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-        {report?.kind === "search" ? <>
-            <QuickStats surface="light" ariaLabel="Google Ads performance" items={[{ label: "Spend", value: <span className="text-xs min-[380px]:text-sm sm:text-lg" title={money(report.spend)}>{money(report.spend)}</span> }, { label: "Clicks", value: count(report.clicks) }, { label: "Conversions", value: count(report.conversions) }]} />
-            <p className="mt-3 text-sm leading-6"><strong>{count(report.impressions)}</strong> impressions <span aria-hidden="true">·</span> <strong>{report.costPerConversion === null ? "—" : money(report.costPerConversion)}</strong> per conversion</p>
-            <p className="mt-2 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">{report.startDate} – {report.endDate} · {report.timeZone} · {report.currency}. Includes today so far.</p>
-            {report.impressions === 0 && report.clicks === 0 && report.spend === 0 && report.conversions === 0 ? <p className="mt-2 text-sm">Google reported no activity for this period.</p> : null}
-            <p className="mt-2 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">Conversions are the actions counted in Google Ads, not confirmed appointments. Figures may update as Google processes activity.</p>
-            <p className="mt-2 text-xs text-[var(--onboarding-muted,#475569)]">Updated {new Date(snapshot!.refreshedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.</p>
-        </> : report?.kind === "local_services" ? <>
-            <QuickStats surface="light" ariaLabel="Google Local Services Ads performance" items={[{ label: "Spend", value: <span className="text-xs min-[380px]:text-sm sm:text-lg" title={money(report.spend)}>{money(report.spend)}</span> }, { label: "Leads", value: count(report.leads) }, { label: "Charged", value: count(report.chargedLeads) }]} />
-            <p className="mt-3 text-sm leading-6"><strong>{count(report.phoneLeads)}</strong> calls <span aria-hidden="true">·</span> <strong>{count(report.messageLeads)}</strong> messages <span aria-hidden="true">·</span> <strong>{count(report.bookingLeads)}</strong> bookings</p>
-            <p className="mt-2 text-sm leading-6"><strong>{count(report.bookedLeads)}</strong> marked booked <span aria-hidden="true">·</span> <strong>{count(report.creditedLeads)}</strong> credited <span aria-hidden="true">·</span> <strong>{report.costPerLead === null ? "—" : money(report.costPerLead)}</strong> per lead</p>
-            <p className="mt-2 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">{report.startDate} – {report.endDate} · {report.timeZone} · {report.currency}. Lead status and credits may update after the original enquiry.</p>
-            <p className="mt-2 text-xs text-[var(--onboarding-muted,#475569)]">Updated {new Date(snapshot!.refreshedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.</p>
-        </> : <p role="status" className="mt-4 text-sm leading-6 text-[var(--onboarding-muted,#475569)]">{reading ? "Loading saved report…" : pending ? "Loading your results from Google Ads…" : "No report loaded for this period yet."}</p>}
+    const stats = report?.kind === "search"
+        ? [{ label: "Spend", value: money(report.spend) }, { label: "Clicks", value: count(report.clicks) }, { label: "Conversions", value: count(report.conversions) }]
+        : report?.kind === "local_services"
+            ? [{ label: "Spend", value: money(report.spend) }, { label: "Leads", value: count(report.leads) }, { label: "Charged", value: count(report.chargedLeads) }]
+            : []
+    const metrics: ClientPortalReportMetric[] = report?.kind === "search" ? [
+        { label: "Impressions", value: count(report.impressions) },
+        { label: "Click-through rate", value: report.impressions ? `${(report.clicks / report.impressions * 100).toFixed(1)}%` : "—" },
+        { label: "Average cost per click", value: report.clicks ? money(report.spend / report.clicks) : "—" },
+        { label: "Average cost per conversion", value: report.costPerConversion === null ? "—" : money(report.costPerConversion) },
+    ] : report?.kind === "local_services" ? [
+        { label: "Calls", value: count(report.phoneLeads) },
+        { label: "Messages", value: count(report.messageLeads) },
+        { label: "Bookings", value: count(report.bookingLeads) },
+        { label: "Marked booked", value: count(report.bookedLeads) },
+        { label: "Credited", value: count(report.creditedLeads) },
+        { label: "Average cost per lead", value: report.costPerLead === null ? "—" : money(report.costPerLead) },
+    ] : []
+    const emptyMessage = report?.kind === "search" && report.impressions === 0 && report.clicks === 0 && report.spend === 0 && report.conversions === 0
+        ? "Google reported no activity for this period."
+        : report?.kind === "local_services" && report.leads === 0 && report.spend === 0
+            ? "Google reported no Local Services activity for this period."
+            : null
+    const periodControl = <label className="flex items-center gap-2 text-sm font-medium"><span className="sr-only">Reporting period</span><select aria-label="Reporting period" value={period} onChange={(event) => { setError(null); setPeriod(event.target.value as GoogleAdsPeriod) }} className="min-h-11 rounded-lg border border-black/15 bg-white px-3 text-sm">{Object.entries(googleAdsPeriods).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+    return <ClientPortalReport
+        title={reportLabels[kind]}
+        periodLabel={report ? `${report.startDate} – ${report.endDate}` : googleAdsPeriods[period]}
+        updatedAt={snapshot?.refreshedAt}
+        stats={stats}
+        metrics={metrics}
+        controls={periodControl}
+        emptyMessage={emptyMessage}
+        note={report ? <>{report.timeZone} <span aria-hidden="true">·</span> {report.currency}. {report.kind === "search" ? "Conversions are the actions counted in Google Ads, not confirmed appointments. Figures may update as Google processes activity." : "Lead status and credits may update after the original enquiry."}</> : null}
+    >
+        {!report ? <p role="status" className="mt-4 text-sm leading-6 text-[var(--onboarding-muted,#475569)]">{reading ? "Loading saved report…" : pending ? "Loading your results from Google Ads…" : "No report loaded for this period yet."}</p> : null}
         {error ? <p role="alert" className="mt-3 text-sm leading-6 text-red-700">{error}</p> : null}
         <div className="mt-4 flex flex-wrap gap-2"><button type="button" className={adsPrimary} disabled={pending || reading} onClick={() => void refresh(period)}>{pending ? "Refreshing…" : report ? "Refresh metrics" : "Load metrics"}</button>{error ? <button type="button" className={adsSecondary} disabled={pending || reading} onClick={() => { delete cache.current[period]; setPeriod(period); setSnapshots({ ...cache.current }); void adsFetch(`${api}?period=${period}&kind=${kind}`).then((value) => { save(period, value.snapshot); setError(null) }).catch(() => setError("The saved report could not be loaded. Please try again.")) }}>Reload status</button> : null}</div>
-    </div>
+    </ClientPortalReport>
 }
 export function ClientPortalGoogleAds({ token, active }: { token: string; active: boolean }) {
     const [account, setAccount] = useState<string | null>(null)

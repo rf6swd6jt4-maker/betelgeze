@@ -40,6 +40,7 @@ const moduleMigration = readFileSync("supabase/migrations/20260811010000_migrate
 const videoUploadFixMigration = readFileSync("supabase/migrations/20260811234500_fix_builder_video_uploads.sql", "utf8")
 const updateRoute = readFileSync("app/api/workspaces/[workspaceSlug]/onboarding-builder/updates/route.ts", "utf8")
 const appointmentOptionsMigration = readFileSync("supabase/migrations/20260922100000_allow_all_appointment_information_fields.sql", "utf8")
+const appointmentServiceInstanceMigration = readFileSync("supabase/migrations/20260922103000_use_service_instances_for_appointment_onboarding.sql", "utf8")
 
 test("version-two steps use a protected Header and compatible mixed blocks", () => {
     const ordinary = createOnboardingStepV2()
@@ -170,6 +171,9 @@ test("appointment onboarding accepts any mix through every available option", ()
     assert.match(blockValidation, /const maximumFields = options\.length/)
     assert.match(appointmentOptionsMigration, /jsonb_array_length\(requested_fields\) <= 5/)
     assert.match(appointmentOptionsMigration, /jsonb_array_length\(v_block\.definition->''options''\)/)
+    assert.match(appointmentServiceInstanceMigration, /relationship_service_instances instance/)
+    assert.match(appointmentServiceInstanceMigration, /service_instance_sessions enrollment/)
+    assert.match(appointmentServiceInstanceMigration, /relationship_services relationship_service/)
 })
 
 test("Builder defaults expose bookends and mandatory modules with expanded modules and collapsed steps", () => {

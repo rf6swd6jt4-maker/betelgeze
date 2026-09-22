@@ -11,7 +11,8 @@ export async function GET(_request: Request, context: { params: Promise<{ token:
         const report = await loadPortalMetaAdsReport(token)
         if (!report) return Response.json({ error: "Meta Ads reporting is not available for this portal." }, { status: 404, headers: responseHeaders })
         return Response.json({ report }, { headers: responseHeaders })
-    } catch {
+    } catch (error) {
+        console.error("Client portal Meta Ads report", error instanceof Error ? error.message : "Unknown reporting error")
         return Response.json({ error: "Meta Ads reporting is temporarily unavailable. Please try again." }, { status: 503, headers: responseHeaders })
     }
 }

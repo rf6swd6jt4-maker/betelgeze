@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 const sql = readFileSync(new URL("../supabase/migrations/20260922190000_client_sale_commercial_adjustments.sql", import.meta.url), "utf8")
+const auditFixSql = readFileSync(new URL("../supabase/migrations/20260922193000_fix_client_sale_correction_audit.sql", import.meta.url), "utf8")
 
 test("commercial corrections append effective terms without mutating frozen sales or onboarding", () => {
     assert.match(sql, /create table public\.client_sale_commercial_adjustments/)
@@ -29,4 +30,15 @@ test("correction command is versioned and idempotent", () => {
     assert.match(sql, /Commercial terms changed; reload before correcting/)
     assert.match(sql, /Request ID reused with different correction/)
     assert.match(sql, /'replayed', true/)
+})
+
+test("correction audit is written inside the verified security-definer transaction", () => {
+    assert.match(auditFixSql, /insert into public\.workspace_admin_activity/)
+    assert.match(auditFixSql, /public\.sanitize_admin_activity_json/)
+    assert.match(auditFixSql, /client_sale\.pricing_corrected:/)
+    assert.match(auditFixSql, /on conflict \(workspace_id, idempotency_key\).*do nothing/)
+    assert.doesNotMatch(auditFixSql, /record_workspace_admin_activity/)
+    assert.doesNotMatch(auditFixSql, /update public\.relationship_onboarding_sessions/)
+    assert.doesNotMatch(auditFixSql, /update public\.client_sale_items/)
+    assert.doesNotMatch(auditFixSql, /update public\.service_instance_sessions/)
 })

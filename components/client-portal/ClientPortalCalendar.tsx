@@ -67,7 +67,7 @@ export function ClientPortalCalendar({token,active}:{token:string;active:boolean
  const monthLabel=new Intl.DateTimeFormat(undefined,{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(month+"-01T12:00:00Z"))
  const selectMonth=(value:string)=>{if(busy||!validMonth(value))return;setMonth(value);setDay(null);setError(null);if(!cache.has(value))void load(true,value)}
  return <PortalSection id="appointments" title="Your calendar" description="Appointments from GHL, all in one view." icon="calendar">
-  <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain" aria-busy={busy}>
+  <div className="mt-4" aria-busy={busy}>
    <div className="flex flex-wrap items-center justify-between gap-1 pb-2"><h3 aria-live="polite" className="text-base font-semibold">{monthLabel}</h3><div className="flex items-center"><button className={control} onClick={()=>selectMonth(today.slice(0,7))} disabled={busy}>Today</button><button data-icon-button className={`${control} h-11 w-11 px-0`} aria-label="Previous month" onClick={()=>selectMonth(shiftMonth(month,-1))} disabled={busy}><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m14 6-6 6 6 6"/></svg></button><button data-icon-button className={`${control} h-11 w-11 px-0`} aria-label="Next month" onClick={()=>selectMonth(shiftMonth(month,1))} disabled={busy}><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m10 6 6 6-6 6"/></svg></button></div></div>
    <div className={styles.weekdays} aria-hidden="true">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><span key={d}>{d}</span>)}</div>
    <div className={styles.grid} role="group" aria-label={`${monthLabel} calendar`}>

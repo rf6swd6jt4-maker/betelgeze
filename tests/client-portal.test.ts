@@ -11,8 +11,12 @@ const portalAttachmentKeyFixMigration = readFileSync("supabase/migrations/202608
 const proxy = readFileSync("proxy.ts", "utf8")
 const portalPage = readFileSync("app/client-portal/session/[token]/page.tsx", "utf8")
 const portalShell = readFileSync("components/client-portal/ClientPortalShell.tsx", "utf8")
+const portalLayout = readFileSync("components/client-portal/ClientPortalLayout.module.css", "utf8")
 const portalFulfilment = readFileSync("components/client-portal/ClientPortalFulfilment.tsx", "utf8")
 const portalLeads = readFileSync("components/client-portal/ClientPortalLeads.tsx", "utf8")
+const portalAppointments = readFileSync("components/client-portal/ClientPortalAppointments.tsx", "utf8")
+const portalCalendar = readFileSync("components/client-portal/ClientPortalCalendar.tsx", "utf8")
+const portalResources = readFileSync("components/client-portal/ClientPortalResources.tsx", "utf8")
 const portalMetaAds = readFileSync("components/client-portal/ClientPortalMetaAds.tsx", "utf8")
 const portalGoogleAds = readFileSync("components/client-portal/ClientPortalGoogleAds.tsx", "utf8")
 const portalReport = readFileSync("components/client-portal/ClientPortalReport.tsx", "utf8")
@@ -118,6 +122,18 @@ test("completed onboarding redirects to a branded portal with a safe invalid-lin
     assert.doesNotMatch(portalShell, /Your results|coming next|placeholder/u)
     assert.match(portalShell, /md:w-\[30rem\]/u)
     assert.match(portalShell, /aria-label=\{`Back from/u)
+})
+
+test("the client portal scrolls as one page below its sticky top bar", () => {
+    assert.match(portalShell, /<header className="sticky top-0 z-10/u)
+    assert.match(portalShell, /data-client-portal-scroll className="[^"]*overflow-y-auto/u)
+    assert.match(portalShell, /scrollPositions\.current\[activePage\] = scroller\.scrollTop/u)
+    assert.match(portalShell, /scrollPositions\.current\[page\] \?\? 0/u)
+    assert.doesNotMatch(portalShell, /id="ads" className=\{`[^`]*overflow-y-auto/u)
+    assert.doesNotMatch(portalLayout, /\.results \{[\s\S]*?overflow-y/u)
+    for (const source of [portalFulfilment, portalLeads, portalAppointments, portalCalendar, portalResources]) assert.doesNotMatch(source, /overflow-y-auto/u)
+    assert.match(portalShell, /data-client-portal-panel[\s\S]*fixed inset-x-0 top-0/u)
+    assert.match(portalChat, /touch-pan-y overflow-x-hidden overflow-y-auto/u)
 })
 
 test("connected Windsor Meta Ads relationships receive an on-demand token-scoped report", () => {

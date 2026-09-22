@@ -151,8 +151,8 @@ export function ClientPortalResources({ token }: { token: string }) {
             </div>
             <div data-portal-upload-hint><p className="mt-3 text-sm text-[var(--onboarding-muted,#475569)]"><span className="hidden sm:inline">Or drag files and folders here</span><span className="sm:hidden">Choose anything you want to share</span></p><p className="mt-1 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">Any file type. Folders are packaged automatically.</p></div>
         </div>
-        {notice ? <p role="status" className="mt-3 max-h-[25%] shrink-0 overflow-y-auto overscroll-contain rounded-lg bg-[color-mix(in_srgb,var(--onboarding-primary,#1E3A5F)_5%,transparent)] px-3 py-2.5 text-sm leading-6">{notice}</p> : null}
-        <div role="region" aria-label="File uploads and history" tabIndex={0} className="min-h-0 flex-1 overflow-y-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-[-2px]">
+        {notice ? <p role="status" className="mt-3 shrink-0 rounded-lg bg-[color-mix(in_srgb,var(--onboarding-primary,#1E3A5F)_5%,transparent)] px-3 py-2.5 text-sm leading-6">{notice}</p> : null}
+        <div role="region" aria-label="File uploads and history" tabIndex={0} className="focus-visible:outline-2 focus-visible:outline-offset-[-2px]">
         {reading ? <p role="status" className="mt-3 text-sm">Reading your folder…</p> : null}
         {tasks.length ? <><p role="status" className="mt-3 text-xs leading-5 text-[var(--onboarding-muted,#475569)]">Keep this page open while your files are sent. You can add more at any time.</p><List surface="light" ariaLabel="Uploads in progress">{tasks.map((task) => <ListItem key={task.id}>
             <ListPrimaryRow><ListTitle className="flex-1">{task.name}</ListTitle><Status surface="light" tone={task.state === "failed" ? "red" : task.state === "queued" ? "grey" : "yellow"} label={task.state === "failed" ? "Not sent" : task.state === "saving" ? "Saving" : task.state === "queued" ? "Queued" : task.state === "waiting" ? "Reconnecting" : `${Math.min(99, Math.round(task.loaded / Math.max(1, task.total) * 100))}%`} /></ListPrimaryRow>

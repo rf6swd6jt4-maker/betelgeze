@@ -23,6 +23,6 @@ export function ClientPortalLeads({ token, active, mode, onOpen }: { token: stri
     </PortalSection>
     return <div className={`${styles.results} ${ghlConnected ? styles.calendarResults : ""}`}>
         <div className="min-h-0 min-w-0">{ghlConnected ? <ClientPortalCalendar key={`${token}:${calendarVersion}`} token={token} active={active} /> : <PortalSection id="leads-overview" title="Leads" description="Contacts, opportunities and appointments." icon="leads"><div className="flex min-h-0 flex-1 items-center justify-center text-center"><p className="max-w-sm text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Connect GHL to show your lead activity here.</p></div></PortalSection>}</div>
-        <div className="grid min-h-0 min-w-0 auto-rows-max content-start gap-4 lg:gap-6 lg:overflow-y-auto"><ClientPortalGhl key={token} token={token} onConnection={onGhlConnection} active={active} /></div>
+        <div className="grid min-w-0 auto-rows-max content-start gap-4 lg:gap-6"><ClientPortalGhl key={token} token={token} onConnection={onGhlConnection} active={active} /></div>
     </div>
 }

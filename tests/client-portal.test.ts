@@ -14,6 +14,8 @@ const portalShell = readFileSync("components/client-portal/ClientPortalShell.tsx
 const portalFulfilment = readFileSync("components/client-portal/ClientPortalFulfilment.tsx", "utf8")
 const portalLeads = readFileSync("components/client-portal/ClientPortalLeads.tsx", "utf8")
 const portalMetaAds = readFileSync("components/client-portal/ClientPortalMetaAds.tsx", "utf8")
+const portalMetaAdsServer = readFileSync("lib/client-portal/meta-ads-server.ts", "utf8")
+const portalMetaAdsRoute = readFileSync("app/api/client-portal/session/[token]/meta-ads/route.ts", "utf8")
 const portalChat = readFileSync("components/client-portal/ClientPortalChat.tsx", "utf8")
 const portalComposerViewport = readFileSync("components/client-portal/client-portal-composer-viewport.ts", "utf8")
 const composerKeyboardSlide = readFileSync("components/communications/composer-keyboard-slide.ts", "utf8")
@@ -115,12 +117,21 @@ test("completed onboarding redirects to a branded portal with a safe invalid-lin
     assert.match(portalShell, /aria-label=\{`Back from/u)
 })
 
-test("connected Windsor Meta Ads relationships receive a local-data reporting placeholder", () => {
+test("connected Windsor Meta Ads relationships receive an on-demand token-scoped report", () => {
     assert.match(portalSession, /relationship_windsor_meta_ads_connections/u)
     assert.match(portalSession, /\.eq\("status", "connected"\)/u)
     assert.match(portalPage, /metaAdsReporting=\{metaAdsReporting\}/u)
-    assert.match(portalShell, /<ClientPortalMetaAds reporting=\{metaAdsReporting\}/u)
-    assert.match(portalMetaAds, /Reporting connection ready/u)
+    assert.match(portalShell, /dynamic\(\(\) => import\("@\/components\/client-portal\/ClientPortalMetaAds"\)/u)
+    assert.match(portalShell, /adsOpened \? <ClientPortalMetaAds token=\{token\}/u)
+    assert.match(portalMetaAds, /\/meta-ads`/u)
+    assert.match(portalMetaAds, /<QuickStats surface="light"/u)
+    assert.match(portalMetaAds, /<MetricChart title="Daily spend"/u)
+    assert.match(portalMetaAds, /<MetricChart title="Daily clicks"/u)
+    assert.match(portalMetaAdsRoute, /loadPortalMetaAdsReport\(token\)/u)
+    assert.match(portalMetaAdsRoute, /private, no-store/u)
+    assert.match(portalMetaAdsServer, /resolveClientPortalAccessByToken\(token\)/u)
+    assert.match(portalMetaAdsServer, /relationship_windsor_meta_ads_connections/u)
+    assert.match(portalMetaAdsServer, /loadWindsorMetaAdsReport\(apiKey, connection\.account_id\)/u)
     assert.doesNotMatch(portalSession, /windsor\.ai|connectors\.windsor/u)
 })
 

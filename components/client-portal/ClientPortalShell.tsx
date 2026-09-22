@@ -1,11 +1,12 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { ClientPortalChat } from "@/components/client-portal/ClientPortalChat"
 import { ClientPortalFulfilment } from "@/components/client-portal/ClientPortalFulfilment"
 import { ClientPortalLeads } from "@/components/client-portal/ClientPortalLeads"
 import { ClientPortalResources } from "@/components/client-portal/ClientPortalResources"
-import { ClientPortalMetaAds, type ClientPortalMetaAdsReporting } from "@/components/client-portal/ClientPortalMetaAds"
+import type { ClientPortalMetaAdsReporting } from "@/components/client-portal/ClientPortalMetaAds"
 import { PortalIcon, PortalSection, portalPrimaryButton } from "@/components/client-portal/ClientPortalUI"
 import { ClientBrandLogo } from "@/components/client-branding/ClientBrandLogo"
 import { DetailField, DetailFields } from "@/components/detail"
@@ -13,6 +14,10 @@ import { appointmentDateLabels, type PortalAppointment } from "@/lib/client-port
 import type { ClientPortalOverview } from "@/lib/client-portal/overview"
 import { FilterRailButton } from "@/components/panel/FilterRail"
 import styles from "./ClientPortalLayout.module.css"
+
+const ClientPortalMetaAds = dynamic(() => import("@/components/client-portal/ClientPortalMetaAds").then((module) => module.ClientPortalMetaAds), {
+    loading: () => <PortalSection id="meta-ads-loading" title="Meta Ads" description="Campaign performance" icon="chart"><div className="flex min-h-64 flex-1 items-center justify-center text-sm text-[var(--onboarding-muted,#475569)]">Opening reporting…</div></PortalSection>,
+})
 
 function localGreeting(hour: number) {
     if (hour < 12) return "Good morning"
@@ -84,6 +89,7 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
     const [panel, setPanel] = useState<"chat" | PortalAppointment | null>(null)
     const [greeting, setGreeting] = useState("Welcome")
     const [activePage, setActivePage] = useState(overview.hasFulfilment ? "fulfilment" : "leads")
+    const [adsOpened, setAdsOpened] = useState(false)
     const closePanel = useCallback(() => setPanel(null), [])
     useEffect(() => {
         const elements = [document.documentElement, document.body]
@@ -107,7 +113,7 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
                         <nav aria-label="Portal pages" data-surface="light" className="group/rail flex min-w-0 items-center overflow-x-auto overscroll-x-contain">
                             <FilterRailButton selected={activePage === "fulfilment"} aria-controls="fulfilment" onClick={() => setActivePage("fulfilment")}>Fulfilment</FilterRailButton>
                             <FilterRailButton selected={activePage === "leads"} aria-controls="leads" onClick={() => setActivePage("leads")}>Leads</FilterRailButton>
-                            <FilterRailButton selected={activePage === "ads"} aria-controls="ads" onClick={() => setActivePage("ads")}>Ads metrics</FilterRailButton>
+                            <FilterRailButton selected={activePage === "ads"} aria-controls="ads" onClick={() => { setAdsOpened(true); setActivePage("ads") }}>Ads metrics</FilterRailButton>
                             <FilterRailButton selected={activePage === "resources"} aria-controls="resources" onClick={() => setActivePage("resources")}>Files</FilterRailButton>
                         </nav>
                         <button type="button" onClick={() => setPanel("chat")} className={portalPrimaryButton}><PortalIcon name="chat" /><span>Chat</span></button>
@@ -119,7 +125,7 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
                 <div className="grid min-h-0 flex-1 grid-cols-1 gap-4">
                     <div id="fulfilment" className={`min-h-0 min-w-0 ${activePage === "fulfilment" ? "block" : "hidden"}`}><ClientPortalFulfilment overview={overview} /></div>
                     <div id="leads" className={`min-h-0 min-w-0 ${activePage === "leads" ? "block" : "hidden"}`}><ClientPortalLeads token={token} active={activePage === "leads" && panel === null} mode={overview.leadMode} onOpen={setPanel} /></div>
-                    <div id="ads" className={`min-h-0 min-w-0 overflow-y-auto pb-4 ${activePage === "ads" ? "block" : "hidden"}`}>{metaAdsReporting ? <ClientPortalMetaAds reporting={metaAdsReporting} /> : <PortalSection id="ads-metrics" title="Ads metrics" description="A clear view of advertising performance." icon="progress"><div className="flex min-h-0 flex-1 items-center justify-center px-4 py-10 text-center"><div><PortalIcon name="progress" className="mx-auto h-8 w-8 text-[var(--onboarding-muted,#475569)]" /><h3 className="mt-4 text-base font-semibold">Nothing here yet</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Advertising results will appear here when reporting is ready.</p></div></div></PortalSection>}</div>
+                    <div id="ads" className={`min-h-0 min-w-0 overflow-y-auto pb-4 ${activePage === "ads" ? "block" : "hidden"}`}>{metaAdsReporting ? (adsOpened ? <ClientPortalMetaAds token={token} reporting={metaAdsReporting} /> : null) : <PortalSection id="ads-metrics" title="Ads metrics" description="A clear view of advertising performance." icon="progress"><div className="flex min-h-0 flex-1 items-center justify-center px-4 py-10 text-center"><div><PortalIcon name="progress" className="mx-auto h-8 w-8 text-[var(--onboarding-muted,#475569)]" /><h3 className="mt-4 text-base font-semibold">Nothing here yet</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Advertising results will appear here when reporting is ready.</p></div></div></PortalSection>}</div>
                     {/* Keep the uploader mounted when changing panels so active transfers continue. */}
                     <div id="resources" className={`min-h-0 min-w-0 ${activePage === "resources" ? "block" : "hidden"}`}><ClientPortalResources token={token} /></div>
                 </div>

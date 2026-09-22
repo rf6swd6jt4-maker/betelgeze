@@ -4,7 +4,12 @@ import test from "node:test"
 import ts from "typescript"
 
 function provider(payload: unknown, status = 200) {
-    const compiled = { exports: {} as { listWindsorMetaAdsAccounts: (key: string, token: string) => Promise<unknown>; createWindsorMetaAdsAuthorization: (key: string) => Promise<unknown> } }
+    const compiled = { exports: {} as {
+        listWindsorMetaAdsAccounts: (key: string, token: string) => Promise<unknown>
+        createWindsorMetaAdsAuthorization: (key: string) => Promise<unknown>
+        loadWindsorMetaAdsReport: (key: string, accountId: string) => Promise<unknown>
+        parseWindsorMetaAdsReport: (payload: unknown, now?: Date) => { daily: Array<{ date: string; spend: number }>; totals: Record<string, number | null>; currency: string | null }
+    } }
     const calls: URL[] = []
     const code = ts.transpileModule(readFileSync("lib/windsor.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
     new Function("require", "module", "exports", "fetch", code)(() => ({}), compiled, compiled.exports, async (url: URL) => {
@@ -46,4 +51,34 @@ test("grouped Windsor accounts inherit only their explicit Meta source", async (
  assert.deepEqual(await p.listWindsorMetaAdsAccounts("agency","link"),[{id:"one",name:"Grouped account",datasource:"facebook_ads"}])
  const foreign = provider({data:[{access_token:"other",accounts:{facebook_ads:[{account_id:"one"}]}}]})
  assert.deepEqual(await foreign.listWindsorMetaAdsAccounts("agency","link"),[])
+})
+
+test("Windsor Meta Ads reports are account scoped, bounded and normalized into a 30-day series", async () => {
+    const payload = { data: [
+        { date: "2026-09-21", currency: "EUR", spend: "10.50", impressions: "1,000", clicks: "20", actions_lead: "2" },
+        { date: "2026-09-21", currency: "EUR", spend: 4.5, impressions: 500, clicks: 10, actions_lead: 1 },
+    ] }
+    const p = provider(payload)
+    const loaded = await p.loadWindsorMetaAdsReport("agency-secret", "act_123") as { totals: Record<string, number>; daily: unknown[]; currency: string }
+    assert.equal(p.calls[0].origin, "https://connectors.windsor.ai")
+    assert.equal(p.calls[0].pathname, "/facebook")
+    assert.equal(p.calls[0].searchParams.get("select_accounts"), "act_123")
+    assert.equal(p.calls[0].searchParams.get("date_preset"), "last_30d")
+    assert.equal(p.calls[0].searchParams.get("fields"), "date,currency,spend,impressions,clicks,actions_lead")
+    assert.equal(loaded.daily.length, 30)
+    assert.equal(loaded.currency, "EUR")
+
+    const report = p.parseWindsorMetaAdsReport(payload, new Date("2026-09-22T12:00:00Z"))
+    assert.deepEqual(report.daily.at(-2), { date: "2026-09-21", spend: 15, impressions: 1500, clicks: 30, leads: 3 })
+    assert.equal(report.totals.spend, 15)
+    assert.equal(report.totals.ctr, 2)
+    assert.equal(report.totals.cpc, 0.5)
+    assert.equal(report.totals.costPerLead, 5)
+})
+
+test("Windsor Meta Ads reporting rejects malformed values instead of displaying misleading totals", () => {
+    const p = provider([])
+    for (const payload of [null, { error: "bad" }, { data: [null] }, { data: [{ date: "today", spend: 1 }] }, { data: [{ date: "2026-09-22", spend: -1 }] }]) {
+        assert.throws(() => p.parseWindsorMetaAdsReport(payload, new Date("2026-09-22T12:00:00Z")))
+    }
 })

@@ -8,6 +8,12 @@ export type WindsorMetaAdsAccount = {
     datasource: string
 }
 
+export type WindsorMetaAdsReport = {
+    currency: string | null
+    totals: { spend: number; impressions: number; clicks: number; leads: number; ctr: number | null; cpc: number | null; costPerLead: number | null }
+    daily: Array<{ date: string; spend: number; impressions: number; clicks: number; leads: number }>
+}
+
 function providerError(status: number, fallback: string) {
     if (status === 401 || status === 403) return "The agency’s Windsor.ai connection needs attention. Contact your agency to continue."
     if (status === 429) return "Windsor.ai is receiving too many requests. Wait a moment, then check again."
@@ -95,4 +101,70 @@ export async function listWindsorMetaAdsAccounts(apiKey: string, accessToken: st
     }
     visit(payload)
     return [...new Map(accounts.map((account) => [account.id, account])).values()]
+}
+
+function reportRows(payload: unknown) {
+    if (Array.isArray(payload)) return payload
+    if (!payload || typeof payload !== "object") throw new Error("Windsor returned an invalid reporting response.")
+    const record = payload as Record<string, unknown>
+    if (typeof record.error === "string" || record.error === true) throw new Error("Windsor could not load this Meta Ads report.")
+    if (Array.isArray(record.data)) return record.data
+    if (Array.isArray(record.results)) return record.results
+    throw new Error("Windsor returned an unexpected reporting response.")
+}
+
+function reportNumber(value: unknown) {
+    if (value === null || value === undefined || value === "") return 0
+    const numeric = typeof value === "number" ? value : typeof value === "string" ? Number(value.replaceAll(",", "")) : Number.NaN
+    if (!Number.isFinite(numeric) || numeric < 0) throw new Error("Windsor returned an invalid reporting value.")
+    return numeric
+}
+
+export function parseWindsorMetaAdsReport(payload: unknown, now = new Date()): WindsorMetaAdsReport {
+    const rows = reportRows(payload)
+    if (rows.length > 500) throw new Error("Windsor returned too many reporting rows.")
+    const byDate = new Map<string, { spend: number; impressions: number; clicks: number; leads: number }>()
+    let currency: string | null = null
+    for (const value of rows) {
+        if (!value || typeof value !== "object") throw new Error("Windsor returned an invalid reporting row.")
+        const row = value as Record<string, unknown>
+        if (typeof row.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) throw new Error("Windsor returned an invalid reporting date.")
+        if (!currency && typeof row.currency === "string" && /^[A-Z]{3}$/.test(row.currency)) currency = row.currency
+        const current = byDate.get(row.date) ?? { spend: 0, impressions: 0, clicks: 0, leads: 0 }
+        current.spend += reportNumber(row.spend)
+        current.impressions += reportNumber(row.impressions)
+        current.clicks += reportNumber(row.clicks)
+        current.leads += reportNumber(row.actions_lead)
+        byDate.set(row.date, current)
+    }
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+    const daily = Array.from({ length: 30 }, (_, index) => {
+        const day = new Date(end)
+        day.setUTCDate(end.getUTCDate() - (29 - index))
+        const date = day.toISOString().slice(0, 10)
+        return { date, ...(byDate.get(date) ?? { spend: 0, impressions: 0, clicks: 0, leads: 0 }) }
+    })
+    const totals = daily.reduce((sum, row) => ({ spend: sum.spend + row.spend, impressions: sum.impressions + row.impressions, clicks: sum.clicks + row.clicks, leads: sum.leads + row.leads }), { spend: 0, impressions: 0, clicks: 0, leads: 0 })
+    return {
+        currency,
+        totals: {
+            ...totals,
+            ctr: totals.impressions ? (totals.clicks / totals.impressions) * 100 : null,
+            cpc: totals.clicks ? totals.spend / totals.clicks : null,
+            costPerLead: totals.leads ? totals.spend / totals.leads : null,
+        },
+        daily,
+    }
+}
+
+export async function loadWindsorMetaAdsReport(apiKey: string, accountId: string) {
+    const normalizedAccountId = accountId.trim()
+    if (!normalizedAccountId || normalizedAccountId.length > 200) throw new Error("This Meta Ads account is invalid.")
+    const url = new URL("https://connectors.windsor.ai/facebook")
+    url.searchParams.set("api_key", apiKey)
+    url.searchParams.set("fields", "date,currency,spend,impressions,clicks,actions_lead")
+    url.searchParams.set("date_preset", "last_30d")
+    url.searchParams.set("select_accounts", normalizedAccountId)
+    url.searchParams.set("_renderer", "json")
+    return parseWindsorMetaAdsReport(await windsorJson(url))
 }

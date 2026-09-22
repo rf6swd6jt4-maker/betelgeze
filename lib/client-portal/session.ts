@@ -5,6 +5,7 @@ import { clientPortalOverview } from "@/lib/client-portal/overview"
 import { loadPublishedOnboardingTheme } from "@/lib/onboarding/configuration"
 import { resolveOnboardingTheme } from "@/lib/onboarding/theme"
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import { isGoogleAdsService } from "@/lib/google-ads-report"
 
 export async function resolveClientPortalAccessByToken(token: string) {
     if (!/^[a-f0-9]{64}$/i.test(token)) return null
@@ -41,7 +42,7 @@ export async function resolveClientPortalAccessByToken(token: string) {
 export async function loadClientPortalSessionByToken(token: string) {
     const resolved = await resolveClientPortalAccessByToken(token)
     if (!resolved) return null
-    const [theme, reportingResult, overviewResult] = await Promise.all([
+    const [theme, reportingResult, googleServicesResult, overviewResult] = await Promise.all([
         loadPublishedOnboardingTheme(resolved.session.workspace_id),
         supabaseAdmin.from("relationship_windsor_meta_ads_connections")
             .select("account_id, account_name")
@@ -49,6 +50,11 @@ export async function loadClientPortalSessionByToken(token: string) {
             .eq("relationship_id", resolved.session.relationship_id)
             .eq("status", "connected")
             .maybeSingle(),
+        supabaseAdmin.from("relationship_services")
+            .select("service_key, revision:onboarding_service_revisions(definition)")
+            .eq("workspace_id", resolved.session.workspace_id)
+            .eq("relationship_id", resolved.session.relationship_id)
+            .limit(50),
         supabaseAdmin.rpc("client_portal_overview", {
             p_token: token.toLowerCase(),
             p_workspace_id: resolved.session.workspace_id,
@@ -59,10 +65,16 @@ export async function loadClientPortalSessionByToken(token: string) {
         }),
     ])
     const reporting = reportingResult.data
+    const hasGoogleAds = !googleServicesResult.error && (googleServicesResult.data ?? []).some((service) => {
+        const related = service.revision as unknown as { definition?: Record<string, unknown> } | Array<{ definition?: Record<string, unknown> }> | null
+        const definition = Array.isArray(related) ? related[0]?.definition : related?.definition
+        return isGoogleAdsService({ serviceKey: service.service_key, templateId: String(definition?.templateId ?? definition?.template_id ?? "") || null })
+    })
     return {
         ...resolved,
         theme,
         overview: clientPortalOverview(overviewResult.data),
+        hasGoogleAds,
         metaAdsReporting: reporting?.account_id ? { accountId: reporting.account_id, accountName: reporting.account_name ?? null } : null,
     }
 }

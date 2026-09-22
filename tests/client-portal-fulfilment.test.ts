@@ -52,7 +52,10 @@ test("portal landing and lead visibility follow onboarding state", () => {
     assert.match(leads, /mode === "empty"/u)
     assert.match(leads, /Nothing here yet/u)
     assert.match(leads, /<ClientPortalGhl/u)
-    assert.doesNotMatch(shell, /ClientPortalGoogleAds/u)
+    assert.match(session, /relationship_services/u)
+    assert.match(session, /isGoogleAdsService/u)
+    assert.match(shell, /hasGoogleAds \? <ClientPortalGoogleAds/u)
+    assert.match(shell, /!metaAdsReporting && !hasGoogleAds/u)
 })
 
 test("required actions are staff-managed and have no client completion control", () => {

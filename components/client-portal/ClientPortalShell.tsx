@@ -18,6 +18,9 @@ import styles from "./ClientPortalLayout.module.css"
 const ClientPortalMetaAds = dynamic(() => import("@/components/client-portal/ClientPortalMetaAds").then((module) => module.ClientPortalMetaAds), {
     loading: () => <PortalSection id="meta-ads-loading" title="Meta Ads" description="Campaign performance" icon="chart"><div className="flex min-h-64 flex-1 items-center justify-center text-sm text-[var(--onboarding-muted,#475569)]">Opening reporting…</div></PortalSection>,
 })
+const ClientPortalGoogleAds = dynamic(() => import("@/components/client-portal/ClientPortalGoogleAds").then((module) => module.ClientPortalGoogleAds), {
+    loading: () => <PortalSection id="google-ads-loading" title="Google Ads" description="Advertising results" icon="connection"><div className="flex min-h-40 flex-1 items-center justify-center text-sm text-[var(--onboarding-muted,#475569)]">Opening Google Ads…</div></PortalSection>,
+})
 
 function localGreeting(hour: number) {
     if (hour < 12) return "Good morning"
@@ -85,7 +88,7 @@ function AppointmentDetail({ appointment }: { appointment: PortalAppointment }) 
     </>
 }
 
-export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, overview, metaAdsReporting, privacyPolicyUrl, termsOfServiceUrl }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; overview: ClientPortalOverview; metaAdsReporting?: ClientPortalMetaAdsReporting | null; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null }) {
+export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, overview, metaAdsReporting, hasGoogleAds = false, privacyPolicyUrl, termsOfServiceUrl }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; overview: ClientPortalOverview; metaAdsReporting?: ClientPortalMetaAdsReporting | null; hasGoogleAds?: boolean; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null }) {
     const [panel, setPanel] = useState<"chat" | PortalAppointment | null>(null)
     const [greeting, setGreeting] = useState("Welcome")
     const [activePage, setActivePage] = useState(overview.hasFulfilment ? "fulfilment" : "leads")
@@ -125,7 +128,7 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
                 <div className="grid min-h-0 flex-1 grid-cols-1 gap-4">
                     <div id="fulfilment" className={`min-h-0 min-w-0 ${activePage === "fulfilment" ? "block" : "hidden"}`}><ClientPortalFulfilment overview={overview} /></div>
                     <div id="leads" className={`min-h-0 min-w-0 ${activePage === "leads" ? "block" : "hidden"}`}><ClientPortalLeads token={token} active={activePage === "leads" && panel === null} mode={overview.leadMode} onOpen={setPanel} /></div>
-                    <div id="ads" className={`min-h-0 min-w-0 overflow-y-auto pb-4 ${activePage === "ads" ? "block" : "hidden"}`}>{metaAdsReporting ? (adsOpened ? <ClientPortalMetaAds token={token} reporting={metaAdsReporting} /> : null) : <PortalSection id="ads-metrics" title="Ads metrics" description="A clear view of advertising performance." icon="progress"><div className="flex min-h-0 flex-1 items-center justify-center px-4 py-10 text-center"><div><PortalIcon name="progress" className="mx-auto h-8 w-8 text-[var(--onboarding-muted,#475569)]" /><h3 className="mt-4 text-base font-semibold">Nothing here yet</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Advertising results will appear here when reporting is ready.</p></div></div></PortalSection>}</div>
+                    <div id="ads" className={`min-h-0 min-w-0 overflow-y-auto pb-4 ${activePage === "ads" ? "block" : "hidden"}`}><div className="grid gap-4 lg:gap-6">{adsOpened && metaAdsReporting ? <ClientPortalMetaAds token={token} reporting={metaAdsReporting} /> : null}{adsOpened && hasGoogleAds ? <ClientPortalGoogleAds token={token} active={activePage === "ads" && panel === null} /> : null}{!metaAdsReporting && !hasGoogleAds ? <PortalSection id="ads-metrics" title="Ads metrics" description="A clear view of advertising performance." icon="progress"><div className="flex min-h-0 flex-1 items-center justify-center px-4 py-10 text-center"><div><PortalIcon name="progress" className="mx-auto h-8 w-8 text-[var(--onboarding-muted,#475569)]" /><h3 className="mt-4 text-base font-semibold">Nothing here yet</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Advertising results will appear here when reporting is ready.</p></div></div></PortalSection> : null}</div></div>
                     {/* Keep the uploader mounted when changing panels so active transfers continue. */}
                     <div id="resources" className={`min-h-0 min-w-0 ${activePage === "resources" ? "block" : "hidden"}`}><ClientPortalResources token={token} /></div>
                 </div>

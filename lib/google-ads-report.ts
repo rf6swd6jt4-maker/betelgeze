@@ -18,6 +18,9 @@ export type GoogleAdsReport = GoogleAdsSearchReport | GoogleAdsLocalServicesRepo
 export type GoogleAdsReportSnapshot = { report: GoogleAdsReport; refreshedAt: string }
 export function isGoogleAdsPeriod(value: unknown): value is GoogleAdsPeriod { return value === "last7" || value === "last30" || value === "month" }
 export function isGoogleAdsReportKind(value: unknown): value is GoogleAdsReportKind { return value === "search" || value === "local_services" }
+export function isGoogleAdsService(service: { serviceKey: string; templateId?: string | null }) {
+    return ["google-search-ads", "google-local-services-ads", "google-ads"].includes(service.templateId ?? "") || ["google-search-ads", "google-local-services-ads", "google-ads"].includes(service.serviceKey)
+}
 export function googleAdsReportKindsForServices(services: Array<{ serviceKey: string; templateId?: string | null }>): GoogleAdsReportKind[] {
     const kinds = new Set<GoogleAdsReportKind>()
     for (const service of services) {

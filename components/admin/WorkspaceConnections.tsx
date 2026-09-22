@@ -69,7 +69,7 @@ function connectionDetail(connection: WorkspaceConnection) {
     if (connection.provider === "stripe") return [hint.account_name, hint.account_id, hint.mode].filter(Boolean).join(" · ")
     if (connection.provider === "meta_whatsapp") return [hint.display_phone_number ?? hint.phone_number_id, hint.verified_name].filter(Boolean).join(" · ")
     if (connection.provider === "google_ads") return [hint.manager_name, hint.manager_customer_id].filter(Boolean).join(" · ")
-    if (connection.provider === "ghl") return [hint.company_name, hint.company_id].filter(Boolean).join(" · ")
+    if (connection.provider === "ghl") return [hint.company_name, hint.relationship_number, hint.company_id].filter(Boolean).join(" · ")
     if (connection.provider === "meta_ads") return [hint.business_name, hint.business_id, hint.business_verification_status].filter(Boolean).join(" · ")
     if (connection.provider === "windsor") return hint.key_suffix ? `Windsor.ai API key ending ${hint.key_suffix}` : "Windsor.ai team"
     return [hint.phone_number, hint.friendly_name, hint.account_sid].filter(Boolean).join(" · ")
@@ -101,7 +101,7 @@ function CapabilityList({ connection }: { connection: WorkspaceConnection }) {
                 : connection.provider === "google_ads"
                     ? { manager_access: "Manager account accessible", production_api_access: "Production API access verified" }
                 : connection.provider === "ghl"
-                    ? { agency_access: "Agency accessible", location_lookup: "Client locations available", reporting: "Reporting access granted" }
+                    ? { agency_identity: "Agency identity verified", subaccount_verification: "Agency sub-account matching enabled" }
                     : { phone_access: "Phone number accessible", outbound_messages: "Outbound SMS allowed", webhook_subscribed: "Incoming messages routed", mms: "MMS media supported" }
     const capabilities = connection.capabilities ?? (connection.config_hint?.capabilities as Record<string, unknown> | undefined) ?? {}
     return <div className="grid gap-2 sm:grid-cols-2">{Object.entries(labels).map(([key, label]) => <div key={key} className="flex items-center gap-2 text-sm text-neutral-300"><Status compact label={capabilities[key] ? "Ready" : "Not verified"} tone={capabilities[key] ? "green" : "grey"} /><span>{label}</span></div>)}</div>
@@ -114,8 +114,8 @@ function TemplateFields({ title, description, name, language, setName, setLangua
 function ManualFields({ provider }: { provider: IntegrationProvider }) {
     if (provider === "meta_ads") return null
     if (provider === "ghl") return <>
-        <label className="block text-sm text-neutral-300">Agency ID<input className={inputClass} name="company_id" required autoComplete="off" maxLength={80} /></label>
-        <label className="block text-sm text-neutral-300">Agency Private Integration Token<input className={inputClass} name="private_token" type="password" required autoComplete="new-password" maxLength={4096} /><span className="mt-1 block text-xs leading-5 text-neutral-500">Create a least-privilege agency integration with Companies and Locations read access. The token is encrypted and is never displayed again.</span></label>
+        <label className="block text-sm text-neutral-300">Company ID<input className={inputClass} name="company_id" required autoComplete="off" maxLength={80} /><span className="mt-1 block text-xs leading-5 text-neutral-500">Use HighLevel&apos;s alphanumeric Company ID—not the X-XXX-XXX Relationship Number or the ID in the Private Integration page URL.</span></label>
+        <label className="block text-sm text-neutral-300">Agency Private Integration Token<input className={inputClass} name="private_token" type="password" required autoComplete="new-password" maxLength={4096} /><span className="mt-1 block text-xs leading-5 text-neutral-500">Create it in Agency Settings → Private Integrations and grant only View Companies (<code>companies.readonly</code>). The token is encrypted and never displayed again.</span></label>
     </>
     if (provider === "windsor") return <label className="block text-sm text-neutral-300">Windsor.ai API key<input className={inputClass} name="api_key" type="password" required autoComplete="new-password" /><span className="mt-1 block text-xs leading-5 text-neutral-500">Use the API key from the Windsor.ai team owner account. It is encrypted before storage.</span></label>
     if (provider === "google_ads") return <>
@@ -308,7 +308,7 @@ export function WorkspaceConnections({ workspaceSlug, connections, verifyAction,
                 : selected === "google_ads" || selected === "ghl" ? <form onSubmit={submitManual} data-workspace-mutation-scope="local" className="space-y-4 rounded-xl border border-neutral-800 p-4">
                     {selected === "ghl" ? <div><h3 className="font-medium text-white">Connect your HighLevel agency</h3><p className="mt-2 text-sm leading-6 text-neutral-400">This verifies the agency identity used by Client Connections. It does not create, disconnect, or modify any client sub-account.</p></div> : <div><h3 className="font-medium text-white">Connect your manager account</h3><p className="mt-2 text-sm leading-6 text-neutral-400">Enable the Google Ads API in your Google Cloud project. In your Google Ads manager account, open Admin → Access and security and add the service-account email. Read-only access supports reporting; Admin access is required for Betelgeze to send client linking requests during onboarding.</p><a href="https://developers.google.com/google-ads/api/docs/oauth/service-accounts" target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm text-neutral-300 underline decoration-neutral-700 underline-offset-4">Google setup guide</a></div>}
                     <ManualFields provider={selected} />
-                    <p className="text-xs leading-5 text-neutral-500">Credentials are encrypted and never displayed after saving. Verification reads the manager account without changing campaigns.</p>
+                    <p className="text-xs leading-5 text-neutral-500">{selected === "ghl" ? "Verification reads the agency company record only. It does not create, update, or disconnect HighLevel accounts." : "Credentials are encrypted and never displayed after saving. Verification reads the manager account without changing campaigns."}</p>
                     <button disabled={pending} className="h-10 w-full rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-50">{pending ? "Verifying…" : "Save and verify"}</button>
                 </form>
                 : <div className="rounded-xl border border-neutral-800 p-4"><h3 className="font-medium text-white">Connect a Twilio number</h3><p className="mt-1 text-sm leading-6 text-neutral-500">Use the account SID, Auth Token, and an SMS-capable number owned by that account. Betelgeze verifies the number and configures its incoming-message webhook.</p><button type="button" onClick={() => setAdvanced(true)} className="mt-4 h-10 w-full rounded-lg bg-white px-4 text-sm font-medium text-black">Enter Twilio credentials</button></div>}

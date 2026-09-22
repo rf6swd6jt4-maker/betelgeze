@@ -78,6 +78,7 @@ export function integrationHint(provider: IntegrationProvider, config: Integrati
     if (provider === "ghl") return {
         company_id: config.company_id || null,
         company_name: config.company_name || null,
+        relationship_number: config.relationship_number || null,
         token_suffix: config.private_token?.slice(-4) ?? null,
     }
     if (provider === "google_ads") return {
@@ -622,8 +623,11 @@ async function verifyCandidate(provider: IntegrationProvider, config: Integratio
 async function verifyGhlAgencyCandidate(config: IntegrationConfig) {
     const companyId = config.company_id?.trim()
     const privateToken = config.private_token?.trim()
+    if (companyId && /^\d-\d{3}-\d{3}$/.test(companyId)) {
+        throw new Error("Use the HighLevel Company ID, not the X-XXX-XXX Relationship Number.")
+    }
     if (!companyId || !/^[a-zA-Z0-9_-]{10,80}$/.test(companyId) || !privateToken || privateToken.length < 20) {
-        throw new Error("Enter the HighLevel Agency ID and its Private Integration Token.")
+        throw new Error("Enter the HighLevel Company ID and its agency Private Integration Token.")
     }
     const response = await fetch(`https://services.leadconnectorhq.com/companies/${encodeURIComponent(companyId)}`, {
         headers: { Authorization: `Bearer ${privateToken}`, Version: "v3", Accept: "application/json" },
@@ -632,19 +636,20 @@ async function verifyGhlAgencyCandidate(config: IntegrationConfig) {
         signal: AbortSignal.timeout(20_000),
     }).catch(() => null)
     if (!response) throw new Error("HighLevel could not be reached. Try again in a moment.")
-    const payload = await response.json().catch(() => null) as { company?: { id?: unknown; name?: unknown } } | null
+    const payload = await response.json().catch(() => null) as { company?: { id?: unknown; name?: unknown; customerType?: unknown; relationshipNumber?: unknown } } | null
     if (!response.ok) throw new Error(response.status === 401 || response.status === 403
-        ? "HighLevel rejected this agency token. Check its Companies and Locations permissions."
+        ? "HighLevel rejected this agency token. Allow View Companies (companies.readonly), then try again."
         : "HighLevel could not verify this agency connection.")
-    if (payload?.company?.id !== companyId || typeof payload.company.name !== "string" || !payload.company.name.trim()) {
-        throw new Error("HighLevel returned a different agency. Check the Agency ID and token together.")
+    if (payload?.company?.id !== companyId || typeof payload.company.name !== "string" || !payload.company.name.trim() || payload.company.customerType !== "agency") {
+        throw new Error("HighLevel returned a different account. Check the Company ID and agency token together.")
     }
     return {
         company_id: companyId,
         company_name: payload.company.name.trim().slice(0, 200),
+        relationship_number: typeof payload.company.relationshipNumber === "string" ? payload.company.relationshipNumber.trim().slice(0, 40) : null,
         token_suffix: privateToken.slice(-4),
         verified_at: new Date().toISOString(),
-        capabilities: { agency_access: true, location_lookup: true, reporting: true },
+        capabilities: { agency_identity: true, subaccount_verification: true },
     }
 }
 

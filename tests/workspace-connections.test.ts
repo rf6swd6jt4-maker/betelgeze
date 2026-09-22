@@ -22,6 +22,7 @@ const metaAdsCallback = readFileSync("app/api/workspace-connections/meta-ads/cal
 const privacy = readFileSync("app/privacy/page.tsx", "utf8")
 const terms = readFileSync("app/terms/page.tsx", "utf8")
 const reconfirm = readFileSync("app/api/workspaces/[workspaceSlug]/communications/reconfirm/route.ts", "utf8")
+const ghlActivationRepair = readFileSync("supabase/migrations/20260922220000_activate_verified_ghl_agency.sql", "utf8")
 
 test("connection candidates activate atomically and keep a one-generation rollback", () => {
     assert.match(migration, /candidate_config_encrypted/u)
@@ -80,6 +81,19 @@ test("Settings uses one popup lifecycle with automatic and manual connection pat
 test("manual Stripe verification derives account mode from the credential instead of a missing Account property", () => {
     assert.match(integrations, /stripeAccountMode/u)
     assert.doesNotMatch(integrations, /mode: account\.livemode \? "live" : "test"/u)
+})
+
+test("HighLevel agency verification uses provider identities and least-privilege scopes", () => {
+    assert.match(settingsUi, /Company ID/u)
+    assert.match(settingsUi, /not the X-XXX-XXX Relationship Number/u)
+    assert.match(settingsUi, /companies\.readonly/u)
+    assert.doesNotMatch(settingsUi, /Companies and Locations read access/u)
+    assert.match(integrations, /customerType !== "agency"/u)
+    assert.match(integrations, /relationship_number/u)
+    assert.match(integrations, /agency_identity: true, subaccount_verification: true/u)
+    assert.match(ghlActivationRepair, /provider in \([^)]*'ghl'/u)
+    assert.match(ghlActivationRepair, /candidate_config_hint ->> 'company_id'/u)
+    assert.match(ghlActivationRepair, /previous_config_hint ->> 'company_id'/u)
 })
 
 test("provider runtime operations use the workspace connection", () => {

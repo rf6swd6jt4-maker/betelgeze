@@ -20,7 +20,7 @@ function panelLoadingForUrl(value: string, workspaceSlug: string): { variant: Pa
     if (panel === "leadgen") return { variant: nested === "polls" ? "leadgen-polls" as const : "leadgen" as const }
     if (panel === "communications" && (url.searchParams.get("mode") === "team" || url.searchParams.has("dm") || url.searchParams.has("nativeConversation"))) return { variant: "communications-team" as const }
     const variants: Record<string, PanelLoadingVariant> = {
-        "appointment-setting": "appointment-setting",
+        "client-connections": "client-connections",
         assets: "assets",
         communications: "communications",
         onboarding: "onboarding",

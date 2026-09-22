@@ -210,7 +210,9 @@ async function hydrateVisualPayment(definition: OnboardingPaymentDefinitionV2) {
             ...step,
             blocks: await Promise.all(step.blocks.map(async (block) => block.kind === "video" && block.upload?.path
                 ? { ...block, upload: { ...block.upload, resolvedUrl: await createPrivateUploadSignedUrl(block.upload.path) } } as VideoBlock
-                : block)),
+                : block.kind === "crm_setup" && block.video?.path
+                    ? { ...block, video: { ...block.video, resolvedUrl: await createPrivateUploadSignedUrl(block.video.path) } }
+                    : block)),
         }))) as [OnboardingStepV2],
     }
 }
@@ -759,8 +761,9 @@ async function hydrateVisualModule(
         steps: await Promise.all(visual.steps.map(async (step) => ({
             ...step,
             blocks: await Promise.all(step.blocks.map(async (block) => {
-                if (block.kind !== "video" || !block.upload?.path) return block
-                return { ...block, upload: { ...block.upload, resolvedUrl: await createPrivateUploadSignedUrl(block.upload.path) } } as VideoBlock
+                if (block.kind === "video" && block.upload?.path) return { ...block, upload: { ...block.upload, resolvedUrl: await createPrivateUploadSignedUrl(block.upload.path) } } as VideoBlock
+                if (block.kind === "crm_setup" && block.video?.path) return { ...block, video: { ...block.video, resolvedUrl: await createPrivateUploadSignedUrl(block.video.path) } }
+                return block
             })),
         }))),
     }
@@ -778,8 +781,9 @@ async function hydrateVisualBookend(
         steps: await Promise.all(visual.steps.map(async (step) => ({
             ...step,
             blocks: await Promise.all(step.blocks.map(async (block) => {
-                if (block.kind !== "video" || !block.upload?.path) return block
-                return { ...block, upload: { ...block.upload, resolvedUrl: await createPrivateUploadSignedUrl(block.upload.path) } } as VideoBlock
+                if (block.kind === "video" && block.upload?.path) return { ...block, upload: { ...block.upload, resolvedUrl: await createPrivateUploadSignedUrl(block.upload.path) } } as VideoBlock
+                if (block.kind === "crm_setup" && block.video?.path) return { ...block, video: { ...block.video, resolvedUrl: await createPrivateUploadSignedUrl(block.video.path) } }
+                return block
             })),
         }))),
     }

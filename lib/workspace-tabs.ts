@@ -115,8 +115,7 @@ export function workspaceTabTitleForUrl(value: string, workspaceSlug: string) {
     if (suffix.startsWith("onboarding/")) return "Onboarding Detail"
     if (suffix === "work") return "Fulfilment"
     if (suffix.startsWith("work/")) return "Fulfilment Detail"
-    if (suffix === "appointment-setting") return "Appointment Setting"
-    if (suffix.startsWith("appointment-setting/")) return "Appointment Setting Detail"
+    if (suffix === "client-connections") return "Client Connections"
     if (suffix === "queue") return "Work Queue"
     if (suffix === "work-items") return "Work Items"
     if (suffix.startsWith("work-items/")) return "Work Item"
@@ -160,7 +159,7 @@ export function workspaceRouteIsRecordDetail(value: string, workspaceSlug: strin
     const prefix = `/${workspaceSlug}/`
     if (!parsed.pathname.startsWith(prefix)) return false
     const segments = parsed.pathname.slice(prefix.length).split("/").filter(Boolean)
-    if (segments.length === 2 && ["relationships", "onboarding", "work", "appointment-setting", "work-items", "assets", "notes"].includes(segments[0])) return true
+    if (segments.length === 2 && ["relationships", "onboarding", "work", "work-items", "assets", "notes"].includes(segments[0])) return true
     return segments.length === 3
         && ((segments[0] === "leadgen" && segments[1] === "poll")
             || (segments[0] === "admin" && ["activity", "okrs"].includes(segments[1])))
@@ -188,7 +187,7 @@ export function workspaceRouteCanShowRelationshipContext(value: string, workspac
         ? parsed.pathname.slice(defaultWorkspaceUrl.length + 1)
         : ""
     const [section, id] = suffix.split("/")
-    return Boolean(id) && (section === "relationships" || section === "onboarding" || section === "work" || section === "appointment-setting")
+    return Boolean(id) && (section === "relationships" || section === "onboarding" || section === "work")
 }
 
 export function isReopenClosedTabShortcut(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">) {

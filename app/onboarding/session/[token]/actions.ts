@@ -115,6 +115,23 @@ export async function configureAppointmentSettingBlock(
     }
 }
 
+export async function saveCrmSetupBlockResponse(token: string, sessionBlockId: string, input: { usesGhl: boolean; crmName: string | null }) {
+    try {
+        const crmName = input.usesGhl ? null : String(input.crmName ?? "").trim().slice(0, 120)
+        if (!input.usesGhl && !crmName) throw new Error("Tell us which CRM you currently use.")
+        const { data, error } = await supabaseAdmin.rpc("submit_onboarding_crm_setup_block", {
+            p_token: token,
+            p_session_block_id: sessionBlockId,
+            p_uses_ghl: input.usesGhl,
+            p_crm_name: crmName,
+        })
+        if (error) throw new Error(error.message)
+        return { ok: true as const, data }
+    } catch (error) {
+        return { ok: false as const, error: error instanceof Error ? error.message : "Could not save the CRM details." }
+    }
+}
+
 export async function saveCalendarBlockResponse(
     token: string,
     sessionBlockId: string,

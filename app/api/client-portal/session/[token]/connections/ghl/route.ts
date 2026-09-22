@@ -14,4 +14,8 @@ async function handle(request: Request, context: { params: Promise<{ token: stri
     })
 }
 
-export { handle as GET, handle as POST }
+export { handle as GET }
+
+export async function POST() {
+    return Response.json({ error: "Client connections are managed by your agency." }, { status: 405, headers: { Allow: "GET", "Cache-Control": "private, no-store" } })
+}

@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { stripeAccountMode } from "@/lib/stripe/mode"
 import { verifyGoogleAdsManager } from "@/lib/google-ads"
 
-export const BASE_INTEGRATION_PROVIDERS = ["stripe", "meta_whatsapp", "twilio_sms"] as const
+export const BASE_INTEGRATION_PROVIDERS = ["stripe", "meta_whatsapp", "twilio_sms", "ghl"] as const
 export const INTEGRATION_PROVIDERS = [...BASE_INTEGRATION_PROVIDERS, "meta_ads", "windsor", "google_ads"] as const
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number]
 export type IntegrationConfig = Record<string, string>
@@ -75,6 +75,11 @@ function cleanConfig(config: IntegrationConfig) {
 }
 
 export function integrationHint(provider: IntegrationProvider, config: IntegrationConfig): Record<string, string | null> {
+    if (provider === "ghl") return {
+        company_id: config.company_id || null,
+        company_name: config.company_name || null,
+        token_suffix: config.private_token?.slice(-4) ?? null,
+    }
     if (provider === "google_ads") return {
         manager_customer_id: config.manager_customer_id || null,
         service_account_email: config.client_email || null,
@@ -605,12 +610,42 @@ async function verifyTwilioCandidate(config: IntegrationConfig) {
 }
 
 async function verifyCandidate(provider: IntegrationProvider, config: IntegrationConfig) {
+    if (provider === "ghl") return verifyGhlAgencyCandidate(config)
     if (provider === "google_ads") return verifyGoogleAdsManager(config)
     if (provider === "windsor") return verifyWindsorCandidate(config)
     if (provider === "stripe") return verifyStripeCandidate(config)
     if (provider === "meta_whatsapp") return verifyWhatsAppCandidate(config)
     if (provider === "meta_ads") return verifyMetaAdsCandidate(config)
     return verifyTwilioCandidate(config)
+}
+
+async function verifyGhlAgencyCandidate(config: IntegrationConfig) {
+    const companyId = config.company_id?.trim()
+    const privateToken = config.private_token?.trim()
+    if (!companyId || !/^[a-zA-Z0-9_-]{10,80}$/.test(companyId) || !privateToken || privateToken.length < 20) {
+        throw new Error("Enter the HighLevel Agency ID and its Private Integration Token.")
+    }
+    const response = await fetch(`https://services.leadconnectorhq.com/companies/${encodeURIComponent(companyId)}`, {
+        headers: { Authorization: `Bearer ${privateToken}`, Version: "v3", Accept: "application/json" },
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(20_000),
+    }).catch(() => null)
+    if (!response) throw new Error("HighLevel could not be reached. Try again in a moment.")
+    const payload = await response.json().catch(() => null) as { company?: { id?: unknown; name?: unknown } } | null
+    if (!response.ok) throw new Error(response.status === 401 || response.status === 403
+        ? "HighLevel rejected this agency token. Check its Companies and Locations permissions."
+        : "HighLevel could not verify this agency connection.")
+    if (payload?.company?.id !== companyId || typeof payload.company.name !== "string" || !payload.company.name.trim()) {
+        throw new Error("HighLevel returned a different agency. Check the Agency ID and token together.")
+    }
+    return {
+        company_id: companyId,
+        company_name: payload.company.name.trim().slice(0, 200),
+        token_suffix: privateToken.slice(-4),
+        verified_at: new Date().toISOString(),
+        capabilities: { agency_access: true, location_lookup: true, reporting: true },
+    }
 }
 
 async function verifyWindsorCandidate(config: IntegrationConfig) {
@@ -650,7 +685,9 @@ export async function verifyAndActivateWorkspaceIntegrationCandidate(workspaceId
                         ? (hint as Record<string, unknown>).account_id
                     : provider === "google_ads"
                         ? (hint as Record<string, unknown>).manager_customer_id
-                    : (hint as Record<string, unknown>).account_sid
+                        : provider === "ghl"
+                            ? (hint as Record<string, unknown>).company_id
+                        : (hint as Record<string, unknown>).account_sid
         if (typeof externalAccountId === "string" && externalAccountId) {
             const { data: alreadyConnected, error: connectedLookupError } = await supabaseAdmin.from("workspace_integrations")
                 .select("workspace_id")
@@ -662,7 +699,7 @@ export async function verifyAndActivateWorkspaceIntegrationCandidate(workspaceId
                 .limit(1)
                 .maybeSingle()
             if (connectedLookupError) throw new Error(`Betelgeze could not confirm that this provider account is unique: ${connectedLookupError.message}`)
-            if (alreadyConnected) throw new Error(`This ${provider === "stripe" ? "Stripe" : provider === "meta_whatsapp" ? "WhatsApp" : provider === "meta_ads" ? "Meta Business Portfolio" : provider === "windsor" ? "Windsor.ai team" : provider === "google_ads" ? "Google Ads manager" : "Twilio"} account is already connected to another Betelgeze workspace.`)
+            if (alreadyConnected) throw new Error(`This ${provider === "stripe" ? "Stripe" : provider === "meta_whatsapp" ? "WhatsApp" : provider === "meta_ads" ? "Meta Business Portfolio" : provider === "windsor" ? "Windsor.ai team" : provider === "google_ads" ? "Google Ads manager" : provider === "ghl" ? "HighLevel agency" : "Twilio"} account is already connected to another Betelgeze workspace.`)
         }
         if (provider === "google_ads") {
             const activation = await supabaseAdmin.rpc("activate_google_ads_manager_candidate", { p_workspace_id: workspaceId, p_expected_candidate: candidate.encrypted, p_verified_hint: hint })

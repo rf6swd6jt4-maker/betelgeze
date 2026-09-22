@@ -40,7 +40,7 @@ test("Staff see Library and Communications while operational roles reveal Relati
         "Work Queue",
         "Relationships",
         "Onboarding",
-        "Appointment Setting",
+        "Client Connections",
         "Communications",
         "Library",
         "Onboarding Builder",
@@ -51,17 +51,17 @@ test("Staff see Library and Communications while operational roles reveal Relati
     const byKey = new Map(WORKSPACE_PANELS.map((panel) => [panel.key, panel]))
     const baseline = [] as const
     const sellerOrManager = ["relationships.view"] as const
-    const appointmentSetter = ["appointment_setting.manage"] as const
+    const clientConnectionAssignee = ["client_connections.manage"] as const
     assert.equal(canAccessWorkspacePanel(byKey.get("relationships")!, "staff", baseline), false)
     assert.equal(canAccessWorkspacePanel(byKey.get("relationships")!, "staff", sellerOrManager), true)
     assert.equal(canAccessWorkspacePanel(byKey.get("onboarding")!, "staff", ["onboarding.manage"]), false)
     assert.equal(byKey.has("fulfilment"), false)
     assert.equal(canAccessWorkspacePanel(byKey.get("communications")!, "staff", baseline), true)
-    assert.equal(canAccessWorkspacePanel(byKey.get("appointment-setting")!, "staff", appointmentSetter), true)
+    assert.equal(canAccessWorkspacePanel(byKey.get("client-connections")!, "staff", clientConnectionAssignee), true)
     assert.equal(canAccessWorkspacePanel(byKey.get("settings")!, "staff", sellerOrManager), false)
-    assert.equal(canAccessWorkspacePanel(byKey.get("appointment-setting")!, "admin", baseline), false)
-    assert.equal(canAccessWorkspacePanel(byKey.get("appointment-setting")!, "admin", appointmentSetter), true)
-    assert.equal(WORKSPACE_PANELS.filter((panel) => panel.key !== "appointment-setting").every((panel) => canAccessWorkspacePanel(panel, "admin")), true)
+    assert.equal(canAccessWorkspacePanel(byKey.get("client-connections")!, "admin", baseline), false)
+    assert.equal(canAccessWorkspacePanel(byKey.get("client-connections")!, "admin", clientConnectionAssignee), true)
+    assert.equal(WORKSPACE_PANELS.filter((panel) => panel.key !== "client-connections").every((panel) => canAccessWorkspacePanel(panel, "admin")), true)
     assert.equal(canAccessWorkspacePanel(byKey.get("library")!, "staff", baseline), true)
     assert.equal(canAccessWorkspaceUrl("/acme/sops", "acme", "staff", baseline), true)
     assert.equal(canAccessWorkspaceUrl("/acme/work-items", "acme", "staff", baseline), true)
@@ -70,20 +70,22 @@ test("Staff see Library and Communications while operational roles reveal Relati
     assert.equal(canAccessWorkspaceUrl("/acme/work", "acme", "staff", baseline), true)
 })
 
-test("Appointment Setting activates only for a non-archived template service and assigned Staff", () => {
-    const appointmentSettingPanel = WORKSPACE_PANELS.find((panel) => panel.key === "appointment-setting")!
-    assert.equal("requiresService" in appointmentSettingPanel && appointmentSettingPanel.requiresService, true)
+test("Client Connections activates for setup assignees while Appointment Setting services remain detectable", () => {
+    const clientConnectionsPanel = WORKSPACE_PANELS.find((panel) => panel.key === "client-connections")!
+    assert.equal("requiresService" in clientConnectionsPanel && clientConnectionsPanel.requiresService, true)
     assert.match(workspaceAccess, /APPOINTMENT_SETTING_TEMPLATE_ID = "appointment-setting"/)
     assert.match(workspaceAccess, /\.neq\("state", "archived"\)/)
     assert.match(workspaceAccess, /allowedServiceIds\.some\(\(serviceId\) => appointmentSettingServices\.ids\.has\(serviceId\)\)/)
     assert.match(workspaceAccess, /\? \[APPOINTMENT_SETTING_CAPABILITY\] : \[\]/)
+    assert.match(workspaceAccess, /clientConnectionAssignments\.data\?\.length \? \[CLIENT_CONNECTIONS_CAPABILITY\]/)
 })
 
 test("workspace capability normalization remains deterministic", () => {
     assert.deepEqual(combineWorkspaceCapabilities([
         ["communications.manage", "onboarding.manage"],
         ["fulfilment.manage", "appointment_setting.manage", "onboarding.manage"],
-    ]), ["onboarding.manage", "fulfilment.manage", "appointment_setting.manage", "communications.manage"])
+        ["client_connections.manage"],
+    ]), ["onboarding.manage", "fulfilment.manage", "appointment_setting.manage", "client_connections.manage", "communications.manage"])
 })
 
 test("workspace access defaults every member to Work Queue without changing delivery permissions", () => {

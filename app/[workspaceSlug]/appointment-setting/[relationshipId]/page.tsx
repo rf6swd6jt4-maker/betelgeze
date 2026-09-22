@@ -1,79 +1,8 @@
-import { notFound } from "next/navigation"
-import { AppointmentTable } from "@/components/appointment-setting/AppointmentTable"
-import { DetailPageHeader } from "@/components/detail"
-import { RelationshipStage, SquarePill } from "@/components/ui"
-import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
-import { ClientContextPanel } from "@/components/workspace/ClientContextPanel"
-import { loadAppointmentSettingConfiguration, loadAppointmentSettingRelationshipService, listAppointmentSettingAppointments, loadAppointmentSettingDeliveryState } from "@/lib/appointment-setting-server"
-import { getRelationship } from "@/lib/relationships"
-import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
-import { workspacePerformanceEnabled } from "@/lib/workspace-native"
-import { requireRelationshipAccess, requireWorkspacePanel } from "@/lib/workspace-access"
+import { redirect } from "next/navigation"
+import { requireWorkspacePanel } from "@/lib/workspace-access"
 
-export const dynamic = "force-dynamic"
-
-type PageProps = {
-    params: Promise<{ workspaceSlug: string; relationshipId: string }>
-}
-
-export default async function AppointmentSettingRelationshipPage({ params }: PageProps) {
-    const { workspaceSlug, relationshipId } = await params
-    const { workspace, user, access } = await requireWorkspacePanel(workspaceSlug, "appointment-setting")
-    await requireRelationshipAccess(access, relationshipId)
-    const [relationship, serviceId] = await Promise.all([
-        getRelationship(workspace.id, relationshipId),
-        loadAppointmentSettingRelationshipService(access, relationshipId),
-    ])
-    if (
-        !relationship
-        || !serviceId
-        || relationship.status === "archived"
-        || relationship.lifecycle_phase !== "retention"
-    ) notFound()
-
-    const [appointments, configuration] = await Promise.all([
-        listAppointmentSettingAppointments({ workspaceId: workspace.id, relationshipId: relationship.id, serviceId }),
-        loadAppointmentSettingConfiguration({ workspaceId: workspace.id, relationshipId: relationship.id, serviceId }),
-    ])
-    const delivery = await loadAppointmentSettingDeliveryState({ workspaceId: workspace.id, relationshipId, appointments })
-    const latestUpdatedAt = appointments.reduce((latest, appointment) => (
-        appointment.updated_at > latest ? appointment.updated_at : latest
-    ), relationship.updated_at)
-
-    return <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
-        <WorkspaceTopBar userId={user.id} workspace={workspace} workspaceAccess={access} currentProduct="client-work" />
-        <div className="mx-auto max-w-[92rem]">
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]">
-                <div className="min-w-0">
-                    <DetailPageHeader
-                        category="Appointment Setting"
-                        reference={shortId(relationship.id)}
-                        title={relationship.primary_person_name}
-                        subtitle={relationship.business_name ?? "No company saved"}
-                        labels={<>{relationship.source_metadata.is_test === true ? <SquarePill tone="yellow">Test</SquarePill> : null}<RelationshipStage phase="retention" /></>}
-                        updated={formatRelativeTime(latestUpdatedAt)}
-                    />
-
-                    <AppointmentTable
-                        key={relationship.id}
-                        currentUserId={user.id}
-                        workspaceId={workspace.id}
-                        workspaceSlug={workspace.slug}
-                        relationshipId={relationship.id}
-                        serviceId={serviceId}
-                        initialAppointments={appointments}
-                        configuration={configuration}
-                        initialDelivery={delivery}
-                        initialNow={delivery.checkedAt}
-                        draftCommandsEnabled={workspacePerformanceEnabled(workspace.id, user.id, process.env.WORKSPACE_NATIVE_PANELS, process.env.WORKSPACE_PERFORMANCE_USERS)}
-                    />
-                </div>
-
-                <ClientContextPanel access={access}
-                    workspaceSlug={workspace.slug}
-                    relationship={relationship}
-                />
-            </div>
-        </div>
-    </main>
+export default async function LegacyAppointmentSettingDetailPage({ params }: { params: Promise<{ workspaceSlug: string; relationshipId: string }> }) {
+    const { workspaceSlug } = await params
+    await requireWorkspacePanel(workspaceSlug, "client-connections")
+    redirect(`/${workspaceSlug}/client-connections`)
 }

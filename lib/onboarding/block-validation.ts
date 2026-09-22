@@ -127,6 +127,7 @@ function normalizeStep(step: OnboardingStepV2, options: { bookend: boolean; firs
     let connectionCount = 0
     let appointmentMediumCount = 0
     let appointmentFieldsCount = 0
+    let crmSetupCount = 0
     const blocks = step.blocks.map((block, index): OnboardingBlock => {
         const blockName = name(block, block.kind === "header" ? "Header block" : block.kind)
         const blockId = uuid(block.id, `${location}, block “${blockName}” has damaged internal data. Reload the Builder and try publishing again. If it remains, the failure will appear in Admin Activity.`)
@@ -256,6 +257,28 @@ function normalizeStep(step: OnboardingStepV2, options: { bookend: boolean; firs
                 description: text(block.description, 1_000),
                 options,
                 maximumFields,
+                required: true,
+                layout: layout(block),
+            }
+        }
+        if (block.kind === "crm_setup") {
+            crmSetupCount += 1
+            if (crmSetupCount > 1) throw new Error("A step can contain only one CRM setup block.")
+            if (!options.allowPendingVideo && block.video && !block.video.type.startsWith("video/")) throw new Error(`${location} has a non-video file in its CRM setup block.`)
+            return {
+                id: blockId,
+                name: name(block, "CRM setup"),
+                kind: "crm_setup",
+                title: text(block.title, 160) || "Do you already use HighLevel?",
+                description: text(block.description, 1_000),
+                crmLabel: text(block.crmLabel, 160) || "Which CRM do you currently use?",
+                video: block.video ? {
+                    name: text(block.video.name, 255),
+                    path: text(block.video.path, 2_000),
+                    size: Number(block.video.size) || 0,
+                    type: text(block.video.type, 160),
+                    provider: "r2",
+                } : null,
                 required: true,
                 layout: layout(block),
             }

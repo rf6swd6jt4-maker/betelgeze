@@ -18,8 +18,8 @@ test("contact links normalize saved values and reject executable URLs and inject
 test("shortcuts require permissions and Appointment Setting requires an eligible relationship", () => {
     assert.deepEqual(relationshipContextShortcuts([], true), [])
     assert.deepEqual(relationshipContextShortcuts(["onboarding.manage"], true), ["onboarding"])
-    assert.deepEqual(relationshipContextShortcuts(["fulfilment.manage", "appointment_setting.manage"], false), ["fulfilment"])
-    assert.deepEqual(relationshipContextShortcuts(["fulfilment.manage", "appointment_setting.manage"], true), ["fulfilment", "appointment-setting"])
+    assert.deepEqual(relationshipContextShortcuts(["fulfilment.manage", "client_connections.manage"], false), ["fulfilment"])
+    assert.deepEqual(relationshipContextShortcuts(["fulfilment.manage", "client_connections.manage"], true), ["fulfilment", "client-connections"])
 })
 
 test("service context follows full relationship access, service grants, and direct assignment", () => {

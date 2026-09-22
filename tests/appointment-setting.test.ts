@@ -37,19 +37,20 @@ test("Appointment Setting includes only visible, non-archived Retention relation
     )
 })
 
-test("Appointment Setting opens the relationship's dedicated appointment table", () => {
+test("legacy Appointment Setting routes move into Client Connections without deleting the appointment records", () => {
     const source = readFileSync("app/[workspaceSlug]/appointment-setting/page.tsx", "utf8")
     const detail = readFileSync("app/[workspaceSlug]/appointment-setting/[relationshipId]/page.tsx", "utf8")
+    const connections = readFileSync("app/[workspaceSlug]/client-connections/page.tsx", "utf8")
+    const workspace = readFileSync("components/client-connections/ClientConnectionsWorkspace.tsx", "utf8")
 
-    assert.match(source, /<List ariaLabel="Relationships ready for appointment setting">/)
-    assert.match(source, /<RelationshipStage phase="retention"/)
-    assert.match(source, /<Status label="Ready" tone="green"/)
-    assert.match(source, /accessibleRelationshipIds\(access\)/)
-    assert.match(source, /loadAppointmentSettingRelationshipServices\(access\)/)
+    assert.match(source, /requireWorkspacePanel\(workspaceSlug, "client-connections"\)/)
+    assert.match(source, /redirect\(`\/\$\{workspaceSlug\}\/client-connections`\)/)
+    assert.match(detail, /requireWorkspacePanel\(workspaceSlug, "client-connections"\)/)
+    assert.match(detail, /redirect\(`\/\$\{workspaceSlug\}\/client-connections`\)/)
+    assert.match(connections, /listClientConnections/)
+    assert.match(workspace, /Agency Connection/)
+    assert.match(workspace, /ariaLabel="Client accounts"/)
     assert.equal(appointmentSettingDetailHref("acme", "relationship-1"), "/acme/appointment-setting/relationship-1")
-    assert.match(detail, /<DetailPageHeader/)
-    assert.match(detail, /<AppointmentTable/)
-    assert.match(detail, /loadAppointmentSettingRelationshipService\(access, relationshipId\)/)
 })
 
 test("Appointment Setting appointments are relationship and service scoped with secure realtime reads", () => {

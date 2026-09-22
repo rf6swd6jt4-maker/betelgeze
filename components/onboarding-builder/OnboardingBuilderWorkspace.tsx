@@ -16,6 +16,7 @@ import {
     createCalendarBlock,
     createAppointmentFieldsBlock,
     createAppointmentMediumBlock,
+    createCrmSetupBlock,
     createChecklistBlock,
     createConnectionBlock,
     createEstimateBlock,
@@ -85,7 +86,7 @@ function definitionId(groupKey: string) {
 }
 
 function blockName(block: OnboardingBlock) {
-    return block.name?.trim() || (block.kind === "header" ? "Header block" : block.kind === "estimate" ? "Estimated time" : block.kind === "checklist" ? "Checklist" : block.kind === "form" ? "Form" : block.kind === "video" ? "Video" : block.kind === "calendar" ? "Calendar" : block.kind === "connection" ? (block.provider === "google_ads" ? "Google Ads connection" : "Facebook connection") : block.kind === "appointment_medium" ? "Appointment medium" : block.kind === "appointment_fields" ? "Appointment information" : "Button")
+    return block.name?.trim() || (block.kind === "header" ? "Header block" : block.kind === "estimate" ? "Estimated time" : block.kind === "checklist" ? "Checklist" : block.kind === "form" ? "Form" : block.kind === "video" ? "Video" : block.kind === "calendar" ? "Calendar" : block.kind === "connection" ? (block.provider === "google_ads" ? "Google Ads connection" : "Facebook connection") : block.kind === "appointment_medium" ? "Appointment medium" : block.kind === "appointment_fields" ? "Appointment information" : block.kind === "crm_setup" ? "CRM setup" : "Button")
 }
 
 function createBuilderBlock(kind: BuilderBlockKind): OnboardingBlock {
@@ -98,6 +99,7 @@ function createBuilderBlock(kind: BuilderBlockKind): OnboardingBlock {
     if (kind === "google_ads_connection") return createConnectionBlock("google_ads")
     if (kind === "appointment_medium") return createAppointmentMediumBlock()
     if (kind === "appointment_fields") return createAppointmentFieldsBlock()
+    if (kind === "crm_setup") return createCrmSetupBlock()
     return createButtonBlock()
 }
 
@@ -209,6 +211,7 @@ function OutlineItemIcon({ kind }: { kind: "bookend" | "module" | "step" | Onboa
         connection: "bg-blue-500/15 text-blue-300",
         appointment_medium: "bg-fuchsia-500/15 text-fuchsia-300",
         appointment_fields: "bg-rose-500/15 text-rose-300",
+        crm_setup: "bg-cyan-500/15 text-cyan-300",
         field: "bg-emerald-500/15 text-emerald-300",
         help: "bg-indigo-500/15 text-indigo-300",
         payment: "bg-amber-500/15 text-amber-300",
@@ -227,6 +230,7 @@ function OutlineItemIcon({ kind }: { kind: "bookend" | "module" | "step" | Onboa
         connection: <><circle cx="10" cy="10" r="7" /><path d="M8 6.5h2.3c1.8 0 3 1 3 2.5s-1.2 2.5-3 2.5H9v3M7 9.5h4" /></>,
         appointment_medium: <><circle cx="10" cy="10" r="6" /><path d="M7 10h6M10 7v6" /></>,
         appointment_fields: <><path d="M5 5h10M5 10h10M5 15h10" /><circle cx="3" cy="5" r=".5" /><circle cx="3" cy="10" r=".5" /><circle cx="3" cy="15" r=".5" /></>,
+        crm_setup: <><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M6 8h8M6 12h5" /></>,
         field: <><rect x="3" y="6" width="14" height="8" rx="2" /><path d="M6 10h5" /></>,
         help: <><circle cx="10" cy="10" r="7" /><path d="M8 8a2 2 0 1 1 3 1.7c-.8.4-1 1-1 1.8M10 14h.01" /></>,
         payment: <><rect x="3" y="5" width="14" height="10" rx="2" /><path d="M3 8h14M6 12h3" /></>,
@@ -457,6 +461,15 @@ function InspectorPanel({ currentGroup, step, block, field, help, helpSelected, 
         <p className="text-xs leading-5 text-neutral-600">Name, date, and time are always included. Clients may choose any combination of the available fields and decide whether each is optional or required.</p>
         <button type="button" disabled={!editable} onClick={deleteSelection} className="text-xs text-red-300 disabled:opacity-30">Delete appointment information</button>
     </div>
+    if (block.kind === "crm_setup") return <div className="space-y-4">
+        <label className="block text-xs text-neutral-500">Element name<input value={blockName(block)} disabled={!editable} onChange={(event) => updateBlock({ ...block, name: event.target.value })} className={inspectorInputClass} /></label>
+        <label className="block text-xs text-neutral-500">Heading<input value={block.title} disabled={!editable} onChange={(event) => updateBlock({ ...block, title: event.target.value })} className={inspectorInputClass} /></label>
+        <label className="block text-xs text-neutral-500">Description<textarea value={block.description} disabled={!editable} onChange={(event) => updateBlock({ ...block, description: event.target.value })} rows={4} className={inspectorTextareaClass} /></label>
+        <label className="block text-xs text-neutral-500">CRM question<input value={block.crmLabel} disabled={!editable} onChange={(event) => updateBlock({ ...block, crmLabel: event.target.value })} className={inspectorInputClass} /></label>
+        <label className={`block text-xs text-neutral-500 ${uploadProgress === null ? "cursor-pointer" : "cursor-wait"}`}>HighLevel guide video<span className="mt-1 flex min-h-9 items-center justify-between gap-2 rounded-lg border border-neutral-700 bg-black px-2 text-xs text-neutral-300"><span className="min-w-0 truncate">{block.video?.name ?? "No video uploaded"}</span><span className="shrink-0 font-medium text-white">{uploadProgress === null ? block.video ? "Replace" : "Upload" : `Uploading ${uploadProgress}%`}</span></span><input type="file" accept="video/*" disabled={!editable || uploadProgress !== null} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadVideo(file); event.currentTarget.value = "" }} className="sr-only" /></label>
+        <p className="text-xs leading-5 text-neutral-600">Clients who already use HighLevel see the guide. Other clients tell you which CRM they use.</p>
+        <button type="button" disabled={!editable} onClick={deleteSelection} className="text-xs text-red-300 disabled:opacity-30">Delete CRM setup</button>
+    </div>
     if (currentGroup.kind === "payment" && block.id === ONBOARDING_PAYMENT_BUTTON_ID) return <div className="space-y-4">
         <p className="text-xs leading-5 text-neutral-400">The button label and Stripe branding are fixed so clients can immediately recognise the secure payment action.</p>
         <p className="text-xs leading-5 text-neutral-600">This required button creates or reuses the client’s secure Stripe Checkout page. Its destination is assigned automatically and it cannot be moved or removed.</p>
@@ -574,6 +587,7 @@ const LIBRARY_BLOCK_PRESENTATION: Record<BuilderBlockKind, { label: string; icon
     google_ads_connection: { label: "Google Ads connection", icon: "" },
     appointment_medium: { label: "Appointment medium", icon: "◉" },
     appointment_fields: { label: "Appointment information", icon: "≡" },
+    crm_setup: { label: "CRM setup", icon: "⌁" },
 }
 
 function BlockLibraryItem({ kind, label, editable, addBlock }: { kind: BuilderBlockKind; label?: string; editable: boolean; addBlock: (kind: BuilderBlockKind) => void }) {
@@ -1036,7 +1050,7 @@ export function OnboardingBuilderWorkspace({ workspaceSlug, workspaceName, logoS
                     ...("revisionId" in definition ? { revisionId: prepared.draftRevisionId } : {}),
                     steps: definition.steps.map((step) => step.id !== stepId ? step : {
                         ...step,
-                        blocks: step.blocks.map((block) => block.id === blockId && block.kind === "video" ? { ...block, legacyEmbedUrl: null, upload } : block),
+                        blocks: step.blocks.map((block) => block.id !== blockId ? block : block.kind === "video" ? { ...block, legacyEmbedUrl: null, upload } : block.kind === "crm_setup" ? { ...block, video: upload } : block),
                     }),
                 })
                 if (groupKey === "payment") return { ...document, payment: updateDefinitionVideo(document.payment) as OnboardingPaymentDefinitionV2 }

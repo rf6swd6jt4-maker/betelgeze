@@ -110,7 +110,16 @@ export type AppointmentFieldsBlock = BlockBase & {
     required: true
 }
 
-export type OnboardingBlock = HeaderBlock | EstimateBlock | ChecklistBlock | FormBlock | VideoBlock | ButtonBlock | CalendarBlock | ConnectionBlock | AppointmentMediumBlock | AppointmentFieldsBlock
+export type CrmSetupBlock = BlockBase & {
+    kind: "crm_setup"
+    title: string
+    description: string
+    crmLabel: string
+    video: WorkspaceVideoDescriptor | null
+    required: true
+}
+
+export type OnboardingBlock = HeaderBlock | EstimateBlock | ChecklistBlock | FormBlock | VideoBlock | ButtonBlock | CalendarBlock | ConnectionBlock | AppointmentMediumBlock | AppointmentFieldsBlock | CrmSetupBlock
 
 export type OnboardingStepV2 = {
     id: string
@@ -260,6 +269,20 @@ export function createAppointmentFieldsBlock(): AppointmentFieldsBlock {
         description: "Name and appointment date and time are always included. Choose any combination of extra details and whether each one is optional or required.",
         options: ["phone", "email", "service", "address", "notes"],
         maximumFields: 5,
+        required: true,
+        layout: { ...DEFAULT_BLOCK_LAYOUT, width: "wide" },
+    }
+}
+
+export function createCrmSetupBlock(): CrmSetupBlock {
+    return {
+        id: stableUuid(),
+        name: "CRM setup",
+        kind: "crm_setup",
+        title: "Do you already use HighLevel?",
+        description: "Tell us whether you have a HighLevel account. If not, tell us which CRM you currently use and we’ll prepare your appointment system.",
+        crmLabel: "Which CRM do you currently use?",
+        video: null,
         required: true,
         layout: { ...DEFAULT_BLOCK_LAYOUT, width: "wide" },
     }

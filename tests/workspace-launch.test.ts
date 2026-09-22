@@ -55,7 +55,7 @@ test("cold launch restores record tabs to their panel home but preserves exact c
         ["/scaylup/relationships/client-1?view=work#timeline", "/scaylup/relationships"],
         ["/scaylup/onboarding/client-1", "/scaylup/onboarding"],
         ["/scaylup/work/client-1", "/scaylup/work"],
-        ["/scaylup/appointment-setting/client-1", "/scaylup/appointment-setting"],
+        ["/scaylup/appointment-setting/client-1", "/scaylup/client-connections"],
         ["/scaylup/work-items/item-1", "/scaylup/work-items"],
         ["/scaylup/assets/asset-1", "/scaylup/assets"],
         ["/scaylup/leadgen/poll/poll-1", "/scaylup/leadgen/polls"],

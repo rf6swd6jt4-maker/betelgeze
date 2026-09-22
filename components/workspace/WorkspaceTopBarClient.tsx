@@ -248,8 +248,8 @@ function WorkIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="m3 6 .8.8L5.5 5" /><path d="m3 12 .8.8 1.7-1.8" /><path d="m3 18 .8.8 1.7-1.8" /></svg>
 }
 
-function AppointmentIcon() {
-    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /><path d="m9 15 2 2 4-4" /></svg>
+function ConnectionsIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M8 12h8" /><path d="M10 8H7a4 4 0 0 0 0 8h3" /><path d="M14 8h3a4 4 0 0 1 0 8h-3" /></svg>
 }
 
 function AssetsIcon() {
@@ -292,7 +292,7 @@ function workspacePanelIcon(key: WorkspacePanelKey) {
     if (key === "relationships") return <RelationshipsIcon />
     if (key === "onboarding") return <HomeIcon />
     if (key === "fulfilment" || key === "queue") return <WorkIcon />
-    if (key === "appointment-setting") return <AppointmentIcon />
+    if (key === "client-connections") return <ConnectionsIcon />
     if (key === "communications") return <CommunicationsIcon />
     if (key === "library") return <LibraryIcon />
     if (key === "onboarding-builder") return <BuilderIcon />

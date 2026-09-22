@@ -11,7 +11,7 @@ export function workspaceRouteUsesSharedBanner(pathname: string) {
     }
 
     return nested.length === 0 && [
-        "appointment-setting",
+        "client-connections",
         "assets",
         "sops",
         "onboarding",

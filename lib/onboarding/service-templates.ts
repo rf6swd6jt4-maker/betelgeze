@@ -6,7 +6,7 @@ export type ServiceTemplateSetup =
     | { kind: "connection"; connectionKey: string }
 
 export type ServiceTemplateOnboardingBlock = {
-    kind: "connection" | "google_ads_connection" | "appointment_medium" | "appointment_fields"
+    kind: "connection" | "google_ads_connection" | "appointment_medium" | "appointment_fields" | "crm_setup"
     label: string
 }
 
@@ -77,11 +77,8 @@ export const SERVICE_TEMPLATES: readonly ServiceTemplateDefinition[] = [{
         defaultBillingIntervalCount: 1,
     },
     setup: { kind: "none" },
-    capabilities: ["onboarding.manage", "fulfilment.manage", "appointment_setting.manage"],
-    onboardingBlocks: [
-        { kind: "appointment_medium", label: "Appointment medium" },
-        { kind: "appointment_fields", label: "Appointment information" },
-    ],
+    capabilities: ["onboarding.manage", "fulfilment.manage"],
+    onboardingBlocks: [{ kind: "crm_setup", label: "CRM setup" }],
 }, {
     id: "google-search-ads",
     name: "Google Search Ads",

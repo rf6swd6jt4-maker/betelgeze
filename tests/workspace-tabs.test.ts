@@ -98,7 +98,7 @@ test("workspace shell only supports relationship context on detail routes", () =
     assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/relationships/client-1", "scaylup", origin), true)
     assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/onboarding/client-1", "scaylup", origin), true)
     assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/work/client-1", "scaylup", origin), true)
-    assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/appointment-setting/client-1", "scaylup", origin), true)
+    assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/client-connections", "scaylup", origin), false)
     assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/onboarding", "scaylup", origin), false)
     assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/relationships", "scaylup", origin), false)
 })
@@ -114,7 +114,6 @@ test("record details open as switchable workspace tabs while hubs and actions st
         "/scaylup/relationships/client-1",
         "/scaylup/onboarding/client-1",
         "/scaylup/work/client-1",
-        "/scaylup/appointment-setting/client-1",
         "/scaylup/work-items/item-1",
         "/scaylup/assets/asset-1",
         "/scaylup/leadgen/poll/poll-1",
@@ -190,7 +189,7 @@ test("record tabs use names and contextual section labels while collections stay
     assert.equal(workspaceTabRecordTitleForUrl("/scaylup/work-items/1", "scaylup", "Launch Google Ads"), "Launch Google Ads")
     assert.equal(workspaceTabRecordTitleForUrl("/scaylup/onboarding/1", "scaylup", "Jane Smith"), "Jane Smith · Onboarding")
     assert.equal(workspaceTabRecordTitleForUrl("/scaylup/work/1", "scaylup", "Jane Smith"), "Jane Smith · Fulfilment")
-    assert.equal(workspaceTabRecordTitleForUrl("/scaylup/appointment-setting/1", "scaylup", "Jane Smith"), "Jane Smith · Appointment Setting")
+    assert.equal(workspaceTabRecordTitleForUrl("/scaylup/client-connections", "scaylup", "Jane Smith"), "")
     assert.equal(workspaceTabRecordTitleForUrl("/scaylup/relationships", "scaylup", "Jane Smith"), "")
     assert.equal(workspaceTabRecordTitleForUrl("/other/relationships/1", "scaylup", "Jane Smith"), "")
     assert.equal(workspaceTabRecordTitleForUrl("/scaylup/relationships/1", "scaylup", "  "), "")

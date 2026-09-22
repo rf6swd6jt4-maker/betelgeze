@@ -26,6 +26,7 @@ type Props = {
     rollbackAction: Action
     disconnectAction: Action
     canManage: boolean
+    canManageHighLevel?: boolean
     metaAppId: string | null
     metaEmbeddedSignupConfigId: string | null
     showHeader?: boolean
@@ -41,7 +42,7 @@ declare global {
     }
 }
 
-const titles: Record<IntegrationProvider, string> = { stripe: "Stripe", meta_whatsapp: "WhatsApp", twilio_sms: "Twilio", meta_ads: "Meta Ads", windsor: "Meta Ads Reporting", google_ads: "Google Ads Manager" }
+const titles: Record<IntegrationProvider, string> = { stripe: "Stripe", meta_whatsapp: "WhatsApp", twilio_sms: "Twilio", meta_ads: "Meta Ads", windsor: "Meta Ads Reporting", google_ads: "Google Ads Manager", ghl: "HighLevel" }
 const descriptions: Record<IntegrationProvider, string> = {
     stripe: "Create invoices and receive payment events from this agency's Stripe account.",
     meta_whatsapp: "Send confirmations and onboarding links from this agency's WhatsApp number.",
@@ -49,6 +50,7 @@ const descriptions: Record<IntegrationProvider, string> = {
     meta_ads: "Authorize the agency's Business Portfolio for Meta Ads reporting.",
     windsor: "Use Windsor.ai to let clients securely connect Meta Ads reporting.",
     google_ads: "Connect the agency’s Google Ads manager account.",
+    ghl: "Connect the agency HighLevel account used to manage client sub-accounts.",
 }
 
 const inputClass = "mt-1.5 h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 text-sm text-white outline-none focus:border-neutral-400"
@@ -67,6 +69,7 @@ function connectionDetail(connection: WorkspaceConnection) {
     if (connection.provider === "stripe") return [hint.account_name, hint.account_id, hint.mode].filter(Boolean).join(" · ")
     if (connection.provider === "meta_whatsapp") return [hint.display_phone_number ?? hint.phone_number_id, hint.verified_name].filter(Boolean).join(" · ")
     if (connection.provider === "google_ads") return [hint.manager_name, hint.manager_customer_id].filter(Boolean).join(" · ")
+    if (connection.provider === "ghl") return [hint.company_name, hint.company_id].filter(Boolean).join(" · ")
     if (connection.provider === "meta_ads") return [hint.business_name, hint.business_id, hint.business_verification_status].filter(Boolean).join(" · ")
     if (connection.provider === "windsor") return hint.key_suffix ? `Windsor.ai API key ending ${hint.key_suffix}` : "Windsor.ai team"
     return [hint.phone_number, hint.friendly_name, hint.account_sid].filter(Boolean).join(" · ")
@@ -97,7 +100,9 @@ function CapabilityList({ connection }: { connection: WorkspaceConnection }) {
                     ? { api_access: "API key verified", external_authorization: "Client authorization links enabled", reporting: "Meta reporting enabled" }
                 : connection.provider === "google_ads"
                     ? { manager_access: "Manager account accessible", production_api_access: "Production API access verified" }
-                : { phone_access: "Phone number accessible", outbound_messages: "Outbound SMS allowed", webhook_subscribed: "Incoming messages routed", mms: "MMS media supported" }
+                : connection.provider === "ghl"
+                    ? { agency_access: "Agency accessible", location_lookup: "Client locations available", reporting: "Reporting access granted" }
+                    : { phone_access: "Phone number accessible", outbound_messages: "Outbound SMS allowed", webhook_subscribed: "Incoming messages routed", mms: "MMS media supported" }
     const capabilities = connection.capabilities ?? (connection.config_hint?.capabilities as Record<string, unknown> | undefined) ?? {}
     return <div className="grid gap-2 sm:grid-cols-2">{Object.entries(labels).map(([key, label]) => <div key={key} className="flex items-center gap-2 text-sm text-neutral-300"><Status compact label={capabilities[key] ? "Ready" : "Not verified"} tone={capabilities[key] ? "green" : "grey"} /><span>{label}</span></div>)}</div>
 }
@@ -108,6 +113,10 @@ function TemplateFields({ title, description, name, language, setName, setLangua
 
 function ManualFields({ provider }: { provider: IntegrationProvider }) {
     if (provider === "meta_ads") return null
+    if (provider === "ghl") return <>
+        <label className="block text-sm text-neutral-300">Agency ID<input className={inputClass} name="company_id" required autoComplete="off" maxLength={80} /></label>
+        <label className="block text-sm text-neutral-300">Agency Private Integration Token<input className={inputClass} name="private_token" type="password" required autoComplete="new-password" maxLength={4096} /><span className="mt-1 block text-xs leading-5 text-neutral-500">Create a least-privilege agency integration with Companies and Locations read access. The token is encrypted and is never displayed again.</span></label>
+    </>
     if (provider === "windsor") return <label className="block text-sm text-neutral-300">Windsor.ai API key<input className={inputClass} name="api_key" type="password" required autoComplete="new-password" /><span className="mt-1 block text-xs leading-5 text-neutral-500">Use the API key from the Windsor.ai team owner account. It is encrypted before storage.</span></label>
     if (provider === "google_ads") return <>
         <label className="block text-sm text-neutral-300">Manager account ID<input className={inputClass} name="manager_customer_id" required placeholder="123-456-7890" autoComplete="off" maxLength={14} /></label>
@@ -129,7 +138,7 @@ function ManualFields({ provider }: { provider: IntegrationProvider }) {
     </>
 }
 
-export function WorkspaceConnections({ workspaceSlug, connections, verifyAction, manualAction, completeWhatsAppAction, selectMetaAdsBusinessAction, verifyPendingAction, discardPendingAction, rollbackAction, disconnectAction, canManage, metaAppId, metaEmbeddedSignupConfigId, showHeader = true }: Props) {
+export function WorkspaceConnections({ workspaceSlug, connections, verifyAction, manualAction, completeWhatsAppAction, selectMetaAdsBusinessAction, verifyPendingAction, discardPendingAction, rollbackAction, disconnectAction, canManage, canManageHighLevel = canManage, metaAppId, metaEmbeddedSignupConfigId, showHeader = true }: Props) {
     const router = useRouter()
     const [selected, setSelected] = useState<IntegrationProvider | null>(null)
     const [advanced, setAdvanced] = useState(false)
@@ -178,6 +187,7 @@ export function WorkspaceConnections({ workspaceSlug, connections, verifyAction,
     }, [router])
 
     const connection = selected ? connections.find((item) => item.provider === selected) ?? null : null
+    const canEditSelected = canManage || (selected === "ghl" && canManageHighLevel)
     const metaBusinessOptions = connection?.provider === "meta_ads" && Array.isArray(connection.candidate_config_hint?.business_options)
         ? connection.candidate_config_hint.business_options.flatMap((item): Array<{ id: string; name: string; verificationStatus: string | null }> => {
             if (!item || typeof item !== "object") return []
@@ -276,10 +286,10 @@ export function WorkspaceConnections({ workspaceSlug, connections, verifyAction,
                 <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:justify-between sm:gap-4"><div className="min-w-0"><h3 className="font-medium text-white">{titles[item.provider]}</h3><p className="mt-1 text-sm leading-5 text-neutral-500">{descriptions[item.provider]}</p></div><Status label={state.label} tone={state.tone} wrap className="max-w-full sm:shrink-0" /></div>
                 {detail ? <p className="mt-4 break-all text-sm text-neutral-300">{detail}</p> : null}
                 {item.last_error ? <p className="mt-3 break-words text-sm leading-5 text-red-300">{item.last_error}</p> : null}
-                <button type="button" disabled={!canManage} onClick={() => { setSelected(item.provider); setTemplateName(String(item.config_hint.template || "onboarding_confirmation")); setTemplateLanguage(String(item.config_hint.template_language || "en_US")); setReconfirmationTemplateName(String(item.config_hint.reconfirmation_template || "scaylup_service_updates_preference")); setReconfirmationTemplateLanguage(String(item.config_hint.reconfirmation_template_language || "en")); setOnboardingTemplateName(String(item.config_hint.onboarding_template || "scaylup_onboarding_access")); setOnboardingTemplateLanguage(String(item.config_hint.onboarding_template_language || "en")); setClientPortalTemplateName(String(item.config_hint.client_portal_template || "scaylup_client_portal_access")); setClientPortalTemplateLanguage(String(item.config_hint.client_portal_template_language || "en")); setAdvanced(false); setMetaBusinessId(""); setError(null) }} className="mt-5 h-10 w-full rounded-lg border border-neutral-700 px-3 text-sm font-medium text-neutral-100 transition hover:border-neutral-500 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40">{item.enabled ? "Manage connection" : "Connect"}</button>
+                <button type="button" disabled={!canManage && !(item.provider === "ghl" && canManageHighLevel)} onClick={() => { setSelected(item.provider); setTemplateName(String(item.config_hint.template || "onboarding_confirmation")); setTemplateLanguage(String(item.config_hint.template_language || "en_US")); setReconfirmationTemplateName(String(item.config_hint.reconfirmation_template || "scaylup_service_updates_preference")); setReconfirmationTemplateLanguage(String(item.config_hint.reconfirmation_template_language || "en")); setOnboardingTemplateName(String(item.config_hint.onboarding_template || "scaylup_onboarding_access")); setOnboardingTemplateLanguage(String(item.config_hint.onboarding_template_language || "en")); setClientPortalTemplateName(String(item.config_hint.client_portal_template || "scaylup_client_portal_access")); setClientPortalTemplateLanguage(String(item.config_hint.client_portal_template_language || "en")); setAdvanced(false); setMetaBusinessId(""); setError(null) }} className="mt-5 h-10 w-full rounded-lg border border-neutral-700 px-3 text-sm font-medium text-neutral-100 transition hover:border-neutral-500 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40">{item.enabled ? "Manage connection" : "Connect"}</button>
             </article>
         })}</div>
-        {!canManage ? <p className="mt-3 text-xs text-neutral-500">Only the workspace owner can connect or disconnect provider accounts.</p> : null}
+        {!canManage ? <p className="mt-3 text-xs text-neutral-500">Only the workspace owner can manage provider accounts. Workspace admins can manage HighLevel.</p> : null}
 
         {selected && connection ? <Modal title={`Connect ${titles[selected]}`} description="The current connection remains active until the replacement passes every required check." error={error} onClose={() => { if (!pending) setSelected(null) }}>
             <div className="space-y-5 p-4 sm:p-5">
@@ -295,23 +305,23 @@ export function WorkspaceConnections({ workspaceSlug, connections, verifyAction,
                     <ManualFields provider="windsor" />
                     <button disabled={pending} className="h-10 w-full rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-50">{pending ? "Verifying…" : "Save and verify"}</button>
                 </form>
-                : selected === "google_ads" ? <form onSubmit={submitManual} data-workspace-mutation-scope="local" className="space-y-4 rounded-xl border border-neutral-800 p-4">
-                    <div><h3 className="font-medium text-white">Connect your manager account</h3><p className="mt-2 text-sm leading-6 text-neutral-400">Enable the Google Ads API in your Google Cloud project. In your Google Ads manager account, open Admin → Access and security and add the service-account email. Read-only access supports reporting; Admin access is required for Betelgeze to send client linking requests during onboarding.</p><a href="https://developers.google.com/google-ads/api/docs/oauth/service-accounts" target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm text-neutral-300 underline decoration-neutral-700 underline-offset-4">Google setup guide</a></div>
-                    <ManualFields provider="google_ads" />
+                : selected === "google_ads" || selected === "ghl" ? <form onSubmit={submitManual} data-workspace-mutation-scope="local" className="space-y-4 rounded-xl border border-neutral-800 p-4">
+                    {selected === "ghl" ? <div><h3 className="font-medium text-white">Connect your HighLevel agency</h3><p className="mt-2 text-sm leading-6 text-neutral-400">This verifies the agency identity used by Client Connections. It does not create, disconnect, or modify any client sub-account.</p></div> : <div><h3 className="font-medium text-white">Connect your manager account</h3><p className="mt-2 text-sm leading-6 text-neutral-400">Enable the Google Ads API in your Google Cloud project. In your Google Ads manager account, open Admin → Access and security and add the service-account email. Read-only access supports reporting; Admin access is required for Betelgeze to send client linking requests during onboarding.</p><a href="https://developers.google.com/google-ads/api/docs/oauth/service-accounts" target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm text-neutral-300 underline decoration-neutral-700 underline-offset-4">Google setup guide</a></div>}
+                    <ManualFields provider={selected} />
                     <p className="text-xs leading-5 text-neutral-500">Credentials are encrypted and never displayed after saving. Verification reads the manager account without changing campaigns.</p>
                     <button disabled={pending} className="h-10 w-full rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-50">{pending ? "Verifying…" : "Save and verify"}</button>
                 </form>
                 : <div className="rounded-xl border border-neutral-800 p-4"><h3 className="font-medium text-white">Connect a Twilio number</h3><p className="mt-1 text-sm leading-6 text-neutral-500">Use the account SID, Auth Token, and an SMS-capable number owned by that account. Betelgeze verifies the number and configures its incoming-message webhook.</p><button type="button" onClick={() => setAdvanced(true)} className="mt-4 h-10 w-full rounded-lg bg-white px-4 text-sm font-medium text-black">Enter Twilio credentials</button></div>}
 
-                {selected !== "meta_ads" && selected !== "windsor" && selected !== "google_ads" ? <div className="border-t border-neutral-800 pt-4"><button type="button" onClick={() => setAdvanced((value) => !value)} className="text-sm text-neutral-400 underline decoration-neutral-700 underline-offset-4 hover:text-white">{advanced ? "Hide manual connection" : "Use manual credentials"}</button>{advanced ? <form onSubmit={submitManual} className="mt-4 space-y-3 rounded-xl border border-neutral-800 bg-neutral-900/50 p-4"><p className="text-xs leading-5 text-neutral-500">Credentials are encrypted before storage and are never returned to the browser. The current connection is replaced only after verification succeeds.</p><ManualFields provider={selected} /><button disabled={pending} className="h-10 w-full rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-50">{pending ? "Verifying…" : "Save and verify"}</button></form> : null}</div> : null}
+                {selected !== "meta_ads" && selected !== "windsor" && selected !== "google_ads" && selected !== "ghl" ? <div className="border-t border-neutral-800 pt-4"><button type="button" onClick={() => setAdvanced((value) => !value)} className="text-sm text-neutral-400 underline decoration-neutral-700 underline-offset-4 hover:text-white">{advanced ? "Hide manual connection" : "Use manual credentials"}</button>{advanced ? <form onSubmit={submitManual} className="mt-4 space-y-3 rounded-xl border border-neutral-800 bg-neutral-900/50 p-4"><p className="text-xs leading-5 text-neutral-500">Credentials are encrypted before storage and are never returned to the browser. The current connection is replaced only after verification succeeds.</p><ManualFields provider={selected} /><button disabled={pending} className="h-10 w-full rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-50">{pending ? "Verifying…" : "Save and verify"}</button></form> : null}</div> : null}
 
                 {connection.candidate_auth_method && selected === "meta_ads" && metaBusinessOptions.length > 1 ? <div className="rounded-xl border border-yellow-700/40 bg-yellow-950/20 p-4"><Status label="Choose a Business Portfolio" tone="yellow" /><p className="mt-2 text-sm leading-5 text-neutral-400">Meta returned more than one portfolio. Choose the one owned by this agency.</p><label className="mt-4 block text-sm text-neutral-300">Business Portfolio<select value={metaBusinessId} onChange={(event) => setMetaBusinessId(event.target.value)} className={inputClass}><option value="">Choose a portfolio</option>{metaBusinessOptions.map((business) => <option key={business.id} value={business.id}>{business.name}</option>)}</select></label><div className="mt-3 flex gap-2"><button type="button" disabled={pending || !metaBusinessId} onClick={() => run(() => selectMetaAdsBusinessAction(metaBusinessId), true)} className="h-9 rounded-lg bg-white px-3 text-sm font-medium text-black disabled:opacity-50">Use this portfolio</button><button type="button" disabled={pending} onClick={() => run(() => discardPendingAction(selected))} className="h-9 rounded-lg border border-neutral-700 px-3 text-sm text-neutral-300 disabled:opacity-50">Discard</button></div></div>
                 : connection.candidate_auth_method ? <div className="rounded-xl border border-yellow-700/40 bg-yellow-950/20 p-4"><Status label="Connection waiting for verification" tone="yellow" /><p className="mt-2 text-sm leading-5 text-neutral-400">The active connection has not been changed.</p><div className="mt-3 flex gap-2"><button type="button" disabled={pending} onClick={() => run(() => verifyPendingAction(selected), true)} className="h-9 rounded-lg bg-white px-3 text-sm font-medium text-black disabled:opacity-50">Try verification again</button><button type="button" disabled={pending} onClick={() => run(() => discardPendingAction(selected))} className="h-9 rounded-lg border border-neutral-700 px-3 text-sm text-neutral-300 disabled:opacity-50">Discard</button></div></div> : null}
 
                 {selected === "google_ads" && connection.enabled && canManage ? <div className="border-t border-neutral-800 pt-4"><button type="button" disabled={pending} onClick={() => { setGoogleDiagnostic(null); startTransition(async () => { try { setGoogleDiagnostic(await diagnoseGoogleAdsOnboarding(workspaceSlug)) } catch { setGoogleDiagnostic({ ok: false, message: "The onboarding check could not finish. Please try again." }) } }) }} className="h-9 rounded-lg border border-neutral-700 px-3 text-sm text-neutral-300 disabled:opacity-50">{pending ? "Checking…" : "Check failed onboarding"}</button><p className="mt-2 text-xs leading-5 text-neutral-500">Checks the latest failed client connection without sending an invitation.</p>{googleDiagnostic ? <p role="status" className={`mt-3 break-words text-sm leading-6 ${googleDiagnostic.ok ? "text-emerald-300" : "text-red-200"}`}>{googleDiagnostic.message}</p> : null}</div> : null}
 
-                {connection.previous_mode ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-800 pt-4"><p className="text-sm text-neutral-500">A previous connection is available as a rollback.</p><button type="button" disabled={pending} onClick={() => { if (window.confirm(`Restore the previous ${titles[selected]} connection?`)) run(() => rollbackAction(selected), true) }} className="h-9 rounded-lg border border-neutral-700 px-3 text-sm text-neutral-200 disabled:opacity-50">Restore previous</button></div> : null}
-                {connection.enabled && connection.mode !== "platform_legacy" ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-red-950 pt-4"><div><p className="text-sm font-medium text-red-200">Disconnect {titles[selected]}</p><p className="mt-1 text-xs text-neutral-600">{selected === "google_ads" ? "Stored credentials will be removed from this workspace." : "Provider automations will stop immediately."}</p></div><button type="button" disabled={pending} onClick={() => { if (window.confirm(`Disconnect ${titles[selected]} from this workspace?`)) run(() => disconnectAction(selected), true) }} className="h-9 rounded-lg border border-red-900 px-3 text-sm text-red-200 disabled:opacity-50">Disconnect</button></div> : null}
+                {connection.previous_mode && canEditSelected ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-800 pt-4"><p className="text-sm text-neutral-500">A previous connection is available as a rollback.</p><button type="button" disabled={pending} onClick={() => { if (window.confirm(`Restore the previous ${titles[selected]} connection?`)) run(() => rollbackAction(selected), true) }} className="h-9 rounded-lg border border-neutral-700 px-3 text-sm text-neutral-200 disabled:opacity-50">Restore previous</button></div> : null}
+                {connection.enabled && connection.mode !== "platform_legacy" && canEditSelected ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-red-950 pt-4"><div><p className="text-sm font-medium text-red-200">Disconnect {titles[selected]}</p><p className="mt-1 text-xs text-neutral-600">{selected === "google_ads" || selected === "ghl" ? "Stored credentials will be removed from this workspace." : "Provider automations will stop immediately."}</p></div><button type="button" disabled={pending} onClick={() => { if (window.confirm(`Disconnect ${titles[selected]} from this workspace?`)) run(() => disconnectAction(selected), true) }} className="h-9 rounded-lg border border-red-900 px-3 text-sm text-red-200 disabled:opacity-50">Disconnect</button></div> : null}
             </div>
         </Modal> : null}
     </section>

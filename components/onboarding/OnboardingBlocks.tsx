@@ -5,6 +5,7 @@ import { satisfyBlockRequirement } from "@/app/onboarding/session/[token]/action
 import { OnboardingForm } from "@/components/onboarding/OnboardingForm"
 import { AppointmentSetupBlock } from "@/components/onboarding/AppointmentSetupBlock"
 import { CalendarDateTimeBlock } from "@/components/onboarding/CalendarDateTimeBlock"
+import { CrmSetupBlock } from "@/components/onboarding/CrmSetupBlock"
 import { GoogleAdsConnectionBlock } from "@/components/onboarding/GoogleAdsConnectionBlock"
 import { WindsorMetaAdsConnectionBlock } from "@/components/onboarding/WindsorMetaAdsConnectionBlock"
 import { OnboardingSaveCoordinator } from "@/components/onboarding/OnboardingSaveCoordinator"
@@ -70,7 +71,7 @@ function OnboardingBlocksContent({
     const [requirementError, setRequirementError] = useState<string | null>(null)
     const [formSubmitting, setFormSubmitting] = useState(false)
     const formBlock = blocks.find((block) => block.kind === "form")
-    const requiredBlocks = blocks.filter((block) => (block.kind === "video" && block.requirement === "finish") || (block.kind === "button" && block.required) || block.kind === "calendar" || block.kind === "connection" || block.kind === "appointment_medium" || block.kind === "appointment_fields")
+    const requiredBlocks = blocks.filter((block) => (block.kind === "video" && block.requirement === "finish") || (block.kind === "button" && block.required) || block.kind === "calendar" || block.kind === "connection" || block.kind === "appointment_medium" || block.kind === "appointment_fields" || block.kind === "crm_setup")
     const unsatisfied = requiredBlocks.filter((block) => !satisfied.has(block.sessionBlockId ?? block.id))
     const form = useMemo(() => formBlock?.kind === "form" && formBlock.fields.length > 0 ? stepForm ?? {
         key: stepKey,
@@ -155,6 +156,10 @@ function OnboardingBlocksContent({
             if (block.kind === "appointment_medium" || block.kind === "appointment_fields") {
                 const requirementId = block.sessionBlockId ?? block.id
                 return <BlockFrame key={block.id} block={block}><AppointmentSetupBlock block={block} token={token} initialResponse={initialBlockResponses[requirementId]} locked={locked} preview={preview} satisfied={satisfied.has(requirementId)} onSatisfied={() => setSatisfied((current) => new Set(current).add(requirementId))} onUnsatisfied={() => setSatisfied((current) => { const next = new Set(current); next.delete(requirementId); return next })} /></BlockFrame>
+            }
+            if (block.kind === "crm_setup") {
+                const requirementId = block.sessionBlockId ?? block.id
+                return <BlockFrame key={block.id} block={block}><CrmSetupBlock block={block} token={token} sessionBlockId={block.sessionBlockId} initialResponse={initialBlockResponses[requirementId]} locked={locked} preview={preview} satisfied={satisfied.has(requirementId)} onSatisfied={() => setSatisfied((current) => new Set(current).add(requirementId))} onUnsatisfied={() => setSatisfied((current) => { const next = new Set(current); next.delete(requirementId); return next })} /></BlockFrame>
             }
             if (block.kind === "calendar") {
                 const requirementId = block.sessionBlockId ?? block.id

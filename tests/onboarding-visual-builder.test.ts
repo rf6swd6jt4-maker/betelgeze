@@ -143,10 +143,9 @@ test("the block library groups general interactions and installed service blocks
     assert.match(builderUi, />Interactions</)
     assert.match(builderUi, /installedServiceBlockGroups/)
     assert.match(builderUi, /template\.onboardingBlocks\.map/)
-    assert.match(builderUi, /appointment_medium/)
-    assert.match(builderUi, /appointment_fields/)
+    assert.match(builderUi, /crm_setup/)
     assert.match(runtimeBlocks, /<AppointmentSetupBlock/)
-    assert.match(sessionSnapshot, /"appointment_medium", "appointment_fields"/)
+    assert.match(sessionSnapshot, /"appointment_medium", "appointment_fields", "crm_setup"/)
 })
 
 test("appointment-setting blocks autosave without local save buttons and step submission reports failures", () => {
@@ -441,7 +440,7 @@ test("runtime requirements persist by stable session block and gate atomic step 
     assert.match(runtimeBlocks, /disabled=\{unsatisfied\.length > 0\}/)
     assert.match(runtimePage, /satisfiedBlockIds/)
     assert.match(runtimePage, /Boolean\(currentStep\.blocks\?\.length\)/)
-    assert.match(sessionSnapshot, /\["header", "estimate", "form", "checklist", "video", "button", "calendar", "connection", "appointment_medium", "appointment_fields"\]/)
+    assert.match(sessionSnapshot, /\["header", "estimate", "form", "checklist", "video", "button", "calendar", "connection", "appointment_medium", "appointment_fields", "crm_setup"\]/)
 })
 
 test("frozen visual previews and Settings style share the release pipeline without live draft leakage", () => {

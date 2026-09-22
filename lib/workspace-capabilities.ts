@@ -3,6 +3,7 @@ export const WORKSPACE_CAPABILITIES = [
     "onboarding.manage",
     "fulfilment.manage",
     "appointment_setting.manage",
+    "client_connections.manage",
     "communications.manage",
     "library.manage",
     "onboarding_builder.manage",

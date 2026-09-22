@@ -52,7 +52,7 @@ function total(value: Record<string, unknown>, collection: string, locationId: s
     return value.total as number
 }
 
-export async function fetchGhlMetrics(credentials: { locationId: string; privateToken: string }, fetcher: typeof fetch = fetch): Promise<{ locationName: string; metrics: GhlMetrics }> {
+export async function fetchGhlMetrics(credentials: { locationId: string; privateToken: string }, fetcher: typeof fetch = fetch): Promise<{ locationName: string; companyId?: string; metrics: GhlMetrics }> {
     const controller = new AbortController()
     const deadline = setTimeout(() => controller.abort(), 20_000)
     const { locationId, privateToken } = credentials
@@ -74,6 +74,8 @@ export async function fetchGhlMetrics(credentials: { locationId: string; private
         if (!identity || typeof identity !== "object" || (identity as Record<string, unknown>).id !== locationId) throw new GhlError("location")
         const locationName = (identity as Record<string, unknown>).name
         if (typeof locationName !== "string" || !locationName.trim()) throw new GhlError("response")
+        const rawCompanyId = (identity as Record<string, unknown>).companyId
+        const companyId = typeof rawCompanyId === "string" && /^[a-zA-Z0-9_-]{10,80}$/.test(rawCompanyId) ? rawCompanyId : null
         const opportunityCount = async (status?: string) => total(await request("/opportunities/search", {
             locationId, query: "", page: 0, limit: 1,
             filters: status ? [{ field: "status", operator: "eq", value: status }] : [],
@@ -83,7 +85,7 @@ export async function fetchGhlMetrics(credentials: { locationId: string; private
             request("/contacts/search", { locationId, page: 1, pageLimit: 1 }).then((result) => total(result, "contacts", locationId)),
             opportunityCount(), opportunityCount("open"), opportunityCount("won"), opportunityCount("lost"),
         ])
-        return { locationName: locationName.trim().slice(0, 200), metrics: { contacts, opportunities, open, won, lost } }
+        return { locationName: locationName.trim().slice(0, 200), ...(companyId ? { companyId } : {}), metrics: { contacts, opportunities, open, won, lost } }
     } catch (error) {
         controller.abort()
         throw error instanceof GhlError ? error : new GhlError("unavailable")

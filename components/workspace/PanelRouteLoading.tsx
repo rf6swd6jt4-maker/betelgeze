@@ -10,7 +10,7 @@ export type PanelLoadingVariant =
     | "admin-activity"
     | "admin-maintenance"
     | "admin-okrs"
-    | "appointment-setting"
+    | "client-connections"
     | "assets"
     | "communications"
     | "communications-team"
@@ -131,9 +131,9 @@ function WorkItemsLoading({ fulfilment = false }: { fulfilment?: boolean }) {
     </PanelFrame>
 }
 
-function AppointmentSettingLoading() {
-    return <PanelFrame title="Appointment Setting">
-        <PanelHeader title="Appointment Setting" />
+function ClientConnectionsLoading() {
+    return <PanelFrame title="Client Connections">
+        <PanelHeader title="Client Connections" />
         <ListSkeleton kind="relationship" rows={4} />
     </PanelFrame>
 }
@@ -253,7 +253,7 @@ export function PanelRouteLoading({ variant, title }: { variant: PanelLoadingVar
     if (variant === "onboarding") return <OnboardingLoading />
     if (variant === "work-items") return <WorkItemsLoading />
     if (variant === "fulfilment") return <WorkItemsLoading fulfilment />
-    if (variant === "appointment-setting") return <AppointmentSettingLoading />
+    if (variant === "client-connections") return <ClientConnectionsLoading />
     if (variant === "assets") return <AssetsLoading />
     if (variant === "notes") return <NotesLoading />
     if (variant === "leadgen") return <LeadgenLoading />

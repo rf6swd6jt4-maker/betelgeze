@@ -63,7 +63,7 @@ type AssetRow = {
 type BlockRequirementRow = {
     session_step_id: string
     session_block_id: string
-    requirement_kind: "calendar_scheduled" | "appointment_medium_configured" | "appointment_fields_configured"
+    requirement_kind: "calendar_scheduled" | "appointment_medium_configured" | "appointment_fields_configured" | "crm_setup_completed"
     response: unknown
     satisfied_at: string
 }
@@ -232,6 +232,13 @@ function buildStepDetails(
                     label: step.blockLabels?.[requirement.session_block_id] ?? "Selected date and time",
                     value: formatted,
                 }] : []
+            }
+            if (requirement.requirement_kind === "crm_setup_completed") {
+                const response = requirement.response && typeof requirement.response === "object" ? requirement.response as Record<string, unknown> : {}
+                return [
+                    { key: `crm:${requirement.session_block_id}:highlevel`, label: "Uses HighLevel", value: response.usesGhl === true ? "Yes" : "No" },
+                    ...(response.usesGhl === false && typeof response.crmName === "string" ? [{ key: `crm:${requirement.session_block_id}:name`, label: "Current CRM", value: response.crmName }] : []),
+                ]
             }
             return formatAppointmentOnboardingResponse({
                 kind: requirement.requirement_kind,
@@ -529,7 +536,7 @@ function startOnboardingDetailData(input: {
             .select("session_step_id, session_block_id, requirement_kind, response, satisfied_at")
             .eq("workspace_id", input.workspaceId)
             .eq("session_id", session.id)
-            .in("requirement_kind", ["calendar_scheduled", "appointment_medium_configured", "appointment_fields_configured"])
+            .in("requirement_kind", ["calendar_scheduled", "appointment_medium_configured", "appointment_fields_configured", "crm_setup_completed"])
         return (data ?? []) as BlockRequirementRow[]
     })
 

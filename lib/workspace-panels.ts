@@ -19,7 +19,7 @@ export const WORKSPACE_PANELS = [
     { key: "queue", label: "Work Queue", route: "queue", capability: "fulfilment.manage", allMembers: true, description: "Your next ready work across clients and services", keywords: ["home", "my work", "priority", "tasks"] },
     { key: "relationships", label: "Relationships", route: "relationships", capability: "relationships.view", description: "Relationship Hub list", keywords: ["dashboard", "crm", "people", "accounts"] },
     { key: "onboarding", label: "Onboarding", route: "onboarding", capability: "onboarding.manage", minimumRole: "admin", description: "Relationship onboarding status and submissions", keywords: ["forms", "submissions", "portal"] },
-    { key: "appointment-setting", label: "Appointment Setting", route: "appointment-setting", capability: "appointment_setting.manage", requiresService: true, description: "Leads, bookings, setter availability, and appointment outcomes", keywords: ["appointments", "bookings", "setters", "calendar", "leads"] },
+    { key: "client-connections", label: "Client Connections", route: "client-connections", capability: "client_connections.manage", requiresService: true, description: "Connect client accounts to agency services", keywords: ["connections", "integrations", "GHL", "HighLevel", "client accounts"] },
     { key: "communications", label: "Communications", route: "communications", capability: "communications.manage", allMembers: true, description: "Relationship communication summaries", keywords: ["messages", "chat", "whatsapp", "communication"] },
     { key: "library", label: "Library", route: "work-items", activeRoutes: ["work-items", "sops", "assets", "notes"], capability: "library.manage", allMembers: true, description: "Workspace procedures, work items, assets and notes", keywords: ["tasks", "files", "uploads", "gallery", "sop", "procedures", "call notes", "context"] },
     { key: "onboarding-builder", label: "Onboarding Builder", route: "onboarding-builder", capability: "onboarding_builder.manage", minimumRole: "admin", standalone: true, description: "Build workspace onboarding modules and session structure", keywords: ["onboarding modules", "session builder", "forms builder", "form fields", "welcome", "completion", "visual builder"] },
@@ -30,7 +30,8 @@ export const WORKSPACE_PANELS = [
 // Retain authorization and saved URLs alongside the personal queue.
 // This legacy destination is deliberately absent from navigation and search.
 const LEGACY_FULFILMENT_PANEL = { key: "fulfilment", label: "Fulfilment", route: "work", capability: "fulfilment.manage", allMembers: true, description: "Fulfilment relationship work items", keywords: ["tasks", "project management", "queue", "fulfilment"] } as const satisfies WorkspacePanelDefinition
-export type WorkspacePanel = (typeof WORKSPACE_PANELS)[number] | typeof LEGACY_FULFILMENT_PANEL
+const LEGACY_APPOINTMENT_PANEL = { key: "appointment-setting", label: "Appointment Setting", route: "appointment-setting", capability: "appointment_setting.manage", requiresService: true, description: "Legacy appointment table", keywords: [] } as const satisfies WorkspacePanelDefinition
+export type WorkspacePanel = (typeof WORKSPACE_PANELS)[number] | typeof LEGACY_FULFILMENT_PANEL | typeof LEGACY_APPOINTMENT_PANEL
 export type WorkspacePanelKey = WorkspacePanel["key"]
 
 export function canAccessPrivateWorkspacePanels(role: WorkspaceRole) {
@@ -51,7 +52,7 @@ export function canAccessWorkspacePanel(
 }
 
 export function workspacePanelByKey(key: WorkspacePanelKey) {
-    return key === "fulfilment" ? LEGACY_FULFILMENT_PANEL : WORKSPACE_PANELS.find((panel) => panel.key === key)!
+    return key === "fulfilment" ? LEGACY_FULFILMENT_PANEL : key === "appointment-setting" ? LEGACY_APPOINTMENT_PANEL : WORKSPACE_PANELS.find((panel) => panel.key === key)!
 }
 
 export function workspacePanelForUrl(value: string, workspaceSlug: string) {
@@ -60,6 +61,7 @@ export function workspacePanelForUrl(value: string, workspaceSlug: string) {
     if (!pathname.startsWith(prefix)) return null
     const route = pathname.slice(prefix.length).split("/")[0]
     if (route === LEGACY_FULFILMENT_PANEL.route) return LEGACY_FULFILMENT_PANEL
+    if (route === LEGACY_APPOINTMENT_PANEL.route) return LEGACY_APPOINTMENT_PANEL
     return WORKSPACE_PANELS.find((panel) => panel.route === route || ("activeRoutes" in panel && (panel.activeRoutes as readonly string[]).includes(route))) ?? null
 }
 

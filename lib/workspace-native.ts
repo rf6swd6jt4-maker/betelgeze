@@ -1,5 +1,5 @@
 export type NativeWorkspaceRoute = {
-    kind: "queue" | "relationships" | "assets" | "work-items" | "work" | "admin" | "appointment-setting"
+    kind: "queue" | "relationships" | "assets" | "work-items" | "work" | "admin"
     relationshipId?: string
     section?: "work" | "okrs" | "okr-detail" | "maintenance" | "activity" | "activity-detail"
     key: string
@@ -26,7 +26,7 @@ export function nativeWorkspaceRoute(value: string, workspaceSlug: string): Nati
         return { kind, relationshipId: id, section: id ? section === "okrs" ? "okr-detail" : "activity-detail" : section as NativeWorkspaceRoute["section"], key: path + (filtered.size ? `?${filtered}` : "") }
     }
     if (kind === "queue") return segments.length === 1 ? { kind, key: path } : null
-    if (kind !== "relationships" && kind !== "assets" && kind !== "work-items" && kind !== "work" && kind !== "appointment-setting") return null
+    if (kind !== "relationships" && kind !== "assets" && kind !== "work-items" && kind !== "work") return null
     if (segments.length === 1) return { kind, key: path }
     if (segments.length === 2 && uuid.test(segments[1])) return { kind, relationshipId: segments[1], key: path }
     return null

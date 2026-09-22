@@ -143,7 +143,7 @@ export async function removeWorkspaceInvitation(slug: string, invitationId: stri
 
 export async function saveWorkspaceConnection(slug: string, provider: IntegrationProvider, formData: FormData) {
     if (!INTEGRATION_PROVIDERS.includes(provider)) throw new Error("Unknown connection.")
-    const { workspace, user } = await requireWorkspace(slug, "owner")
+    const { workspace, user } = await requireWorkspaceConnectionManager(slug, provider)
     await assertWorkspaceConnectionIsEditable(workspace.id, provider)
     const config = Object.fromEntries([...formData.entries()].filter(([, value]) => typeof value === "string")) as Record<string, string>
     const required: Record<IntegrationProvider, string[]> = {
@@ -153,6 +153,7 @@ export async function saveWorkspaceConnection(slug: string, provider: Integratio
         meta_ads: [],
         windsor: ["api_key"],
         google_ads: [],
+        ghl: ["company_id", "private_token"],
     }
     if (provider === "meta_ads") throw new Error("Meta Ads must be connected through the Betelgeze Meta App.")
     if (provider === "google_ads") throw new Error("Use Save and verify to connect the Google Ads manager account.")
@@ -164,7 +165,7 @@ export async function saveWorkspaceConnection(slug: string, provider: Integratio
 export async function verifyWorkspaceConnection(slug: string, provider: IntegrationProvider): Promise<WorkspaceConnectionActionResult> {
     return connectionAction(async () => {
         if (!INTEGRATION_PROVIDERS.includes(provider)) throw new Error("Unknown connection.")
-        const { workspace } = await requireWorkspace(slug, "owner")
+        const { workspace } = await requireWorkspaceConnectionManager(slug, provider)
         await assertWorkspaceConnectionIsEditable(workspace.id, provider)
         await verifyWorkspaceIntegration(workspace.id, provider)
         refresh(slug)
@@ -172,6 +173,10 @@ export async function verifyWorkspaceConnection(slug: string, provider: Integrat
 }
 
 export type WorkspaceConnectionActionResult = { ok: true } | { ok: false; error: string }
+
+async function requireWorkspaceConnectionManager(slug: string, provider: IntegrationProvider) {
+    return requireWorkspace(slug, provider === "ghl" ? "admin" : "owner")
+}
 
 export async function diagnoseGoogleAdsOnboarding(slug: string): Promise<{ ok: boolean; message: string }> {
     const { workspace } = await requireWorkspace(slug, "owner")
@@ -215,7 +220,7 @@ export async function saveWhatsAppTemplates(slug: string, templates: WhatsAppTem
 export async function stageManualWorkspaceConnection(slug: string, provider: IntegrationProvider, formData: FormData): Promise<WorkspaceConnectionActionResult> {
     return connectionAction(async () => {
         if (!INTEGRATION_PROVIDERS.includes(provider)) throw new Error("Unknown connection.")
-        const { workspace, user } = await requireWorkspace(slug, "owner")
+        const { workspace, user } = await requireWorkspaceConnectionManager(slug, provider)
         if (provider === "google_ads") {
             const { data: installed, error: lookupError } = await supabaseAdmin.from("workspace_integrations").select("provider").eq("workspace_id", workspace.id).eq("provider", "google_ads").maybeSingle()
             if (lookupError || !installed) throw new Error("Create a service using the Google Ads template before connecting your manager account.")
@@ -233,6 +238,7 @@ export async function stageManualWorkspaceConnection(slug: string, provider: Int
             meta_ads: [],
             windsor: ["api_key"],
             google_ads: [],
+            ghl: ["company_id", "private_token"],
         }
         if (provider === "meta_ads") throw new Error("Meta Ads must be connected through the Betelgeze Meta App.")
         if (required[provider].some((key) => !config[key]?.trim())) throw new Error("Fill in every required connection detail before continuing.")
@@ -302,7 +308,7 @@ export async function completeWhatsAppEmbeddedSignup(slug: string, input: {
 
 export async function verifyPendingWorkspaceConnection(slug: string, provider: IntegrationProvider): Promise<WorkspaceConnectionActionResult> {
     return connectionAction(async () => {
-        const { workspace } = await requireWorkspace(slug, "owner")
+        const { workspace } = await requireWorkspaceConnectionManager(slug, provider)
         await verifyAndActivateWorkspaceIntegrationCandidate(workspace.id, provider)
         refresh(slug)
     })
@@ -310,7 +316,7 @@ export async function verifyPendingWorkspaceConnection(slug: string, provider: I
 
 export async function discardPendingWorkspaceConnection(slug: string, provider: IntegrationProvider): Promise<WorkspaceConnectionActionResult> {
     return connectionAction(async () => {
-        const { workspace } = await requireWorkspace(slug, "owner")
+        const { workspace } = await requireWorkspaceConnectionManager(slug, provider)
         await discardWorkspaceIntegrationCandidate(workspace.id, provider)
         refresh(slug)
     })
@@ -318,7 +324,7 @@ export async function discardPendingWorkspaceConnection(slug: string, provider: 
 
 export async function rollbackWorkspaceConnection(slug: string, provider: IntegrationProvider): Promise<WorkspaceConnectionActionResult> {
     return connectionAction(async () => {
-        const { workspace } = await requireWorkspace(slug, "owner")
+        const { workspace } = await requireWorkspaceConnectionManager(slug, provider)
         await restorePreviousWorkspaceIntegration(workspace.id, provider)
         refresh(slug)
     })
@@ -326,7 +332,7 @@ export async function rollbackWorkspaceConnection(slug: string, provider: Integr
 
 export async function disconnectWorkspaceConnection(slug: string, provider: IntegrationProvider): Promise<WorkspaceConnectionActionResult> {
     return connectionAction(async () => {
-        const { workspace } = await requireWorkspace(slug, "owner")
+        const { workspace } = await requireWorkspaceConnectionManager(slug, provider)
         await disconnectWorkspaceIntegration(workspace.id, provider)
         refresh(slug)
     })

@@ -23,6 +23,7 @@ function isAdminRole(role: WorkspaceRole) {
 }
 
 const APPOINTMENT_SETTING_CAPABILITY = "appointment_setting.manage" satisfies WorkspaceCapability
+const CLIENT_CONNECTIONS_CAPABILITY = "client_connections.manage" satisfies WorkspaceCapability
 const APPOINTMENT_SETTING_TEMPLATE_ID = "appointment-setting"
 
 function serviceTemplateId(definition: unknown) {
@@ -82,7 +83,7 @@ export async function loadWorkspaceAccess(input: {
         }
     }
 
-    const [assignmentResult, rolesResult, allocatedServices] = await Promise.all([
+    const [assignmentResult, rolesResult, allocatedServices, clientConnectionAssignments] = await Promise.all([
         supabaseAdmin
             .from("workspace_member_service_access")
             .select("service_id")
@@ -90,11 +91,12 @@ export async function loadWorkspaceAccess(input: {
             .eq("user_id", input.userId),
         supabaseAdmin.from("workspace_operational_roles").select("can_sell, can_manage").eq("workspace_id", input.workspaceId).eq("user_id", input.userId).maybeSingle(),
         supabaseAdmin.from("relationship_services").select("service_id").eq("workspace_id", input.workspaceId).eq("assignee_user_id", input.userId),
+        supabaseAdmin.from("appointment_setting_setup_assignees").select("relationship_id").eq("workspace_id", input.workspaceId).eq("user_id", input.userId).limit(1),
     ])
     const { data: assignments, error: assignmentError } = assignmentResult
     const baseCapabilities = ["fulfilment.manage", "communications.manage"] satisfies WorkspaceCapability[]
 
-    if (assignmentError || rolesResult.error || allocatedServices.error) {
+    if (assignmentError || rolesResult.error || allocatedServices.error || clientConnectionAssignments.error) {
         console.error("Workspace service access could not be loaded", {
             workspaceId: input.workspaceId,
             userId: input.userId,
@@ -111,6 +113,7 @@ export async function loadWorkspaceAccess(input: {
         baseCapabilities,
         rolesResult.data?.can_sell || rolesResult.data?.can_manage ? ["relationships.view"] : [],
         allowedServiceIds.some((serviceId) => appointmentSettingServices.ids.has(serviceId)) ? [APPOINTMENT_SETTING_CAPABILITY] : [],
+        clientConnectionAssignments.data?.length ? [CLIENT_CONNECTIONS_CAPABILITY] : [],
     ])
 
     return { ...input, capabilities, allowedServiceIds, serviceAccessSchemaReady: appointmentSettingServices.ready }

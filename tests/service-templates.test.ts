@@ -26,8 +26,8 @@ test("the service template catalogue starts with the Meta Ads template", () => {
     assert.equal(appointmentSetting.thumbnail.src, "/service-templates/appointment-setting.png")
     assert.equal(appointmentSetting.serviceDefaults.thumbnailSrc, appointmentSetting.thumbnail.src)
     assert.deepEqual(appointmentSetting.setup, { kind: "none" })
-    assert.deepEqual(appointmentSetting.capabilities, ["onboarding.manage", "fulfilment.manage", "appointment_setting.manage"])
-    assert.deepEqual(appointmentSetting.onboardingBlocks.map((block) => block.kind), ["appointment_medium", "appointment_fields"])
+    assert.deepEqual(appointmentSetting.capabilities, ["onboarding.manage", "fulfilment.manage"])
+    assert.deepEqual(appointmentSetting.onboardingBlocks.map((block) => block.kind), ["crm_setup"])
     assert.equal(existsSync(`public${appointmentSetting.thumbnail.src}`), true)
 })
 

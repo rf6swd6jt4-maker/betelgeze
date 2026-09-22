@@ -114,7 +114,7 @@ test("panel routes have instant fallbacks and shared lists defer off-screen pain
     assert.match(list, /\[content-visibility:auto\]/)
     assert.match(list, /\[contain-intrinsic-size:auto_88px\]/)
 
-    for (const route of ["admin", "appointment-setting", "assets", "communications", "leadgen", "onboarding", "relationships", "settings", "work", "work-items"]) {
+    for (const route of ["admin", "assets", "client-connections", "communications", "leadgen", "onboarding", "relationships", "settings", "work", "work-items"]) {
         assert.equal(existsSync(new URL(`../app/[workspaceSlug]/${route}/loading.tsx`, import.meta.url)), true, `${route} needs a route loading boundary`)
     }
     assert.equal(existsSync(new URL("../app/[workspaceSlug]/relationships/[relationshipId]/loading.tsx", import.meta.url)), true)
@@ -132,7 +132,7 @@ test("workspace panel homes share one persistent banner inside their tab frame",
         "/agency/admin/okrs",
         "/agency/admin/activity/event-id",
         "/agency/admin/maintenance",
-        "/agency/appointment-setting",
+        "/agency/client-connections",
         "/agency/assets",
         "/agency/leadgen",
         "/agency/leadgen/polls",
@@ -156,7 +156,7 @@ test("workspace panel homes share one persistent banner inside their tab frame",
 
     for (const path of [
         "app/[workspaceSlug]/admin/page.tsx",
-        "app/[workspaceSlug]/appointment-setting/page.tsx",
+        "app/[workspaceSlug]/client-connections/page.tsx",
         "app/[workspaceSlug]/assets/page.tsx",
         "app/[workspaceSlug]/leadgen/page.tsx",
         "app/[workspaceSlug]/notes/page.tsx",
@@ -189,7 +189,7 @@ test("route loading UI reflects each panel's real composition", () => {
 
     const variants = {
         admin: "admin",
-        "appointment-setting": "appointment-setting",
+        "client-connections": "client-connections",
         assets: "assets",
         communications: "communications",
         leadgen: "leadgen",
@@ -210,7 +210,6 @@ test("route loading UI reflects each panel's real composition", () => {
         "leadgen/polls": "leadgen-polls",
         "admin/activity/[eventId]": "detail",
         "admin/okrs/[okrId]": "detail",
-        "appointment-setting/[relationshipId]": "detail",
         "assets/[id]": "detail",
         "leadgen/new": "detail",
         "leadgen/poll/[pollId]": "detail",

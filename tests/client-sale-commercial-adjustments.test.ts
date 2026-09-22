@@ -4,6 +4,7 @@ import test from "node:test"
 
 const sql = readFileSync(new URL("../supabase/migrations/20260922190000_client_sale_commercial_adjustments.sql", import.meta.url), "utf8")
 const auditFixSql = readFileSync(new URL("../supabase/migrations/20260922193000_fix_client_sale_correction_audit.sql", import.meta.url), "utf8")
+const recordedRevenueFixSql = readFileSync(new URL("../supabase/migrations/20260922213000_use_commercial_adjustments_for_recorded_revenue.sql", import.meta.url), "utf8")
 
 test("commercial corrections append effective terms without mutating frozen sales or onboarding", () => {
     assert.match(sql, /create table public\.client_sale_commercial_adjustments/)
@@ -41,4 +42,13 @@ test("correction audit is written inside the verified security-definer transacti
     assert.doesNotMatch(auditFixSql, /update public\.relationship_onboarding_sessions/)
     assert.doesNotMatch(auditFixSql, /update public\.client_sale_items/)
     assert.doesNotMatch(auditFixSql, /update public\.service_instance_sessions/)
+})
+
+test("recorded revenue uses effective terms only when no provider invoice receipt exists", () => {
+    assert.match(recordedRevenueFixSql, /coalesce\(a\.effective_upfront_amount \+ a\.effective_recurring_amount, s\.total_amount\) total_amount/)
+    assert.match(recordedRevenueFixSql, /order by adjustment\.version desc/)
+    assert.match(recordedRevenueFixSql, /select currency, amount_cents from paid_invoices/)
+    assert.match(recordedRevenueFixSql, /not exists \(select 1 from paid_invoices invoice where invoice\.sale_id=sale\.id\)/)
+    assert.doesNotMatch(recordedRevenueFixSql, /update public\.client_sales/)
+    assert.doesNotMatch(recordedRevenueFixSql, /update public\.relationship_onboarding_sessions/)
 })

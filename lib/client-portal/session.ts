@@ -5,7 +5,7 @@ import { clientPortalOverview } from "@/lib/client-portal/overview"
 import { loadPublishedOnboardingTheme } from "@/lib/onboarding/configuration"
 import { resolveOnboardingTheme } from "@/lib/onboarding/theme"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { isGoogleAdsService } from "@/lib/google-ads-report"
+import { isGoogleAdsService, isLegacyGoogleAdsServiceName } from "@/lib/google-ads-report"
 
 export async function resolveClientPortalAccessByToken(token: string) {
     if (!/^[a-f0-9]{64}$/i.test(token)) return null
@@ -65,15 +65,18 @@ export async function loadClientPortalSessionByToken(token: string) {
         }),
     ])
     const reporting = reportingResult.data
-    const hasGoogleAds = !googleServicesResult.error && (googleServicesResult.data ?? []).some((service) => {
+    const overview = clientPortalOverview(overviewResult.data)
+    const hasGoogleAdsIdentity = !googleServicesResult.error && (googleServicesResult.data ?? []).some((service) => {
         const related = service.revision as unknown as { definition?: Record<string, unknown> } | Array<{ definition?: Record<string, unknown> }> | null
         const definition = Array.isArray(related) ? related[0]?.definition : related?.definition
         return isGoogleAdsService({ serviceKey: service.service_key, templateId: String(definition?.templateId ?? definition?.template_id ?? "") || null })
     })
+    // Relationships sold before immutable template identities use the frozen service name.
+    const hasGoogleAds = hasGoogleAdsIdentity || overview.progress.some((service) => isLegacyGoogleAdsServiceName(service.serviceName))
     return {
         ...resolved,
         theme,
-        overview: clientPortalOverview(overviewResult.data),
+        overview,
         hasGoogleAds,
         metaAdsReporting: reporting?.account_id ? { accountId: reporting.account_id, accountName: reporting.account_name ?? null } : null,
     }

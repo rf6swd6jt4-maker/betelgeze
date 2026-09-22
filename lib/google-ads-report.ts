@@ -21,6 +21,9 @@ export function isGoogleAdsReportKind(value: unknown): value is GoogleAdsReportK
 export function isGoogleAdsService(service: { serviceKey: string; templateId?: string | null }) {
     return ["google-search-ads", "google-local-services-ads", "google-ads"].includes(service.templateId ?? "") || ["google-search-ads", "google-local-services-ads", "google-ads"].includes(service.serviceKey)
 }
+export function isLegacyGoogleAdsServiceName(value: string) {
+    return ["Google Search Ads", "Google Local Services Ads", "Google Ads"].includes(value.trim())
+}
 export function googleAdsReportKindsForServices(services: Array<{ serviceKey: string; templateId?: string | null }>): GoogleAdsReportKind[] {
     const kinds = new Set<GoogleAdsReportKind>()
     for (const service of services) {

@@ -10,7 +10,7 @@ function load(file: string): Record<string, unknown> {
     new Function("require", "module", "exports", ts.transpileModule(readFileSync(`lib/${file}.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)((p: string) => p === "./google-ads-report" ? load("google-ads-report") : require(p), m, m.exports)
     return m.exports
 }
-const { googleAdsDateRange, googleAdsReportKindsForServices, isGoogleAdsService, parseGoogleAdsMetrics, parseGoogleAdsCampaignMetrics, parseGoogleLocalServicesLeads } = load("google-ads-report") as typeof import('../lib/google-ads-report')
+const { googleAdsDateRange, googleAdsReportKindsForServices, isGoogleAdsService, isLegacyGoogleAdsServiceName, parseGoogleAdsMetrics, parseGoogleAdsCampaignMetrics, parseGoogleLocalServicesLeads } = load("google-ads-report") as typeof import('../lib/google-ads-report')
 const { fetchGoogleAdsReport, normalizeGoogleAdsConfig } = load("google-ads") as typeof import('../lib/google-ads')
 const keys = generateKeyPairSync('rsa', { modulusLength: 2048 })
 const config = { manager_customer_id: '1234567890', client_email: 'report@project.iam.gserviceaccount.com', private_key: keys.privateKey.export({type:'pkcs8',format:'pem'}).toString() }
@@ -27,6 +27,8 @@ test('service identities select separate Search and Local Services reports with 
     assert.equal(isGoogleAdsService({serviceKey:'generated',templateId:'google-search-ads'}),true)
     assert.equal(isGoogleAdsService({serviceKey:'google-local-services-ads'}),true)
     assert.equal(isGoogleAdsService({serviceKey:'meta-ads-setup',templateId:'meta-ads-setup'}),false)
+    assert.equal(isLegacyGoogleAdsServiceName('Google Search Ads'),true)
+    assert.equal(isLegacyGoogleAdsServiceName('Meta Ads Setup'),false)
 })
 test('reports preserve fractional conversions, micros, zero versus failures and reject unsafe numbers', () => {
     assert.deepEqual(parseGoogleAdsMetrics({results:[{metrics:{costMicros:'1500001',clicks:'3',impressions:'10',conversions:0.5}}]}),{spend:1.500001,clicks:3,impressions:10,conversions:0.5,costPerConversion:3.000002})

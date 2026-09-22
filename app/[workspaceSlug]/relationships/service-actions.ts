@@ -55,3 +55,22 @@ export async function changeRelationshipService(slug: string, relationshipId: st
     }
     return { ok: true, id: input.instanceId, generation: data.generation === true }
 }
+
+export async function cancelRelationshipService(slug: string, relationshipId: string, input: { expectedUserId: string; requestId: string; instanceId: string; version: number; reason: string }) {
+    const { workspace, user, access } = await requireWorkspacePanel(slug, "relationships")
+    await requireRelationshipAccess(access, relationshipId)
+    const reason = input.reason.trim()
+    if (user.id !== input.expectedUserId || !uuid.test(input.requestId) || !uuid.test(input.instanceId)
+        || !Number.isSafeInteger(input.version) || input.version < 1 || !reason || reason.length > 1000) {
+        return { ok: false, error: "Give a reason for cancelling this service." }
+    }
+    const { error } = await supabaseAdmin.rpc("cancel_relationship_service", {
+        p_workspace_id: workspace.id, p_relationship_id: relationshipId, p_instance_id: input.instanceId,
+        p_actor_user_id: user.id, p_request_id: input.requestId, p_expected_version: input.version, p_reason: reason,
+    })
+    if (error) return { ok: false, uncertain: !/^[0-9A-Z]{5}$/.test(error.code ?? ""), error: error.code === "P0001" ? error.message : "Cancellation could not be confirmed. Retry this same request." }
+    revalidatePath(`/${slug}/relationships`)
+    revalidatePath(`/${slug}/relationships/${relationshipId}`)
+    revalidatePath(`/${slug}/work-items`)
+    return { ok: true }
+}

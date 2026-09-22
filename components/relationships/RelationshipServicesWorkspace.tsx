@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import dynamic from "next/dynamic"
 import { useRouter, useSearchParams, useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
-import { AssignmentSelector, Selector, AttachmentCards, AttachmentCard, AddAttachmentCard, CenteredDialog, ServiceStage, RoundPill } from "@/components/ui"
+import { AssignmentSelector, Selector, AttachmentCards, AttachmentCard, AddAttachmentCard, CenteredDialog, ServiceStage, RoundPill, Status } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow } from "@/components/list/List"
 import { SopWorkProgress } from "@/components/sops/SopWorkProgress"
 import type { RelationshipQueuePage } from "@/lib/relationship-service-plan"
@@ -17,7 +17,7 @@ const PosDialog = dynamic(
     { ssr: false },
 )
 import { DetailField, DetailFields } from "@/components/detail"
-import { addRelationshipService, changeRelationshipService } from "@/app/[workspaceSlug]/relationships/service-actions"
+import { addRelationshipService, changeRelationshipService, cancelRelationshipService } from "@/app/[workspaceSlug]/relationships/service-actions"
 import { SERVICE_STAGES, type RelationshipServicePage, type RelationshipServiceRow, type ServiceCatalogueChoice } from "@/lib/service-stages"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 
@@ -142,6 +142,40 @@ function Pagination({ page, hasMore, onChange }: {page: number; hasMore: boolean
     return page || hasMore ? <div className="mt-3 flex items-center justify-between text-sm"><button className="min-h-11 px-2 disabled:opacity-40" disabled={!page} onClick={() => onChange(page - 1)}>Previous</button><span className="text-neutral-500">Page {page + 1}</span><button className="min-h-11 px-2 disabled:opacity-40" disabled={!hasMore} onClick={() => onChange(page + 1)}>Next</button></div> : null
 }
 type ServiceCardDetail = RelationshipServiceRow & { notes?: string; description?: string; manager?: string; seller?: string; sold_upfront_cents?: number | null; sold_recurring_cents?: number | null; sold_currency?: string | null; billing_interval?: string; billing_interval_count?: number }
+function CancelServiceDialog({ row, props, onDone, onClose }: { row: ServiceCardDetail; props: Props; onDone: () => void; onClose: () => void }) {
+    const [reason, setReason] = useState("")
+    const [error, setError] = useState("")
+    const [uncertain, setUncertain] = useState(false)
+    const [pending, startTransition] = useTransition()
+    const requestId = useRef<string | null>(null)
+    function submit(event: FormEvent) {
+        event.preventDefault()
+        if (!reason.trim() || pending) return
+        requestId.current ??= crypto.randomUUID()
+        setError("")
+        startTransition(async () => {
+            try {
+                const result = await runWorkspaceMutation(() => cancelRelationshipService(props.workspaceSlug, props.relationshipId, {
+                    expectedUserId: props.userId, requestId: requestId.current!, instanceId: row.id, version: row.version, reason,
+                }), { category: "services" })
+                if (result.ok) { onDone(); return }
+                setError(result.error ?? "Could not cancel service")
+                setUncertain("uncertain" in result && result.uncertain === true)
+                if (!("uncertain" in result && result.uncertain)) requestId.current = null
+            } catch { setUncertain(true); setError("Cancellation could not be confirmed. Retry the same request.") }
+        })
+    }
+    return <CenteredDialog title={`Cancel ${row.name}`} busy={pending || uncertain} onClose={onClose}>
+        <form onSubmit={submit}>
+            <p className="text-sm leading-6 text-neutral-400">This marks the service as cancelled and cancels its unfinished work. Completed work and service history stay available. Billing is managed separately.</p>
+            <label className="mt-4 block text-sm text-neutral-300">Reason
+                <input autoFocus required disabled={pending || uncertain} maxLength={1000} value={reason} onChange={event => { setReason(event.target.value); requestId.current = null }} className={`mt-2 ${inputClass}`} />
+            </label>
+            {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error}</p> : null}
+            <div className="mt-4 flex justify-end gap-3"><button type="button" disabled={pending || uncertain} onClick={onClose} className="min-h-11 px-3 text-sm text-neutral-300">Close</button><button disabled={pending || !reason.trim()} className="min-h-11 rounded-lg bg-red-900 px-4 py-2 text-sm font-medium text-red-100 disabled:opacity-50">{pending ? "Cancelling…" : uncertain ? "Retry same cancellation" : "Cancel service"}</button></div>
+        </form>
+    </CenteredDialog>
+}
 export function RelationshipServicesWorkspace(props: Props) {
     const router = useRouter()
     const search = useSearchParams()
@@ -154,6 +188,7 @@ export function RelationshipServicesWorkspace(props: Props) {
     const [serviceBusy, setServiceBusy] = useState(false)
     const [editing, setEditing] = useState<RelationshipServiceRow | null>(null)
     const [opened, setOpened] = useState<ServiceCardDetail | null>(null)
+    const [canceling, setCanceling] = useState<ServiceCardDetail | null>(null)
     const [pos, setPos] = useState<string | null>(null)
     const [page, setPage] = useState(0)
     const [cards, setCards] = useState<RelationshipServicePage>(props.initial)
@@ -171,7 +206,7 @@ export function RelationshipServicesWorkspace(props: Props) {
         return () => controller.abort()
     }, [endpoint, page, props.initial, props.userId, active, visible, retry])
     function resumeGeneration(instanceId: string) { if (!adding && !editing && !resumedGeneration) { setServiceBusy(true); setResumedGeneration(instanceId) } }
-    function saved(queue?: RelationshipQueuePage) { if (queue) setPublishedQueue(queue); setGenerating(false); setResumedGeneration(null); setAdding(false); setEditing(null); setOpened(null); setRetry(value => value + 1); router.refresh() }
+    function saved(queue?: RelationshipQueuePage) { if (queue) setPublishedQueue(queue); setGenerating(false); setResumedGeneration(null); setAdding(false); setEditing(null); setOpened(null); setCanceling(null); setRetry(value => value + 1); router.refresh() }
     function closePos() { setPos(null); if (search.has("sell")) { const next = new URLSearchParams(search.toString()); next.delete("sell"); router.replace(`/${props.workspaceSlug}/relationships/${props.relationshipId}${next.size ? `?${next}` : ""}`) } }
     const requestedPos = pos ?? search.get("sell")
     return <section className="mt-5" aria-label="Relationship services and work">
@@ -180,7 +215,7 @@ export function RelationshipServicesWorkspace(props: Props) {
             <div className="relative h-[25.5rem] min-w-0 pt-6 xl:h-auto xl:min-h-0"><div className="h-full xl:absolute xl:inset-0 xl:pt-6"><RelationshipQueue endpoint={endpoint} slug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} publishedQueue={publishedQueue} onGeneration={resumeGeneration} /></div>
             </div>
             <div className="min-w-0"><section ref={host} className="mt-6" aria-label="Assigned services"><h2 className="mb-3 text-base font-semibold">Services</h2>
-                <AttachmentCards label="Assigned services" compact>{cards.items.map(row => <AttachmentCard compact thumbnailFit="contain" key={row.id} title={row.name} thumbnail={<ServiceThumbnail service={row} />} inactive={["negotiating", "declined", "for_later"].includes(row.stage ?? "")} subtitle={SERVICE_STAGES.find(stage => stage.key === row.stage)?.label ?? "Review needed"} onClick={() => setOpened(row)} />)}{props.canAdd ? <AddAttachmentCard compact label="Add service" onClick={() => { setGenerating(false); setAdding(true) }} /> : null}</AttachmentCards>
+                <AttachmentCards label="Assigned services" compact>{cards.items.map(row => <AttachmentCard compact thumbnailFit="contain" key={row.id} title={row.name} thumbnail={<ServiceThumbnail service={row} />} inactive={row.disposition === "cancelled" || ["negotiating", "declined", "for_later"].includes(row.stage ?? "")} subtitle={row.disposition === "cancelled" ? "Cancelled" : SERVICE_STAGES.find(stage => stage.key === row.stage)?.label ?? "Review needed"} onClick={() => setOpened(row)} />)}{props.canAdd ? <AddAttachmentCard compact label="Add service" onClick={() => { setGenerating(false); setAdding(true) }} /> : null}</AttachmentCards>
                 {error ? <p role="alert" className="mt-2 text-sm text-red-300">{error} <button className="min-h-11 underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p> : null}
                 <Pagination page={page} hasMore={cards.hasMore} onChange={setPage} />
             </section><RelationshipContactCards workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canAdd={props.canAdd} /></div>
@@ -188,11 +223,12 @@ export function RelationshipServicesWorkspace(props: Props) {
         {adding ? <CenteredDialog title={generating ? "Generating work…" : "Add service"} busy={serviceBusy} onClose={() => setAdding(false)}><ServiceForm onGenerating={setGenerating} onBusyChange={setServiceBusy} endpoint={endpoint} props={props} onDone={saved} onClose={() => setAdding(false)} /></CenteredDialog> : null}
         {editing ? <CenteredDialog title={generating ? "Generating work…" : "Edit service"} busy={serviceBusy} onClose={() => setEditing(null)}><ServiceForm onGenerating={setGenerating} onBusyChange={setServiceBusy} key={editing.id} row={editing} endpoint={endpoint} props={props} onDone={saved} onClose={() => setEditing(null)} /></CenteredDialog> : null}
         {resumedGeneration ? <CenteredDialog title="Generating work…" busy={serviceBusy} onClose={() => setResumedGeneration(null)}><SopWorkProgress onBusyChange={setServiceBusy} endpoint={endpoint} instanceId={resumedGeneration} userId={props.userId} onComplete={saved} onClose={() => setResumedGeneration(null)} /></CenteredDialog> : null}
-        {opened ? <ServiceDetailDialog row={opened} endpoint={endpoint} userId={props.userId} onClose={() => setOpened(null)} onEdit={editable(opened) ? () => { setEditing(opened); setOpened(null) } : undefined} onSell={canSell(opened) ? () => { setPos(opened.id); setOpened(null) } : undefined} /> : null}
+        {opened ? <ServiceDetailDialog row={opened} endpoint={endpoint} userId={props.userId} onClose={() => setOpened(null)} onEdit={opened.disposition !== "cancelled" && editable(opened) ? () => { setEditing(opened); setOpened(null) } : undefined} onSell={opened.disposition !== "cancelled" && canSell(opened) ? () => { setPos(opened.id); setOpened(null) } : undefined} onCancel={opened.disposition !== "cancelled" && !opened.legacy && props.canAdd && (props.canImport || opened.origin === "negotiation") ? () => { setCanceling(opened); setOpened(null) } : undefined} /> : null}
+        {canceling ? <CancelServiceDialog row={canceling} props={props} onDone={saved} onClose={() => setCanceling(null)} /> : null}
         {requestedPos ? <PosDialog workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} selectedId={requestedPos === "1" ? undefined : requestedPos} onClose={closePos} /> : null}
     </section>
 }
-function ServiceDetailDialog({ row, endpoint, userId, onClose, onEdit, onSell }: { row: ServiceCardDetail; endpoint: string; userId: string; onClose: () => void; onEdit?: () => void; onSell?: () => void }) {
+function ServiceDetailDialog({ row, endpoint, userId, onClose, onEdit, onSell, onCancel }: { row: ServiceCardDetail; endpoint: string; userId: string; onClose: () => void; onEdit?: () => void; onSell?: () => void; onCancel?: () => void }) {
     const [data, setData] = useState(row)
     const [error, setError] = useState("")
     useEffect(() => {
@@ -202,8 +238,8 @@ function ServiceDetailDialog({ row, endpoint, userId, onClose, onEdit, onSell }:
     }, [endpoint, row, userId])
     const showCataloguePrices = !(data.origin === "already_onboarded" && data.stage === "completed")
     const money = (cents: number) => new Intl.NumberFormat("en", { style: "currency", currency: data.sold_currency ?? data.currency }).format(cents / 100)
-    return <CenteredDialog title={row.name} onClose={onClose} footer={onSell || onEdit ? <div className="flex justify-end gap-3">{onEdit ? <button className="min-h-11 px-3 text-sm text-neutral-300" onClick={onEdit}>Edit service</button> : null}{onSell ? <button className={buttonClass} onClick={onSell}>Sell service</button> : null}</div> : undefined}>
-        <ServiceStage stage={data.stage} />
+    return <CenteredDialog title={row.name} onClose={onClose} footer={onSell || onEdit || onCancel ? <div className="flex flex-wrap justify-end gap-3">{onCancel ? <button className="min-h-11 px-3 text-sm text-red-300" onClick={onCancel}>Cancel service</button> : null}{onEdit ? <button className="min-h-11 px-3 text-sm text-neutral-300" onClick={onEdit}>Edit service</button> : null}{onSell ? <button className={buttonClass} onClick={onSell}>Sell service</button> : null}</div> : undefined}>
+        {data.disposition === "cancelled" ? <Status label="Cancelled" tone="red" /> : <ServiceStage stage={data.stage} />}
         {data.description ? <p className="mt-3 text-sm leading-6 text-neutral-400">{data.description}</p> : null}
         <DetailFields columns={1}>{showCataloguePrices ? <><DetailField label="Upfront" icon="status">{money(data.sold_upfront_cents ?? data.upfront_cents)}</DetailField><DetailField label="Recurring" icon="status">{money(data.sold_recurring_cents ?? data.recurring_cents)} / {data.billing_interval_count ?? 1} {data.billing_interval ?? "month"}</DetailField></> : null}<DetailField label="Assigned to" icon="person">{data.assignee_name}</DetailField>{data.manager ? <DetailField label="Manager" icon="person">{data.manager}</DetailField> : null}{data.seller ? <DetailField label="Seller" icon="person">{data.seller}</DetailField> : null}<DetailField label="Notes" icon="description">{data.notes || "No notes"}</DetailField></DetailFields>
         {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error}</p> : null}

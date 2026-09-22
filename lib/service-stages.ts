@@ -13,7 +13,7 @@ export const serviceStageLabel = (stage: string | null) => SERVICE_STAGES.find(s
 export type RelationshipServiceRow = {
     id: string; service_id: string; service_revision_id: string; name: string; stage: ServiceStageKey | null
     thumbnailUrl?: string | null; thumbnailPath?: string | null; templateId?: string | null;
-    origin: string; assignee_user_id: string | null; assignee_name: string; version: number
+    origin: string; disposition?: "active" | "paused" | "cancelled"; assignee_user_id: string | null; assignee_name: string; version: number
     upfront_cents: number; recurring_cents: number; currency: string; created_at: string; legacy: boolean
 }
 export type ServiceValueSummary = { currency: string; kind: "catalogue_estimate" | "sold" | "all_time"; billing_interval: string | null; billing_interval_count: number | null; upfront_cents: number; recurring_cents: number }

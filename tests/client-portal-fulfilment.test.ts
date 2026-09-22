@@ -57,6 +57,8 @@ test("required actions are staff-managed and have no client completion control",
     assert.match(actions, /action\.status === "open" \? "completed" : "open"/u)
     assert.match(actions, /Add required action/u)
     assert.match(actions, /Fulfilment progress/u)
+    assert.match(actions, /<CenteredDialog title="Client portal" short/u)
+    assert.doesNotMatch(actions, /AnchoredPopup/u)
     assert.doesNotMatch(readFileSync("components/client-portal/ClientPortalFulfilment.tsx", "utf8"), /method:\s*"PATCH"|onClick/u)
 })
 

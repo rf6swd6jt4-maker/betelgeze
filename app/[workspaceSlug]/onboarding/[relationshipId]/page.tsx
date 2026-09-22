@@ -28,6 +28,7 @@ import { accessibleRelationshipIds, fullyAccessibleRelationshipIds, requireWorks
 import { loadNormalizedSessionSnapshot } from "@/lib/onboarding/session-snapshot"
 import { getOnboardingUrl } from "@/lib/onboarding/client-creation"
 import { formatCalendarResponse } from "@/lib/onboarding/calendar"
+import { formatAppointmentOnboardingResponse } from "@/lib/appointment-setting"
 
 export const dynamic = "force-dynamic"
 
@@ -59,9 +60,10 @@ type AssetRow = {
     created_at: string
 }
 
-type CalendarRequirementRow = {
+type BlockRequirementRow = {
     session_step_id: string
     session_block_id: string
+    requirement_kind: "calendar_scheduled" | "appointment_medium_configured" | "appointment_fields_configured"
     response: unknown
     satisfied_at: string
 }
@@ -177,13 +179,14 @@ type StaffSessionStep = CanonicalSessionStep & {
     sessionStepId?: string | null
     fieldLabels?: Record<string, string>
     blockLabels?: Record<string, string>
+    blockOptions?: Record<string, string[]>
 }
 
 function buildStepDetails(
     steps: StaffSessionStep[],
     workItems: WorkItemRow[],
     assets: AssetRow[],
-    calendarRequirements: CalendarRequirementRow[],
+    blockRequirements: BlockRequirementRow[],
     editRequestStepIds = new Set<string>(),
 ) {
     const itemByStep = new Map<string, WorkItemRow>()
@@ -208,10 +211,10 @@ function buildStepDetails(
         }
     }
 
-    const calendarRequirementsByStep = new Map<string, CalendarRequirementRow[]>()
-    for (const requirement of calendarRequirements) {
-        calendarRequirementsByStep.set(requirement.session_step_id, [
-            ...(calendarRequirementsByStep.get(requirement.session_step_id) ?? []),
+    const blockRequirementsByStep = new Map<string, BlockRequirementRow[]>()
+    for (const requirement of blockRequirements) {
+        blockRequirementsByStep.set(requirement.session_step_id, [
+            ...(blockRequirementsByStep.get(requirement.session_step_id) ?? []),
             requirement,
         ])
     }
@@ -220,16 +223,27 @@ function buildStepDetails(
         const item = itemByStep.get(step.key) ?? null
         const submission = submissionsByStep.get(step.key) ?? null
         const uploads = uploadsByStep.get(step.key) ?? []
-        const calendarRequirementsForStep = calendarRequirementsByStep.get(step.sessionStepId ?? step.key) ?? []
-        const blockAnswers = calendarRequirementsForStep.flatMap((requirement) => {
-            const formatted = formatCalendarResponse(requirement.response)
-            return formatted ? [{
-                key: `calendar:${requirement.session_block_id}`,
-                label: step.blockLabels?.[requirement.session_block_id] ?? "Selected date and time",
-                value: formatted,
-            }] : []
+        const blockRequirementsForStep = blockRequirementsByStep.get(step.sessionStepId ?? step.key) ?? []
+        const blockAnswers = blockRequirementsForStep.flatMap((requirement) => {
+            if (requirement.requirement_kind === "calendar_scheduled") {
+                const formatted = formatCalendarResponse(requirement.response)
+                return formatted ? [{
+                    key: `calendar:${requirement.session_block_id}`,
+                    label: step.blockLabels?.[requirement.session_block_id] ?? "Selected date and time",
+                    value: formatted,
+                }] : []
+            }
+            return formatAppointmentOnboardingResponse({
+                kind: requirement.requirement_kind,
+                response: requirement.response,
+                options: step.blockOptions?.[requirement.session_block_id],
+            }).map((answer) => ({
+                ...answer,
+                key: `appointment:${requirement.session_block_id}:${answer.key}`,
+                label: answer.key === "mediums" ? step.blockLabels?.[requirement.session_block_id] ?? answer.label : answer.label,
+            }))
         })
-        const dates = [item?.updated_at ?? item?.created_at, submission?.updated_at ?? submission?.created_at, ...uploads.map((asset) => asset.updated_at ?? asset.created_at), ...calendarRequirementsForStep.map((requirement) => requirement.satisfied_at)].filter(Boolean) as string[]
+        const dates = [item?.updated_at ?? item?.created_at, submission?.updated_at ?? submission?.created_at, ...uploads.map((asset) => asset.updated_at ?? asset.created_at), ...blockRequirementsForStep.map((requirement) => requirement.satisfied_at)].filter(Boolean) as string[]
         const updatedAt = dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null
         return {
             key: step.key,
@@ -509,10 +523,14 @@ function startOnboardingDetailData(input: {
         const { data } = await supabaseAdmin.from("onboarding_edit_requests").select("session_step_id").eq("workspace_id", input.workspaceId).eq("session_id", session.id).eq("status", "pending")
         return (data ?? []) as Array<{ session_step_id: string }>
     })
-    const calendarRequirementsPromise = Promise.all([sessionResultPromise, normalizedSnapshotPromise]).then(async ([{ data: session }, normalizedSnapshot]) => {
-        if (!session || !normalizedSnapshot) return [] as CalendarRequirementRow[]
-        const { data } = await supabaseAdmin.from("onboarding_block_requirements").select("session_step_id, session_block_id, response, satisfied_at").eq("workspace_id", input.workspaceId).eq("session_id", session.id).eq("requirement_kind", "calendar_scheduled")
-        return (data ?? []) as CalendarRequirementRow[]
+    const blockRequirementsPromise = Promise.all([sessionResultPromise, normalizedSnapshotPromise]).then(async ([{ data: session }, normalizedSnapshot]) => {
+        if (!session || !normalizedSnapshot) return [] as BlockRequirementRow[]
+        const { data } = await supabaseAdmin.from("onboarding_block_requirements")
+            .select("session_step_id, session_block_id, requirement_kind, response, satisfied_at")
+            .eq("workspace_id", input.workspaceId)
+            .eq("session_id", session.id)
+            .in("requirement_kind", ["calendar_scheduled", "appointment_medium_configured", "appointment_fields_configured"])
+        return (data ?? []) as BlockRequirementRow[]
     })
 
     const summaryPromise = Promise.all([
@@ -551,7 +569,12 @@ function startOnboardingDetailData(input: {
                 videoUrl: step.videoUrl,
                 fieldLabels: Object.fromEntries(step.fields.map((field) => [field.id, field.label])),
                 blockLabels: Object.fromEntries(step.blocks.flatMap((block) => block.kind === "calendar"
+                    || block.kind === "appointment_medium"
+                    || block.kind === "appointment_fields"
                     ? [[block.sessionBlockId ?? block.id, block.title]]
+                    : [])),
+                blockOptions: Object.fromEntries(step.blocks.flatMap((block) => block.kind === "appointment_medium" || block.kind === "appointment_fields"
+                    ? [[block.sessionBlockId ?? block.id, block.options]]
                     : [])),
             }))
             : session ? getOnboardingStepsForModules(moduleKeys) : []
@@ -578,20 +601,20 @@ function startOnboardingDetailData(input: {
         workItemsPromise,
         assetsPromise,
         editRequestsPromise,
-        calendarRequirementsPromise,
-    ]).then(([summary, workItems, assets, editRequests, calendarRequirements]) => {
+        blockRequirementsPromise,
+    ]).then(([summary, workItems, assets, editRequests, blockRequirements]) => {
         const scopedStepIds = new Set(summary.canonicalSteps.map((step) => step.sessionStepId ?? step.key))
         const scopedWorkItems = workItems.filter((item) => input.role !== "staff" || scopedStepIds.has(metadataValue(item.metadata, "session_step_id") || metadataValue(item.metadata, "step_key")))
         const scopedAssets = assets.filter((asset) => input.role !== "staff" || scopedStepIds.has(metadataValue(asset.metadata, "session_step_id") || metadataValue(asset.metadata, "step_key")))
         const scopedEditRequests = editRequests.filter((request) => input.role !== "staff" || scopedStepIds.has(request.session_step_id))
-        const scopedCalendarRequirements = calendarRequirements.filter((requirement) => input.role !== "staff" || scopedStepIds.has(requirement.session_step_id)) as CalendarRequirementRow[]
-        const steps = buildStepDetails(summary.canonicalSteps, scopedWorkItems, scopedAssets, scopedCalendarRequirements, new Set(scopedEditRequests.map((request) => request.session_step_id)))
+        const scopedBlockRequirements = blockRequirements.filter((requirement) => input.role !== "staff" || scopedStepIds.has(requirement.session_step_id)) as BlockRequirementRow[]
+        const steps = buildStepDetails(summary.canonicalSteps, scopedWorkItems, scopedAssets, scopedBlockRequirements, new Set(scopedEditRequests.map((request) => request.session_step_id)))
         const percentage = getProgressPercentage(steps.map((step) => ({ key: step.key })), steps.filter((step) => step.status === "submitted" || step.status === "reviewed").map((step) => step.key))
         const latestActivity = [
             summary.session?.updated_at,
             ...scopedWorkItems.map((item) => item.updated_at ?? item.created_at),
             ...scopedAssets.map((asset) => asset.updated_at ?? asset.created_at),
-            ...scopedCalendarRequirements.map((requirement) => requirement.satisfied_at),
+            ...scopedBlockRequirements.map((requirement) => requirement.satisfied_at),
         ].filter((value): value is string => Boolean(value)).reduce<string | null>((latest, value) => !latest || new Date(value) > new Date(latest) ? value : latest, null)
         return {
             ...summary,

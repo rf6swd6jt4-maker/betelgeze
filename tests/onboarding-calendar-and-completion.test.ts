@@ -55,8 +55,8 @@ test("the Calendar is a reusable Builder block rendered by preview and public on
     assert.match(calendarBlock, /type="time"/u)
     assert.match(calendarBlock, /browserTimezone\(\)/u)
     assert.match(publicActions, /rpc\("submit_onboarding_calendar_block"/u)
-    assert.match(staffDetail, /requirement_kind", "calendar_scheduled"/u)
-    assert.match(staffDetail, /formatCalendarResponse/u)
+    assert.match(staffDetail, /\.in\("requirement_kind", \["calendar_scheduled", "appointment_medium_configured", "appointment_fields_configured"\]\)/u)
+    assert.match(staffDetail, /formatAppointmentOnboardingResponse/u)
 })
 
 test("calendar persistence is token scoped, future only, and required before completion", () => {

@@ -54,6 +54,36 @@ export function normalizeAppointmentRequestedFields(value: unknown, maximum: num
     return normalized
 }
 
+export function formatAppointmentOnboardingResponse(input: {
+    kind: "appointment_medium_configured" | "appointment_fields_configured"
+    response: unknown
+    options?: string[]
+}): Array<{ key: string; label: string; value: string }> {
+    const response = input.response && typeof input.response === "object" && !Array.isArray(input.response)
+        ? input.response as Record<string, unknown>
+        : {}
+    if (input.kind === "appointment_medium_configured") {
+        const mediums = normalizeAppointmentMediums(response.mediums)
+        return mediums.length ? [{
+            key: "mediums",
+            label: "Appointment types",
+            value: mediums.map((medium) => APPOINTMENT_MEDIUM_OPTIONS.find((option) => option.key === medium)?.label ?? medium).join(", "),
+        }] : []
+    }
+
+    const allowedOptions = new Set<AppointmentFieldKey>((input.options?.filter((key): key is AppointmentFieldKey => (
+        APPOINTMENT_FIELD_OPTIONS.some((option) => option.key === key)
+    )) ?? APPOINTMENT_FIELD_OPTIONS.map((option) => option.key)))
+    const fields = new Map(normalizeAppointmentRequestedFields(response.fields).map((field) => [field.key, field.required]))
+    return APPOINTMENT_FIELD_OPTIONS
+        .filter((option) => allowedOptions.has(option.key))
+        .map((option) => ({
+            key: option.key,
+            label: option.label,
+            value: fields.has(option.key) ? (fields.get(option.key) ? "Required" : "Optional") : "Not included",
+        }))
+}
+
 export function formatUsPhone(value: string) {
     const digits = value.replace(/\D/g, "")
     const national = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits

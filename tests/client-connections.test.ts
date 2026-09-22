@@ -17,6 +17,14 @@ test("Client Connections preserves active credentials and exposes no disconnect 
     assert.match(manager, /await fetchGhlMetrics\(credentials\)[\s\S]*await call\(input\.workspaceId, input\.userId, "finish"/)
 })
 
+test("Client Connections list query avoids PL/pgSQL record and SQL alias collisions", () => {
+    const repair = source("supabase/migrations/20260922191500_fix_client_connections_list.sql")
+
+    assert.match(repair, /v_connection client_portal_secure\.ghl_connections%rowtype/)
+    assert.match(repair, /left join client_portal_secure\.ghl_connections ghl_connection/)
+    assert.doesNotMatch(repair, /\bconnection\.workspace_id\b/)
+})
+
 test("the client portal is read-only and shows setup progress until staff link HighLevel", () => {
     const portal = source("components/client-portal/ClientPortalGhl.tsx")
     const route = source("app/api/client-portal/session/[token]/connections/ghl/route.ts")

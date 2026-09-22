@@ -1,23 +1,18 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
-import dynamic from "next/dynamic"
 import { ClientPortalChat } from "@/components/client-portal/ClientPortalChat"
-import { ClientPortalAppointments } from "@/components/client-portal/ClientPortalAppointments"
+import { ClientPortalFulfilment } from "@/components/client-portal/ClientPortalFulfilment"
+import { ClientPortalLeads } from "@/components/client-portal/ClientPortalLeads"
 import { ClientPortalResources } from "@/components/client-portal/ClientPortalResources"
 import { ClientPortalMetaAds, type ClientPortalMetaAdsReporting } from "@/components/client-portal/ClientPortalMetaAds"
-import { PortalIcon, PortalSection, portalPrimaryButton } from "@/components/client-portal/ClientPortalUI"
+import { PortalIcon, portalPrimaryButton } from "@/components/client-portal/ClientPortalUI"
 import { ClientBrandLogo } from "@/components/client-branding/ClientBrandLogo"
 import { DetailField, DetailFields } from "@/components/detail"
 import { appointmentDateLabels, type PortalAppointment } from "@/lib/client-portal/appointments"
+import type { ClientPortalOverview } from "@/lib/client-portal/overview"
 import { FilterRailButton } from "@/components/panel/FilterRail"
 import styles from "./ClientPortalLayout.module.css"
-
-const ClientPortalGoogleAds = dynamic(() => import("./ClientPortalGoogleAds").then((module) => module.ClientPortalGoogleAds))
-const ClientPortalCalendar = dynamic(() => import("./ClientPortalCalendar").then((module) => module.ClientPortalCalendar))
-const ClientPortalGhl = dynamic(() => import("./ClientPortalGhl").then((module) => module.ClientPortalGhl), {
-    loading: () => <PortalSection id="ghl-connection" title="GHL" description="Contacts & opportunities" icon="connection"><p className="mt-4 text-sm">Loading connection…</p></PortalSection>,
-})
 
 function localGreeting(hour: number) {
     if (hour < 12) return "Good morning"
@@ -85,13 +80,10 @@ function AppointmentDetail({ appointment }: { appointment: PortalAppointment }) 
     </>
 }
 
-export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, metaAdsReporting, privacyPolicyUrl, termsOfServiceUrl }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; metaAdsReporting?: ClientPortalMetaAdsReporting | null; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null }) {
+export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, overview, metaAdsReporting, privacyPolicyUrl, termsOfServiceUrl }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; overview: ClientPortalOverview; metaAdsReporting?: ClientPortalMetaAdsReporting | null; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null }) {
     const [panel, setPanel] = useState<"chat" | PortalAppointment | null>(null)
     const [greeting, setGreeting] = useState("Welcome")
-    const [ghlConnected, setGhlConnected] = useState(false)
-    const [calendarVersion, setCalendarVersion] = useState(0)
-    const onGhlConnection = useCallback((connected: boolean, reset = false) => { setGhlConnected(connected); if (reset) setCalendarVersion(value => value + 1) }, [])
-    const [activePage, setActivePage] = useState("appointments")
+    const [activePage, setActivePage] = useState(overview.hasFulfilment ? "fulfilment" : "leads")
     const closePanel = useCallback(() => setPanel(null), [])
     useEffect(() => {
         const elements = [document.documentElement, document.body]
@@ -113,7 +105,9 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
                     <ClientBrandLogo logoSrc={logoSrc} workspaceName={workspaceName} className="h-9 min-w-0 max-w-[min(12rem,38vw)] shrink" fallbackClassName="min-w-0 truncate text-lg font-semibold tracking-tight" />
                     <div className="flex shrink-0 items-center gap-1 sm:gap-3">
                         <nav aria-label="Portal pages" data-surface="light" className="group/rail flex items-center">
-                            <FilterRailButton selected={activePage === "appointments"} aria-controls="appointments" onClick={() => setActivePage("appointments")}>Results</FilterRailButton>
+                            {overview.hasFulfilment ? <FilterRailButton selected={activePage === "fulfilment"} aria-controls="fulfilment" onClick={() => setActivePage("fulfilment")}>Fulfilment</FilterRailButton> : null}
+                            <FilterRailButton selected={activePage === "leads"} aria-controls="leads" onClick={() => setActivePage("leads")}>Leads</FilterRailButton>
+                            {metaAdsReporting ? <FilterRailButton selected={activePage === "ads"} aria-controls="ads" onClick={() => setActivePage("ads")}>Ads metrics</FilterRailButton> : null}
                             <FilterRailButton selected={activePage === "resources"} aria-controls="resources" onClick={() => setActivePage("resources")}>Files</FilterRailButton>
                         </nav>
                         <button type="button" onClick={() => setPanel("chat")} className={portalPrimaryButton}><PortalIcon name="chat" /><span>Chat</span></button>
@@ -121,20 +115,13 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
                 </div>
             </header>
             <main data-client-portal-main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6">
-                <section data-portal-greeting aria-labelledby="portal-greeting" className="mb-3 shrink-0 lg:mb-6"><p className="hidden text-sm font-medium text-[var(--onboarding-muted,#475569)] lg:block">Your client portal</p><h1 id="portal-greeting" className="truncate text-2xl font-semibold leading-tight tracking-tight lg:mt-2 lg:text-[2rem]">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-2 hidden text-sm leading-6 text-[var(--onboarding-muted,#475569)] lg:block">Check your appointments or send files to your team.</p></section>
+                <section data-portal-greeting aria-labelledby="portal-greeting" className="mb-3 shrink-0 lg:mb-6"><p className="hidden text-sm font-medium text-[var(--onboarding-muted,#475569)] lg:block">Your client portal</p><h1 id="portal-greeting" className="truncate text-2xl font-semibold leading-tight tracking-tight lg:mt-2 lg:text-[2rem]">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-2 hidden text-sm leading-6 text-[var(--onboarding-muted,#475569)] lg:block">Keep up with fulfilment, leads and files from your team.</p></section>
                 <div className="grid min-h-0 flex-1 grid-cols-1 gap-4">
-                    <div className={`min-h-0 min-w-0 ${activePage === "appointments" ? "block" : "hidden"}`}>
-                        <div className={`${styles.results} ${ghlConnected ? styles.calendarResults : ""}`}>
-                            <div className="min-h-0 min-w-0">{ghlConnected ? <ClientPortalCalendar key={`${token}:${calendarVersion}`} token={token} active={activePage === "appointments" && panel === null} /> : <ClientPortalAppointments token={token} onOpen={setPanel} />}</div>
-                            <div aria-label="Connections" className="grid min-h-0 min-w-0 auto-rows-max content-start gap-4 lg:gap-6 lg:overflow-y-auto">
-                                <ClientPortalGhl key={token} token={token} onConnection={onGhlConnection} active={activePage === "appointments" && panel === null} />
-                                <ClientPortalGoogleAds token={token} active={activePage === "appointments" && panel === null} />
-                                {metaAdsReporting ? <ClientPortalMetaAds reporting={metaAdsReporting} /> : null}
-                            </div>
-                        </div>
-                    </div>
+                    {overview.hasFulfilment ? <div id="fulfilment" className={`min-h-0 min-w-0 ${activePage === "fulfilment" ? "block" : "hidden"}`}><ClientPortalFulfilment overview={overview} /></div> : null}
+                    <div id="leads" className={`min-h-0 min-w-0 ${activePage === "leads" ? "block" : "hidden"}`}><ClientPortalLeads token={token} active={activePage === "leads" && panel === null} mode={overview.leadMode} onOpen={setPanel} /></div>
+                    {metaAdsReporting ? <div id="ads" className={`min-h-0 min-w-0 overflow-y-auto pb-4 ${activePage === "ads" ? "block" : "hidden"}`}><ClientPortalMetaAds reporting={metaAdsReporting} /></div> : null}
                     {/* Keep the uploader mounted when changing panels so active transfers continue. */}
-                    <div className={`min-h-0 min-w-0 ${activePage === "resources" ? "block" : "hidden"}`}><ClientPortalResources token={token} /></div>
+                    <div id="resources" className={`min-h-0 min-w-0 ${activePage === "resources" ? "block" : "hidden"}`}><ClientPortalResources token={token} /></div>
                 </div>
             </main>
             <footer className="mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-4 px-4 pb-[env(safe-area-inset-bottom)] text-xs text-[var(--onboarding-muted,#475569)] sm:px-6 lg:px-8"><span className="min-w-0 truncate">{workspaceName}</span><div className="flex shrink-0 gap-5">{privacyPolicyUrl ? <a href={privacyPolicyUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center underline underline-offset-4">Privacy</a> : null}{termsOfServiceUrl ? <a href={termsOfServiceUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center underline underline-offset-4">Terms</a> : null}</div></footer>

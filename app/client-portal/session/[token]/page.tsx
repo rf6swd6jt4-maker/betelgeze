@@ -37,13 +37,13 @@ export default async function ClientPortalSessionPage({ params }: PageProps) {
         </main>
     }
 
-    const { workspace, relationship, theme, metaAdsReporting } = resolved
+    const { workspace, relationship, theme, metaAdsReporting, overview } = resolved
     const [publicBranding, brandAssets] = await Promise.all([
         loadWorkspacePublicBranding(workspace.id, workspace.name),
         loadWorkspaceClientBrandAssets(workspace.id),
     ])
     const logoSrc = clientBrandLogoUrl("client-portal", token, brandAssets.logoPath)
     return <OnboardingThemeProvider theme={theme}>
-        <ClientPortalShell token={token} workspaceName={publicBranding.displayName} logoSrc={logoSrc} primaryPersonName={relationship.primary_person_name} metaAdsReporting={metaAdsReporting} privacyPolicyUrl={publicBranding.privacyPolicyUrl} termsOfServiceUrl={publicBranding.termsOfServiceUrl} />
+        <ClientPortalShell token={token} workspaceName={publicBranding.displayName} logoSrc={logoSrc} primaryPersonName={relationship.primary_person_name} overview={overview} metaAdsReporting={metaAdsReporting} privacyPolicyUrl={publicBranding.privacyPolicyUrl} termsOfServiceUrl={publicBranding.termsOfServiceUrl} />
     </OnboardingThemeProvider>
 }

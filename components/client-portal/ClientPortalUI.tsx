@@ -8,6 +8,9 @@ const paths = {
     upload: <><path d="M12 16V3m-5 5 5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" /></>,
     chat: <><path d="M20 15a3 3 0 0 1-3 3H9l-5 3v-6a3 3 0 0 1-1-2.2V7a3 3 0 0 1 3-3h11a3 3 0 0 1 3 3Z" /><path d="M8 9h8M8 13h5" /></>,
     chart: <><path d="M4 20V10m6 10V4m6 16v-7m4 7H2" /></>,
+    checklist: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="m8 9 1.5 1.5L12 8m2 1h3m-9 6 1.5 1.5L12 14m2 1h3" /></>,
+    progress: <><path d="M5 19V9m7 10V5m7 14v-6" /><path d="M3 21h18" /></>,
+    leads: <><path d="M4 19V5m0 3h10l-2.5 3L14 14H4" /></>,
 }
 
 export function PortalIcon({ name, className = "h-5 w-5" }: { name: keyof typeof paths; className?: string }) {

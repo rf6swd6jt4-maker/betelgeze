@@ -1,6 +1,7 @@
 import { headers } from "next/headers"
 import { clientBrandLogoUrl, loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
 import { getClientPortalUrl } from "@/lib/client-portal/domain"
+import { clientPortalOverview } from "@/lib/client-portal/overview"
 import { loadPublishedOnboardingTheme } from "@/lib/onboarding/configuration"
 import { resolveOnboardingTheme } from "@/lib/onboarding/theme"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -40,7 +41,7 @@ export async function resolveClientPortalAccessByToken(token: string) {
 export async function loadClientPortalSessionByToken(token: string) {
     const resolved = await resolveClientPortalAccessByToken(token)
     if (!resolved) return null
-    const [theme, reportingResult] = await Promise.all([
+    const [theme, reportingResult, overviewResult] = await Promise.all([
         loadPublishedOnboardingTheme(resolved.session.workspace_id),
         supabaseAdmin.from("relationship_windsor_meta_ads_connections")
             .select("account_id, account_name")
@@ -48,6 +49,10 @@ export async function loadClientPortalSessionByToken(token: string) {
             .eq("relationship_id", resolved.session.relationship_id)
             .eq("status", "connected")
             .maybeSingle(),
+        supabaseAdmin.rpc("client_portal_overview", {
+            p_token: token.toLowerCase(),
+            p_workspace_id: resolved.session.workspace_id,
+        }),
         supabaseAdmin.rpc("record_client_portal_access", {
             p_workspace_id: resolved.session.workspace_id,
             p_portal_session_id: resolved.session.id,
@@ -57,6 +62,7 @@ export async function loadClientPortalSessionByToken(token: string) {
     return {
         ...resolved,
         theme,
+        overview: clientPortalOverview(overviewResult.data),
         metaAdsReporting: reporting?.account_id ? { accountId: reporting.account_id, accountName: reporting.account_name ?? null } : null,
     }
 }

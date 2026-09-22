@@ -8,6 +8,7 @@ import { readChatDraft, writeChatDraft } from "@/lib/communications/offline-draf
 import { useOfflineChat } from "@/components/communications/useOfflineChat"
 import { ChatOutboxStatus } from "@/components/communications/ChatOutboxStatus"
 import { ClientChatParticipants } from "@/components/communications/ClientChatParticipants"
+import { ClientPortalActions } from "@/components/communications/ClientPortalActions"
 import { resourceUploadAssetId } from "@/lib/communications/resource-upload"
 
 import { chatCheckboxBody } from "@/lib/chat-formatting"
@@ -908,6 +909,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-800 text-xs font-semibold">{initials(selected.title)}</span>
                             <span className="min-w-0"><span className="flex min-w-0 items-center gap-2"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{selected.title}</span>{selected.isTest ? <SquarePill tone="yellow" className="!min-h-5 !px-2 !py-0.5 !text-[10px] !leading-3">Test</SquarePill> : null}</span><span className="block truncate text-[11px] text-neutral-600">{selected.subtitle ?? "WhatsApp client"}</span></span>
                         </Link>
+                        <ClientPortalActions key={`portal-actions:${selected.id}`} workspaceSlug={bootstrap.workspaceSlug} relationshipId={selected.id} />
                         <ClientChatParticipants key={selected.id} workspaceSlug={bootstrap.workspaceSlug} conversation={selected} userId={bootstrap.currentUser.id} people={bootstrap.people} onSaved={synchronize} />
                         <CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} />
                     </header>

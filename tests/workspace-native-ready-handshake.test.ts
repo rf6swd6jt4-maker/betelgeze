@@ -97,14 +97,14 @@ function handshakeFixture(downgrade?: "host" | "native") {
         const completeTabNavigation = evaluate(declarations(hostSource, ["completeTabNavigation"]), hostContext, "completeTabNavigation")
         evaluate(effectSource(hostSource, "function receiveFrameMessage"), { ...hostContext, completeTabNavigation })
         const nativeContext = {
-            ...shared, ...hooks(1, downgrade === "native"), tab, active: true, accountCleared: false, current, committedUrl,
+            ...shared, ...hooks(1, downgrade === "native"), tab, active: true, accountCleared: false, current, committedUrl, owner: ref({}), userId: "user", workspaceId: "workspace",
             blockedByAccess: false, refresh() {},
             assignRef: (id: string, handle: Handle | null) => { if (handle) nativeRefs.current.set(id, handle); else nativeRefs.current.delete(id) },
             post: (message: { type: string; url: string }) => nativeMessageRef.current({ source: "workspace-test", target: "host", tabId, ...message }),
         }
         const callbacks = evaluate(declarations(nativeSource, ["reportLocation", "onMounted"]), nativeContext, "({reportLocation, onMounted})") as { reportLocation: () => void; onMounted: () => void }
         lateMounted = callbacks.onMounted
-        evaluate(effectSource(nativeSource, "current.current = { tab, active, accountCleared }"), { ...nativeContext, ...hooks(1) })
+        evaluate(effectSource(nativeSource, "current.current = { tab, active, accountCleared,"), { ...nativeContext, ...hooks(1) })
         evaluate(effectSource(nativeSource, "committedUrl.current = null"), { ...nativeContext, ...hooks(1) })
         evaluate(effectSource(nativeSource, "assignRef(tab.id"), { ...nativeContext, ...callbacks })
         const ready = nodesMatching(nativeSource, (node): node is ts.FunctionDeclaration => ts.isFunctionDeclaration(node) && node.name?.text === "Ready")

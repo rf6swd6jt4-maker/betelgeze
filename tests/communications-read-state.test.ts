@@ -45,11 +45,11 @@ test("all activation paths revoke the old chat before queued iframe messages, in
         assert.ok(switchCallback)
         deps.activeTabIdRef.current = "chat"
         events.length = 0
-        let release!: (safe: () => boolean) => void
+        let release!: (safe: (commit: () => void) => boolean) => void
         const queued: Array<() => void> = []
         const switchDeps = {
             activeTabIdRef: deps.activeTabIdRef, startNativeNavigation() {}, nativeNavigationPerformance: { finish() {} },
-            prepareNativeLeave: () => new Promise<() => boolean>((resolve) => { release = resolve }),
+            prepareNativeLeave: () => new Promise<(commit: () => void) => boolean>((resolve) => { release = resolve }),
             tabsRef: { current: [{ id: "chat", seenRevision: 0 }, { id: "other", seenRevision: 0 }] }, mutationRevisionRef: { current: 0 },
             setTabs() {}, activateWorkspaceTab: activate, saveTabsState() {},
             window: { requestAnimationFrame: (cb: () => void) => { queued.push(cb) } }, postToTab: () => {
@@ -62,7 +62,7 @@ test("all activation paths revoke the old chat before queued iframe messages, in
         assert.equal(workspaceDocumentIsActive(), true, "the current chat stays active while departure is still undecided")
         assert.equal(queued.length, 0)
         Object.assign(globalThis, { document: host.document })
-        release(() => true); await pending
+        release((commit) => { commit(); return true }); await pending
         Object.assign(globalThis, { document: frames.get("chat")!.contentWindow!.document })
         assert.equal(workspaceDocumentIsActive(), false)
         assert.deepEqual(events, ["chat", "other"])

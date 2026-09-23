@@ -13,7 +13,7 @@ import type { NativeLibrarySnapshot } from "@/lib/workspace-native-library"
 import { WorkspacePanelChrome } from "./WorkspacePanelChrome"
 import { PullToRefresh } from "./PullToRefresh"
 import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
-import { flushWorkspaceAutosaves } from "@/lib/workspace-mutations"
+import { captureWorkspaceAutosaveDepartureCheck, flushWorkspaceAutosaves } from "@/lib/workspace-mutations"
 import { WORKSPACE_TAB_MESSAGE_SOURCE, workspaceRouteIsRecordDetail, type WorkspaceTabFrameMessage, type WorkspaceTabParentMessage } from "@/lib/workspace-tabs"
 import { parseWorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 import { WorkspaceNavigationProvider, type WorkspaceNavigation } from "./WorkspaceNavigation"
@@ -27,7 +27,9 @@ const QueuePanel = lazy(() => import("./NativeQueuePanel"))
 const WorkPanel = lazy(() => import("./NativeWorkPanel"))
 const AdminPanel = lazy(() => import("./NativeAdminPanel"))
 export type NativePanelSnapshot = PersonalQueueSnapshot | NativeRelationshipsSnapshot | NativeLibrarySnapshot | NativeWorkSnapshot | NativeAdminSnapshot
-export type NativeTabHandle = { post: (message: Omit<WorkspaceTabParentMessage, "source" | "target" | "tabId">) => void }
+export type NativeTabHandle = { owner: object; post: (message: Omit<WorkspaceTabParentMessage, "source" | "target" | "tabId">) => void }
+export type NativeTabNavigationRequest = { tabId: string; sourceUrl: string; url: string; replace: boolean; userId: string; workspaceId: string; intentSequence: number }
+export type NativeTabNavigationCommit = (validate: () => boolean) => boolean
 
 export function nativePanelCacheKey(userId: string, workspaceId: string, routeKey: string) { return `${userId}:${workspaceId}:${routeKey}` }
 
@@ -117,7 +119,7 @@ function RestoreScroll({ onRestore }: { onRestore: () => void }) {
     return null
 }
 
-export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, workspaceSlug, userId, cache, accountCleared, scrollPositions, assignRef, onMessage, banner }: {
+export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, workspaceSlug, userId, cache, accountCleared, scrollPositions, assignRef, onMessage, prepareNavigation, banner }: {
     tab: { id: string; url: string; title: string }
     active: boolean
     contextOpen: boolean
@@ -129,10 +131,12 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     scrollPositions: WorkspaceTabScrollStore
     assignRef: (tabId: string, handle: NativeTabHandle | null) => void
     onMessage: (message: WorkspaceTabFrameMessage) => void
+    prepareNavigation: (request: NativeTabNavigationRequest) => NativeTabNavigationCommit | null
     banner?: ReactNode
 }) {
     const root = useRef<HTMLDivElement>(null)
     const boundary = useRef<PanelBoundary>(null)
+    const owner = useRef({})
     const getScrollElement = useCallback(() => root.current, [])
     const getPullTarget = useCallback(() => root.current, [])
     const restoredScrollKey = useRef<string | null>(null)
@@ -142,9 +146,15 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     const [navigationError, setNavigationError] = useState<string | null>(null)
     const [accessError, setAccessError] = useState<{ key: string; message: string } | null>(null)
     const navigationSequence = useRef(0)
-    const current = useRef({ tab, active, accountCleared })
+    const mounted = useRef(false)
+    const current = useRef({ tab, active, accountCleared, userId, workspaceId })
     const committedUrl = useRef<string | null>(null)
-    useLayoutEffect(() => { current.current = { tab, active, accountCleared } }, [tab, active, accountCleared])
+    useLayoutEffect(() => { current.current = { tab, active, accountCleared, userId, workspaceId } }, [tab, active, accountCleared, userId, workspaceId])
+    useLayoutEffect(() => {
+        const sequence = navigationSequence
+        mounted.current = true
+        return () => { mounted.current = false; ++sequence.current }
+    }, [])
     useLayoutEffect(() => { committedUrl.current = null }, [tab.url, accountCleared])
     const route = nativeWorkspaceRoute(tab.url, workspaceSlug)!
     const key = nativePanelCacheKey(userId, workspaceId, route.key)
@@ -234,7 +244,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     useLayoutEffect(() => {
         // Cached children acknowledge their commit in a passive effect. Their
         // receiver must already be registered, even when painting is paused.
-        assignRef(tab.id, { post(message) {
+        assignRef(tab.id, { owner: owner.current, post(message) {
             if (message.type === "retry") boundary.current?.retry()
             if (message.type === "activate" && message.active && message.refresh) refresh()
             if (message.type === "probe" && !blockedByAccess && committedUrl.current === tab.url) reportLocation()
@@ -256,27 +266,54 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     }, [active])
 
     const navigate = useCallback(async (href: string, replace = false) => {
-        if (!current.current.active || current.current.accountCleared) return
+        if (!mounted.current || !current.current.active || current.current.accountCleared) return
         const sequence = ++navigationSequence.current
         const sourceUrl = current.current.tab.url
         const destination = new URL(href, new URL(sourceUrl, window.location.origin))
         const url = `${destination.pathname}${destination.search}${destination.hash}`
         if (destination.origin === window.location.origin && url === sourceUrl) return
         post({ type: "navigation-intent", url, replace, intentSequence: sequence })
-        const safe = await flushWorkspaceAutosaves(1500, { navigation: true })
-        if (sequence !== navigationSequence.current || !current.current.active || current.current.tab.url !== sourceUrl || current.current.accountCleared) {
+        const internal = destination.origin === window.location.origin && destination.pathname.startsWith(`/${workspaceSlug}/`)
+        const commit = internal ? prepareNavigation({ tabId: tab.id, sourceUrl, url, replace, userId, workspaceId, intentSequence: sequence }) : null
+        if (internal && !commit) {
             post({ type: "navigation-intent-end", intentSequence: sequence, interactionOutcome: "aborted" })
             return
         }
-        if (!safe) {
-            post({ type: "navigation-intent-end", intentSequence: sequence, interactionOutcome: "failed" })
-            setNavigationError("Your changes are not safely saved yet. Retry saving before leaving this panel.")
-            return
+        const check = captureWorkspaceAutosaveDepartureCheck()
+        const stillCurrent = () => mounted.current && sequence === navigationSequence.current && current.current.active && current.current.tab.id === tab.id && current.current.tab.url === sourceUrl && !current.current.accountCleared && current.current.userId === userId && current.current.workspaceId === workspaceId
+        const endIntent = (interactionOutcome: "failed" | "aborted") => {
+            if (mounted.current && current.current.tab.id === tab.id && current.current.userId === userId && current.current.workspaceId === workspaceId) post({ type: "navigation-intent-end", intentSequence: sequence, interactionOutcome })
         }
-        setNavigationError(null)
-        if (destination.origin !== window.location.origin || !destination.pathname.startsWith(`/${workspaceSlug}/`)) { window.location.assign(destination.href); return }
-        post({ type: replace ? "location-replace" : "navigation-start", url })
-    }, [post, workspaceSlug])
+        try {
+            const safe = await flushWorkspaceAutosaves(1500, { navigation: true })
+            if (!stillCurrent()) {
+                endIntent("aborted")
+                return
+            }
+            check.acknowledge()
+            let committed = false
+            let validationAttempted = false
+            if (safe) {
+                const validate = () => { validationAttempted = true; return stillCurrent() && check.validate() }
+                if (commit) committed = commit(validate)
+                else if (validate()) {
+                    // Cross-document departure retains its browser boundary;
+                    // the React commit guarantee applies to internal routes.
+                    window.location.assign(destination.href)
+                    committed = true
+                }
+            }
+            if (!committed) {
+                const failed = stillCurrent() && (!safe || validationAttempted)
+                endIntent(failed ? "failed" : "aborted")
+                if (failed) setNavigationError("Your changes are not safely saved yet. Retry saving before leaving this panel.")
+                return
+            }
+            if (mounted.current) setNavigationError(null)
+        } finally {
+            check.dispose()
+        }
+    }, [post, prepareNavigation, tab.id, workspaceSlug, userId, workspaceId])
     const navigation = useMemo<WorkspaceNavigation>(() => ({
         tabId: tab.id, workspaceSlug, url: tab.url, active,
         push: (href) => { void navigate(href) }, replace: (href) => { void navigate(href, true) }, refresh,

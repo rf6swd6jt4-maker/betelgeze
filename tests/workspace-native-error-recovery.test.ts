@@ -33,7 +33,7 @@ test("the actual native handle resets a failed boundary on explicit Retry; ordin
     let post!: (message: { type: string; active?: boolean; refresh?: boolean }) => void
     const effect = matching(root, (node) => ts.isCallExpression(node) && node.expression.getText(root) === "useLayoutEffect" && Boolean(node.arguments[0]?.getText(root).includes("assignRef(tab.id"))) as ts.CallExpression
     const cleanup = evaluate(`const run = ${effect.arguments[0].getText(root)};`, {
-        tab: { id: "tab", url: "/fixture/assets" }, boundary: { current: boundary }, blockedByAccess: false, committedUrl: { current: null }, reportLocation() {},
+        tab: { id: "tab", url: "/fixture/assets" }, owner: { current: {} }, boundary: { current: boundary }, blockedByAccess: false, committedUrl: { current: null }, reportLocation() {},
         refresh: () => { reads++ }, assignRef: (_id: string, handle: { post: typeof post } | null) => { if (handle) post = handle.post },
     }, "run()")
     post({ type: "activate", active: true, refresh: true })

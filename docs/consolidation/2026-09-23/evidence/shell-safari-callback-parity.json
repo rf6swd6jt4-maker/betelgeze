@@ -1,0 +1,38 @@
+{
+  "purpose": "Historical Safari candidate run versus final timing-corrected candidate: actual extracted application declarations and runtime helpers are byte-identical. This is not parity of complete components or timing harnesses.",
+  "historicalResult": "shell-safari-candidate-historical.json",
+  "historicalBundleDirectory": "/var/folders/vc/fmf05jvj1m11z81mw_1b57lr0000gn/T/be-departure-fixture-E0JjxP",
+  "currentBundleDirectory": "/var/folders/vc/fmf05jvj1m11z81mw_1b57lr0000gn/T/be-departure-fixture-g7AKWN",
+  "files": [
+    {
+      "generatedFile": "source.js",
+      "byteIdentical": true,
+      "historicalSha256": "d95b87ce9140c739ed66141221f11fe49123f581511db1a8c1bcf7e182847922",
+      "currentSha256": "d95b87ce9140c739ed66141221f11fe49123f581511db1a8c1bcf7e182847922"
+    },
+    {
+      "generatedFile": "workspace-mutations.js",
+      "byteIdentical": true,
+      "historicalSha256": "dc3754ae93df92ad0c7ba10c78fd46a437e3b75de5866f82050d2e8dfe53a180",
+      "currentSha256": "dc3754ae93df92ad0c7ba10c78fd46a437e3b75de5866f82050d2e8dfe53a180"
+    },
+    {
+      "generatedFile": "workspace-tab-departure.js",
+      "byteIdentical": true,
+      "historicalSha256": "5aa531cd073b506453da5b7a459c83063612faa100e8c63d83fd6e2d73b3ce13",
+      "currentSha256": "5aa531cd073b506453da5b7a459c83063612faa100e8c63d83fd6e2d73b3ce13"
+    },
+    {
+      "generatedFile": "workspace-tabs.js",
+      "byteIdentical": true,
+      "historicalSha256": "237596c10a64fee6d115f4b17d6b35e0dd1aa43b58b339196becd0241f9fca17",
+      "currentSha256": "237596c10a64fee6d115f4b17d6b35e0dd1aa43b58b339196becd0241f9fca17"
+    },
+    {
+      "generatedFile": "workspace-frame-navigation.js",
+      "byteIdentical": true,
+      "historicalSha256": "b4f133506166f7e7a6cea4cf2b8b9a1cd37dcd348acf05c26269aa469286fcec",
+      "currentSha256": "b4f133506166f7e7a6cea4cf2b8b9a1cd37dcd348acf05c26269aa469286fcec"
+    }
+  ]
+}

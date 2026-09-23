@@ -1,5 +1,7 @@
 # Remaining shell departure repair
 
+**Approved continuation:** the user explicitly authorized this bounded local work with “please proceed.” The resulting source and focused checks are recorded in [shell-departure-continuation-validation.md](./shell-departure-continuation-validation.md). The proposal and rejection details below are retained as the scope and approval history; they no longer describe an unapplied current candidate.
+
 This is the concrete local continuation scope after automatic approval review rejected the commit-wrapper implementation. It authorizes no deployment, migration, client-data operation, provider call or protected alerts behavior change. The current accepted candidate is saved separately from the unapplied proposal.
 
 ## Problem and affected paths

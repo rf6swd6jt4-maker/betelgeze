@@ -1,5 +1,7 @@
 // @ts-expect-error Node's built-in TypeScript runner needs the source extension.
 import { WORKSPACE_TAB_MESSAGE_SOURCE } from "./workspace-tabs.ts"
+// @ts-expect-error Node's built-in TypeScript runner needs the source extension.
+import { WORKSPACE_FRAME_NAVIGATION_ATTRIBUTE } from "./workspace-frame-navigation.ts"
 
 export const WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE = "data-workspace-frame-document"
 export const WORKSPACE_FRAME_PAGE_ATTRIBUTE = "data-workspace-frame-page-mounted"
@@ -9,6 +11,18 @@ export type WorkspaceFrameDepartureConfirmation = { requestId: string; documentI
 
 type DepartureFrame = Pick<HTMLIFrameElement, "contentDocument" | "contentWindow">
 const confirmations = new WeakMap<DepartureFrame, () => boolean>()
+
+/** Even retained iframe elements may acquire a different document/receiver. */
+export function captureWorkspaceFrameIdentity(frame: DepartureFrame) {
+    try {
+        const document = frame.contentDocument, source = frame.contentWindow
+        const receiver = document?.documentElement?.getAttribute(WORKSPACE_FRAME_NAVIGATION_ATTRIBUTE)
+        const documentId = document?.documentElement?.getAttribute(WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE)
+        return () => {
+            try { return frame.contentDocument === document && frame.contentWindow === source && document?.documentElement?.getAttribute(WORKSPACE_FRAME_NAVIGATION_ATTRIBUTE) === receiver && document?.documentElement?.getAttribute(WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE) === documentId } catch { return false }
+        }
+    } catch { return () => false }
+}
 
 /** Invoke in the task that commits removal, after all asynchronous checks finish. */
 export function confirmWorkspaceFrameDeparture(frame: DepartureFrame) {

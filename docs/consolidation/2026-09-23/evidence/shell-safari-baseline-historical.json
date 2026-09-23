@@ -1,0 +1,267 @@
+{
+  "status": "complete",
+  "sourceManifest": {
+    "components/workspace/WorkspaceTopBarClient.tsx": "9b1007ab1fe2583aaa3a77eea99e8c64283ce58942dffe703df2c4cb22970a36",
+    "components/workspace/NativeWorkspaceTab.tsx": "8d2c093ef43984a52d50a9f2e1d991401bdd5f15ca4669467c68bff25812fa9c",
+    "lib/workspace-mutations.ts": "49da4b6c4c031c99e0d19555992aae047bc0217db3c5de5eccfb34949624c08a",
+    "lib/workspace-tab-departure.ts": "ab3dbceec5e619aea88f899ec75932f7b1ada024792f6a087e630f28eb2d5be2",
+    "lib/workspace-tabs.ts": "fc5a08ff9bf4f97d0c25a86df77aa1c0a4943d0e19903720b9e7c8b9da48455c",
+    "lib/workspace-frame-navigation.ts": "41ffd6f5011fcb70e61dcd95ea44f67b59948b0e0cbadc4dbb7d6864cac623cf"
+  },
+  "variant": "baseline 7a35b73d",
+  "reactVersion": "19.2.4",
+  "buildMode": "production",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15",
+  "passed": 20,
+  "total": 32,
+  "missing": 0,
+  "cases": [
+    {
+      "name": "host close commits before late native input",
+      "passed": false,
+      "error": "accepted editor input lost: [{\"id\":\"a\",\"draft\":\"late edit\",\"saved\":\"unsaved a\"}]",
+      "durationMs": 5051
+    },
+    {
+      "name": "host close commits before late iframe input",
+      "passed": false,
+      "error": "frame late input lost: [\"a\",\"a\"]",
+      "durationMs": 50
+    },
+    {
+      "name": "failed iframe save retains mounted editor",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 0,
+      "durationMs": 50
+    },
+    {
+      "name": "host Retry commits before late native input",
+      "passed": false,
+      "error": "accepted editor input lost: [{\"id\":\"a\",\"draft\":\"late edit\",\"saved\":\"unsaved a\"}]",
+      "durationMs": 49
+    },
+    {
+      "name": "native to iframe owner replacement",
+      "passed": false,
+      "error": "accepted editor input lost: [{\"id\":\"a\",\"draft\":\"late edit\",\"saved\":\"unsaved a\"}]",
+      "durationMs": 50
+    },
+    {
+      "name": "iframe to native owner replacement",
+      "passed": false,
+      "error": "frame late input lost: [\"a\",\"a\"]",
+      "durationMs": 49
+    },
+    {
+      "name": "full resident pool switch evicts acknowledged frame",
+      "passed": false,
+      "error": "frame late input lost: [\"c\",\"c\"]",
+      "durationMs": 66
+    },
+    {
+      "name": "reopen evicts only safe resident frame",
+      "passed": false,
+      "error": "frame late input lost: [\"c\",\"c\"]",
+      "durationMs": 66
+    },
+    {
+      "name": "native in-panel push commits before late input",
+      "passed": false,
+      "error": "accepted editor input lost: [{\"id\":\"a\",\"draft\":\"late edit\",\"saved\":\"unsaved a\"}]",
+      "durationMs": 49
+    },
+    {
+      "name": "native in-panel replace commits before late input",
+      "passed": false,
+      "error": "accepted editor input lost: [{\"id\":\"a\",\"draft\":\"late edit\",\"saved\":\"unsaved a\"}]",
+      "durationMs": 49
+    },
+    {
+      "name": "failed save retains mounted editor",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 74
+    },
+    {
+      "name": "input during pending save refuses departure",
+      "passed": true,
+      "lateAttempts": 1,
+      "acceptedLateInputs": 1,
+      "flushes": 3,
+      "durationMs": 58
+    },
+    {
+      "name": "A to B to A cancels stale continuation",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 49
+    },
+    {
+      "name": "full pool speculative warm checkpoints without network",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 0,
+      "durationMs": 66
+    },
+    {
+      "name": "Suspense pending native panel Retry settles",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 0,
+      "durationMs": 85
+    },
+    {
+      "name": "error boundary explicit Retry restores native editor",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 0,
+      "durationMs": 115
+    },
+    {
+      "name": "reopen has one activation save and storage effect",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 2,
+      "durationMs": 133
+    },
+    {
+      "name": "owner-free resident frame switch stays asynchronous",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 0,
+      "durationMs": 82
+    },
+    {
+      "name": "native input during pending save is retained",
+      "passed": false,
+      "error": "late native edit lost to navigation",
+      "durationMs": 2
+    },
+    {
+      "name": "native account change aborts pending navigation",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 48
+    },
+    {
+      "name": "native owner replacement fences pending navigation",
+      "passed": false,
+      "error": "replacement native owner accepted stale navigation",
+      "durationMs": 1
+    },
+    {
+      "name": "Suspense destination cannot accept late departed editor input",
+      "passed": false,
+      "error": "accepted editor input lost: [{\"id\":\"a\",\"draft\":\"late edit\",\"saved\":\"unsaved a\"}]",
+      "durationMs": 665
+    },
+    {
+      "name": "synthetic warm native switch painted sample 1",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 85
+    },
+    {
+      "name": "synthetic warm native switch painted sample 2",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 80
+    },
+    {
+      "name": "synthetic warm native switch painted sample 3",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 84
+    },
+    {
+      "name": "synthetic warm native switch painted sample 4",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 83
+    },
+    {
+      "name": "synthetic warm native switch painted sample 5",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 82
+    },
+    {
+      "name": "synthetic gated destination painted sample 1",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 8367
+    },
+    {
+      "name": "synthetic gated destination painted sample 2",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 382
+    },
+    {
+      "name": "synthetic gated destination painted sample 3",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 399
+    },
+    {
+      "name": "synthetic gated destination painted sample 4",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 63481
+    },
+    {
+      "name": "synthetic gated destination painted sample 5",
+      "passed": true,
+      "lateAttempts": 0,
+      "acceptedLateInputs": 0,
+      "flushes": 3,
+      "durationMs": 383
+    }
+  ],
+  "paintedWarmSwitchSamplesMs": [
+    32,
+    30,
+    32,
+    32,
+    32
+  ],
+  "paintedGatedDestinationSamplesMs": [
+    8315,
+    331,
+    348,
+    63436,
+    332
+  ],
+  "limits": "Real React tree and extracted application callbacks, synthetic editors and mock shell dependencies. Synthetic frame receiver, no full app/auth/provider/physical-device evidence. Small timing samples are observations, not production speed."
+}

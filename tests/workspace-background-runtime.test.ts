@@ -45,7 +45,10 @@ test("workspace presence roster includes active and inactive peers without dupli
 test("workspace navigation keeps recent frame content mounted and reports progress inline", () => {
     const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
     const bridge = source("components/workspace/WorkspaceTabBridge.tsx")
-    const navigationCase = shell.slice(shell.indexOf('message.type === "navigation-start"'), shell.indexOf('message.type === "open-tab"'))
+    // Select the handler itself, not the earlier native-message bypass guard.
+    const navigationCaseStart = shell.indexOf('if (message.type === "navigation-start") {')
+    assert.notEqual(navigationCaseStart, -1)
+    const navigationCase = shell.slice(navigationCaseStart, shell.indexOf('if (message.type === "open-tab"', navigationCaseStart))
 
     assert.match(shell, /beginTabNavigation\(tabId, url\)/)
     assert.match(shell, /navigationStateByTab\[tab\.id\]\?\.status === "loading"/)

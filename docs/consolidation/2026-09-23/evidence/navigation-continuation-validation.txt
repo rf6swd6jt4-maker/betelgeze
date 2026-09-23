@@ -1,0 +1,48 @@
+Betelgeze Pass 2 approved navigation continuation
+Date: 2026-09-23
+Workspace: /private/tmp/betelgeze-platform-consolidation
+Branch: codex/platform-consolidation
+Continuation baseline: 7a35b73d
+Original main baseline: 31388081894e6d4143d5bb0d577c0341ec31edf7
+
+Final repository suite
+Command: npm test
+Exit: 0
+tests 1322; pass 1322; fail 0; cancelled 0; skipped 0; todo 0
+duration_ms 6703.708292
+Raw log: /private/tmp/be-consolidation-evidence/pass-2-navigation-final-suite.log
+
+Focused navigation group
+43/43 passing; included in repository suite, not additional unique tests.
+Raw log: /private/tmp/be-consolidation-evidence/shell-continuation-focused-tests.log
+Independent reviewer: 11/11 scoped owner/account identity scenarios.
+
+Lint
+Final combined continuation application/helper/tests/fixture: 10 files, exit 0, no errors or warnings.
+Command: npx eslint <all 10 changed JavaScript/TypeScript paths> --max-warnings=0
+Fixture node --check and git diff --check also passed.
+This last combined check includes the background-runtime handler anchor correction and final paint fixture.
+Raw log: /private/tmp/be-consolidation-evidence/pass-2-navigation-final-lint.log
+
+Production build
+Command: npx next build --webpack
+Exit: 0
+Next.js 16.2.11
+Compiled successfully in 9.8s
+TypeScript finished in 11.3s
+33 static pages generated; build traces completed
+Supabase URL: http://127.0.0.1:9
+Anon/service keys: local-build-placeholder (dummy values)
+No production environment copied or queried.
+Raw log: /private/tmp/be-consolidation-evidence/pass-2-navigation-final-build.log
+
+Application source SHA-256
+NativeWorkspaceTab.tsx 62d5cf33e7724bc81f132313d0cddefd6dd8c88409d3bf2cba967617c3b6f6a5
+WorkspaceTopBarClient.tsx 93437e551dc93dd04a827c16888889ee573b374fbcb40facfc0a587b70e16fdc
+workspace-tab-departure.ts facb9f7b9670361b9a47ba1f0289ccd4dc1097fb60c6ec97adb78c4cac58a641
+
+The original 31/31 disposable PGlite results remain applicable to unchanged SQL.
+No new SQL or production/provider/storage/deployment action occurred here.
+Protected alerts implementations, app_speed.md, app-alerts.md and dependencies unchanged.
+Browser results and synthetic performance limits: ../shell-browser-continuation.md
+Remaining release gates: ../navigation-departure-boundaries.md and ../pass-2-integration.md

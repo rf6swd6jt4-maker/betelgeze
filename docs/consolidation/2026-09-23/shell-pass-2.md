@@ -1,8 +1,10 @@
-# Shell Pass 2 implementation and remaining release gate
+# Shell Pass 2 implementation and historical release gate
+
+**Continuation update:** the user subsequently approved the bounded local repair below. The host commit wrapper was applied and revised, and native in-panel push/replace now uses the same explicit commit ownership. See [shell-departure-continuation-validation.md](./shell-departure-continuation-validation.md) for the current implementation and focused evidence. This document preserves the earlier checkpoint and automatic-review history; its unapplied-patch and React-gap status describes that earlier checkpoint, not the continued source. The separate [navigation boundaries](./navigation-departure-boundaries.md) remain relevant to promotion.
 
 Baseline: `31388081894e6d4143d5bb0d577c0341ec31edf7`. Work was isolated in `/private/tmp/betelgeze-platform-consolidation`. This package made no production calls, SQL changes, deployments, client-message sends or draft/storage deletions. Local checkpoint commits belong to the integration record. `app_speed.md` and `app-alerts.md` remain unchanged. Installed Next routing/error-boundary documentation was read before implementation.
 
-## Current status
+## Status at the earlier checkpoint
 
 **Local implementation is frozen, with one unresolved release blocker.** The current shell performs its final synchronous draft check before scheduling React state changes. React may defer the actual iframe/native-owner unmount until a later commit. A legacy flush-only owner could receive another input between that check and unmount. The current tests do not prove that interval safe. Do not promote this shell package as complete draft-loss protection while this gap remains.
 

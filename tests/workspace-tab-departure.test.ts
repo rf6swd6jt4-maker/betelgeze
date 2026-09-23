@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
-import { confirmWorkspaceFrameDeparture, prepareWorkspaceFrameDeparture, workspaceResidentEvictions, WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE, WORKSPACE_FRAME_PAGE_ATTRIBUTE, WORKSPACE_FRAME_ERROR_ATTRIBUTE } from "../lib/workspace-tab-departure.ts"
+import { captureWorkspaceFrameIdentity, confirmWorkspaceFrameDeparture, prepareWorkspaceFrameDeparture, workspaceResidentEvictions, WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE, WORKSPACE_FRAME_PAGE_ATTRIBUTE, WORKSPACE_FRAME_ERROR_ATTRIBUTE } from "../lib/workspace-tab-departure.ts"
 import { checkpointWorkspaceAutosaves, registerWorkspaceAutosaveFlusher } from "../lib/workspace-mutations.ts"
 
 function transport() {
@@ -119,6 +119,7 @@ test("residency preflights only displaced owners and excludes an explicitly clos
 
 const shell = ts.createSourceFile("shell.tsx", readFileSync("components/workspace/WorkspaceTopBarClient.tsx", "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 function evaluate(name: string, context: Record<string, unknown>) {
+    context = { captureWorkspaceFrameIdentity, nativeAccountScopeRef: { current: "scope" }, flushSync: (commit: () => void) => commit(), ...context }
     let node: ts.Node | undefined
     function visit(item: ts.Node) {
         if ((ts.isFunctionDeclaration(item) && item.name?.text === name) || (ts.isVariableDeclaration(item) && item.name.getText(shell) === name)) node = item
@@ -129,13 +130,16 @@ function evaluate(name: string, context: Record<string, unknown>) {
     return new Function(...Object.keys(context), ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText + `; return ${name};`)(...Object.values(context))
 }
 
+const acceptDeparture = (commit: () => void) => { commit(); return true }
+type DepartureCommit = typeof acceptDeparture
+
 test("the actual shell Retry invokes the final confirmation; a truthy permission cannot bypass refusal", async () => {
-    for (const safe of [false, () => false, () => true]) {
+    for (const safe of [false, () => false, acceptDeparture]) {
         const changes: string[] = []
-        let release!: (safe: boolean | (() => boolean)) => void
+        let release!: (safe: boolean | DepartureCommit) => void
         const retry = evaluate("retryActiveNavigation", {
             activeNavigation: { requestedUrl: "/fixture/assets" }, activeTabId: "tab",
-            prepareNativeLeave: () => new Promise<boolean | (() => boolean)>((resolve) => { release = resolve }),
+            prepareNativeLeave: () => new Promise<boolean | DepartureCommit>((resolve) => { release = resolve }),
             beginTabNavigation: () => changes.push("begin"), updateTabForShellNavigation: () => changes.push("route"),
             pendingNavigationRef: { current: new Map() }, nativeRefs: { current: new Map() }, postToTab: () => changes.push("post"),
             ensureTabFrameLocation: () => changes.push("replace"),
@@ -143,7 +147,7 @@ test("the actual shell Retry invokes the final confirmation; a truthy permission
         const pending = retry()
         assert.deepEqual(changes, [])
         release(safe); await pending
-        assert.deepEqual(changes, typeof safe === "function" && safe() ? ["begin", "route", "replace"] : [])
+        assert.deepEqual(changes, safe === acceptDeparture ? ["begin", "route", "replace"] : [])
     }
 })
 
@@ -172,7 +176,7 @@ test("actual frame close consults the exact closing owner before removing it", a
 test("actual shell native Retry dispatches a boundary retry rather than an ordinary refresh", async () => {
     const messages: unknown[] = []
     const retry = evaluate("retryActiveNavigation", {
-        activeNavigation: { requestedUrl: "/fixture/assets" }, activeTabId: "tab", prepareNativeLeave: async () => () => true,
+        activeNavigation: { requestedUrl: "/fixture/assets" }, activeTabId: "tab", prepareNativeLeave: async () => acceptDeparture,
         beginTabNavigation() {}, updateTabForShellNavigation() {}, pendingNavigationRef: { current: new Map() },
         nativeRefs: { current: new Map([["tab", {}]]) }, postToTab: (...args: unknown[]) => messages.push(args),
         ensureTabFrameLocation: () => assert.fail("native Retry must not reload the workspace"),
@@ -203,7 +207,7 @@ test("actual departure fences rapid intents and aborts an older eviction acknowl
     assert.equal(calls[0].signal.aborted, true)
     assert.equal(calls[1].tabId, "b")
     calls[0].resolve(true); calls[1].resolve(true)
-    assert.equal(await older, false); assert.equal((await latest)(), true)
+    assert.equal(await older, false); assert.equal((await latest)(() => {}), true)
     assert.equal(context.departureAbortRef.current, null)
     assert.deepEqual(errors, [], "a superseded intent does not display a stale save error")
 })
@@ -266,7 +270,7 @@ test("actual successful close bounds frame/context bookkeeping while preserving 
     const order = { current: ["live", "closing"] }, residents = { current: ["live", "closing"] }
     let contextOpen: Record<string, boolean> = { live: false, closing: false }
     const fixture = {
-        tabsRef: { current: tabs }, activeTabId: "live", prepareNativeLeave: async () => () => true, closedTabsRef: closed,
+        tabsRef: { current: tabs }, activeTabId: "live", prepareNativeLeave: async () => acceptDeparture, closedTabsRef: closed,
         contextOpenByTab: contextOpen, tabFrameOrderRef: order, setTabFrameOrder() {}, residentTabIdsRef: residents,
         shellStorage: { remove: (key: string) => removed.push(key) }, workspaceTabContextStorageKey: (_slug: string, id: string) => `context:${id}`, workspace: { slug: "fixture" },
         setContextOpenByTab: (update: (value: typeof contextOpen) => typeof contextOpen) => { contextOpen = update(contextOpen) },
@@ -309,14 +313,103 @@ test("actual A-B-A switching cancels a delayed B departure without changing acti
 
 test("actual switching retains metadata changed while departure was pending", async () => {
     const tabs = { current: ["a", "b"].map((id) => ({ id, url: `/${id}`, title: id, seenRevision: 0 })) }
-    let release!: (safe: () => boolean) => void
+    let release!: (safe: DepartureCommit) => void
+    let activated = ""
     const switchTab = evaluate("switchTab", {
         useCallback: (fn: unknown) => fn, activeTabIdRef: { current: "a" }, startNativeNavigation() {}, nativeNavigationPerformance: { finish() {} },
-        prepareNativeLeave: () => new Promise<() => boolean>((resolve) => { release = resolve }), tabsRef: tabs, mutationRevisionRef: { current: 0 },
-        setTabs: (value: typeof tabs.current) => { tabs.current = value }, activateWorkspaceTab() {}, saveTabsState() {}, postToTab() {}, window: { requestAnimationFrame() {} },
+        prepareNativeLeave: () => new Promise<DepartureCommit>((resolve) => { release = resolve }), tabsRef: tabs, mutationRevisionRef: { current: 0 },
+        setTabs: (value: typeof tabs.current) => { tabs.current = value }, activateWorkspaceTab: (id: string) => { activated = id }, saveTabsState() {}, postToTab() {}, window: { requestAnimationFrame() {} },
     })
     const pending = switchTab(tabs.current[1])
     tabs.current = tabs.current.map((tab) => ({ ...tab, title: `Renamed ${tab.id}` }))
-    release(() => true); await pending
+    release(acceptDeparture); await pending
     assert.deepEqual(tabs.current.map((tab) => tab.title), ["Renamed a", "Renamed b"])
+    assert.equal(activated, "b")
+})
+
+function departureHost() {
+    let release!: (safe: boolean) => void
+    const save = new Promise<boolean>((resolve) => { release = resolve })
+    const document = { documentElement: { getAttribute: () => "receiver-1" } }
+    const frame = { contentDocument: document, contentWindow: {} }
+    let flushes = 0, syncCommits = 0, validations = 0, errors = 0
+    const context = {
+        useCallback: (fn: unknown) => fn,
+        nativeNavigationSequence: { current: 0 }, nativeAccountScopeRef: { current: "actor:workspace" },
+        departureAbortRef: { current: null }, warmAbortRef: { current: null },
+        residentTabIdsRef: { current: ["a", "b"] }, MAX_RESIDENT_WORKSPACE_FRAMES: 3, workspaceResidentEvictions,
+        tabsRef: { current: ["a", "b"].map((id) => ({ id, url: `/fixture/${id}` })) },
+        iframeRefs: { current: new Map<string, typeof frame>() }, nativeRefs: { current: new Map<string, { owner: object }>() }, activeTabIdRef: { current: "a" },
+        nativePanelsEnabled: true, workspace: { slug: "fixture" }, window: {},
+        nativeWorkspaceRoute: () => null, workspaceFrameHasNavigationReceiver: () => true,
+        prepareWorkspaceFrameDeparture: () => save, confirmWorkspaceFrameDeparture: () => true,
+        flushWorkspaceAutosaves: () => { flushes++; return save },
+        captureWorkspaceAutosaveDepartureCheck: () => ({ acknowledge() {}, dispose() {}, validate: () => { validations++; return true } }),
+        flushSync: (commit: () => void) => { syncCommits++; commit() },
+        setBackgroundMutationState() {}, setBackgroundMutationError: () => { errors++ },
+    }
+    return { context, frame, prepare: evaluate("prepareNativeLeave", context), release, counts: () => ({ flushes, syncCommits, validations, errors }) }
+}
+
+test("actual host keeps retained-native activation async but synchronizes displaced inactive native owners", async () => {
+    for (const displaced of [false, true]) {
+        const f = departureHost()
+        f.context.nativeRefs.current.set(displaced ? "b" : "a", { owner: {} })
+        const pending = f.prepare(displaced ? { destination: { tabId: "b", url: "/fixture/replaced" } } : { activateTabId: "b" })
+        assert.equal(f.counts().flushes, 1, "preserve the existing single native save even for retained activation")
+        f.release(true)
+        const permission = await pending
+        let commits = 0
+        assert.equal(permission(() => { commits++; assert.equal(f.counts().syncCommits, displaced ? 1 : 0) }), true)
+        assert.equal(commits, 1)
+        assert.deepEqual(f.counts(), { flushes: 1, syncCommits: displaced ? 1 : 0, validations: 1, errors: 0 })
+    }
+})
+
+test("actual final host guard rejects late scoped owners and changed frame documents while allowing unrelated mounts", async () => {
+    for (const change of ["none", "late-native", "late-frame", "unrelated", "document", "window", "receiver", "native-renewal", "native-remount", "scope", "residency"]) {
+        const f = departureHost()
+        if (["document", "window", "receiver"].includes(change)) f.context.iframeRefs.current.set("b", f.frame)
+        if (change.startsWith("native-")) f.context.nativeRefs.current.set("b", { owner: {} })
+        const pending = f.prepare({ activateTabId: "b", destination: { tabId: "b", url: "/fixture/next" } })
+        f.release(true)
+        const permission = await pending
+        assert.equal(typeof permission, "function")
+        if (change === "late-native") f.context.nativeRefs.current.set("b", { owner: {} })
+        if (change === "late-frame") f.context.iframeRefs.current.set("b", f.frame)
+        if (change === "unrelated") f.context.iframeRefs.current.set("other", f.frame)
+        if (change === "document") f.frame.contentDocument = { ...f.frame.contentDocument }
+        if (change === "window") f.frame.contentWindow = {}
+        if (change === "receiver") f.frame.contentDocument.documentElement.getAttribute = () => "receiver-2"
+        if (change === "native-renewal") f.context.nativeRefs.current.set("b", { owner: f.context.nativeRefs.current.get("b")!.owner })
+        if (change === "native-remount") f.context.nativeRefs.current.set("b", { owner: {} })
+        if (change === "scope") f.context.nativeAccountScopeRef.current = "other:workspace"
+        if (change === "residency") f.context.residentTabIdsRef.current = ["a", "c", "d"]
+        const accepted = ["none", "unrelated", "native-renewal"].includes(change)
+        let committed = false
+        assert.equal(permission(() => { committed = true }), accepted, change)
+        assert.equal(committed, accepted, change)
+    }
+})
+
+test("actual superseded popstate cannot replace a newer committed address", async () => {
+    for (const refusal of ["before-confirmation", "at-commit", "current-failure"]) {
+        const sequence = { current: 0 }
+        const history = { state: { betelgezeWorkspace: { tabId: "b" } }, replaceState: (_state: unknown, _title: string, url: string) => { replacements.push(url) } }
+        const replacements: string[] = []
+        let release!: (safe: false | DepartureCommit) => void
+        const restore = evaluate("restore", {
+            nativeNavigationSequence: sequence,
+            window: { location: { pathname: "/fixture/b", search: "", hash: "" }, history },
+            normalizeWorkspaceUrl: (url: string) => url, canOpenWorkspaceUrl: () => true,
+            tabsRef: { current: ["a", "b"].map((id) => ({ id, url: `/fixture/${id}`, history: [`/fixture/${id}`] })) },
+            activeTabIdRef: { current: "a" }, startNativeNavigation() {}, nativeNavigationPerformance: { finish() {} },
+            prepareNativeLeave: () => { ++sequence.current; return new Promise<false | DepartureCommit>((resolve) => { release = resolve }) },
+        })
+        const pending = restore()
+        if (refusal !== "current-failure") ++sequence.current
+        release(refusal === "at-commit" ? () => false : false)
+        await pending
+        assert.deepEqual(replacements, refusal === "current-failure" ? ["/fixture/a"] : [], refusal)
+    }
 })

@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { observeConversationLayout } from "../components/communications/message-pane-observer.ts"
 
+type LayoutNode = { offsetTop: number; clientTop: number; offsetParent: LayoutNode | null }
+
 function fixture(following = true) {
     let resize!: () => void
     const observed: unknown[] = []
@@ -14,7 +16,8 @@ function fixture(following = true) {
     const listeners = new Map<string, (event?: unknown) => void>()
     const timers = new Map<number, { at: number; callback: () => void }>()
     const frames = new Map<number, () => void>()
-    let now = 0, sequence = 0, captures = 0
+    let now = 0, sequence = 0, captures = 0, rectPhase = 0, rectStep = 0
+    const paintedOffset = () => { rectPhase += rectStep; return rectPhase }
     const writes: number[] = []
     const view = {
         setTimeout(callback: () => void, delay: number) { const id = ++sequence; timers.set(id, { at: now + delay, callback }); return id },
@@ -29,16 +32,17 @@ function fixture(following = true) {
     const content = {}
     const state = { clientHeight: 300, scrollHeight: 1000, scrollTop: following ? 0 : 200, scrollLeft: 0 }
     const positions = Array.from({ length: 10 }, (_, i) => i * 100)
-    const rows = positions.map((_, i) => ({ isConnected: true, getBoundingClientRect: () => ({ top: positions[i] - state.scrollTop, bottom: positions[i] + 100 - state.scrollTop }) }))
+    const rows = positions.map((_, i) => ({ isConnected: true, get offsetTop() { return positions[i] }, clientTop: 0, offsetParent: null as LayoutNode | null, getBoundingClientRect: () => { const phase = paintedOffset(); return { top: positions[i] - state.scrollTop + phase, bottom: positions[i] + 100 - state.scrollTop + phase } } }))
     const pane = {
         ...state,
         dataset: {},
         ownerDocument: { defaultView: view },
         firstElementChild: content,
+        offsetTop: 0, clientTop: 0, offsetParent: null as LayoutNode | null,
         get clientHeight() { return state.clientHeight }, get scrollHeight() { return state.scrollHeight },
         get scrollTop() { return state.scrollTop }, get scrollLeft() { return state.scrollLeft },
         contains: (element: unknown) => rows.includes(element as typeof rows[number]),
-        getBoundingClientRect: () => ({ top: 0 }),
+        getBoundingClientRect: () => ({ top: paintedOffset() }),
         querySelectorAll: () => { captures++; return rows },
         addEventListener: (name: string, callback: (event?: unknown) => void) => listeners.set(name, callback),
         removeEventListener: (name: string) => listeners.delete(name),
@@ -47,7 +51,14 @@ function fixture(following = true) {
     const statuses: boolean[] = []
     const dispose = observeConversationLayout(pane as unknown as HTMLDivElement, follow, (latest) => statuses.push(latest))
     writes.length = 0 // Only track corrections after initial positioning.
-    return { emit, tick, flush, writes, captures: () => captures, pending: () => frames.size + timers.size, state, positions, follow, resize: () => resize(), scroll: () => listeners.get("scroll")?.(), observed, content, statuses, cleanup: () => { dispose(); globalThis.ResizeObserver = originalObserver } }
+    function nestOffsets() {
+        const wrapper = { offsetTop: 100, clientTop: 7, offsetParent: null }
+        pane.offsetTop = 20; pane.clientTop = 2; pane.offsetParent = wrapper
+        const inner = { offsetTop: 30, clientTop: 3, offsetParent: pane }
+        for (const row of rows) row.offsetParent = inner
+        return { wrapper, inner }
+    }
+    return { emit, tick, flush, writes, captures: () => captures, pending: () => frames.size + timers.size, state, positions, follow, resize: () => resize(), scroll: () => listeners.get("scroll")?.(), moveCompositorDuringReads: () => { rectStep = 3 }, nestOffsets, observed, content, statuses, cleanup: () => { dispose(); globalThis.ResizeObserver = originalObserver } }
 }
 
 test("opening and subsequent content growth stay at latest even when the pane does not resize", () => {
@@ -94,6 +105,64 @@ test("hidden tabs do not overwrite the history anchor and keyboard resizing pres
         f.state.clientHeight = 300
         f.resize()
         assert.equal(f.state.scrollTop, 200)
+    } finally { f.cleanup() }
+})
+
+test("a scroll callback queued before the next composer resize cannot consume an unapplied height delta", () => {
+    for (const following of [true, false]) {
+        const f = fixture(following)
+        try {
+            const initialTop = f.state.scrollTop
+            f.state.clientHeight = 294
+            f.resize()
+            assert.equal(f.state.scrollTop, initialTop + 6)
+            f.scroll() // The programmatic correction queues an existing rAF.
+            f.state.clientHeight = 281 // CSS transition advances before that rAF.
+            f.flush()
+            assert.equal(f.state.scrollTop, initialTop + 19)
+            f.state.clientHeight = 267
+            f.resize()
+            assert.equal(f.state.scrollTop, initialTop + 33)
+            f.state.clientHeight = 300
+            f.resize()
+            assert.equal(f.state.scrollTop, initialTop)
+        } finally { f.cleanup() }
+    }
+})
+
+test("compositor movement between painted bounds reads cannot become a content anchor offset", () => {
+    const f = fixture(false)
+    try {
+        f.moveCompositorDuringReads()
+        f.scroll()
+        f.flush()
+        f.state.clientHeight = 200
+        f.resize()
+        assert.equal(f.state.scrollTop, 300)
+        for (let i = 0; i < f.positions.length; i++) f.positions[i] += 50
+        f.state.scrollHeight += 50
+        f.resize()
+        assert.equal(f.state.scrollTop, 350)
+        f.state.clientHeight = 300
+        f.resize()
+        assert.equal(f.state.scrollTop, 250)
+    } finally { f.cleanup() }
+})
+
+test("content coordinates include nested positioned borders and cancel common ancestor movement", () => {
+    const f = fixture(false)
+    try {
+        const { wrapper, inner } = f.nestOffsets()
+        f.scroll(); f.flush()
+        inner.clientTop += 5
+        f.state.scrollHeight += 5
+        f.resize()
+        assert.equal(f.state.scrollTop, 205)
+        wrapper.offsetTop += 70
+        wrapper.clientTop += 4
+        f.state.clientHeight -= 10
+        f.resize()
+        assert.equal(f.state.scrollTop, 215)
     } finally { f.cleanup() }
 })
 

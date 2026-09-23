@@ -11,6 +11,9 @@ const fixtures = [
     { name: "drafts", expected: 25, script: "scripts/serve-workspace-draft-fixture.mjs", global: "workspaceDraftFixtureResult", query: "?autorun" },
     { name: "drafts-strict", expected: 25, script: "scripts/serve-workspace-draft-fixture.mjs", args: ["--development"], global: "workspaceDraftFixtureResult", query: "?autorun" },
     { name: "motion", expected: 5, script: "scripts/serve-chat-viewport-fixture.mjs" },
+    { name: "comms-layout-mobile", expected: 24, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 390, height: 850 } },
+    { name: "comms-layout-reduced", expected: 2, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 390, height: 850 }, reducedMotion: "reduce", query: "?reduced" },
+    { name: "comms-layout-desktop", expected: 1, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 1280, height: 900 }, query: "?desktop" },
 ]
 const selected = process.argv.slice(2)
 if (selected.some(value => !["chromium", "webkit"].includes(value))) throw Error("Usage: run-foundations.mjs [chromium|webkit]")
@@ -42,7 +45,7 @@ try {
         try {
             for (const fixture of fixtures) {
                 const url = await start(fixture)
-                const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+                const context = await browser.newContext({ viewport: fixture.viewport ?? { width: 1280, height: 900 }, ...(fixture.reducedMotion ? { reducedMotion: fixture.reducedMotion } : {}) })
                 const unexpected = [], errors = []
                 await context.route("**/*", route => {
                     const requestUrl = new URL(route.request().url())

@@ -35,6 +35,7 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
     let settleTimer = 0
     let finishTimer = 0
     let finishOverdue = false
+    let motionDeadline = 0
 
     const captureLayout = () => {
         layer.querySelector("[data-message-pane]")?.dispatchEvent(new Event(CHAT_LAYOUT_WILL_CHANGE_EVENT))
@@ -43,11 +44,13 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
         layer.querySelector("[data-message-pane]")?.dispatchEvent(new Event(CHAT_LAYOUT_COMMIT_EVENT))
     }
     const surface = host === view ? clip : view.frameElement
-    const visible = () => surface && surface.getBoundingClientRect().height > 0 && clip.getBoundingClientRect().height > 0
+    const visible = () => clip.ownerDocument.body?.dataset.workspaceTabActive !== "false" &&
+        surface && surface.getBoundingClientRect().height > 0 && clip.getBoundingClientRect().height > 0
     function release() {
         view.clearTimeout(finishTimer)
         finishTimer = 0
         finishOverdue = false
+        motionDeadline = 0
         pending = null
         layer.style.height = ""
         animation?.cancel()
@@ -99,7 +102,17 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
         if (!visible()) { retire(); return }
         if (request.handled || !surface || !request.scope.contains(surface)) return
         request.handled = true
-        const animate = mobile.matches && !reducedMotion.matches && request.duration > 0 && typeof layer.animate === "function"
+        // The controller also checks applied geometry after tab/lifecycle
+        // changes. A live animation already owns this target; after retirement
+        // the same measurement must instead repair the uncommitted layout.
+        if (pending?.bottom === request.bottom && mobile.matches && !reducedMotion.matches) return
+        // A revised keyboard measurement must not snap an in-flight transition
+        // to its endpoint, or restart another full-duration animation. Preserve
+        // the currently painted position and the original completion deadline.
+        const remaining = animation ? Math.max(0, motionDeadline - view.performance.now()) : 0
+        const duration = request.duration > 0 ? request.duration : remaining
+        const retainGestureLayout = animation !== null && interacting
+        const animate = mobile.matches && !reducedMotion.matches && (duration > 0 || retainGestureLayout) && typeof layer.animate === "function"
         if (!animate) {
             pending = request
             finish()
@@ -120,13 +133,14 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
         const from = previousBottom - layer.getBoundingClientRect().bottom
         const to = request.bottom - layoutBottom
         pending = request
-        if (Math.abs(from - to) < 0.5) { finish(); return }
+        if (Math.abs(from - to) < 0.5 && !interacting) { finish(); return }
+        motionDeadline = view.performance.now() + duration
         clip.dataset.chatViewportMoving = "true"
         layer.style.willChange = "transform"
         animation = layer.animate([
             { transform: `translate3d(0, ${from}px, 0)` },
             { transform: `translate3d(0, ${to}px, 0)` },
-        ], { duration: request.duration, easing: CHAT_KEYBOARD_EASING, fill: "both" })
+        ], { duration, easing: CHAT_KEYBOARD_EASING, fill: "both" })
         const currentAnimation = animation
         animation.onfinish = () => {
             // Resizing a native scroller during momentum can cancel the fling.
@@ -141,7 +155,7 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
             finishTimer = 0
             finishOverdue = true
             if (!interacting) finish()
-        }, request.duration + 400)
+        }, duration + 400)
     }
     function resetInteraction() {
         touching = interacting = false

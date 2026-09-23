@@ -5,6 +5,21 @@ import type { MutableRefObject } from "react"
 type Anchor = { element: HTMLElement; top: number }
 const SCROLL_SETTLE_MS = 200
 
+// Message rows share the pane's scrolling context, but a positioned wrapper may
+// own their offsetParent. Use layout coordinates for content anchors: WebKit
+// can sample a common compositor transform at different instants across two
+// getBoundingClientRect calls, turning motion into a false content-size delta.
+function layoutTop(element: HTMLElement) {
+    let top = 0
+    let current: HTMLElement | null = element
+    while (current) {
+        top += current.offsetTop
+        current = current.offsetParent as HTMLElement | null
+        if (current) top += current.clientTop
+    }
+    return top
+}
+
 export function observeConversationLayout(
     pane: HTMLDivElement,
     followLatest: MutableRefObject<boolean>,
@@ -44,7 +59,7 @@ export function observeConversationLayout(
             else high = middle
         }
         const element = rows[low]
-        anchor = element ? { element, top: element.getBoundingClientRect().top - bounds.top + pane.scrollTop } : null
+        anchor = element ? { element, top: layoutTop(element) - layoutTop(pane) } : null
     }
 
     function remember(capture = true) {
@@ -74,7 +89,7 @@ export function observeConversationLayout(
         let nextTop = hidden || geometryCommit ? scrollTop : pane.scrollTop
         if (followLatest.current) nextTop = pane.scrollHeight - nextHeight
         else if (anchor?.element.isConnected && pane.contains(anchor.element)) {
-            const top = anchor.element.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop
+            const top = layoutTop(anchor.element) - layoutTop(pane)
             nextTop += top - anchor.top + (height ? height - nextHeight : 0)
         } else if (height) nextTop += height - nextHeight
         hidden = false
@@ -134,6 +149,11 @@ export function observeConversationLayout(
             frame = 0
             // Avoid message queries/bounds reads on every touch-scroll frame.
             if (interacting) publish()
+            // The composer's CSS height transition can advance between this
+            // scroll event and its frame. Remembering that newer height before
+            // anchoring would silently consume part of the resize (WebKit can
+            // deliver this frame before ResizeObserver). Reconcile it first.
+            else if (pane.clientHeight !== height || pane.scrollHeight !== contentHeight) restore()
             else remember()
         })
     }

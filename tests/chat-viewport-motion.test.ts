@@ -2,23 +2,26 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { observeChatViewportMotion, requestChatViewportMotion } from "../lib/chat-viewport-motion.ts"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "../lib/workspace-tabs.ts"
+import { createComposerViewportController } from "../lib/composer-viewport-controller.ts"
 
 function fixture(inFrame = false) {
     const host = new EventTarget()
     const reduced = Object.assign(new EventTarget(), { matches: false })
     const mobile = Object.assign(new EventTarget(), { matches: true })
     let nextId = 0
+    let now = 0
     const timers = new Map<number, () => void>()
     const view = Object.assign(host, {
         parent: inFrame ? new EventTarget() : host,
         matchMedia: (query: string) => query.includes("reduced") ? reduced : mobile,
         setTimeout: (callback: () => void) => { timers.set(++nextId, callback); return nextId },
         clearTimeout: (id: number) => timers.delete(id),
+        performance: { now: () => now },
     })
     const doc = Object.assign(new EventTarget(), { defaultView: view, visibilityState: "visible", body: { dataset: {} as Record<string, string> } })
     let applied = 800, offset = 0, visible = true, commits = 0
     const writes: number[] = []
-    const animations: { from: number; to: number; duration: number; playState: string; onfinish: (() => void) | null; cancel: () => void }[] = []
+    const animations: { from: number; to: number; duration: number; started: number; playState: string; onfinish: (() => void) | null; cancel: () => void }[] = []
     const clip = Object.assign(new EventTarget(), {
         ownerDocument: doc, dataset: {} as Record<string, string>,
         getBoundingClientRect: () => ({ height: (inFrame || visible) ? applied - 100 : 0 }),
@@ -30,7 +33,7 @@ function fixture(inFrame = false) {
         querySelector: () => ({ dispatchEvent: (event: Event) => { if (event.type === "conversation-layout-commit") commits++ } }),
         animate: (frames: { transform: string }[], options: { duration: number }) => {
             const parse = (transform: string) => Number(transform.match(/, ([-\d.]+)px/)![1])
-            const anim = { from: parse(frames[0].transform), to: parse(frames[1].transform), duration: options.duration, playState: "running", onfinish: null as (() => void) | null, cancel: () => { offset = 0; anim.playState = "idle" } }
+            const anim = { from: parse(frames[0].transform), to: parse(frames[1].transform), duration: options.duration, started: now, playState: "running", onfinish: null as (() => void) | null, cancel: () => { offset = 0; anim.playState = "idle" } }
             animations.push(anim)
             offset = anim.from
             return anim
@@ -44,7 +47,7 @@ function fixture(inFrame = false) {
     const scope = { ownerDocument: { defaultView: view.parent }, contains: (node: unknown) => node === (inFrame ? frame : clip) }
     const cleanup = observeChatViewportMotion(clip as unknown as HTMLElement, layer as unknown as HTMLElement)
     const move = (bottom: number, duration = 300) => requestChatViewportMotion(scope as unknown as HTMLElement, applied, bottom, duration, (value) => { applied = value; writes.push(value) })
-    const advance = (progress: number) => { const a = animations.at(-1)!; offset = a.from + (a.to - a.from) * progress; if (progress === 1) { a.playState = "finished"; a.onfinish?.() } }
+    const advance = (progress: number) => { const a = animations.at(-1)!; now = a.started + a.duration * progress; offset = a.from + (a.to - a.from) * progress; if (progress === 1) { a.playState = "finished"; a.onfinish?.() } }
     const touch = (type: string) => {
         const event = new Event(type)
         Object.defineProperty(event, "target", { value: { closest: () => true } })
@@ -106,6 +109,61 @@ test("rapid reversals and revised keyboard heights start from the interrupted po
     } finally { f.cleanup() }
 })
 
+test("late keyboard samples retarget the painted position without snapping or extending the motion deadline", () => {
+    const f = fixture()
+    try {
+        f.move(500)
+        f.advance(0.5)
+        assert.equal(f.bottom(), 650)
+        f.move(480, 0)
+        assert.equal(f.bottom(), 650)
+        assert.equal(f.animations[1].duration, 150)
+        f.advance(0.5)
+        assert.equal(f.bottom(), 565)
+        f.move(510, 0)
+        assert.equal(f.bottom(), 565)
+        assert.equal(f.animations[2].duration, 75)
+        f.advance(1)
+        assert.equal(f.bottom(), 510)
+        assert.equal(f.applied(), 510)
+        assert.equal(f.layer.style.height, "")
+        assert.equal(f.layer.style.willChange, "")
+    } finally { f.cleanup() }
+})
+
+test("unchanged measured geometry preserves live motion and repairs a retired frame on return", () => {
+    const f = fixture(true)
+    let measured = 800
+    const controller = createComposerViewportController({
+        readBottom: () => measured,
+        readLayoutBottom: () => 800,
+        readAppliedBottom: f.applied,
+        writeBottom: (bottom, animate) => f.move(bottom, animate ? 300 : 0),
+        animateKeyboard: () => true,
+        schedule: () => 1,
+        cancel: () => {},
+    })
+    try {
+        controller.focus()
+        measured = 500
+        controller.update()
+        f.advance(0.5)
+        controller.update()
+        assert.equal(f.bottom(), 650)
+        assert.equal(f.animations.length, 1, "unchanged samples must not restart motion")
+        f.select(false)
+        f.hide()
+        controller.blur()
+        f.show()
+        f.select(true)
+        controller.focus()
+        controller.update()
+        assert.equal(f.applied(), 500)
+        assert.equal(f.bottom(), 500)
+        assert.equal(f.layer.style.height, "")
+    } finally { controller.dispose(); f.cleanup() }
+})
+
 test("reduced motion, desktop, and continuous viewport events commit immediately", () => {
     for (const option of ["reduced", "desktop", "continuous"]) {
         const f = fixture()
@@ -120,6 +178,20 @@ test("reduced motion, desktop, and continuous viewport events commit immediately
     }
 })
 
+test("crossing to desktop releases mobile motion even when its measured target is unchanged", () => {
+    const f = fixture()
+    try {
+        f.move(500)
+        f.advance(0.5)
+        f.mobile.matches = false
+        f.move(500, 0)
+        assert.equal(f.applied(), 500)
+        assert.equal(f.bottom(), 500)
+        assert.equal(f.layer.style.height, "")
+        assert.equal(f.layer.style.willChange, "")
+    } finally { f.cleanup() }
+})
+
 test("a scroll gesture defers final scroller resizing until momentum settles", () => {
     const f = fixture()
     try {
@@ -129,6 +201,26 @@ test("a scroll gesture defers final scroller resizing until momentum settles", (
         f.touch("touchend"); f.settle()
         assert.equal(f.applied(), 500)
         assert.equal(f.bottom(), 500)
+    } finally { f.cleanup() }
+})
+
+test("a revised endpoint after animation completion preserves active touch and momentum layout", () => {
+    const f = fixture()
+    try {
+        f.move(500)
+        f.touch("touchstart")
+        f.advance(1)
+        f.move(480, 0)
+        assert.equal(f.applied(), 800)
+        assert.equal(f.animations.at(-1)?.duration, 0)
+        f.advance(1)
+        assert.equal(f.bottom(), 480)
+        assert.equal(f.applied(), 800)
+        f.touch("touchend")
+        f.settle()
+        assert.equal(f.applied(), 480)
+        assert.equal(f.bottom(), 480)
+        assert.equal(f.layer.style.height, "")
     } finally { f.cleanup() }
 })
 

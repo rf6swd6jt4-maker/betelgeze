@@ -22,6 +22,7 @@ export function useClientPortalComposerViewport(composerRef: RefObject<HTMLEleme
         const viewport = createComposerViewportController({
             readBottom: readViewportBottom,
             readLayoutBottom: () => readChatLayoutBottom(window),
+            readAppliedBottom: () => appliedViewportBottom,
             diagnose: (sample) => recordChatViewportDiagnostic(window, "portal", panel, sample),
             animateKeyboard: () => mobile.matches,
             schedule: (callback, delay) => window.setTimeout(callback, delay),

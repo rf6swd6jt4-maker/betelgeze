@@ -1731,11 +1731,15 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         const viewport = createComposerViewportController({
             readBottom: readViewportBottom,
             readLayoutBottom: () => readChatLayoutBottom(window),
+            readAppliedBottom: () => appliedViewportBottom,
             diagnose: (sample) => recordChatViewportDiagnostic(window, "workspace", panel, sample),
             animateKeyboard: () => mobile.matches,
             schedule: (callback, delay) => window.setTimeout(callback, delay),
             cancel: (timer) => window.clearTimeout(timer),
             writeBottom: (viewportBottom, animate) => {
+                // Also covers bounded late-metric reconciliation, which runs
+                // without a new browser viewport event.
+                visualOrigin.update()
                 if (!panel) { applyViewportBottom(viewportBottom); return }
                 requestChatViewportMotion(panel, appliedViewportBottom, viewportBottom,
                     animate ? COMPOSER_KEYBOARD_MOTION_MS : 0, applyViewportBottom)
@@ -1772,17 +1776,20 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             if (focused) { origin.focus(); viewport.focus() }
             else { origin.blur(); viewport.blur() }
         }
+        // Correct the origin before capturing a visible composer position;
+        // afterward would add native pan to an already-calculated translation.
         const holdWorkspaceViewport = () => {
             if (document.visibilityState === "hidden") return
+            visualOrigin.update()
             syncComposerFocus()
             origin.update()
             viewport.update()
-            visualOrigin.update()
         }
         const handleComposerFocus = (event: Event) => {
             const { focused, sourceWindow } = (event as CustomEvent<WorkspaceComposerFocusEventDetail>).detail ?? {}
             if (typeof focused !== "boolean" || document.visibilityState === "hidden") return
             if (sourceWindow !== window && sourceWindow !== iframeRefs.current.get(activeTabIdRef.current)?.contentWindow) return
+            visualOrigin.update()
             composerFocused = focused
             if (focused) { origin.focus(); viewport.focus() }
             else { origin.blur(); viewport.blur() }
@@ -1798,10 +1805,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         }
         const resumeWorkspaceViewport = () => {
             if (document.visibilityState !== "visible") return
+            visualOrigin.resume()
             origin.resume()
             viewport.resume()
             syncComposerFocus()
-            visualOrigin.resume()
         }
         const handleWorkspaceVisibility = () => {
             if (document.visibilityState === "hidden") suspendWorkspaceViewport()

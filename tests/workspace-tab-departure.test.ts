@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs"
 import ts from "typescript"
 import { captureWorkspaceFrameIdentity, confirmWorkspaceFrameDeparture, prepareWorkspaceFrameDeparture, workspaceResidentEvictions, WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE, WORKSPACE_FRAME_PAGE_ATTRIBUTE, WORKSPACE_FRAME_ERROR_ATTRIBUTE } from "../lib/workspace-tab-departure.ts"
 import { checkpointWorkspaceAutosaves, registerWorkspaceAutosaveFlusher } from "../lib/workspace-mutations.ts"
+import { communicationsLocation } from "../lib/communications/native-host.ts"
 
 function transport() {
     const listeners = new Set<(event: MessageEvent) => void>()
@@ -119,7 +120,7 @@ test("residency preflights only displaced owners and excludes an explicitly clos
 
 const shell = ts.createSourceFile("shell.tsx", readFileSync("components/workspace/WorkspaceTopBarClient.tsx", "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 function evaluate(name: string, context: Record<string, unknown>) {
-    context = { captureWorkspaceFrameIdentity, nativeAccountScopeRef: { current: "scope" }, flushSync: (commit: () => void) => commit(), ...context }
+    context = { captureWorkspaceFrameIdentity, nativeAccountScopeRef: { current: "scope" }, usesNativeCommunications: (url: string) => Boolean(communicationsLocation(url, "fixture")), flushSync: (commit: () => void) => commit(), ...context }
     let node: ts.Node | undefined
     function visit(item: ts.Node) {
         if ((ts.isFunctionDeclaration(item) && item.name?.text === name) || (ts.isVariableDeclaration(item) && item.name.getText(shell) === name)) node = item
@@ -253,7 +254,7 @@ test("actual account clearing invalidates pending departures and speculative war
         window: { addEventListener: (_type: string, callback: typeof listener) => { listener = callback }, removeEventListener() {} },
         currentUserId: "me", nativeNavigationSequence: sequence, departureAbortRef: { current: departure }, warmAbortRef: { current: warm },
         navigationTimeoutRef: { current: new Map() }, pendingNavigationRef: { current: new Map() }, navigationErrorRef: { current: new Map() },
-        setClearedNativeAccount() {}, nativeAccountScope: "me:fixture", nativeNavigationPerformance: { cancel() {} }, nativeCache: { clear() {} }, nativeScrollPositions: { clear() {} },
+        setClearedNativeAccount() {}, nativeAccountScope: "me:fixture", nativeNavigationPerformance: { cancel() {} }, nativeCache: { clear() {} }, communicationsCache: { clear() {} }, nativeScrollPositions: { clear() {} },
     }
     const javascript = ts.transpileModule(`const run = ${node.arguments[0].getText(shell)};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
     const cleanup = new Function(...Object.keys(context), `${javascript}; return run();`)(...Object.values(context))

@@ -7,6 +7,9 @@ export function ChatMotionViewport({ children }: { children: ReactNode }) {
     const clip = useRef<HTMLDivElement>(null)
     const layer = useRef<HTMLDivElement>(null)
     useLayoutEffect(() => {
+        // The resident mobile surface shares the host's measured layout. It has
+        // no second keyboard animation or temporary oversized scrolling layer.
+        if (clip.current?.closest("[data-mobile-comms-tab]")) return
         if (clip.current && layer.current) return observeChatViewportMotion(clip.current, layer.current)
     }, [])
     return <div ref={clip} className="min-h-0 flex-1 overflow-clip" data-chat-motion-viewport>

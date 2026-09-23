@@ -101,7 +101,7 @@ async function fixture(options={}){
     setBackgroundMutationState:noop,setBackgroundMutationError:error=>story.errors.push(error),setMobileContextKey:noop,setTabFrameOrder:noop,setLoadedTabIds:noop,setRefreshingTabIds:noop,setNavigationStateByTab:noop,setBackgroundMutationCounts:noop,setContextStatusByTab:noop,setContextObstructedByTab:noop,setContextOpenByTab:noop,setRouteLoadingTabId:noop,
     shellStorage:{set:()=>{story.sideEffects.storage++},remove:noop},workspaceTabContextStorageKey:(_slug,id)=>id,saveTabsState:()=>{story.sideEffects.save++},
     nativeNavigationPerformance:{begin:noop,cancel:noop,finish:noop,activate:()=>{story.sideEffects.activate++},bind:noop,finishSource:noop},startNativeNavigation:noop,publishWorkspaceTabActivity:noop,
-    nativeWorkspaceRoute:url=>url.includes('/native/')?{key:url}:null,workspaceFrameHasNavigationReceiver:()=>false,normalizeWorkspaceUrl:url=>url,normalizeWorkspaceRoute:url=>url,
+    nativeWorkspaceRoute:url=>url.includes('/native/')?{key:url}:null,usesNativeCommunications:url=>tabsHelpers.workspaceTabIsCommunications(url,'fixture',window.location.origin),workspaceFrameHasNavigationReceiver:()=>false,normalizeWorkspaceUrl:url=>url,normalizeWorkspaceRoute:url=>url,
     titleForUrl:url=>url,routeCanShowRelationshipContext:()=>false,setTabContextStatus:noop,setTabContextOpen:noop,
     openCreate:noop,scheduleSoftNavigationFallback:noop,captureWorkspaceAutosaveDepartureCheck:capture,beginTabNavigation:noop,ensureTabFrameLocation:()=>setEpoch(value=>value+1),requestTabFrameNavigation:noop,
     postToTab:(id,message)=>{story.messages.push({id,...message});if(message.type==='retry'){story.throwing=false;story.boundary?.retry();setEpoch(value=>value+1)}},

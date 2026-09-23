@@ -68,7 +68,8 @@ function decorate(body: string) {
     return { decorations: Decoration.set(ranges, true), atomic: Decoration.set(atomic, true) }
 }
 
-export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, onBlur, disabled = false, sendDisabled = false, placeholder, maxLength = 8000, portal = false, mentionPeople }: {
+export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, onBlur, active = true, disabled = false, sendDisabled = false, placeholder, maxLength = 8000, portal = false, mentionPeople }: {
+    active?: boolean
     mentionPeople?: MentionPerson[]
     inputRef: RefObject<HTMLElement | null>
     value: string
@@ -84,8 +85,9 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
 }) {
     const host = useRef<HTMLDivElement>(null)
     const editor = useRef<EditorView | null>(null)
-    const current = useRef({ value, onChange, onSend, onFocus, onBlur, disabled, sendDisabled, placeholder, maxLength })
-    useLayoutEffect(() => { current.current = { value, onChange, onSend, onFocus, onBlur, disabled, sendDisabled, placeholder, maxLength } })
+    const current = useRef({ value, onChange, onSend, onFocus, onBlur, active, disabled, sendDisabled, placeholder, maxLength })
+    useLayoutEffect(() => { current.current = { value, onChange, onSend, onFocus, onBlur, active, disabled, sendDisabled, placeholder, maxLength } })
+    const cancelPointerFocus = useRef<(() => void) | null>(null)
     const [mentionMenu, setMentionMenu] = useState<{ from: number; to: number; query: string; active: number; anchor: HTMLElement } | null>(null)
     const menu = useRef(mentionMenu)
     const peopleRef = useRef(mentionPeople)
@@ -93,7 +95,7 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
     function updateMenu(next: typeof mentionMenu) { menu.current = next; setMentionMenu(next) }
     function selectMention(person: MentionPerson) {
         const view = editor.current, selection = menu.current
-        if (!view || !selection || current.current.disabled) return
+        if (!view || !selection || !current.current.active || current.current.disabled) return
         const source = chatMentionSource(person) + " "
         if (view.state.doc.length - (selection.to - selection.from) + source.length > current.current.maxLength) return
         updateMenu(null)
@@ -135,7 +137,7 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
             return true
         }
         const enter = (view: EditorView) => {
-            if (view.composing || current.current.disabled) return false
+            if (view.composing || !current.current.active || current.current.disabled) return false
             if (chooseMention()) return true
             if (editList(view, "Enter")) return true
             if (!current.current.sendDisabled) current.current.onSend()
@@ -143,8 +145,9 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
         }
         const pointerFocus = createComposerPointerFocus(() => {
             const view = editor.current
-            if (view && !current.current.disabled) view.contentDOM.focus({ preventScroll: true })
+            if (view && current.current.active && !current.current.disabled) view.contentDOM.focus({ preventScroll: true })
         })
+        cancelPointerFocus.current = pointerFocus.pointercancel
         const view = new EditorView({
             parent: host.current,
             state: EditorState.create({
@@ -168,13 +171,15 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
                     }),
                     EditorState.transactionFilter.of((transaction) => {
                         if (transaction.annotation(externalChange)) return transaction
+                        // Blur can commit the last IME composition while its
+                        // resident tab deactivates. Keep that final draft edit.
                         return transaction.docChanged && (current.current.disabled || (transaction.newDoc.length > current.current.maxLength && transaction.newDoc.length > transaction.startState.doc.length)) ? [] : transaction
                     }),
                     EditorView.contentAttributes.of(() => ({
                         "aria-label": current.current.placeholder,
                         "aria-multiline": "true",
                         "aria-disabled": String(current.current.disabled),
-                        contenteditable: String(!current.current.disabled),
+                        contenteditable: String(current.current.active && !current.current.disabled),
                         enterkeyhint: /^ *(?:-|\d+\.|\[[ xX]\]) /m.test(current.current.value) ? "enter" : "send",
                         spellcheck: "true",
                         autocorrect: "on",
@@ -186,7 +191,7 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
                     EditorView.updateListener.of((update) => {
                         if (update.docChanged || update.selectionSet) {
                             const selection = update.state.selection.main
-                            const query = peopleRef.current?.length && !current.current.disabled && !update.transactions.some((transaction) => transaction.annotation(externalChange))
+                            const query = current.current.active && peopleRef.current?.length && !current.current.disabled && !update.transactions.some((transaction) => transaction.annotation(externalChange))
                                 ? mentionQuery(update.state.doc.toString(), selection.from, selection.to) : null
                             mentionActions.current.updateMenu(query ? { ...query, active: 0, anchor: update.view.contentDOM } : null)
                         }
@@ -194,7 +199,7 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
                     }),
                     EditorView.domEventHandlers({
                         focus: () => { current.current.onFocus?.() },
-                        blur: () => { current.current.onBlur?.() },
+                        blur: () => { mentionActions.current.updateMenu(null); current.current.onBlur?.() },
                         ...pointerFocus,
                     }),
                     // Size the scroller directly: its default 1.4 line-height
@@ -230,11 +235,18 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
         view.scrollDOM.setAttribute("data-composer-scroll", "")
         editor.current = view
         inputRef.current = view.contentDOM
-        return () => { inputRef.current = null; editor.current = null; view.destroy() }
+        return () => { cancelPointerFocus.current = null; inputRef.current = null; editor.current = null; view.destroy() }
     }, [inputRef])
     useLayoutEffect(() => {
         const view = editor.current
         if (!view) return
+        if (!active) {
+            // A resident panel keeps its editor and draft, but cannot keep a
+            // native selection, a portalled mention menu, or a pending tap.
+            cancelPointerFocus.current?.()
+            view.contentDOM.blur()
+            mentionActions.current.updateMenu(null)
+        }
         if (view.state.doc.toString() !== value) {
             // Sending, switching chats, and opening an edit start a new undo
             // history; undo must never bring another conversation's draft back.
@@ -242,6 +254,6 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
             view.dispatch({ effects: historyConfig.current.reconfigure(history()) })
         }
         view.dispatch({ effects: placeholderConfig.current.reconfigure(editorPlaceholder(placeholder)) })
-    }, [value, disabled, placeholder])
-    return <><div ref={host} className={`min-w-0 flex-1 ${portal ? "px-2.5" : ""}`} data-chat-composer-host />{mentionMenu && !disabled && mentionPeople ? <ComposerMentionPicker anchor={mentionMenu.anchor} people={matchingMentionPeople(mentionPeople, mentionMenu.query)} active={mentionMenu.active} onSelect={selectMention} onDismiss={() => updateMenu(null)} /> : null}</>
+    }, [active, value, disabled, placeholder])
+    return <><div ref={host} className={`min-w-0 flex-1 ${portal ? "px-2.5" : ""}`} data-chat-composer-host />{active && mentionMenu && !disabled && mentionPeople ? <ComposerMentionPicker anchor={mentionMenu.anchor} people={matchingMentionPeople(mentionPeople, mentionMenu.query)} active={mentionMenu.active} onSelect={selectMention} onDismiss={() => updateMenu(null)} /> : null}</>
 }

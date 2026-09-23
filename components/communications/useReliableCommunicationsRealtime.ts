@@ -1,7 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js"
+import type { RealtimeChannel } from "@supabase/supabase-js"
+import type { CommunicationsClient } from "./CommunicationsRuntime"
 
 import { useWorkspaceTabActive, WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
 
@@ -9,7 +10,7 @@ export type CommunicationsConnectionState = "connecting" | "syncing" | "live" | 
 
 const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000]
 const SAFETY_SYNC_MS = 20_000
-const COMMUNICATIONS_RECOVERY_EVENT = "betelgeze:communications-recover"
+export const COMMUNICATIONS_RECOVERY_EVENT = "betelgeze:communications-recover"
 
 export function useReliableCommunicationsRealtime({
     active,
@@ -24,7 +25,7 @@ export function useReliableCommunicationsRealtime({
     privateChannel: boolean
     register: (channel: RealtimeChannel) => RealtimeChannel
     schemaReady: boolean
-    supabase: SupabaseClient
+    supabase: CommunicationsClient
     synchronize: () => Promise<void>
     topic: string
 }) {

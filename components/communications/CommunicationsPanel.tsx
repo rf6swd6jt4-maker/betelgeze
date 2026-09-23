@@ -1,7 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import dynamic from "next/dynamic"
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { PanelRouteLoading } from "@/components/workspace/PanelRouteLoading"
 import { useCommunicationsUnread } from "./useCommunicationsUnread"
 import { Status } from "@/components/ui"
@@ -10,18 +9,42 @@ import { DEFAULT_CONVERSATION_LIST_WIDTH } from "@/components/communications/Res
 import type { CommunicationsBootstrap } from "@/lib/communications/types"
 import type { NativeCommunicationsBootstrap } from "@/lib/teams/types"
 import { WORKSPACE_TAB_FRAME_PARAM, WORKSPACE_TAB_MESSAGE_SOURCE, type WorkspaceTabFrameMessage } from "@/lib/workspace-tabs"
+import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
+import { afterVisibleWorkspacePaint } from "@/lib/workspace-navigation-lifecycle"
 
-const CommunicationsWorkspace = dynamic(() => import("@/components/communications/CommunicationsWorkspace").then((module) => module.CommunicationsWorkspace), { loading: () => <PanelRouteLoading variant="communications" /> })
-const TeamCommunicationsWorkspace = dynamic(() => import("@/components/communications/TeamCommunicationsWorkspace").then((module) => module.TeamCommunicationsWorkspace), { loading: () => <PanelRouteLoading variant="communications-team" /> })
+const CommunicationsWorkspace = lazy(() => import("@/components/communications/CommunicationsWorkspace").then((module) => ({ default: module.CommunicationsWorkspace })))
+const TeamCommunicationsWorkspace = lazy(() => import("@/components/communications/TeamCommunicationsWorkspace").then((module) => ({ default: module.TeamCommunicationsWorkspace })))
 
-export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, nativeBootstrap: initialNativeBootstrap, initialMode, initialConversationId, initialNativeConversationId, initialDmUserId }: {
+function ContentReady({ active, onMounted, onReady }: { active: boolean; onMounted?: () => void; onReady?: () => void }) {
+    useEffect(() => {
+        if (!active) return
+        onMounted?.()
+        if (!onReady) return
+        return afterVisibleWorkspacePaint(onReady, {
+            visible: () => document.visibilityState === "visible",
+            requestFrame: callback => requestAnimationFrame(callback),
+            cancelFrame: frame => cancelAnimationFrame(frame),
+            subscribe: update => {
+                document.addEventListener("visibilitychange", update)
+                return () => document.removeEventListener("visibilitychange", update)
+            },
+        })
+    }, [active, onMounted, onReady])
+    return null
+}
+
+export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, nativeBootstrap: initialNativeBootstrap, initialMode, initialConversationId, initialNativeConversationId, initialDmUserId, onMounted, onReady }: {
     clientBootstrap: CommunicationsBootstrap | null
     nativeBootstrap: NativeCommunicationsBootstrap | null
     initialMode: CommunicationsMode
     initialConversationId?: string
     initialNativeConversationId?: string
     initialDmUserId?: string
+    onMounted?: () => void
+    onReady?: () => void
 }) {
+    const navigation = useWorkspaceNavigation()
+    const panelActive = navigation?.active ?? true
     const initialBootstrap = initialClientBootstrap ?? initialNativeBootstrap!
     const { workspaceId, workspaceSlug } = initialBootstrap
     const userId = initialBootstrap.currentUser.id
@@ -92,6 +115,7 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
     }, [workspaceId])
 
     useEffect(() => {
+        if (navigation) return
         const tabId = new URL(window.location.href).searchParams.get(WORKSPACE_TAB_FRAME_PARAM)
         if (!tabId || window.parent === window) return
         const message: WorkspaceTabFrameMessage = {
@@ -102,10 +126,11 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
             unreadCount,
         }
         window.parent.postMessage(message, window.location.origin)
-    }, [unreadCount])
+    }, [unreadCount, navigation])
 
     useEffect(() => {
-        const url = new URL(window.location.href)
+        if (navigation && !navigation.active) return
+        const url = new URL(navigation?.url ?? window.location.href, window.location.origin)
         url.searchParams.set("mode", mode)
         if (clientSelectedId) url.searchParams.set("conversation", clientSelectedId)
         else url.searchParams.delete("conversation")
@@ -113,6 +138,16 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
             url.searchParams.set("nativeConversation", nativeSelectedId)
             url.searchParams.delete("dm")
         } else url.searchParams.delete("nativeConversation")
+
+        if (navigation) {
+            const nextUrl = `${url.pathname}${url.search}${url.hash}`
+            if (nextUrl === navigation.url) return
+            // The shell owns history. Leave the effect before its synchronous
+            // current-source commit and cancel obsolete route continuations.
+            let cancelled = false
+            queueMicrotask(() => { if (!cancelled) navigation.replace(nextUrl) })
+            return () => { cancelled = true }
+        }
 
         const tabId = url.searchParams.get(WORKSPACE_TAB_FRAME_PARAM)
         window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
@@ -127,7 +162,7 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
             url: `${shellUrl.pathname}${shellUrl.search}${shellUrl.hash}`,
         }
         window.parent.postMessage(message, window.location.origin)
-    }, [clientSelectedId, mode, nativeSelectedId])
+    }, [clientSelectedId, mode, nativeSelectedId, navigation])
 
     const setMode = useCallback((next: "clients" | "team") => {
         setModeState(next)
@@ -138,10 +173,10 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
         setConversationListWidth(width)
         localStorage.setItem(`betelgeze:communications:list-width:${workspaceId}`, String(width))
     }, [workspaceId])
-    return <div data-communications-panel className="fixed inset-0 isolate overflow-hidden overscroll-none bg-black [contain:paint]">
-        {clientBootstrap ? <div className={mode === "clients" ? "absolute inset-0" : "hidden"} aria-hidden={mode !== "clients"}>
+    return <div data-communications-panel className={`${navigation ? "absolute" : "fixed"} inset-0 isolate overflow-hidden overscroll-none bg-black [contain:paint]`}>
+        {clientBootstrap ? <div className={mode === "clients" ? "absolute inset-0" : "hidden"} aria-hidden={mode !== "clients"}><Suspense fallback={<PanelRouteLoading variant="communications" />}>
             <CommunicationsWorkspace
-                active={mode === "clients"}
+                active={panelActive && mode === "clients"}
                 bootstrap={clientBootstrap}
                 onOpenTeam={() => setMode("team")}
                 onSelectedConversationChange={setClientSelectedId}
@@ -150,10 +185,11 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
                 conversationListWidth={conversationListWidth}
                 onConversationListWidthChange={setSharedConversationListWidth}
             />
-        </div> : null}
-        {nativeBootstrap ? <div className={mode === "team" ? "absolute inset-0" : "hidden"} aria-hidden={mode !== "team"}>
+            <ContentReady active={panelActive && mode === "clients"} onMounted={onMounted} onReady={onReady} />
+        </Suspense></div> : null}
+        {nativeBootstrap ? <div className={mode === "team" ? "absolute inset-0" : "hidden"} aria-hidden={mode !== "team"}><Suspense fallback={<PanelRouteLoading variant="communications-team" />}>
             <TeamCommunicationsWorkspace
-                active={mode === "team"}
+                active={panelActive && mode === "team"}
                 bootstrap={nativeBootstrap}
                 onOpenClients={() => setMode("clients")}
                 onSelectedConversationChange={setNativeSelectedId}
@@ -162,7 +198,8 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
                 conversationListWidth={conversationListWidth}
                 onConversationListWidthChange={setSharedConversationListWidth}
             />
-        </div> : null}
+            <ContentReady active={panelActive && mode === "team"} onMounted={onMounted} onReady={onReady} />
+        </Suspense></div> : null}
         {!(mode === "clients" ? clientBootstrap : nativeBootstrap) ? <>
             <PanelRouteLoading variant={mode === "clients" ? "communications" : "communications-team"} />
             <div className="absolute inset-x-0 bottom-8 z-10 flex items-center justify-center gap-3 bg-black px-4 py-3 text-xs">

@@ -140,7 +140,12 @@ function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose:
     useEffect(() => {
         const previous = document.activeElement as HTMLElement | null
         dialogRef.current?.focus()
-        return () => { if (previous?.isConnected) previous.focus({ preventScroll: true }) }
+        return () => {
+            // Closing a resident tab also closes its viewer. Restoring focus to
+            // that hidden editor would reopen the keyboard in the next tab.
+            if (previous?.isConnected && document.visibilityState === "visible"
+                && previous.getClientRects().length && !previous.closest("[inert]")) previous.focus({ preventScroll: true })
+        }
     }, [])
     useEffect(() => {
         const strip = stripRef.current

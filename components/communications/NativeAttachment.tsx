@@ -8,7 +8,7 @@ import type { MessageMediaPreview } from "@/components/communications/MessageMed
 import { LoadingSpinnerIcon, OpenWithIcon } from "@/components/communications/MessageInteractionIcons"
 import { VoiceNotePlayer } from "@/components/communications/VoiceNotePlayer"
 import { communicationMediaRatio, communicationPreviewUrl } from "@/lib/communications/attachments"
-import { useConversationMedia } from "@/components/communications/ConversationMedia"
+import { useConversationMedia, useConversationMediaActive } from "@/components/communications/ConversationMedia"
 import type { CommunicationAttachment } from "@/lib/communications/types"
 import { nativeAttachmentSizeLabel, nativeAttachmentTypeLabel } from "@/lib/communications/native-attachments"
 
@@ -91,9 +91,17 @@ function FileOptions({ attachment, onClose }: { attachment: CommunicationAttachm
 }
 
 function AttachmentFileCard({ attachment, previewFailed = false }: { attachment: CommunicationAttachment; previewFailed?: boolean }) {
+    const active = useConversationMediaActive()
     const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
+    useEffect(() => {
+        if (!active) return
+        return () => setAnchor(null)
+    }, [active])
     const size = nativeAttachmentSizeLabel(attachment.size)
-    function close() { anchor?.focus({ preventScroll: true }); setAnchor(null) }
+    function close() {
+        if (active && anchor?.getClientRects().length && !anchor.closest("[inert]")) anchor.focus({ preventScroll: true })
+        setAnchor(null)
+    }
     return <div className="mb-2 min-w-0" onClick={(event) => event.stopPropagation()}>
         <button type="button" aria-label={`Open ${attachment.fileName}`} aria-haspopup="dialog" aria-expanded={Boolean(anchor)} onClick={(event) => setAnchor(anchor ? null : event.currentTarget)} className="flex w-full min-w-0 items-center gap-3 rounded-xl border border-current/10 bg-black/5 px-3 py-2.5 text-left hover:bg-black/10">
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-7 w-7 shrink-0 opacity-60"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" /><path d="M14 3v5h5M8 13h8M8 17h5" /></svg>
@@ -104,8 +112,8 @@ function AttachmentFileCard({ attachment, previewFailed = false }: { attachment:
             </span>
             <OpenWithIcon className="h-5 w-5 shrink-0 opacity-75" />
         </button>
-        <AnchoredPopup anchor={anchor} role="dialog" align="end" onDismiss={close} className="rounded-xl border border-neutral-800 bg-neutral-950 shadow-xl">
-            {anchor ? <FileOptions attachment={attachment} onClose={close} /> : null}
+        <AnchoredPopup anchor={active ? anchor : null} role="dialog" align="end" onDismiss={close} className="rounded-xl border border-neutral-800 bg-neutral-950 shadow-xl">
+            {active && anchor ? <FileOptions attachment={attachment} onClose={close} /> : null}
         </AnchoredPopup>
     </div>
 }

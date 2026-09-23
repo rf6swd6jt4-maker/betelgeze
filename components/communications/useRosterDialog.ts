@@ -24,7 +24,12 @@ export function useRosterDialog(open: boolean, onClose: () => void) {
         host.body.style.overflow = "hidden"
         host.addEventListener("keydown", onKey)
         dialog.querySelector<HTMLElement>("button")?.focus()
-        return () => { host.body.style.overflow = previousOverflow; host.removeEventListener("keydown", onKey); origin?.focus({ preventScroll: true }) }
+        return () => {
+            host.body.style.overflow = previousOverflow
+            host.removeEventListener("keydown", onKey)
+            if (origin?.isConnected && host.visibilityState === "visible"
+                && origin.getClientRects().length && !origin.closest("[inert]")) origin.focus({ preventScroll: true })
+        }
     }, [open])
     return dialogRef
 }

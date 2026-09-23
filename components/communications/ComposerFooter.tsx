@@ -1,15 +1,19 @@
 "use client"
 
-import { useLayoutEffect, useRef, type ComponentProps } from "react"
+import { useLayoutEffect, useRef, type ComponentProps, type ReactNode } from "react"
 import { containComposerTouch } from "./composer-touch"
 
-export function ComposerFooter(props: ComponentProps<"footer">) {
+export function ComposerFooter({ accessories, children, ...props }: ComponentProps<"footer"> & { accessories?: ReactNode }) {
     const ref = useRef<HTMLElement>(null)
     const slotRef = useRef<HTMLDivElement>(null)
     useLayoutEffect(() => {
         const footer = ref.current, slot = slotRef.current
         if (!footer || !slot) return
         const releaseTouch = containComposerTouch(footer)
+        // In the mobile resident surface normal flex layout measures the whole
+        // composer in the same layout pass as the message pane. No observer or
+        // independent height animation may lag behind the keyboard or editor.
+        if (footer.closest("[data-mobile-comms-tab]")) return releaseTouch
         const mobile = window.matchMedia("(max-width: 1023px)")
         const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)")
         let previousHeight = 0
@@ -27,6 +31,9 @@ export function ComposerFooter(props: ComponentProps<"footer">) {
         return () => { releaseTouch(); observer.disconnect() }
     }, [])
     return <div ref={slotRef} className="relative z-10 flex shrink-0 flex-col justify-end overflow-clip" data-composer-slot>
-        <footer {...props} ref={ref} />
+        <footer {...props} ref={ref}>
+            {accessories !== undefined ? <div data-composer-accessories data-composer-scroll>{accessories}</div> : null}
+            {children}
+        </footer>
     </div>
 }

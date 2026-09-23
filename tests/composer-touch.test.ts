@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { containComposerTouch } from "../components/communications/composer-touch.ts"
 
-function setup(draft?: { scrollHeight: number; clientHeight: number; scrollTop: number }) {
+function setup(draft?: { scrollHeight: number; clientHeight: number; scrollTop: number; scrollWidth?: number; clientWidth?: number; scrollLeft?: number }) {
     const listeners = new Map<string, (event: unknown) => void>()
     const text = {}
     const selection = { isCollapsed: true, anchorNode: text, focusNode: text }
@@ -18,14 +18,14 @@ function setup(draft?: { scrollHeight: number; clientHeight: number; scrollTop: 
         removeEventListener(name: string) { listeners.delete(name) },
     }
     const cleanup = containComposerTouch(surface as unknown as HTMLElement)
-    const emit = (name: string, y: number, count = 1, area: "editor" | "button" | "padding" | "handle" | "tray" = "editor") => {
+    const emit = (name: string, y: number, count = 1, area: "editor" | "button" | "padding" | "handle" | "tray" = "editor", x = 200) => {
         let prevented = false
         const target = { closest: (selector: string) => {
             if (selector.includes("button")) return area === "button" ? target : null
             if (selector.includes("data-chat-composer")) return area === "editor" ? editor : null
             return area === "editor" || area === "tray" ? draft ?? null : null
         } }
-        listeners.get(name)?.({ touches: Array.from({ length: count }, () => ({ clientX: area === "padding" ? 20 : 200, clientY: y })), target, cancelable: true, preventDefault: () => { prevented = true } })
+        listeners.get(name)?.({ touches: Array.from({ length: count }, () => ({ clientX: area === "padding" ? 20 : x, clientY: y })), target, cancelable: true, preventDefault: () => { prevented = true } })
         return prevented
     }
     return { emit, cleanup, listeners, selection, doc }
@@ -40,6 +40,21 @@ test("empty composer and footer drags cannot pan the page; taps stay native", ()
         cleanup()
         assert.equal(listeners.size, 0)
     }
+})
+
+test("attachment trays retain horizontal scrolling and contain their boundaries", () => {
+    const tray = { scrollHeight: 100, clientHeight: 100, scrollTop: 0, scrollWidth: 900, clientWidth: 300, scrollLeft: 100 }
+    const { emit } = setup(tray)
+    emit("touchstart", 100, 1, "tray", 200)
+    assert.equal(emit("touchmove", 101, 1, "tray", 170), false)
+    tray.scrollLeft = 600
+    assert.equal(emit("touchmove", 102, 1, "tray", 140), true)
+    assert.equal(emit("touchmove", 104, 1, "tray", 170), false)
+    tray.scrollLeft = 0
+    assert.equal(emit("touchmove", 104, 1, "tray", 200), true)
+    emit("touchend", 104, 0, "tray")
+    emit("touchstart", 100, 1, "tray", 200)
+    assert.equal(emit("touchmove", 70, 1, "tray", 201), true)
 })
 
 test("long drafts scroll internally but block outward drags at both boundaries", () => {

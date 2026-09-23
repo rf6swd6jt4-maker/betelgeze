@@ -12,6 +12,7 @@ import { COMPOSER_KEYBOARD_MOTION_MS, createComposerViewportController } from "@
 import { readChatLayoutBottom, readChatViewportBottom, recordChatViewportDiagnostic } from "@/lib/chat-viewport-state"
 import { createViewportOriginRecovery } from "@/lib/viewport-origin-recovery"
 import { createWorkspaceVisualOrigin } from "@/lib/workspace-visual-origin"
+import { observeMobileWorkspaceViewport } from "@/lib/mobile-workspace-viewport"
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -22,6 +23,8 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { usePathname, useSearchParams } from "next/navigation"
 import { flushSync } from "react-dom"
 import { NativeWorkspaceTab, nativePanelCacheKey, type NativePanelSnapshot, type NativeTabHandle, type NativeTabNavigationRequest, type NativeTabNavigationCommit } from "@/components/workspace/NativeWorkspaceTab"
+import { NativeCommunicationsTab } from "@/components/workspace/NativeCommunicationsTab"
+import { communicationsLocation, type NativeCommunicationsSnapshot } from "@/lib/communications/native-host"
 import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
 import { WorkspaceNavigationPerformanceTracker } from "@/lib/workspace-performance-contract"
 import { createWorkspaceNavigationDeadline, workspaceNavigationReadyMatches } from "@/lib/workspace-navigation-lifecycle"
@@ -352,6 +355,17 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     // Revalidation may supply a new launch ID. The mounted shell already owns
     // its tabs: changing this ID detaches frame refs and erases their readiness.
     const [initialTab] = useState(() => bootstrapTab)
+    // Choose before mounting a chat document, then retain its renderer through
+    // rotation/resizing. Mounting an iframe first would duplicate its bootstrap
+    // and replacing a resident document would discard editor/selection state.
+    const [mobileCommunicationsHost, setMobileCommunicationsHost] = useState<boolean | null>(null)
+    useLayoutEffect(() => {
+        let cancelled = false
+        const mobile = window.matchMedia("(max-width: 1023px)").matches
+        queueMicrotask(() => { if (!cancelled) setMobileCommunicationsHost(mobile) })
+        return () => { cancelled = true }
+    }, [])
+    const usesNativeCommunications = useCallback((url: string) => mobileCommunicationsHost === true && Boolean(communicationsLocation(url, workspace.slug)), [mobileCommunicationsHost, workspace.slug])
     const online = useOnline()
     const pathname = usePathname()
     const searchParams = useSearchParams()
@@ -379,10 +393,12 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     const nativeState = useMemo(() => ({
         scope: `${currentUserId}:${workspace.id}`,
         cache: new WorkspaceRecordCache<NativePanelSnapshot>(),
+        communications: new WorkspaceRecordCache<NativeCommunicationsSnapshot>(),
         scroll: new WorkspaceTabScrollStore(),
         performance: new WorkspaceNavigationPerformanceTracker(),
     }), [currentUserId, workspace.id])
     const nativeCache = nativeState.cache
+    const communicationsCache = nativeState.communications
     const nativeScrollPositions = nativeState.scroll
     const nativeAccountScope = nativeState.scope
     const nativeAccountScopeRef = useRef(nativeAccountScope)
@@ -501,7 +517,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         if (options.destination) {
             const { tabId, url } = options.destination
             const frame = iframeRefs.current.get(tabId)
-            if (frame && ((nativePanelsEnabled && nativeWorkspaceRoute(url, workspace.slug)) || !workspaceFrameHasNavigationReceiver(frame, tabId))) departing.add(tabId)
+            if (frame && ((nativePanelsEnabled && nativeWorkspaceRoute(url, workspace.slug)) || usesNativeCommunications(url) || !workspaceFrameHasNavigationReceiver(frame, tabId))) departing.add(tabId)
         }
         const nativeDisplaced = [...departing].some((id) => nativeRefs.current.has(id)) || Boolean(options.destination && nativeRefs.current.has(options.destination.tabId) && tabsRef.current.find((tab) => tab.id === options.destination?.tabId)?.url !== options.destination.url)
         const nativeDeparture = nativeRefs.current.has(activeTabIdRef.current) || nativeDisplaced
@@ -555,7 +571,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             else finish()
             return committed
         }
-    }, [nativePanelsEnabled, workspace.slug])
+    }, [nativePanelsEnabled, workspace.slug, usesNativeCommunications])
     useEffect(() => () => { ++nativeNavigationSequence.current; departureAbortRef.current?.abort(); warmAbortRef.current?.abort() }, [])
     const defaultWorkspaceUrl = `/${workspace.slug}`
     const tabsStorageKey = `betelgeze:workspace-tabs:${workspace.slug}`
@@ -723,17 +739,17 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         shellStorage.set(tabsStorageKey, JSON.stringify({ mode: "live", tabs: nextTabs, activeId: nextActiveId }))
         const active = nextTabs.find((tab) => tab.id === nextActiveId)
         if (active) {
-            if (nativePanelsEnabled && `${window.location.pathname}${window.location.search}${window.location.hash}` !== active.url) {
+            if ((nativePanelsEnabled || mobileCommunicationsHost) && `${window.location.pathname}${window.location.search}${window.location.hash}` !== active.url) {
                 window.history.pushState({ ...window.history.state, betelgezeWorkspace: { tabId: active.id, url: active.url } }, "", active.url)
             }
             const restoreUrl = workspaceLaunchUrlForRestore(active.url, workspace.slug) ?? active.url
             const restoreTab = nextTabs.find((tab) => tab.url === restoreUrl) ?? active
             persistWorkspaceLaunchHint({ workspaceSlug: workspace.slug, tabId: restoreTab.id, url: restoreUrl })
         }
-    }, [tabsStorageKey, workspace.slug, nativePanelsEnabled, shellStorage])
+    }, [tabsStorageKey, workspace.slug, nativePanelsEnabled, mobileCommunicationsHost, shellStorage])
 
     useEffect(() => {
-        if (!nativePanelsEnabled) return
+        if (!nativePanelsEnabled && !mobileCommunicationsHost) return
         const restore = async () => {
             const url = normalizeWorkspaceUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`)
             if (!canOpenWorkspaceUrl(url)) return
@@ -772,7 +788,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         const receive = () => { void restore() }
         window.addEventListener("popstate", receive)
         return () => window.removeEventListener("popstate", receive)
-    }, [nativePanelsEnabled, normalizeWorkspaceUrl, canOpenWorkspaceUrl, prepareNativeLeave, titleForUrl, activateWorkspaceTab, saveTabsState, startNativeNavigation, nativeNavigationPerformance])
+    }, [nativePanelsEnabled, mobileCommunicationsHost, normalizeWorkspaceUrl, canOpenWorkspaceUrl, prepareNativeLeave, titleForUrl, activateWorkspaceTab, saveTabsState, startNativeNavigation, nativeNavigationPerformance])
 
     const showCreationNotice = useCallback((notice: CreationNotice) => {
         if (creationNoticeTimeoutRef.current) window.clearTimeout(creationNoticeTimeoutRef.current)
@@ -949,12 +965,13 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 setClearedNativeAccount(nativeAccountScope)
                 nativeNavigationPerformance.cancel()
                 nativeCache.clear()
+                communicationsCache.clear()
                 nativeScrollPositions.clear()
             }
         }
         window.addEventListener("betelgeze:offline-account-clearing", clear)
-        return () => { window.removeEventListener("betelgeze:offline-account-clearing", clear); nativeNavigationPerformance.cancel(); nativeCache.clear(); nativeScrollPositions.clear() }
-    }, [nativeCache, nativeScrollPositions, nativeAccountScope, currentUserId, nativeNavigationPerformance])
+        return () => { window.removeEventListener("betelgeze:offline-account-clearing", clear); nativeNavigationPerformance.cancel(); nativeCache.clear(); communicationsCache.clear(); nativeScrollPositions.clear() }
+    }, [nativeCache, communicationsCache, nativeScrollPositions, nativeAccountScope, currentUserId, nativeNavigationPerformance])
 
     useEffect(() => {
         markWorkspaceLaunch("shell_hydrated_ms")
@@ -1578,7 +1595,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             }
 
             if (message.type === "navigation-start") {
-                if (!native && message.url && nativePanelsEnabled && nativeWorkspaceRoute(message.url, workspace.slug)) {
+                if (!native && message.url && ((nativePanelsEnabled && nativeWorkspaceRoute(message.url, workspace.slug)) || usesNativeCommunications(message.url))) {
                     const url = normalizeWorkspaceUrl(message.url)
                     void prepareNativeLeave({ destination: { tabId: message.tabId, url } }).then((confirmDeparture) => {
                         if (!confirmDeparture) return
@@ -1640,7 +1657,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         const receive = (event: MessageEvent<WorkspaceTabFrameMessage>) => receiveFrameMessage(event)
         window.addEventListener("message", receive)
         return () => { nativeMessageRef.current = () => {}; window.removeEventListener("message", receive) }
-    }, [refreshCommunicationsUnread, openCreate, traverseHistory, beginTabNavigation, completeTabNavigation, markTabFrameReady, normalizeWorkspaceUrl, openWorkspaceTab, postToTab, reopenClosedTab, reportInitialPanelReady, requestTabFrameNavigation, routeCanShowRelationshipContext, saveTabsState, scheduleSoftNavigationFallback, setTabContextOpen, setTabContextStatus, showCreationNotice, titleForUrl, updateTabForShellNavigation, workspace.slug, nativeNavigationPerformance, startNativeNavigation, nativePanelsEnabled, prepareNativeLeave])
+    }, [refreshCommunicationsUnread, openCreate, traverseHistory, beginTabNavigation, completeTabNavigation, markTabFrameReady, normalizeWorkspaceUrl, openWorkspaceTab, postToTab, reopenClosedTab, reportInitialPanelReady, requestTabFrameNavigation, routeCanShowRelationshipContext, saveTabsState, scheduleSoftNavigationFallback, setTabContextOpen, setTabContextStatus, showCreationNotice, titleForUrl, updateTabForShellNavigation, workspace.slug, nativeNavigationPerformance, startNativeNavigation, nativePanelsEnabled, prepareNativeLeave, usesNativeCommunications])
 
     useEffect(() => {
         if (!tabsHydrated || loadedTabIdsRef.current.has(activeTabId)) return
@@ -1714,7 +1731,13 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         const readViewportBottom = () => readChatViewportBottom(window)
         const panel = shellRoot.querySelector<HTMLElement>("[data-workspace-tab-panels]")
         const topbar = shellRoot.querySelector<HTMLElement>("[data-workspace-topbar]")
+        const tabbar = shellRoot.querySelector<HTMLElement>("[data-workspace-tabbar]")
         const mobile = window.matchMedia("(max-width: 1023px)")
+        const mobileViewport = panel && topbar && tabbar ? observeMobileWorkspaceViewport({
+            view: window, root: shellRoot, panel, topbar, tabbar,
+            active: () => mobile.matches && !!panel.querySelector('[data-mobile-comms-tab][data-active="true"]'),
+        }) : null
+        let mobileOwnsViewport = false
         const visualOrigin = createWorkspaceVisualOrigin({
             readTop: () => topbar?.getBoundingClientRect().top ?? NaN,
             readLimit: () => mobile.matches && document.visibilityState === "visible" && Math.abs((window.visualViewport?.scale ?? 1) - 1) < 0.01
@@ -1737,6 +1760,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             schedule: (callback, delay) => window.setTimeout(callback, delay),
             cancel: (timer) => window.clearTimeout(timer),
             writeBottom: (viewportBottom, animate) => {
+                if (mobileOwnsViewport) return
                 // Also covers bounded late-metric reconciliation, which runs
                 // without a new browser viewport event.
                 visualOrigin.update()
@@ -1776,10 +1800,30 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             if (focused) { origin.focus(); viewport.focus() }
             else { origin.blur(); viewport.blur() }
         }
+        const applyMobileViewport = () => {
+            if (mobileViewport?.update()) {
+                if (!mobileOwnsViewport) {
+                    mobileOwnsViewport = true
+                    origin.suspend()
+                    visualOrigin.suspend()
+                    viewport.suspend()
+                }
+                return true
+            }
+            if (mobileOwnsViewport) {
+                mobileOwnsViewport = false
+                composerFocused = false
+                visualOrigin.resume()
+                origin.resume()
+                viewport.resume()
+            }
+            return false
+        }
         // Correct the origin before capturing a visible composer position;
         // afterward would add native pan to an already-calculated translation.
         const holdWorkspaceViewport = () => {
             if (document.visibilityState === "hidden") return
+            if (applyMobileViewport()) return
             visualOrigin.update()
             syncComposerFocus()
             origin.update()
@@ -1789,12 +1833,14 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             const { focused, sourceWindow } = (event as CustomEvent<WorkspaceComposerFocusEventDetail>).detail ?? {}
             if (typeof focused !== "boolean" || document.visibilityState === "hidden") return
             if (sourceWindow !== window && sourceWindow !== iframeRefs.current.get(activeTabIdRef.current)?.contentWindow) return
+            if (applyMobileViewport()) return
             visualOrigin.update()
             composerFocused = focused
             if (focused) { origin.focus(); viewport.focus() }
             else { origin.blur(); viewport.blur() }
         }
         const suspendWorkspaceViewport = () => {
+            mobileViewport?.suspend()
             origin.suspend()
             visualOrigin.suspend()
             activeComposer()?.blur()
@@ -1805,6 +1851,8 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         }
         const resumeWorkspaceViewport = () => {
             if (document.visibilityState !== "visible") return
+            mobileViewport?.resume()
+            if (applyMobileViewport()) return
             visualOrigin.resume()
             origin.resume()
             viewport.resume()
@@ -1820,6 +1868,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         root.dataset.workspaceViewportLocked = "true"
         syncComposerViewportRef.current = holdWorkspaceViewport
         window.addEventListener("resize", holdWorkspaceViewport)
+        mobile.addEventListener("change", holdWorkspaceViewport)
         window.visualViewport?.addEventListener("resize", holdWorkspaceViewport)
         window.visualViewport?.addEventListener("scroll", holdWorkspaceViewport)
         window.addEventListener(WORKSPACE_COMPOSER_FOCUS_EVENT, handleComposerFocus)
@@ -1836,6 +1885,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
 
         return () => {
             window.removeEventListener("resize", holdWorkspaceViewport)
+            mobile.removeEventListener("change", holdWorkspaceViewport)
             window.visualViewport?.removeEventListener("resize", holdWorkspaceViewport)
             window.visualViewport?.removeEventListener("scroll", holdWorkspaceViewport)
             window.removeEventListener(WORKSPACE_COMPOSER_FOCUS_EVENT, handleComposerFocus)
@@ -1845,6 +1895,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             origin.dispose()
             viewport.dispose()
             visualOrigin.dispose()
+            mobileViewport?.dispose()
             syncComposerViewportRef.current = null
             document.body.style.overflow = previousOverflow
             delete document.body.dataset.workspaceTabsHosted
@@ -2542,7 +2593,8 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     const frameTabs = orderWorkspaceTabsByStableIds(tabs, tabFrameOrder)
         .filter((tab) => tab.id === activeTabId || residentTabIdSet.has(tab.id))
     const activeTab = visibleTabs.find((tab) => tab.id === activeTabId) ?? visibleTabs[0]
-    const activeNativePanel = nativePanelsEnabled && Boolean(nativeWorkspaceRoute(activeTab.url, workspace.slug))
+    const activeNativePanel = usesNativeCommunications(activeTab.url) || (nativePanelsEnabled && Boolean(nativeWorkspaceRoute(activeTab.url, workspace.slug)))
+    useLayoutEffect(() => { syncComposerViewportRef.current?.() }, [activeTabId, activeTab.url, mobileCommunicationsHost])
     const activeTabLoaded = loadedTabIds.has(activeTab.id)
     const canGoBack = activeTabLoaded && activeTab.historyIndex > 0
     const canGoForward = activeTabLoaded && activeTab.historyIndex < activeTab.history.length - 1
@@ -2984,7 +3036,11 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         </div>
 
         <div data-workspace-tab-panels className={`fixed bottom-0 top-[6.25rem] z-30 overflow-hidden bg-neutral-950 ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
-            {frameTabs.map((tab) => nativePanelsEnabled && nativeWorkspaceRoute(tab.url, workspace.slug) ? (
+            {frameTabs.map((tab) => mobileCommunicationsHost === null && communicationsLocation(tab.url, workspace.slug) ? null : usesNativeCommunications(tab.url) ? (
+                <NativeCommunicationsTab key={`${currentUserId}:${workspace.id}:${tab.id}`} tab={tab} active={tab.id === activeTabId}
+                    workspaceId={workspace.id} workspaceSlug={workspace.slug} userId={currentUserId} cache={communicationsCache}
+                    accountCleared={clearedNativeAccount === nativeAccountScope} assignRef={assignNativeTabRef} onMessage={receiveNativeMessage} prepareNavigation={prepareNativePanelNavigation} />
+            ) : nativePanelsEnabled && nativeWorkspaceRoute(tab.url, workspace.slug) ? (
                 <NativeWorkspaceTab key={tab.id} tab={tab} active={tab.id === activeTabId}
                     contextOpen={contextOpenByTab[tab.id] ?? true} workspaceId={workspace.id} workspaceSlug={workspace.slug}
                     userId={currentUserId} cache={nativeCache} accountCleared={clearedNativeAccount === nativeAccountScope} scrollPositions={nativeScrollPositions} banner={nativeBanner} assignRef={assignNativeTabRef} onMessage={receiveNativeMessage} prepareNavigation={prepareNativePanelNavigation} />

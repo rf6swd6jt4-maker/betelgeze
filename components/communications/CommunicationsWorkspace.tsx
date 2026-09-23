@@ -17,7 +17,7 @@ import { ChatMessageText } from "@/components/communications/ChatMessageText"
 import Link from "next/link"
 import Image from "next/image"
 import { ComposerFooter } from "@/components/communications/ComposerFooter"
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 
 import { CommunicationsConnectionStatus } from "@/components/communications/CommunicationsConnectionStatus"
 import { ComposerMessagePreview } from "@/components/communications/ComposerMessagePreview"
@@ -54,7 +54,7 @@ import { mergeChatReadCursor, readCursorCoversMessage, subscribeChatReads } from
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import type { ClientConversation, CommunicationAttachment, CommunicationDelivery, CommunicationMessage, CommunicationReaction, CommunicationReadCursor, CommunicationSticker, CommunicationsBootstrap } from "@/lib/communications/types"
 import { communicationAttachmentFromRawPayload } from "@/lib/communications/attachments"
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
+import { useCommunicationsClient } from "./CommunicationsRuntime"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { clientConversationUnreadCount } from "@/lib/communications/unread"
 import { clientMessageSupportsReaction } from "@/lib/communications/interactions"
@@ -238,7 +238,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
 }) {
     const unreadSummary = useSharedUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
     const unreadByConversation = useMemo(() => unreadSummary ? new Map(unreadSummary.rows.filter(row => row.kind === "client").map(row => [row.conversationId, row.count])) : null, [unreadSummary])
-    const supabase = useMemo(() => createSupabaseBrowserClient(), [])
+    const supabase = useCommunicationsClient()
     const [updates] = useState(() => createCoordinatedChat<CommunicationMessage, ClientConversation, CommunicationReaction>(bootstrap, (reaction) => `${reaction.messageId}:${reaction.direction}`))
     const { conversations, reactions } = useSyncExternalStore(updates.subscribe, updates.getSnapshot, updates.getSnapshot)
     const { setConversations } = updates
@@ -290,6 +290,20 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const whatsAppTypingTimerRef = useRef<number | null>(null)
     const whatsAppTypingCooldownTimersRef = useRef<Record<string, number>>({})
     const workspaceTabActive = useWorkspaceTabActive()
+    const interactionActive = active && workspaceTabActive && documentVisible
+    useLayoutEffect(() => {
+        if (!interactionActive) return
+        const pane = messagePaneRef.current
+        return () => {
+            // Retain the conversation/editor, but end gestures and transient
+            // overlays before another mode or resident tab takes interaction.
+            swipeStartRef.current = null
+            setSwipePosition(null)
+            setActionMessageId(null)
+            setPreviewMedia(null)
+            pane?.querySelectorAll<HTMLMediaElement>("audio,video").forEach((media) => media.pause())
+        }
+    }, [interactionActive, selectedId])
     const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null
     const latestInboundMessageAt = useMemo(() => selected?.messages.reduce((latest, message) =>
         message.direction === "inbound" && usesWhatsApp(message) && message.createdAt > latest ? message.createdAt : latest, "") ?? "", [selected?.messages])
@@ -408,7 +422,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         if (whatsappWindowClosed || whatsappOptedOut) return
         setReplyingTo(message)
         setActionMessageId(null)
-        window.requestAnimationFrame(() => composerRef.current?.focus())
+        if (interactionActive) composerRef.current?.focus({ preventScroll: true })
     }
 
     function rememberRecentReaction(emoji: string) {
@@ -910,7 +924,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                             <span className="min-w-0"><span className="flex min-w-0 items-center gap-2"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{selected.title}</span>{selected.isTest ? <SquarePill tone="yellow" className="!min-h-5 !px-2 !py-0.5 !text-[10px] !leading-3">Test</SquarePill> : null}</span><span className="block truncate text-[11px] text-neutral-600">{selected.subtitle ?? "WhatsApp client"}</span></span>
                         </Link>
                         <ClientPortalActions key={`portal-actions:${selected.id}`} workspaceSlug={bootstrap.workspaceSlug} relationshipId={selected.id} />
-                        <ClientChatParticipants key={selected.id} workspaceSlug={bootstrap.workspaceSlug} conversation={selected} userId={bootstrap.currentUser.id} people={bootstrap.people} onSaved={synchronize} />
+                        <ClientChatParticipants active={interactionActive} key={selected.id} workspaceSlug={bootstrap.workspaceSlug} conversation={selected} userId={bootstrap.currentUser.id} people={bootstrap.people} onSaved={synchronize} />
                         <CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} />
                     </header>
                     {selected.pinnedMessageId && pinnedPreview ? <PinnedMessageBar preview={pinnedPreview} onClick={() => jumpToMessage(selected.pinnedMessageId!)} /> : null}
@@ -942,7 +956,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                             const saveAttachmentLabel = isSticker ? stickerSaved ? "Sticker saved" : savingStickerMessageId === message.id ? "Saving sticker" : "Save sticker" : `Download ${message.attachment?.fileName ?? "attachment"}`
                             const saveAttachmentDisabled = stickerSaved || savingStickerMessageId === message.id || downloadingMessageId === message.id
                             const canPin = message.clientRequestId !== message.id
-                            const showActions = actionMessageId === message.id
+                            const showActions = interactionActive && actionMessageId === message.id
                             const readers = readCursors.filter((cursor) => cursor.relationshipId === selected.id && cursor.userId !== message.senderUserId && readCursorCoversMessage(cursor, message)).flatMap((cursor) => peopleById.get(cursor.userId) ?? [])
                             return <Fragment key={messageAnimationKey(message)}>
                                 {showDay ? <div className="my-3 flex justify-center"><time dateTime={message.createdAt} className="rounded-full border border-neutral-800 bg-neutral-950 px-3 py-1 text-[10px] text-neutral-500">{messageDay(message.createdAt)}</time></div> : null}
@@ -951,6 +965,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                                     <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, swipeOffset / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, swipeOffset / 190)})` }} className="pointer-events-none absolute left-0 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-800 text-white lg:hidden"><ReplyIcon className="h-5 w-5" /></span>
                                     {message.direction === "outbound" && showActions ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}><MessageActionTray view={actionView} canInteract={canInteract} interactionBlocked={whatsappWindowClosed || whatsappOptedOut} currentEmoji={teamReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} onReply={() => beginReply(message)} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onShowReactions={() => setActionView("reactions")} pinned={selected.pinnedMessageId === message.id} side="right" onSave={canSaveAttachment ? () => void saveOrDownloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={saveAttachmentDisabled} saveActive={stickerSaved} /></MessageActionPopup> : null}
                                     <NativeMessageBubble
+                                        active={interactionActive}
                                         video={message.attachment?.kind === "video"}
                                         image={message.attachment?.kind === "image"}
                                         role="button"
@@ -1026,7 +1041,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                     {showJumpToLatest ? <JumpToLatestButton onClick={() => { followLatestRef.current = true; setAtLatest(true); messagePaneRef.current?.scrollTo({ top: messagePaneRef.current.scrollHeight, left: 0, behavior: "instant" }) }} /> : null}
                     </div>
 
-                    <ComposerFooter className="relative z-10 shrink-0 touch-manipulation border-t border-neutral-800 bg-neutral-950 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:p-4">
+                    <ComposerFooter className="relative z-10 shrink-0 touch-manipulation border-t border-neutral-800 bg-neutral-950 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:p-4" accessories={<>
                         {replyingTo ? <ComposerMessagePreview label={`Replying to ${senderName(replyingTo)}`} preview={messagePreview(replyingTo)} onCancel={() => { setReplyingTo(null); composerRef.current?.focus({ preventScroll: true }) }} /> : null}
                         <ComposerAttachments queue={uploads.queue} conversationId={selected.id} />
                         {attachmentError ? <p role="alert" className="mx-auto mb-2 max-w-3xl text-xs text-red-300">{attachmentError}</p> : null}
@@ -1041,7 +1056,9 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                         <input ref={attachmentInputRef} type="file" accept="image/jpeg,image/png,video/mp4,video/3gpp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) setAttachmentError(uploads.queue.add(selected.id, files)) }} />
                         <input ref={stickerInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadSticker(file) }} />
                         <ChatOutboxStatus entries={offline.entries} conversationId={selected.id} />
+                        </>}>
                         <MessageComposer
+                            active={interactionActive}
                             textareaRef={composerRef}
                             draft={whatsappWindowClosed || whatsappOptedOut ? "" : draft}
                             placeholder={whatsappOptedOut ? "Client opted out of WhatsApp" : whatsappWindowClosed ? reconfirmationAwaitingReply ? "Waiting for client to reply CONFIRM" : "24hr window expired — send reconfirmation" : selected.canSend ? `Message ${selected.title}` : "Add a phone number and connect SMS or WhatsApp"}
@@ -1061,6 +1078,6 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                 </> : <div className="flex flex-1 items-center justify-center p-6 text-center"><div><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950 text-xl">◌</div><h2 className="mt-4 text-sm font-semibold">Select a client chat</h2><p className="mt-2 text-xs text-neutral-600">Messages update here without reloading the panel.</p></div></div>}
             </NativeChatViewport></ConversationMedia>
         </ResizableConversationColumns>
-        <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} />
+        {interactionActive ? <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} /> : null}
     </section>
 }

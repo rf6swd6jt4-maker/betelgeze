@@ -2,25 +2,17 @@
 // This is development tooling, not an authenticated or physical-device check.
 import { spawn } from "node:child_process"
 import { mkdir, writeFile } from "node:fs/promises"
-import { chromium, webkit } from "playwright"
+import { createRequire } from "node:module"
 import { assertFixtureReport } from "./report.mjs"
+const require = createRequire(import.meta.url)
+const { chromium, webkit } = require(require.resolve("playwright", { paths: process.env.BE_BROWSER_TEST_ROOT ? [process.env.BE_BROWSER_TEST_ROOT] : [process.cwd()] }))
 
 const fixtures = [
     { name: "mobile-comms", expected: 17, script: "scripts/serve-mobile-comms-fixture.mjs", global: "mobileCommsFixtureResult", viewport: { width: 390, height: 850 } },
     { name: "mobile-comms-landscape", expected: 1, script: "scripts/serve-mobile-comms-fixture.mjs", global: "mobileCommsFixtureResult", viewport: { width: 844, height: 390 }, query: "?landscape" },
-    { name: "native-comms", expected: 6, script: "scripts/serve-native-comms-fixture.mjs", global: "nativeCommsFixtureResult", viewport: { width: 390, height: 850 } },
-    { name: "native-comms-runtime", expected: 4, script: "scripts/serve-native-comms-fixture.mjs", args: ["--development"], global: "nativeCommsFixtureResult", query: "?runtime", viewport: { width: 390, height: 850 } },
-    { name: "visual-origin", expected: 6, script: "scripts/serve-workspace-visual-origin-fixture.mjs" },
-    { name: "departure", expected: 32, script: "scripts/serve-workspace-departure-fixture.mjs", global: "departureFixtureResult" },
-    { name: "drafts", expected: 25, script: "scripts/serve-workspace-draft-fixture.mjs", global: "workspaceDraftFixtureResult", query: "?autorun" },
-    { name: "drafts-strict", expected: 25, script: "scripts/serve-workspace-draft-fixture.mjs", args: ["--development"], global: "workspaceDraftFixtureResult", query: "?autorun" },
-    { name: "motion", expected: 5, script: "scripts/serve-chat-viewport-fixture.mjs" },
-    { name: "comms-layout-mobile", expected: 24, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 390, height: 850 } },
-    { name: "comms-layout-reduced", expected: 2, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 390, height: 850 }, reducedMotion: "reduce", query: "?reduced" },
-    { name: "comms-layout-desktop", expected: 1, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 1280, height: 900 }, query: "?desktop" },
 ]
 const selected = process.argv.slice(2)
-if (selected.some(value => !["chromium", "webkit"].includes(value))) throw Error("Usage: run-foundations.mjs [chromium|webkit]")
+if (selected.some(value => !["chromium", "webkit"].includes(value))) throw Error("Usage: run-mobile-comms.mjs [chromium|webkit]")
 const engines = selected.length ? selected : ["chromium", "webkit"]
 const reports = []
 const servers = []
@@ -45,7 +37,7 @@ function start(fixture) {
 await mkdir("browser-results", { recursive: true })
 try {
     for (const engine of engines) {
-        const browser = await ({ chromium, webkit })[engine].launch({ headless: true })
+        const browser = await ({ chromium, webkit })[engine].launch({ headless: true, executablePath: engine === "chromium" ? process.env.CHROMIUM_EXECUTABLE : process.env.WEBKIT_EXECUTABLE })
         try {
             for (const fixture of fixtures) {
                 const url = await start(fixture)
@@ -87,5 +79,5 @@ try {
     }
 } finally {
     for (const server of servers) server.kill("SIGTERM")
-    await writeFile("browser-results/foundations.json", JSON.stringify({ observedAt: new Date().toISOString(), reports, limits: "Loopback synthetic component/helper checks. Not production latency, authenticated UI or physical-device evidence." }, null, 2))
+    await writeFile("browser-results/mobile-comms.json", JSON.stringify({ observedAt: new Date().toISOString(), reports, limits: "Loopback synthetic component/helper checks. Not production latency, authenticated UI or physical-device evidence." }, null, 2))
 }

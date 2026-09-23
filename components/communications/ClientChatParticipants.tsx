@@ -6,14 +6,14 @@ import { List, ListItem } from "@/components/list/List"
 import { DeliveryUserPicker } from "@/components/settings/DeliveryUserPicker"
 import type { ClientConversation, CommunicationPerson } from "@/lib/communications/types"
 
-export function ClientChatParticipants({ workspaceSlug, conversation, userId, people, onSaved }: { workspaceSlug: string; conversation: ClientConversation; userId: string; people: CommunicationPerson[]; onSaved: () => Promise<void> }) {
+export function ClientChatParticipants({ active = true, workspaceSlug, conversation, userId, people, onSaved }: { active?: boolean; workspaceSlug: string; conversation: ClientConversation; userId: string; people: CommunicationPerson[]; onSaved: () => Promise<void> }) {
     const [open, setOpen] = useState(false)
     const [selected, setSelected] = useState(conversation.participants?.optionalIds ?? [])
     const [pending, setPending] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const roster = conversation.participants
     const canManage = roster?.managerId === userId
-    const dialogRef = useRosterDialog(open, () => setOpen(false))
+    const dialogRef = useRosterDialog(active && open, () => setOpen(false))
     async function save() {
         setPending(true); setError(null)
         try {
@@ -27,7 +27,7 @@ export function ClientChatParticipants({ workspaceSlug, conversation, userId, pe
     if (!roster) return null
     return <>
         <button type="button" aria-label="Client conversation participants" title="Participants" onClick={() => { setSelected(roster.optionalIds); setError(null); setOpen(true) }} className="inline-flex h-9 w-9 shrink-0 items-center justify-center text-neutral-400 hover:text-white"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-5 w-5"><circle cx="9" cy="8" r="3" /><path d="M3 21v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M21 21v-2a6 6 0 0 0-4-5" /></svg></button>
-        {open ? <div role="dialog" aria-modal="true" aria-labelledby="client-participants-title" className="fixed inset-0 z-[180] flex items-center justify-center bg-black/75 p-4" onMouseDown={(e) => { if(e.target === e.currentTarget) setOpen(false) }}><section ref={dialogRef} className="betelgeze-popup-enter max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-neutral-700 bg-neutral-950 p-4">
+        {active && open ? <div role="dialog" aria-modal="true" aria-labelledby="client-participants-title" className="fixed inset-0 z-[180] flex items-center justify-center bg-black/75 p-4" onMouseDown={(e) => { if(e.target === e.currentTarget) setOpen(false) }}><section ref={dialogRef} className="betelgeze-popup-enter max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-neutral-700 bg-neutral-950 p-4">
             <header className="flex items-center gap-3"><h2 id="client-participants-title" className="flex-1 text-lg font-semibold">Client conversation</h2><button type="button" onClick={() => setOpen(false)} aria-label="Close participants" className="h-9 w-9 text-xl text-neutral-500">×</button></header>
             <p className="mt-1 text-xs text-neutral-500">{conversation.title}</p>
             <List ariaLabel="Client chat participants" className="!mt-3"><ListItem className="px-3 py-2 text-sm">{conversation.title} <span className="text-xs text-neutral-500">· Client</span></ListItem>{people.filter((p) => roster.memberIds.includes(p.id)).map((p) => <ListItem key={p.id} className="px-3 py-2"><Assignee userId={p.id} name={p.name} avatarSrc={p.avatarSrc} /></ListItem>)}</List>

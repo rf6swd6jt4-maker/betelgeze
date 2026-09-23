@@ -16,7 +16,7 @@ import { ChatMessageText } from "@/components/communications/ChatMessageText"
 
 import Image from "next/image"
 import { ComposerFooter } from "@/components/communications/ComposerFooter"
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { Avatar } from "@/components/account/Avatar"
 import { CommunicationsConnectionStatus } from "@/components/communications/CommunicationsConnectionStatus"
 import { ComposerMessagePreview } from "@/components/communications/ComposerMessagePreview"
@@ -50,7 +50,7 @@ import { useConversationRead } from "./useConversationRead"
 import { CommunicationsActivityTracker } from "./CommunicationsActivityTracker"
 import { mergeChatReadCursor, readCursorCoversMessage, subscribeChatReads } from "@/lib/communications/read-state"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
+import { useCommunicationsClient } from "./CommunicationsRuntime"
 import { mentionPreview } from "@/lib/chat-formatting"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { openWorkspaceMemberProfile } from "@/lib/workspace-member-profile"
@@ -169,7 +169,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 }) {
     const unreadSummary = useSharedUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
     const unreadByConversation = useMemo(() => unreadSummary ? new Map(unreadSummary.rows.filter(row => row.kind === "native").map(row => [row.conversationId, row.count])) : null, [unreadSummary])
-    const supabase = useMemo(() => createSupabaseBrowserClient(), [])
+    const supabase = useCommunicationsClient()
     const [updates] = useState(() => createCoordinatedChat<NativeMessage, NativeConversation, NativeReaction>(bootstrap, (reaction) => `${reaction.messageId}:${reaction.reactorUserId}`))
     const { conversations, reactions } = useSyncExternalStore(updates.subscribe, updates.getSnapshot, updates.getSnapshot)
     const { setConversations } = updates
@@ -225,6 +225,19 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const lastTypingBroadcastAtRef = useRef(0)
     const editingDraftSnapshotRef = useRef("")
     const workspaceTabActive = useWorkspaceTabActive()
+    const interactionActive = active && workspaceTabActive && documentVisible
+    useLayoutEffect(() => {
+        if (!interactionActive) return
+        const pane = messagePaneRef.current
+        return () => {
+            swipeStartRef.current = null
+            setSwipePosition(null)
+            setActionMessageId(null)
+            setPreviewMedia(null)
+            setEditingTeam(undefined)
+            pane?.querySelectorAll<HTMLMediaElement>("audio,video").forEach((media) => media.pause())
+        }
+    }, [interactionActive, selectedId])
     const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null
     const history = useConversationHistory(selectedId, selectedId && loadedHistoryIds.has(selectedId) ? selected?.messages ?? [] : [], {
         hasMore: Boolean(selected?.messageWindowStart),
@@ -536,7 +549,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         setStickerTrayOpen(false)
         setActionMessageId(null)
         setError(null)
-        window.requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }))
+        if (interactionActive) composerRef.current?.focus({ preventScroll: true })
     }
 
     function cancelEditingMessage() {
@@ -544,7 +557,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         setEditState("idle")
         setDraft(editingDraftSnapshotRef.current)
         setError(null)
-        window.requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }))
+        if (interactionActive) composerRef.current?.focus({ preventScroll: true })
     }
 
     async function saveEditedMessage() {
@@ -646,7 +659,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         setReplyingTo(message)
         setQuoteHighlight(null)
         followLatestRef.current = false
-        composerRef.current?.focus({ preventScroll: true })
+        if (interactionActive) composerRef.current?.focus({ preventScroll: true })
     }
 
     async function jumpToMessage(messageId: string, quote?: MessageQuote | null) {
@@ -796,11 +809,12 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                                 <span aria-hidden="true" style={{ opacity: Math.min(1, Math.abs(swipeOffset) / 36) }} className={`pointer-events-none absolute -inset-x-3 inset-y-0 lg:hidden ${swipeOffset < 0 ? "bg-gradient-to-l from-red-600/45 via-red-950/20 to-transparent" : "bg-gradient-to-r from-white/20 via-white/5 to-transparent"}`} />
                                 <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, swipeOffset) / 190)})` }} className="pointer-events-none absolute left-0 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-800 text-white lg:hidden"><ReplyIcon className="h-5 w-5" /></span>
                                 {canDelete ? <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, -swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, -swipeOffset) / 190)})` }} className="pointer-events-none absolute right-0 flex h-9 w-9 items-center justify-center rounded-full bg-red-600 text-white lg:hidden"><DeleteIcon className="h-5 w-5" /></span> : null}
-                                {actionMessageId === message.id ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}>{actionView === "actions" ? <PrimaryMessageActions onDelete={canDelete && selected.canWrite ? () => void deleteMessage(message) : null} onEdit={canEdit ? () => startEditingMessage(message) : null} onSave={canSaveAttachment ? () => void downloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={downloadingMessageId === message.id} onQuote={selected.canWrite ? () => startQuotingMessage(message) : null} onReply={null} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onReact={selected.canWrite ? () => setActionView("reactions") : null} pinned={selected.pinnedMessageId === message.id} /> : selected.canWrite ? <MessageReactionActions currentEmoji={ownReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} side={own ? "right" : "left"} /> : null}</MessageActionPopup> : null}
+                                {interactionActive && actionMessageId === message.id ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}>{actionView === "actions" ? <PrimaryMessageActions onDelete={canDelete && selected.canWrite ? () => void deleteMessage(message) : null} onEdit={canEdit ? () => startEditingMessage(message) : null} onSave={canSaveAttachment ? () => void downloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={downloadingMessageId === message.id} onQuote={selected.canWrite ? () => startQuotingMessage(message) : null} onReply={null} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onReact={selected.canWrite ? () => setActionView("reactions") : null} pinned={selected.pinnedMessageId === message.id} /> : selected.canWrite ? <MessageReactionActions currentEmoji={ownReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} side={own ? "right" : "left"} /> : null}</MessageActionPopup> : null}
                                 {!own && selected.kind === "team" ? sender?.former
                                     ? <span title={`${sender.name} · former member`} className="mb-1 mr-2 inline-flex h-7 w-7 shrink-0 overflow-hidden rounded-full opacity-70"><Avatar src={sender.avatarSrc} name={sender.name} className="h-full w-full object-center" /></span>
                                     : <button data-icon-button type="button" onClick={() => openWorkspaceMemberProfile(message.senderUserId)} aria-label={`Open ${sender?.name ?? "team member"} profile`} className="mb-1 mr-2 inline-flex h-7 w-7 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full p-0 outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"><Avatar src={sender?.avatarSrc} name={sender?.name ?? "Team member"} className="h-full w-full object-center" /></button> : null}
                                 <NativeMessageBubble
+                                    active={interactionActive}
                                     selectingText={Boolean(selectingQuote)}
                                     video={message.attachment?.kind === "video"}
                                         image={message.attachment?.kind === "image"}
@@ -852,8 +866,8 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         </Fragment>
                     }) : selectedTypingPeople.length ? null : <div className="flex min-h-64 items-center justify-center text-center"><div><p className="text-sm font-medium text-neutral-300">Start the conversation</p><p className="mt-2 text-xs text-neutral-600">Native Betelgeze messages update instantly.</p></div></div>}
                     {selectedTypingPeople.length ? <NativeTypingDots label={selectedTypingLabel} /> : null}</div></div>{showJumpToLatest ? <JumpToLatestButton onClick={() => { followLatestRef.current = true; setAtLatest(true); messagePaneRef.current?.scrollTo({ top: messagePaneRef.current.scrollHeight, left: 0, behavior: "instant" }) }} /> : null}</div>
-                    <ComposerFooter className="relative z-10 shrink-0 touch-manipulation border-t border-neutral-800 bg-neutral-950 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:p-4">
-                        {selectingQuote ? <MessageQuoteSelection key={`${selected.id}:${selectingQuote.id}:${selectingQuote.body}`} messageId={selectingQuote.id} body={selectingQuote.body} paneRef={messagePaneRef} onChange={updateSelectedQuote} onCancel={cancelQuoteSelection} /> : null}
+                    <ComposerFooter className="relative z-10 shrink-0 touch-manipulation border-t border-neutral-800 bg-neutral-950 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:p-4" accessories={<>
+                        {interactionActive && selectingQuote ? <MessageQuoteSelection key={`${selected.id}:${selectingQuote.id}:${selectingQuote.body}`} messageId={selectingQuote.id} body={selectingQuote.body} paneRef={messagePaneRef} onChange={updateSelectedQuote} onCancel={cancelQuoteSelection} /> : null}
                         {editingMessage ? <ComposerMessagePreview label="Editing message" preview={mentionPreview(editingMessage.body)} /> : null}
                         {replyingTo ? <ComposerMessagePreview label={selected.kind === "team" ? `Replying to ${replyingTo.senderUserId === bootstrap.currentUser.id ? "yourself" : peopleById.get(replyingTo.senderUserId)?.name ?? "team member"}` : "Replying to message"} tooltip={selectingQuote ? "Reply to the whole message, or highlight text in it to quote a passage." : undefined} preview={replyingTo.selectedQuote ? `“${replyingTo.selectedQuote.text}”` : messagePreview(replyingTo)} onCancel={() => { setReplyingTo(null); composerRef.current?.focus({ preventScroll: true }) }} /> : null}
                         {!editingMessage ? <ComposerAttachments queue={uploads.queue} conversationId={selected.id} /> : null}
@@ -862,7 +876,9 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         <input ref={attachmentInputRef} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) setError(uploads.queue.add(selected.id, files)) }} />
                         <input ref={stickerInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadSticker(file) }} />
                         <ChatOutboxStatus entries={offline.entries} conversationId={selected.id} />
+                        </>}>
                         <MessageComposer
+                            active={interactionActive}
                             textareaRef={composerRef}
                             mentionPeople={selected.kind === "team" ? bootstrap.people.filter((person) => selected.memberIds.includes(person.id)) : undefined}
                             draft={draft}
@@ -884,7 +900,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 </> : <div className="flex flex-1 items-center justify-center p-6 text-center"><div><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950"><TeamIcon /></div><h2 className="mt-4 text-sm font-semibold">Select a team conversation</h2><p className="mt-2 text-xs text-neutral-600">Direct messages and team chats update without reloading.</p></div></div>}
             </NativeChatViewport></ConversationMedia>
         </ResizableConversationColumns>
-        {editingTeam !== undefined ? <TeamEditor bootstrap={{ ...bootstrap, teams }} team={editingTeam} onClose={() => setEditingTeam(undefined)} onSaved={async () => { await refresh(selectedRef.current) }} /> : null}
-        <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} />
+        {interactionActive && editingTeam !== undefined ? <TeamEditor bootstrap={{ ...bootstrap, teams }} team={editingTeam} onClose={() => setEditingTeam(undefined)} onSaved={async () => { await refresh(selectedRef.current) }} /> : null}
+        {interactionActive ? <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} /> : null}
     </section>
 }

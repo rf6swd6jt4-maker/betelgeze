@@ -57,7 +57,7 @@ test("Communications uses its dedicated responsive conversation workspace instea
     assert.match(page, /fixed inset-0 overflow-hidden bg-black/)
     assert.match(panel, /data-communications-panel/)
     assert.doesNotMatch(panel, /communicationsViewportLocked|visualViewport|scrollTo/)
-    assert.match(panel, /fixed inset-0 isolate overflow-hidden overscroll-none bg-black/)
+    assert.match(panel, /\$\{navigation \? "absolute" : "fixed"\} inset-0 isolate overflow-hidden overscroll-none bg-black/)
     assert.match(workspace, /h-full min-h-0 w-full/)
     assert.match(workspace, /overflow-y-auto/)
     assert.match(workspace, /lg:hidden/)

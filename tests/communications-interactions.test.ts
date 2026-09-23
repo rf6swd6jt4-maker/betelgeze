@@ -167,7 +167,7 @@ test("message interactions keep the approved mobile and profile parity", async (
     }
     assert.match(team, /MessageActionPopup/)
     assert.doesNotMatch(panel, /visualViewport|scrollTo|useLayoutEffect/)
-    assert.match(panel, /fixed inset-0 isolate overflow-hidden overscroll-none bg-black/)
+    assert.match(panel, /\$\{navigation \? "absolute" : "fixed"\} inset-0 isolate overflow-hidden overscroll-none bg-black/)
     assert.match(shell, /dataset\.workspaceViewportLocked = "true"/)
     assert.match(shell, /element\.hidden = true/)
     assert.match(shell, /element\.hidden = hidden/)
@@ -218,7 +218,10 @@ test("message interactions keep the approved mobile and profile parity", async (
     assert.doesNotMatch(team, /onPointerDown=\{\(\) => composerRef\.current\?\.blur\(\)\}/)
     const richComposer = await readFile("components/communications/ChatComposerInput.tsx", "utf8")
     assert.match(composer, /max-w-3xl touch-manipulation items-center/)
-    assert.doesNotMatch(composer, /onPointerDown=\{[\s\S]{0,400}event\.preventDefault\(\)|setSelectionRange/)
+    assert.doesNotMatch(composer, /setSelectionRange/)
+    // Only the Send button may retain an already-focused editor; the editor
+    // itself still owns native pointer selection. Runtime fixture covers both.
+    assert.match(composer, /type="submit"[\s\S]*textareaRef\.current === event\.currentTarget\.ownerDocument\.activeElement\) event\.preventDefault\(\)/)
     assert.match(richComposer, /view\.contentDOM\.focus\(\{ preventScroll: true \}\)/)
     assert.match(richComposer, /view\.composing/)
     assert.match(richComposer, /historyKeymap/)

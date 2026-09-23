@@ -6,6 +6,8 @@ import { createMediaQueue } from "@/lib/communications/media-queue"
 const MediaActive = createContext(true)
 const MediaQueue = createContext<ReturnType<typeof createMediaQueue> | null>(null)
 
+export function useConversationMediaActive() { return useContext(MediaActive) }
+
 export function ConversationMedia({ active, children }: { active: boolean; children: ReactNode }) {
     const [queue] = useState(() => createMediaQueue())
     return <MediaActive.Provider value={active}><MediaQueue.Provider value={queue}>{children}</MediaQueue.Provider></MediaActive.Provider>

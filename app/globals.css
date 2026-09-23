@@ -89,6 +89,66 @@ html[data-workspace-viewport-locked="true"] [data-workspace-tab-panels] {
   height: max(0px, calc(var(--workspace-visual-viewport-bottom, 100dvh) - 6.25rem));
 }
 
+/* Resident mobile Comms: one visual-viewport origin, one available height.
+   DOM rectangles use layout coordinates; offsetTop belongs to position only.
+   No accumulated chrome correction or synthetic keyboard transform applies. */
+html[data-workspace-viewport-locked="true"] [data-mobile-comms-viewport="true"] [data-workspace-topbar] {
+  top: var(--mobile-workspace-top);
+  transform: none;
+  will-change: auto;
+}
+
+html[data-workspace-viewport-locked="true"] [data-mobile-comms-viewport="true"] [data-workspace-tabbar] {
+  top: calc(var(--mobile-workspace-top) + var(--mobile-workspace-header-height));
+  transform: none;
+  will-change: auto;
+}
+
+html[data-workspace-viewport-locked="true"] [data-mobile-comms-viewport="true"] [data-workspace-tab-panels] {
+  top: calc(var(--mobile-workspace-top) + var(--mobile-workspace-header-height) + var(--mobile-workspace-tabs-height));
+  height: max(0px, calc(var(--mobile-workspace-height) - var(--mobile-workspace-header-height) - var(--mobile-workspace-tabs-height)));
+  transform: none;
+}
+
+/* Bound rich drafts and trays to the actual space below the conversation
+   header/pinned bar. Container units avoid a second JS measurement owner. */
+[data-mobile-comms-tab] [data-chat-motion-layer] {
+  container-type: size;
+}
+
+[data-mobile-comms-tab] [data-composer-slot] {
+  max-height: 100%;
+}
+
+[data-mobile-comms-tab] [data-composer-slot] > footer {
+  --composer-padding: calc(0.75rem + max(0.75rem, env(safe-area-inset-bottom)));
+  --composer-accessory-reserve: 0px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  flex-shrink: 1;
+}
+
+[data-mobile-comms-tab] [data-composer-slot] > footer:has([data-composer-accessories] > :not(input)) {
+  --composer-accessory-reserve: min(48px, max(0px, calc(100cqh - var(--composer-padding) - 59px)));
+}
+
+[data-mobile-comms-tab] [data-composer-accessories] {
+  min-height: var(--composer-accessory-reserve);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+[data-mobile-comms-tab] [data-composer-slot] form {
+  flex-shrink: 0;
+  width: 100%;
+}
+
+[data-mobile-comms-tab] [data-composer-slot] .cm-scroller {
+  max-height: min(116px, max(44px, calc(100cqh - var(--composer-padding) - 15px - var(--composer-accessory-reserve))));
+}
+
 @media (min-width: 768px) {
   body[data-workspace-sidebar-open="true"] [data-workspace-tabbar] {
     left: var(--workspace-sidebar-width);

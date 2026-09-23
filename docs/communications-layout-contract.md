@@ -1,52 +1,62 @@
 # Communications layout contract
 
-Status: implementation candidate, awaiting physical-device and user acceptance. This is the intended behavior and maintenance boundary, not a declaration of a permanently verified UI. Preserve `app_speed.md` and the protected `app-alerts.md` contract. Release evidence is recorded separately below.
+Status: mobile resident rebuild candidate; physical-device and user acceptance pending. This replaces the mobile staff layout introduced at `93e7bcca`. Preserve `app_speed.md` and the protected `app-alerts.md` policy. A passing fixture, build or deployment does not establish physical keyboard behaviour.
 
 ## Required experience
 
-- Workspace top bar, workspace tabs and conversation header remain stationary during keyboard and draft changes.
-- The messages and composer move only by the measured keyboard displacement. Composer growth consumes exactly its visible slot-height increase; it must not cause an extra whole-chat slide.
-- An opening/closing animation travels from the current displayed position toward the measured endpoint. It never visits a remembered full-height layout because focus changed or the app resumed.
-- Multiline drafts grow smoothly to the existing four-line mobile/seven-line desktop limit and scroll internally afterward. Reply and attachment trays use the same footer slot. The inner footer may be larger than its animated slot; the slot clips it and defines the visible boundary.
-- Latest-following messages retain their gap above the visible composer slot. A reader above the latest message retains their content position relative to the bottom of the pane as available height changes; do not jump them to the latest message. Native touch scrolling and momentum own their position while interacting.
-- Typing, selection handles, select-all, copy/paste, undo/redo, formatting, draft retention, quoting, media, read/unread and notification semantics remain unchanged. Desktop and reduced-motion sizing remain immediate.
+- Workspace header, tabs and conversation header keep their screen position during keyboard and draft changes.
+- The composer occupies the bottom of the usable visual viewport. Its complete measured height determines the message pane's remaining space; no independent whole-chat slide or delayed footer resize applies in the mobile resident surface.
+- Following latest retains the message/composer gap. Reading older history retains a message anchor relative to the bottom of the pane across height changes. Native touch scrolling/momentum owns scroll position during interaction; no delayed correction replays afterward.
+- Long drafts grow to the existing line limit, then scroll internally. On short/landscape viewports the editor's visible height is further bounded to retain Send. Reply, attachment, error and sticker accessories scroll within their own bounded region. Attachment rows support horizontal scrolling. A focused editor keeps keyboard focus on Send; IME composition cannot accidentally submit.
+- Hidden modes/tabs retain drafts and loaded conversation state but cannot acquire focus, display portal menus, continue gallery playback or finish obsolete hold gestures.
+- Existing authorization, message ordering, idempotent sends, pending mutations, encrypted storage, read acknowledgements, exact active-chat visibility and notification semantics remain unchanged.
 
-## Ownership and maintenance
+## Ownership
 
 | Responsibility | Owner |
 | --- | --- |
-| Host viewport, actual focus and resident frame identity | `WorkspaceTopBarClient`; standalone portal uses `client-portal-composer-viewport` |
-| Valid measured edge, focus/lifecycle cancellation, bounded late measurement | `createComposerViewportController` |
-| Measured fixed-chrome correction before motion capture | `createWorkspaceVisualOrigin` |
-| Guarded resting document-origin recovery | `createViewportOriginRecovery` |
-| One clipped keyboard animation and atomic final geometry | `ChatMotionViewport` / `observeChatViewportMotion` |
-| Multiline/reply/attachment slot sizing | `ComposerFooter`; editor measurement belongs to CodeMirror |
-| Message content/viewport anchoring and native scroll ownership | `observeConversationLayout` |
+| Resident mobile Comms tab, scoped cache and shell navigation | `NativeCommunicationsTab`, `WorkspaceRecordCache`, `WorkspaceNavigationProvider` |
+| Active-mode bootstrap | Existing authorized client sync / native conversations GET endpoints |
+| Mobile viewport geometry | `observeMobileWorkspaceViewport` in the persistent shell |
+| Messages and composer layout | Normal flex layout within `ChatMotionViewport` |
+| Bounded accessories and editor | `ComposerFooter`, container-relative CSS, CodeMirror |
+| Message anchoring and touch/momentum ownership | `observeConversationLayout` |
+| Drafts/messages/uploads/reconnect | Existing Communications owners, retained across local selections |
+| Read/unread and alerts | Existing `useConversationRead`, activity/summary owners and `app-alerts.md` |
 
-Use these existing owners for future additions. Do not add another keyboard listener, footer keyboard transform, speculative focus/blur height, immediate document-scroll reset, animated iframe height, or timeout that restores a cached endpoint. Do not temporarily shrink the visible editor to measure it. No animation libraries, polling loops, new runtime dependencies or per-animation-frame JavaScript are introduced by this repair.
+The mobile renderer is selected before its resident document mounts and retained through orientation/width changes. Desktop-opened iframe tabs and client portals retain their existing path. Loading a mobile Comms tab does not also mount a Comms iframe. Native panel readiness follows mounted real mode content and visible paint, not just a resolved bootstrap request. Local selections update only their tab URL; hidden panels cannot overwrite the active browser URL. Explicit shell navigation is fenced by existing departure/current-source checks.
 
-The compositor layer may temporarily keep a larger *internal* layout to avoid resizing the iframe every animation frame; its displayed position must follow the measured motion and its transient height/transform must be released. The controller must distinguish that applied layout from its requested endpoint. A departed owner cannot finish an obsolete request; the current valid measurement repairs geometry after retirement. Duplicate requests for a still-owned endpoint must not restart animation. A revised endpoint after the animation deadline must still preserve an active touch/momentum gesture. The message observer must reconcile any height/content change before a queued scroll frame remembers a new baseline; WebKit may run that frame before ResizeObserver. Otherwise a multiline transition can silently consume part of the required scroll correction. This uses the existing scroll frame, with no new animation loop, and continues to yield during touch/momentum. Store anchor positions in transform-free layout coordinates, including positioned-parent borders; separate animated screen-bounds reads must not become a content-growth delta. Current message rows share the pane scrolling context without an intervening scroller.
+Each resident Comms tab retains its own Realtime transport, preserving the former iframe isolation and exact broadcast topics. It shares the existing authentication owner instead of creating more GoTrue instances. Disposal releases its channels/socket. The migration adds no subscription per keyboard event and never suffixes private topics or changes notification policy.
 
-Once device acceptance is recorded, treat these boundaries as stable. A future change to them needs a concrete defect or requirement, a reproducing regression case, the full relevant checks and a renewed affected-device check. Feature additions should use the contract without altering it incidentally.
+## Geometry
 
-## Acceptance and release evidence
+All mobile geometry uses layout-viewport CSS pixels:
 
-Base: `1dc8f19b31077b5714941929a8851577b7e534cd`. Application-only repair; no schema, client records, messages, stored files, credentials or delivery operations are modified for validation. Fixtures use synthetic local data and block external requests.
+- `origin = visualViewport.offsetTop`
+- `usable height = visualViewport.height`
+- header top = origin
+- tabs top = origin + measured header height
+- panel top = origin + measured header height + measured tabs height
+- panel height = usable height - measured header height - measured tabs height
 
-Automated coverage must use the production controller, motion layer, composer, editor and message observer together, including native and resident iframe layouts. Measure intermediate frames as well as final positions. Relative message/composer gaps use transform-free local coordinates: separate screen-rectangle reads can sample different instants of a shared compositor animation. This is a measurement correction, not a relaxed tolerance. The composed fixture uses production React components and helpers with representative shell wiring, not the authenticated WorkspaceTopBarClient application. Cover endpoint and continuous keyboard changes, rapid reopen, unchanged short viewport at blur/resume, departure during motion, revised endpoints during touch/momentum, multiline growth/shrink, reply/attachment height changes, history anchoring, selection, reduced motion and desktop.
+The origin is never added to available height. No accumulating correction from the previous header rectangle applies. Focus/blur never predicts a keyboard size. Invalid/zoom samples retain usable geometry; without an initial valid sample the mobile owner does not claim ownership. Viewport events apply current geometry immediately and allow one next-frame reread; there is no animation or polling loop, cached endpoint replay, or document-scroll reset.
 
-Before calling this baseline verified, record the tested release/device/browser and results for:
+The legacy geometry/controller is suspended while this owner is active. The mobile chat does not subscribe to legacy synthetic motion. Composer sizing is natural layout; container units bound it to the actual available space below the chat header and pinned message, without a second JavaScript height owner. The existing message observer receives an atomic pre/post geometry notification and retains its interaction guards.
 
-| Check | Acceptance status |
-| --- | --- |
-| Focused and full repository tests, changed-file lint, production build | Local checks passed: 1,295 tests, foundation lint/history/whitespace gate, webpack production build; hosted candidate checks pending |
-| Real-component Chromium and WebKit regression matrix | Local foundation runner passed 120 checks per engine, including 24 mobile chat cases, 2 reduced-motion cases and 1 desktop case per engine; hosted candidate checks pending |
-| Exact production commit and terminal deployment status | Pending deployment |
-| Physical iPhone Safari and Home Screen mode | Pending user test |
-| Physical Android Chrome | Pending device check |
-| Authenticated desktop interactions | Pending user test |
-| Ordinary working-day stability | Not yet established |
+## Validation and release
 
-Physical checks: open/close and rapidly reopen the keyboard; type/delete through the line limit; select and move handles in long drafts; add/remove reply and attachment previews; switch emoji/dictation keyboards; scroll history during keyboard motion; switch conversations and workspace tabs; background/return, lock/unlock, rotate, and repeat in browser and installed modes. Use an isolated test conversation for write actions; do not send messages to real clients solely to validate layout.
+Base: `93e7bcca704425839845e8471ad1e1b33c959aeb`. Application-only candidate; no migrations, production messages, uploads, credentials, records or provider operations are part of validation.
 
-Rollback is application-only: revert this repair to the base revision without any database or storage cleanup. That restores the known earlier keyboard defect, so prefer a narrowly verified forward fix when possible. Never erase drafts or message history to reset UI geometry.
+Evidence is recorded in `docs/mobile-comms-rebuild-validation.md`. It must distinguish:
+
+1. unit/source checks and scoped lint;
+2. production build;
+3. synthetic Chromium/WebKit geometry, native-host lifecycle and reading fixtures;
+4. candidate hosted CI and terminal production deployment;
+5. authenticated and physical-device checks.
+
+Phone acceptance: first and repeated keyboard open/close; immediate typing; rapid close/reopen; emoji/dictation; long draft selection, copy/paste/undo; reply/attachment/sticker growth; portrait/landscape; history and momentum during keyboard movement; media load and gallery dismissal; conversation/mode/workspace switching; background/return and lock/unlock; offline retry. Cover physical iPhone Safari and Home Screen app and physical Android Chrome/installed mode equally. Use an isolated test conversation for writes. Desktop regression checks remain required.
+
+Do not label this baseline permanently verified or frozen before device acceptance and normal working-day use. User approval to deploy this candidate is for their phone test, not proof that the phone checks have passed.
+
+Rollback: application-only revert to the base, preserving all drafts, cache isolation, pending/accepted messages and history. No database or storage cleanup. The earlier mobile keyboard defects return with that rollback; record that limitation rather than calling it a verified baseline.

@@ -1,0 +1,11 @@
+'use client'
+import {useEffect,useMemo,useState} from 'react'
+import {WorkspaceNavigationProvider} from '@/components/workspace/WorkspaceNavigation'
+import Reader from '../reader/page'
+const noop=()=>{}
+export default function Host(){
+ const [active,setActive]=useState(true),[covered,setCovered]=useState(false)
+ const navigation=useMemo(()=>({tabId:'one',workspaceSlug:'fixture',url:'/fixture/communications',active,push:noop,replace:noop,refresh:noop,back:noop,forward:noop,prefetch:noop,context:noop}),[active])
+ useEffect(()=>{document.body.dataset.workspaceActiveTabId=active?'one':'other';document.body.dataset.workspaceTabsHosted='true';window.dispatchEvent(new Event('betelgeze:workspace-tab-visibility'))},[active])
+ return <><div style={{height:40}}><button id="switch" onClick={()=>setActive(!active)}>Switch</button><button id="cover" onClick={()=>setCovered(true)}>Cover</button></div><WorkspaceNavigationProvider value={navigation}><section data-native-reader style={{display:active?'block':'none'}}><Reader/></section></WorkspaceNavigationProvider><style>{'[data-native-reader] [data-message-pane]{height:calc(100vh - 90px)!important}'}</style>{covered&&<div style={{position:'fixed',inset:0,background:'#888',zIndex:100}}><button id="uncover" onClick={()=>setCovered(false)}>Close viewer</button></div>}</>
+}

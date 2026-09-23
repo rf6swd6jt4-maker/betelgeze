@@ -15,9 +15,9 @@ export function SopDetailFields({ workspaceSlug, userId, sop, canEdit, admin }: 
     }, [workspaceSlug, sop.id, userId])
     const saveName = useCallback((value: string, _version: string, baseline: string) => save("title", value, baseline), [save])
     const saveDescription = useCallback((value: string, _version: string, baseline: string) => save("description", value, baseline), [save])
-    const common = { workspaceSlug, workItemId: sop.id, updatedAt: sop.updated_at, onSaved: saved }
-    const name = useWorkItemTextDraft({ ...common, description: sop.title, label: "Name", save: saveName })
-    const description = useWorkItemTextDraft({ ...common, description: sop.description, label: "Description", save: saveDescription })
+    const common = { userId, recordType: "sop", workspaceSlug, workItemId: sop.id, updatedAt: sop.updated_at, onSaved: saved }
+    const name = useWorkItemTextDraft({ ...common, field: "title", description: sop.title, label: "Name", save: saveName })
+    const description = useWorkItemTextDraft({ ...common, field: "description", description: sop.description, label: "Description", save: saveDescription })
     return <>
         <DetailPageHeader category="SOP" reference={shortId(sop.id)} title={canEdit ? name.value || sop.title : sop.title} updated={formatRelativeTime(sop.updated_at)} />
         <DetailFields>

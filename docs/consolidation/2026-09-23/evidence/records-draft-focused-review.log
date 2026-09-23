@@ -1,0 +1,36 @@
+(node:51738) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/betelgeze-platform-consolidation/tests/work-item-description-reconciliation.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/betelgeze-platform-consolidation/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ a pristine description receives another tab's refreshed text before its next edit (1.229709ms)
+✔ a dirty description never borrows the version of conflicting remote text (0.074542ms)
+✔ another field changing can advance the version without discarding a description draft (0.048791ms)
+✔ late snapshots before a save acknowledgement cannot restore older text (0.060459ms)
+✔ an older conflict response cannot replace the latest value offered for recovery (0.0485ms)
+✔ matching remote text resolves a draft without submitting it twice (0.041791ms)
+✔ the actual editor refreshes pristine text and blocks a dirty conflicting save until explicit recovery (67.420667ms)
+✔ the actual editor keeps ordinary typing storage-free and checkpoints latest input at unload (24.609667ms)
+✔ selecting recovery during an in-flight save cannot submit it until explicit review is saved (20.855292ms)
+✔ account activation preserves the current actor but checkpoints and stops the displaced actor (19.91425ms)
+✔ a prop-only actor switch resets visible text and fences the old request completion (21.166875ms)
+✔ the actual editor accepts an in-flight write snapshot only after its acknowledgement (16.05975ms)
+✔ a newer remote edit arriving during a save prevents the next queued local overwrite (16.741958ms)
+(node:51739) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/betelgeze-platform-consolidation/tests/workspace-draft-journal.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/betelgeze-platform-consolidation/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ clean owners and unchanged checkpoints do no storage work; late input replaces only this writer (2.043625ms)
+✔ fresh writers isolate duplicated sessions; acknowledging one never clears another or its hint (0.238166ms)
+✔ denied storage retains the latest owner but successful storage does not duplicate durable drafts in memory (0.094959ms)
+✔ unreadable foreign journals survive explicit review, recovery and local acknowledgement (0.161ms)
+✔ mount hint lookup is exact and explicit recovery has a finite sliced pass despite concurrent growth (0.315334ms)
+✔ stopped account owners cannot write or retire drafts and oversized copies remain recoverable in the open page (0.076834ms)
+✔ server acknowledgement preserves newer late input and retires only an exactly clean own copy (0.064833ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 355.923416

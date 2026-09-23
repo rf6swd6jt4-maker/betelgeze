@@ -36,7 +36,7 @@ export default async function NoteDetailPage({ params }: { params: Promise<{ wor
         <WorkspaceTopBar userId={user.id} workspace={workspace} workspaceAccess={access} currentProduct="client-work" />
         <div className="mx-auto max-w-[92rem]">
             <DetailPageHeader category="Note" reference={shortId(note.id)} title={note.name} facts={[{ label: linkCount === 1 ? "link" : "links", value: linkCount }]} updated={formatRelativeTime(note.updated_at)} />
-            <NoteFieldsEditor userId={user.id} updatedAt={note.updated_at} slug={workspace.slug} noteId={note.id} name={note.name} description={note.description} createdAt={note.created_at} creator={creatorField} links={relationshipLinks} />
+            <NoteFieldsEditor key={`${user.id}:${workspace.id}:${note.id}`} userId={user.id} updatedAt={note.updated_at} slug={workspace.slug} noteId={note.id} name={note.name} description={note.description} createdAt={note.created_at} creator={creatorField} links={relationshipLinks} />
             <RecordAttachments workspaceSlug={workspace.slug} userId={user.id} owner="note" ownerId={note.id} canEdit={access.role === "owner" || access.role === "admin"} />
             <DetailDangerZone>
                 <DetailDangerAction title="Archive note" description="Archive will remove this note from the active Library while preserving its linked relationships and assets." control={<DetailDangerButton type="button" disabled>Archive note</DetailDangerButton>} />

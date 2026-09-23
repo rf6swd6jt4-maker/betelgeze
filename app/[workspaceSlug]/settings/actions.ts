@@ -92,7 +92,9 @@ async function assertWorkspaceConnectionIsEditable(workspaceId: string, provider
 }
 
 export async function updateWorkspaceName(slug: string, formData: FormData) {
-    const { workspace } = await requireWorkspace(slug, "admin")
+    const { workspace, user } = await requireWorkspace(slug, "admin")
+    const expectedUserId = formData.get("__workspace_expected_user")
+    if (expectedUserId !== null && expectedUserId !== user.id) throw new Error("Your account changed. Reopen this form before saving.")
     const name = String(formData.get("name") ?? "").trim()
     if (name.length < 2 || name.length > 100) throw new Error("Workspace names must be between 2 and 100 characters.")
     const { error } = await supabaseAdmin.from("workspaces").update({ name }).eq("id", workspace.id)

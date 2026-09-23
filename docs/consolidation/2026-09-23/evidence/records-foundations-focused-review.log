@@ -1,0 +1,27 @@
+✔ unchanged historical migrations pass, including existing legacy names and duplicates (208.366792ms)
+✔ historical edits are refused both unstaged and committed (361.861042ms)
+✔ historical deletion is refused in working tree and index (317.4895ms)
+✔ a staged historical edit hidden by restoring baseline working bytes is refused (221.936ms)
+✔ a staged deletion hidden by restoring the path as untracked is refused (223.574084ms)
+✔ staged JS and whitespace cannot hide behind a different clean working copy (335.685375ms)
+✔ ordinary unstaged edits remain reviewable, and fully staged edits pass the same lint scope (556.800792ms)
+✔ historical rename is refused even when the new filename is valid (209.53525ms)
+✔ new unreleased migration stays editable across staged, committed and untracked states (563.475125ms)
+✔ new migrations require valid lowercase names and real UTC timestamps (572.824792ms)
+✔ duplicate versions are refused against history and among new files (332.6875ms)
+✔ new migration symlinks, including dangling links, are refused (209.484917ms)
+✔ changed JS/TS symlinks cannot silently bypass scoped lint (226.280583ms)
+✔ invalid and shell-like base refs fail visibly without execution (263.824209ms)
+✔ NUL-safe change list preserves spaces, tabs, newlines and literal shell syntax (258.149875ms)
+✔ whitespace is enforced for tracked and untracked files (215.471ms)
+✔ scoped lint receives exact argv, excludes deleted/unchanged files, and propagates nonzero status (537.327375ms)
+✔ missing installed ESLint fails instead of silently skipping changed code (211.159416ms)
+✔ event bases cover pull requests, push history, initial push and manual branch/main runs (378.141875ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6241.882375

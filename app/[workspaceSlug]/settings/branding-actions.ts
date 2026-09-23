@@ -79,6 +79,8 @@ export async function uploadAgencyFavicon(slug: string, formData: FormData) {
 export async function saveAgencyPublicBranding(slug: string, formData: FormData): Promise<WorkspaceMutationResult> {
     try {
         const { workspace, user } = await requireWorkspace(slug, "admin")
+        const expectedUserId = formData.get("__workspace_expected_user")
+        if (expectedUserId !== null && expectedUserId !== user.id) return { ok: false, error: "Your account changed. Reopen this form before saving." }
         const displayName = cleanOptionalText(formData, "agency_display_name", 100)
         const metadataTitle = cleanOptionalText(formData, "agency_metadata_title", 100)
         const metadataDescription = cleanOptionalText(formData, "agency_metadata_description", 300)

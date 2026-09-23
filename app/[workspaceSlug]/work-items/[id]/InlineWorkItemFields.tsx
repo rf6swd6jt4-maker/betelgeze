@@ -41,6 +41,7 @@ type EditorOptions = {
 }
 
 type Props = {
+    userId: string
     workspaceSlug: string
     workItemId: string
     updatedAt: string
@@ -169,10 +170,10 @@ export function InlineWorkItemFields(props: Props) {
     const [query, setQuery] = useState("")
     const [error, setError] = useState<string | null>(null)
     const [pending, startTransition] = useTransition()
-    const persistDescription = useCallback((value: string, version: string, baseline: string) => updateWorkItemDescription(props.workspaceSlug, props.workItemId, value, version, baseline), [props.workspaceSlug, props.workItemId])
-    const persistInstructions = useCallback((value: string, _version: string, baseline: string) => updateWorkItemInstructions(props.workspaceSlug, props.workItemId, value, baseline), [props.workspaceSlug, props.workItemId])
-    const descriptionDraft = useWorkItemTextDraft({ ...props, label: "Description", save: persistDescription })
-    const instructionsDraft = useWorkItemTextDraft({ ...props, description: props.instructions ?? null, label: "Instructions", save: persistInstructions })
+    const persistDescription = useCallback((value: string, version: string, baseline: string) => updateWorkItemDescription(props.workspaceSlug, props.workItemId, value, version, baseline, props.userId), [props.workspaceSlug, props.workItemId, props.userId])
+    const persistInstructions = useCallback((value: string, _version: string, baseline: string) => updateWorkItemInstructions(props.workspaceSlug, props.workItemId, value, baseline, props.userId), [props.workspaceSlug, props.workItemId, props.userId])
+    const descriptionDraft = useWorkItemTextDraft({ ...props, recordType: "work-item", field: "description", label: "Description", save: persistDescription })
+    const instructionsDraft = useWorkItemTextDraft({ ...props, recordType: "work-item", field: "instructions", description: props.instructions ?? null, label: "Instructions", save: persistInstructions })
     const saveText = async () => (await descriptionDraft.save()) && (await instructionsDraft.save())
     const completed = props.status === "done"
     const started = Boolean(props.actualStartAt)

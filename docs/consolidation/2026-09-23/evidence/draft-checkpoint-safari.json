@@ -1,0 +1,103 @@
+{
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15",
+  "samples": 100,
+  "ordinaryTypingStorageCalls": 0,
+  "cases": [
+    {
+      "textChars": 0,
+      "encodedBytes": 251,
+      "control": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serialize": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "existingWriterCheckpoint": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "firstCheckpointIncludingHint": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      }
+    },
+    {
+      "textChars": 1000,
+      "encodedBytes": 2251,
+      "control": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serialize": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "existingWriterCheckpoint": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "firstCheckpointIncludingHint": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      }
+    },
+    {
+      "textChars": 20000,
+      "encodedBytes": 40251,
+      "control": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serialize": {
+        "median": 0,
+        "p95": 0,
+        "max": 1
+      },
+      "existingWriterCheckpoint": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "firstCheckpointIncludingHint": {
+        "median": 0,
+        "p95": 1,
+        "max": 1
+      }
+    },
+    {
+      "textChars": 100000,
+      "encodedBytes": 200251,
+      "control": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serialize": {
+        "median": 0,
+        "p95": 1,
+        "max": 1
+      },
+      "existingWriterCheckpoint": {
+        "median": 0,
+        "p95": 0,
+        "max": 1
+      },
+      "firstCheckpointIncludingHint": {
+        "median": 0,
+        "p95": 1,
+        "max": 1
+      }
+    }
+  ]
+}

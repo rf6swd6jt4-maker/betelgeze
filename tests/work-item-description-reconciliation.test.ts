@@ -5,6 +5,7 @@ import { createRequire, Module } from "node:module"
 import { resolve } from "node:path"
 import ts from "typescript"
 import { recordVersionAfter, reconcileRecordTextDraft } from "../lib/record-version.js"
+import { createWorkspaceDraftJournal } from "../lib/workspace-draft-journal.ts"
 
 const version = (fraction: string) => `2026-09-10T12:00:00.${fraction}Z`
 const draft = (value = "Original") => ({ value, baseline: "Original", version: version("000001"), conflict: null })
@@ -62,7 +63,7 @@ function editorFixture() {
     let effects: Array<() => void> = []
     const flushers = new Set<() => Promise<boolean>>()
     const flush = async () => { for (const callback of flushers) if (!await callback()) return false; return true }
-    let respond: ((result: { ok: true; version: string }) => void) | undefined
+    const responders: Array<(result: { ok: true; version: string }) => void> = []
     const saves: Array<{ value: string; version: string }> = []
     const router = { refresh: () => {} }
     const same = (left?: unknown[], right?: unknown[]) => Boolean(left && right && left.length === right.length && left.every((value, index) => Object.is(value, right[index])))
@@ -104,11 +105,15 @@ function editorFixture() {
         "@/lib/work-item-priority": { workItemPrioritySelectionLabel: () => "System generated", workItemPrioritySelectionOptions: [] },
         "@/lib/workspace-mutations": { registerWorkspaceAutosaveFlusher: (callback: typeof flush) => { flushers.add(callback); return () => { flushers.delete(callback) } }, runWorkspaceMutation: (run: () => unknown) => run() },
         "@/lib/record-version": { recordVersionAfter, reconcileRecordTextDraft },
+        "@/lib/workspace-draft-journal": { createWorkspaceDraftJournal },
+        "@/components/workspace/WorkspaceDraftRecovery": { WorkspaceDraftRecovery: "recovery" },
         "./actions": { updateWorkItemDescription: (_slug: string, _id: string, value: string, expectedVersion: string) => {
             saves.push({ value, version: expectedVersion })
-            return new Promise<{ ok: true; version: string }>((resolve) => { respond = resolve })
+            return new Promise<{ ok: true; version: string }>((resolve) => { responders.push(resolve) })
         } },
     }
+    const hooks = dependencies.react as { useEffect: unknown; useLayoutEffect?: unknown }
+    hooks.useLayoutEffect = hooks.useEffect
     const file = "app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields.tsx"
     function compile(file: string) {
         const compiled = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText
@@ -121,11 +126,22 @@ function editorFixture() {
     dependencies["@/components/work-items/useWorkItemTextDraft"] = compile("components/work-items/useWorkItemTextDraft.ts").exports
     dependencies["@/components/work-items/WorkItemTextField"] = compile("components/work-items/WorkItemTextField.tsx").exports
     const compiledModule = compile(file)
-    const properties = { workspaceSlug: "example", workItemId: "record", updatedAt: version("000001"), description: "Original", status: "todo", assignees: [], manualDependencyIds: [], dependencies: [], relationships: [], keyResults: [], workOptions: [], relationshipOptions: [], keyResultOptions: [], members: [] }
+    const properties = { userId: "actor", workspaceSlug: "example", workItemId: "record", updatedAt: version("000001"), description: "Original", status: "todo", assignees: [], manualDependencyIds: [], dependencies: [], relationships: [], keyResults: [], workOptions: [], relationshipOptions: [], keyResultOptions: [], members: [] }
     let tree: ElementNode
     const oldWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
     const oldDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
-    const host = { addEventListener() {}, removeEventListener() {}, setTimeout: () => 1, clearTimeout() {}, parent: {} }
+    const storage = new Map<string, string>(), listeners = new Map<string, Set<(event: Event) => void>>()
+    let storageWrites = 0, denied = false
+    const host = {
+        addEventListener(type: string, callback: (event: Event) => void) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type)!.add(callback) },
+        removeEventListener(type: string, callback: (event: Event) => void) { listeners.get(type)?.delete(callback) },
+        setTimeout: () => 1, clearTimeout() {}, parent: {},
+        localStorage: { get length() { return storage.size }, key: (index: number) => [...storage.keys()][index] ?? null,
+            getItem: (key: string) => storage.get(key) ?? null,
+            setItem: (key: string, value: string) => { storageWrites++; if (denied) throw Error("QuotaExceededError"); storage.set(key, value) },
+            removeItem: (key: string) => { storage.delete(key) },
+        },
+    }
     host.parent = host
     Object.defineProperty(globalThis, "window", { configurable: true, value: host })
     Object.defineProperty(globalThis, "document", { configurable: true, value: { addEventListener() {}, removeEventListener() {} } })
@@ -146,10 +162,14 @@ function editorFixture() {
         return predicate(node) ? node : node.props?.children === undefined ? undefined : find(predicate, node.props.children)
     }
     const textarea = () => find((node) => node.type === "textarea" && node.props?.placeholder === "Add a description…")!
+    const recovery = () => find((node) => node.type === "recovery" && node.props?.label === "Description")!
     return {
-        render, saves, flush: () => flush(), value: () => textarea().props!.value,
+        render, saves, storage, storageWrites: () => storageWrites, denyStorage: () => { denied = true }, flush: () => flush(), value: () => textarea().props!.value,
+        event: (type: string, detail?: unknown) => { const event = new CustomEvent(type, { cancelable: true, detail }); listeners.get(type)?.forEach((callback) => callback(event)); return event },
+        restore: (value: string) => { (recovery().props!.onRestore as (draft: unknown) => void)({ value, baseline: "Old server", version: version("000000"), id: "other-writer", savedAt: 1, durable: true }); render() },
+        saveReviewed: () => { const button = find((node) => node.type === "button" && node.props?.children === "Save reviewed draft"); assert.ok(button); (button.props!.onClick as () => void)(); render() },
         edit: (value: string) => { (textarea().props!.onChange as (event: unknown) => void)({ target: { value } }); render() },
-        acknowledge: (nextVersion: string) => respond!({ ok: true, version: nextVersion }),
+        acknowledge: (nextVersion: string, index = responders.length - 1) => responders[index]({ ok: true, version: nextVersion }),
         useLatest: () => { const button = find((node) => node.type === "button" && node.props?.children === "Use latest version"); assert.ok(button); (button.props!.onClick as () => void)(); render() },
         dispose: () => { slots.forEach((slot) => slot.cleanup?.()); if (oldWindow) Object.defineProperty(globalThis, "window", oldWindow); else Reflect.deleteProperty(globalThis, "window"); if (oldDocument) Object.defineProperty(globalThis, "document", oldDocument); else Reflect.deleteProperty(globalThis, "document") },
     }
@@ -169,6 +189,77 @@ test("the actual editor refreshes pristine text and blocks a dirty conflicting s
         editor.useLatest()
         assert.equal(editor.value(), "New remote update")
         assert.equal(await editor.flush(), true)
+    } finally { editor.dispose() }
+})
+
+test("the actual editor keeps ordinary typing storage-free and checkpoints latest input at unload", () => {
+    const editor = editorFixture()
+    try {
+        editor.render(); editor.edit("Typed after an earlier departure")
+        assert.equal(editor.storageWrites(), 0)
+        assert.equal(editor.event("beforeunload").defaultPrevented, false)
+        const saved = [...editor.storage.values()].filter((raw) => raw.startsWith("{"))
+        assert.equal(saved.length, 1)
+        assert.equal(JSON.parse(saved[0]).value, "Typed after an earlier departure")
+        assert.equal(editor.saves.length, 0, "checkpoint never sends another request")
+        editor.edit("Latest denied input"); editor.denyStorage()
+        assert.equal(editor.event("beforeunload").defaultPrevented, true)
+    } finally { editor.dispose() }
+})
+
+test("selecting recovery during an in-flight save cannot submit it until explicit review is saved", async () => {
+    const editor = editorFixture()
+    try {
+        editor.render(); editor.edit("First save")
+        const pending = editor.flush()
+        editor.restore("Recovered copy")
+        editor.acknowledge(version("000002"))
+        assert.equal(await pending, false)
+        editor.render()
+        assert.equal(editor.value(), "Recovered copy")
+        assert.equal(editor.saves.length, 1)
+        assert.equal(await editor.flush(), false, "ordinary blur/navigation cannot authorize recovered intent")
+        editor.saveReviewed()
+        assert.equal(editor.saves.length, 2)
+        assert.equal(editor.saves[1].value, "Recovered copy")
+        editor.acknowledge(version("000003")); await editor.flush()
+    } finally { editor.dispose() }
+})
+
+test("account activation preserves the current actor but checkpoints and stops the displaced actor", async () => {
+    const editor = editorFixture()
+    try {
+        editor.render(); editor.edit("Current actor draft")
+        editor.event("betelgeze:offline-account-clearing", { preservedUserId: "actor" })
+        assert.equal(editor.storageWrites(), 0, "activating this account does not disturb its mounted owner")
+        editor.edit("Current actor remains editable")
+        const saving = editor.flush()
+        editor.acknowledge(version("000002")); assert.equal(await saving, true)
+        editor.edit("Displaced actor latest draft")
+        editor.event("betelgeze:offline-account-clearing", { preservedUserId: "different-actor" })
+        assert.ok([...editor.storage.values()].some((raw) => raw.includes("Displaced actor latest draft")))
+        editor.edit("Must not replace the stopped actor")
+        assert.equal(editor.value(), "Displaced actor latest draft")
+        assert.equal(await editor.flush(), false)
+        assert.equal(editor.saves.length, 1)
+    } finally { editor.dispose() }
+})
+
+test("a prop-only actor switch resets visible text and fences the old request completion", async () => {
+    const editor = editorFixture()
+    try {
+        editor.render(); editor.edit("Old actor edit")
+        const oldSave = editor.flush()
+        editor.render({ userId: "new-actor", description: "New account server text", updatedAt: version("000010") })
+        assert.equal(editor.value(), "New account server text")
+        editor.edit("New actor edit")
+        const newSave = editor.flush()
+        editor.acknowledge(version("000002"), 0)
+        assert.equal(await oldSave, false)
+        editor.render(); assert.equal(editor.value(), "New actor edit")
+        editor.acknowledge(version("000011"), 1)
+        assert.equal(await newSave, true)
+        assert.equal(editor.saves.length, 2)
     } finally { editor.dispose() }
 })
 

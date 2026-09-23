@@ -1,0 +1,366 @@
+{
+  "outcome": "passed",
+  "passed": 58,
+  "productionCalls": 0,
+  "externalDeliveryCalls": 0,
+  "serverStarted": true,
+  "serverStopped": true,
+  "sources": {
+    "scripts/validate-records-postgres-concurrency.mjs": "51cff8cac7b15abff5fb1f1bbea277bc4fa11dad19d95f592ad58cf02911833d",
+    "supabase/migrations/20260821120000_account_system_v2.sql": "dc437f80ee4a78544d22383e2cb1feb0a625095fa42d985bcaacd5a475e1f5a5",
+    "supabase/migrations/20260710120000_canonical_work_items_assets.sql": "ea832015f37f13223d4981a155ce7943dd8f4e5b8c623f1c1d85df2c678be077",
+    "supabase/migrations/20260918130000_workspace_notes.sql": "7b973cb002003a82f578b4368a32e6143b106e042e09e97a554c70da34713e3e",
+    "supabase/migrations/20260919091000_note_attachment_links.sql": "f10eef4990d759bded90d125380ccbe3c6119aba38c0cafbb809a2aaae66ba9d",
+    "supabase/migrations/20260804110000_admin_okr_maintenance.sql": "06434cb4b68063295df5fc83be1dab6485744586b133d5bd0832c0f271e7f405",
+    "supabase/migrations/20260923170000_note_attachment_integrity.sql": "f528c63317f38dee9891ef085dc1fd3d0d779d1c8feaf033e9ddec12c0755889",
+    "supabase/migrations/20260923171000_record_attachment_commands.sql": "a3f45a2ee4e5b2863e71387ff0f7902fc52351a5bcad500e2e2623e68bb0c000",
+    "scripts/records-sql-preflight.sql": "028c30367540a5434a1f9665a60867557e2f583aef1fa5c27bf35b82e08a5283"
+  },
+  "results": [
+    {
+      "name": "original valid note relationship reproduces row-shape defect",
+      "passed": true,
+      "sqlstate": "42703"
+    },
+    {
+      "name": "original valid note asset reproduces row-shape defect",
+      "passed": true,
+      "sqlstate": "42703"
+    },
+    {
+      "name": "failure before A1 commit restores exact original function",
+      "passed": true,
+      "sqlstate": "22012"
+    },
+    {
+      "name": "failure before A4 commit rolls back table functions grants and index",
+      "passed": true,
+      "sqlstate": "22012"
+    },
+    {
+      "name": "both exact candidate migrations install without rewriting existing records",
+      "passed": true
+    },
+    {
+      "name": "concurrent workers have distinct PostgreSQL backends",
+      "passed": true
+    },
+    {
+      "name": "same request waits on advisory lock, then converges to one atomically visible record and receipt",
+      "passed": true
+    },
+    {
+      "name": "conflicting same-request payload waits, then fails without replacing accepted intent",
+      "passed": true
+    },
+    {
+      "name": "aborted first transaction leaves no acceptance; waiting retry creates exactly once",
+      "passed": true
+    },
+    {
+      "name": "acknowledgement discarded after committed create replays original record on a new connection",
+      "passed": true
+    },
+    {
+      "name": "simultaneous same-field edits serialize and stale writer receives authoritative conflict",
+      "passed": true
+    },
+    {
+      "name": "simultaneous different-field edits preserve both values after lock wait",
+      "passed": true
+    },
+    {
+      "name": "concurrent link delta preserves unseen addition and removes only explicit baseline link",
+      "passed": true
+    },
+    {
+      "name": "concurrent exact attachment pair waits and remains unique",
+      "passed": true
+    },
+    {
+      "name": "opposite note-link directions use ordered note locks and finish without deadlock",
+      "passed": true
+    },
+    {
+      "name": "unrelated create request completes while another independent request remains uncommitted",
+      "passed": true
+    },
+    {
+      "name": "foreign link delta rejects before deleting existing links",
+      "passed": true,
+      "sqlstate": "P0001"
+    },
+    {
+      "name": "failed relationship change retains all prior links",
+      "passed": true
+    },
+    {
+      "name": "late link-trigger failure rolls back parent and prior links; waiting and repaired-target retries stay terminally rejected",
+      "passed": true
+    },
+    {
+      "name": "SQL upload provenance rejects wrong actor path without inserting asset",
+      "passed": true
+    },
+    {
+      "name": "SQL upload provenance rejects null size without inserting asset",
+      "passed": true
+    },
+    {
+      "name": "SQL upload provenance rejects oversized upload without inserting asset",
+      "passed": true
+    },
+    {
+      "name": "expiry rejection wins its request lock; later verification cannot resurrect the same upload request",
+      "passed": true
+    },
+    {
+      "name": "accepted upload creation wins its request lock and returns original record to expired-receipt retry",
+      "passed": true
+    },
+    {
+      "name": "anon cannot execute attach_existing_record",
+      "passed": true,
+      "sqlstate": "42501"
+    },
+    {
+      "name": "anon cannot execute save_note_text",
+      "passed": true,
+      "sqlstate": "42501"
+    },
+    {
+      "name": "anon cannot execute edit_note_relationships",
+      "passed": true,
+      "sqlstate": "42501"
+    },
+    {
+      "name": "anon cannot execute create_attachment_record",
+      "passed": true,
+      "sqlstate": "42501"
+    },
+    {
+      "name": "anon cannot read command receipts",
+      "passed": true,
+      "sqlstate": "42501"
+    },
+    {
+      "name": "authenticated cannot execute attach_existing_record",
+      "passed": true,
+      "sqlstate": "42501"
+    },
+    {
+      "name": "authenticated cannot execute save_note_text",
+      "passed": true,
+      "sqlstate": "42501"
+    },
+    {
+      "name": "authenticated cannot execute edit_note_relationships",
+      "passed": true,
+      "sqlstate": "42501"
+    },
+    {
+      "name": "authenticated cannot execute create_attachment_record",
+      "passed": true,
+      "sqlstate": "42501"
+    },
+    {
+      "name": "authenticated cannot read command receipts",
+      "passed": true,
+      "sqlstate": "42501"
+    },
+    {
+      "name": "staff cannot create through service command",
+      "passed": true,
+      "sqlstate": "P0001"
+    },
+    {
+      "name": "foreign workspace cannot create through service command",
+      "passed": true,
+      "sqlstate": "P0001"
+    },
+    {
+      "name": "actual notes RLS hides admin notes from authenticated staff",
+      "passed": true
+    },
+    {
+      "name": "actual MFA-aware membership policy hides notes at aal1",
+      "passed": true
+    },
+    {
+      "name": "actual notes RLS allows authorized aal2 admin",
+      "passed": true
+    },
+    {
+      "name": "revoked actor cannot replay even an accepted receipt",
+      "passed": true,
+      "sqlstate": "P0001"
+    },
+    {
+      "name": "inactive workspace cannot mutate notes",
+      "passed": true,
+      "sqlstate": "P0001"
+    },
+    {
+      "name": "revocation during advisory wait denies create without parent or terminal receipt",
+      "passed": true
+    },
+    {
+      "name": "revocation during note wait denies text with unchanged fields links and receipts",
+      "passed": true
+    },
+    {
+      "name": "revocation during note wait denies delta with unchanged fields links and receipts",
+      "passed": true
+    },
+    {
+      "name": "revocation during note wait denies attach with unchanged fields links and receipts",
+      "passed": true
+    },
+    {
+      "name": "revocation during note wait denies create with unchanged fields links and receipts",
+      "passed": true
+    },
+    {
+      "name": "relationship archived before parent-note release is rejected after parent-first lock wait",
+      "passed": true
+    },
+    {
+      "name": "asset archival during later work-item lock wait is caught by final eligible-target recheck",
+      "passed": true
+    },
+    {
+      "name": "attachment owner archival during later asset lock wait is caught before insert",
+      "passed": true
+    },
+    {
+      "name": "competing relationship deltas cannot overrun the twenty-link limit",
+      "passed": true
+    },
+    {
+      "name": "attach-existing cannot add twenty-first relationship",
+      "passed": true,
+      "sqlstate": "P0001"
+    },
+    {
+      "name": "existing attachment retry at cap succeeds without changing any links",
+      "passed": true
+    },
+    {
+      "name": "attach-existing wins last slot and concurrent edit rolls back without removing links",
+      "passed": true
+    },
+    {
+      "name": "edit wins last slot and concurrent attach-existing refuses addition without removing links",
+      "passed": true
+    },
+    {
+      "name": "unexpected internal database failure is not classified as rejected",
+      "passed": true,
+      "sqlstate": "XX000"
+    },
+    {
+      "name": "unexpected failure leaves no partial state or receipt and same intent succeeds after repair",
+      "passed": true
+    },
+    {
+      "name": "failed PostgreSQL DDL transaction rolls back its earlier table creation",
+      "passed": true
+    },
+    {
+      "name": "read-only installation inventory executes and reports installed command schema",
+      "passed": true
+    }
+  ],
+  "observations": [
+    {
+      "name": "runtime",
+      "version": "PostgreSQL 17.11 on aarch64-apple-darwin27.0.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit",
+      "tcpListeners": "",
+      "fixture": "fresh private UNIX socket cluster, synthetic data only"
+    },
+    {
+      "name": "installed candidate function fingerprints",
+      "functions": [
+        {
+          "config": [
+            "search_path=public"
+          ],
+          "grants": [
+            "fixture_owner=X/fixture_owner",
+            "service_role=X/fixture_owner"
+          ],
+          "body_md5": "95fbf907f2f5bad9fefde6dc15a849cc",
+          "signature": "assert_record_attachment_admin(uuid,uuid)",
+          "security_definer": false
+        },
+        {
+          "config": [
+            "search_path=public"
+          ],
+          "grants": [
+            "fixture_owner=X/fixture_owner",
+            "service_role=X/fixture_owner"
+          ],
+          "body_md5": "d6671a6eb50351a4fe8c27fd069e9353",
+          "signature": "attach_existing_record(uuid,uuid,text,uuid,text,uuid)",
+          "security_definer": false
+        },
+        {
+          "config": [
+            "search_path=public"
+          ],
+          "grants": [
+            "fixture_owner=X/fixture_owner",
+            "service_role=X/fixture_owner"
+          ],
+          "body_md5": "ebc589bb565e618210d17518d93f01dd",
+          "signature": "create_attachment_record(uuid,uuid,uuid,text,jsonb,text)",
+          "security_definer": false
+        },
+        {
+          "config": [
+            "search_path=public"
+          ],
+          "grants": [
+            "fixture_owner=X/fixture_owner",
+            "service_role=X/fixture_owner"
+          ],
+          "body_md5": "ab01947485aefe58d9cde45bdfc04f0f",
+          "signature": "edit_note_relationships(uuid,uuid,uuid,uuid[],uuid[])",
+          "security_definer": false
+        },
+        {
+          "config": [
+            "search_path=public"
+          ],
+          "grants": null,
+          "body_md5": "66d9ede79912b623424d4189f1b4e1db",
+          "signature": "enforce_note_link_workspace()",
+          "security_definer": false
+        },
+        {
+          "config": [
+            "search_path=public"
+          ],
+          "grants": [
+            "fixture_owner=X/fixture_owner",
+            "service_role=X/fixture_owner"
+          ],
+          "body_md5": "620a5be0c1bbbf7f42c3689f6c5dea2c",
+          "signature": "save_note_text(uuid,uuid,uuid,text,text,text)",
+          "security_definer": false
+        }
+      ]
+    },
+    {
+      "name": "unverified boundaries",
+      "items": [
+        "not a full production-schema clone",
+        "no live R2 signature/conditional PUT/CORS/HEAD operation",
+        "no authenticated browser or production latency claim",
+        "authorization and eligibility rechecked at write admission after known lock acquisition; later revocation or non-key changes are not serialized",
+        "foreign-key checks, unique insertion and arbitrary installed triggers can wait after admission; no new commit-time linearizability claim"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+Pass 3 final local validation
+Date: 2026-09-23
+Baseline: 31388081894e6d4143d5bb0d577c0341ec31edf7
+Worktree: /private/tmp/betelgeze-platform-consolidation
+No production credentials, writes, provider requests or deployments.
+
+pass-3-suite-final.log
+sha256: db241ab3a3c7514465fadca618abf43dbcb45089c233ec8630808b58dfab8783
+Command: npm test
+Exit: 0
+✔ new tabs append when the source is last or no longer exists (0.11575ms)
+ℹ tests 1353
+ℹ suites 0
+ℹ pass 1353
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12944.682625
+
+pass-3-foundations-final.log
+sha256: d6fc59ba3d757397fd490dfbcac1d4d77ad303099836bab3f3e07585f8042299
+Command: node scripts/check-foundation-changes.mjs --base 31388081894e6d4143d5bb0d577c0341ec31edf7 --lint
+Exit: 0
+Foundation base tree: 892a49b4e2d8d6cc156cb8efad608c108389a48e; 264 historical migrations; 2 new migrations; 100 changed JS/TS files.
+
+pass-3-build-final.log
+sha256: e192e78db4a2bbb6b72e0ca8078889c9374f5242c55cbcc0f3c082b61ea16816
+Command: NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:9 NEXT_PUBLIC_SUPABASE_ANON_KEY=local-build-placeholder SUPABASE_SERVICE_ROLE_KEY=local-build-placeholder NEXT_TELEMETRY_DISABLED=1 npx next build --webpack
+Exit: 0
+▲ Next.js 16.2.11 (webpack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 11.4s
+  Running TypeScript ...
+  Finished TypeScript in 11.0s ...
+  Collecting page data using 9 workers ...
+  Generating static pages using 9 workers (0/33) ...
+  Generating static pages using 9 workers (8/33)
+  Generating static pages using 9 workers (16/33)
+  Generating static pages using 9 workers (24/33)
+✓ Generating static pages using 9 workers (33/33) in 191ms
+  Finalizing page optimization ...
+  Collecting build traces ...
+
+Route (app)

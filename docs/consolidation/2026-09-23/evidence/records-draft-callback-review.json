@@ -1,0 +1,67 @@
+{
+  "checks": 11,
+  "result": "PASS",
+  "sources": {
+    "components/work-items/useWorkItemTextDraft.ts": "e5fb9a50aa2c68300998f154ed034ac0887a8a7ada02cb09be300bc5af694994",
+    "components/workspace/WorkspaceAutosaveForm.tsx": "4e716011e98438c91af5da0bcd9b4f275864023578dfa522adcee06daf7f01ad",
+    "components/workspace/WorkspaceDraftRecovery.tsx": "9c15b4d152f954a48a14e9eadf124fd8cd27d7230363f98fcca20a73b1ecd005"
+  },
+  "results": [
+    {
+      "file": "components/work-items/useWorkItemTextDraft.ts",
+      "event": "actor",
+      "passed": true
+    },
+    {
+      "file": "components/work-items/useWorkItemTextDraft.ts",
+      "event": "different",
+      "passed": true
+    },
+    {
+      "file": "components/work-items/useWorkItemTextDraft.ts",
+      "event": "unspecified",
+      "passed": true
+    },
+    {
+      "file": "components/workspace/WorkspaceAutosaveForm.tsx",
+      "event": "actor",
+      "passed": true
+    },
+    {
+      "file": "components/workspace/WorkspaceAutosaveForm.tsx",
+      "event": "different",
+      "passed": true
+    },
+    {
+      "file": "components/workspace/WorkspaceAutosaveForm.tsx",
+      "event": "unspecified",
+      "passed": true
+    },
+    {
+      "file": "components/workspace/WorkspaceDraftRecovery.tsx",
+      "event": "actor",
+      "passed": true
+    },
+    {
+      "file": "components/workspace/WorkspaceDraftRecovery.tsx",
+      "event": "different",
+      "passed": true
+    },
+    {
+      "file": "components/workspace/WorkspaceDraftRecovery.tsx",
+      "event": "unspecified",
+      "passed": true
+    },
+    {
+      "case": "inactive owner cannot reopen review",
+      "passed": true
+    },
+    {
+      "case": "late review result from stopped owner is discarded",
+      "passed": true
+    }
+  ],
+  "browserCalls": 0,
+  "productionCalls": 0,
+  "boundary": "actual AST-extracted callbacks executed with synthetic ports; not mounted browser proof"
+}

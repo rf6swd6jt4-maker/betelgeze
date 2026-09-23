@@ -1,0 +1,59 @@
+ok 1 - original valid note relationship reproduces row-shape defect
+ok 2 - original valid note asset reproduces row-shape defect
+ok 3 - failure before A1 commit restores exact original function
+ok 4 - failure before A4 commit rolls back table functions grants and index
+ok 5 - both exact candidate migrations install without rewriting existing records
+ok 6 - concurrent workers have distinct PostgreSQL backends
+ok 7 - same request waits on advisory lock, then converges to one atomically visible record and receipt
+ok 8 - conflicting same-request payload waits, then fails without replacing accepted intent
+ok 9 - aborted first transaction leaves no acceptance; waiting retry creates exactly once
+ok 10 - acknowledgement discarded after committed create replays original record on a new connection
+ok 11 - simultaneous same-field edits serialize and stale writer receives authoritative conflict
+ok 12 - simultaneous different-field edits preserve both values after lock wait
+ok 13 - concurrent link delta preserves unseen addition and removes only explicit baseline link
+ok 14 - concurrent exact attachment pair waits and remains unique
+ok 15 - opposite note-link directions use ordered note locks and finish without deadlock
+ok 16 - unrelated create request completes while another independent request remains uncommitted
+ok 17 - foreign link delta rejects before deleting existing links
+ok 18 - failed relationship change retains all prior links
+ok 19 - late link-trigger failure rolls back parent and prior links; waiting and repaired-target retries stay terminally rejected
+ok 20 - SQL upload provenance rejects wrong actor path without inserting asset
+ok 21 - SQL upload provenance rejects null size without inserting asset
+ok 22 - SQL upload provenance rejects oversized upload without inserting asset
+ok 23 - expiry rejection wins its request lock; later verification cannot resurrect the same upload request
+ok 24 - accepted upload creation wins its request lock and returns original record to expired-receipt retry
+ok 25 - anon cannot execute attach_existing_record
+ok 26 - anon cannot execute save_note_text
+ok 27 - anon cannot execute edit_note_relationships
+ok 28 - anon cannot execute create_attachment_record
+ok 29 - anon cannot read command receipts
+ok 30 - authenticated cannot execute attach_existing_record
+ok 31 - authenticated cannot execute save_note_text
+ok 32 - authenticated cannot execute edit_note_relationships
+ok 33 - authenticated cannot execute create_attachment_record
+ok 34 - authenticated cannot read command receipts
+ok 35 - staff cannot create through service command
+ok 36 - foreign workspace cannot create through service command
+ok 37 - actual notes RLS hides admin notes from authenticated staff
+ok 38 - actual MFA-aware membership policy hides notes at aal1
+ok 39 - actual notes RLS allows authorized aal2 admin
+ok 40 - revoked actor cannot replay even an accepted receipt
+ok 41 - inactive workspace cannot mutate notes
+ok 42 - revocation during advisory wait denies create without parent or terminal receipt
+ok 43 - revocation during note wait denies text with unchanged fields links and receipts
+ok 44 - revocation during note wait denies delta with unchanged fields links and receipts
+ok 45 - revocation during note wait denies attach with unchanged fields links and receipts
+ok 46 - revocation during note wait denies create with unchanged fields links and receipts
+ok 47 - relationship archived before parent-note release is rejected after parent-first lock wait
+ok 48 - asset archival during later work-item lock wait is caught by final eligible-target recheck
+ok 49 - attachment owner archival during later asset lock wait is caught before insert
+ok 50 - competing relationship deltas cannot overrun the twenty-link limit
+ok 51 - attach-existing cannot add twenty-first relationship
+ok 52 - existing attachment retry at cap succeeds without changing any links
+ok 53 - attach-existing wins last slot and concurrent edit rolls back without removing links
+ok 54 - edit wins last slot and concurrent attach-existing refuses addition without removing links
+ok 55 - unexpected internal database failure is not classified as rejected
+ok 56 - unexpected failure leaves no partial state or receipt and same intent succeeds after repair
+ok 57 - failed PostgreSQL DDL transaction rolls back its earlier table creation
+ok 58 - read-only installation inventory executes and reports installed command schema
+{"outcome":"passed","passed":58,"productionCalls":0,"serverStopped":true,"evidencePath":"/private/tmp/be-records-postgres-pass3.json"}

@@ -4,6 +4,8 @@ Audit date: 23 September 2026. Status: Pass 1 findings; not a completed release.
 
 Pass 2 is authorized and implemented separately in this worktree. Preserve the original findings below as the baseline. Updated Pro/backup evidence is in [pass-2-live-checks.md](./pass-2-live-checks.md); package reports and the final Pass 2 integration record distinguish local validation from production release evidence.
 
+The subsequent [Pass 3 integration record](./pass-3-integration.md) covers editor recovery, real PostgreSQL contention rehearsal, CI checks and operating guidance. It supersedes the corresponding local-work status below without changing this dated audit baseline or claiming a production release.
+
 ## Scope and authority
 
 The user requested three passes consolidating daily operations and protecting future additions, with explicit protection of client data. The initial preparation and Pass 1 are read-only with respect to application behavior and production. Inspection artifacts and disposable fixtures are local. No migration, provider request, client message, billing change, production data update or deployment has been performed.

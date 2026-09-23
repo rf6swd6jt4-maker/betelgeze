@@ -1,0 +1,103 @@
+{
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+  "samples": 100,
+  "ordinaryTypingStorageCalls": 0,
+  "cases": [
+    {
+      "textChars": 0,
+      "encodedBytes": 251,
+      "control": {
+        "median": 0,
+        "p95": 0,
+        "max": 0.10000002384185791
+      },
+      "serialize": {
+        "median": 0,
+        "p95": 0,
+        "max": 0.09999996423721313
+      },
+      "existingWriterCheckpoint": {
+        "median": 0,
+        "p95": 0.09999996423721313,
+        "max": 0.10000002384185791
+      },
+      "firstCheckpointIncludingHint": {
+        "median": 0,
+        "p95": 0,
+        "max": 0.10000002384185791
+      }
+    },
+    {
+      "textChars": 1000,
+      "encodedBytes": 2251,
+      "control": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serialize": {
+        "median": 0,
+        "p95": 0,
+        "max": 0.10000002384185791
+      },
+      "existingWriterCheckpoint": {
+        "median": 0,
+        "p95": 0.09999996423721313,
+        "max": 0.10000002384185791
+      },
+      "firstCheckpointIncludingHint": {
+        "median": 0,
+        "p95": 0.09999996423721313,
+        "max": 0.10000002384185791
+      }
+    },
+    {
+      "textChars": 20000,
+      "encodedBytes": 40251,
+      "control": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serialize": {
+        "median": 0,
+        "p95": 0.10000002384185791,
+        "max": 0.19999998807907104
+      },
+      "existingWriterCheckpoint": {
+        "median": 0,
+        "p95": 0.10000002384185791,
+        "max": 0.10000002384185791
+      },
+      "firstCheckpointIncludingHint": {
+        "median": 0,
+        "p95": 0.19999998807907104,
+        "max": 0.30000001192092896
+      }
+    },
+    {
+      "textChars": 100000,
+      "encodedBytes": 200251,
+      "control": {
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serialize": {
+        "median": 0,
+        "p95": 0.10000002384185791,
+        "max": 0.30000001192092896
+      },
+      "existingWriterCheckpoint": {
+        "median": 0.10000002384185791,
+        "p95": 0.19999998807907104,
+        "max": 0.20000004768371582
+      },
+      "firstCheckpointIncludingHint": {
+        "median": 0.10000002384185791,
+        "p95": 0.30000001192092896,
+        "max": 0.5
+      }
+    }
+  ]
+}

@@ -114,9 +114,9 @@ async function SettingsIdentity({ workspace }: { workspace: WorkspaceRecord }) {
     />
 }
 
-function WorkspaceSettingsSection({ workspace }: { workspace: WorkspaceRecord }) {
+function WorkspaceSettingsSection({ workspace, userId }: { workspace: WorkspaceRecord; userId: string }) {
     return <UnifiedSection id="workspace" title="Workspace" description="Edit the workspace name shown in the top bar, menus, and account areas.">
-        <WorkspaceAutosaveForm action={updateWorkspaceName.bind(null, workspace.slug)} className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
+        <WorkspaceAutosaveForm key={`${userId}:${workspace.id}`} recoveryScope={{ userId, workspaceSlug: workspace.slug, recordType: "workspace", recordId: workspace.id, field: "name" }} recoveryFields={["name"]} action={updateWorkspaceName.bind(null, workspace.slug)} className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
             <label className="block text-sm text-neutral-300">Workspace name<input name="name" required defaultValue={workspace.name} className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" /></label>
         </WorkspaceAutosaveForm>
     </UnifiedSection>
@@ -146,7 +146,7 @@ function ClientPortalSettingsSection({ workspace, role }: { workspace: Workspace
     </UnifiedSection>
 }
 
-async function AgencyBrandingSettingsSection({ workspace, onboardingSettingsPromise }: { workspace: WorkspaceRecord; onboardingSettingsPromise: Promise<OnboardingSettingsData> }) {
+async function AgencyBrandingSettingsSection({ workspace, userId, onboardingSettingsPromise }: { workspace: WorkspaceRecord; userId: string; onboardingSettingsPromise: Promise<OnboardingSettingsData> }) {
     const [onboardingSettings, publicBranding, clientBrandAssets] = await Promise.all([
         onboardingSettingsPromise,
         loadWorkspacePublicBranding(workspace.id, workspace.name),
@@ -158,7 +158,7 @@ async function AgencyBrandingSettingsSection({ workspace, onboardingSettingsProm
     ])
     return <UnifiedSection id="agency-branding" title="Agency Branding" description="Manage the public identity, policies, metadata, favicon, and colours used across agency-branded pages.">
         <div className="space-y-5">
-            <AgencyPublicBrandingFields branding={publicBranding} saveAction={saveAgencyPublicBranding.bind(null, workspace.slug)} />
+            <AgencyPublicBrandingFields userId={userId} workspaceSlug={workspace.slug} branding={publicBranding} saveAction={saveAgencyPublicBranding.bind(null, workspace.slug)} />
             <AgencyBrandingEditor workspaceSlug={workspace.slug} workspaceName={publicBranding.displayName} initialTheme={onboardingSettings.theme} publishedTheme={onboardingSettings.publishedTheme} previewBookend={onboardingSettings.welcome} help={onboardingSettings.help} schemaReady={onboardingSettings.schemaReady} brandAssetSchemaReady={clientBrandAssets.schemaReady} logoSrc={agencyLogoSrc} faviconSrc={agencyFaviconSrc} uploadLogo={uploadAgencyLogo.bind(null, workspace.slug)} uploadFavicon={uploadAgencyFavicon.bind(null, workspace.slug)} />
         </div>
     </UnifiedSection>
@@ -249,11 +249,11 @@ export default async function SettingsPage({ params, searchParams }: PageProps) 
             <div className="mt-8 grid min-w-0 max-w-full gap-8 lg:grid-cols-[16rem_minmax(0,1fr)]">
                 <SettingsSectionNav sections={settingsSections.filter((section) => section.id !== "leadgen" || leadgenOperationsAvailable())} />
                 <div id="workspace-settings-scroll" className="min-w-0 max-w-full space-y-10 pb-8 lg:pr-2">
-                    <WorkspaceSettingsSection workspace={workspace} />
+                    <WorkspaceSettingsSection workspace={workspace} userId={user.id} />
                     <Suspense fallback={<SettingsSectionFallback id="services" title="Services" description="Catalogue and default pricing for client work." height="min-h-72" />}><ServicesSettingsSection workspace={workspace} initialServiceId={query.service} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="onboarding" title="Onboarding" description="Compose mandatory modules, manage client help, open Builder, and control the domain used for onboarding sessions." height="min-h-72" />}><OnboardingSettingsSection workspace={workspace} role={role} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
                     <ClientPortalSettingsSection workspace={workspace} role={role} />
-                    <Suspense fallback={<SettingsSectionFallback id="agency-branding" title="Agency Branding" description="Manage the public identity, policies, metadata, favicon, and colours used across agency-branded pages." height="min-h-72" />}><AgencyBrandingSettingsSection workspace={workspace} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
+                    <Suspense fallback={<SettingsSectionFallback id="agency-branding" title="Agency Branding" description="Manage the public identity, policies, metadata, favicon, and colours used across agency-branded pages." height="min-h-72" />}><AgencyBrandingSettingsSection workspace={workspace} userId={user.id} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="connections" title="Connections" description="Manage active provider credentials and client communication delivery channels." height="min-h-64" />}><ConnectionsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="users" title="Users" description="Invite teammates and control workspace access." height="min-h-56" />}><UsersSettingsSection workspace={workspace} isOwner={isOwner} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="teams" title="Teams" description="Selling, management, and service delivery responsibilities." height="min-h-56" />}><TeamsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>

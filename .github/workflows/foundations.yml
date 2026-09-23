@@ -1,0 +1,98 @@
+name: Foundations
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Optional comparison base; otherwise merge base with main, or previous commit on main
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundations-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-build-placeholder
+    steps:
+      - name: Check out source and comparison history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24.16.0
+          cache: npm
+      - name: Resolve immutable comparison base
+        env:
+          FOUNDATION_MANUAL_BASE: ${{ inputs.base_ref }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import { resolveFoundationBase } from './scripts/check-foundation-changes.mjs';
+          const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+          const base = resolveFoundationBase(process.cwd(), process.env.GITHUB_EVENT_NAME, event, process.env.FOUNDATION_MANUAL_BASE || '');
+          appendFileSync(process.env.GITHUB_ENV, `FOUNDATION_BASE=${base}\n`);
+          console.log(`Comparison base tree: ${base}`);
+          NODE
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Migration history, new migrations, whitespace and changed JS/TS lint
+        run: node scripts/check-foundation-changes.mjs --base "$FOUNDATION_BASE" --lint
+      - name: Full test suite
+        run: npm test
+      - name: Production webpack build with local placeholders
+        run: npx next build --webpack
+
+  isolated-postgres:
+    name: Isolated PostgreSQL 16 regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BE_RECORDS_PG_BIN: /usr/lib/postgresql/16/bin
+    steps:
+      - name: Check out synthetic SQL fixture and migrations
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Run independent connections in a fresh socket-only database
+        env:
+          BE_RECORDS_PG_EVIDENCE: ${{ runner.temp }}/records-postgres-evidence.json
+        run: node scripts/validate-records-postgres-concurrency.mjs
+      - name: Print tested SQL runtime and source manifest
+        if: always()
+        env:
+          BE_RECORDS_PG_EVIDENCE: ${{ runner.temp }}/records-postgres-evidence.json
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const evidence = JSON.parse(readFileSync(process.env.BE_RECORDS_PG_EVIDENCE, 'utf8'));
+          console.log(JSON.stringify({
+            outcome: evidence.outcome,
+            passed: evidence.passed,
+            productionCalls: evidence.productionCalls,
+            serverStopped: evidence.serverStopped,
+            runtime: evidence.observations.find((item) => item.name === 'runtime'),
+            sources: evidence.sources,
+          }, null, 2));
+          NODE

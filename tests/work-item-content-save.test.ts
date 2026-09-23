@@ -23,7 +23,7 @@ function fixture() {
     } }
     const mocks: Record<string,unknown> = {
         "next/cache": { revalidatePath() {} }, "@/lib/supabase/admin": { supabaseAdmin: db }, "@/lib/relationships": { workItemHref: () => "/work" },
-        "@/lib/workspace-access": { requireWorkspaceAccess: async () => ({workspace:{id:"workspace"},role,access:{}}), workspaceAccessCanWorkItem: async () => allowed, workspaceAccessHasCapability: () => true },
+        "@/lib/workspace-access": { requireWorkspaceAccess: async () => ({workspace:{id:"workspace"},user:{id:"actor"},role,access:{}}), workspaceAccessCanWorkItem: async () => allowed, workspaceAccessHasCapability: () => true },
     }
     const compiledModule = { exports: {} }
     const file="app/[workspaceSlug]/work-items/[id]/actions.ts"
@@ -52,4 +52,12 @@ test("content mutations preserve work-item authorization and reject oversized in
     f.staffDenied()
     await assert.rejects(f.actions.updateWorkItemInstructions("acme","work","Unauthorized","Procedure"),/not found/)
     assert.equal(f.writes(),0)
+})
+
+test("recovered work-item text cannot save under a different authenticated actor", async () => {
+    const f = fixture()
+    assert.equal((await f.actions.updateWorkItemDescription("acme", "work", "Wrong account", "v1", "Goal", "previous-actor")).ok, false)
+    assert.equal((await f.actions.updateWorkItemInstructions("acme", "work", "Wrong account", "Procedure", "previous-actor")).ok, false)
+    assert.equal(f.writes(), 0)
+    assert.equal((await f.actions.updateWorkItemDescription("acme", "work", "Correct actor", "v1", "Goal", "actor")).ok, true)
 })

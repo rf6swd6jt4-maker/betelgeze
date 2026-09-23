@@ -1,0 +1,32 @@
+✔ description and instructions can save concurrently without overwriting each other or source evidence (44.037ms)
+✔ same-field racing saves accept only one writer and missing baseline cannot cause blind overwrite (14.314875ms)
+✔ content mutations preserve work-item authorization and reject oversized input (12.389417ms)
+✔ recovered work-item text cannot save under a different authenticated actor (10.824125ms)
+✔ a pristine description receives another tab's refreshed text before its next edit (1.285458ms)
+✔ a dirty description never borrows the version of conflicting remote text (0.081167ms)
+✔ another field changing can advance the version without discarding a description draft (0.062458ms)
+✔ late snapshots before a save acknowledgement cannot restore older text (0.066292ms)
+✔ an older conflict response cannot replace the latest value offered for recovery (0.052375ms)
+✔ matching remote text resolves a draft without submitting it twice (0.048125ms)
+✔ the actual editor refreshes pristine text and blocks a dirty conflicting save until explicit recovery (80.175625ms)
+✔ the actual editor keeps ordinary typing storage-free and checkpoints latest input at unload (27.853333ms)
+✔ selecting recovery during an in-flight save cannot submit it until explicit review is saved (20.572625ms)
+✔ account activation preserves the current actor but checkpoints and stops the displaced actor (20.084875ms)
+✔ a prop-only actor switch resets visible text and fences the old request completion (21.08125ms)
+✔ the actual editor accepts an in-flight write snapshot only after its acknowledgement (15.190958ms)
+✔ a newer remote edit arriving during a save prevents the next queued local overwrite (16.398542ms)
+✔ clean owners and unchanged checkpoints do no storage work; late input replaces only this writer (2.55325ms)
+✔ fresh writers isolate duplicated sessions; acknowledging one never clears another or its hint (0.212958ms)
+✔ denied storage retains the latest owner but successful storage does not duplicate durable drafts in memory (0.105333ms)
+✔ unreadable foreign journals survive explicit review, recovery and local acknowledgement (0.14275ms)
+✔ mount hint lookup is exact and explicit recovery has a finite sliced pass despite concurrent growth (0.32925ms)
+✔ stopped account owners cannot write or retire drafts and oversized copies remain recoverable in the open page (0.07675ms)
+✔ server acknowledgement preserves newer late input and retires only an exactly clean own copy (0.07525ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 388.596584

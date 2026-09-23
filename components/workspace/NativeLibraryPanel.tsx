@@ -16,7 +16,7 @@ import { InstantFilterResults } from "@/components/panel/InstantFilterResults"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { RelationshipStage, SquarePill, RoundPill, Status } from "@/components/ui"
-import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, DetailFields, DetailPageHeader } from "@/components/detail"
+import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, DetailPageHeader } from "@/components/detail"
 import { AssetFieldsEditor } from "@/app/[workspaceSlug]/assets/[id]/AssetFieldsEditor"
 import { InlineWorkItemFields } from "@/app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
@@ -266,7 +266,7 @@ function WorkItems({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "wor
 }
 
 function WorkItemDetail({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "work-item-detail" }> }) {
-    const { item, isAdminItem, assets, role } = data
+    const { item, isAdminItem, role } = data
     return (
         <main className="min-h-full bg-neutral-950 px-4 py-6 text-white sm:px-6">
             <div className="mx-auto max-w-[92rem]">
@@ -280,7 +280,7 @@ function WorkItemDetail({ data }: { data: Extract<NativeLibrarySnapshot, { kind:
                             updated={formatRelativeTime(item.updated_at)}
                         />
 
-                <InlineWorkItemFields {...data.fields} />
+                <InlineWorkItemFields key={`${data.userId}:${item.id}`} {...data.fields} />
 
                 <RecordAttachments workspaceSlug={data.workspaceSlug} userId={data.userId} owner="work-item" ownerId={item.id} canEdit={role === "owner" || role === "admin"} />
 

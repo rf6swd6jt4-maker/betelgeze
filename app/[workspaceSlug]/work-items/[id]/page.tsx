@@ -11,7 +11,6 @@ import {
     getRelationship,
     listWorkItemRelationships,
     listWorkItemAssets,
-    assetHref,
 } from "@/lib/relationships"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { listWorkItemKeyResultLinks } from "@/lib/admin/okrs"
@@ -64,13 +63,6 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
         username: person.username,
         avatar_url: person.avatar_path ? signedUrls.get(person.avatar_path) ?? null : null,
     })
-    const attachmentPreview = (asset: typeof assets[number]) => {
-        if (!asset.storage_path || !asset.content_type?.startsWith("image/")) return null
-        if (asset.native_kind === "sop_extracted_image") return `/api/workspaces/${workspace.slug}/sop-images/${asset.id}?thumbnail=1`
-        if (asset.source_kind === "message") return `/api/client-messages/media/${asset.storage_path.split("/").map(encodeURIComponent).join("/")}`
-        return signedUrls.get(asset.storage_path) ?? null
-    }
-
     return (
         <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} workspaceAccess={access} currentProduct="client-work" />
@@ -86,6 +78,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                         />
 
                 <InlineWorkItemFields
+                    key={`${user.id}:${workspace.id}:${item.id}`} userId={user.id}
                     workspaceSlug={workspace.slug} workItemId={item.id} status={item.status} statusLabel={status.label} statusTone={status.tone}
                     updatedAt={item.updated_at}
                     plannedStartDate={item.planned_start_date} plannedStartTime={item.planned_start_time ?? null} dueDate={item.due_date} dueTime={item.due_time ?? null} actualStartAt={item.actual_start_at} actualStartHasTime={Boolean(item.actual_start_has_time)} actualCompletedAt={item.actual_completed_at} actualCompletedHasTime={Boolean(item.actual_completed_has_time)} description={item.description} instructions={item.instructions} evidence={item.evidence}

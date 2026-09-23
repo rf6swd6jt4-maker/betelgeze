@@ -109,7 +109,7 @@ async function loadWorkItemDetail(workspaceSlug: string, id: string) {
     ])
     const personProps = (person: typeof planning.members[number]) => ({ user_id: person.user_id, username: person.username, avatar_url: person.avatar_path ? avatarUrls.get(person.avatar_path) ?? null : null })
     const fields = {
-        workspaceSlug: workspace.slug, workItemId: item.id, status: item.status, statusLabel: status.label, statusTone: status.tone, updatedAt: item.updated_at,
+        userId: user.id, workspaceSlug: workspace.slug, workItemId: item.id, status: item.status, statusLabel: status.label, statusTone: status.tone, updatedAt: item.updated_at,
         plannedStartDate: item.planned_start_date, plannedStartTime: item.planned_start_time ?? null, dueDate: item.due_date, dueTime: item.due_time ?? null,
         actualStartAt: item.actual_start_at, actualStartHasTime: Boolean(item.actual_start_has_time), actualCompletedAt: item.actual_completed_at, actualCompletedHasTime: Boolean(item.actual_completed_has_time), description: item.description, instructions: item.instructions, evidence: item.evidence,
         assignees: planning.assignees.map(personProps), executionOwnerId: item.execution_owner_id ?? null, creator: planning.creator ? personProps(planning.creator) : null, members: planning.members.map(personProps),

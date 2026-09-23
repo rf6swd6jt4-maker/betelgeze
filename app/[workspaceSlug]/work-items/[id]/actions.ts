@@ -63,8 +63,9 @@ export async function updateWorkItemSchedule(slug: string, workItemId: string, s
 }
 
 type TextSaveResult = { ok: true; version: string } | { ok: false; error: string; conflict?: boolean; version?: string }
-async function updateWorkItemText(slug: string, workItemId: string, field: "description" | "instructions", text: string, baseline?: string, expectedUpdatedAt?: string): Promise<TextSaveResult> {
-    const { workspace, item } = await requireWorkItem(slug, workItemId, field)
+async function updateWorkItemText(slug: string, workItemId: string, field: "description" | "instructions", text: string, baseline?: string, expectedUpdatedAt?: string, expectedUserId?: string): Promise<TextSaveResult> {
+    const { workspace, user, item } = await requireWorkItem(slug, workItemId, field)
+    if (expectedUserId !== undefined && expectedUserId !== user.id) return { ok: false, error: "Your account changed. Reopen this work item before saving." }
     if (baseline === undefined && !expectedUpdatedAt) return { ok: false, error: "Reload this work item before editing it." }
     if (typeof text !== "string" || text.length > 100000 || (baseline !== undefined && typeof baseline !== "string")) return { ok: false, error: "This text is invalid or too long." }
     const conflict = { ok: false as const, conflict: true, version: item.updated_at, error: `The ${field} changed elsewhere. Refresh to review the latest version before retrying.` }
@@ -87,11 +88,11 @@ async function updateWorkItemText(slug: string, workItemId: string, field: "desc
     return { ok: true, version: saved.updated_at }
 }
 
-export async function updateWorkItemDescription(slug: string, workItemId: string, description: string, expectedUpdatedAt: string, baseline?: string): Promise<TextSaveResult> {
-    return updateWorkItemText(slug, workItemId, "description", description, baseline, expectedUpdatedAt)
+export async function updateWorkItemDescription(slug: string, workItemId: string, description: string, expectedUpdatedAt: string, baseline?: string, expectedUserId?: string): Promise<TextSaveResult> {
+    return updateWorkItemText(slug, workItemId, "description", description, baseline, expectedUpdatedAt, expectedUserId)
 }
-export async function updateWorkItemInstructions(slug: string, workItemId: string, instructions: string, baseline: string): Promise<TextSaveResult> {
-    return updateWorkItemText(slug, workItemId, "instructions", instructions, baseline)
+export async function updateWorkItemInstructions(slug: string, workItemId: string, instructions: string, baseline: string, expectedUserId?: string): Promise<TextSaveResult> {
+    return updateWorkItemText(slug, workItemId, "instructions", instructions, baseline, undefined, expectedUserId)
 }
 
 export async function updateWorkItemAssignees(slug: string, workItemId: string, assigneeIds: string[], executionOwnerId: string | null) {

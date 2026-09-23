@@ -49,9 +49,21 @@ begin
         perform 1 from notes where workspace_id=p_workspace and id=p_target;
     end if;
     if not found then raise exception 'Attachment unavailable'; end if;
+    -- Re-read admission after the last potentially blocking owner/target lock.
+    -- KEY SHARE intentionally does not block unrelated target metadata updates.
+    perform assert_record_attachment_admin(p_workspace,p_actor);
+    if p_owner='relationship' and not exists (select 1 from relationships where workspace_id=p_workspace and id=p_owner_id and status<>'archived') then raise exception 'Attachment owner unavailable'; end if;
+    if p_owner='work-item' and not exists (select 1 from work_items where workspace_id=p_workspace and id=p_owner_id) then raise exception 'Attachment owner unavailable'; end if;
+    if p_kind='asset' and not exists (select 1 from assets where workspace_id=p_workspace and id=p_target and metadata->>'archived_at' is null) then raise exception 'Attachment unavailable'; end if;
     if p_owner='relationship' and p_kind='asset' then
         insert into asset_relationships(workspace_id,relationship_id,asset_id) values(p_workspace,p_owner_id,p_target) on conflict(asset_id,relationship_id) do nothing;
     elsif p_owner='relationship' then
+        -- The target note lock above also serializes relationship-delta writers.
+        -- An existing pair remains a valid idempotent retry at (or above) the cap.
+        if not exists (select 1 from note_relationships where note_id=p_target and relationship_id=p_owner_id)
+           and (select count(*) from (select 1 from note_relationships where workspace_id=p_workspace and note_id=p_target limit 20) existing_links)>=20 then
+            raise exception 'A note can link to at most 20 relationships';
+        end if;
         insert into note_relationships(workspace_id,relationship_id,note_id) values(p_workspace,p_owner_id,p_target) on conflict(note_id,relationship_id) do nothing;
     elsif p_owner='work-item' and p_kind='asset' then
         -- Existing private-work-item trigger remains authoritative.
@@ -75,6 +87,7 @@ begin
        or length(btrim(p_value)) not between 1 and (case when p_field='name' then 160 else 20000 end) then raise exception 'Invalid note text'; end if;
     select * into n from notes where workspace_id=p_workspace and id=p_note for update;
     if not found then raise exception 'Note unavailable'; end if;
+    perform assert_record_attachment_admin(p_workspace,p_actor);
     current_value:=case when p_field='name' then n.name else n.description end;
     -- Lost-ack retry of the same final value is safe and does not bump the version.
     if current_value=btrim(p_value) then return jsonb_build_object('ok',true,'version',n.updated_at); end if;
@@ -97,6 +110,7 @@ begin
     perform 1 from notes where workspace_id=p_workspace and id=p_note for update;
     if not found then raise exception 'Note unavailable'; end if;
     perform 1 from relationships where workspace_id=p_workspace and id=any(p_add) and status<>'archived' order by id for key share;
+    perform assert_record_attachment_admin(p_workspace,p_actor);
     if (select count(distinct id) from relationships where workspace_id=p_workspace and id=any(p_add) and status<>'archived')
        <> (select count(distinct x) from unnest(p_add) x) then raise exception 'Relationship unavailable'; end if;
     -- Only the caller's explicit removals are removed; unseen concurrent additions survive.
@@ -117,13 +131,14 @@ begin
     perform assert_record_attachment_admin(p_workspace,p_actor);
     if p_request is null or p_kind is null or p_kind not in ('asset','note') or jsonb_typeof(p_payload) is distinct from 'object' then raise exception 'Invalid create request'; end if;
     perform pg_advisory_xact_lock(hashtextextended(p_workspace::text||p_actor::text||p_request::text,0));
+    perform assert_record_attachment_admin(p_workspace,p_actor);
     select * into prior from record_attachment_commands where workspace_id=p_workspace and actor_id=p_actor and request_id=p_request;
     if found then
         if prior.kind<>p_kind or prior.payload<>p_payload then raise exception 'This request was already saved with different values. Recover the original request before creating another record'; end if;
         return jsonb_build_object('status',prior.status,'record_id',prior.record_id,'error',prior.rejection_message);
     end if;
-    -- The request lock survives this subtransaction. A known validation failure rolls
-    -- back parent and links before a durable terminal rejection is recorded.
+    -- Lock acquisition and validation complete before a fresh authorization check.
+    -- Authorization failures stay outside terminal-rejection handlers.
     begin
     if p_reject_reason is not null then
         if p_reject_reason='upload_expired' and p_kind='asset' then raise exception 'The upload expired. Choose the file again in the restored draft';
@@ -138,18 +153,28 @@ begin
     title:=btrim(p_payload->>'title'); description:=btrim(coalesce(p_payload->>'description',''));
     if title is null or length(title) not between 1 and (case when p_kind='note' then 160 else 500 end) or length(description)>20000
        or (p_kind='note' and description='') then raise exception 'Invalid record name or description'; end if;
-    perform 1 from relationships where workspace_id=p_workspace and id=any(relationship_ids) and status<>'archived' order by id for key share;
-    if (select count(*) from relationships where workspace_id=p_workspace and id=any(relationship_ids) and status<>'archived')<>cardinality(relationship_ids) then raise exception 'Relationship unavailable'; end if;
-    perform 1 from assets where workspace_id=p_workspace and id=any(asset_ids) and metadata->>'archived_at' is null order by id for key share;
-    if (select count(*) from assets where workspace_id=p_workspace and id=any(asset_ids) and metadata->>'archived_at' is null)<>cardinality(asset_ids) then raise exception 'Asset unavailable'; end if;
-    if work_id is not null then
-        perform 1 from work_items where workspace_id=p_workspace and id=work_id for key share;
-        if not found then raise exception 'Work item unavailable'; end if;
-    end if;
+    -- All command paths acquire existing note locks before eligible target locks.
     if note_id is not null then
         perform 1 from notes where workspace_id=p_workspace and id=note_id for update;
         if not found then raise exception 'Note unavailable'; end if;
     end if;
+    perform 1 from relationships where workspace_id=p_workspace and id=any(relationship_ids) and status<>'archived' order by id for key share;
+    perform 1 from assets where workspace_id=p_workspace and id=any(asset_ids) and metadata->>'archived_at' is null order by id for key share;
+    if work_id is not null then
+        perform 1 from work_items where workspace_id=p_workspace and id=work_id for key share;
+        if not found then raise exception 'Work item unavailable'; end if;
+    end if;
+    exception when raise_exception or invalid_text_representation or string_data_right_truncation or foreign_key_violation or check_violation then
+        rejected_message:=sqlerrm;
+    end;
+    perform assert_record_attachment_admin(p_workspace,p_actor);
+    if rejected_message is null then
+    -- Recheck eligible targets after every known blocking acquisition. These are
+    -- write-admission checks, not serialization of later archival/revocation.
+    begin
+    if (select count(*) from relationships where workspace_id=p_workspace and id=any(relationship_ids) and status<>'archived')<>cardinality(relationship_ids) then raise exception 'Relationship unavailable'; end if;
+    if (select count(*) from assets where workspace_id=p_workspace and id=any(asset_ids) and metadata->>'archived_at' is null)<>cardinality(asset_ids) then raise exception 'Asset unavailable'; end if;
+    if work_id is not null and not exists (select 1 from work_items where workspace_id=p_workspace and id=work_id) then raise exception 'Work item unavailable'; end if;
     if p_kind='note' then
         insert into notes(id,workspace_id,name,description,created_by) values(p_request,p_workspace,title,description,p_actor);
         insert into note_relationships(workspace_id,note_id,relationship_id) select p_workspace,p_request,unnest(relationship_ids);
@@ -170,6 +195,7 @@ begin
     exception when raise_exception or invalid_text_representation or string_data_right_truncation or foreign_key_violation or check_violation then
         rejected_message:=sqlerrm;
     end;
+    end if;
     if rejected_message is not null then
         insert into record_attachment_commands(workspace_id,actor_id,request_id,kind,payload,status,rejection_message) values(p_workspace,p_actor,p_request,p_kind,p_payload,'rejected',rejected_message);
         return jsonb_build_object('status','rejected','error',rejected_message);

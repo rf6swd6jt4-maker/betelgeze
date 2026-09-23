@@ -1,0 +1,27 @@
+{
+  "reviewedAt": "2026-09-23T16:57:48.347Z",
+  "sources": {
+    "lib/workspace-draft-journal.ts": "a178980de4dd5faf251d6deefc2beefec1ec93050a21d253ba93e62e0253bca4",
+    "components/workspace/WorkspaceDraftRecovery.tsx": "9c15b4d152f954a48a14e9eadf124fd8cd27d7230363f98fcca20a73b1ecd005",
+    "components/work-items/useWorkItemTextDraft.ts": "e5fb9a50aa2c68300998f154ed034ac0887a8a7ada02cb09be300bc5af694994",
+    "components/workspace/WorkspaceAutosaveForm.tsx": "4e716011e98438c91af5da0bcd9b4f275864023578dfa522adcee06daf7f01ad",
+    "components/work-items/WorkItemTextField.tsx": "c11e29ef3ee4de71a299977f079f4483fdc1160a66d9a5665565c38d7ec075c8",
+    "app/[workspaceSlug]/notes/[id]/NoteFieldsEditor.tsx": "effd81d3f15122e12c7bfad41b73080b20db8c534084e2da9c422741220a86b0",
+    "components/sops/SopDetailFields.tsx": "2daf30c7386ea51a24534cd7ae2ae94fbbd1ee710c5ff804a8519fee3cc9010f",
+    "app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields.tsx": "36769bd6df515d40e5082b2dfc4ec8ce02cccea467d86ffbd991e9d80ced5644",
+    "app/[workspaceSlug]/work-items/[id]/actions.ts": "3cc522b791c756cd997ccd92229045744a9faa25fa34b04ae4b8897d77b641c7",
+    "app/[workspaceSlug]/settings/actions.ts": "e27b9b8d58a9d795ccbb03316d776a8581ab2c573bad94ff3f3cf8a5c5e980d4",
+    "app/[workspaceSlug]/settings/branding-actions.ts": "ab07eeaf8b0ff8a0ab1a0f4abf83c6a3dfdbaa88be0a6d2c4f2b3d7579b25509",
+    "components/settings/AgencyPublicBrandingFields.tsx": "ef3ef0ebca7007bdb79b44752f9fd6f325127493020f99e5d3c66199c0ad7dfd",
+    "app/[workspaceSlug]/settings/page.tsx": "eaef27b7bef5d34cccb1ecc76c7ab3fb6957b412a8c583b1b78c7a8bcbc8e054",
+    "app/[workspaceSlug]/notes/[id]/page.tsx": "2bae895b911a9201f972ece66cd570bfd502d6ee3f598825aea651e7dbfc7e8a",
+    "app/[workspaceSlug]/sops/[id]/page.tsx": "bb276b906f5b4633f9444c1796b12cf28a38b282b17128a63c49a25891c1fbdb",
+    "components/workspace/NativeLibraryPanel.tsx": "3e54059cebc7f71bc76d22d9bcf5a3e81d8ea0271cf978cb5ff1e906461993b2",
+    "lib/workspace-native-library.ts": "7441b2ea1f0c3d699c5794ff99b9127a4941dfa710f834ea490ced17f16905c5",
+    "lib/workspace-mutations.ts": "49da4b6c4c031c99e0d19555992aae047bc0217db3c5de5eccfb34949624c08a",
+    "lib/record-version.js": "6c6ead2442af74ed3cc8b5da17e65445dd3e8115359203684df8bccbf7a59e18",
+    ".github/workflows/foundations.yml": "774bbca57240222254e6401f668c8c035c61175d0ae9dfedcf623c9b76722090",
+    "scripts/check-foundation-changes.mjs": "c52ea398e24b9900eee4af528911c9a61b3bc81df8ae07c94ce0162d33547d4d",
+    "tests/foundation-changes.test.mjs": "457fcdcfc13cfddd59aefeb8a6bab142fb72fcc246ba20fec79e7c29deed45c7"
+  }
+}

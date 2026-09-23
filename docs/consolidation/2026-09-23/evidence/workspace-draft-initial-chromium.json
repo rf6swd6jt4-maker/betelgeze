@@ -1,0 +1,266 @@
+{
+  "status": "complete",
+  "sourceManifest": {
+    "components/work-items/useWorkItemTextDraft.ts": "e5fb9a50aa2c68300998f154ed034ac0887a8a7ada02cb09be300bc5af694994",
+    "components/work-items/WorkItemTextField.tsx": "c11e29ef3ee4de71a299977f079f4483fdc1160a66d9a5665565c38d7ec075c8",
+    "components/workspace/WorkspaceAutosaveForm.tsx": "4e716011e98438c91af5da0bcd9b4f275864023578dfa522adcee06daf7f01ad",
+    "components/workspace/WorkspaceDraftRecovery.tsx": "9c15b4d152f954a48a14e9eadf124fd8cd27d7230363f98fcca20a73b1ecd005",
+    "lib/workspace-draft-journal.ts": "a178980de4dd5faf251d6deefc2beefec1ec93050a21d253ba93e62e0253bca4",
+    "lib/workspace-mutations.ts": "49da4b6c4c031c99e0d19555992aae047bc0217db3c5de5eccfb34949624c08a",
+    "lib/record-version.js": "6c6ead2442af74ed3cc8b5da17e65445dd3e8115359203684df8bccbf7a59e18"
+  },
+  "reactVersion": "19.2.4",
+  "buildMode": "production",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+  "observedAt": "2026-09-23T16:56:37.523Z",
+  "documentVisibility": "visible",
+  "hasFocus": true,
+  "passed": 23,
+  "total": 25,
+  "completed": 25,
+  "missing": [],
+  "unexpectedRequests": [],
+  "cases": [
+    {
+      "name": "text: ordinary typing writes zero localStorage records",
+      "passed": true,
+      "observations": {
+        "typingWrites": 0,
+        "typedInputs": 4
+      },
+      "storageWrites": 0,
+      "durationMs": 61
+    },
+    {
+      "name": "text: late input survives pending save and owner unmount",
+      "passed": true,
+      "observations": {
+        "saveCalls": 1,
+        "recoveredLateInput": true
+      },
+      "storageWrites": 2,
+      "durationMs": 45
+    },
+    {
+      "name": "text: explicit review restores and waits for Save reviewed draft",
+      "passed": true,
+      "observations": {
+        "automaticSaveCalls": 0,
+        "explicitSaveCalls": 1
+      },
+      "storageWrites": 4,
+      "durationMs": 1002
+    },
+    {
+      "name": "text: choosing recovery during a pending save cannot auto-submit it",
+      "passed": true,
+      "observations": {
+        "callsBeforeConfirmation": 1,
+        "callsAfterConfirmation": 2
+      },
+      "storageWrites": 6,
+      "durationMs": 120
+    },
+    {
+      "name": "text: quota failure refuses checkpoint and retains latest draft in this document",
+      "passed": true,
+      "observations": {
+        "durable": false,
+        "retainedInDocument": true
+      },
+      "storageWrites": 4,
+      "durationMs": 77
+    },
+    {
+      "name": "text: unavailable storage is disclosed during explicit recovery",
+      "passed": false,
+      "error": "Unreadable storage warning absent",
+      "storageWrites": 2,
+      "durationMs": 1853
+    },
+    {
+      "name": "text: actor/workspace replacement fences stale acknowledgement",
+      "passed": true,
+      "observations": {
+        "oldActorRetained": true,
+        "newActorIsolated": true
+      },
+      "storageWrites": 2,
+      "durationMs": 68
+    },
+    {
+      "name": "text: account clearing closes recovery and fences pending work",
+      "passed": true,
+      "observations": {
+        "dialogClosed": true,
+        "staleAcknowledgementRefused": true
+      },
+      "storageWrites": 4,
+      "durationMs": 49
+    },
+    {
+      "name": "text: matching preserved account keeps recovery and pending owner active",
+      "passed": true,
+      "observations": {
+        "preservedAccountActive": true
+      },
+      "storageWrites": 2,
+      "durationMs": 47
+    },
+    {
+      "name": "text: displaced preserved account closes recovery and stops old owner",
+      "passed": true,
+      "observations": {
+        "displacedOwnerStopped": true,
+        "draftRetained": true
+      },
+      "storageWrites": 4,
+      "durationMs": 46
+    },
+    {
+      "name": "text: pagehide checkpoint captures text without a server request",
+      "passed": true,
+      "observations": {
+        "syntheticPagehide": true,
+        "durable": true
+      },
+      "storageWrites": 2,
+      "durationMs": 23
+    },
+    {
+      "name": "form: ordinary typing writes zero localStorage records",
+      "passed": true,
+      "observations": {
+        "typingWrites": 0,
+        "typedInputs": 4
+      },
+      "storageWrites": 0,
+      "durationMs": 46
+    },
+    {
+      "name": "form: late input survives pending save and owner unmount",
+      "passed": true,
+      "observations": {
+        "saveCalls": 1,
+        "recoveredLateInput": true
+      },
+      "storageWrites": 2,
+      "durationMs": 46
+    },
+    {
+      "name": "form: explicit review restores and waits for Save reviewed draft",
+      "passed": true,
+      "observations": {
+        "automaticSaveCalls": 0,
+        "explicitSaveCalls": 1
+      },
+      "storageWrites": 4,
+      "durationMs": 1003
+    },
+    {
+      "name": "form: choosing recovery during a pending save cannot auto-submit it",
+      "passed": true,
+      "observations": {
+        "callsBeforeConfirmation": 1,
+        "callsAfterConfirmation": 2
+      },
+      "storageWrites": 6,
+      "durationMs": 124
+    },
+    {
+      "name": "form: quota failure refuses checkpoint and retains latest draft in this document",
+      "passed": true,
+      "observations": {
+        "durable": false,
+        "retainedInDocument": true
+      },
+      "storageWrites": 4,
+      "durationMs": 77
+    },
+    {
+      "name": "form: unavailable storage is disclosed during explicit recovery",
+      "passed": false,
+      "error": "Unreadable storage warning absent",
+      "storageWrites": 2,
+      "durationMs": 1854
+    },
+    {
+      "name": "form: actor/workspace replacement fences stale acknowledgement",
+      "passed": true,
+      "observations": {
+        "oldActorRetained": true,
+        "newActorIsolated": true
+      },
+      "storageWrites": 2,
+      "durationMs": 64
+    },
+    {
+      "name": "form: account clearing closes recovery and fences pending work",
+      "passed": true,
+      "observations": {
+        "dialogClosed": true,
+        "staleAcknowledgementRefused": true
+      },
+      "storageWrites": 4,
+      "durationMs": 43
+    },
+    {
+      "name": "form: matching preserved account keeps recovery and pending owner active",
+      "passed": true,
+      "observations": {
+        "preservedAccountActive": true
+      },
+      "storageWrites": 2,
+      "durationMs": 44
+    },
+    {
+      "name": "form: displaced preserved account closes recovery and stops old owner",
+      "passed": true,
+      "observations": {
+        "displacedOwnerStopped": true,
+        "draftRetained": true
+      },
+      "storageWrites": 4,
+      "durationMs": 43
+    },
+    {
+      "name": "form: pagehide checkpoint captures text without a server request",
+      "passed": true,
+      "observations": {
+        "syntheticPagehide": true,
+        "durable": true
+      },
+      "storageWrites": 2,
+      "durationMs": 21
+    },
+    {
+      "name": "text: concurrent server version preserves local conflict and archives before use-latest",
+      "passed": true,
+      "observations": {
+        "localConflictRetained": true
+      },
+      "storageWrites": 2,
+      "durationMs": 57
+    },
+    {
+      "name": "form: rejected save retains current fields and supports explicit retry",
+      "passed": true,
+      "observations": {
+        "rejectedDraftRetained": true,
+        "retryCalls": 1
+      },
+      "storageWrites": 0,
+      "durationMs": 66
+    },
+    {
+      "name": "text: prop-only scope change resets owner and rejects old async continuation",
+      "passed": true,
+      "observations": {
+        "newOwnerSubmittedIndependently": true
+      },
+      "storageWrites": 2,
+      "durationMs": 45
+    }
+  ],
+  "limits": "Actual complete draft hook/form/recovery/journal/mutation runtime and text-field rendering, real React DOM/localStorage. Router/Gantt and presentation primitives mocked; server saves are controlled promises. Synthetic input/pagehide/quota errors, not authenticated app, real termination, OS quota, provider or physical-device evidence. No paint or production speed claim."
+}

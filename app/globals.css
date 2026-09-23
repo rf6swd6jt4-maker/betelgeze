@@ -75,8 +75,16 @@ html[data-workspace-viewport-locked="true"] [data-workspace-tabbar] {
   will-change: transform;
 }
 
+html[data-workspace-viewport-locked="true"] [data-workspace-topbar] {
+  top: var(--workspace-visual-origin-offset, 0px);
+}
+
+html[data-workspace-viewport-locked="true"] [data-workspace-tabbar] {
+  top: calc(3.5rem + var(--workspace-visual-origin-offset, 0px));
+}
+
 html[data-workspace-viewport-locked="true"] [data-workspace-tab-panels] {
-  top: 6.25rem;
+  top: calc(6.25rem + var(--workspace-visual-origin-offset, 0px));
   bottom: auto;
   height: max(0px, calc(var(--workspace-visual-viewport-bottom, 100dvh) - 6.25rem));
 }

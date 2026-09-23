@@ -37,7 +37,6 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
     const pathname = usePathname()
     const router = useRouter()
     const searchParams = useSearchParams()
-    const startedPollNoticeRef = useRef("")
     const refreshStartedRef = useRef(false)
     const [refreshPending, startRefreshTransition] = useTransition()
     const refresh = useCallback(() => startRefreshTransition(() => router.refresh()), [router])
@@ -117,27 +116,6 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
         observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-workspace-record-title"] })
         return () => observer.disconnect()
     }, [pathname, searchParams, tabId, workspaceSlug])
-
-    useEffect(() => {
-        const pollId = searchParams.get("pollStarted")
-        if (!pollId) return
-        const key = `${pathname}:${pollId}`
-        if (startedPollNoticeRef.current === key) return
-        startedPollNoticeRef.current = key
-
-        const message: WorkspaceTabFrameMessage = {
-            source: WORKSPACE_TAB_MESSAGE_SOURCE,
-            target: "host",
-            tabId,
-            type: "poll-started",
-            pollId,
-        }
-        window.parent.postMessage(message, window.location.origin)
-
-        const current = new URL(window.location.href)
-        current.searchParams.delete("pollStarted")
-        window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`)
-    }, [pathname, searchParams, tabId])
 
     useEffect(() => {
         let contextObstructed = false

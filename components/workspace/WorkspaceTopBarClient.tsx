@@ -11,6 +11,7 @@ import { requestChatViewportMotion } from "@/lib/chat-viewport-motion"
 import { COMPOSER_KEYBOARD_MOTION_MS, createComposerViewportController } from "@/lib/composer-viewport-controller"
 import { readChatLayoutBottom, readChatViewportBottom, recordChatViewportDiagnostic } from "@/lib/chat-viewport-state"
 import { createViewportOriginRecovery } from "@/lib/viewport-origin-recovery"
+import { createWorkspaceVisualOrigin } from "@/lib/workspace-visual-origin"
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -1572,10 +1573,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 }
             }
 
-            if (message.type === "poll-started" && message.pollId) {
-                showCreationNotice({ label: "Poll started", href: `/${workspace.slug}/leadgen/poll/${message.pollId}` })
-            }
-
             if (message.type === "communications-unread" && Number.isFinite(message.unreadCount)) {
                 refreshCommunicationsUnread()
             }
@@ -1716,7 +1713,16 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         const root = document.documentElement
         const readViewportBottom = () => readChatViewportBottom(window)
         const panel = shellRoot.querySelector<HTMLElement>("[data-workspace-tab-panels]")
+        const topbar = shellRoot.querySelector<HTMLElement>("[data-workspace-topbar]")
         const mobile = window.matchMedia("(max-width: 1023px)")
+        const visualOrigin = createWorkspaceVisualOrigin({
+            readTop: () => topbar?.getBoundingClientRect().top ?? NaN,
+            readLimit: () => mobile.matches && document.visibilityState === "visible" && Math.abs((window.visualViewport?.scale ?? 1) - 1) < 0.01
+                ? readChatLayoutBottom(window) / 2 : 0,
+            writeOffset: (offset) => root.style.setProperty("--workspace-visual-origin-offset", `${offset}px`),
+            requestFrame: (callback) => window.requestAnimationFrame(callback),
+            cancelFrame: (frame) => window.cancelAnimationFrame(frame),
+        })
         let appliedViewportBottom = readChatLayoutBottom(window)
         const applyViewportBottom = (viewportBottom: number) => {
             appliedViewportBottom = viewportBottom
@@ -1771,6 +1777,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             syncComposerFocus()
             origin.update()
             viewport.update()
+            visualOrigin.update()
         }
         const handleComposerFocus = (event: Event) => {
             const { focused, sourceWindow } = (event as CustomEvent<WorkspaceComposerFocusEventDetail>).detail ?? {}
@@ -1782,6 +1789,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         }
         const suspendWorkspaceViewport = () => {
             origin.suspend()
+            visualOrigin.suspend()
             activeComposer()?.blur()
             const activeElement = document.activeElement
             if (activeElement instanceof HTMLElement) activeElement.blur()
@@ -1793,6 +1801,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             origin.resume()
             viewport.resume()
             syncComposerFocus()
+            visualOrigin.resume()
         }
         const handleWorkspaceVisibility = () => {
             if (document.visibilityState === "hidden") suspendWorkspaceViewport()
@@ -1828,11 +1837,13 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             window.removeEventListener("pageshow", resumeWorkspaceViewport)
             origin.dispose()
             viewport.dispose()
+            visualOrigin.dispose()
             syncComposerViewportRef.current = null
             document.body.style.overflow = previousOverflow
             delete document.body.dataset.workspaceTabsHosted
             delete root.dataset.workspaceViewportLocked
             root.style.removeProperty("--workspace-visual-viewport-bottom")
+            root.style.removeProperty("--workspace-visual-origin-offset")
             window.dispatchEvent(new Event(WORKSPACE_TAB_VISIBILITY_EVENT))
             previousStates.forEach(({ element, hidden, inert, ariaHidden }) => {
                 element.hidden = hidden
@@ -2757,7 +2768,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                     </button>
                     <label className="relative block min-w-0 flex-1">
                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
-                        <input ref={desktopSearchInputRef} value={query} onKeyDown={submitSearch} onChange={(event) => { setQuery(event.target.value); openDesktopSearch() }} onFocus={openDesktopSearch} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 pr-16 text-sm text-neutral-300 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
+                        <input ref={desktopSearchInputRef} value={query} onKeyDown={submitSearch} onChange={(event) => { setQuery(event.target.value); openDesktopSearch() }} onFocus={openDesktopSearch} aria-label="Search Betelgeze" placeholder="Search relationships, work, files..." className="h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 pr-16 text-sm text-neutral-300 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
                         <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-neutral-800 px-1.5 py-0.5 text-[10px] leading-none text-neutral-500">{searchShortcutLabel}</span>
                     </label>
                     <WorkspacePresenceAvatars members={workspacePresenceMembers} state={presenceState} error={presenceError} onOpenProfile={setProfileUserId} />
@@ -2792,7 +2803,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                                 <div className="border-b border-neutral-800 p-3">
                                     <label className="relative block">
                                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
-                                        <input ref={mobileSearchInputRef} value={query} onKeyDown={submitSearch} onChange={(event) => setQuery(event.target.value)} aria-label="Search Betelgeze" placeholder="Search relationships, work, leads..." className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-10 text-base text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
+                                        <input ref={mobileSearchInputRef} value={query} onKeyDown={submitSearch} onChange={(event) => setQuery(event.target.value)} aria-label="Search Betelgeze" placeholder="Search relationships, work, files..." className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-10 text-base text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
                                     </label>
                                 </div>
                                 <div className="max-h-[calc(72vh-4.25rem)] overflow-y-auto">

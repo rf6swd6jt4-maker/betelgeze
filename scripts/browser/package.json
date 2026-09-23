@@ -1,0 +1,9 @@
+{
+  "name": "betelgeze-browser-regression",
+  "private": true,
+  "type": "module",
+  "description": "Isolated development-only browser validation; never imported by the application.",
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

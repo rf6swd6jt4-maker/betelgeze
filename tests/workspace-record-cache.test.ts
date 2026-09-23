@@ -51,7 +51,7 @@ test("expiration of an invalidated read cannot fail the newer generation", async
     t.mock.timers.enable({ apis: ["setTimeout"] })
     const cache = new WorkspaceRecordCache<string>()
     const pending = cache.load("record", () => new Promise<string>(() => {}))
-    const rejected = assert.rejects(pending, /too long/)
+    const rejected = assert.rejects(pending, { name: "AbortError" })
     cache.invalidate()
     await cache.load("record", async () => "new")
     t.mock.timers.tick(30_000)
@@ -80,11 +80,12 @@ test("invalidation fences an older response while a new read publishes", async (
     const cache = new WorkspaceRecordCache<string>()
     const old = deferred<string>()
     const first = cache.load("record", () => old.promise)
+    const cancelled = assert.rejects(first, { name: "AbortError" })
     await Promise.resolve()
     cache.invalidate()
     await cache.load("record", async () => "new", { force: true })
     old.resolve("old")
-    await first
+    await cancelled
     assert.equal(cache.getSnapshot("record").data, "new")
 })
 
@@ -95,10 +96,11 @@ test("account clear immediately removes visible data and fences late old-account
     const unsubscribe = cache.subscribe("old", () => notified++)
     cache.seed("old", "private")
     const pending = cache.load("old", () => gate.promise, { force: true })
+    const cancelled = assert.rejects(pending, { name: "AbortError" })
     await Promise.resolve()
     cache.clear()
     gate.resolve("late private")
-    await pending
+    await cancelled
     assert.equal(cache.getSnapshot("old").data, null)
     assert.ok(notified >= 3)
     unsubscribe()
@@ -138,6 +140,7 @@ test("a late save invalidates a cold read with an observable one-shot reload rev
     const cache = new WorkspaceRecordCache<string>()
     const firstRead = deferred<string>()
     const pending = cache.load("new-panel", () => firstRead.promise)
+    const cancelled = assert.rejects(pending, { name: "AbortError" })
     await Promise.resolve()
     const revision = cache.getSnapshot("new-panel").revision
     cache.invalidate()
@@ -146,7 +149,7 @@ test("a late save invalidates a cold read with an observable one-shot reload rev
     await cache.load("new-panel", async () => "fresh panel")
     assert.equal(cache.getSnapshot("new-panel").revision, revision + 1, "settling the replacement must not trigger another reload")
     firstRead.resolve("stale before save")
-    await pending
+    await cancelled
     assert.equal(cache.getSnapshot("new-panel").data, "fresh panel")
 })
 
@@ -176,4 +179,44 @@ test("performance rollout can be limited to an authorized operator without widen
     assert.equal(workspacePerformanceEnabled("workspace", undefined, "workspace", "operator"), false)
     assert.equal(workspacePerformanceEnabled("workspace", "operator", "another", "operator"), false)
     assert.equal(workspacePerformanceEnabled("workspace", "staff", "workspace", undefined), true)
+})
+
+
+test("repeated invalidation settles abort-ignoring readers and releases every deadline", async (t) => {
+    const originalSet = globalThis.setTimeout
+    const originalClear = globalThis.clearTimeout
+    const timers = new Set<ReturnType<typeof setTimeout>>()
+    t.mock.method(globalThis, "setTimeout", (...args: Parameters<typeof setTimeout>) => {
+        const timer = originalSet(...args)
+        timers.add(timer)
+        return timer
+    })
+    t.mock.method(globalThis, "clearTimeout", (timer: ReturnType<typeof setTimeout>) => {
+        timers.delete(timer)
+        originalClear(timer)
+    })
+    const cache = new WorkspaceRecordCache<string>(4)
+    for (let cycle = 0; cycle < 250; cycle++) {
+        const key = `account:workspace:${cycle}`
+        const pending = cache.load(key, () => new Promise<string>(() => {}))
+        const rejected = assert.rejects(pending, { name: "AbortError" })
+        await Promise.resolve()
+        cache.invalidate(candidate => candidate === key)
+        await rejected
+        assert.equal(timers.size, 0, "cancelled reads cannot accumulate 30-second timers")
+        assert.equal(cache.getSnapshot(key).loading, false)
+    }
+    await cache.load("active", async () => "usable")
+    assert.equal(cache.getSnapshot("active").data, "usable")
+    assert.equal(timers.size, 0)
+})
+
+test("invalidating before dispatch avoids starting obsolete network work", async () => {
+    const cache = new WorkspaceRecordCache<string>()
+    let reads = 0
+    const pending = cache.load("old", async () => { reads++; return "obsolete" })
+    const rejected = assert.rejects(pending, { name: "AbortError" })
+    cache.invalidate()
+    await rejected
+    assert.equal(reads, 0)
 })

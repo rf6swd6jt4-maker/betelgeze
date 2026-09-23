@@ -1,4 +1,3 @@
-import { leadgenOperationsAvailable } from "@/lib/leadgen/availability"
 import { loadWorkspaceOperations } from "@/lib/teams/operations"
 import { Suspense, type CSSProperties, type ReactNode } from "react"
 import { WorkspaceIdentityEditor } from "@/components/admin/WorkspaceIdentityEditor"
@@ -59,7 +58,6 @@ const settingsSections = [
     { id: "connections", label: "Connections", detail: "Providers and delivery channels" },
     { id: "users", label: "Users", detail: "Access and invitations" },
     { id: "teams", label: "Teams", detail: "People and responsibility routing" },
-    { id: "leadgen", label: "Lead Gen", detail: "Automation, targeting, and sources" },
 ] satisfies SettingsSectionNavItem[]
 
 type WorkspaceResult = Awaited<ReturnType<typeof requireWorkspace>>
@@ -203,37 +201,6 @@ async function TeamsSettingsSection({ workspace, isOwner }: { workspace: Workspa
     return <UnifiedSection id="teams" title="Teams" description="Selling, management, and service delivery responsibilities."><WorkspaceTeamSettings workspaceSlug={workspace.slug} operations={operations} isOwner={isOwner} /></UnifiedSection>
 }
 
-async function LeadgenSettingsSection({ workspace }: { workspace: WorkspaceRecord }) {
-    const [{ AdaptiveTargetingSettings }, { ManualSettingsForm, SettingsSectionActions }, { SourceSettingsCard }, { loadLeadgenSettingsPageData }, { saveLeadgenSettings }] = await Promise.all([
-        import("@/components/leadgen/AdaptiveTargetingSettings"),
-        import("@/components/leadgen/ManualSettingsForm"),
-        import("@/components/leadgen/SourceSettingsCard"),
-        import("@/lib/leadgen/settings-page-data"),
-        import("../leadgen/settings/actions"),
-    ])
-    const leadgenSettings = await loadLeadgenSettingsPageData(workspace.id)
-    return <UnifiedSection id="leadgen" title="Lead Gen" description="Manage poll automation, ICP targeting, source readiness, mappings, and runtime controls.">
-        <ManualSettingsForm action={saveLeadgenSettings.bind(null, workspace.slug)} className="space-y-6">
-            <div id="leadgen-automation" className="scroll-mt-5"><div data-settings-section="poll-options" className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
-                <input type="hidden" name="settingsScope" value="settings" />
-                <h3 className="text-lg font-semibold leading-6">Poll Automation</h3>
-                <p className="mt-1.5 text-sm leading-5 text-neutral-400">Cadence, run limits, and automated polling defaults.</p>
-                <div className="mt-4 grid gap-3">
-                    <label className="block text-sm text-neutral-300">Automatic poll interval<input name="pollIntervalHours" type="number" min={1} max={2160} defaultValue={leadgenSettings.settings?.poll_interval_hours ?? 168} className="mt-2 h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" /><span className="mt-1.5 block text-xs leading-5 text-neutral-500">Hours between scheduled polls. 168 = weekly.</span></label>
-                    <label className="block text-sm text-neutral-300">Candidate target count<input name="sourceConfig:icp:limit" type="number" min={10} max={5000} defaultValue={leadgenSettings.sourceConfig.icp?.limit ?? 1000} className="mt-2 h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" /><span className="mt-1.5 block text-xs leading-5 text-neutral-500">Upper bound before staged qualification.</span></label>
-                    <label className="block text-sm text-neutral-300">Max owner-evidence depth<input name="sourceConfig:icp:maxEnrichmentDepth" type="number" min={1} max={8} defaultValue={leadgenSettings.sourceConfig.icp?.maxEnrichmentDepth ?? 4} className="mt-2 h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" /><span className="mt-1.5 block text-xs leading-5 text-neutral-500">How far the pipeline may chase owner evidence.</span></label>
-                    <label className="flex min-h-11 items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-300"><input name="automaticPollsEnabled" type="checkbox" defaultChecked={Boolean(leadgenSettings.settings?.automatic_polls_enabled)} className="h-4 w-4 shrink-0 accent-white" /><span>Run polls automatically on this cadence</span></label>
-                    <label className="flex min-h-11 items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-300"><input name="sourceConfig:icp:ownerRequired" type="checkbox" defaultChecked={leadgenSettings.sourceConfig.icp?.ownerRequired !== false} className="h-4 w-4 shrink-0 accent-white" /><span>Only show qualified leads when owner/principal and phone evidence is found</span></label>
-                    <input type="hidden" name="geography" value={leadgenSettings.settings?.geography ?? ""} />
-                </div>
-                <SettingsSectionActions section="poll-options" label="poll automation" />
-            </div></div>
-            <div id="leadgen-targeting" className="scroll-mt-5"><AdaptiveTargetingSettings industries={leadgenSettings.adaptiveIndustries} locations={leadgenSettings.adaptiveLocations} selectedIndustries={leadgenSettings.selectedIndustries} selectedLocations={leadgenSettings.selectedLocations} /></div>
-        </ManualSettingsForm>
-        <div id="leadgen-sources" className="mt-6 scroll-mt-5"><ManualSettingsForm action={saveLeadgenSettings.bind(null, workspace.slug)}><input type="hidden" name="settingsScope" value="sources" /><SourceSettingsCard sources={leadgenSettings.sourceItems} sourceCategoryIntents={leadgenSettings.sourceCategoryIntents} catalogueStats={leadgenSettings.catalogueStats} /></ManualSettingsForm></div>
-    </UnifiedSection>
-}
-
 type PageProps = { params: Promise<{ workspaceSlug: string }>; searchParams: Promise<{ service?: string }> }
 
 export default async function SettingsPage({ params, searchParams }: PageProps) {
@@ -247,7 +214,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps) 
         <div className="mx-auto min-w-0 max-w-7xl pt-5">
             <Suspense fallback={<IdentityFallback workspace={workspace} />}><SettingsIdentity workspace={workspace} /></Suspense>
             <div className="mt-8 grid min-w-0 max-w-full gap-8 lg:grid-cols-[16rem_minmax(0,1fr)]">
-                <SettingsSectionNav sections={settingsSections.filter((section) => section.id !== "leadgen" || leadgenOperationsAvailable())} />
+                <SettingsSectionNav sections={settingsSections} />
                 <div id="workspace-settings-scroll" className="min-w-0 max-w-full space-y-10 pb-8 lg:pr-2">
                     <WorkspaceSettingsSection workspace={workspace} userId={user.id} />
                     <Suspense fallback={<SettingsSectionFallback id="services" title="Services" description="Catalogue and default pricing for client work." height="min-h-72" />}><ServicesSettingsSection workspace={workspace} initialServiceId={query.service} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
@@ -257,7 +224,6 @@ export default async function SettingsPage({ params, searchParams }: PageProps) 
                     <Suspense fallback={<SettingsSectionFallback id="connections" title="Connections" description="Manage active provider credentials and client communication delivery channels." height="min-h-64" />}><ConnectionsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="users" title="Users" description="Invite teammates and control workspace access." height="min-h-56" />}><UsersSettingsSection workspace={workspace} isOwner={isOwner} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="teams" title="Teams" description="Selling, management, and service delivery responsibilities." height="min-h-56" />}><TeamsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
-                    {leadgenOperationsAvailable() ? <Suspense fallback={<SettingsSectionFallback id="leadgen" title="Lead Gen" description="Manage poll automation, ICP targeting, source readiness, mappings, and runtime controls." height="min-h-80" />}><LeadgenSettingsSection workspace={workspace} /></Suspense> : null}
                     <p className="pt-2 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
                 </div>
             </div>

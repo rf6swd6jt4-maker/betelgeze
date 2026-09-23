@@ -67,6 +67,11 @@ export class WorkspaceRecordCache<T> {
         this.publish(entry, { ...entry.snapshot, loading: true, error: null })
         let timedOut = false
         let timeout: ReturnType<typeof setTimeout>
+        let abortRead!: () => void
+        const cancelled = new Promise<never>((_, reject) => {
+            abortRead = () => reject(new DOMException("Panel read cancelled", "AbortError"))
+            controller.signal.addEventListener("abort", abortRead, { once: true })
+        })
         const deadline = new Promise<never>((_, reject) => {
             timeout = setTimeout(() => {
                 timedOut = true
@@ -76,7 +81,10 @@ export class WorkspaceRecordCache<T> {
         })
         // Race the whole read, including body parsing. An unresponsive read
         // must release the deduplicated slot so an explicit retry can work.
-        const request = Promise.race([Promise.resolve().then(() => read(controller.signal)), deadline]).then((data) => {
+        const request = Promise.race([Promise.resolve().then(() => {
+            controller.signal.throwIfAborted()
+            return read(controller.signal)
+        }), deadline, cancelled]).then((data) => {
             if (entry.generation === generation && !controller.signal.aborted) {
                 this.publish(entry, { data, loading: false, error: null, updatedAt: this.now(), revision: entry.generation })
             }
@@ -88,6 +96,7 @@ export class WorkspaceRecordCache<T> {
             throw error
         }).finally(() => {
             clearTimeout(timeout)
+            controller.signal.removeEventListener("abort", abortRead)
             if (entry.request === request) { entry.request = undefined; entry.controller = undefined; this.trim() }
         })
         entry.request = request
@@ -100,6 +109,7 @@ export class WorkspaceRecordCache<T> {
             if (!predicate(key)) continue
             entry.generation += 1
             entry.controller?.abort()
+            entry.controller = undefined
             entry.request = undefined
             this.publish(entry, { ...entry.snapshot, revision: entry.generation, updatedAt: 0, loading: false })
         }
@@ -108,6 +118,7 @@ export class WorkspaceRecordCache<T> {
         for (const entry of [...this.entries.values()]) {
             entry.generation += 1
             entry.controller?.abort()
+            entry.controller = undefined
             entry.request = undefined
             this.publish(entry, { data: null, loading: false, error: null, updatedAt: 0, revision: entry.generation })
         }

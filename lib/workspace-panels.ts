@@ -1,7 +1,5 @@
 import type { WorkspaceRole } from "@/lib/workspace-roles"
 import type { WorkspaceCapability } from "@/lib/workspace-capabilities"
-// @ts-expect-error Node test runner requires the source extension.
-import { leadgenOperationsAvailable } from "./leadgen/availability.ts"
 
 export type WorkspacePanelDefinition = {
     key: string
@@ -28,7 +26,6 @@ export const WORKSPACE_PANELS = [
     { key: "communications", label: "Communications", route: "communications", capability: "communications.manage", allMembers: true, description: "Relationship communication summaries", keywords: ["messages", "chat", "whatsapp", "communication"] },
     { key: "library", label: "Library", route: "work-items", activeRoutes: ["work-items", "sops", "assets", "notes"], capability: "library.manage", allMembers: true, description: "Workspace procedures, work items, assets and notes", keywords: ["tasks", "files", "uploads", "gallery", "sop", "procedures", "call notes", "context"] },
     { key: "onboarding-builder", label: "Onboarding Builder", route: "onboarding-builder", capability: "onboarding_builder.manage", minimumRole: "admin", standalone: true, description: "Build workspace onboarding modules and session structure", keywords: ["onboarding modules", "session builder", "forms builder", "form fields", "welcome", "completion", "visual builder"] },
-    ...(leadgenOperationsAvailable() ? [LEADGEN_PANEL] : []),
     { key: "admin", label: "Admin", route: "admin", capability: "admin.manage", minimumRole: "admin", description: "Private OKRs, activity, maintenance, and automation-failure follow-up", keywords: ["admin tools", "okr", "objectives", "key results", "metrics", "activity console", "automation history", "maintenance", "automation failures", "admin work items", "goals"] },
     { key: "settings", label: "Settings", route: "settings", capability: "settings.manage", minimumRole: "admin", description: "Unified workspace settings", keywords: ["workspace settings", "services", "agency branding", "onboarding colours"] },
 ] as const satisfies readonly WorkspacePanelDefinition[]
@@ -36,7 +33,7 @@ export const WORKSPACE_PANELS = [
 // This legacy destination is deliberately absent from navigation and search.
 const LEGACY_FULFILMENT_PANEL = { key: "fulfilment", label: "Fulfilment", route: "work", capability: "fulfilment.manage", allMembers: true, description: "Fulfilment relationship work items", keywords: ["tasks", "project management", "queue", "fulfilment"] } as const satisfies WorkspacePanelDefinition
 const LEGACY_APPOINTMENT_PANEL = { key: "appointment-setting", label: "Appointment Setting", route: "appointment-setting", capability: "appointment_setting.manage", requiresService: true, description: "Legacy appointment table", keywords: [] } as const satisfies WorkspacePanelDefinition
-export type WorkspacePanel = (typeof WORKSPACE_PANELS)[number] | typeof LEGACY_FULFILMENT_PANEL | typeof LEGACY_APPOINTMENT_PANEL
+export type WorkspacePanel = (typeof WORKSPACE_PANELS)[number] | typeof LEGACY_FULFILMENT_PANEL | typeof LEGACY_APPOINTMENT_PANEL | typeof LEADGEN_PANEL
 export type WorkspacePanelKey = WorkspacePanel["key"]
 
 export function canAccessPrivateWorkspacePanels(role: WorkspaceRole) {

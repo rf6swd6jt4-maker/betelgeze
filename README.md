@@ -57,8 +57,6 @@ R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
 R2_BUCKET_NAME=
 R2_PUBLIC_BASE_URL=
-SUNBIZ_SHARD_BASE_URL=
-AZ_OWNER_SHARD_BASE_URL=
 CLOUDFLARE_ACCOUNT_ID=
 CLOUDFLARE_API_TOKEN=
 SYSTEM_HEALTH_SUPABASE_DATABASE_LIMIT_MB=500
@@ -73,6 +71,9 @@ STRIPE_INVOICE_DAYS_UNTIL_DUE=7
 META_WHATSAPP_CONSENT_TEMPLATE_NAME=
 META_WHATSAPP_CONSENT_TEMPLATE_LANGUAGE=en
 ```
+
+Lead Gen processing and imports have been retired. Administrators can still
+inspect saved companies and poll history at `/[workspaceSlug]/leadgen`.
 
 `SUPABASE_SERVICE_ROLE_KEY` must only be used server-side. Do not put a
 business's Stripe, ClickUp, or Meta credentials in `NEXT_PUBLIC_*` variables.

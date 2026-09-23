@@ -7,12 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
-    "import:sunbiz": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/import-sunbiz-owner-index.ts",
-    "build:sunbiz-shards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/build-sunbiz-shards.ts",
-    "upload:sunbiz-shards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/upload-sunbiz-shards.ts",
-    "build:az-owner-shards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/build-arizona-owner-shards.ts",
-    "upload:az-owner-shards": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/upload-arizona-owner-shards.ts"
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1057.0",
@@ -20,8 +15,6 @@
     "@codemirror/commands": "^6.11.0",
     "@codemirror/state": "^6.7.4",
     "@codemirror/view": "^6.43.11",
-    "@duckdb/node-api": "^1.5.4-r.1",
-    "@mapbox/vector-tile": "^3.0.0",
     "@napi-rs/canvas": "1.0.9",
     "@react-email/render": "^2.1.0",
     "@supabase/ssr": "^0.10.3",
@@ -30,9 +23,7 @@
     "fast-xml-parser": "5.11.1",
     "image-size": "2.0.4",
     "next": "^16.2.11",
-    "pbf": "^5.1.0",
     "pdfjs-dist": "6.3.289",
-    "pmtiles": "^4.4.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "resend": "^6.21.0",

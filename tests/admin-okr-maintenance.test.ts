@@ -437,12 +437,11 @@ test("Admin Work and Maintenance keep compact list rows while OKRs use the unifi
 })
 
 test("the private activity console covers core automation producers", async () => {
-    const [migration, activityMetrics, activityPage, activityTrends, leadgen, onboarding, stripe, whatsapp, gantt] = await Promise.all([
+    const [migration, activityMetrics, activityPage, activityTrends, onboarding, stripe, whatsapp, gantt] = await Promise.all([
         readFile("supabase/migrations/20260804123000_admin_activity_console.sql", "utf8"),
         readFile("lib/admin/activity-metrics.ts", "utf8"),
         readFile("app/[workspaceSlug]/admin/activity/page.tsx", "utf8"),
         readFile("components/admin/ActivityTrends.tsx", "utf8"),
-        readFile("lib/leadgen/osm-worker.ts", "utf8"),
         readFile("lib/onboarding/canonical.ts", "utf8"),
         readFile("app/api/stripe/webhook/route.ts", "utf8"),
         readFile("lib/client-messages/clickup-bridge.ts", "utf8"),
@@ -458,7 +457,7 @@ test("the private activity console covers core automation producers", async () =
     assert.match(activityLoader, /listAdminActivitySince/)
     assert.match(activityTrends, /tone=\{metric\.tone\}/)
     assert.match(activityPage, /Event stream/)
-    for (const source of [leadgen, onboarding, stripe, whatsapp, gantt]) assert.match(source, /recordAdminActivity|recordClientAdminActivity/)
+    for (const source of [onboarding, stripe, whatsapp, gantt]) assert.match(source, /recordAdminActivity|recordClientAdminActivity/)
 })
 
 test("Create OKR uses the shared shell modal and is never preloaded for Staff", async () => {
@@ -517,16 +516,15 @@ test("Maintenance responsibility is managed through the required workspace team"
     assert.match(adminPage, /listAdminWorkItems/)
 })
 
-test("Settings and search gate Lead Gen while preserving other settings links", async () => {
+test("Settings and search retire Lead Gen while preserving other settings links", async () => {
     const [settings, search, shell] = await Promise.all([
         readFile("app/[workspaceSlug]/settings/page.tsx", "utf8"),
         readFile("app/api/workspaces/[workspaceSlug]/search/route.ts", "utf8"),
         readFile("components/workspace/WorkspaceTopBarClient.tsx", "utf8"),
     ])
-    assert.match(settings, /section\.id !== "leadgen" \|\| leadgenOperationsAvailable\(\)/)
-    assert.match(settings, /\{leadgenOperationsAvailable\(\) \? <Suspense[^\n]*<LeadgenSettingsSection/)
+    assert.doesNotMatch(settings, /LeadgenSettingsSection|leadgenOperationsAvailable|id: "leadgen"/)
     assert.match(search, /settings-teams/)
-    assert.match(search, /leadgenOperationsAvailable\(\) \|\| \(!entry\.href\.includes\("\/leadgen"\)/)
+    assert.doesNotMatch(search, /leadgenOperationsAvailable|from\("leadgen_|settings-leadgen/)
     assert.match(shell, /settings#teams/)
     assert.doesNotMatch(shell, /settings#leadgen/)
 })

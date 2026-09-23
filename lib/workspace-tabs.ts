@@ -33,13 +33,12 @@ export type WorkspaceTabFrameMessage = {
     source: typeof WORKSPACE_TAB_MESSAGE_SOURCE
     target: "host"
     tabId: string
-    type: "navigation-intent" | "navigation-intent-end" | "meaningful-ready" | "navigation-failed" | "history-step" | "record-title" | "location" | "location-replace" | "mutation" | "action-start" | "action-end" | "mutation-start" | "mutation-end" | "refresh-start" | "refresh-end" | "context-status" | "context-obstruction" | "navigation-start" | "open-tab" | "poll-started" | "reopen-closed-tab" | "communications-unread" | "departure-ready"
+    type: "navigation-intent" | "navigation-intent-end" | "meaningful-ready" | "navigation-failed" | "history-step" | "record-title" | "location" | "location-replace" | "mutation" | "action-start" | "action-end" | "mutation-start" | "mutation-end" | "refresh-start" | "refresh-end" | "context-status" | "context-obstruction" | "navigation-start" | "open-tab" | "reopen-closed-tab" | "communications-unread" | "departure-ready"
     url?: string
     relationshipId?: string | null
     contextSupported?: boolean
     context?: WorkspaceTabRelationshipContext | null
     contextObstructed?: boolean
-    pollId?: string
     historyDelta?: -1 | 1
     unreadCount?: number
     title?: string
@@ -137,7 +136,8 @@ export function workspaceTabTitleForUrl(value: string, workspaceSlug: string) {
     if (suffix.startsWith("communications/")) return "Communication"
     if (suffix === "leadgen") return "Lead Gen"
     if (suffix === "leadgen/new") return "New Poll"
-    if (suffix.startsWith("leadgen/poll/")) return "Lead Poll"
+    if (suffix.startsWith("leadgen/poll/")) return "Saved Poll"
+    if (suffix.startsWith("leadgen/company/")) return "Saved Lead"
     if (suffix === "leadgen/polls") return "Polls"
     if (suffix === "admin") return "Admin"
     if (suffix === "settings") return "Settings"
@@ -169,7 +169,7 @@ export function workspaceRouteIsRecordDetail(value: string, workspaceSlug: strin
     const segments = parsed.pathname.slice(prefix.length).split("/").filter(Boolean)
     if (segments.length === 2 && ["relationships", "onboarding", "work", "work-items", "assets", "notes"].includes(segments[0])) return true
     return segments.length === 3
-        && ((segments[0] === "leadgen" && segments[1] === "poll")
+        && ((segments[0] === "leadgen" && ["poll", "company"].includes(segments[1]))
             || (segments[0] === "admin" && ["activity", "okrs"].includes(segments[1])))
 }
 

@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+/scripts/browser/node_modules/
+/browser-results/
 /.pnp
 .pnp.*
 .yarn/*

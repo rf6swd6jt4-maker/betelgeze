@@ -1,5 +1,5 @@
 import { PanelRouteLoading } from "@/components/workspace/PanelRouteLoading"
 
-export default function LeadgenLoading() {
+export default function Loading() {
     return <PanelRouteLoading variant="leadgen" />
 }

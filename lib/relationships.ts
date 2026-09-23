@@ -551,7 +551,7 @@ export async function listRelationshipTimelineItems(workspaceSlug: string, relat
             is_key_task: true,
             native_kind: "leadgen_company",
             native_id: relationship.leadgen_company_id,
-                native_href: workspaceHref(workspaceSlug, "leadgen"),
+            native_href: workspaceHref(workspaceSlug, relationship.leadgen_company_id ? `leadgen/company/${relationship.leadgen_company_id}` : "leadgen"),
             planned_start_date: null,
             due_date: null,
             planned_end_date: null,

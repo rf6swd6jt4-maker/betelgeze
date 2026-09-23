@@ -16,6 +16,7 @@ import {
 
 const searchRoute = readFileSync("app/api/workspaces/[workspaceSlug]/search/route.ts", "utf8")
 const leadgenPanel = readFileSync("app/[workspaceSlug]/leadgen/page.tsx", "utf8")
+const leadgenCompanyPanel = readFileSync("app/[workspaceSlug]/leadgen/company/[companyId]/page.tsx", "utf8")
 const leadgenPollsPanel = readFileSync("app/[workspaceSlug]/leadgen/polls/page.tsx", "utf8")
 const leadgenPollPanel = readFileSync("app/[workspaceSlug]/leadgen/poll/[pollId]/page.tsx", "utf8")
 const workspaceTopBar = readFileSync("components/workspace/WorkspaceTopBarClient.tsx", "utf8")
@@ -110,15 +111,14 @@ test("mobile workspace navigation scrolls within the dynamic viewport", () => {
 test("search calls top-level destinations panels and hides all private records from staff", () => {
     assert.match(searchRoute, /type: "Panel"/)
     assert.doesNotMatch(searchRoute, /type: "Page"/)
-    assert.match(searchRoute, /canAccessPrivatePanels && !companyError/)
-    assert.match(searchRoute, /canAccessPrivatePanels && !pollError/)
+    assert.doesNotMatch(searchRoute, /from\("leadgen_(?:companies|polls)"\)/, "retired Lead Gen records must not be searched from the ordinary workspace search")
     assert.match(searchRoute, /canAccessWorkspacePanel\(panel, access\.role, access\.capabilities\)/)
     assert.match(searchRoute, /accessibleRelationshipIds\(workspaceAccess\)/)
     assert.match(searchRoute, /accessibleWorkItemIds\(workspaceAccess/)
 })
 
 test("private Lead Gen routes require admin access", () => {
-    for (const source of [leadgenPanel, leadgenPollsPanel, leadgenPollPanel]) {
+    for (const source of [leadgenPanel, leadgenCompanyPanel, leadgenPollsPanel, leadgenPollPanel]) {
         assert.match(source, /requireWorkspace\(workspaceSlug, "admin"\)/)
     }
 })

@@ -56,6 +56,8 @@ Workspace composer focus notifications identify their source window; only the ac
 
 The workspace must not reset document scrolling during keyboard focus, blur, or viewport movement. WebKit's native focus scroll can otherwise move the whole fixed shell down and back up. `createViewportOriginRecovery` repairs residual document scroll only after the unfocused, unzoomed viewport has returned to its full height and origin for two frames. New focus, viewport changes, suspension, and teardown cancel pending recovery. Never compensate by translating the shell by `visualViewport.offsetTop`.
 
+If WebKit pans the locked workspace despite zero document scroll, the workspace may correct its fixed top bar, tab bar, and panel from the top bar's measured displacement on the existing viewport events. Keep the panel's bottom at the composer viewport controller's edge. The correction must leave document scroll, focused editor, selection, and drafts untouched; sample once again in the next animation frame for viewport metrics that arrive after their event, and remove the correction on teardown.
+
 `ComposerFooter` owns the 180ms height transition for multiline drafts, reply previews, and attachment/sticker trays. Its footer stays aligned to the bottom while the message pane follows the changing height. Desktop and reduced motion use immediate sizing. Keep native editor scrolling, selection, and composition intact; mark its scroller with `data-composer-scroll` so footer gesture containment permits long drafts to scroll.
 
 ## Chat message formatting

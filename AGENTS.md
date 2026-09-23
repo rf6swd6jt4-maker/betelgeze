@@ -1,3 +1,5 @@
+Read and follow `app_speed.md` before planning or implementing any app change. Read `docs/platform-foundation.md` for ownership and `docs/reliability-release-gate.md` before release. Preserve client/user data, accepted work, stored files and immutable migrations.
+
 <!-- BEGIN:nextjs-agent-rules -->
 # This is NOT the Next.js you know
 

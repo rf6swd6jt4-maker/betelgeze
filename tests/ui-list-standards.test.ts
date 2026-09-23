@@ -3,8 +3,6 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 
 const canonicalListPages = [
-    "app/[workspaceSlug]/leadgen/page.tsx",
-    "app/[workspaceSlug]/leadgen/polls/page.tsx",
     "components/workspace/NativeRelationshipsPanel.tsx",
     "app/[workspaceSlug]/onboarding/page.tsx",
     "app/[workspaceSlug]/work/page.tsx",
@@ -12,6 +10,22 @@ const canonicalListPages = [
     "app/[workspaceSlug]/admin/maintenance/page.tsx",
     "app/[workspaceSlug]/admin/activity/page.tsx",
 ]
+
+test("retired Lead Gen poll archive uses the shared read-only list anatomy", async () => {
+    const source = await readFile("components/leadgen/LeadgenPollHistory.tsx", "utf8")
+    for (const primitive of ["PanelTabHeader", "List", "ListItem", "ListPrimaryRow", "ListSecondaryRow", "ListTitle"]) {
+        assert.match(source, new RegExp(`<${primitive}`))
+    }
+    assert.doesNotMatch(source, /<MobileListActionSurface|<ListActionMenu/, "the archive has no mutation actions")
+})
+
+test("saved company archive uses the shared read-only list anatomy", async () => {
+    const source = await readFile("app/[workspaceSlug]/leadgen/page.tsx", "utf8")
+    for (const primitive of ["PanelTabHeader", "List", "ListItem", "ListPrimaryRow", "ListSecondaryRow", "ListTitle"]) {
+        assert.match(source, new RegExp(`<${primitive}`))
+    }
+    assert.doesNotMatch(source, /<MobileListActionSurface|<ListActionMenu/)
+})
 
 test("canonical platform lists use the shared header and two-row list primitives", async () => {
     const pages = await Promise.all(canonicalListPages.map(async (path) => ({ path, source: await readFile(path, "utf8") })))

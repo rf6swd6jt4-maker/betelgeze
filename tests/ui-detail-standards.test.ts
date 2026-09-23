@@ -8,9 +8,22 @@ const directDetailPages = [
     "app/[workspaceSlug]/work/[relationshipId]/page.tsx",
     "app/[workspaceSlug]/work-items/[id]/page.tsx",
     "app/[workspaceSlug]/assets/[id]/page.tsx",
-    "app/[workspaceSlug]/leadgen/poll/[pollId]/page.tsx",
     "app/[workspaceSlug]/admin/activity/[eventId]/page.tsx",
 ]
+
+test("retired Lead Gen poll details retain shared read-only identity and fields", async () => {
+    const source = await readFile("app/[workspaceSlug]/leadgen/poll/[pollId]/page.tsx", "utf8")
+    assert.match(source, /<DetailPageHeader/)
+    assert.match(source, /<DetailFields>/)
+    assert.doesNotMatch(source, /<DetailDangerZone|<DetailDangerAction/, "historical polls cannot be deleted")
+})
+
+test("saved Lead Gen company details retain shared read-only identity and fields", async () => {
+    const source = await readFile("app/[workspaceSlug]/leadgen/company/[companyId]/page.tsx", "utf8")
+    assert.match(source, /<DetailPageHeader/)
+    assert.match(source, /<DetailFields>/)
+    assert.doesNotMatch(source, /<DetailDangerZone|<DetailDangerAction/)
+})
 
 test("record detail routes use the shared detail header and danger-zone anatomy", async () => {
     const pages = await Promise.all(directDetailPages.map(async (path) => ({ path, source: await readFile(path, "utf8") })))

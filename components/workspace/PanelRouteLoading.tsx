@@ -173,10 +173,9 @@ function AdminLoading({ section = "work" }: { section?: "work" | "okrs" | "activ
 }
 
 function LeadgenLoading({ polls = false }: { polls?: boolean }) {
-    const title = polls ? "Polls" : "Leads"
+    const title = polls ? "Poll history" : "Saved leads"
     return <PanelFrame title={title}>
-        <PanelHeader title={title} action tabs={["Leads", "Polls"]} activeTab={title} />
-        <StatsSkeleton count={polls ? 4 : 3} />
+        <PanelHeader title={title} />
         <ListSkeleton />
     </PanelFrame>
 }

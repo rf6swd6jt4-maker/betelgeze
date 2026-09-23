@@ -61,7 +61,7 @@ test("heavy panel homes stream their useful core before secondary metadata", () 
     assert.match(relationships, /<Contents authorization=/)
     assert.match(onboarding, /<Suspense fallback=\{<OnboardingPanelFallback \/>\}>/)
     assert.match(onboarding, /\.in\("metadata->>session_id", sessionIds\)/)
-    for (const section of ["ServicesSettingsSection", "OnboardingSettingsSection", "AgencyBrandingSettingsSection", "ConnectionsSettingsSection", "UsersSettingsSection", "TeamsSettingsSection", "LeadgenSettingsSection"]) {
+    for (const section of ["ServicesSettingsSection", "OnboardingSettingsSection", "AgencyBrandingSettingsSection", "ConnectionsSettingsSection", "UsersSettingsSection", "TeamsSettingsSection"]) {
         assert.match(settings, new RegExp(`<Suspense[^>]*>[\\s\\S]*?<${section}`, "u"), `${section} must keep an independent loading boundary`)
     }
 })
@@ -179,7 +179,7 @@ test("route loading UI reflects each panel's real composition", () => {
     assert.match(loading, /function SettingsLoading/)
     assert.match(loading, /function OkrTableSkeleton/)
     assert.match(loading, /tabs=\{\["Work", "OKRs", "Maintenance", "Activity"\]\} activeTab=\{activeTab\}/)
-    assert.match(loading, /tabs=\{\["Leads", "Polls"\]\} activeTab=\{title\}/)
+    assert.match(loading, /const title = polls \? "Poll history" : "Saved leads"/)
     assert.match(loading, /tabs=\{\["Work Items", "Assets", "Notes"\]\} activeTab="Assets"/)
     assert.match(loading, /variant === "admin-okrs"[\s\S]*?<AdminLoading section="okrs"/)
     assert.match(currentLoading, /searchParams\.get\("view"\) === "okrs"[\s\S]*?"admin-okrs"/)
@@ -211,8 +211,8 @@ test("route loading UI reflects each panel's real composition", () => {
         "admin/activity/[eventId]": "detail",
         "admin/okrs/[okrId]": "detail",
         "assets/[id]": "detail",
-        "leadgen/new": "detail",
         "leadgen/poll/[pollId]": "detail",
+        "leadgen/company/[companyId]": "detail",
         "onboarding/[relationshipId]": "detail",
         "work/[relationshipId]": "detail",
         "work-items/[id]": "detail",

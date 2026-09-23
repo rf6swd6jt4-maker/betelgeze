@@ -62,7 +62,12 @@ export function resolveFoundationBase(cwd, eventName, event, manualBase = "") {
     if (!ref) throw new Error("Pull request base SHA is missing.");
   } else if (eventName === "push") {
     if (!event.before) throw new Error("Push before SHA is missing.");
-    ref = /^0+$/.test(event.before) ? emptyTree(cwd) : event.before;
+    // Candidate branches must check their entire change against main on every
+    // push. A first branch push has a zero before SHA, but existing migrations
+    // are still history; subsequent pushes cannot hide an earlier violation.
+    ref = event.ref?.startsWith("refs/heads/codex/")
+      ? git(cwd, ["merge-base", "HEAD", "refs/remotes/origin/main"]).stdout.trim()
+      : /^0+$/.test(event.before) ? emptyTree(cwd) : event.before;
   } else if (eventName === "workflow_dispatch") {
     if (manualBase.trim()) {
       ref = manualBase.trim();

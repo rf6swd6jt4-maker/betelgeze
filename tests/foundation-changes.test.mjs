@@ -256,3 +256,22 @@ test("event bases cover pull requests, push history, initial push and manual bra
   assert.throws(() => resolveFoundationBase(cwd, "push", { before: "not-a-commit" }));
   assert.throws(() => resolveFoundationBase(cwd, "workflow_dispatch", {}, "--help"), /valid base/);
 });
+
+
+test("candidate branch pushes keep all changes and historical migrations in scope", (t) => {
+  const { cwd, base } = fixture(t);
+  const baselineTree = git(cwd, "rev-parse", `${base}^{tree}`);
+  const event = { before: "0".repeat(40), ref: "refs/heads/codex/candidate" };
+  assert.equal(resolveFoundationBase(cwd, "push", event), baselineTree);
+  assert.equal(inspectFoundationChanges(cwd, baselineTree).historicalMigrationCount, 1);
+  put(cwd, historical, "select 99;\n");
+  git(cwd, "add", ".");
+  git(cwd, "commit", "-m", "Earlier candidate change");
+  const earlier = git(cwd, "rev-parse", "HEAD");
+  put(cwd, "src/new.js", "export const next = 1;\n");
+  git(cwd, "add", ".");
+  git(cwd, "commit", "-m", "Later candidate change");
+  const nextBase = resolveFoundationBase(cwd, "push", { ...event, before: earlier });
+  assert.equal(nextBase, baselineTree);
+  assert.match(inspectFoundationChanges(cwd, nextBase).issues.join("\n"), /Historical migration/);
+});

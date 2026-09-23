@@ -4,7 +4,7 @@ Base: `336439e4027c785c252edcc298d5e066acf81e75`. The user authorized implementa
 
 ## Changes
 
-- Remove the operational Lead Gen source, settings, actions, import commands, NER deployment source/workflow, old poll-start notifications and four exclusive dependencies. Remove DuckDB's forced all-route output tracing. Retain bounded authorized company/poll archives, exact historical relationship links, and denial endpoints for stale processing/import URLs. See [retirement](./leadgen-retirement.md).
+- Remove the operational Lead Gen source, settings, actions, import commands, NER deployment source/workflow (retaining its existing automatic-deployment denial), old poll-start notifications and four exclusive dependencies. Remove DuckDB's forced all-route output tracing. Retain bounded authorized company/poll archives, exact historical relationship links, and denial endpoints for stale processing/import URLs. See [retirement](./leadgen-retirement.md).
 - Correct a measured upward displacement of fixed mobile workspace chrome without changing document scroll or editor selection. The existing composer controller keeps its bottom-edge ownership. Physical compositor behavior remains unverified; see [geometry evidence](./mobile-consolidation.md).
 - Settle cancelled panel reads immediately and release their deadlines even when the upstream reader ignores abort. A 250-cycle controlled baseline retains 250 deadlines; the candidate retains zero. See [resource evidence](./resident-stability.md).
 - Add development-only Chromium/WebKit fixture gates, with exact case counts and non-loopback requests blocked, to Foundations CI. Browser tooling has a separate lockfile and is not an application dependency. Candidate branches now run the same workflow before main promotion, checking their entire diff against main on every push.
@@ -12,7 +12,7 @@ Base: `336439e4027c785c252edcc298d5e066acf81e75`. The user authorized implementa
 
 ## Local validation
 
-- Complete Node suite: 1,288 passed; zero failed/skipped/cancelled. Lead Gen implementation tests were retired with their deleted implementation; replacement tests enforce denied mutation and authorized, paginated archives.
+- Complete Node suite: 1,289 passed; zero failed/skipped/cancelled. Lead Gen implementation tests were retired with their deleted implementation; replacement tests enforce denied mutation and authorized, paginated archives.
 - Strict scoped lint, immutable migration/whitespace gate: passed. All 266 historical migrations unchanged; no new migrations. `app_speed.md` and `app-alerts.md` unchanged.
 - Production webpack build with loopback placeholder Supabase configuration: passed. Removed DuckDB/vector-tile/PMTiles packages are absent from produced server file traces. This does not measure transferred client bytes or production latency.
 - Chromium 153 and Playwright WebKit 26.6: 93 checks per engine (viewport geometry 6, departure 32, production draft recovery 25, StrictMode draft recovery 25, motion 5). Real application components/helpers with synthetic DOM/saves; no live account or provider requests. Hosted workflow rechecks the committed candidate.

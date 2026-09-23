@@ -142,3 +142,11 @@ test("retained relationship provenance opens its exact saved company", () => {
     const relationships = readFileSync("lib/relationships.ts", "utf8")
     assert.match(relationships, /relationship\.leadgen_company_id \? `leadgen\/company\/\$\{relationship\.leadgen_company_id\}` : "leadgen"/)
 })
+
+
+test("retired NER keeps its automatic deployment denial without service code", () => {
+    const config = JSON.parse(readFileSync("services/ner/vercel.json", "utf8"))
+    assert.equal(config.git.deploymentEnabled, false)
+    assert.equal(existsSync("services/ner/app.py"), false)
+    assert.equal(existsSync(".github/workflows/deploy-ner.yml"), false)
+})

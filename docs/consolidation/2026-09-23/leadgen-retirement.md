@@ -12,7 +12,7 @@ This change removes Lead Gen's operational application, import commands, and sep
 
 - Poll creation/retry/cancel/removal actions; task, evidence, qualification and provider workers; source catalogue/settings UI; browser auto-refresh; legacy operational loading presentation (archive routes retain shared loading boundaries).
 - Five Sunbiz/Arizona import/build/upload commands and their package scripts; generated name-frequency data and generator.
-- `services/ner` and `.github/workflows/deploy-ner.yml`. This removes repository deployment automation only. An already deployed NER project, old deployment URL, external caller, old process, or scheduler must be inventoried separately; source deletion does not disable it.
+- NER implementation and `.github/workflows/deploy-ner.yml`. Retain only `services/ner/vercel.json` with `git.deploymentEnabled=false`: deleting this control re-enables automatic builds for the still-linked Vercel project. This removes repository deployment automation only. An already deployed NER project, old deployment URL, external caller, old process, or scheduler must be inventoried separately; source deletion does not disable it.
 - Implementation-specific Lead Gen tests, replaced with retirement admission, archive pagination/auth, and cursor checks.
 
 ## Dependency evidence
@@ -22,3 +22,8 @@ The removed `lib/leadgen/overture-duckdb.ts` was the sole app importer of `@duck
 ## Verification and release limit
 
 Focused tests cover stale POST denial before request parsing, bounded workspace-scoped company/poll archive reads, validated cursor input, and absent operational entrypoints. Shared list/detail/access tests cover read-only archive anatomy and admin route authorization. `git diff --check` and app/lib TypeScript diagnostics passed. The repository's broad `tsc --noEmit` still reports pre-existing test import-extension errors; the coordinator owns build and wider test gates. No live deployment, provider state, external scheduler, or physical/browser session is proven by these source checks. Previous accepted requests or old deployments require a separate live inventory before describing Lead Gen as externally stopped.
+
+
+## Deployment configuration follow-up
+
+The first production promotion exposed a live linked `betelgeze-ner` Vercel project: deleting its existing `git.deploymentEnabled=false` configuration caused obsolete automatic build attempts. Restore that exact configuration as a retirement marker while keeping all service implementation and the manual deploy workflow removed. [Vercel documents this Git control](https://vercel.com/docs/project-configuration/git-configuration). This prevents future automatic builds; it does not delete the project, old deployment URLs or any stored data, and does not certify that an older endpoint is disabled. The main Betelgeze deployment is a separate project.

@@ -1,5 +1,7 @@
 import type { WorkspaceRole } from "@/lib/workspace-roles"
 import type { WorkspaceCapability } from "@/lib/workspace-capabilities"
+// @ts-expect-error Node test runner requires the source extension.
+import { leadgenOperationsAvailable } from "./leadgen/availability.ts"
 
 export type WorkspacePanelDefinition = {
     key: string
@@ -15,6 +17,9 @@ export type WorkspacePanelDefinition = {
     standalone?: boolean
 }
 
+// Retain the historical identity and authorization while removing discovery.
+const LEADGEN_PANEL = { key: "leadgen", label: "Lead Gen", route: "leadgen", capability: "leadgen.manage", minimumRole: "admin", description: "Lead generation dashboard", keywords: ["leads", "lead generation"] } as const satisfies WorkspacePanelDefinition
+
 export const WORKSPACE_PANELS = [
     { key: "queue", label: "Work Queue", route: "queue", capability: "fulfilment.manage", allMembers: true, description: "Your next ready work across clients and services", keywords: ["home", "my work", "priority", "tasks"] },
     { key: "relationships", label: "Relationships", route: "relationships", capability: "relationships.view", description: "Relationship Hub list", keywords: ["dashboard", "crm", "people", "accounts"] },
@@ -23,7 +28,7 @@ export const WORKSPACE_PANELS = [
     { key: "communications", label: "Communications", route: "communications", capability: "communications.manage", allMembers: true, description: "Relationship communication summaries", keywords: ["messages", "chat", "whatsapp", "communication"] },
     { key: "library", label: "Library", route: "work-items", activeRoutes: ["work-items", "sops", "assets", "notes"], capability: "library.manage", allMembers: true, description: "Workspace procedures, work items, assets and notes", keywords: ["tasks", "files", "uploads", "gallery", "sop", "procedures", "call notes", "context"] },
     { key: "onboarding-builder", label: "Onboarding Builder", route: "onboarding-builder", capability: "onboarding_builder.manage", minimumRole: "admin", standalone: true, description: "Build workspace onboarding modules and session structure", keywords: ["onboarding modules", "session builder", "forms builder", "form fields", "welcome", "completion", "visual builder"] },
-    { key: "leadgen", label: "Lead Gen", route: "leadgen", capability: "leadgen.manage", minimumRole: "admin", description: "Lead generation dashboard", keywords: ["leads", "lead generation"] },
+    ...(leadgenOperationsAvailable() ? [LEADGEN_PANEL] : []),
     { key: "admin", label: "Admin", route: "admin", capability: "admin.manage", minimumRole: "admin", description: "Private OKRs, activity, maintenance, and automation-failure follow-up", keywords: ["admin tools", "okr", "objectives", "key results", "metrics", "activity console", "automation history", "maintenance", "automation failures", "admin work items", "goals"] },
     { key: "settings", label: "Settings", route: "settings", capability: "settings.manage", minimumRole: "admin", description: "Unified workspace settings", keywords: ["workspace settings", "services", "agency branding", "onboarding colours"] },
 ] as const satisfies readonly WorkspacePanelDefinition[]
@@ -52,7 +57,7 @@ export function canAccessWorkspacePanel(
 }
 
 export function workspacePanelByKey(key: WorkspacePanelKey) {
-    return key === "fulfilment" ? LEGACY_FULFILMENT_PANEL : key === "appointment-setting" ? LEGACY_APPOINTMENT_PANEL : WORKSPACE_PANELS.find((panel) => panel.key === key)!
+    return key === "leadgen" ? LEADGEN_PANEL : key === "fulfilment" ? LEGACY_FULFILMENT_PANEL : key === "appointment-setting" ? LEGACY_APPOINTMENT_PANEL : WORKSPACE_PANELS.find((panel) => panel.key === key)!
 }
 
 export function workspacePanelForUrl(value: string, workspaceSlug: string) {
@@ -60,6 +65,7 @@ export function workspacePanelForUrl(value: string, workspaceSlug: string) {
     const prefix = `/${workspaceSlug}/`
     if (!pathname.startsWith(prefix)) return null
     const route = pathname.slice(prefix.length).split("/")[0]
+    if (route === LEADGEN_PANEL.route) return LEADGEN_PANEL
     if (route === LEGACY_FULFILMENT_PANEL.route) return LEGACY_FULFILMENT_PANEL
     if (route === LEGACY_APPOINTMENT_PANEL.route) return LEGACY_APPOINTMENT_PANEL
     return WORKSPACE_PANELS.find((panel) => panel.route === route || ("activeRoutes" in panel && (panel.activeRoutes as readonly string[]).includes(route))) ?? null

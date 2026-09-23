@@ -1,3 +1,5 @@
+import { leadgenOperationsAvailable } from "@/lib/leadgen/availability"
+import { LeadgenQuarantineNotice } from "@/components/leadgen/LeadgenQuarantineNotice"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
 import { NewPollButton } from "@/components/leadgen/NewPollButton"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
@@ -68,16 +70,17 @@ export default async function LeadgenWorkspacePage({ params, searchParams }: Pag
     }
 
     return <main className="min-h-screen bg-neutral-950 px-4 pb-5 text-white sm:px-6 sm:pb-6">
-        <ListAutoRefresh />
+        {leadgenOperationsAvailable() ? <ListAutoRefresh /> : null}
         <div className="mx-auto max-w-7xl">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
             <PanelTabHeader
                 title="Leads"
                 description={`Qualified owner-phone leads from the latest poll. Research candidates and rejected evidence remain on the poll detail page. Signed in as ${workspaceRoleLabel(role)}.`}
-                actions={<><span className="font-mono text-sm text-neutral-500">{LEADGEN_POLLING_SYSTEM_VERSION_LABEL}</span><NewPollButton href={`/${workspace.slug}/leadgen/new`} /></>}
+                actions={<><span className="font-mono text-sm text-neutral-500">{LEADGEN_POLLING_SYSTEM_VERSION_LABEL}</span>{leadgenOperationsAvailable() ? <NewPollButton href={`/${workspace.slug}/leadgen/new`} /> : null}</>}
                 tabs={<LeadgenTabs workspaceSlug={workspace.slug} active="leads" />}
             />
 
+            <LeadgenQuarantineNotice />
             {relationshipError && <div className="mt-5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
                 {relationshipError === "paused" ? "Creating relationships from Lead Gen is temporarily paused." : relationshipError === "not-ready" ? "This lead needs a person and contact path before it can become a Relationship." : "Relationships are not ready in the database yet. Apply the latest Supabase migration, then try again."}
             </div>}
@@ -104,7 +107,7 @@ export default async function LeadgenWorkspacePage({ params, searchParams }: Pag
                         ...(relationshipId ? [{ label: "Open relationship", href: relationshipHubHref(workspace.slug, relationshipId) }] : []),
                         sourceUrl ? { label: "Open source", href: sourceUrl, external: true } : {},
                         { label: "Copy lead details", copyText: copyLine },
-                        { label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true },
+                        ...(leadgenOperationsAvailable() ? [{ label: "Remove", action: removeLeadgenCompany.bind(null, workspace.slug, company.id), danger: true }] : []),
                     ]
                     return <ListItem key={company.id} detailPreview={relationshipId ? {
                         category: "Relationship",
@@ -136,16 +139,16 @@ export default async function LeadgenWorkspacePage({ params, searchParams }: Pag
                 }) : <div className="grid gap-4 p-5 lg:grid-cols-[1.1fr_0.9fr]">
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <h3 className="text-xl font-semibold">{latestPoll ? "This poll did not return qualified leads." : "No real companies have been collected yet."}</h3>
-                        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">{latestPoll ? "The Leads tab only shows companies from the latest poll where source-backed owner identity and owner phone evidence both cleared the qualification threshold. Raw candidates, skipped checks, and rejected reasons are preserved inside the poll detail page." : "Configure Overture plus ICP industries and locations in Settings, then run a poll. Candidates will be investigated across the active public-source catalogue before anything appears here."}</p>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">{latestPoll ? "The Leads tab only shows companies from the latest poll where source-backed owner identity and owner phone evidence both cleared the qualification threshold. Raw candidates, skipped checks, and rejected reasons are preserved inside the poll detail page." : "No saved leads are available. Poll history and retained evidence remain accessible from the Polls tab."}</p>
                     </div>
-                    <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
+                    {leadgenOperationsAvailable() ? <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
                         <h3 className="text-xl font-semibold">Next action</h3>
                         <ul className="mt-3 space-y-2 text-sm text-neutral-300">
                             <li>• Check Settings to confirm Overture and the active fan-out catalogue are ready.</li>
                             <li>• Run a 10-business test poll from New Poll.</li>
                             <li>• Open the poll detail page to inspect candidates, evidence, and rejection reasons.</li>
                         </ul>
-                    </div>
+                    </div> : null}
                 </div>}
             </List>
             <p className="mt-10 text-center text-xs text-neutral-600">Betelgeze © 2026</p>

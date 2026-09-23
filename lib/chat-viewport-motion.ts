@@ -1,5 +1,8 @@
 // The host owns keyboard geometry. A visible chat may animate that geometry
 // without resizing its iframe (and reflowing its messages) on every frame.
+// @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
+import { WORKSPACE_TAB_VISIBILITY_EVENT } from "./workspace-tabs.ts"
+
 export const CHAT_VIEWPORT_MOTION_EVENT = "betelgeze:chat-viewport-motion"
 export const CHAT_LAYOUT_WILL_CHANGE_EVENT = "conversation-layout-will-change"
 export const CHAT_LAYOUT_COMMIT_EVENT = "conversation-layout-commit"
@@ -52,9 +55,17 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
         layer.style.willChange = ""
         delete clip.dataset.chatViewportMoving
     }
+    function retire() {
+        // A hidden resident frame can lose touchend. Its gesture and temporary
+        // geometry no longer own the next activation's keyboard motion.
+        touching = interacting = false
+        view.clearTimeout(settleTimer)
+        settleTimer = 0
+        release()
+    }
     function finish() {
         if (!pending) return
-        if (!visible()) { release(); return }
+        if (!visible()) { retire(); return }
         const request = pending
         pending = null
         // The transform and final scroll compensation disappear in the same
@@ -83,12 +94,10 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
 
     function onMotion(event: Event) {
         const request = (event as CustomEvent<MotionRequest>).detail
-        if (request.handled || !surface || !request.scope.contains(surface) || !visible()) {
-            // Hidden resident iframes can still report their old inner viewport
-            // size. Check the host frame too, and retire its previous request.
-            if (pending?.scope === request.scope) release()
-            return
-        }
+        // Retire even when another visible chat already claimed the request,
+        // or when the interrupted gesture did not yet own an animation.
+        if (!visible()) { retire(); return }
+        if (request.handled || !surface || !request.scope.contains(surface)) return
         request.handled = true
         const animate = mobile.matches && !reducedMotion.matches && request.duration > 0 && typeof layer.animate === "function"
         if (!animate) {
@@ -140,6 +149,11 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
         finish()
     }
     function onVisibility() { resetInteraction() }
+    function onTabVisibility() {
+        // Consume the shell's existing event; do not create a new activity or
+        // reading predicate. Selection can precede the frame's CSS update.
+        if (clip.ownerDocument.body?.dataset.workspaceTabActive === "false" || !visible()) retire()
+    }
     function onReducedMotion() { if (reducedMotion.matches) finish() }
     host.addEventListener(CHAT_VIEWPORT_MOTION_EVENT, onMotion)
     clip.addEventListener("touchstart", onTouchStart, { passive: true })
@@ -148,12 +162,13 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
     clip.addEventListener("wheel", onWheel, { passive: true })
     clip.addEventListener("scroll", onScroll, true)
     clip.ownerDocument.addEventListener("visibilitychange", onVisibility)
+    view.addEventListener(WORKSPACE_TAB_VISIBILITY_EVENT, onTabVisibility)
     host.addEventListener("pagehide", resetInteraction)
     host.addEventListener("pageshow", resetInteraction)
     reducedMotion.addEventListener("change", onReducedMotion)
     return () => {
         finish()
-        view.clearTimeout(settleTimer)
+        retire()
         host.removeEventListener(CHAT_VIEWPORT_MOTION_EVENT, onMotion)
         clip.removeEventListener("touchstart", onTouchStart)
         clip.removeEventListener("touchend", onTouchEnd)
@@ -161,6 +176,7 @@ export function observeChatViewportMotion(clip: HTMLElement, layer: HTMLElement)
         clip.removeEventListener("wheel", onWheel)
         clip.removeEventListener("scroll", onScroll, true)
         clip.ownerDocument.removeEventListener("visibilitychange", onVisibility)
+        view.removeEventListener(WORKSPACE_TAB_VISIBILITY_EVENT, onTabVisibility)
         host.removeEventListener("pagehide", resetInteraction)
         host.removeEventListener("pageshow", resetInteraction)
         reducedMotion.removeEventListener("change", onReducedMotion)

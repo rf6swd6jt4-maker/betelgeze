@@ -2,10 +2,16 @@
 
 import { useEffect } from "react"
 import { WORKSPACE_TAB_FRAME_NAME_PREFIX, WORKSPACE_TAB_FRAME_PARAM, WORKSPACE_TAB_MESSAGE_SOURCE, type WorkspaceTabParentMessage } from "@/lib/workspace-tabs"
+import { WORKSPACE_FRAME_ERROR_ATTRIBUTE } from "@/lib/workspace-tab-departure"
 
 type ReportableError = Error & { digest?: string }
 
 export function ErrorBoundaryReporter({ error, boundary }: { error: ReportableError; boundary: "app" | "global" }) {
+    useEffect(() => {
+        const root = document.documentElement
+        root.setAttribute(WORKSPACE_FRAME_ERROR_ATTRIBUTE, "true")
+        return () => root.removeAttribute(WORKSPACE_FRAME_ERROR_ATTRIBUTE)
+    }, [])
     useEffect(() => {
         if (window.self === window.top) return
         const tabId = new URLSearchParams(window.location.search).get(WORKSPACE_TAB_FRAME_PARAM)

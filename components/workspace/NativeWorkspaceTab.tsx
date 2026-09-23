@@ -70,8 +70,12 @@ class PanelBoundary extends Component<{ children: ReactNode; onRetry: () => void
     state = { failed: false }
     static getDerivedStateFromError() { return { failed: true } }
     componentDidCatch() { this.props.onFailure() }
+    retry = () => {
+        if (this.state.failed) this.setState({ failed: false })
+        this.props.onRetry()
+    }
     render() {
-        return this.state.failed ? <div role="alert" className="p-6 text-sm text-red-200">This panel could not open. <button type="button" onClick={() => { this.setState({ failed: false }); this.props.onRetry() }} className="underline">Retry</button></div> : this.props.children
+        return this.state.failed ? <div role="alert" className="p-6 text-sm text-red-200">This panel could not open. <button type="button" onClick={this.retry} className="underline">Retry</button></div> : this.props.children
     }
 }
 
@@ -128,6 +132,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
     banner?: ReactNode
 }) {
     const root = useRef<HTMLDivElement>(null)
+    const boundary = useRef<PanelBoundary>(null)
     const getScrollElement = useCallback(() => root.current, [])
     const getPullTarget = useCallback(() => root.current, [])
     const restoredScrollKey = useRef<string | null>(null)
@@ -230,6 +235,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
         // Cached children acknowledge their commit in a passive effect. Their
         // receiver must already be registered, even when painting is paused.
         assignRef(tab.id, { post(message) {
+            if (message.type === "retry") boundary.current?.retry()
             if (message.type === "activate" && message.active && message.refresh) refresh()
             if (message.type === "probe" && !blockedByAccess && committedUrl.current === tab.url) reportLocation()
             // Shell navigation changes tab.url; the data key effect owns loading.
@@ -312,7 +318,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
         {navigationError ? <div role="alert" className="px-4 py-2 text-sm text-red-200">{navigationError}</div> : null}
         {blockedByAccess ? <div role="alert" className="px-4 py-2 text-sm text-red-200">{accountCleared ? "Your workspace session changed. Reload to continue." : accessError?.message} <button type="button" onClick={() => window.location.reload()} className="underline">Reload workspace</button></div> : null}
         {snapshot.error ? <div role="alert" className="border-b border-red-900/50 px-4 py-2 text-sm text-red-200">{snapshot.error} <button type="button" onClick={refresh} className="underline">Retry</button></div> : null}
-        <WorkspacePanelChrome banner={banner}><PanelBoundary key={key} onRetry={refresh} onFailure={() => { measurement.current?.finish("failed"); post({ type: "navigation-failed", url: tab.url }) }}><Suspense fallback={<WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />}>
+        <WorkspacePanelChrome banner={banner}><PanelBoundary ref={boundary} key={key} onRetry={refresh} onFailure={() => { measurement.current?.finish("failed"); post({ type: "navigation-failed", url: tab.url }) }}><Suspense fallback={<WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />}>
             {!blockedByAccess && (snapshot.data ? <><NativePanel data={snapshot.data} /><RestoreScroll onRestore={restoreScroll} /><Ready key={snapshot.updatedAt} onMounted={onMounted} onReady={onReady} /></> : snapshot.error ? null : <WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />)}
         </Suspense></PanelBoundary></WorkspacePanelChrome>
     </div></WorkspaceNavigationProvider>

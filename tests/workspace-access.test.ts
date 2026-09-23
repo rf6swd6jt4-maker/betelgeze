@@ -44,11 +44,13 @@ test("Staff see Library and Communications while operational roles reveal Relati
         "Communications",
         "Library",
         "Onboarding Builder",
-        "Lead Gen",
         "Admin",
         "Settings",
     ])
     const byKey = new Map(WORKSPACE_PANELS.map((panel) => [panel.key, panel]))
+    assert.equal(byKey.has("leadgen"), false)
+    assert.equal(canAccessWorkspaceUrl("/acme/leadgen/polls", "acme", "admin"), true)
+    assert.equal(canAccessWorkspaceUrl("/acme/leadgen/polls", "acme", "staff"), false)
     const baseline = [] as const
     const sellerOrManager = ["relationships.view"] as const
     const clientConnectionAssignee = ["client_connections.manage"] as const

@@ -1,0 +1,85 @@
+{
+  "candidateApplied": false,
+  "candidateExecuted": false,
+  "staticOnly": true,
+  "callers": [
+    {
+      "caller": "restore",
+      "successStatementsPreserved": true,
+      "earlyAndFinalRefusalPreserved": true,
+      "awaitInsideCommit": false
+    },
+    {
+      "caller": "reopenClosedTab",
+      "successStatementsPreserved": true,
+      "earlyAndFinalRefusalPreserved": true,
+      "awaitInsideCommit": false
+    },
+    {
+      "caller": "openWorkspaceTab",
+      "successStatementsPreserved": true,
+      "earlyAndFinalRefusalPreserved": true,
+      "awaitInsideCommit": false
+    },
+    {
+      "caller": "traverseHistory",
+      "successStatementsPreserved": true,
+      "earlyAndFinalRefusalPreserved": true,
+      "awaitInsideCommit": false
+    },
+    {
+      "caller": "navigateActiveTab",
+      "successStatementsPreserved": true,
+      "earlyAndFinalRefusalPreserved": true,
+      "awaitInsideCommit": false
+    },
+    {
+      "caller": "switchTab",
+      "successStatementsPreserved": true,
+      "earlyAndFinalRefusalPreserved": true,
+      "awaitInsideCommit": false
+    },
+    {
+      "caller": "addTab",
+      "successStatementsPreserved": true,
+      "earlyAndFinalRefusalPreserved": true,
+      "awaitInsideCommit": false
+    },
+    {
+      "caller": "closeTab",
+      "successStatementsPreserved": true,
+      "earlyAndFinalRefusalPreserved": true,
+      "awaitInsideCommit": false
+    },
+    {
+      "caller": "retryActiveNavigation",
+      "successStatementsPreserved": true,
+      "earlyAndFinalRefusalPreserved": true,
+      "awaitInsideCommit": false
+    },
+    {
+      "caller": "receiveFrameMessage/navigation-start",
+      "successStatementsPreserved": true,
+      "earlyRefusalPreserved": true,
+      "awaitInsideCommit": false
+    }
+  ],
+  "zeroArgumentConfirmationCalls": 0,
+  "flushSyncSites": [
+    {
+      "owner": "prepareNativeLeave",
+      "guard": "frames.length || nativeDeparture"
+    },
+    {
+      "owner": "warmWorkspaceTab",
+      "guard": "evicted.length"
+    }
+  ],
+  "parseDiagnostics": 0,
+  "limitations": [
+    "No React DOM mounted fixture",
+    "No event-loop/flushSync runtime proof",
+    "No native error/Suspense behavior proof",
+    "No performance measurements"
+  ]
+}

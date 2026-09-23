@@ -1,0 +1,61 @@
+{
+  "baselineCommit": "31388081894e6d4143d5bb0d577c0341ec31edf7",
+  "evidenceKind": "synthetic helper fixture; no physical-device claim",
+  "scenario": "interrupted touch; resident frame hidden and shown; next keyboard opening",
+  "expected": {
+    "applied": 500,
+    "visualBottom": 500,
+    "layerHeight": "",
+    "moving": null,
+    "willChange": ""
+  },
+  "observed": {
+    "applied": 800,
+    "visualBottom": 500,
+    "layerHeight": "700px",
+    "moving": "true",
+    "willChange": "transform"
+  },
+  "defectReproduced": true
+}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Hidden-frame retirement must clear stale gesture state so the next keyboard motion commits.
++ actual - expected
+
+  {
++   applied: 800,
++   layerHeight: '700px',
++   moving: 'true',
+-   applied: 500,
+-   layerHeight: '',
+-   moving: null,
+    visualBottom: 500,
++   willChange: 'transform'
+-   willChange: ''
+  }
+
+    at file:///private/tmp/be-consolidation-evidence/mobile-hidden-frame-reproduction.mjs:24:10 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: {
+    applied: 800,
+    visualBottom: 500,
+    layerHeight: '700px',
+    moving: 'true',
+    willChange: 'transform'
+  },
+  expected: {
+    applied: 500,
+    visualBottom: 500,
+    layerHeight: '',
+    moving: null,
+    willChange: ''
+  },
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.16.0

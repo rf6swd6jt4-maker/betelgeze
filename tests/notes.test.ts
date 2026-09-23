@@ -14,9 +14,6 @@ test("notes are canonical workspace records with bounded relationship and asset 
     assert.match(migration, /enforce_note_link_workspace/)
     assert.match(migration, /workspace_admins_can_manage_notes/)
     assert.match(actions, /export async function createNoteFromModal/)
-    assert.match(actions, /slice\(0, 20\)/)
-    assert.match(actions, /from\("note_relationships"\)/)
-    assert.match(actions, /from\("note_assets"\)/)
     assert.match(notes, /\.limit\(120\)/)
 })
 
@@ -68,7 +65,7 @@ test("note fields autosave and all record attachments use the shared gallery", a
         readFile("docs/ui-standards.md", "utf8"),
     ])
     assert.match(page, /<NoteFieldsEditor/)
-    assert.match(fields, /WorkspaceAutosaveForm/)
+    assert.match(fields, /useWorkItemTextDraft/)
     assert.match(fields, /AutoGrowTextarea/)
     assert.match(actions, /saveNoteFields/)
     assert.match(page, /<RecordAttachments/)

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition, type FormEvent } from "reac
 import type { WorkspaceCreateActionState } from "@/app/[workspaceSlug]/relationships/actions"
 import { usePathname } from "@/components/workspace/WorkspaceNavigation"
 import { AssignmentSelector, AutoGrowTextarea, MultiSelector } from "@/components/ui"
+import { acknowledgeRecordCreate, recoverRecordCreates, saveRecordCreate, type SavedRecordCreate } from "@/lib/assets/create-draft"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 
 export type WorkspaceCreateTarget = "relationship" | "work-item" | "asset" | "note" | "okr"
@@ -42,12 +43,26 @@ function defaultOkrPeriod() {
 
 export function WorkspaceCreateModal({ target, initialAttachment, workspace, currentUserId, username, currentUserRole, createRelationshipAction, createWorkItemAction, createAssetAction, createNoteAction, createOkrAction, onClose, onCreated }: Props) {
     const dialogRef = useRef<HTMLDialogElement | null>(null)
+    const formRef = useRef<HTMLFormElement | null>(null)
     // Other create modes retain their established host for portalled selectors.
     const ModalTag = target === "relationship" ? "dialog" : "div"
     useEffect(() => { const dialog = dialogRef.current; dialog?.showModal(); return () => dialog?.close() }, [target])
     const pathname = usePathname()
     const linkedRelationshipId = initialAttachment?.owner === "relationship" ? initialAttachment.id : pathname.match(/\/relationships\/([a-f0-9-]{36})(?:\/|$)/i)?.[1] ?? ""
     const relationshipRequestId = useRef<string | null>(null)
+    const recordRequestId = useRef<string | null>(null)
+    const submitBusy = useRef(false)
+    const attemptedFile = useRef<File | null>(null)
+    const uploaded = useRef<{ file: File; receipt: string; storedAsset: { name: string; path: string; size: number; type: string; kind: string } } | null>(null)
+    const pendingCreate = useRef<FormData | null>(null)
+    const savedCreate = useRef<SavedRecordCreate | null>(null)
+    const editingRejected = useRef<SavedRecordCreate | null>(null)
+    const [hasPendingCreate, setHasPendingCreate] = useState(false)
+    const [draftReady, setDraftReady] = useState(target !== "asset" && target !== "note")
+    const [requestRejected, setRequestRejected] = useState(false)
+    const [savedName, setSavedName] = useState("")
+    const [savedDescription, setSavedDescription] = useState("")
+    const draftKey = `betelgeze:offline-draft:record-create:v1:${currentUserId}:${workspace.id}:${target}:${initialAttachment?.owner ?? ""}:${initialAttachment?.id ?? ""}`
     const [okrOwnerId, setOkrOwnerId] = useState(currentUserId)
     const [noteRelationshipIds, setNoteRelationshipIds] = useState<string[]>(initialAttachment?.owner === "relationship" ? [initialAttachment.id] : [])
     const [noteAssetIds, setNoteAssetIds] = useState<string[]>([])
@@ -58,6 +73,20 @@ export function WorkspaceCreateModal({ target, initialAttachment, workspace, cur
     const [uploadLabel, setUploadLabel] = useState<string | null>(null)
     const [isCreating, startCreateTransition] = useTransition()
     const [okrPeriod] = useState(defaultOkrPeriod)
+
+    useEffect(() => {
+        if (target !== "asset" && target !== "note") return
+        let retired = false
+        void Promise.resolve().then(() => {
+        if (retired) return
+        try {
+            const saved = recoverRecordCreates(window.localStorage, draftKey, currentUserId)[0]
+            if (saved) { savedCreate.current = saved; pendingCreate.current = saved.form; recordRequestId.current = String(saved.form.get("record_request_id")); setHasPendingCreate(true); setSavedName(String(saved.form.get("name") ?? saved.form.get("title") ?? "")); setSavedDescription(String(saved.form.get("description") ?? "")) }
+            setDraftReady(true)
+        } catch (error) { setCreateError(error instanceof Error ? error.message : "Saved draft could not be read. It has not been discarded.") }
+        })
+        return () => { retired = true }
+    }, [draftKey, currentUserId, target])
 
     useEffect(() => {
         if (target === "relationship") return
@@ -81,66 +110,97 @@ export function WorkspaceCreateModal({ target, initialAttachment, workspace, cur
         return () => controller.abort()
     }, [target, workspace.slug])
 
+    function dispatchCreate(formData: FormData, form?: HTMLFormElement) {
+        startCreateTransition(async () => {
+            try {
+                const result = await runWorkspaceMutation(() => target === "relationship" ? createRelationshipAction(formData)
+                    : target === "work-item" ? createWorkItemAction(formData)
+                    : target === "asset" ? createAssetAction(formData)
+                    : target === "note" ? createNoteAction(formData) : createOkrAction(formData), { category: target === "okr" ? "maintenance" : target === "asset" || target === "note" ? "system" : target === "work-item" ? "gantt" : "services" })
+                if (!result.ok) {
+                    if (result.rejected && (target === "asset" || target === "note")) {
+                        setRequestRejected(true)
+                    }
+                    setCreateError(result.error ?? "Could not create this item.")
+                    return
+                }
+                if (target === "asset" || target === "note") {
+                    try { if (savedCreate.current) acknowledgeRecordCreate(window.localStorage, savedCreate.current) } catch { /* A retained acknowledgement replay is idempotent. */ }
+                    pendingCreate.current = null; setHasPendingCreate(false)
+                }
+                form?.reset(); onCreated(result, target)
+            } catch { setCreateError("The save could not be confirmed. Retry the saved request to recover the same record.") }
+            finally { submitBusy.current = false }
+        })
+    }
     async function submitCreate(event: FormEvent<HTMLFormElement>) {
         event.preventDefault()
-        setCreateError(null)
-        const form = event.currentTarget
-        const formData = new FormData(form)
+        if (submitBusy.current || !draftReady) return
+        submitBusy.current = true; setCreateError(null)
+        const form = event.currentTarget, formData = new FormData(form)
         if (target === "relationship") {
             relationshipRequestId.current ??= crypto.randomUUID()
             formData.set("relationship_request_id", relationshipRequestId.current)
         }
-
+        if (target === "asset" || target === "note") {
+            if (pendingCreate.current) { dispatchCreate(pendingCreate.current, form); return }
+            recordRequestId.current ??= crypto.randomUUID()
+            formData.set("record_request_id", recordRequestId.current)
+            formData.set("expected_user_id", currentUserId)
+        }
         if (target === "asset") {
             const file = formData.get("asset_file")
-            if (!(file instanceof File) || file.size === 0) {
-                setCreateError("Choose a file to upload.")
-                return
-            }
+            if (!(file instanceof File) || file.size === 0) { setCreateError("Choose a file to upload."); submitBusy.current = false; return }
             setUploadLabel(`Uploading ${file.name}`)
             try {
-                const prepare = await fetch(`/api/workspaces/${workspace.slug}/assets/upload`, {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ name: file.name, size: file.size, type: file.type || "application/octet-stream" }),
-                })
-                const prepared = await prepare.json() as { uploadUrl?: string; storedAsset?: { name: string; path: string; size: number; type: string; kind: string }; error?: string }
-                if (!prepare.ok || !prepared.uploadUrl || !prepared.storedAsset) throw new Error(prepared.error ?? "Could not prepare upload.")
-                const upload = await fetch(prepared.uploadUrl, { method: "PUT", headers: { "content-type": prepared.storedAsset.type }, body: file })
-                if (!upload.ok) throw new Error("The file could not be uploaded.")
-                formData.set("storage_path", prepared.storedAsset.path)
-                formData.set("content_type", prepared.storedAsset.type)
-                formData.set("file_size", String(prepared.storedAsset.size))
-                formData.set("asset_kind", prepared.storedAsset.kind)
-                formData.set("original_name", prepared.storedAsset.name)
-                if (!String(formData.get("title") ?? "").trim()) formData.set("title", prepared.storedAsset.name)
+                if (!uploaded.current || uploaded.current.file !== file) {
+                    // A newly selected file receives a new immutable key. Retries retain the old one.
+                    if (attemptedFile.current && attemptedFile.current !== file) { recordRequestId.current = crypto.randomUUID(); formData.set("record_request_id", recordRequestId.current) }
+                    attemptedFile.current = file
+                    const prepare = await fetch(`/api/workspaces/${workspace.slug}/assets/upload`, {
+                        method: "POST", headers: { "content-type": "application/json", "x-workspace-user": currentUserId },
+                        body: JSON.stringify({ name: file.name, size: file.size, type: file.type || "application/octet-stream", requestId: recordRequestId.current }), signal: AbortSignal.timeout(30000),
+                    })
+                    const prepared = await prepare.json() as { uploadUrl?: string; uploadHeaders?: Record<string, string>; receipt?: string; storedAsset?: { name: string; path: string; size: number; type: string; kind: string }; error?: string }
+                    if (!prepare.ok || !prepared.uploadUrl || !prepared.storedAsset || !prepared.receipt || !prepared.uploadHeaders) throw new Error(prepared.error ?? "Could not prepare upload.")
+                    const upload = await fetch(prepared.uploadUrl, { method: "PUT", headers: prepared.uploadHeaders, body: file })
+                    // An uncertain prior PUT may already have created this immutable object.
+                    if (!upload.ok && upload.status !== 412) throw new Error("The file could not be uploaded.")
+                    uploaded.current = { file, receipt: prepared.receipt, storedAsset: prepared.storedAsset }
+                }
+                const saved = uploaded.current
+                formData.set("upload_receipt", saved.receipt)
+                if (!String(formData.get("title") ?? "").trim()) formData.set("title", saved.storedAsset.name)
+                formData.delete("asset_file")
             } catch (error) {
-                setCreateError(error instanceof TypeError ? "The browser could not reach file storage. Please try again in a moment." : error instanceof Error ? error.message : "Upload failed.")
-                setUploadLabel(null)
-                return
+                setCreateError(error instanceof Error ? error.message : "Upload failed. Retry this same file.")
+                setUploadLabel(null); submitBusy.current = false; return
             }
             setUploadLabel(null)
         }
-
-        startCreateTransition(async () => {
+        if (target === "asset" || target === "note") {
             try {
-            const result = await runWorkspaceMutation(() => target === "relationship"
-                ? createRelationshipAction(formData)
-                : target === "work-item"
-                    ? createWorkItemAction(formData)
-                    : target === "asset"
-                        ? createAssetAction(formData)
-                        : target === "note"
-                            ? createNoteAction(formData)
-                            : createOkrAction(formData), { category: target === "okr" ? "maintenance" : target === "asset" || target === "note" ? "system" : target === "work-item" ? "gantt" : "services" })
-            if (!result.ok) {
-                setCreateError(result.error ?? "Could not create this item.")
-                return
-            }
-            form.reset()
-            onCreated(result, target)
-            } catch { setCreateError("The save could not be confirmed. Retry to recover this same relationship.") }
-        })
+                savedCreate.current = saveRecordCreate(window.localStorage, draftKey, formData)
+                if (editingRejected.current) { acknowledgeRecordCreate(window.localStorage, editingRejected.current); editingRejected.current = null }
+                pendingCreate.current = formData; setHasPendingCreate(true)
+                setSavedName(String(formData.get("name") ?? formData.get("title") ?? ""))
+                setSavedDescription(String(formData.get("description") ?? ""))
+            } catch { setCreateError("Device storage is unavailable. Keep this draft open; nothing was submitted."); submitBusy.current = false; return }
+        }
+        dispatchCreate(formData, form)
+    }
+
+    function reviseRejected() {
+        const pending = pendingCreate.current, form = formRef.current
+        if (!requestRejected || !pending || !form) return
+        for (const name of ["name", "title", "description", "relationship_id", "work_item_id"]) {
+            const input = form.elements.namedItem(name)
+            if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement || input instanceof HTMLSelectElement) input.value = String(pending.get(name) ?? "")
+        }
+        setNoteRelationshipIds(pending.getAll("relationship_ids").map(String)); setNoteAssetIds(pending.getAll("asset_ids").map(String))
+        editingRejected.current = savedCreate.current
+        pendingCreate.current = null; savedCreate.current = null; recordRequestId.current = null; uploaded.current = null; attemptedFile.current = null
+        setHasPendingCreate(false); setRequestRejected(false); setCreateError(target === "asset" ? "The rejected request cannot create a record. Your text is restored; choose the file again and correct its links." : "The rejected request cannot create a record. Your draft is restored for correction.")
     }
 
     const title = target === "relationship" ? "Add relationship" : target === "work-item" ? "Add work item" : target === "asset" ? "Add asset" : target === "note" ? "Add note" : "Create OKR"
@@ -151,13 +211,15 @@ export function WorkspaceCreateModal({ target, initialAttachment, workspace, cur
                 : target === "note" ? "Create note" : "Create OKR"
     const ownerOptions = options.okrOwnerOptions.length ? options.okrOwnerOptions : [{ id: currentUserId, label: username, role: currentUserRole }]
 
-    return <ModalTag ref={(node: HTMLElement | null) => { dialogRef.current = node instanceof HTMLDialogElement ? node : null }} role="dialog" aria-modal="true" className={`fixed inset-0 z-[90] m-0 h-dvh max-h-none w-full max-w-none items-center justify-center border-0 bg-black/70 px-4 py-6 backdrop-blur-sm ${target === "relationship" ? "open:flex" : "flex"}`} aria-labelledby="workspace-create-title" onCancel={event => { event.preventDefault(); if (!isCreating) onClose() }} onMouseDown={event => { if (!isCreating && event.target === event.currentTarget) onClose() }}>
+    return <ModalTag ref={(node: HTMLElement | null) => { dialogRef.current = node instanceof HTMLDialogElement ? node : null }} role="dialog" aria-modal="true" className={`fixed inset-0 z-[90] m-0 h-dvh max-h-none w-full max-w-none items-center justify-center border-0 bg-black/70 px-4 py-6 backdrop-blur-sm ${target === "relationship" ? "open:flex" : "flex"}`} aria-labelledby="workspace-create-title" onCancel={event => { event.preventDefault(); if (!isCreating && !uploadLabel) onClose() }} onMouseDown={event => { if (!isCreating && !uploadLabel && event.target === event.currentTarget) onClose() }}>
         <div className="betelgeze-popup-enter w-full max-w-xl overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-white shadow-2xl shadow-black/50">
             <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3 sm:px-5">
                 <div><p className="text-xs text-neutral-500">Create in {workspace.name}</p><h2 id="workspace-create-title" className="text-lg font-semibold">{title}</h2></div>
-                <button data-icon-button type="button" onClick={onClose} disabled={isCreating} aria-label="Close create panel" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white"><span aria-hidden="true" className="text-xl leading-none">×</span></button>
+                <button data-icon-button type="button" onClick={onClose} disabled={isCreating || Boolean(uploadLabel)} aria-label="Close create panel" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white"><span aria-hidden="true" className="text-xl leading-none">×</span></button>
             </div>
-            <form onSubmit={submitCreate} className="max-h-[min(70vh,42rem)] overflow-y-auto px-4 py-4 sm:px-5">
+            {hasPendingCreate ? <div className="border-b border-neutral-800 px-4 py-3 text-sm text-neutral-300"><p>{requestRejected ? "This request was rejected and cannot create a record. Its draft is preserved." : "An unconfirmed create request is saved on this device. Retry it to recover the same record before creating another."}</p><p className="mt-2 font-medium">{savedName}</p><details className="mt-2"><summary>Saved description</summary><p className="max-h-32 overflow-y-auto whitespace-pre-wrap">{savedDescription}</p></details><button type="button" disabled={isCreating} className="mt-2 underline" onClick={() => { if (requestRejected) { reviseRejected(); return }; if (pendingCreate.current && !submitBusy.current) { submitBusy.current = true; dispatchCreate(pendingCreate.current) } }}>{requestRejected ? "Edit saved draft" : "Retry saved request"}</button></div> : null}
+            <form ref={formRef} onSubmit={submitCreate} className="max-h-[min(70vh,42rem)] overflow-y-auto px-4 py-4 sm:px-5">
+                <fieldset className="contents" disabled={(target === "asset" || target === "note") && (hasPendingCreate || !draftReady)}>
                 {target === "relationship" ? <div className="space-y-4">
                     <p className="text-sm leading-6 text-neutral-400">Start with the person. Add their services from the relationship page.</p>
                     <label className="block text-sm text-neutral-300">Name<input name="primary_person_name" maxLength={200} required autoFocus autoComplete="name" placeholder="Person or primary contact" className="mt-1.5 h-11 w-full rounded-lg border border-neutral-700 bg-black px-3 text-base text-white" /></label>
@@ -196,7 +258,8 @@ export function WorkspaceCreateModal({ target, initialAttachment, workspace, cur
                 {optionsError ? <p className="mt-4 text-xs text-amber-300">{optionsError} You can still create this item without an optional link.</p> : null}
                 {createError ? <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{createError}</p> : null}
                 {uploadLabel ? <p className="mt-4 text-sm text-neutral-400">{uploadLabel}</p> : null}
-                <div className="mt-5 flex justify-end gap-3"><button disabled={isCreating || Boolean(uploadLabel)} className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating…" : submitLabel}</button></div>
+                <div className="mt-5 flex justify-end gap-3"><button disabled={!draftReady || isCreating || Boolean(uploadLabel) || hasPendingCreate} className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating…" : submitLabel}</button></div>
+                </fieldset>
             </form>
         </div>
     </ModalTag>

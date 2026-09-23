@@ -1,10 +1,11 @@
 "use server"
 
+import { requireLeadgenOperations } from "@/lib/leadgen/availability"
+
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { configObject, createInitialLeadgenPollTasks, MAX_SEED_CANDIDATES, planLeadgenSources, processLeadgenPoll, TARGET_VALIDATED_BUSINESSES } from "@/lib/leadgen/poll-runner"
 import { executableLeadgenSources, leadgenSourceRuntimeConfigured, seedLeadgenSources } from "@/lib/leadgen/sources"
 import { LEADGEN_POLLING_SYSTEM_VERSION } from "@/lib/leadgen/version"
 
@@ -34,6 +35,8 @@ async function loadEnabledIcpValueSets() {
 }
 
 export async function createLeadgenPoll(slug: string) {
+    requireLeadgenOperations()
+    const { configObject, createInitialLeadgenPollTasks, MAX_SEED_CANDIDATES, planLeadgenSources, TARGET_VALIDATED_BUSINESSES } = await import("@/lib/leadgen/poll-runner")
     const { workspace, user } = await requireWorkspace(slug, "admin")
     const settingsResult = await supabaseAdmin
         .from("leadgen_workspace_settings")
@@ -94,6 +97,7 @@ export async function createLeadgenPoll(slug: string) {
 }
 
 export async function cancelLeadgenPoll(slug: string, pollId: string) {
+    requireLeadgenOperations()
     const { workspace } = await requireWorkspace(slug, "admin")
     const { error } = await supabaseAdmin
         .from("leadgen_polls")
@@ -106,6 +110,8 @@ export async function cancelLeadgenPoll(slug: string, pollId: string) {
 }
 
 export async function retryLeadgenPoll(slug: string, pollId: string) {
+    requireLeadgenOperations()
+    const { processLeadgenPoll } = await import("@/lib/leadgen/poll-runner")
     const { workspace } = await requireWorkspace(slug, "admin")
     await supabaseAdmin
         .from("leadgen_poll_tasks")
@@ -123,6 +129,7 @@ export async function retryLeadgenPoll(slug: string, pollId: string) {
 }
 
 export async function removeLeadgenPoll(slug: string, pollId: string) {
+    requireLeadgenOperations()
     const { workspace } = await requireWorkspace(slug, "admin")
     await supabaseAdmin.from("leadgen_source_records").delete().eq("poll_id", pollId).eq("workspace_id", workspace.id)
     await supabaseAdmin.from("leadgen_poll_tasks").delete().eq("poll_id", pollId).eq("workspace_id", workspace.id)
@@ -131,6 +138,7 @@ export async function removeLeadgenPoll(slug: string, pollId: string) {
 }
 
 export async function removeLeadgenCompany(slug: string, companyId: string) {
+    requireLeadgenOperations()
     const { workspace } = await requireWorkspace(slug, "admin")
     await supabaseAdmin.from("leadgen_companies").delete().eq("id", companyId).eq("workspace_id", workspace.id)
     revalidatePath(`/${slug}/leadgen`)
@@ -138,6 +146,7 @@ export async function removeLeadgenCompany(slug: string, companyId: string) {
 
 // Keep the old action entry point safe for already-open lead lists.
 export async function promoteLeadgenCompanyToRelationship(slug: string) {
+    requireLeadgenOperations()
     await requireWorkspace(slug, "admin")
     redirect(`/${slug}/leadgen?relationshipError=paused`)
 }

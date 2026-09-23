@@ -7,7 +7,7 @@ import { compareReadPositions, mergeChatReadCursor, publishChatRead, subscribeCh
 import { applyReadToSummary, createUnreadSummaryResource } from "../lib/communications/unread-summary.ts"
 import { clientConversationUnreadCount, nativeConversationUnreadCount } from "../lib/communications/unread.ts"
 
-test("all activation paths revoke the old chat before queued iframe messages", () => {
+test("all activation paths revoke the old chat before queued iframe messages, including a delayed departure acknowledgement", async () => {
     const previous = { window: globalThis.window, document: globalThis.document }
     const host = { document: { body: { dataset: {} as Record<string,string> } } }
     const frames = new Map<string, HTMLIFrameElement>()
@@ -23,14 +23,16 @@ test("all activation paths revoke the old chat before queued iframe messages", (
         const file = process.env.COMMS_SHELL_BASELINE ?? "components/workspace/WorkspaceTopBarClient.tsx"
         const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
         let callback: ts.ArrowFunction | undefined
+        let switchCallback: ts.ArrowFunction | undefined
         function visit(node: ts.Node) {
             if (ts.isVariableDeclaration(node) && node.name.getText(source) === "activateWorkspaceTab" && node.initializer && ts.isCallExpression(node.initializer)) callback = node.initializer.arguments[0] as ts.ArrowFunction
+            if (ts.isVariableDeclaration(node) && node.name.getText(source) === "switchTab" && node.initializer && ts.isCallExpression(node.initializer)) switchCallback = node.initializer.arguments[0] as ts.ArrowFunction
             ts.forEachChild(node, visit)
         }
         visit(source)
         assert.ok(callback)
         const code = ts.transpileModule(`const activate = ${callback.getText(source)}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-        const deps = { publishWorkspaceTabActivity, iframeRefs: { current: frames }, activeTabIdRef: { current: "chat" }, navigationTimeoutRef: { current: new Map() }, nativeNavigationPerformance: { activate() {} }, setMobileContextKey() {}, setResidentTabIds() {}, setActiveTabId() {} }
+        const deps = { publishWorkspaceTabActivity, iframeRefs: { current: frames }, activeTabIdRef: { current: "chat" }, residentTabIdsRef: { current: ["chat", "other"] }, MAX_RESIDENT_WORKSPACE_FRAMES: 3, navigationTimeoutRef: { current: new Map() }, nativeNavigationPerformance: { activate() {} }, setMobileContextKey() {}, setResidentTabIds() {}, setActiveTabId() {} }
         const activate = new Function(...Object.keys(deps), `${code};return activate`)(...Object.values(deps))
         activate("other") // run the actual shell callback used by addTab, close and history
         Object.assign(globalThis, { document: frames.get("chat")!.contentWindow!.document })
@@ -40,6 +42,31 @@ test("all activation paths revoke the old chat before queued iframe messages", (
         publishWorkspaceTabActivity(frames, "chat")
         Object.assign(globalThis, { document: frames.get("chat")!.contentWindow!.document })
         assert.equal(workspaceDocumentIsActive(), true)
+        assert.ok(switchCallback)
+        deps.activeTabIdRef.current = "chat"
+        events.length = 0
+        let release!: (safe: () => boolean) => void
+        const queued: Array<() => void> = []
+        const switchDeps = {
+            activeTabIdRef: deps.activeTabIdRef, startNativeNavigation() {}, nativeNavigationPerformance: { finish() {} },
+            prepareNativeLeave: () => new Promise<() => boolean>((resolve) => { release = resolve }),
+            tabsRef: { current: [{ id: "chat", seenRevision: 0 }, { id: "other", seenRevision: 0 }] }, mutationRevisionRef: { current: 0 },
+            setTabs() {}, activateWorkspaceTab: activate, saveTabsState() {},
+            window: { requestAnimationFrame: (cb: () => void) => { queued.push(cb) } }, postToTab: () => {
+                assert.equal(workspaceDocumentIsActive(), false, "old-chat revocation precedes queued activation messages")
+            },
+        }
+        const switchCode = ts.transpileModule(`const switchTab = ${switchCallback.getText(source)}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+        const switchTab = new Function(...Object.keys(switchDeps), `${switchCode};return switchTab`)(...Object.values(switchDeps))
+        const pending = switchTab(switchDeps.tabsRef.current[1])
+        assert.equal(workspaceDocumentIsActive(), true, "the current chat stays active while departure is still undecided")
+        assert.equal(queued.length, 0)
+        Object.assign(globalThis, { document: host.document })
+        release(() => true); await pending
+        Object.assign(globalThis, { document: frames.get("chat")!.contentWindow!.document })
+        assert.equal(workspaceDocumentIsActive(), false)
+        assert.deepEqual(events, ["chat", "other"])
+        queued.forEach((callback) => callback())
     } finally { Object.assign(globalThis, previous) }
 })
 

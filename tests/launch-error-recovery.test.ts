@@ -4,6 +4,7 @@ import { createRequire } from "node:module"
 import test from "node:test"
 import ts from "typescript"
 import * as tabContract from "../lib/workspace-tabs.ts"
+import { WORKSPACE_FRAME_ERROR_ATTRIBUTE } from "../lib/workspace-tab-departure.ts"
 
 const require = createRequire(import.meta.url)
 // Exercise the shipped components with isolated browser hooks and the actual
@@ -129,14 +130,16 @@ function errorFixture(options: { frame?: boolean; search?: string; name?: string
     const window = { ...events(), parent, self: {}, top: {}, name: options.name ?? "", location: { pathname: "/fixture/queue", search: options.search ?? "?__betelgeze_tab=one", hash: "#active", origin: "https://app.betelgeze.com" } }
     if (options.frame === false) window.top = window.self
     const cleanups: Array<() => void> = []
+    const attributes = new Map<string, string>()
+    const document = { documentElement: { setAttribute: (key: string, value: string) => attributes.set(key, value), removeAttribute: (key: string) => attributes.delete(key) } }
     let telemetry = 0
     component("components/errors/ErrorBoundaryReporter.tsx", {
-        ...tabContract, window, URLSearchParams, console: { error() {}, warn() {} },
+        ...tabContract, window, document, WORKSPACE_FRAME_ERROR_ATTRIBUTE, URLSearchParams, console: { error() {}, warn() {} },
         useEffect: (callback: () => (() => void) | undefined) => { const result = callback(); if (result) cleanups.push(result) },
         fetch: async () => { telemetry++ },
     }).ErrorBoundaryReporter({ error: new Error("Load failed"), boundary: "app" })
     const probe = { origin: window.location.origin, source: parent, data: { source: tabContract.WORKSPACE_TAB_MESSAGE_SOURCE, target: "frame", tabId: "one", type: "probe" } }
-    return { messages, window, probe, telemetry: () => telemetry, cleanup() { cleanups.forEach(callback => callback()) } }
+    return { messages, window, probe, attributes, telemetry: () => telemetry, cleanup() { cleanups.forEach(callback => callback()) } }
 }
 test("a failed page settles its parent even after its normal bridge unmounts", () => {
     const fixture = errorFixture()
@@ -147,7 +150,9 @@ test("a failed page settles its parent even after its normal bridge unmounts", (
     fixture.window.emit("message", fixture.probe)
     assert.equal(fixture.messages.length, 2, "a host mounted later receives the error via its bounded readiness probe")
     assert.equal(fixture.telemetry(), 1, "probes do not repeat network telemetry")
+    assert.equal(fixture.attributes.get(WORKSPACE_FRAME_ERROR_ATTRIBUTE), "true")
     fixture.cleanup()
+    assert.equal(fixture.attributes.has(WORKSPACE_FRAME_ERROR_ATTRIBUTE), false)
     assert.equal(fixture.window.count("message"), 0)
 })
 test("error probe messages must come from the same-origin parent and the correct tab", () => {

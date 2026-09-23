@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
-import { createWorkspaceFrameNavigator, workspaceFrameHasNavigationReceiver } from "../lib/workspace-frame-navigation.ts"
+import { createWorkspaceFrameNavigator, WorkspaceFrameDraftError, workspaceFrameHasNavigationReceiver } from "../lib/workspace-frame-navigation.ts"
 
 function deferred() {
     let resolve!: (value: boolean) => void
@@ -51,11 +51,16 @@ test("repeated pending clicks do not flush or fetch twice", async () => {
 test("failed draft persistence prevents navigation and allows an explicit retry", async () => {
     let safe = false
     const f = fixture(async () => safe)
-    await assert.rejects(f.navigator.navigate("/fixture/sops"), /not safely saved/)
+    await assert.rejects(f.navigator.navigate("/fixture/sops"), WorkspaceFrameDraftError)
     assert.deepEqual(f.pushes, [])
     safe = true
     await f.navigator.navigate("/fixture/sops", true)
     assert.deepEqual(f.replacements, ["/fixture/sops"])
+})
+test("a router failure is not reported as failed draft persistence", async () => {
+    const failure = new Error("Router unavailable")
+    const navigator = createWorkspaceFrameNavigator({ currentUrl: () => "/fixture/queue", flush: async () => true, push: () => { throw failure }, replace() {} })
+    await assert.rejects(navigator.navigate("/fixture/sops"), (error) => error === failure && !(error instanceof WorkspaceFrameDraftError))
 })
 test("unmounted receiver cannot finish an old navigation", async () => {
     const flush = deferred()

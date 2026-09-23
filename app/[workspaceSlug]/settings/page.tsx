@@ -1,3 +1,4 @@
+import { leadgenOperationsAvailable } from "@/lib/leadgen/availability"
 import { loadWorkspaceOperations } from "@/lib/teams/operations"
 import { Suspense, type CSSProperties, type ReactNode } from "react"
 import { WorkspaceIdentityEditor } from "@/components/admin/WorkspaceIdentityEditor"
@@ -6,9 +7,6 @@ import { WorkspaceInvitationForm } from "@/components/admin/WorkspaceInvitationF
 import { WorkspaceConnections } from "@/components/admin/WorkspaceConnections"
 import { WorkspaceOnboardingDomain } from "@/components/admin/WorkspaceOnboardingDomain"
 import { WorkspaceTeamSettings } from "@/components/settings/WorkspaceTeamSettings"
-import { AdaptiveTargetingSettings } from "@/components/leadgen/AdaptiveTargetingSettings"
-import { ManualSettingsForm, SettingsSectionActions } from "@/components/leadgen/ManualSettingsForm"
-import { SourceSettingsCard } from "@/components/leadgen/SourceSettingsCard"
 import { SettingsSectionNav, type SettingsSectionNavItem } from "@/components/workspace/SettingsSectionNav"
 import { AgencyBrandingEditor } from "@/components/settings/AgencyBrandingEditor"
 import { AgencyPublicBrandingFields } from "@/components/settings/AgencyPublicBrandingFields"
@@ -18,7 +16,6 @@ import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { WorkspaceAutosaveForm } from "@/components/workspace/WorkspaceAutosaveForm"
 import { WorkspaceActionButton } from "@/components/workspace/WorkspaceActionButton"
 import { AdminMfaResetButton } from "@/components/admin/AdminMfaResetButton"
-import { loadLeadgenSettingsPageData } from "@/lib/leadgen/settings-page-data"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { loadOnboardingSettingsPageData } from "@/lib/onboarding/configuration"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -26,7 +23,6 @@ import { normalizeWorkspaceRole, requireWorkspace, workspaceRoleLabel } from "@/
 import { BASE_INTEGRATION_PROVIDERS, listWorkspaceConnections } from "@/lib/workspace-integrations"
 import { loadWorkspacePublicBranding } from "@/lib/client-branding/public-branding"
 import { loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
-import { saveLeadgenSettings } from "../leadgen/settings/actions"
 import { saveAgencyPublicBranding, uploadAgencyFavicon, uploadAgencyLogo } from "./branding-actions"
 import { inviteWorkspaceUser, removeWorkspaceUser, resetWorkspaceUserMfa } from "../users/actions"
 import {
@@ -208,6 +204,13 @@ async function TeamsSettingsSection({ workspace, isOwner }: { workspace: Workspa
 }
 
 async function LeadgenSettingsSection({ workspace }: { workspace: WorkspaceRecord }) {
+    const [{ AdaptiveTargetingSettings }, { ManualSettingsForm, SettingsSectionActions }, { SourceSettingsCard }, { loadLeadgenSettingsPageData }, { saveLeadgenSettings }] = await Promise.all([
+        import("@/components/leadgen/AdaptiveTargetingSettings"),
+        import("@/components/leadgen/ManualSettingsForm"),
+        import("@/components/leadgen/SourceSettingsCard"),
+        import("@/lib/leadgen/settings-page-data"),
+        import("../leadgen/settings/actions"),
+    ])
     const leadgenSettings = await loadLeadgenSettingsPageData(workspace.id)
     return <UnifiedSection id="leadgen" title="Lead Gen" description="Manage poll automation, ICP targeting, source readiness, mappings, and runtime controls.">
         <ManualSettingsForm action={saveLeadgenSettings.bind(null, workspace.slug)} className="space-y-6">
@@ -244,7 +247,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps) 
         <div className="mx-auto min-w-0 max-w-7xl pt-5">
             <Suspense fallback={<IdentityFallback workspace={workspace} />}><SettingsIdentity workspace={workspace} /></Suspense>
             <div className="mt-8 grid min-w-0 max-w-full gap-8 lg:grid-cols-[16rem_minmax(0,1fr)]">
-                <SettingsSectionNav sections={settingsSections} />
+                <SettingsSectionNav sections={settingsSections.filter((section) => section.id !== "leadgen" || leadgenOperationsAvailable())} />
                 <div id="workspace-settings-scroll" className="min-w-0 max-w-full space-y-10 pb-8 lg:pr-2">
                     <WorkspaceSettingsSection workspace={workspace} />
                     <Suspense fallback={<SettingsSectionFallback id="services" title="Services" description="Catalogue and default pricing for client work." height="min-h-72" />}><ServicesSettingsSection workspace={workspace} initialServiceId={query.service} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
@@ -254,7 +257,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps) 
                     <Suspense fallback={<SettingsSectionFallback id="connections" title="Connections" description="Manage active provider credentials and client communication delivery channels." height="min-h-64" />}><ConnectionsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="users" title="Users" description="Invite teammates and control workspace access." height="min-h-56" />}><UsersSettingsSection workspace={workspace} isOwner={isOwner} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="teams" title="Teams" description="Selling, management, and service delivery responsibilities." height="min-h-56" />}><TeamsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
-                    <Suspense fallback={<SettingsSectionFallback id="leadgen" title="Lead Gen" description="Manage poll automation, ICP targeting, source readiness, mappings, and runtime controls." height="min-h-80" />}><LeadgenSettingsSection workspace={workspace} /></Suspense>
+                    {leadgenOperationsAvailable() ? <Suspense fallback={<SettingsSectionFallback id="leadgen" title="Lead Gen" description="Manage poll automation, ICP targeting, source readiness, mappings, and runtime controls." height="min-h-80" />}><LeadgenSettingsSection workspace={workspace} /></Suspense> : null}
                     <p className="pt-2 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
                 </div>
             </div>

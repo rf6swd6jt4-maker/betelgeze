@@ -37,6 +37,7 @@ type AutosaveFlusher = () => Promise<void | boolean>
 type AutosaveOptions = { checkpoint?: () => boolean }
 
 const autosaveFlushers = new Map<AutosaveFlusher, AutosaveOptions>()
+let autosaveRegistryRevision = 0
 
 function newMutationId() {
     return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -60,8 +61,41 @@ function categoryForPath(pathname: string): WorkspaceMutationOptions["category"]
 }
 
 export function registerWorkspaceAutosaveFlusher(flusher: AutosaveFlusher, options: AutosaveOptions = {}) {
+    autosaveRegistryRevision += 1
     autosaveFlushers.set(flusher, options)
-    return () => autosaveFlushers.delete(flusher)
+    return () => { const removed = autosaveFlushers.delete(flusher); if (removed) autosaveRegistryRevision += 1; return removed }
+}
+
+/** Final, synchronous departure check; never starts another save. */
+export function captureWorkspaceAutosaveDepartureCheck() {
+    const revision = autosaveRegistryRevision
+    const owners = [...autosaveFlushers.values()]
+    let edited = false, disposed = false, acknowledged = false
+    const markEdited = (event: Event) => { if (event.type !== WORKSPACE_MUTATION_INTENT_START || acknowledged) edited = true }
+    const events = ["beforeinput", "input", "change", "click", "submit", WORKSPACE_MUTATION_INTENT_START]
+    for (const event of events) window.addEventListener(event, markEdited, true)
+    return {
+        acknowledge() { acknowledged = true },
+        validate() {
+            if (disposed || revision !== autosaveRegistryRevision) return false
+            return owners.every((owner) => {
+                if (!owner.checkpoint) return !edited
+                try { return owner.checkpoint() } catch { return false }
+            })
+        },
+        dispose() {
+            disposed = true
+            for (const event of events) window.removeEventListener(event, markEdited, true)
+        },
+    }
+}
+
+/** Speculative eviction may checkpoint intent, but must never start a network save. */
+export function checkpointWorkspaceAutosaves() {
+    for (const registration of autosaveFlushers.values()) {
+        try { if (!registration.checkpoint?.()) return false } catch { return false }
+    }
+    return true
 }
 
 export async function flushWorkspaceAutosaves(timeoutMs = 1500, options: { navigation?: boolean } = {}) {

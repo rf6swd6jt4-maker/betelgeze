@@ -1,0 +1,28 @@
+Pass 2 accepted candidate validation, 2026-09-23
+
+Repository test suite:
+ℹ tests 1309
+ℹ suites 0
+ℹ pass 1309
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8422.521166
+
+SQL validator:
+{"passed":31,"productionCalls":0,"environment":"PGlite in memory; serialized connection, not a multi-connection lock-contention benchmark"}
+
+Changed-file lint: 72 JavaScript/TypeScript files, exit 0.
+Final refusal return-type annotation: 19 related tests and scoped lint passed.
+
+Production webpack build: exit 0; dummy loopback Supabase configuration.
+▲ Next.js 16.2.11 (webpack)
+✓ Compiled successfully in 6.5s
+  Finished TypeScript in 11.2s ...
+✓ Generating static pages using 9 workers (33/33) in 200ms
+  Collecting build traces ...
+
+Mobile fixture: candidate 5/5 and baseline 2/5 in both Chromium153 and Safari27/WebKit605.1.15; synthetic desktop browser events at390px, not physical-device evidence.
+
+No production/schema/storage/provider changes. The shell React commit gap and native navigation coverage remain release blockers. Proposed wrapper is unapplied and has static review only.

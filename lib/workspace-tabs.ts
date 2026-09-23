@@ -19,18 +19,21 @@ export type WorkspaceTabParentMessage = {
     source: typeof WORKSPACE_TAB_MESSAGE_SOURCE
     target: "frame"
     tabId: string
-    type: "activate" | "navigate" | "traverse" | "context-set" | "probe"
+    type: "activate" | "navigate" | "traverse" | "context-set" | "probe" | "prepare-departure" | "retry"
     url?: string
     refresh?: boolean
     active?: boolean
     open?: boolean
+    requestId?: string
+    documentId?: string
+    checkpointOnly?: boolean
 }
 
 export type WorkspaceTabFrameMessage = {
     source: typeof WORKSPACE_TAB_MESSAGE_SOURCE
     target: "host"
     tabId: string
-    type: "navigation-intent" | "navigation-intent-end" | "meaningful-ready" | "navigation-failed" | "history-step" | "record-title" | "location" | "location-replace" | "mutation" | "action-start" | "action-end" | "mutation-start" | "mutation-end" | "refresh-start" | "refresh-end" | "context-status" | "context-obstruction" | "navigation-start" | "open-tab" | "poll-started" | "reopen-closed-tab" | "communications-unread"
+    type: "navigation-intent" | "navigation-intent-end" | "meaningful-ready" | "navigation-failed" | "history-step" | "record-title" | "location" | "location-replace" | "mutation" | "action-start" | "action-end" | "mutation-start" | "mutation-end" | "refresh-start" | "refresh-end" | "context-status" | "context-obstruction" | "navigation-start" | "open-tab" | "poll-started" | "reopen-closed-tab" | "communications-unread" | "departure-ready"
     url?: string
     relationshipId?: string | null
     contextSupported?: boolean
@@ -47,6 +50,11 @@ export type WorkspaceTabFrameMessage = {
     intentSequence?: number
     replace?: boolean
     interactionOutcome?: "failed" | "aborted"
+    requestId?: string
+    documentId?: string
+    safe?: boolean
+    failureReason?: "drafts"
+    retainedUrl?: string
 }
 
 export function workspaceTabIsCommunications(value: string, workspaceSlug: string, origin: string) {

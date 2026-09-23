@@ -1,7 +1,7 @@
+import { leadgenOperationsAvailable, leadgenPausedResponse } from "@/lib/leadgen/availability"
 import { NextResponse } from "next/server"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { processLeadgenPoll } from "@/lib/leadgen/poll-runner"
 import { getAal2User } from "@/lib/auth/aal"
 
 export const dynamic = "force-dynamic"
@@ -31,6 +31,7 @@ async function runningPollShouldResume(workspaceId: string, pollId: string, star
 }
 
 export async function POST(request: Request) {
+    if (!leadgenOperationsAvailable()) return leadgenPausedResponse()
     const supabase = await createSupabaseServerClient()
     const user = await getAal2User(supabase)
     if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 })
@@ -55,6 +56,7 @@ export async function POST(request: Request) {
         .maybeSingle()
     if (!membershipResult.data) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
+    const { processLeadgenPoll } = await import("@/lib/leadgen/poll-runner")
     const runningResult = await supabaseAdmin
         .from("leadgen_polls")
         .select("id, started_at")

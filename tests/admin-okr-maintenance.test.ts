@@ -1,6 +1,11 @@
 import assert from "node:assert/strict"
 import { access, readFile } from "node:fs/promises"
+import { createRequire, Module } from "node:module"
+import { resolve } from "node:path"
 import test from "node:test"
+import React from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import ts from "typescript"
 import { maintenanceBugTitle, resolveMaintenanceError } from "../lib/admin/error-catalogue.ts"
 import { okrAttainment, okrGap, okrKeyResultProgress, okrTargetMet, okrTrendScale } from "../lib/admin/okr-metrics.ts"
 import { okrDisplayStatus, okrDisplayTitle } from "../lib/admin/okr-title.ts"
@@ -183,8 +188,6 @@ test("the OKRs tab is a metric table with popup-only Objective and Key Result de
     assert.match(workspace, /const carryMeasurement =/)
     assert.match(workspace, /startPoint=\{\{ position: 0, value: carryValue \}\}/)
     assert.match(trendChart, /const plotRight = 490/)
-    assert.match(trendChart, /className="text-\[12px\] sm:text-\[9px\]"/)
-    assert.match(trendChart, /className="text-\[14px\] sm:text-\[10px\]"/)
     assert.doesNotMatch(workspace, /tick\.label/)
     assert.match(workspace, /unchanged: Boolean\(plotted\[index - 1\]/)
     assert.match(trendChart, /onPointerEnter=\{\(\) => setActiveId\(point\.id\)\}/)
@@ -230,6 +233,28 @@ test("the OKRs tab is a metric table with popup-only Objective and Key Result de
     assert.match(search, /admin\/okrs#okr-/)
     assert.match(search, /admin\/okrs#key-result-/)
     assert.match(actions, /return \{ ok: true, href: okrsHref\(slug, `okr-\$\{okr\.id\}`\) \}/)
+})
+
+test("the shared trend chart renders value and period labels for both supported surfaces", async () => {
+    const path = resolve("components/ui/TrendChart.tsx")
+    const compiled = new Module(path) as Module & { _compile: (source: string, filename: string) => void }
+    compiled.require = createRequire(path)
+    compiled._compile(ts.transpileModule(await readFile(path, "utf8"), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+    }).outputText, path)
+    for (const surface of ["dark", "light"]) {
+        const html = renderToStaticMarkup(React.createElement(compiled.exports.TrendChart, {
+            ariaLabel: "Weekly progress",
+            points: [], domainEnd: 7, min: 0, max: 100, surface,
+            ticks: [{ id: "target", value: 100, label: "Target 100", emphasized: true }],
+            labels: [{ id: "start", position: 0, label: "Monday", anchor: "start" }, { id: "end", position: 7, label: "Sunday", anchor: "end" }],
+        }))
+        assert.match(html, /role="img" aria-label="Weekly progress"/)
+        assert.match(html, /<text x="500" y="20"[^>]+>Target 100<\/text>/)
+        assert.match(html, /<text x="8" y="222" text-anchor="start"[^>]+>Monday<\/text>/)
+        assert.match(html, /<text x="490" y="222" text-anchor="end"[^>]+>Sunday<\/text>/)
+        assert.match(html, /No data in this period/)
+    }
 })
 
 test("work-item Links combine relationships and committed Key Results", async () => {
@@ -338,13 +363,17 @@ test("service-role query paths explicitly exclude private work for Staff surface
 })
 
 test("asset creation only offers and accepts active relationships", async () => {
-    const [createOptions, actions] = await Promise.all([
+    const [createOptions, actions, commands] = await Promise.all([
         readFile("app/api/workspaces/[workspaceSlug]/shell-create-options/route.ts", "utf8"),
         readFile("app/[workspaceSlug]/relationships/actions.ts", "utf8"),
+        readFile("supabase/migrations/20260923171000_record_attachment_commands.sql", "utf8"),
     ])
     assert.match(createOptions, /from\("relationships"\)[^\n]*\.neq\("status", "archived"\)/)
-    assert.match(actions, /createAssetFromModal[\s\S]*from\("relationships"\)[\s\S]*\.eq\("id", relationshipToLink\)[\s\S]*\.neq\("status", "archived"\)[\s\S]*This relationship is archived or unavailable\./)
-    assert.ok(actions.indexOf('if (!relationship) return { ok: false, error: "This relationship is archived or unavailable." }') < actions.indexOf('supabaseAdmin.from("assets").insert'))
+    const createAsset = actions.slice(actions.indexOf("export async function createAssetFromModal"), actions.indexOf("export async function createNoteFromModal"))
+    assert.match(createAsset, /rpc\("create_attachment_record"/)
+    assert.doesNotMatch(createAsset, /from\("assets"\)\.insert|\.delete\(\)/)
+    assert.match(commands, /relationships where workspace_id=p_workspace and id=any\(relationship_ids\) and status<>'archived'/)
+    assert.ok(commands.indexOf("raise exception 'Relationship unavailable'", commands.indexOf("create function public.create_attachment_record")) < commands.indexOf("insert into assets(id"))
 })
 
 test("maintenance is event-driven and logs to console before creating Work Items", async () => {
@@ -488,18 +517,16 @@ test("Maintenance responsibility is managed through the required workspace team"
     assert.match(adminPage, /listAdminWorkItems/)
 })
 
-test("Settings and search expose one Lead Gen section without duplicate group headings", async () => {
+test("Settings and search gate Lead Gen while preserving other settings links", async () => {
     const [settings, search, shell] = await Promise.all([
         readFile("app/[workspaceSlug]/settings/page.tsx", "utf8"),
         readFile("app/api/workspaces/[workspaceSlug]/search/route.ts", "utf8"),
         readFile("components/workspace/WorkspaceTopBarClient.tsx", "utf8"),
     ])
-    assert.match(settings, /\{ id: "leadgen", label: "Lead Gen"/)
-    assert.doesNotMatch(settings, /\{ id: "leadgen-automation", label:/)
-    assert.doesNotMatch(settings, /title="Lead Gen Automation"|title="Lead Gen Targeting"|title="Lead Gen Sources"/)
+    assert.match(settings, /section\.id !== "leadgen" \|\| leadgenOperationsAvailable\(\)/)
+    assert.match(settings, /\{leadgenOperationsAvailable\(\) \? <Suspense[^\n]*<LeadgenSettingsSection/)
     assert.match(search, /settings-teams/)
-    assert.match(search, /settings-leadgen".*label: "Lead Gen"/)
-    assert.match(search, /\$\{settingsPath\} > Lead Gen > Poll Automation/)
+    assert.match(search, /leadgenOperationsAvailable\(\) \|\| \(!entry\.href\.includes\("\/leadgen"\)/)
     assert.match(shell, /settings#teams/)
-    assert.match(shell, /settings#leadgen/)
+    assert.doesNotMatch(shell, /settings#leadgen/)
 })

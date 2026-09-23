@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { observeChatViewportMotion, requestChatViewportMotion } from "../lib/chat-viewport-motion.ts"
+import { WORKSPACE_TAB_VISIBILITY_EVENT } from "../lib/workspace-tabs.ts"
 
 function fixture(inFrame = false) {
     const host = new EventTarget()
@@ -14,7 +15,7 @@ function fixture(inFrame = false) {
         setTimeout: (callback: () => void) => { timers.set(++nextId, callback); return nextId },
         clearTimeout: (id: number) => timers.delete(id),
     })
-    const doc = Object.assign(new EventTarget(), { defaultView: view, visibilityState: "visible" })
+    const doc = Object.assign(new EventTarget(), { defaultView: view, visibilityState: "visible", body: { dataset: {} as Record<string, string> } })
     let applied = 800, offset = 0, visible = true, commits = 0
     const writes: number[] = []
     const animations: { from: number; to: number; duration: number; playState: string; onfinish: (() => void) | null; cancel: () => void }[] = []
@@ -50,7 +51,11 @@ function fixture(inFrame = false) {
         Object.defineProperty(event, "touches", { value: type === "touchstart" ? [{}] : [] })
         clip.dispatchEvent(event)
     }
-    return { move, advance, touch, cleanup, animations, writes, layer, clip, doc, reduced, mobile, host: view.parent, applied: () => applied, commits: () => commits, hide: () => { visible = false }, bottom: () => layer.getBoundingClientRect().bottom, settle: () => { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()) } }
+    const select = (active: boolean) => {
+        doc.body.dataset.workspaceTabActive = String(active)
+        view.dispatchEvent(new Event(WORKSPACE_TAB_VISIBILITY_EVENT))
+    }
+    return { move, advance, touch, select, cleanup, animations, writes, layer, clip, doc, reduced, mobile, host: view.parent, applied: () => applied, commits: () => commits, timerCount: () => timers.size, hide: () => { visible = false }, show: () => { visible = true }, bottom: () => layer.getBoundingClientRect().bottom, settle: () => { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()) } }
 }
 
 test("keyboard opening moves one layer without resizing the host between endpoints", () => {
@@ -198,4 +203,69 @@ test("backgrounding clears an interrupted touch so future keyboard animations ca
         assert.equal(f.bottom(), 800)
         assert.equal(f.layer.style.willChange, "")
     } finally { f.cleanup() }
+})
+
+test("returning to a hidden resident frame retires a lost touchend before the next motion", () => {
+    const f = fixture(true)
+    try {
+        f.move(500); f.touch("touchstart"); f.advance(0.5)
+        const oldFinish = f.animations[0].onfinish!
+        f.hide(); f.move(800); f.show(); f.move(500)
+        oldFinish()
+        assert.equal(f.applied(), 800, "retired callback must not commit newer motion")
+        f.advance(1); f.settle()
+        assert.equal(f.applied(), 500)
+        assert.equal(f.layer.style.height, "")
+        assert.equal(f.layer.style.willChange, "")
+        assert.equal(f.clip.dataset.chatViewportMoving, undefined)
+        assert.equal(f.timerCount(), 0)
+    } finally { f.cleanup() }
+})
+
+test("resident deactivation discards old geometry even before CSS hides the frame", () => {
+    const f = fixture(true)
+    try {
+        f.move(500); f.touch("touchstart"); f.advance(0.5)
+        f.select(false)
+        assert.deepEqual(f.writes, [800], "deactivation must not apply obsolete keyboard height")
+        assert.equal(f.layer.style.height, "")
+        assert.equal(f.timerCount(), 0)
+        f.select(true); f.move(450); f.advance(1)
+        assert.equal(f.applied(), 450)
+    } finally { f.cleanup() }
+})
+
+test("a lost gesture without pending motion is also retired on hidden or deactivated surfaces", () => {
+    for (const deactivate of [false, true]) {
+        const f = fixture(true)
+        try {
+            f.touch("touchstart")
+            if (deactivate) { f.select(false); f.select(true) }
+            else { f.hide(); f.move(800); f.show() }
+            f.move(500); f.advance(1)
+            assert.equal(f.applied(), 500)
+            assert.equal(f.timerCount(), 0)
+        } finally { f.cleanup() }
+    }
+})
+
+test("an active-tab notification preserves real touch and momentum deferral", () => {
+    const f = fixture(true)
+    try {
+        f.move(500); f.touch("touchstart"); f.select(true); f.advance(1); f.settle()
+        assert.equal(f.applied(), 800)
+        f.touch("touchend"); f.settle()
+        assert.equal(f.applied(), 500)
+    } finally { f.cleanup() }
+})
+
+test("disposal removes resident listeners and all outstanding gesture and motion timers", () => {
+    const f = fixture(true)
+    f.move(500); f.touch("touchstart"); f.touch("touchend")
+    f.cleanup()
+    assert.equal(f.timerCount(), 0)
+    const writes = [...f.writes]
+    f.select(false); f.move(800); f.settle()
+    assert.deepEqual(f.writes, [...writes, 800], "disposed helper cannot claim motion")
+    assert.equal(f.layer.style.height, "")
 })

@@ -1,10 +1,5 @@
+import { leadgenOperationsAvailable, leadgenPausedResponse } from "@/lib/leadgen/availability"
 import { NextRequest } from "next/server"
-
-import {
-    importSunbizOwnerIndexFromText,
-    normaliseSunbizImportMode,
-    normaliseSunbizImportSourceKey,
-} from "@/lib/leadgen/sunbiz-import"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -33,6 +28,7 @@ function boolValue(value: unknown) {
 }
 
 async function importPayload(request: NextRequest) {
+    const { normaliseSunbizImportMode, normaliseSunbizImportSourceKey } = await import("@/lib/leadgen/sunbiz-import")
     const contentType = request.headers.get("content-type") ?? ""
     const url = new URL(request.url)
     if (contentType.includes("multipart/form-data")) {
@@ -66,6 +62,7 @@ async function importPayload(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+    if (!leadgenOperationsAvailable()) return leadgenPausedResponse()
     if (!isAuthorized(request)) {
         return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -83,6 +80,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+        const { importSunbizOwnerIndexFromText } = await import("@/lib/leadgen/sunbiz-import")
         const summary = await importSunbizOwnerIndexFromText({
             sourceKey: payload.sourceKey,
             text: payload.text,

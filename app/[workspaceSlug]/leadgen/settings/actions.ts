@@ -1,5 +1,7 @@
 "use server"
 
+import { requireLeadgenOperations } from "@/lib/leadgen/availability"
+
 import { revalidatePath } from "next/cache"
 import { requireWorkspace } from "@/lib/workspaces"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -139,6 +141,7 @@ async function reconcileEnabledSourcesForCategoryIntents({
 }
 
 export async function updateLeadgenWorkspaceName(slug: string, formData: FormData) {
+    requireLeadgenOperations()
     const { workspace } = await requireWorkspace(slug, "admin")
     const name = String(formData.get("name") ?? "").trim()
     if (name.length < 2 || name.length > 100) throw new Error("Workspace names must be between 2 and 100 characters.")
@@ -148,6 +151,7 @@ export async function updateLeadgenWorkspaceName(slug: string, formData: FormDat
 }
 
 export async function updateLeadgenCoverLayout(slug: string, bannerHeight: number, bannerPosition: number) {
+    requireLeadgenOperations()
     const { workspace } = await requireWorkspace(slug, "admin")
     if (!Number.isInteger(bannerHeight) || bannerHeight < 192 || bannerHeight > 288) throw new Error("Banner height must be between 192px and 288px.")
     if (!Number.isInteger(bannerPosition) || bannerPosition < 0 || bannerPosition > 100) throw new Error("Banner position must be between 0 and 100.")
@@ -157,6 +161,7 @@ export async function updateLeadgenCoverLayout(slug: string, bannerHeight: numbe
 }
 
 export async function uploadLeadgenBanner(slug: string, formData: FormData) {
+    requireLeadgenOperations()
     const { workspace } = await requireWorkspace(slug, "admin")
     const file = formData.get("banner")
     if (!(file instanceof File) || file.size === 0) throw new Error("Choose an image to upload.")
@@ -167,6 +172,7 @@ export async function uploadLeadgenBanner(slug: string, formData: FormData) {
 }
 
 export async function uploadSharedWorkspaceLogo(slug: string, formData: FormData) {
+    requireLeadgenOperations()
     const { workspace } = await requireWorkspace(slug, "admin")
     const file = formData.get("logo")
     if (!(file instanceof File) || file.size === 0) throw new Error("Choose an image to upload.")
@@ -177,6 +183,7 @@ export async function uploadSharedWorkspaceLogo(slug: string, formData: FormData
 }
 
 export async function saveLeadgenSettings(slug: string, formData: FormData) {
+    requireLeadgenOperations()
     const { workspace } = await requireWorkspace(slug, "admin")
     const settingsResult = await supabaseAdmin
         .from("leadgen_workspace_settings")

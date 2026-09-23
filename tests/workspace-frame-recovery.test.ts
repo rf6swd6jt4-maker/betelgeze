@@ -106,13 +106,15 @@ function receiverFixture(native = false) {
     const tabsRef = ref(tabs)
     let loaded = 0
     const messages: unknown[] = []
+    const saveErrors: string[] = []
+    const fallback = ref(new Map())
     const context = {
         workspaceNavigationReadyMatches, useCallback: (v: unknown) => v,
         document: { visibilityState: "visible" }, window: { location: { origin: "https://fixture.test" }, clearTimeout() {}, requestAnimationFrame: () => assert.fail("stale readiness must not replay navigation") },
         WORKSPACE_TAB_MESSAGE_SOURCE: "fixture", iframeRefs: ref(new Map([["tab", { contentWindow: frameWindow }]])),
         nativeRefs: ref(new Map(native ? [["tab", {}]] : [])), tabsRef,
         pendingNavigationRef: pending, navigationErrorRef: errors, navigationTimeoutRef: timers,
-        softNavigationFallbackRef: ref(new Map()), navigationFallbackRef: ref(new Map()),
+        softNavigationFallbackRef: ref(new Map()), navigationFallbackRef: fallback,
         readyTabIdsRef: ref(new Set()), activeTabIdRef: ref("tab"),
         normalizeWorkspaceUrl: (v: string) => v, markTabFrameReady: () => { loaded++ },
         postToTab: (...args: unknown[]) => messages.push(args), reportInitialPanelReady() {}, setRouteLoadingTabId() {},
@@ -120,11 +122,12 @@ function receiverFixture(native = false) {
         routeCanShowRelationshipContext: () => false, setTabContextStatus() {}, setTabContextOpen() {},
         setTabs: (update: (value: typeof tabs) => typeof tabs) => { tabs = update(tabs); tabsRef.current = tabs },
         setNavigationStateByTab: (update: (value: typeof navigation) => typeof navigation) => { navigation = update(navigation) },
+        setBackgroundMutationState() {}, setBackgroundMutationError: (value: string) => saveErrors.push(value),
     }
     const receive = evaluate(declaration("completeTabNavigation") + fn("receiveFrameMessage"), context, "receiveFrameMessage")
     return {
-        pending, errors, state: () => ({ navigation, loaded, messages, tabs }),
-        send(type: string, url: string) { receive({ origin: "https://fixture.test", source: frameWindow, data: { source: "fixture", target: "host", tabId: "tab", type, url } }, native) },
+        pending, errors, fallback, state: () => ({ navigation, loaded, messages, tabs, saveErrors }),
+        send(type: string, url: string, extra: Record<string, unknown> = {}) { receive({ origin: "https://fixture.test", source: frameWindow, data: { source: "fixture", target: "host", tabId: "tab", type, url, ...extra } }, native) },
     }
 }
 
@@ -152,6 +155,18 @@ test("native failure immediately ends loading; only the matching retry can clear
     fixture.send("location", "/target")
     assert.equal(fixture.errors.current.size, 0)
     assert.deepEqual(fixture.state().navigation, {})
+})
+
+test("a denied frame save restores the retained editor and removes the destination overlay", () => {
+    const fixture = receiverFixture()
+    const retained = { id: "tab", url: "/old", title: "Editor", history: ["/old"], historyIndex: 0 }
+    fixture.fallback.current.set("tab", retained)
+    fixture.send("navigation-failed", "/target", { failureReason: "drafts", retainedUrl: "/old" })
+    assert.deepEqual(fixture.state().tabs, [retained])
+    assert.deepEqual(fixture.state().navigation, {})
+    assert.equal(fixture.pending.current.size, 0); assert.equal(fixture.errors.current.size, 0)
+    assert.match(fixture.state().saveErrors[0], /not safely saved/)
+    assert.equal(fixture.state().messages.length, 0, "restoring retained chrome must not navigate the editor again")
 })
 
 test("a late committed frame URL replacement clears the previous timeout", () => {

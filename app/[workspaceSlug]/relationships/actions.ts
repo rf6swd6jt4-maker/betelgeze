@@ -23,7 +23,10 @@ import { WORKSPACE_TAB_FRAME_PARAM, workspaceTabFrameUrl } from "@/lib/workspace
 import { resolvePrimaryMessagingProvider } from "@/lib/client-messages/addresses"
 import { noteHref } from "@/lib/notes"
 
-const creatableAssetKinds = new Set(["file", "media", "document"])
+import { getRequiredEnv } from "@/lib/env"
+import { confirmedRecordRejection } from "@/lib/assets/create-draft"
+import { readAssetUploadReceipt } from "@/lib/assets/upload-receipt"
+import { verifyAssetUpload } from "@/lib/assets/uploads"
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export type WorkspaceCreateActionState = {
@@ -31,6 +34,7 @@ export type WorkspaceCreateActionState = {
     href?: string
     error?: string
     notice?: string
+    rejected?: boolean
 }
 
 export type RelationshipDealDetailsInput = {
@@ -655,135 +659,56 @@ export async function createRelationshipAsset(slug: string, relationshipId: stri
     redirect(relationshipHubHref(slug, relationshipId))
 }
 
+// Stable create request IDs are scoped to the authenticated actor and workspace.
+function createLinkIds(formData: FormData, name: string) {
+    const ids = formData.getAll(name).map(String).filter(Boolean)
+    return ids.sort()
+}
+function createParentId(value: string | null | undefined) {
+    return value || null
+}
+
 export async function createAssetFromModal(slug: string, formData: FormData, relationshipId?: string | null, workItemId?: string | null): Promise<WorkspaceCreateActionState> {
     const { workspace, user } = await requireWorkspace(slug, "admin")
-    const title = formString(formData, "title")
-    const assetKind = formString(formData, "asset_kind") || "file"
-    if (!title) return { ok: false, error: "missing-title" }
-    if (!creatableAssetKinds.has(assetKind)) return { ok: false, error: "invalid-kind" }
-    const storagePath = nullableFormString(formData, "storage_path")
-    if (!storagePath) return { ok: false, error: "missing-upload" }
-
-    const submittedRelationshipId = nullableFormString(formData, "relationship_id")
-    const relationshipToLink = relationshipId ?? submittedRelationshipId
-    const workItemToLink = workItemId ?? nullableFormString(formData, "work_item_id")
-    const noteToLink = nullableFormString(formData, "note_id")
-    if (relationshipToLink) {
-        const { data: relationship } = await supabaseAdmin.from("relationships")
-            .select("id")
-            .eq("workspace_id", workspace.id)
-            .eq("id", relationshipToLink)
-            .neq("status", "archived")
-            .maybeSingle()
-        if (!relationship) return { ok: false, error: "This relationship is archived or unavailable." }
-    }
-    if (workItemToLink) {
-        const { data: workItem } = await supabaseAdmin.from("work_items").select("id").eq("workspace_id", workspace.id).eq("id", workItemToLink).maybeSingle()
-        if (!workItem) return { ok: false, error: "This work item is unavailable." }
-    }
-    if (noteToLink) {
-        const { data: note } = await supabaseAdmin.from("notes").select("id").eq("workspace_id", workspace.id).eq("id", noteToLink).maybeSingle()
-        if (!note) return { ok: false, error: "This note is unavailable." }
-    }
-
-    const { data: asset, error } = await supabaseAdmin.from("assets").insert({
-        workspace_id: workspace.id,
-        title,
-        asset_kind: assetKind,
-        source_kind: "upload",
-        description: nullableFormString(formData, "description"),
-        storage_path: storagePath,
-        content_type: nullableFormString(formData, "content_type"),
-        file_size: Number(formData.get("file_size") ?? 0) || null,
-        native_kind: "manual_upload",
-        metadata: {
-            created_from: relationshipId || workItemId ? "context_create" : "global_create",
-            original_name: nullableFormString(formData, "original_name"),
-        },
-        created_by: user.id,
-    })
-        .select("id")
-        .single()
-
-    if (error || !asset) return { ok: false, error: "create-failed" }
-
-    const links = await Promise.all([
-        relationshipToLink ? supabaseAdmin.from("asset_relationships").insert({ workspace_id: workspace.id, asset_id: asset.id, relationship_id: relationshipToLink }) : Promise.resolve({ error: null }),
-        workItemToLink ? supabaseAdmin.from("asset_work_items").insert({ workspace_id: workspace.id, asset_id: asset.id, work_item_id: workItemToLink }) : Promise.resolve({ error: null }),
-        noteToLink ? supabaseAdmin.from("note_assets").insert({ workspace_id: workspace.id, asset_id: asset.id, note_id: noteToLink }) : Promise.resolve({ error: null }),
-    ])
-    if (links.some((link) => link.error)) {
-        await supabaseAdmin.from("assets").delete().eq("workspace_id", workspace.id).eq("id", asset.id)
-        return { ok: false, error: "The asset links could not be saved. Nothing was created." }
-    }
-
-    relationshipRevalidatePaths(slug, relationshipToLink ?? undefined)
-    return { ok: true, href: assetHref(slug, asset.id) }
+    try {
+        if (formData.get("expected_user_id") !== user.id) return { ok: false, error: "Your session changed. Keep your draft and reload the uploader." }
+        const requestId = formString(formData, "record_request_id")
+        if (!uuidPattern.test(requestId)) return { ok: false, error: "This uploader needs to be reloaded. Your draft has not been saved." }
+        const receipt = readAssetUploadReceipt(formData.get("upload_receipt"), getRequiredEnv("R2_SECRET_ACCESS_KEY"), workspace.id, user.id, Date.now(), true)
+        if (receipt.id !== requestId) return { ok: false, error: "The upload belongs to another create request." }
+        const title = formString(formData, "title") || receipt.name
+        const description = formString(formData, "description")
+        const relationship = createParentId(relationshipId ?? nullableFormString(formData, "relationship_id"))
+        const payload = { title, description, relationship_ids: relationship ? [relationship] : [], asset_ids: [], work_item_id: createParentId(workItemId ?? nullableFormString(formData, "work_item_id")), note_id: createParentId(nullableFormString(formData, "note_id")), storage_path: receipt.path, file_size: receipt.size, content_type: receipt.type, asset_kind: receipt.kind, original_name: receipt.name }
+        const accepted = await supabaseAdmin.from("record_attachment_commands").select("record_id").eq("workspace_id", workspace.id).eq("actor_id", user.id).eq("request_id", requestId).maybeSingle()
+        if (accepted.error) return { ok: false, error: "Asset creation is not available yet. Keep this draft and retry after the update is ready." }
+        const expired = receipt.expires <= Date.now()
+        if (!accepted.data && !expired) await verifyAssetUpload(receipt)
+        const result = await supabaseAdmin.rpc("create_attachment_record", { p_workspace: workspace.id, p_actor: user.id, p_request: requestId, p_kind: "asset", p_payload: payload, p_reject_reason: expired ? "upload_expired" : null })
+        if (result.error || !result.data) return { ok: false, error: result.error?.code === "P0001" ? result.error.message : "The asset save could not be confirmed. Retry this same request; no cleanup or duplicate create is performed." }
+        const outcome = result.data as { status?: string; record_id?: string; error?: string }
+        if (confirmedRecordRejection(result)) return { ok: false, rejected: true, error: outcome.error ?? "The asset request was rejected. Edit the preserved draft." }
+        if (outcome.status !== "accepted" || !outcome.record_id) return { ok: false, error: "The asset save could not be confirmed. Retry the saved request." }
+        relationshipRevalidatePaths(slug, relationship ?? undefined)
+        return { ok: true, href: assetHref(slug, outcome.record_id) }
+    } catch (error) { return { ok: false, error: error instanceof Error ? error.message : "The asset could not be confirmed. Retry this same request." } }
 }
 
 export async function createNoteFromModal(slug: string, formData: FormData): Promise<WorkspaceCreateActionState> {
     const { workspace, user } = await requireWorkspace(slug, "admin")
-    const name = formString(formData, "name")
-    const description = formString(formData, "description")
-    if (!name || name.length > 160) return { ok: false, error: "Add a note name of 160 characters or fewer." }
-    if (!description || description.length > 20_000) return { ok: false, error: "Add a note description of 20,000 characters or fewer." }
-
-    const relationshipIds = [...new Set(formData.getAll("relationship_ids").map(String).filter((id) => uuidPattern.test(id)))].slice(0, 20)
-    const assetIds = [...new Set(formData.getAll("asset_ids").map(String).filter((id) => uuidPattern.test(id)))].slice(0, 20)
-    const workItemId = nullableFormString(formData, "work_item_id")
-    const parentNoteId = nullableFormString(formData, "parent_note_id")
-    if ((workItemId && !uuidPattern.test(workItemId)) || (parentNoteId && !uuidPattern.test(parentNoteId))) return { ok: false, error: "The attached record is invalid." }
-    if (relationshipIds.length !== formData.getAll("relationship_ids").filter(Boolean).length || assetIds.length !== formData.getAll("asset_ids").filter(Boolean).length) {
-        return { ok: false, error: "One or more selected links are invalid." }
-    }
-
-    const [relationshipsResult, assetsResult] = await Promise.all([
-        relationshipIds.length
-            ? supabaseAdmin.from("relationships").select("id").eq("workspace_id", workspace.id).neq("status", "archived").in("id", relationshipIds)
-            : Promise.resolve({ data: [], error: null }),
-        assetIds.length
-            ? supabaseAdmin.from("assets").select("id").eq("workspace_id", workspace.id).in("id", assetIds)
-            : Promise.resolve({ data: [], error: null }),
-    ])
-    if (relationshipsResult.error || (relationshipsResult.data ?? []).length !== relationshipIds.length) return { ok: false, error: "One or more relationships are archived or unavailable." }
-    if (assetsResult.error || (assetsResult.data ?? []).length !== assetIds.length) return { ok: false, error: "One or more assets are unavailable." }
-    if (workItemId) {
-        const { data } = await supabaseAdmin.from("work_items").select("id").eq("workspace_id", workspace.id).eq("id", workItemId).maybeSingle()
-        if (!data) return { ok: false, error: "The work item is unavailable." }
-    }
-    if (parentNoteId) {
-        const { data } = await supabaseAdmin.from("notes").select("id").eq("workspace_id", workspace.id).eq("id", parentNoteId).maybeSingle()
-        if (!data) return { ok: false, error: "The parent note is unavailable." }
-    }
-
-    const { data: note, error } = await supabaseAdmin.from("notes").insert({
-        workspace_id: workspace.id,
-        name,
-        description,
-        created_by: user.id,
-    }).select("id").single()
-    if (error || !note) return { ok: false, error: "The note could not be created." }
-
-    const [relationshipLinks, assetLinks, workItemLink, parentNoteLink] = await Promise.all([
-        relationshipIds.length ? supabaseAdmin.from("note_relationships").insert(relationshipIds.map((relationshipId) => ({
-            workspace_id: workspace.id,
-            note_id: note.id,
-            relationship_id: relationshipId,
-        }))) : Promise.resolve({ error: null }),
-        assetIds.length ? supabaseAdmin.from("note_assets").insert(assetIds.map((assetId) => ({
-            workspace_id: workspace.id,
-            note_id: note.id,
-            asset_id: assetId,
-        }))) : Promise.resolve({ error: null }),
-        workItemId ? supabaseAdmin.from("note_work_items").insert({ workspace_id: workspace.id, note_id: note.id, work_item_id: workItemId }) : Promise.resolve({ error: null }),
-        parentNoteId ? supabaseAdmin.from("note_notes").insert({ workspace_id: workspace.id, parent_note_id: parentNoteId, attached_note_id: note.id }) : Promise.resolve({ error: null }),
-    ])
-    if (relationshipLinks.error || assetLinks.error || workItemLink.error || parentNoteLink.error) {
-        await supabaseAdmin.from("notes").delete().eq("workspace_id", workspace.id).eq("id", note.id)
-        return { ok: false, error: "The note links could not be saved. Nothing was created." }
-    }
-
-    revalidatePath(workspaceHref(slug, "notes"))
-    for (const relationshipId of relationshipIds) relationshipRevalidatePaths(slug, relationshipId)
-    return { ok: true, href: noteHref(slug, note.id) }
+    try {
+        if (formData.get("expected_user_id") !== user.id) return { ok: false, error: "Your session changed. Keep your draft and reload the editor." }
+        const requestId = formString(formData, "record_request_id"), name = formString(formData, "name"), description = formString(formData, "description")
+        if (!uuidPattern.test(requestId)) return { ok: false, error: "This editor needs to be reloaded. Keep your draft; no note was created." }
+        const relationships = createLinkIds(formData, "relationship_ids"), assets = createLinkIds(formData, "asset_ids")
+        const payload = { title: name, description, relationship_ids: relationships, asset_ids: assets, work_item_id: createParentId(nullableFormString(formData, "work_item_id")), note_id: createParentId(nullableFormString(formData, "parent_note_id")) }
+        const result = await supabaseAdmin.rpc("create_attachment_record", { p_workspace: workspace.id, p_actor: user.id, p_request: requestId, p_kind: "note", p_payload: payload })
+        if (result.error || !result.data) return { ok: false, error: result.error?.code === "P0001" ? result.error.message : "The note save could not be confirmed. Retry this same request; no cleanup or duplicate create is performed." }
+        const outcome = result.data as { status?: string; record_id?: string; error?: string }
+        if (confirmedRecordRejection(result)) return { ok: false, rejected: true, error: outcome.error ?? "The note request was rejected. Edit the preserved draft." }
+        if (outcome.status !== "accepted" || !outcome.record_id) return { ok: false, error: "The note save could not be confirmed. Retry the saved request." }
+        revalidatePath(workspaceHref(slug, "notes"))
+        for (const relationshipId of relationships) relationshipRevalidatePaths(slug, relationshipId)
+        return { ok: true, href: noteHref(slug, outcome.record_id) }
+    } catch (error) { return { ok: false, error: error instanceof Error ? error.message : "The note could not be confirmed. Retry this same request." } }
 }

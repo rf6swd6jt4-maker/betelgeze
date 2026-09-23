@@ -1,3 +1,5 @@
+// @ts-expect-error Node executes this script directly with source extensions.
+import { requireLeadgenOperations } from "../lib/leadgen/availability.ts"
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, rmSync, statSync, unlinkSync } from "node:fs"
 import path from "node:path"
 import { createInterface } from "node:readline"
@@ -310,6 +312,7 @@ async function buildShards(options: CliOptions, helpers: ArizonaOwnerShardHelper
 }
 
 async function main() {
+    requireLeadgenOperations()
     const helpers = await loadArizonaOwnerShardHelpers()
     const options = parseArgs(process.argv.slice(2), helpers)
     if (!options.sourceKey || options.files.length === 0) {

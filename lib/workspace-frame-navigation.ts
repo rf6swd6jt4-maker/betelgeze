@@ -2,6 +2,10 @@
 export const WORKSPACE_FRAME_NAVIGATION_EVENT = "betelgeze:frame-navigate"
 export const WORKSPACE_FRAME_NAVIGATION_ATTRIBUTE = "data-workspace-frame-navigation"
 
+export class WorkspaceFrameDraftError extends Error {
+    constructor() { super("Your changes are not safely saved yet. Please retry saving."); this.name = "WorkspaceFrameDraftError" }
+}
+
 export function createWorkspaceFrameNavigator(options: {
     currentUrl: () => string
     flush: () => Promise<unknown>
@@ -18,7 +22,7 @@ export function createWorkspaceFrameNavigator(options: {
             try {
                 const safe = await options.flush()
                 if (sequence !== ownSequence) return
-                if (safe === false) throw new Error("Your changes are not safely saved yet. Please retry saving.")
+                if (safe === false) throw new WorkspaceFrameDraftError()
                 // A -> B (pending) -> A must still reach the router so that it
                 // cancels B, even though the committed address is already A.
                 if (replace) options.replace(url)

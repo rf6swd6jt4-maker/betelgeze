@@ -1,3 +1,4 @@
+import { leadgenOperationsAvailable } from "@/lib/leadgen/availability"
 import type { NextRequest } from "next/server"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -102,6 +103,7 @@ function staticNavigationResults(workspace: { name: string; slug: string }, quer
     ]
 
     return entries
+        .filter((entry) => leadgenOperationsAvailable() || (!entry.href.includes("/leadgen") && !entry.href.includes("#leadgen")))
         .filter((entry) => includesQuery([entry.label, entry.description, entry.path, ...entry.keywords], query))
         .map((entry) => ({
             id: entry.id,
@@ -277,7 +279,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
             .is("archived_at", null)
             .order("created_at", { ascending: false })
             .limit(80) : Promise.resolve({ data: [], error: null }),
-        canAccessPrivatePanels
+        canAccessPrivatePanels && leadgenOperationsAvailable()
             ? supabaseAdmin
                 .from("leadgen_companies")
                 .select("id, display_name, legal_name, dba_name, entity_number, owner_name, owner_phone, phone, website_url, source_key, source_record_id, first_seen_poll_id, qualification_status")
@@ -285,7 +287,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                 .order("created_at", { ascending: false })
                 .limit(80)
             : Promise.resolve({ data: [], error: null }),
-        canAccessPrivatePanels
+        canAccessPrivatePanels && leadgenOperationsAvailable()
             ? supabaseAdmin
                 .from("leadgen_polls")
                 .select("id, status, trigger, source_count, candidate_count, qualified_count, error, created_at")

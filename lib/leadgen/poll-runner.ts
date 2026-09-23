@@ -1,3 +1,4 @@
+import { leadgenOperationsAvailable, requireLeadgenOperations } from "@/lib/leadgen/availability"
 import { buildSourcePlan, executableLeadgenSources, seedLeadgenSources, stateLicensingSourceKeys, type LeadgenSourceConfig, type LeadgenSourcePlanItem } from "@/lib/leadgen/sources"
 import { createOsmTasksForPoll, finalizeLeadgenPoll, processOsmPoll, setLeadgenPollStatus } from "@/lib/leadgen/osm-worker"
 import { createPipelineTasksForPoll, createWebsiteTasksForPoll, processPipelineSourcePoll } from "@/lib/leadgen/pipeline-workers"
@@ -38,6 +39,7 @@ function executablePlan(sourcePlan: LeadgenSourcePlanItem[]) {
 }
 
 export async function createInitialLeadgenPollTasks({ workspaceId, pollId, sourcePlan }: { workspaceId: string; pollId: string; sourcePlan: LeadgenSourcePlanItem[] }) {
+    requireLeadgenOperations()
     const { osmSeedPlan, preSeedPipelinePlans } = executablePlan(sourcePlan)
     const [pipelineCount, osmCount] = await Promise.all([
         preSeedPipelinePlans.length ? createPipelineTasksForPoll({ workspaceId, pollId, plans: preSeedPipelinePlans }) : Promise.resolve(0),
@@ -205,6 +207,7 @@ async function reusablePassedCompanyIds(stageRuns: Map<PollStageKey, PollStageRu
 }
 
 export async function processLeadgenPoll({ workspaceId, pollId }: { workspaceId: string; pollId: string }) {
+    if (!leadgenOperationsAvailable()) return { processed: false, reason: "quarantined" }
     const pollResult = await supabaseAdmin
         .from("leadgen_polls")
         .select("id, status, source_snapshot")

@@ -16,6 +16,7 @@ import {
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
 import { openOnboardingBuilderWindow } from "@/lib/onboarding-builder-window"
 import { WORKSPACE_FRAME_NAVIGATION_EVENT } from "@/lib/workspace-frame-navigation"
+import { WORKSPACE_FRAME_PAGE_ATTRIBUTE } from "@/lib/workspace-tab-departure"
 import { focusedChatComposer } from "@/lib/workspace-composer-viewport"
 import { PullToRefresh } from "@/components/workspace/PullToRefresh"
 import { parseWorkspaceDetailPreview, storeWorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
@@ -40,6 +41,12 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
     const refreshStartedRef = useRef(false)
     const [refreshPending, startRefreshTransition] = useTransition()
     const refresh = useCallback(() => startRefreshTransition(() => router.refresh()), [router])
+
+    useEffect(() => {
+        // Document lifetime marker: a later missing receiver must not imply
+        // that this formerly usable page has no draft owner.
+        document.documentElement.setAttribute(WORKSPACE_FRAME_PAGE_ATTRIBUTE, "true")
+    }, [])
 
     useEffect(() => {
         if (refreshPending) {

@@ -1,0 +1,92 @@
+{
+  "verifiedAt": "2026-09-23T14:15:08.233Z",
+  "results": [
+    {
+      "name": "environment",
+      "version": "PostgreSQL 18.3 (PGlite 0.5.8) on wasm32-unknown-emscripten, compiled by emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 3.1.74 (1092ec30a3fb1d46b1782ff1b4db5094d3d06ae5), 32-bit",
+      "sourcePath": "/private/tmp/betelgeze-platform-consolidation/supabase/migrations/20260918130000_workspace_notes.sql",
+      "originalFunctionBodyMd5": "75cb6e5209f6c5d59aefb3ffcfefac5e",
+      "database": "fresh in-memory PGlite; no live connection"
+    },
+    {
+      "name": "original valid note-to-relationship fails",
+      "passed": true,
+      "sqlstate": "42703",
+      "message": "record \"new\" has no field \"asset_id\""
+    },
+    {
+      "name": "original valid note-to-asset fails",
+      "passed": true,
+      "sqlstate": "42703",
+      "message": "record \"new\" has no field \"relationship_id\""
+    },
+    {
+      "name": "branched valid note-to-relationship succeeds",
+      "passed": true
+    },
+    {
+      "name": "branched valid note-to-asset succeeds",
+      "passed": true
+    },
+    {
+      "name": "branched relationship target from another workspace rejected",
+      "passed": true,
+      "sqlstate": "P0001",
+      "message": "Relationship does not belong to the link workspace"
+    },
+    {
+      "name": "branched asset target from another workspace rejected",
+      "passed": true,
+      "sqlstate": "P0001",
+      "message": "Asset does not belong to the link workspace"
+    },
+    {
+      "name": "branched foreign note on relationship link rejected",
+      "passed": true,
+      "sqlstate": "P0001",
+      "message": "Note does not belong to the link workspace"
+    },
+    {
+      "name": "branched foreign note on asset link rejected",
+      "passed": true,
+      "sqlstate": "P0001",
+      "message": "Note does not belong to the link workspace"
+    },
+    {
+      "name": "branched relationship cross-workspace update rejected",
+      "passed": true,
+      "sqlstate": "P0001",
+      "message": "Relationship does not belong to the link workspace"
+    },
+    {
+      "name": "branched asset cross-workspace update rejected",
+      "passed": true,
+      "sqlstate": "P0001",
+      "message": "Asset does not belong to the link workspace"
+    },
+    {
+      "name": "branched duplicate relationship remains unique",
+      "passed": true,
+      "sqlstate": "23505",
+      "message": "duplicate key value violates unique constraint \"note_relationships_pkey\""
+    },
+    {
+      "name": "branched duplicate asset remains unique",
+      "passed": true,
+      "sqlstate": "23505",
+      "message": "duplicate key value violates unique constraint \"note_assets_pkey\""
+    },
+    {
+      "name": "all record counts and valid links preserved after rejection cases",
+      "passed": true,
+      "finalCounts": {
+        "notes": 2,
+        "relationship_records": 2,
+        "asset_records": 2,
+        "relationship_links": 1,
+        "asset_links": 1
+      }
+    }
+  ],
+  "proposedFunction": "CREATE OR REPLACE FUNCTION public.enforce_note_link_workspace()\nRETURNS trigger\nLANGUAGE plpgsql\nSET search_path = public\nAS $$\nBEGIN\n    IF NOT EXISTS (\n        SELECT 1 FROM public.notes note\n        WHERE note.id = NEW.note_id AND note.workspace_id = NEW.workspace_id\n    ) THEN\n        RAISE EXCEPTION 'Note does not belong to the link workspace';\n    END IF;\n    IF TG_TABLE_NAME = 'note_relationships' THEN\n        IF NOT EXISTS (\n            SELECT 1 FROM public.relationships relationship\n            WHERE relationship.id = NEW.relationship_id AND relationship.workspace_id = NEW.workspace_id\n        ) THEN\n            RAISE EXCEPTION 'Relationship does not belong to the link workspace';\n        END IF;\n    END IF;\n    IF TG_TABLE_NAME = 'note_assets' THEN\n        IF NOT EXISTS (\n            SELECT 1 FROM public.assets asset\n            WHERE asset.id = NEW.asset_id AND asset.workspace_id = NEW.workspace_id\n        ) THEN\n            RAISE EXCEPTION 'Asset does not belong to the link workspace';\n        END IF;\n    END IF;\n    RETURN NEW;\nEND;\n$$;"
+}

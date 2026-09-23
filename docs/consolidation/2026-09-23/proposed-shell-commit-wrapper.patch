@@ -1,0 +1,722 @@
+--- a/components/workspace/WorkspaceTopBarClient.tsx
++++ b/components/workspace/WorkspaceTopBarClient.tsx
+@@ -19,6 +19,7 @@
+ import dynamic from "next/dynamic"
+ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
+ import { usePathname, useSearchParams } from "next/navigation"
++import { flushSync } from "react-dom"
+ import { NativeWorkspaceTab, nativePanelCacheKey, type NativePanelSnapshot, type NativeTabHandle } from "@/components/workspace/NativeWorkspaceTab"
+ import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
+ import { WorkspaceNavigationPerformanceTracker } from "@/lib/workspace-performance-contract"
+@@ -475,7 +476,7 @@
+         const cached = nativeCache.getSnapshot(nativePanelCacheKey(currentUserId, workspace.id, route.key)).data
+         return nativeNavigationPerformance.begin(beginWorkspaceInteraction({ workspaceSlug: workspace.slug, operation, routeSection: route.kind, renderer: "native", cacheState: cached ? "memory" : "network", background: false }), url, tabId, source)
+     }, [nativePanelsEnabled, clearedNativeAccount, nativeAccountScope, nativeCache, nativeNavigationPerformance, currentUserId, workspace.id, workspace.slug])
+-    const prepareNativeLeave = useCallback(async (options: { activateTabId?: string; closeTabId?: string; destination?: { tabId: string; url: string }; forceFrame?: string } = {}): Promise<false | (() => boolean)> => {
++    const prepareNativeLeave = useCallback(async (options: { activateTabId?: string; closeTabId?: string; destination?: { tabId: string; url: string }; forceFrame?: string } = {}): Promise<false | ((commit: () => void) => boolean)> => {
+         const sequence = ++nativeNavigationSequence.current
+         warmAbortRef.current?.abort()
+         departureAbortRef.current?.abort()
+@@ -513,13 +514,21 @@
+         }
+         if (!safe) return refuse()
+         nativeCheck?.acknowledge()
+-        // Invoke immediately before the destructive state/document change.
+-        // An asynchronous acknowledgement is not the final checkpoint.
+-        return () => {
+-            if (sequence !== nativeNavigationSequence.current || controller.signal.aborted) { nativeCheck?.dispose(); return false }
+-            const confirmed = frames.every((frame) => confirmWorkspaceFrameDeparture(frame)) && (!nativeCheck || nativeCheck.validate())
+-            nativeCheck?.dispose()
+-            return confirmed || refuse()
++        // Validation and the React commit share one task, so another input
++        // cannot dirty a legacy owner between acknowledgement and unmount.
++        return (commit) => {
++            let committed = false
++            const finish = () => {
++                if (sequence !== nativeNavigationSequence.current || controller.signal.aborted) { nativeCheck?.dispose(); return }
++                const confirmed = frames.every((frame) => confirmWorkspaceFrameDeparture(frame)) && (!nativeCheck || nativeCheck.validate())
++                nativeCheck?.dispose()
++                if (!confirmed) { refuse(); return }
++                commit()
++                committed = true
++            }
++            if (frames.length || nativeDeparture) flushSync(finish)
++            else finish()
++            return committed
+         }
+     }, [nativePanelsEnabled, workspace.slug])
+     useEffect(() => () => { ++nativeNavigationSequence.current; departureAbortRef.current?.abort(); warmAbortRef.current?.abort() }, [])
+@@ -553,13 +562,17 @@
+             return frame ? prepareWorkspaceFrameDeparture(frame, id, window, controller.signal, true) : nativeRefs.current.has(id) ? checkpointWorkspaceAutosaves() : true
+         }))
+         if (controller.signal.aborted || !safe.every(Boolean) || residentTabIdsRef.current !== current || activeTabIdRef.current !== activeId || !tabsRef.current.some((tab) => tab.id === tabId)) return
+-        if (!evicted.every((id) => {
+-            const frame = iframeRefs.current.get(id)
+-            return frame ? confirmWorkspaceFrameDeparture(frame) : !nativeRefs.current.has(id) || checkpointWorkspaceAutosaves()
+-        })) return
+-        const next = ordered.slice(0, MAX_RESIDENT_WORKSPACE_FRAMES)
+-        residentTabIdsRef.current = next
+-        setResidentTabIds(next)
++        const commit = () => {
++            if (!evicted.every((id) => {
++                const frame = iframeRefs.current.get(id)
++                return frame ? confirmWorkspaceFrameDeparture(frame) : !nativeRefs.current.has(id) || checkpointWorkspaceAutosaves()
++            })) return
++            const next = ordered.slice(0, MAX_RESIDENT_WORKSPACE_FRAMES)
++            residentTabIdsRef.current = next
++            setResidentTabIds(next)
++        }
++        if (evicted.length) flushSync(commit)
++        else commit()
+     }, [])
+     const cancelScheduledTabWarm = useCallback((tabId: string) => {
+         if (tabWarmTargetRef.current !== tabId) return
+@@ -696,22 +709,29 @@
+             const target = tabsRef.current.find((tab) => tab.id === storedId) ?? tabsRef.current.find((tab) => tab.url === url) ?? previous
+             if (!target) { nativeNavigationPerformance.finish(intent, "aborted"); return }
+             const confirmDeparture = await prepareNativeLeave({ activateTabId: target.id, destination: { tabId: target.id, url } })
+-            if (!confirmDeparture || !confirmDeparture()) {
++            if (!confirmDeparture) {
+                 nativeNavigationPerformance.finish(intent, "failed")
+                 if (previous) window.history.replaceState(window.history.state, "", previous.url)
+                 return
+             }
+-            nativeNavigationPerformance.bind(intent, target.id)
+-            const knownIndex = target.history.lastIndexOf(url)
+-            const nextTabs = tabsRef.current.map((tab) => tab.id === target.id ? {
+-                ...tab, url, title: titleForUrl(url),
+-                ...(knownIndex >= 0 ? { historyIndex: knownIndex } : appendWorkspaceTabHistory(tab.history, tab.historyIndex, url)),
+-            } : tab)
+-            tabsRef.current = nextTabs
+-            activeTabIdRef.current = target.id
+-            setTabs(nextTabs)
+-            activateWorkspaceTab(target.id)
+-            saveTabsState(nextTabs, target.id)
++            const committed = confirmDeparture(() => {
++                nativeNavigationPerformance.bind(intent, target.id)
++                const knownIndex = target.history.lastIndexOf(url)
++                const nextTabs = tabsRef.current.map((tab) => tab.id === target.id ? {
++                    ...tab, url, title: titleForUrl(url),
++                    ...(knownIndex >= 0 ? { historyIndex: knownIndex } : appendWorkspaceTabHistory(tab.history, tab.historyIndex, url)),
++                } : tab)
++                tabsRef.current = nextTabs
++                activeTabIdRef.current = target.id
++                setTabs(nextTabs)
++                activateWorkspaceTab(target.id)
++                saveTabsState(nextTabs, target.id)
++            })
++            if (!committed) {
++                nativeNavigationPerformance.finish(intent, "failed")
++                if (previous) window.history.replaceState(window.history.state, "", previous.url)
++                return
++            }
+         }
+         const receive = () => { void restore() }
+         window.addEventListener("popstate", receive)
+@@ -1098,34 +1118,37 @@
+         const closed = closedTabsRef.current.at(-1)
+         if (!closed) return false
+         const confirmDeparture = await prepareNativeLeave({ activateTabId: closed.tab.id })
+-        if (!confirmDeparture || !confirmDeparture()) return false
+-        closedTabsRef.current.pop()
+-
+-        const previousTabId = activeTabIdRef.current
+-        const restoredTab = { ...closed.tab, seenRevision: mutationRevisionRef.current }
+-        shellStorage.set(workspaceTabContextStorageKey(workspace.slug, restoredTab.id), closed.contextOpen === false ? "false" : "true")
+-        if (!tabFrameOrderRef.current.includes(restoredTab.id)) {
+-            tabFrameOrderRef.current.push(restoredTab.id)
+-            setTabFrameOrder([...tabFrameOrderRef.current])
+-        }
+-        loadedTabIdsRef.current.delete(closed.tab.id)
+-        readyTabIdsRef.current.delete(closed.tab.id)
+-        pendingNavigationRef.current.delete(closed.tab.id)
+-        setLoadedTabIds(new Set(loadedTabIdsRef.current))
+-        setTabs((existingTabs) => {
+-            const insertionIndex = Math.min(Math.max(closed.index, 0), existingTabs.length)
+-            const nextTabs = [
+-                ...existingTabs.slice(0, insertionIndex),
+-                restoredTab,
+-                ...existingTabs.slice(insertionIndex),
+-            ]
+-            activeTabIdRef.current = restoredTab.id
+-            activateWorkspaceTab(restoredTab.id)
+-            saveTabsState(nextTabs, restoredTab.id)
+-            return nextTabs
+-        })
+-        window.requestAnimationFrame(() => postToTab(previousTabId, { type: "activate", active: false, refresh: false }))
+-        return true
++        if (!confirmDeparture) return false
++        const committed = confirmDeparture(() => {
++            closedTabsRef.current.pop()
++    
++            const previousTabId = activeTabIdRef.current
++            const restoredTab = { ...closed.tab, seenRevision: mutationRevisionRef.current }
++            shellStorage.set(workspaceTabContextStorageKey(workspace.slug, restoredTab.id), closed.contextOpen === false ? "false" : "true")
++            if (!tabFrameOrderRef.current.includes(restoredTab.id)) {
++                tabFrameOrderRef.current.push(restoredTab.id)
++                setTabFrameOrder([...tabFrameOrderRef.current])
++            }
++            loadedTabIdsRef.current.delete(closed.tab.id)
++            readyTabIdsRef.current.delete(closed.tab.id)
++            pendingNavigationRef.current.delete(closed.tab.id)
++            setLoadedTabIds(new Set(loadedTabIdsRef.current))
++            setTabs((existingTabs) => {
++                const insertionIndex = Math.min(Math.max(closed.index, 0), existingTabs.length)
++                const nextTabs = [
++                    ...existingTabs.slice(0, insertionIndex),
++                    restoredTab,
++                    ...existingTabs.slice(insertionIndex),
++                ]
++                activeTabIdRef.current = restoredTab.id
++                activateWorkspaceTab(restoredTab.id)
++                saveTabsState(nextTabs, restoredTab.id)
++                return nextTabs
++            })
++            window.requestAnimationFrame(() => postToTab(previousTabId, { type: "activate", active: false, refresh: false }))
++        })
++        if (!committed) return false
++        return committed
+     }, [activateWorkspaceTab, postToTab, saveTabsState, prepareNativeLeave, shellStorage, workspace.slug])
+ 
+     const openWorkspaceTab = useCallback(async (href: string, detailPreview?: WorkspaceDetailPreview, sourceTabId?: string) => {
+@@ -1133,64 +1156,67 @@
+         const url = normalizeWorkspaceUrl(href)
+         const requestedTabId = tabsRef.current.find((tab) => tab.url === url)?.id ?? (tabsRef.current.length >= 8 ? activeTabIdRef.current : createTabId())
+         const confirmDeparture = await prepareNativeLeave({ activateTabId: requestedTabId, destination: { tabId: requestedTabId, url } })
+-        if (!confirmDeparture || !confirmDeparture()) { nativeNavigationPerformance.finish(intent, "failed"); return }
+-        if (detailPreview) storeWorkspaceDetailPreview(url, detailPreview)
+-        const currentTabs = tabsRef.current
+-        const existingTab = currentTabs.find((tab) => tab.url === url)
+-        const previousTabId = activeTabIdRef.current
+-
+-        if (existingTab) {
+-            if (existingTab.id === previousTabId) { nativeNavigationPerformance.finish(intent, "aborted"); return }
+-            nativeNavigationPerformance.bind(intent, existingTab.id)
+-            const refresh = existingTab.seenRevision < mutationRevisionRef.current
+-            const nextTabs = currentTabs.map((tab) => tab.id === existingTab.id
+-                ? { ...tab, seenRevision: refresh ? mutationRevisionRef.current : tab.seenRevision, detailPreview: detailPreview ?? tab.detailPreview }
+-                : tab)
++        if (!confirmDeparture) { nativeNavigationPerformance.finish(intent, "failed"); return }
++        const committed = confirmDeparture(() => {
++            if (detailPreview) storeWorkspaceDetailPreview(url, detailPreview)
++            const currentTabs = tabsRef.current
++            const existingTab = currentTabs.find((tab) => tab.url === url)
++            const previousTabId = activeTabIdRef.current
++    
++            if (existingTab) {
++                if (existingTab.id === previousTabId) { nativeNavigationPerformance.finish(intent, "aborted"); return }
++                nativeNavigationPerformance.bind(intent, existingTab.id)
++                const refresh = existingTab.seenRevision < mutationRevisionRef.current
++                const nextTabs = currentTabs.map((tab) => tab.id === existingTab.id
++                    ? { ...tab, seenRevision: refresh ? mutationRevisionRef.current : tab.seenRevision, detailPreview: detailPreview ?? tab.detailPreview }
++                    : tab)
++                tabsRef.current = nextTabs
++                activeTabIdRef.current = existingTab.id
++                setTabs(nextTabs)
++                activateWorkspaceTab(existingTab.id)
++                saveTabsState(nextTabs, existingTab.id)
++                window.requestAnimationFrame(() => {
++                    postToTab(previousTabId, { type: "activate", active: false, refresh: false })
++                    postToTab(existingTab.id, { type: "activate", active: true, refresh })
++                    postToTab(existingTab.id, { type: "probe" })
++                })
++                return
++            }
++    
++            if (currentTabs.length >= 8) {
++                const tabId = activeTabIdRef.current
++                if (!tabId) { nativeNavigationPerformance.finish(intent, "aborted"); return }
++                nativeNavigationPerformance.bind(intent, tabId)
++                beginTabNavigation(tabId, url)
++                updateTabForShellNavigation(tabId, url, detailPreview)
++                pendingNavigationRef.current.set(tabId, url)
++                requestTabFrameNavigation(tabId, url)
++                return
++            }
++    
++            const tab: WorkspaceTab = {
++                id: requestedTabId,
++                title: titleForUrl(url),
++                url,
++                history: [url],
++                historyIndex: 0,
++                seenRevision: mutationRevisionRef.current,
++                detailPreview,
++            }
++            const nextTabs = insertWorkspaceTabAfter(currentTabs, tab, sourceTabId ?? previousTabId)
++            nativeNavigationPerformance.bind(intent, tab.id)
++            tabFrameOrderRef.current.push(tab.id)
++            setTabFrameOrder([...tabFrameOrderRef.current])
+             tabsRef.current = nextTabs
+-            activeTabIdRef.current = existingTab.id
++            activeTabIdRef.current = tab.id
+             setTabs(nextTabs)
+-            activateWorkspaceTab(existingTab.id)
+-            saveTabsState(nextTabs, existingTab.id)
+-            window.requestAnimationFrame(() => {
+-                postToTab(previousTabId, { type: "activate", active: false, refresh: false })
+-                postToTab(existingTab.id, { type: "activate", active: true, refresh })
+-                postToTab(existingTab.id, { type: "probe" })
+-            })
+-            return
+-        }
+-
+-        if (currentTabs.length >= 8) {
+-            const tabId = activeTabIdRef.current
+-            if (!tabId) { nativeNavigationPerformance.finish(intent, "aborted"); return }
+-            nativeNavigationPerformance.bind(intent, tabId)
+-            beginTabNavigation(tabId, url)
+-            updateTabForShellNavigation(tabId, url, detailPreview)
+-            pendingNavigationRef.current.set(tabId, url)
+-            requestTabFrameNavigation(tabId, url)
+-            return
+-        }
+-
+-        const tab: WorkspaceTab = {
+-            id: requestedTabId,
+-            title: titleForUrl(url),
+-            url,
+-            history: [url],
+-            historyIndex: 0,
+-            seenRevision: mutationRevisionRef.current,
+-            detailPreview,
+-        }
+-        const nextTabs = insertWorkspaceTabAfter(currentTabs, tab, sourceTabId ?? previousTabId)
+-        nativeNavigationPerformance.bind(intent, tab.id)
+-        tabFrameOrderRef.current.push(tab.id)
+-        setTabFrameOrder([...tabFrameOrderRef.current])
+-        tabsRef.current = nextTabs
+-        activeTabIdRef.current = tab.id
+-        setTabs(nextTabs)
+-        activateWorkspaceTab(tab.id)
+-        shellStorage.set(workspaceTabContextStorageKey(workspace.slug, tab.id), "true")
+-        setContextOpenByTab((current) => ({ ...current, [tab.id]: true }))
+-        saveTabsState(nextTabs, tab.id)
+-        window.requestAnimationFrame(() => postToTab(previousTabId, { type: "activate", active: false, refresh: false }))
++            activateWorkspaceTab(tab.id)
++            shellStorage.set(workspaceTabContextStorageKey(workspace.slug, tab.id), "true")
++            setContextOpenByTab((current) => ({ ...current, [tab.id]: true }))
++            saveTabsState(nextTabs, tab.id)
++            window.requestAnimationFrame(() => postToTab(previousTabId, { type: "activate", active: false, refresh: false }))
++        })
++        if (!committed) { nativeNavigationPerformance.finish(intent, "failed"); return }
+     }, [activateWorkspaceTab, beginTabNavigation, normalizeWorkspaceUrl, postToTab, requestTabFrameNavigation, saveTabsState, titleForUrl, updateTabForShellNavigation, workspace.slug, prepareNativeLeave, startNativeNavigation, nativeNavigationPerformance, shellStorage])
+ 
+     useEffect(() => {
+@@ -1222,21 +1248,24 @@
+         if (!destination) return
+         const intent = startNativeNavigation(destination.url, "navigation", tabId)
+         const confirmDeparture = await prepareNativeLeave({ destination: { tabId, url: destination.url } })
+-        if (!confirmDeparture || !confirmDeparture()) { nativeNavigationPerformance.finish(intent, "failed"); return }
+-        const latestTabs = tabsRef.current
+-        const latestTab = latestTabs.find((candidate) => candidate.id === tabId)
+-        const latestDestination = latestTab && workspaceTabHistoryStep(latestTab.history, latestTab.historyIndex, step)
+-        if (latestDestination?.url !== destination.url || latestDestination.historyIndex !== destination.historyIndex) { nativeNavigationPerformance.finish(intent, "aborted"); return }
+-
+-        beginTabNavigation(tabId, destination.url)
+-        const nextTabs = latestTabs.map((candidate) => candidate.id === tabId
+-            ? { ...candidate, url: destination.url, title: titleForUrl(destination.url), historyIndex: destination.historyIndex }
+-            : candidate)
+-        tabsRef.current = nextTabs
+-        setTabs(nextTabs)
+-        saveTabsState(nextTabs, tabId)
+-        pendingNavigationRef.current.set(tabId, destination.url)
+-        requestTabFrameNavigation(tabId, destination.url, "replace")
++        if (!confirmDeparture) { nativeNavigationPerformance.finish(intent, "failed"); return }
++        const committed = confirmDeparture(() => {
++            const latestTabs = tabsRef.current
++            const latestTab = latestTabs.find((candidate) => candidate.id === tabId)
++            const latestDestination = latestTab && workspaceTabHistoryStep(latestTab.history, latestTab.historyIndex, step)
++            if (latestDestination?.url !== destination.url || latestDestination.historyIndex !== destination.historyIndex) { nativeNavigationPerformance.finish(intent, "aborted"); return }
++    
++            beginTabNavigation(tabId, destination.url)
++            const nextTabs = latestTabs.map((candidate) => candidate.id === tabId
++                ? { ...candidate, url: destination.url, title: titleForUrl(destination.url), historyIndex: destination.historyIndex }
++                : candidate)
++            tabsRef.current = nextTabs
++            setTabs(nextTabs)
++            saveTabsState(nextTabs, tabId)
++            pendingNavigationRef.current.set(tabId, destination.url)
++            requestTabFrameNavigation(tabId, destination.url, "replace")
++        })
++        if (!committed) { nativeNavigationPerformance.finish(intent, "failed"); return }
+     }, [prepareNativeLeave, beginTabNavigation, titleForUrl, saveTabsState, requestTabFrameNavigation, startNativeNavigation, nativeNavigationPerformance])
+ 
+     const openCreate = useCallback((target: WorkspaceCreateTarget) => {
+@@ -1470,12 +1499,14 @@
+                 if (!native && message.url && nativePanelsEnabled && nativeWorkspaceRoute(message.url, workspace.slug)) {
+                     const url = normalizeWorkspaceUrl(message.url)
+                     void prepareNativeLeave({ destination: { tabId: message.tabId, url } }).then((confirmDeparture) => {
+-                        if (!confirmDeparture || !confirmDeparture()) return
+-                        beginTabNavigation(message.tabId, url)
+-                        pendingNavigationRef.current.set(message.tabId, url)
+-                        updateTabForShellNavigation(message.tabId, url)
+-                        scheduleSoftNavigationFallback(message.tabId, url)
+-                        readyTabIdsRef.current.delete(message.tabId)
++                        if (!confirmDeparture) return
++                        confirmDeparture(() => {
++                            beginTabNavigation(message.tabId, url)
++                            pendingNavigationRef.current.set(message.tabId, url)
++                            updateTabForShellNavigation(message.tabId, url)
++                            scheduleSoftNavigationFallback(message.tabId, url)
++                            readyTabIdsRef.current.delete(message.tabId)
++                        })
+                     })
+                     return
+                 }
+@@ -2012,26 +2043,29 @@
+         const requestedTabId = activeTabIdRef.current
+         const requestedUrl = normalizeWorkspaceUrl(href)
+         const confirmDeparture = await prepareNativeLeave({ destination: { tabId: requestedTabId, url: requestedUrl } })
+-        if (!confirmDeparture || !confirmDeparture()) { nativeNavigationPerformance.finish(intent, "failed"); return }
+-        setMobileContextKey(null)
+-        const tabId = activeTabIdRef.current
+-        if (!tabId) { nativeNavigationPerformance.finish(intent, "aborted"); return }
+-        const url = normalizeWorkspaceUrl(href)
+-        const currentTab = tabsRef.current.find((candidate) => candidate.id === tabId)
+-        const isLoaded = loadedTabIdsRef.current.has(tabId)
+-        const alreadyPending = pendingNavigationRef.current.get(tabId) === url
+-        if (alreadyPending || (currentTab?.url === url && isLoaded && !pendingNavigationRef.current.has(tabId))) { nativeNavigationPerformance.finish(intent, "aborted"); return }
+-        beginTabNavigation(tabId, url)
+-        if (currentTab?.url !== url) {
+-            updateTabForShellNavigation(tabId, url)
+-            if (!routeCanShowRelationshipContext(url)) {
+-                setTabContextStatus(tabId, { supported: false, relationshipId: null, context: null })
+-                setTabContextOpen(tabId, false)
+-            }
+-        }
+-
+-        pendingNavigationRef.current.set(tabId, url)
+-        requestTabFrameNavigation(tabId, url)
++        if (!confirmDeparture) { nativeNavigationPerformance.finish(intent, "failed"); return }
++        const committed = confirmDeparture(() => {
++            setMobileContextKey(null)
++            const tabId = activeTabIdRef.current
++            if (!tabId) { nativeNavigationPerformance.finish(intent, "aborted"); return }
++            const url = normalizeWorkspaceUrl(href)
++            const currentTab = tabsRef.current.find((candidate) => candidate.id === tabId)
++            const isLoaded = loadedTabIdsRef.current.has(tabId)
++            const alreadyPending = pendingNavigationRef.current.get(tabId) === url
++            if (alreadyPending || (currentTab?.url === url && isLoaded && !pendingNavigationRef.current.has(tabId))) { nativeNavigationPerformance.finish(intent, "aborted"); return }
++            beginTabNavigation(tabId, url)
++            if (currentTab?.url !== url) {
++                updateTabForShellNavigation(tabId, url)
++                if (!routeCanShowRelationshipContext(url)) {
++                    setTabContextStatus(tabId, { supported: false, relationshipId: null, context: null })
++                    setTabContextOpen(tabId, false)
++                }
++            }
++    
++            pendingNavigationRef.current.set(tabId, url)
++            requestTabFrameNavigation(tabId, url)
++        })
++        if (!committed) { nativeNavigationPerformance.finish(intent, "failed"); return }
+     }
+ 
+     function isStandaloneBuilderHref(href: string) {
+@@ -2080,26 +2114,29 @@
+         }
+         const intent = startNativeNavigation(tab.url, "tab_switch", tab.id)
+         const confirmDeparture = await prepareNativeLeave({ activateTabId: tab.id })
+-        if (!confirmDeparture || !confirmDeparture()) { nativeNavigationPerformance.finish(intent, "failed"); return }
+-        const currentTabs = tabsRef.current
+-        const currentTab = currentTabs.find((candidate) => candidate.id === tab.id)
+-        if (!currentTab) { nativeNavigationPerformance.finish(intent, "aborted"); return }
+-        const previousTabId = activeTabIdRef.current
+-        const refresh = currentTab.seenRevision < mutationRevisionRef.current
+-        const nextTabs = currentTabs.map((existingTab) => existingTab.id === tab.id && refresh
+-            ? { ...existingTab, seenRevision: mutationRevisionRef.current }
+-            : existingTab)
+-        activeTabIdRef.current = tab.id
+-        tabsRef.current = nextTabs
+-        setTabs(nextTabs)
+-        activateWorkspaceTab(tab.id)
+-        saveTabsState(nextTabs, tab.id)
+-        window.requestAnimationFrame(() => {
+-            postToTab(previousTabId, { type: "activate", active: false, refresh: false })
+-            postToTab(tab.id, { type: "activate", active: true, refresh })
+-            // about:blank during initial loading is not a stale document.
+-            postToTab(tab.id, { type: "probe" })
+-        })
++        if (!confirmDeparture) { nativeNavigationPerformance.finish(intent, "failed"); return }
++        const committed = confirmDeparture(() => {
++            const currentTabs = tabsRef.current
++            const currentTab = currentTabs.find((candidate) => candidate.id === tab.id)
++            if (!currentTab) { nativeNavigationPerformance.finish(intent, "aborted"); return }
++            const previousTabId = activeTabIdRef.current
++            const refresh = currentTab.seenRevision < mutationRevisionRef.current
++            const nextTabs = currentTabs.map((existingTab) => existingTab.id === tab.id && refresh
++                ? { ...existingTab, seenRevision: mutationRevisionRef.current }
++                : existingTab)
++            activeTabIdRef.current = tab.id
++            tabsRef.current = nextTabs
++            setTabs(nextTabs)
++            activateWorkspaceTab(tab.id)
++            saveTabsState(nextTabs, tab.id)
++            window.requestAnimationFrame(() => {
++                postToTab(previousTabId, { type: "activate", active: false, refresh: false })
++                postToTab(tab.id, { type: "activate", active: true, refresh })
++                // about:blank during initial loading is not a stale document.
++                postToTab(tab.id, { type: "probe" })
++            })
++        })
++        if (!committed) { nativeNavigationPerformance.finish(intent, "failed"); return }
+     }, [activateWorkspaceTab, postToTab, saveTabsState, prepareNativeLeave, startNativeNavigation, nativeNavigationPerformance])
+ 
+     useEffect(() => {
+@@ -2262,33 +2299,36 @@
+         if (!canAddTabRef.current || tabsRef.current.length >= 8) return
+         const newTabId = createTabId()
+         const confirmDeparture = await prepareNativeLeave({ activateTabId: newTabId })
+-        if (!confirmDeparture || !confirmDeparture()) return
+-        const currentTabs = tabsRef.current
+-        if (!canAddTabRef.current || currentTabs.length >= 8) return
+-        const currentTab = currentTabs.find((candidate) => candidate.id === activeTabIdRef.current)
+-        const url = currentTab?.url ?? defaultWorkspaceUrl
+-        const history = currentTab?.history.length ? [...currentTab.history] : [url]
+-        const historyIndex = currentTab ? Math.min(Math.max(currentTab.historyIndex, 0), history.length - 1) : 0
+-        const tab = {
+-            id: newTabId,
+-            title: titleForUrl(url),
+-            url,
+-            history,
+-            historyIndex,
+-            seenRevision: currentTab?.seenRevision ?? mutationRevisionRef.current,
+-        }
+-        tabFrameOrderRef.current.push(tab.id)
+-        setTabFrameOrder([...tabFrameOrderRef.current])
+-        const nextTabs = insertWorkspaceTabAfter(currentTabs, tab, activeTabIdRef.current)
+-        tabsRef.current = nextTabs
+-        activeTabIdRef.current = tab.id
+-        setTabs(nextTabs)
+-        activateWorkspaceTab(tab.id)
+-        const currentContextStatus = currentTab ? contextStatusByTabRef.current[currentTab.id] : null
+-        const currentContextOpen = currentContextStatus?.supported ? true : currentTab ? contextOpenByTab[currentTab.id] ?? true : true
+-        shellStorage.set(workspaceTabContextStorageKey(workspace.slug, tab.id), currentContextOpen ? "true" : "false")
+-        setContextOpenByTab((current) => ({ ...current, [tab.id]: currentContextOpen }))
+-        saveTabsState(nextTabs, tab.id)
++        if (!confirmDeparture) return
++        const committed = confirmDeparture(() => {
++            const currentTabs = tabsRef.current
++            if (!canAddTabRef.current || currentTabs.length >= 8) return
++            const currentTab = currentTabs.find((candidate) => candidate.id === activeTabIdRef.current)
++            const url = currentTab?.url ?? defaultWorkspaceUrl
++            const history = currentTab?.history.length ? [...currentTab.history] : [url]
++            const historyIndex = currentTab ? Math.min(Math.max(currentTab.historyIndex, 0), history.length - 1) : 0
++            const tab = {
++                id: newTabId,
++                title: titleForUrl(url),
++                url,
++                history,
++                historyIndex,
++                seenRevision: currentTab?.seenRevision ?? mutationRevisionRef.current,
++            }
++            tabFrameOrderRef.current.push(tab.id)
++            setTabFrameOrder([...tabFrameOrderRef.current])
++            const nextTabs = insertWorkspaceTabAfter(currentTabs, tab, activeTabIdRef.current)
++            tabsRef.current = nextTabs
++            activeTabIdRef.current = tab.id
++            setTabs(nextTabs)
++            activateWorkspaceTab(tab.id)
++            const currentContextStatus = currentTab ? contextStatusByTabRef.current[currentTab.id] : null
++            const currentContextOpen = currentContextStatus?.supported ? true : currentTab ? contextOpenByTab[currentTab.id] ?? true : true
++            shellStorage.set(workspaceTabContextStorageKey(workspace.slug, tab.id), currentContextOpen ? "true" : "false")
++            setContextOpenByTab((current) => ({ ...current, [tab.id]: currentContextOpen }))
++            saveTabsState(nextTabs, tab.id)
++        })
++        if (!committed) return
+     }
+ 
+     function toggleContextPanel() {
+@@ -2312,80 +2352,83 @@
+             ? requestedRemaining[Math.max(0, requestedIndex - 1)] ?? requestedRemaining[0]
+             : requestedRemaining.find((tab) => tab.id === activeTabIdRef.current) ?? requestedRemaining[0]
+         const confirmDeparture = await prepareNativeLeave({ closeTabId: tabId, activateTabId: requestedActive.id })
+-        if (!confirmDeparture || !confirmDeparture()) return
+-        const currentTabs = tabsRef.current
+-        const tabIndex = currentTabs.findIndex((tab) => tab.id === tabId)
+-        const closedTab = currentTabs[tabIndex]
+-        const nextTabs = currentTabs.filter((tab) => tab.id !== tabId)
+-        const nextActiveTab = nextTabs.find((tab) => tab.id === requestedActive.id)
+-        if (!closedTab || !nextActiveTab) return
+-        closedTabsRef.current.push({ tab: closedTab, index: tabIndex, contextOpen: contextOpenByTab[tabId] ?? true })
+-        if (closedTabsRef.current.length > 20) closedTabsRef.current.shift()
+-        tabFrameOrderRef.current = tabFrameOrderRef.current.filter((id) => id !== tabId)
+-        setTabFrameOrder([...tabFrameOrderRef.current])
+-        residentTabIdsRef.current = residentTabIdsRef.current.filter((id) => id !== tabId)
+-        shellStorage.remove(workspaceTabContextStorageKey(workspace.slug, tabId))
+-        setContextOpenByTab((current) => {
+-            const next = { ...current }
+-            delete next[tabId]
+-            return next
+-        })
+-        loadedTabIdsRef.current.delete(tabId)
+-        readyTabIdsRef.current.delete(tabId)
+-        pendingNavigationRef.current.delete(tabId)
+-        const navigationTimeout = navigationTimeoutRef.current.get(tabId)
+-        navigationTimeout?.cancel()
+-        navigationTimeoutRef.current.delete(tabId)
+-        const softFallback = softNavigationFallbackRef.current.get(tabId)
+-        if (softFallback) window.clearTimeout(softFallback)
+-        softNavigationFallbackRef.current.delete(tabId)
+-        navigationFallbackRef.current.delete(tabId)
+-        navigationErrorRef.current.delete(tabId)
+-        mutationIdsByTabRef.current.delete(tabId)
+-        setLoadedTabIds(new Set(loadedTabIdsRef.current))
+-        if (routeLoadingTabId === tabId) setRouteLoadingTabId(null)
+-        setRefreshingTabIds((current) => {
+-            if (!current.has(tabId)) return current
+-            const next = new Set(current)
+-            next.delete(tabId)
+-            return next
+-        })
+-        setNavigationStateByTab((current) => {
+-            if (!(tabId in current)) return current
+-            const next = { ...current }
+-            delete next[tabId]
+-            return next
+-        })
+-        setBackgroundMutationCounts((current) => {
+-            if (!(tabId in current)) return current
+-            const next = { ...current }
+-            delete next[tabId]
+-            return next
+-        })
+-        delete contextStatusByTabRef.current[tabId]
+-        delete contextManualClosedByTabRef.current[tabId]
+-        delete contextObstructedByTabRef.current[tabId]
+-        setContextStatusByTab((current) => {
+-            if (!(tabId in current)) return current
+-            const next = { ...current }
+-            delete next[tabId]
+-            return next
+-        })
+-        setContextObstructedByTab((current) => {
+-            if (!(tabId in current)) return current
+-            const next = { ...current }
+-            delete next[tabId]
+-            return next
+-        })
+-        activeTabIdRef.current = nextActiveTab.id
+-        tabsRef.current = nextTabs
+-        setTabs(nextTabs)
+-        activateWorkspaceTab(nextActiveTab.id)
+-        saveTabsState(nextTabs, nextActiveTab.id)
+-        if (tabId === activeTabId) {
+-            const refresh = nextActiveTab.seenRevision < mutationRevisionRef.current
+-            window.requestAnimationFrame(() => postToTab(nextActiveTab.id, { type: "activate", active: true, refresh }))
+-        }
++        if (!confirmDeparture) return
++        const committed = confirmDeparture(() => {
++            const currentTabs = tabsRef.current
++            const tabIndex = currentTabs.findIndex((tab) => tab.id === tabId)
++            const closedTab = currentTabs[tabIndex]
++            const nextTabs = currentTabs.filter((tab) => tab.id !== tabId)
++            const nextActiveTab = nextTabs.find((tab) => tab.id === requestedActive.id)
++            if (!closedTab || !nextActiveTab) return
++            closedTabsRef.current.push({ tab: closedTab, index: tabIndex, contextOpen: contextOpenByTab[tabId] ?? true })
++            if (closedTabsRef.current.length > 20) closedTabsRef.current.shift()
++            tabFrameOrderRef.current = tabFrameOrderRef.current.filter((id) => id !== tabId)
++            setTabFrameOrder([...tabFrameOrderRef.current])
++            residentTabIdsRef.current = residentTabIdsRef.current.filter((id) => id !== tabId)
++            shellStorage.remove(workspaceTabContextStorageKey(workspace.slug, tabId))
++            setContextOpenByTab((current) => {
++                const next = { ...current }
++                delete next[tabId]
++                return next
++            })
++            loadedTabIdsRef.current.delete(tabId)
++            readyTabIdsRef.current.delete(tabId)
++            pendingNavigationRef.current.delete(tabId)
++            const navigationTimeout = navigationTimeoutRef.current.get(tabId)
++            navigationTimeout?.cancel()
++            navigationTimeoutRef.current.delete(tabId)
++            const softFallback = softNavigationFallbackRef.current.get(tabId)
++            if (softFallback) window.clearTimeout(softFallback)
++            softNavigationFallbackRef.current.delete(tabId)
++            navigationFallbackRef.current.delete(tabId)
++            navigationErrorRef.current.delete(tabId)
++            mutationIdsByTabRef.current.delete(tabId)
++            setLoadedTabIds(new Set(loadedTabIdsRef.current))
++            if (routeLoadingTabId === tabId) setRouteLoadingTabId(null)
++            setRefreshingTabIds((current) => {
++                if (!current.has(tabId)) return current
++                const next = new Set(current)
++                next.delete(tabId)
++                return next
++            })
++            setNavigationStateByTab((current) => {
++                if (!(tabId in current)) return current
++                const next = { ...current }
++                delete next[tabId]
++                return next
++            })
++            setBackgroundMutationCounts((current) => {
++                if (!(tabId in current)) return current
++                const next = { ...current }
++                delete next[tabId]
++                return next
++            })
++            delete contextStatusByTabRef.current[tabId]
++            delete contextManualClosedByTabRef.current[tabId]
++            delete contextObstructedByTabRef.current[tabId]
++            setContextStatusByTab((current) => {
++                if (!(tabId in current)) return current
++                const next = { ...current }
++                delete next[tabId]
++                return next
++            })
++            setContextObstructedByTab((current) => {
++                if (!(tabId in current)) return current
++                const next = { ...current }
++                delete next[tabId]
++                return next
++            })
++            activeTabIdRef.current = nextActiveTab.id
++            tabsRef.current = nextTabs
++            setTabs(nextTabs)
++            activateWorkspaceTab(nextActiveTab.id)
++            saveTabsState(nextTabs, nextActiveTab.id)
++            if (tabId === activeTabId) {
++                const refresh = nextActiveTab.seenRevision < mutationRevisionRef.current
++                window.requestAnimationFrame(() => postToTab(nextActiveTab.id, { type: "activate", active: true, refresh }))
++            }
++        })
++        if (!committed) return
+     }
+ 
+     const navButtonClass = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400"
+@@ -2586,18 +2629,21 @@
+     async function retryActiveNavigation() {
+         if (!activeNavigation) return
+         const confirmDeparture = await prepareNativeLeave({ forceFrame: activeTabId })
+-        if (!confirmDeparture || !confirmDeparture()) return
+-        beginTabNavigation(activeTabId, activeNavigation.requestedUrl)
+-        updateTabForShellNavigation(activeTabId, activeNavigation.requestedUrl)
+-        pendingNavigationRef.current.set(activeTabId, activeNavigation.requestedUrl)
+-        if (nativeRefs.current.has(activeTabId)) {
+-            // A timed-out native route remains mounted; repeating its URL
+-            // alone would not rerun the read effect. Refresh coalesces an
+-            // existing request and retries a settled failure.
+-            postToTab(activeTabId, { type: "retry" })
+-            return
+-        }
+-        ensureTabFrameLocation(activeTabId, activeNavigation.requestedUrl, "replace", true)
++        if (!confirmDeparture) return
++        const committed = confirmDeparture(() => {
++            beginTabNavigation(activeTabId, activeNavigation.requestedUrl)
++            updateTabForShellNavigation(activeTabId, activeNavigation.requestedUrl)
++            pendingNavigationRef.current.set(activeTabId, activeNavigation.requestedUrl)
++            if (nativeRefs.current.has(activeTabId)) {
++                // A timed-out native route remains mounted; repeating its URL
++                // alone would not rerun the read effect. Refresh coalesces an
++                // existing request and retries a settled failure.
++                postToTab(activeTabId, { type: "retry" })
++                return
++            }
++            ensureTabFrameLocation(activeTabId, activeNavigation.requestedUrl, "replace", true)
++        })
++        if (!committed) return
+     }
+ 
+     function viewCreatedRecord() {

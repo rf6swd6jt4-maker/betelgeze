@@ -1,0 +1,7 @@
+repository=/private/tmp/betelgeze-platform-consolidation
+WorkspaceTopBarClient.tsx.sha256=53e13a8792de7ab6f07649d444536aef459a95411846c4b60cb061259f27e652
+CONFIRMED: failed draft flush followed by shell Retry force-replaces the frame, without another flush.
+CONFIRMED CONTROL FLOW: iframe-to-native tab URL/renderer selection proceeds before any iframe draft acknowledgement.
+CONFIRMED: tab persistence propagates storage exceptions; bootstrap calls it before setTabsHydrated and navigation calls it before later acknowledgements.
+(node:2339) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)

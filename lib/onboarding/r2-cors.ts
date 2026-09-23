@@ -9,6 +9,7 @@ type CorsRule = {
 
 const DIRECT_UPLOAD_HEADERS = [
     "content-type",
+    "if-none-match",
     "x-amz-server-side-encryption-customer-algorithm",
     "x-amz-server-side-encryption-customer-key",
     "x-amz-server-side-encryption-customer-key-md5",

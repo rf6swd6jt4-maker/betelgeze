@@ -1,3 +1,6 @@
+import Link from "next/link"
+import { leadgenOperationsAvailable } from "@/lib/leadgen/availability"
+import { LeadgenQuarantineNotice } from "@/components/leadgen/LeadgenQuarantineNotice"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { WorkspaceActionButton } from "@/components/workspace/WorkspaceActionButton"
@@ -25,6 +28,10 @@ function sourceRequirement(sourceKey: LeadgenSourceKey, hasSeedSource: boolean) 
 export default async function NewLeadgenPollPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user } = await requireWorkspace(workspaceSlug, "admin")
+    if (!leadgenOperationsAvailable()) return <main className="min-h-screen bg-neutral-950 px-4 pb-8 text-white sm:px-6">
+        <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
+        <div className="mx-auto max-w-7xl pt-5"><h1 className="text-xl font-semibold">Lead Gen</h1><LeadgenQuarantineNotice /><Link href={`/${workspace.slug}/leadgen/polls`} prefetch={false} className="text-sm text-neutral-300 underline">View poll history</Link></div>
+    </main>
     const settingsResult = await supabaseAdmin
         .from("leadgen_workspace_settings")
         .select("enabled_sources, source_config")

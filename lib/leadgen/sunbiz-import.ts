@@ -1,3 +1,4 @@
+import { requireLeadgenOperations } from "@/lib/leadgen/availability"
 import { parseSunbizOwnerIndexRows, type SunbizOwnerIndexRow } from "@/lib/leadgen/sunbiz-bulk-index"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
@@ -46,6 +47,7 @@ function dbRow(row: SunbizOwnerIndexRow) {
 }
 
 export async function clearSunbizOwnerIndex(sourceKey: SunbizImportSourceKey) {
+    requireLeadgenOperations()
     const { error } = await supabaseAdmin
         .from("leadgen_sunbiz_owner_index")
         .delete()
@@ -54,6 +56,7 @@ export async function clearSunbizOwnerIndex(sourceKey: SunbizImportSourceKey) {
 }
 
 export async function upsertSunbizOwnerIndexRows(rows: SunbizOwnerIndexRow[]) {
+    requireLeadgenOperations()
     if (rows.length === 0) return 0
     const { error } = await supabaseAdmin
         .from("leadgen_sunbiz_owner_index")
@@ -77,6 +80,7 @@ export async function markSunbizOwnerIndexImportHealthy({
     importedRows: number
     importer: string
 }) {
+    requireLeadgenOperations()
     await supabaseAdmin
         .from("leadgen_source_health")
         .upsert({
@@ -106,6 +110,7 @@ export async function importSunbizOwnerIndexFromText({
     dryRun?: boolean
     batchSize?: number
 }): Promise<SunbizImportSummary> {
+    requireLeadgenOperations()
     const rows = parseSunbizOwnerIndexRows(sourceKey, text)
     const safeBatchSize = Math.min(1000, Math.max(50, Math.floor(batchSize)))
     if (rows.length === 0) throw new Error("The Sunbiz file did not contain any importable person owner/officer rows for this source.")

@@ -1,3 +1,5 @@
+import { leadgenOperationsAvailable } from "@/lib/leadgen/availability"
+import { LeadgenQuarantineNotice } from "@/components/leadgen/LeadgenQuarantineNotice"
 import { notFound } from "next/navigation"
 import { BetelgezeStatusMark } from "@/components/brand/BetelgezeStatusMark"
 import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, DetailFields, DetailPageHeader } from "@/components/detail"
@@ -149,7 +151,8 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
             .select("id, source_key, stage_key, stage, industry_value, location_value, status, source_query, raw_count, company_count, error, started_at, completed_at, created_at")
             .eq("poll_id", poll.id)
             .eq("workspace_id", workspace.id)
-            .order("created_at", { ascending: true }),
+            .order("created_at", { ascending: true })
+            .limit(500),
         supabaseAdmin
             .from("leadgen_source_records")
             .select("id, source_key, source_record_id, company_name, phone, website_url, profile_url, address, categories, raw_payload, created_at")
@@ -189,16 +192,19 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
             .from("leadgen_candidate_scores")
             .select("company_id, owner_identity_points, owner_phone_points, business_support_points, total_score, qualification_status, disqualification_reason, best_owner_name, best_owner_phone")
             .eq("poll_id", poll.id)
-            .eq("workspace_id", workspace.id),
+            .eq("workspace_id", workspace.id)
+            .limit(500),
         supabaseAdmin
             .from("leadgen_source_catalog")
-            .select("source_key, label, family, source_points, owner_identity_points, owner_phone_points, business_support_points, access_method, free_status, implementation_status, run_stage, enabled, rate_limit_ms, coverage, metadata"),
+            .select("source_key, label, family, source_points, owner_identity_points, owner_phone_points, business_support_points, access_method, free_status, implementation_status, run_stage, enabled, rate_limit_ms, coverage, metadata")
+            .limit(1000),
         supabaseAdmin
             .from("leadgen_poll_stage_runs")
             .select("id, stage_key, stage_order, status, target_count, input_count, passed_count, failed_count, skipped_count, replaced_count, error, metrics, started_at, completed_at, created_at")
             .eq("poll_id", poll.id)
             .eq("workspace_id", workspace.id)
-            .order("stage_order", { ascending: true }),
+            .order("stage_order", { ascending: true })
+            .limit(10),
         supabaseAdmin
             .from("leadgen_company_stage_status")
             .select("id, company_id, stage_key, status, source_keys, score, reason, metrics, completed_at")
@@ -246,16 +252,18 @@ export default async function LeadgenPollObjectPage({ params }: PageProps) {
     }
 
     return <main className="min-h-screen bg-neutral-950 px-4 pb-5 text-white sm:px-8 sm:pb-8">
-        <PollLiveRefresh enabled={live} />
+        {leadgenOperationsAvailable() ? <PollLiveRefresh enabled={live} /> : null}
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="leadgen" />
         <div className="mx-auto max-w-6xl pt-5">
+            <LeadgenQuarantineNotice />
+            <p className="mb-4 text-xs text-neutral-500">Diagnostics show bounded samples: up to 200 source records, companies and evidence rows; 500 tasks, claims and scores; and 1,000 company-stage results. Saved poll totals are retained separately.</p>
             <DetailPageHeader
                 category="Poll"
                 reference={shortId(poll.id)}
                 title={`${sourceNames(poll.source_snapshot, poll.source_count)} poll`}
-                subtitle={live ? "Live view refreshes automatically while the poll is active." : undefined}
+                subtitle={live ? (leadgenOperationsAvailable() ? "Live view refreshes automatically while the poll is active." : "Processing is paused. The saved poll status is preserved.") : undefined}
                 labels={<SquarePill>{poll.trigger === "manual" ? "Manual" : "Automated"}</SquarePill>}
-                facts={[{ label: "duration", value: <PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live} /> }]}
+                facts={[{ label: "duration", value: <PollDuration startedAt={poll.started_at} createdAt={poll.created_at} completedAt={poll.completed_at} live={live && leadgenOperationsAvailable()} /> }]}
                 updated={formatRelativeTime(poll.completed_at ?? poll.started_at ?? poll.created_at)}
             />
 

@@ -1,3 +1,5 @@
+// @ts-expect-error Node executes this script directly with source extensions.
+import { requireLeadgenOperations } from "../lib/leadgen/availability.ts"
 import { createReadStream, existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { createInterface } from "node:readline"
@@ -465,6 +467,7 @@ async function importFiles(options: ResolvedCliOptions) {
 }
 
 async function main() {
+    requireLeadgenOperations()
     loadEnvFile(path.join(process.cwd(), ".env.local"))
     loadEnvFile(path.join(process.cwd(), ".env"))
     const options = parseArgs(process.argv.slice(2))

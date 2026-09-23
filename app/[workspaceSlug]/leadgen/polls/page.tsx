@@ -1,3 +1,6 @@
+import { leadgenOperationsAvailable } from "@/lib/leadgen/availability"
+import { LEADGEN_HISTORY_PAGE_SIZE, leadgenHistoryCursor } from "@/lib/leadgen/history"
+import { LeadgenPollHistory } from "@/components/leadgen/LeadgenPollHistory"
 import { LeadgenTabs } from "@/components/leadgen/LeadgenTabs"
 import { NewPollButton } from "@/components/leadgen/NewPollButton"
 import { PollDuration } from "@/components/leadgen/PollDuration"
@@ -21,7 +24,7 @@ import { cancelLeadgenPoll, removeLeadgenPoll, retryLeadgenPoll } from "../actio
 
 export const dynamic = "force-dynamic"
 
-type PageProps = { params: Promise<{ workspaceSlug: string }> }
+type PageProps = { params: Promise<{ workspaceSlug: string }>; searchParams: Promise<{ before?: string; beforeId?: string }> }
 type PollStatus = "queued" | "running" | "completed" | "failed" | "cancelled"
 type PollTask = {
     id: string
@@ -97,16 +100,29 @@ function investigationStats(tasks: InvestigationTask[], claims: EvidenceClaim[])
     }
 }
 
-export default async function LeadgenPollsPage({ params }: PageProps) {
+export default async function LeadgenPollsPage({ params, searchParams }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user, role } = await requireWorkspace(workspaceSlug, "admin")
-    const pollsResult = await supabaseAdmin
+    const { before, beforeId } = await searchParams
+    const cursor = leadgenHistoryCursor(before, beforeId)
+    let pollsQuery = supabaseAdmin
         .from("leadgen_polls")
         .select("id, requested_by, status, trigger, source_count, source_snapshot, candidate_count, normalised_count, deduped_count, enriched_count, qualified_count, created_at, started_at, completed_at, error")
         .eq("workspace_id", workspace.id)
         .order("created_at", { ascending: false })
-        .limit(40)
-    const polls = pollsResult.error ? [] : pollsResult.data ?? []
+        .order("id", { ascending: false })
+        .limit(LEADGEN_HISTORY_PAGE_SIZE + 1)
+    if (cursor) pollsQuery = pollsQuery.or(`created_at.lt.${cursor.before},and(created_at.eq.${cursor.before},id.lt.${cursor.beforeId})`)
+    const pollsResult = await pollsQuery
+    if (pollsResult.error) throw new Error("Could not load poll history. Please retry.")
+    const pollRows = pollsResult.data ?? []
+    const polls = pollRows.slice(0, LEADGEN_HISTORY_PAGE_SIZE)
+    if (!leadgenOperationsAvailable()) {
+        const last = polls.at(-1)
+        const olderHref = pollRows.length > LEADGEN_HISTORY_PAGE_SIZE && last
+            ? `/${workspace.slug}/leadgen/polls?${new URLSearchParams({ before: last.created_at, beforeId: last.id })}` : null
+        return <LeadgenPollHistory workspace={workspace} userId={user.id} polls={polls} olderHref={olderHref} hasCursor={Boolean(cursor)} />
+    }
     const creatorIds = [...new Set(polls.map((poll) => poll.requested_by).filter(Boolean))] as string[]
     const { data: creators } = creatorIds.length
         ? await supabaseAdmin.from("user_profiles").select("user_id, username, avatar_path").in("user_id", creatorIds)

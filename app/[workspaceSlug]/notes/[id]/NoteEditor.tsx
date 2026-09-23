@@ -1,17 +1,18 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition, type FormEvent } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition, type FormEvent } from "react"
 import { CenteredDialog, MultiSelector, type MultiSelectorOption } from "@/components/ui"
 import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 import { updateNoteRelationships } from "./actions"
 
-export function NoteEditor({ workspaceSlug, noteId, relationships }: {
-    workspaceSlug: string; noteId: string; relationships: MultiSelectorOption[]
+export function NoteEditor({ workspaceSlug, noteId, userId, relationships }: {
+    workspaceSlug: string; noteId: string; userId: string; relationships: MultiSelectorOption[]
 }) {
     const router = useRouter()
     const [open, setOpen] = useState(false)
     const [options, setOptions] = useState<MultiSelectorOption[]>([])
+    const baseline = useRef(relationships.map(item => item.id))
     const [selected, setSelected] = useState(relationships.map(item => item.id))
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -34,14 +35,14 @@ export function NoteEditor({ workspaceSlug, noteId, relationships }: {
         setError(null)
         startTransition(async () => {
             try {
-                const result = await runWorkspaceMutation(() => updateNoteRelationships(workspaceSlug, noteId, selected), { category: "system" })
+                const result = await runWorkspaceMutation(() => updateNoteRelationships(workspaceSlug, noteId, selected, baseline.current, userId), { category: "system" })
                 if (!result.ok) { setError(result.error); return }
                 setOpen(false); router.refresh()
             } catch { setError("The links could not be confirmed. Try again.") }
         })
     }
     return <>
-        <button type="button" className="text-xs text-neutral-300 underline underline-offset-4" onClick={() => { setSelected(relationships.map(item => item.id)); setLoading(!options.length); setError(null); setOpen(true) }}>Edit relationships</button>
+        <button type="button" className="text-xs text-neutral-300 underline underline-offset-4" onClick={() => { baseline.current = relationships.map(item => item.id); setSelected(baseline.current); setLoading(!options.length); setError(null); setOpen(true) }}>Edit relationships</button>
         {open ? <CenteredDialog title="Linked relationships" busy={pending} onClose={() => setOpen(false)}><form onSubmit={submit} className="space-y-4">
             <MultiSelector label="Linked relationships" description="Choose up to 20 relationships for this note." placeholder={loading ? "Loading…" : "Choose relationships"} options={choices} selected={selected} onChange={setSelected} disabled={loading} maxSelections={20} />
             {error ? <p role="alert" className="text-sm text-red-300">{error}</p> : null}

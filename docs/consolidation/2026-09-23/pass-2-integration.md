@@ -2,6 +2,8 @@
 
 Candidate branch: `codex/platform-consolidation`, in `/private/tmp/betelgeze-platform-consolidation`, based on main `31388081894e6d4143d5bb0d577c0341ec31edf7`. The dirty primary checkout and its dependencies are preserved. This document records local implementation; it is not a production release.
 
+Local checkpoints: `1f82aa81` (table-specific Note trigger), `eeccc560` (atomic record commands and durable outcomes), and `a8235c3f` (reviewed application/tests/audit artifacts). These commits were not pushed. The unapplied shell proposal is stored as a zero-context unified diff for review, with whitespace normalized; it is not installed application code.
+
 **Status: reviewed local candidate, with an unresolved shell release blocker.** The final draft check can precede React's actual removal of an editor. Native in-panel navigation has an additional uncovered departure path. Automatic approval review blocked the proposed commit wrapper; that patch remains unapplied and alone would not cover the native path. See the [concrete continuation scope](./shell-departure-continuation.md). Pass 2 must not be described as fully complete or safe to release.
 
 ## Packages

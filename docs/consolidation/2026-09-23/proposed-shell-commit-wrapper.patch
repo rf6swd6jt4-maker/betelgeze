@@ -1,26 +1,11 @@
 --- a/components/workspace/WorkspaceTopBarClient.tsx
 +++ b/components/workspace/WorkspaceTopBarClient.tsx
-@@ -19,6 +19,7 @@
- import dynamic from "next/dynamic"
- import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
- import { usePathname, useSearchParams } from "next/navigation"
+@@ -21,0 +22 @@
 +import { flushSync } from "react-dom"
- import { NativeWorkspaceTab, nativePanelCacheKey, type NativePanelSnapshot, type NativeTabHandle } from "@/components/workspace/NativeWorkspaceTab"
- import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
- import { WorkspaceNavigationPerformanceTracker } from "@/lib/workspace-performance-contract"
-@@ -475,7 +476,7 @@
-         const cached = nativeCache.getSnapshot(nativePanelCacheKey(currentUserId, workspace.id, route.key)).data
-         return nativeNavigationPerformance.begin(beginWorkspaceInteraction({ workspaceSlug: workspace.slug, operation, routeSection: route.kind, renderer: "native", cacheState: cached ? "memory" : "network", background: false }), url, tabId, source)
-     }, [nativePanelsEnabled, clearedNativeAccount, nativeAccountScope, nativeCache, nativeNavigationPerformance, currentUserId, workspace.id, workspace.slug])
+@@ -478 +479 @@
 -    const prepareNativeLeave = useCallback(async (options: { activateTabId?: string; closeTabId?: string; destination?: { tabId: string; url: string }; forceFrame?: string } = {}): Promise<false | (() => boolean)> => {
 +    const prepareNativeLeave = useCallback(async (options: { activateTabId?: string; closeTabId?: string; destination?: { tabId: string; url: string }; forceFrame?: string } = {}): Promise<false | ((commit: () => void) => boolean)> => {
-         const sequence = ++nativeNavigationSequence.current
-         warmAbortRef.current?.abort()
-         departureAbortRef.current?.abort()
-@@ -513,13 +514,21 @@
-         }
-         if (!safe) return refuse()
-         nativeCheck?.acknowledge()
+@@ -516,7 +517,15 @@
 -        // Invoke immediately before the destructive state/document change.
 -        // An asynchronous acknowledgement is not the final checkpoint.
 -        return () => {
@@ -43,13 +28,7 @@
 +            if (frames.length || nativeDeparture) flushSync(finish)
 +            else finish()
 +            return committed
-         }
-     }, [nativePanelsEnabled, workspace.slug])
-     useEffect(() => () => { ++nativeNavigationSequence.current; departureAbortRef.current?.abort(); warmAbortRef.current?.abort() }, [])
-@@ -553,13 +562,17 @@
-             return frame ? prepareWorkspaceFrameDeparture(frame, id, window, controller.signal, true) : nativeRefs.current.has(id) ? checkpointWorkspaceAutosaves() : true
-         }))
-         if (controller.signal.aborted || !safe.every(Boolean) || residentTabIdsRef.current !== current || activeTabIdRef.current !== activeId || !tabsRef.current.some((tab) => tab.id === tabId)) return
+@@ -556,7 +565,11 @@
 -        if (!evicted.every((id) => {
 -            const frame = iframeRefs.current.get(id)
 -            return frame ? confirmWorkspaceFrameDeparture(frame) : !nativeRefs.current.has(id) || checkpointWorkspaceAutosaves()
@@ -68,19 +47,10 @@
 +        }
 +        if (evicted.length) flushSync(commit)
 +        else commit()
-     }, [])
-     const cancelScheduledTabWarm = useCallback((tabId: string) => {
-         if (tabWarmTargetRef.current !== tabId) return
-@@ -696,22 +709,29 @@
-             const target = tabsRef.current.find((tab) => tab.id === storedId) ?? tabsRef.current.find((tab) => tab.url === url) ?? previous
-             if (!target) { nativeNavigationPerformance.finish(intent, "aborted"); return }
-             const confirmDeparture = await prepareNativeLeave({ activateTabId: target.id, destination: { tabId: target.id, url } })
+@@ -699 +712 @@
 -            if (!confirmDeparture || !confirmDeparture()) {
 +            if (!confirmDeparture) {
-                 nativeNavigationPerformance.finish(intent, "failed")
-                 if (previous) window.history.replaceState(window.history.state, "", previous.url)
-                 return
-             }
+@@ -704,11 +717,18 @@
 -            nativeNavigationPerformance.bind(intent, target.id)
 -            const knownIndex = target.history.lastIndexOf(url)
 -            const nextTabs = tabsRef.current.map((tab) => tab.id === target.id ? {
@@ -110,13 +80,7 @@
 +                if (previous) window.history.replaceState(window.history.state, "", previous.url)
 +                return
 +            }
-         }
-         const receive = () => { void restore() }
-         window.addEventListener("popstate", receive)
-@@ -1098,34 +1118,37 @@
-         const closed = closedTabsRef.current.at(-1)
-         if (!closed) return false
-         const confirmDeparture = await prepareNativeLeave({ activateTabId: closed.tab.id })
+@@ -1101,28 +1121,31 @@
 -        if (!confirmDeparture || !confirmDeparture()) return false
 -        closedTabsRef.current.pop()
 -
@@ -148,7 +112,7 @@
 +        if (!confirmDeparture) return false
 +        const committed = confirmDeparture(() => {
 +            closedTabsRef.current.pop()
-+    
++
 +            const previousTabId = activeTabIdRef.current
 +            const restoredTab = { ...closed.tab, seenRevision: mutationRevisionRef.current }
 +            shellStorage.set(workspaceTabContextStorageKey(workspace.slug, restoredTab.id), closed.contextOpen === false ? "false" : "true")
@@ -176,13 +140,7 @@
 +        })
 +        if (!committed) return false
 +        return committed
-     }, [activateWorkspaceTab, postToTab, saveTabsState, prepareNativeLeave, shellStorage, workspace.slug])
- 
-     const openWorkspaceTab = useCallback(async (href: string, detailPreview?: WorkspaceDetailPreview, sourceTabId?: string) => {
-@@ -1133,64 +1156,67 @@
-         const url = normalizeWorkspaceUrl(href)
-         const requestedTabId = tabsRef.current.find((tab) => tab.url === url)?.id ?? (tabsRef.current.length >= 8 ? activeTabIdRef.current : createTabId())
-         const confirmDeparture = await prepareNativeLeave({ activateTabId: requestedTabId, destination: { tabId: requestedTabId, url } })
+@@ -1136,13 +1159,51 @@
 -        if (!confirmDeparture || !confirmDeparture()) { nativeNavigationPerformance.finish(intent, "failed"); return }
 -        if (detailPreview) storeWorkspaceDetailPreview(url, detailPreview)
 -        const currentTabs = tabsRef.current
@@ -202,7 +160,7 @@
 +            const currentTabs = tabsRef.current
 +            const existingTab = currentTabs.find((tab) => tab.url === url)
 +            const previousTabId = activeTabIdRef.current
-+    
++
 +            if (existingTab) {
 +                if (existingTab.id === previousTabId) { nativeNavigationPerformance.finish(intent, "aborted"); return }
 +                nativeNavigationPerformance.bind(intent, existingTab.id)
@@ -222,7 +180,7 @@
 +                })
 +                return
 +            }
-+    
++
 +            if (currentTabs.length >= 8) {
 +                const tabId = activeTabIdRef.current
 +                if (!tabId) { nativeNavigationPerformance.finish(intent, "aborted"); return }
@@ -233,7 +191,7 @@
 +                requestTabFrameNavigation(tabId, url)
 +                return
 +            }
-+    
++
 +            const tab: WorkspaceTab = {
 +                id: requestedTabId,
 +                title: titleForUrl(url),
@@ -247,10 +205,10 @@
 +            nativeNavigationPerformance.bind(intent, tab.id)
 +            tabFrameOrderRef.current.push(tab.id)
 +            setTabFrameOrder([...tabFrameOrderRef.current])
-             tabsRef.current = nextTabs
+@@ -1150 +1211 @@
 -            activeTabIdRef.current = existingTab.id
 +            activeTabIdRef.current = tab.id
-             setTabs(nextTabs)
+@@ -1152,42 +1213,7 @@
 -            activateWorkspaceTab(existingTab.id)
 -            saveTabsState(nextTabs, existingTab.id)
 -            window.requestAnimationFrame(() => {
@@ -300,13 +258,7 @@
 +            window.requestAnimationFrame(() => postToTab(previousTabId, { type: "activate", active: false, refresh: false }))
 +        })
 +        if (!committed) { nativeNavigationPerformance.finish(intent, "failed"); return }
-     }, [activateWorkspaceTab, beginTabNavigation, normalizeWorkspaceUrl, postToTab, requestTabFrameNavigation, saveTabsState, titleForUrl, updateTabForShellNavigation, workspace.slug, prepareNativeLeave, startNativeNavigation, nativeNavigationPerformance, shellStorage])
- 
-     useEffect(() => {
-@@ -1222,21 +1248,24 @@
-         if (!destination) return
-         const intent = startNativeNavigation(destination.url, "navigation", tabId)
-         const confirmDeparture = await prepareNativeLeave({ destination: { tabId, url: destination.url } })
+@@ -1225,15 +1251,18 @@
 -        if (!confirmDeparture || !confirmDeparture()) { nativeNavigationPerformance.finish(intent, "failed"); return }
 -        const latestTabs = tabsRef.current
 -        const latestTab = latestTabs.find((candidate) => candidate.id === tabId)
@@ -328,7 +280,7 @@
 +            const latestTab = latestTabs.find((candidate) => candidate.id === tabId)
 +            const latestDestination = latestTab && workspaceTabHistoryStep(latestTab.history, latestTab.historyIndex, step)
 +            if (latestDestination?.url !== destination.url || latestDestination.historyIndex !== destination.historyIndex) { nativeNavigationPerformance.finish(intent, "aborted"); return }
-+    
++
 +            beginTabNavigation(tabId, destination.url)
 +            const nextTabs = latestTabs.map((candidate) => candidate.id === tabId
 +                ? { ...candidate, url: destination.url, title: titleForUrl(destination.url), historyIndex: destination.historyIndex }
@@ -340,13 +292,7 @@
 +            requestTabFrameNavigation(tabId, destination.url, "replace")
 +        })
 +        if (!committed) { nativeNavigationPerformance.finish(intent, "failed"); return }
-     }, [prepareNativeLeave, beginTabNavigation, titleForUrl, saveTabsState, requestTabFrameNavigation, startNativeNavigation, nativeNavigationPerformance])
- 
-     const openCreate = useCallback((target: WorkspaceCreateTarget) => {
-@@ -1470,12 +1499,14 @@
-                 if (!native && message.url && nativePanelsEnabled && nativeWorkspaceRoute(message.url, workspace.slug)) {
-                     const url = normalizeWorkspaceUrl(message.url)
-                     void prepareNativeLeave({ destination: { tabId: message.tabId, url } }).then((confirmDeparture) => {
+@@ -1473,6 +1502,8 @@
 -                        if (!confirmDeparture || !confirmDeparture()) return
 -                        beginTabNavigation(message.tabId, url)
 -                        pendingNavigationRef.current.set(message.tabId, url)
@@ -361,13 +307,7 @@
 +                            scheduleSoftNavigationFallback(message.tabId, url)
 +                            readyTabIdsRef.current.delete(message.tabId)
 +                        })
-                     })
-                     return
-                 }
-@@ -2012,26 +2043,29 @@
-         const requestedTabId = activeTabIdRef.current
-         const requestedUrl = normalizeWorkspaceUrl(href)
-         const confirmDeparture = await prepareNativeLeave({ destination: { tabId: requestedTabId, url: requestedUrl } })
+@@ -2015,20 +2046,23 @@
 -        if (!confirmDeparture || !confirmDeparture()) { nativeNavigationPerformance.finish(intent, "failed"); return }
 -        setMobileContextKey(null)
 -        const tabId = activeTabIdRef.current
@@ -406,18 +346,12 @@
 +                    setTabContextOpen(tabId, false)
 +                }
 +            }
-+    
++
 +            pendingNavigationRef.current.set(tabId, url)
 +            requestTabFrameNavigation(tabId, url)
 +        })
 +        if (!committed) { nativeNavigationPerformance.finish(intent, "failed"); return }
-     }
- 
-     function isStandaloneBuilderHref(href: string) {
-@@ -2080,26 +2114,29 @@
-         }
-         const intent = startNativeNavigation(tab.url, "tab_switch", tab.id)
-         const confirmDeparture = await prepareNativeLeave({ activateTabId: tab.id })
+@@ -2083,20 +2117,23 @@
 -        if (!confirmDeparture || !confirmDeparture()) { nativeNavigationPerformance.finish(intent, "failed"); return }
 -        const currentTabs = tabsRef.current
 -        const currentTab = currentTabs.find((candidate) => candidate.id === tab.id)
@@ -461,13 +395,7 @@
 +            })
 +        })
 +        if (!committed) { nativeNavigationPerformance.finish(intent, "failed"); return }
-     }, [activateWorkspaceTab, postToTab, saveTabsState, prepareNativeLeave, startNativeNavigation, nativeNavigationPerformance])
- 
-     useEffect(() => {
-@@ -2262,33 +2299,36 @@
-         if (!canAddTabRef.current || tabsRef.current.length >= 8) return
-         const newTabId = createTabId()
-         const confirmDeparture = await prepareNativeLeave({ activateTabId: newTabId })
+@@ -2265,27 +2302,30 @@
 -        if (!confirmDeparture || !confirmDeparture()) return
 -        const currentTabs = tabsRef.current
 -        if (!canAddTabRef.current || currentTabs.length >= 8) return
@@ -525,13 +453,7 @@
 +            saveTabsState(nextTabs, tab.id)
 +        })
 +        if (!committed) return
-     }
- 
-     function toggleContextPanel() {
-@@ -2312,80 +2352,83 @@
-             ? requestedRemaining[Math.max(0, requestedIndex - 1)] ?? requestedRemaining[0]
-             : requestedRemaining.find((tab) => tab.id === activeTabIdRef.current) ?? requestedRemaining[0]
-         const confirmDeparture = await prepareNativeLeave({ closeTabId: tabId, activateTabId: requestedActive.id })
+@@ -2315,74 +2355,77 @@
 -        if (!confirmDeparture || !confirmDeparture()) return
 -        const currentTabs = tabsRef.current
 -        const tabIndex = currentTabs.findIndex((tab) => tab.id === tabId)
@@ -683,13 +605,7 @@
 +            }
 +        })
 +        if (!committed) return
-     }
- 
-     const navButtonClass = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400"
-@@ -2586,18 +2629,21 @@
-     async function retryActiveNavigation() {
-         if (!activeNavigation) return
-         const confirmDeparture = await prepareNativeLeave({ forceFrame: activeTabId })
+@@ -2589,12 +2632,15 @@
 -        if (!confirmDeparture || !confirmDeparture()) return
 -        beginTabNavigation(activeTabId, activeNavigation.requestedUrl)
 -        updateTabForShellNavigation(activeTabId, activeNavigation.requestedUrl)
@@ -717,6 +633,3 @@
 +            ensureTabFrameLocation(activeTabId, activeNavigation.requestedUrl, "replace", true)
 +        })
 +        if (!committed) return
-     }
- 
-     function viewCreatedRecord() {

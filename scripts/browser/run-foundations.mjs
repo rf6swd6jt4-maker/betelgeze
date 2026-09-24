@@ -6,6 +6,8 @@ import { chromium, webkit } from "playwright"
 import { assertFixtureReport } from "./report.mjs"
 
 const fixtures = [
+    { name: "mobile-conversation", expected: 16, script: "scripts/serve-mobile-conversation-fixture.mjs", global: "mobileConversationFixtureResult", viewport: { width: 390, height: 844 } },
+    { name: "mobile-conversation-motion", expected: 33, script: "scripts/serve-mobile-conversation-motion-fixture.mjs", global: "mobileConversationMotionFixtureResult", viewport: { width: 390, height: 844 } },
     { name: "mobile-comms", expected: 17, script: "scripts/serve-mobile-comms-fixture.mjs", global: "mobileCommsFixtureResult", viewport: { width: 390, height: 850 } },
     { name: "mobile-comms-landscape", expected: 1, script: "scripts/serve-mobile-comms-fixture.mjs", global: "mobileCommsFixtureResult", viewport: { width: 844, height: 390 }, query: "?landscape" },
     { name: "native-comms", expected: 6, script: "scripts/serve-native-comms-fixture.mjs", global: "nativeCommsFixtureResult", viewport: { width: 390, height: 850 } },
@@ -15,9 +17,9 @@ const fixtures = [
     { name: "drafts", expected: 25, script: "scripts/serve-workspace-draft-fixture.mjs", global: "workspaceDraftFixtureResult", query: "?autorun" },
     { name: "drafts-strict", expected: 25, script: "scripts/serve-workspace-draft-fixture.mjs", args: ["--development"], global: "workspaceDraftFixtureResult", query: "?autorun" },
     { name: "motion", expected: 5, script: "scripts/serve-chat-viewport-fixture.mjs" },
-    { name: "comms-layout-mobile", expected: 24, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 390, height: 850 } },
-    { name: "comms-layout-reduced", expected: 2, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 390, height: 850 }, reducedMotion: "reduce", query: "?reduced" },
-    { name: "comms-layout-desktop", expected: 1, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 1280, height: 900 }, query: "?desktop" },
+    { name: "comms-layout-mobile", expected: 34, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 390, height: 850 } },
+    { name: "comms-layout-reduced", expected: 10, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 390, height: 850 }, reducedMotion: "reduce", query: "?reduced" },
+    { name: "comms-layout-desktop", expected: 9, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 1280, height: 900 }, query: "?desktop" },
 ]
 const selected = process.argv.slice(2)
 if (selected.some(value => !["chromium", "webkit"].includes(value))) throw Error("Usage: run-foundations.mjs [chromium|webkit]")

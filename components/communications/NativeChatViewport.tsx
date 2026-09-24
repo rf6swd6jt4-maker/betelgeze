@@ -45,5 +45,5 @@ export function NativeChatViewport(props: ComponentProps<"div">) {
         }
     }, [])
 
-    return <div {...props} ref={rootRef} />
+    return <div {...props} ref={rootRef} data-native-chat-viewport />
 }

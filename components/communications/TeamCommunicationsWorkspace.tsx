@@ -34,6 +34,7 @@ import { useConversationLayout } from "@/components/communications/useConversati
 import { ConversationMedia } from "@/components/communications/ConversationMedia"
 import { ChatMotionViewport } from "@/components/communications/ChatMotionViewport"
 import { NativeChatViewport } from "@/components/communications/NativeChatViewport"
+import { MobileConversationSurface } from "@/components/communications/MobileConversationSurface"
 import { beginMessageSwipe, moveMessageSwipe, finishMessageSwipe, type MessageSwipe } from "@/lib/communications/message-swipe"
 import { NativeMessageBubble, type MessageActionAnchor } from "@/components/communications/NativeMessageBubble"
 import { NativeAttachment } from "@/components/communications/NativeAttachment"
@@ -223,7 +224,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const conversationsRef = useRef(conversations)
     const sentTypingConversationRef = useRef<string | null>(null)
     const lastTypingBroadcastAtRef = useRef(0)
-    const editingDraftSnapshotRef = useRef("")
+    const editingSessionRef = useRef<{ messageId: string; draft: string } | null>(null)
     const workspaceTabActive = useWorkspaceTabActive()
     const interactionActive = active && workspaceTabActive && documentVisible
     useLayoutEffect(() => {
@@ -351,11 +352,13 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     }, [bootstrap.requestedDmUserId, bootstrap.workspaceSlug, refresh])
 
     function selectConversation(id: string | null) {
+        editingSessionRef.current = null
         closeWorkspaceComposer(composerRef.current)
         void flushPendingRead().catch(() => undefined)
         followLatestRef.current = true; setAtLatest(true); setShowJumpToLatest(false)
         jumpRequestRef.current++; setQuoteHighlight(null);
         setSelectedId(id); setReplyingTo(null); setEditingMessage(null); setEditState("idle"); setActionMessageId(null); setActionView("actions"); setError(null)
+        setStickerTrayOpen(false)
         setDraft(id ? readChatDraft(`betelgeze:native-chat:draft:${bootstrap.currentUser.id}:${bootstrap.workspaceId}:${id}`) : "")
     }
 
@@ -407,6 +410,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 
                             setReplyingTo((current) => current?.id === messageId ? null : current)
                             setEditingMessage((current) => current?.id === messageId ? null : current)
+                            if (editingSessionRef.current?.messageId === messageId) { editingSessionRef.current = null; setEditState("idle") }
                             setActionMessageId((current) => current === messageId ? null : current)
                         }
                         return
@@ -540,7 +544,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 
     function startEditingMessage(message: NativeMessage) {
         if (!selected?.canWrite || !nativeMessageCanEdit(message, bootstrap.currentUser.id)) return
-        editingDraftSnapshotRef.current = draft
+        editingSessionRef.current = { messageId: message.id, draft }
         stopNativeTyping(selected.id)
         setEditingMessage(message)
         setEditState("idle")
@@ -553,19 +557,23 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     }
 
     function cancelEditingMessage() {
+        const session = editingSessionRef.current
+        editingSessionRef.current = null
         setEditingMessage(null)
         setEditState("idle")
-        setDraft(editingDraftSnapshotRef.current)
+        if (session) setDraft(session.draft)
         setError(null)
         if (interactionActive) composerRef.current?.focus({ preventScroll: true })
     }
 
     async function saveEditedMessage() {
-        if (!selected?.canWrite || !editingMessage || editState === "saving") return
+        const session = editingSessionRef.current
+        if (!selected?.canWrite || !editingMessage || !session || editState === "saving") return
         const body = draft.trim()
         if (!body || body === editingMessage.body.trim()) return
         const conversationId = selected.id
         const messageId = editingMessage.id
+        const ownsEditor = () => editingSessionRef.current === session && selectedRef.current === conversationId
         setEditState("saving")
         setError(null)
         try {
@@ -574,10 +582,16 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 if (!result.message) throw new ChatMutationError("Could not confirm the edit.", true)
                 return result.message
             })
-            setEditingMessage((current) => current?.id === messageId ? null : current)
-            if (selectedRef.current === conversationId) setDraft(editingDraftSnapshotRef.current)
-        } catch (error) { setError(error instanceof Error ? error.message : "Could not edit message.") }
-        finally { setEditState("idle"); void refresh().catch(() => undefined) }
+            // The write still completes after departure/cancel, but its old UI
+            // session must never overwrite a newer draft or another edit.
+            if (ownsEditor()) {
+                editingSessionRef.current = null
+                setEditingMessage(null)
+                setDraft(session.draft)
+                setEditState("idle")
+            }
+        } catch (error) { if (ownsEditor()) setError(error instanceof Error ? error.message : "Could not edit message.") }
+        finally { if (ownsEditor()) setEditState("idle"); void refresh().catch(() => undefined) }
     }
 
     async function toggleCheckbox(message: NativeMessage, line: number, checked: boolean, expectedBody: string) {
@@ -710,6 +724,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         setActionMessageId(null)
         setReplyingTo((current) => current?.id === message.id ? null : current)
         setEditingMessage((current) => current?.id === message.id ? null : current)
+        if (editingSessionRef.current?.messageId === message.id) { editingSessionRef.current = null; setEditState("idle") }
         try {
             await updates.mutateMessage(message.id, null, async () => {
                 const params = new URLSearchParams({ conversationId, messageId: message.id })
@@ -751,7 +766,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         {active ? <CommunicationsActivityTracker workspaceId={bootstrap.workspaceId} conversationKind="native" conversationId={selectedId} connectionState={connection.state} isReading={reading.isReading} /> : null}
         {!schemaReady ? <div className="shrink-0 border-b border-amber-900 bg-amber-950 px-4 py-2 text-center text-xs text-amber-100">Apply the Teams database migration to enable native messaging.</div> : null}
         <ResizableConversationColumns listWidth={conversationListWidth} onListWidthChange={onConversationListWidthChange}>
-            <aside className={`${selected ? "hidden lg:flex" : "flex"} min-h-0 flex-col border-r border-neutral-800 bg-neutral-950`}>
+            <aside data-conversation-list className="flex min-h-0 flex-col border-r border-neutral-800 bg-neutral-950">
                 <div className="shrink-0 border-b border-neutral-800 p-3">
                     <div className="flex items-center gap-1"><div role="tablist" className="flex items-center gap-1"><button type="button" role="tab" aria-selected="false" onClick={onOpenClients} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-medium text-neutral-400 hover:bg-neutral-900 hover:text-white">Clients<UnreadMessageCount count={clientUnreadCount ?? 0} label="unread Client messages" /></button><button type="button" role="tab" aria-selected="true" className="inline-flex h-8 items-center rounded-lg bg-neutral-800 px-3 text-xs font-semibold text-white">Team</button></div><span className="ml-auto"><CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} /></span></div>
                     <label className="relative mt-3 block"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"><SearchIcon /></span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search team conversations" className="h-10 w-full rounded-lg border border-neutral-800 bg-black pl-9 pr-3 text-sm outline-none placeholder:text-neutral-600" /></label>
@@ -766,10 +781,11 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     return <button key={conversation.id} type="button" onClick={() => selectConversation(conversation.id)} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}><TeamAvatar conversation={conversation} currentUserId={bootstrap.currentUser.id} /><span className="min-w-0"><span className="flex items-start justify-between gap-3"><span className="truncate text-sm font-semibold">{conversation.title}</span>{latest ? <time className={unread ? "text-[11px] text-white" : "text-[11px] text-neutral-600"}>{formatRelativeTime(latest.createdAt)}</time> : null}</span><span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">{!showTypingPreview && latest?.senderUserId === bootstrap.currentUser.id ? <NativeDeliveryTicks message={latest} read={latestRead} /> : null}<span className={`truncate ${showTypingPreview ? "font-medium text-neutral-300" : ""}`}>{showTypingPreview ? "typing…" : latest ? `${latest.senderUserId === bootstrap.currentUser.id ? "You: " : ""}${messagePreview(latest)}` : conversation.subtitle}</span>{unread ? <span className="ml-auto"><UnreadMessageCount count={unread} label="unread messages" /></span> : null}</span></span></button>
                 }) : <div className="p-6 text-center"><p className="text-sm text-neutral-300">{showArchived ? "No archived teams" : "No team conversations yet"}</p><p className="mt-2 text-xs text-neutral-600">{showArchived ? "Archived team history will appear here." : "Open a profile to start a DM or create a team."}</p></div>}</div>
             </aside>
+            <MobileConversationSurface selected={Boolean(selected)} active={active && workspaceTabActive} onClose={() => selectConversation(null)}>
             <ConversationMedia active={active && workspaceTabActive && documentVisible}><NativeChatViewport className={`${selected ? "flex" : "hidden lg:flex"} min-h-0 min-w-0 flex-col overflow-hidden bg-black`}>
                 {selected ? <>
                     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-neutral-800 bg-neutral-950 px-3 sm:px-4">
-                        <button type="button" onClick={() => selectConversation(null)} aria-label="Back to team conversations" className="inline-flex h-10 w-10 shrink-0 items-center justify-center text-neutral-400 lg:hidden"><BackIcon /></button>
+                        <button data-icon-button data-mobile-conversation-back type="button" onClick={() => selectConversation(null)} aria-label="Back to team conversations" className="inline-flex h-10 w-10 shrink-0 items-center justify-center text-neutral-400 lg:hidden"><BackIcon /></button>
                         <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (selected.system) return; if (selected.kind === "direct") openWorkspaceMemberProfile(selected.memberIds.find((id) => id !== bootstrap.currentUser.id) ?? bootstrap.currentUser.id); else if (currentTeam) setEditingTeam(currentTeam) }} disabled={selected.system} aria-label={selected.system ? "BE · Private updates" : selected.kind === "direct" ? `Open ${selected.title} profile` : `View ${selected.title} members`} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-600">
                             <span className="h-9 w-9 shrink-0 overflow-hidden rounded-full">{selected.kind === "direct" ? <Avatar src={selected.avatarSrc} name={selected.title} className="h-full w-full" /> : <span className="flex h-full w-full items-center justify-center rounded-full bg-neutral-800"><TeamIcon /></span>}</span>
                             <span className="min-w-0"><span className="block truncate text-sm font-semibold">{selected.title}</span><span className="block truncate text-[11px] text-neutral-600">{selected.archived ? "Archived · read-only" : selected.subtitle}</span></span>
@@ -779,7 +795,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     </header>
                     {selected.pinnedMessageId && pinnedPreview ? <PinnedMessageBar preview={pinnedPreview} onClick={() => jumpToMessage(selected.pinnedMessageId!)} /> : null}
                     <ChatMotionViewport key={selectedId}>
-                    <div className="relative min-h-0 flex-1"><div key={selectedId} data-message-pane tabIndex={0} ref={messagePaneRef} {...messagePaneInteractions} style={{ overflowAnchor: "none" }} className="invisible data-[positioned=true]:visible h-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-contain bg-[radial-gradient(circle_at_top,_rgba(38,38,38,0.5),_transparent_38%)] px-3 py-5 sm:px-6"><div className="mx-auto flex min-h-full w-full min-w-0 max-w-3xl flex-col gap-2 lg:max-w-none">
+                    <div className="relative min-h-0 flex-1"><div key={selectedId} data-message-pane data-empty={!selected.messages.length ? "true" : undefined} tabIndex={0} ref={messagePaneRef} {...messagePaneInteractions} style={{ overflowAnchor: "none" }} className="invisible data-[positioned=true]:visible h-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-contain bg-[radial-gradient(circle_at_top,_rgba(38,38,38,0.5),_transparent_38%)] px-3 py-5 sm:px-6"><div className="mx-auto flex min-h-full w-full min-w-0 max-w-3xl flex-col gap-2 lg:max-w-none">
                         {selected.messages.length ? <div aria-hidden="true" className="mt-auto" /> : null}
                             {history.hasEarlier ? <button type="button" disabled={history.loadingEarlier} onClick={() => { followLatestRef.current = false; void history.loadEarlier() }} className="mx-auto shrink-0 px-3 py-2 text-xs text-neutral-500 hover:text-white">{history.loadingEarlier ? "Loading earlier messages…" : "Load earlier messages"}</button> : null}
                             {history.historyError ? <p role="alert" className="px-3 py-2 text-center text-xs text-red-400">{history.historyError}</p> : null}
@@ -864,7 +880,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                             </div>
                             {!isSticker && messageReactions.length ? <div inert={quoteSelectionMuted} className={`flex gap-1 px-1 transition-opacity duration-150 ${quoteSelectionMuted ? "pointer-events-none select-none opacity-30" : ""} ${own ? "justify-end" : "justify-start"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.reactorUserId}`} title={`${peopleById.get(reaction.reactorUserId)?.name ?? "Team member"} reacted`} className="rounded-full border border-neutral-800 bg-neutral-950 px-2 py-0.5 text-sm">{reaction.emoji}</span>)}</div> : null}
                         </Fragment>
-                    }) : selectedTypingPeople.length ? null : <div className="flex min-h-64 items-center justify-center text-center"><div><p className="text-sm font-medium text-neutral-300">Start the conversation</p><p className="mt-2 text-xs text-neutral-600">Native Betelgeze messages update instantly.</p></div></div>}
+                    }) : selectedTypingPeople.length ? null : <div data-conversation-empty className="flex min-h-64 items-center justify-center text-center"><div><p className="text-sm font-medium text-neutral-300">Start the conversation</p><p className="mt-2 text-xs text-neutral-600">Native Betelgeze messages update instantly.</p></div></div>}
                     {selectedTypingPeople.length ? <NativeTypingDots label={selectedTypingLabel} /> : null}</div></div>{showJumpToLatest ? <JumpToLatestButton onClick={() => { followLatestRef.current = true; setAtLatest(true); messagePaneRef.current?.scrollTo({ top: messagePaneRef.current.scrollHeight, left: 0, behavior: "instant" }) }} /> : null}</div>
                     <ComposerFooter className="relative z-10 shrink-0 touch-manipulation border-t border-neutral-800 bg-neutral-950 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:p-4" accessories={<>
                         {interactionActive && selectingQuote ? <MessageQuoteSelection key={`${selected.id}:${selectingQuote.id}:${selectingQuote.body}`} messageId={selectingQuote.id} body={selectingQuote.body} paneRef={messagePaneRef} onChange={updateSelectedQuote} onCancel={cancelQuoteSelection} /> : null}
@@ -899,8 +915,9 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     </ChatMotionViewport>
                 </> : <div className="flex flex-1 items-center justify-center p-6 text-center"><div><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950"><TeamIcon /></div><h2 className="mt-4 text-sm font-semibold">Select a team conversation</h2><p className="mt-2 text-xs text-neutral-600">Direct messages and team chats update without reloading.</p></div></div>}
             </NativeChatViewport></ConversationMedia>
+            {interactionActive && editingTeam !== undefined ? <TeamEditor bootstrap={{ ...bootstrap, teams }} team={editingTeam} onClose={() => setEditingTeam(undefined)} onSaved={async () => { await refresh(selectedRef.current) }} /> : null}
+            {interactionActive ? <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} /> : null}
+            </MobileConversationSurface>
         </ResizableConversationColumns>
-        {interactionActive && editingTeam !== undefined ? <TeamEditor bootstrap={{ ...bootstrap, teams }} team={editingTeam} onClose={() => setEditingTeam(undefined)} onSaved={async () => { await refresh(selectedRef.current) }} /> : null}
-        {interactionActive ? <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} /> : null}
     </section>
 }

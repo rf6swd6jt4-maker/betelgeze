@@ -1,7 +1,7 @@
 "use client"
 
 import { useLayoutEffect, useRef, useState, type RefObject } from "react"
-import { createComposerPointerFocus } from "./composer-pointer-focus"
+import { createComposerPointerFocus, retainNativeComposerFocus } from "./composer-pointer-focus"
 import { Annotation, Compartment, EditorState, StateField, Transaction } from "@codemirror/state"
 import { Decoration, EditorView, WidgetType, drawSelection, keymap, placeholder as editorPlaceholder } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap, insertNewline } from "@codemirror/commands"
@@ -143,10 +143,12 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
             if (!current.current.sendDisabled) current.current.onSend()
             return true
         }
+        const nativeFocus = () => !!editor.current?.contentDOM.closest("[data-mobile-conversation-surface]:not([hidden]):not([inert])")
+            && current.current.active && !current.current.disabled
         const pointerFocus = createComposerPointerFocus(() => {
             const view = editor.current
             if (view && current.current.active && !current.current.disabled) view.contentDOM.focus({ preventScroll: true })
-        })
+        }, nativeFocus)
         cancelPointerFocus.current = pointerFocus.pointercancel
         const view = new EditorView({
             parent: host.current,
@@ -235,7 +237,8 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
         view.scrollDOM.setAttribute("data-composer-scroll", "")
         editor.current = view
         inputRef.current = view.contentDOM
-        return () => { cancelPointerFocus.current = null; inputRef.current = null; editor.current = null; view.destroy() }
+        const releaseNativeFocus = retainNativeComposerFocus(view.contentDOM, nativeFocus)
+        return () => { releaseNativeFocus(); cancelPointerFocus.current = null; inputRef.current = null; editor.current = null; view.destroy() }
     }, [inputRef])
     useLayoutEffect(() => {
         const view = editor.current

@@ -13,6 +13,7 @@ import { readChatLayoutBottom, readChatViewportBottom, recordChatViewportDiagnos
 import { createViewportOriginRecovery } from "@/lib/viewport-origin-recovery"
 import { createWorkspaceVisualOrigin } from "@/lib/workspace-visual-origin"
 import { observeMobileWorkspaceViewport } from "@/lib/mobile-workspace-viewport"
+import { MOBILE_CONVERSATION_VISIBILITY_EVENT, mobileConversationIsOpen } from "@/lib/mobile-conversation-viewport"
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -1738,6 +1739,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             active: () => mobile.matches && !!panel.querySelector('[data-mobile-comms-tab][data-active="true"]'),
         }) : null
         let mobileOwnsViewport = false
+        let conversationOwnsViewport = false
         const visualOrigin = createWorkspaceVisualOrigin({
             readTop: () => topbar?.getBoundingClientRect().top ?? NaN,
             readLimit: () => mobile.matches && document.visibilityState === "visible" && Math.abs((window.visualViewport?.scale ?? 1) - 1) < 0.01
@@ -1801,6 +1803,19 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             else { origin.blur(); viewport.blur() }
         }
         const applyMobileViewport = () => {
+            if (mobileConversationIsOpen(window)) {
+                conversationOwnsViewport = true
+                mobileViewport?.suspend()
+                origin.suspend()
+                visualOrigin.suspend()
+                viewport.suspend()
+                return true
+            }
+            const releasedConversation = conversationOwnsViewport
+            if (conversationOwnsViewport) {
+                conversationOwnsViewport = false
+                mobileViewport?.resume()
+            }
             if (mobileViewport?.update()) {
                 if (!mobileOwnsViewport) {
                     mobileOwnsViewport = true
@@ -1810,7 +1825,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 }
                 return true
             }
-            if (mobileOwnsViewport) {
+            if (mobileOwnsViewport || releasedConversation) {
                 mobileOwnsViewport = false
                 composerFocused = false
                 visualOrigin.resume()
@@ -1851,6 +1866,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         }
         const resumeWorkspaceViewport = () => {
             if (document.visibilityState !== "visible") return
+            if (mobileConversationIsOpen(window)) { applyMobileViewport(); return }
             mobileViewport?.resume()
             if (applyMobileViewport()) return
             visualOrigin.resume()
@@ -1872,6 +1888,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         window.visualViewport?.addEventListener("resize", holdWorkspaceViewport)
         window.visualViewport?.addEventListener("scroll", holdWorkspaceViewport)
         window.addEventListener(WORKSPACE_COMPOSER_FOCUS_EVENT, handleComposerFocus)
+        window.addEventListener(MOBILE_CONVERSATION_VISIBILITY_EVENT, holdWorkspaceViewport)
         document.addEventListener("visibilitychange", handleWorkspaceVisibility)
         window.addEventListener("pagehide", suspendWorkspaceViewport)
         window.addEventListener("pageshow", resumeWorkspaceViewport)
@@ -1889,6 +1906,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             window.visualViewport?.removeEventListener("resize", holdWorkspaceViewport)
             window.visualViewport?.removeEventListener("scroll", holdWorkspaceViewport)
             window.removeEventListener(WORKSPACE_COMPOSER_FOCUS_EVENT, handleComposerFocus)
+            window.removeEventListener(MOBILE_CONVERSATION_VISIBILITY_EVENT, holdWorkspaceViewport)
             document.removeEventListener("visibilitychange", handleWorkspaceVisibility)
             window.removeEventListener("pagehide", suspendWorkspaceViewport)
             window.removeEventListener("pageshow", resumeWorkspaceViewport)

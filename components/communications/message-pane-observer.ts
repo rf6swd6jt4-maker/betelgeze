@@ -86,7 +86,10 @@ export function observeConversationLayout(
         // Accept the current layout; settling must not replay an old correction.
         if (interacting) { remember(false); return }
         if (!force && !hidden && nextHeight === height && pane.scrollHeight === contentHeight) return
-        let nextTop = hidden || geometryCommit ? scrollTop : pane.scrollTop
+        // Expanding the pane (for example, cancelling a quote) can clamp the
+        // native offset before ResizeObserver runs. Apply the height delta to
+        // the saved offset once, rather than subtracting it from that clamp.
+        let nextTop = hidden || geometryCommit || nextHeight !== height ? scrollTop : pane.scrollTop
         if (followLatest.current) nextTop = pane.scrollHeight - nextHeight
         else if (anchor?.element.isConnected && pane.contains(anchor.element)) {
             const top = layoutTop(anchor.element) - layoutTop(pane)

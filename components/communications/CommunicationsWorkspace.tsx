@@ -39,6 +39,7 @@ import { ComposerAttachments } from "@/components/communications/ComposerAttachm
 import { ConversationMedia } from "@/components/communications/ConversationMedia"
 import { ChatMotionViewport } from "@/components/communications/ChatMotionViewport"
 import { NativeChatViewport } from "@/components/communications/NativeChatViewport"
+import { MobileConversationSurface } from "@/components/communications/MobileConversationSurface"
 import { NativeMessageBubble, type MessageActionAnchor } from "@/components/communications/NativeMessageBubble"
 import { VoiceNotePlayer } from "@/components/communications/VoiceNotePlayer"
 import { UnreadMessageCount } from "@/components/communications/UnreadMessageCount"
@@ -889,13 +890,17 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
             : message.senderKind === "legacy" ? "Previous system" : selected?.title ?? "Client"
     const pinnedMessage = selected?.pinnedMessageId ? selected.messages.find((message) => message.id === selected.pinnedMessageId) ?? null : null
     const pinnedPreview = pinnedMessage ? messagePreview(pinnedMessage).split(/\r?\n/, 1)[0] : selected?.pinnedMessageId ? "Pinned message unavailable" : null
+    const conversationIdentity = selected ? <>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-800 text-xs font-semibold">{initials(selected.title)}</span>
+        <span className="min-w-0"><span className="flex min-w-0 items-center gap-2"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{selected.title}</span>{selected.isTest ? <SquarePill tone="yellow" className="!min-h-5 !px-2 !py-0.5 !text-[10px] !leading-3">Test</SquarePill> : null}</span><span className="block truncate text-[11px] text-neutral-600">{selected.subtitle ?? "WhatsApp client"}</span></span>
+    </> : null
 
     return <section data-workspace-record-title={active ? selected?.title : undefined} aria-label="Client communications" className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-black">
         {active ? <CommunicationsActivityTracker workspaceId={bootstrap.workspaceId} conversationKind="client" conversationId={selectedId} connectionState={connection.state} isReading={reading.isReading} /> : null}
         {!schemaReady ? <div className="shrink-0 border-b border-amber-900 bg-amber-950 px-4 py-2 text-center text-xs text-amber-100">The Communications database update must be applied before live sending and read tracking are available.</div> : null}
 
         <ResizableConversationColumns listWidth={conversationListWidth} onListWidthChange={onConversationListWidthChange}>
-            <aside className={`${selected ? "hidden lg:flex" : "flex"} min-h-0 flex-col border-r border-neutral-800 bg-neutral-950`}>
+            <aside data-conversation-list className="flex min-h-0 flex-col border-r border-neutral-800 bg-neutral-950">
                 <div className="shrink-0 border-b border-neutral-800 p-3">
                     <div role="tablist" aria-label="Communication conversations" className="flex items-center gap-1">
                         <button type="button" role="tab" aria-selected="true" className="inline-flex h-8 items-center rounded-lg bg-neutral-800 px-3 text-xs font-semibold text-white">Clients</button>
@@ -915,14 +920,15 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                 }) : <div className="p-6 text-center"><p className="text-sm font-medium text-neutral-300">{conversations.length ? "No matching conversations" : "No clients yet"}</p><p className="mt-2 text-xs leading-5 text-neutral-600">{conversations.length ? "Try another name or message." : "Client relationships will appear here automatically."}</p></div>}</div>
             </aside>
 
+            <MobileConversationSurface selected={Boolean(selected)} active={active && workspaceTabActive} onClose={() => selectConversation(null)}>
             <ConversationMedia active={active && workspaceTabActive && documentVisible}><NativeChatViewport className={`${selected ? "flex" : "hidden lg:flex"} min-h-0 min-w-0 flex-col overflow-hidden bg-black`}>
                 {selected ? <>
                     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-neutral-800 bg-neutral-950 px-3 sm:px-4">
-                        <button type="button" onClick={() => selectConversation(null)} aria-label="Back to client chats" className="inline-flex h-10 w-10 items-center justify-center text-neutral-400 hover:text-white lg:hidden"><BackIcon /></button>
-                        <Link href={`/${bootstrap.workspaceSlug}/relationships/${selected.id}`} aria-label={`Open ${selected.title} relationship`} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg outline-none hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-600">
-                            <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-800 text-xs font-semibold">{initials(selected.title)}</span>
-                            <span className="min-w-0"><span className="flex min-w-0 items-center gap-2"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{selected.title}</span>{selected.isTest ? <SquarePill tone="yellow" className="!min-h-5 !px-2 !py-0.5 !text-[10px] !leading-3">Test</SquarePill> : null}</span><span className="block truncate text-[11px] text-neutral-600">{selected.subtitle ?? "WhatsApp client"}</span></span>
+                        <button data-icon-button data-mobile-conversation-back type="button" onClick={() => selectConversation(null)} aria-label="Back to client chats" className="inline-flex h-10 w-10 items-center justify-center text-neutral-400 hover:text-white lg:hidden"><BackIcon /></button>
+                        <Link href={`/${bootstrap.workspaceSlug}/relationships/${selected.id}`} aria-label={`Open ${selected.title} relationship`} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg outline-none hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-600 [[data-mobile-conversation-surface]_&]:hidden">
+                            {conversationIdentity}
                         </Link>
+                        <div className="hidden min-w-0 flex-1 items-center gap-3 rounded-lg [[data-mobile-conversation-surface]_&]:flex">{conversationIdentity}</div>
                         <ClientPortalActions key={`portal-actions:${selected.id}`} workspaceSlug={bootstrap.workspaceSlug} relationshipId={selected.id} />
                         <ClientChatParticipants active={interactionActive} key={selected.id} workspaceSlug={bootstrap.workspaceSlug} conversation={selected} userId={bootstrap.currentUser.id} people={bootstrap.people} onSaved={synchronize} />
                         <CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} />
@@ -931,7 +937,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
 
                     <ChatMotionViewport key={selectedId}>
                     <div className="relative min-h-0 flex-1">
-                    <div key={selectedId} data-message-pane tabIndex={0} ref={messagePaneRef} {...messagePaneInteractions} style={{ overflowAnchor: "none" }} className="invisible data-[positioned=true]:visible h-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-contain bg-[radial-gradient(circle_at_top,_rgba(38,38,38,0.5),_transparent_38%)] px-3 py-5 sm:px-6">
+                    <div key={selectedId} data-message-pane data-empty={!selected.messages.length ? "true" : undefined} tabIndex={0} ref={messagePaneRef} {...messagePaneInteractions} style={{ overflowAnchor: "none" }} className="invisible data-[positioned=true]:visible h-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-contain bg-[radial-gradient(circle_at_top,_rgba(38,38,38,0.5),_transparent_38%)] px-3 py-5 sm:px-6">
                         <div className="mx-auto flex min-h-full w-full min-w-0 max-w-3xl flex-col gap-2 lg:max-w-none">
                             {selected.messages.length ? <div aria-hidden="true" className="mt-auto" /> : null}
                             {history.hasEarlier ? <button type="button" disabled={history.loadingEarlier} onClick={() => { followLatestRef.current = false; void history.loadEarlier() }} className="mx-auto shrink-0 px-3 py-2 text-xs text-neutral-500 hover:text-white">{history.loadingEarlier ? "Loading earlier messages…" : "Load earlier messages"}</button> : null}
@@ -1036,7 +1042,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                                 </div>
                                 {!isSticker && messageReactions.length ? <div className={`flex gap-1 px-1 ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.direction}`} title={reaction.direction === "inbound" ? `Reacted by ${selected.title}` : `Reacted in Betelgeze by ${peopleById.get(reaction.reactorUserId ?? "")?.name ?? "Team"}`} className="rounded-full border border-neutral-800 bg-neutral-950 px-2 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
                             </Fragment>
-                        }) : <div className="flex min-h-64 items-center justify-center text-center"><div><p className="text-sm font-medium text-neutral-300">Start the conversation</p><p className="mt-2 text-xs text-neutral-600">Messages sent here use this relationship&apos;s connected SMS and WhatsApp channels.</p></div></div>}</div>
+                        }) : <div data-conversation-empty className="flex min-h-64 items-center justify-center text-center"><div><p className="text-sm font-medium text-neutral-300">Start the conversation</p><p className="mt-2 text-xs text-neutral-600">Messages sent here use this relationship&apos;s connected SMS and WhatsApp channels.</p></div></div>}</div>
                     </div>
                     {showJumpToLatest ? <JumpToLatestButton onClick={() => { followLatestRef.current = true; setAtLatest(true); messagePaneRef.current?.scrollTo({ top: messagePaneRef.current.scrollHeight, left: 0, behavior: "instant" }) }} /> : null}
                     </div>
@@ -1077,7 +1083,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                     </ChatMotionViewport>
                 </> : <div className="flex flex-1 items-center justify-center p-6 text-center"><div><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950 text-xl">◌</div><h2 className="mt-4 text-sm font-semibold">Select a client chat</h2><p className="mt-2 text-xs text-neutral-600">Messages update here without reloading the panel.</p></div></div>}
             </NativeChatViewport></ConversationMedia>
+            {interactionActive ? <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} /> : null}
+            </MobileConversationSurface>
         </ResizableConversationColumns>
-        {interactionActive ? <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} /> : null}
     </section>
 }

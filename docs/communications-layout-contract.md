@@ -1,6 +1,29 @@
 # Communications layout contract
 
-Status: mobile resident rebuild candidate; physical-device and user acceptance pending. This replaces the mobile staff layout introduced at `93e7bcca`. Preserve `app_speed.md` and the protected `app-alerts.md` policy. A passing fixture, build or deployment does not establish physical keyboard behaviour.
+Status: full-screen UI approved for production release by the user on 24 September 2026 after local v7 review. See [release evidence and remaining work](mobile-comms-fullscreen-release.md). This replaces the mobile staff layout introduced at `93e7bcca`. Preserve `app_speed.md` and the protected `app-alerts.md` policy. A passing fixture, build or deployment does not establish physical keyboard behaviour on every device.
+
+Approved full-screen implementation: when a selected conversation is hosted by `MobileConversationSurface`, it temporarily owns geometry through `observeMobileConversationViewport`; the workspace observer suspends. That surface uses absolute document coordinates (`visualViewport.pageTop`, `height`) with an unclipped static body, and restores shell ownership on departure. The inline/resident and legacy paths below keep their existing contract. See [the local revision 2 investigation](mobile-comms-displacement-local-v2.md) for the rejected physical baseline and investigation history. The v2-v7 documents record local-stage evidence; the release document records subsequent rollout.
+
+The [local revision 4 focus correction](mobile-comms-focus-local-v4.md) keeps that geometry and lets native touch selection establish focus before reasserting preventScroll on the same editor. It replaces the full-screen path's premature pointerup focus; it does not change the other viewport or protected reading owners. The user reported no jumps in the physical v4 test; smooth motion is the separate v5 candidate below.
+
+The [local v5 motion candidate](mobile-comms-motion-local-v5.md) adds a presentation
+observer only inside the full-screen prototype. It animates the messages and
+composer below the header using the existing layout notifications and scroll
+owner. The physically accepted v4 focus/root/header files remain unchanged.
+This presentation exception to the normal-flex-only legacy path is part of the approved release.
+
+The user reported promising physical v5 behaviour. The [local v6 polish](mobile-comms-polish-local-v6.md)
+preserves its focus and viewport calculations, carries animation velocity through
+endpoint corrections, prevents hidden shell descendants painting through, and
+fixes action-related scroll/focus defects. Message reads, unread counts,
+subscriptions, receipts and mutation delivery remain the existing owners; their
+reliability work is a separate future scope.
+
+[Local v7 edge-case patches](mobile-comms-edges-local-v7.md) keep empty-chat
+prompts in natural layout while animating the composer, bound empty content to
+short panes, fence stale edit UI results, reset transient sticker trays on chat
+selection and settle navigation/popups at explicit accessibility/action handoffs.
+The accepted focus and viewport/header geometry remain unchanged.
 
 ## Required experience
 

@@ -139,7 +139,7 @@ function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose:
     const stripRef = useRef<HTMLDivElement>(null)
     useEffect(() => {
         const previous = document.activeElement as HTMLElement | null
-        dialogRef.current?.focus()
+        dialogRef.current?.focus({ preventScroll: true })
         return () => {
             // Closing a resident tab also closes its viewer. Restoring focus to
             // that hidden editor would reopen the keyboard in the next tab.
@@ -167,11 +167,20 @@ function MediaGallery({ media, onClose }: { media: MessageMediaPreview; onClose:
     const next = () => select(index + 1)
     const arrowClass = "absolute top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-white drop-shadow-lg hover:text-white/70 disabled:opacity-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
     return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Image preview" tabIndex={-1} className="betelgeze-popup-fade fixed inset-0 z-[180] flex flex-col overflow-hidden overscroll-none bg-black/95 text-white outline-none" onKeyDown={(event) => {
-        if (event.key === "Tab") {
-            const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], video[controls], [tabindex="0"]')).filter((element) => !element.closest("[inert]"))
-            const first = controls[0], last = controls.at(-1)
-            if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) { event.preventDefault(); last?.focus() }
-            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+        // Native media controls live in a browser shadow tree and can retarget
+        // every internal Tab to the video. Keep their native traversal intact.
+        if (event.key === "Tab" && !(event.target as Element).closest("video")) {
+            const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], video[controls], [tabindex="0"]'))
+                .filter(element => element.getClientRects().length && !element.closest("[inert]"))
+            if (controls.length) {
+                // Safari can skip buttons in its native Tab order, including
+                // the first step from the focused gallery container.
+                const current = controls.indexOf(document.activeElement as HTMLElement)
+                const next = current < 0 ? event.shiftKey ? controls.length - 1 : 0
+                    : (current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length
+                event.preventDefault()
+                controls[next].focus({ preventScroll: true })
+            }
         }
         if (!multiple || (event.target as Element).closest("video")) return
         if (event.key === "ArrowLeft") { event.preventDefault(); previous() }

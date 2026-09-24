@@ -110,17 +110,93 @@ html[data-workspace-viewport-locked="true"] [data-mobile-comms-viewport="true"] 
   transform: none;
 }
 
+/* The conversation uses the document origin. A fixed containing block would
+   reintroduce WebKit's separate fixed-layer keyboard pan; a positioned/clipped
+   body would make pageTop relative to the wrong origin or crop the moving frame.
+   The shell also sets body overflow inline, so this scoped override is explicit. */
+html[data-mobile-conversation-open="true"] body {
+  position: static;
+  inset: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: visible !important;
+  background: #000;
+}
+
+html[data-mobile-conversation-open="true"] { background: #000; }
+
+.mobile-conversation-surface {
+  position: absolute;
+  z-index: 100;
+  top: var(--conversation-viewport-top, 0px);
+  left: 0;
+  width: 100%;
+  height: var(--conversation-viewport-height, 100dvh);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  isolation: isolate;
+  background: #000;
+  color: var(--foreground);
+  overscroll-behavior: none;
+}
+
+/* A desktop-created legacy iframe cannot escape its parent document. Preserve
+   its prior narrow list/detail behavior; full-screen ownership is resident-only. */
+@media (max-width: 1023px) {
+  .grid:has(> [data-inline-conversation-selected="true"]) > [data-conversation-list] { display: none; }
+}
+
+.mobile-conversation-surface[hidden] { display: none !important; }
+.mobile-conversation-surface > [data-native-chat-viewport] {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+.mobile-conversation-surface > [data-native-chat-viewport] > header {
+  height: calc(3.5rem + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Empty conversations have no scrollable history. Bound their prompt by the
+   real pane, rather than creating a 256px scroll extent behind a short keyboard
+   viewport. The motion owner leaves this prompt in natural layout. */
+.mobile-conversation-surface [data-message-pane][data-empty="true"] > div {
+  height: 100%;
+}
+.mobile-conversation-surface [data-conversation-empty] {
+  height: 16rem;
+  min-height: 0;
+  flex-shrink: 1;
+}
+
+/* Underlying navigation stays mounted, but cannot flash through a native
+   keyboard/compositor excursion while the conversation is fully presented.
+   Group opacity also suppresses descendants that explicitly set visibility:
+   visible (for example positioned message panes in another resident tab).
+   Leaving removes both properties before the horizontal reveal starts.
+   Global profile dialogs remain outside these three hidden surfaces. */
+html:is([data-mobile-conversation-phase="open"], [data-mobile-conversation-phase="dismissing-keyboard"])
+  :is([data-workspace-topbar], [data-workspace-tabbar], [data-workspace-tab-panels]) {
+  visibility: hidden;
+  opacity: 0;
+}
+
 /* Bound rich drafts and trays to the actual space below the conversation
    header/pinned bar. Container units avoid a second JS measurement owner. */
-[data-mobile-comms-tab] [data-chat-motion-layer] {
+:is([data-mobile-comms-tab], [data-mobile-conversation-surface]) [data-chat-motion-layer] {
   container-type: size;
 }
 
-[data-mobile-comms-tab] [data-composer-slot] {
+:is([data-mobile-comms-tab], [data-mobile-conversation-surface]) [data-composer-slot] {
   max-height: 100%;
 }
 
-[data-mobile-comms-tab] [data-composer-slot] > footer {
+:is([data-mobile-comms-tab], [data-mobile-conversation-surface]) [data-composer-slot] > footer {
   --composer-padding: calc(0.75rem + max(0.75rem, env(safe-area-inset-bottom)));
   --composer-accessory-reserve: 0px;
   display: flex;
@@ -130,22 +206,22 @@ html[data-workspace-viewport-locked="true"] [data-mobile-comms-viewport="true"] 
   flex-shrink: 1;
 }
 
-[data-mobile-comms-tab] [data-composer-slot] > footer:has([data-composer-accessories] > :not(input)) {
+:is([data-mobile-comms-tab], [data-mobile-conversation-surface]) [data-composer-slot] > footer:has([data-composer-accessories] > :not(input)) {
   --composer-accessory-reserve: min(48px, max(0px, calc(100cqh - var(--composer-padding) - 59px)));
 }
 
-[data-mobile-comms-tab] [data-composer-accessories] {
+:is([data-mobile-comms-tab], [data-mobile-conversation-surface]) [data-composer-accessories] {
   min-height: var(--composer-accessory-reserve);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-[data-mobile-comms-tab] [data-composer-slot] form {
+:is([data-mobile-comms-tab], [data-mobile-conversation-surface]) [data-composer-slot] form {
   flex-shrink: 0;
   width: 100%;
 }
 
-[data-mobile-comms-tab] [data-composer-slot] .cm-scroller {
+:is([data-mobile-comms-tab], [data-mobile-conversation-surface]) [data-composer-slot] .cm-scroller {
   max-height: min(116px, max(44px, calc(100cqh - var(--composer-padding) - 15px - var(--composer-accessory-reserve))));
 }
 

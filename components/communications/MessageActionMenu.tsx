@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useCallback, useState, type ReactNode } from "react"
 
 import { CopyIcon, DeleteIcon, EditIcon, PinIcon, ReactIcon, ReplyIcon, SaveIcon } from "@/components/communications/MessageInteractionIcons"
 import { AnchoredPopup } from "@/components/ui/AnchoredPopup"
@@ -94,11 +94,11 @@ export function MessageReactionActions({ currentEmoji, recentEmoji, onReact, onR
     const [customOpen, setCustomOpen] = useState(false)
     const [customEmoji, setCustomEmoji] = useState("")
     const [customError, setCustomError] = useState<string | null>(null)
-    const inputRef = useRef<HTMLInputElement | null>(null)
-
-    useEffect(() => {
-        if (customOpen) window.requestAnimationFrame(() => inputRef.current?.focus())
-    }, [customOpen])
+    // Mount is part of the user's picker action. Deferring focus to another
+    // frame can lose iOS keyboard activation and lets the browser pan the page.
+    const focusEmojiInput = useCallback((input: HTMLInputElement | null) => {
+        input?.focus({ preventScroll: true })
+    }, [])
 
     function submitCustom() {
         const emoji = customEmoji.trim()
@@ -120,7 +120,7 @@ export function MessageReactionActions({ currentEmoji, recentEmoji, onReact, onR
             <button data-icon-button type="button" onClick={() => setCustomOpen((open) => !open)} aria-label="Use device emoji picker" aria-expanded={customOpen} className={`${ACTION_BUTTON_CLASS} text-xl lg:text-lg`}>+</button>
         </div>
         {customOpen ? <form onSubmit={(event) => { event.preventDefault(); submitCustom() }} className="betelgeze-popup-enter flex w-64 max-w-full gap-2 rounded-xl border border-neutral-800 bg-neutral-950 p-2 text-white shadow-2xl">
-            <label className="min-w-0 flex-1"><span className="sr-only">Emoji reaction</span><input ref={inputRef} inputMode="text" value={customEmoji} onChange={(event) => { setCustomEmoji(event.target.value); setCustomError(null) }} maxLength={32} aria-invalid={Boolean(customError)} placeholder="Use device emoji picker" className="h-10 w-full rounded-lg border border-neutral-800 bg-black px-3 text-base outline-none focus:border-neutral-600 lg:h-9 lg:text-sm" />{customError ? <span className="mt-1 block text-[10px] text-red-400">{customError}</span> : null}</label>
+            <label className="min-w-0 flex-1"><span className="sr-only">Emoji reaction</span><input ref={focusEmojiInput} inputMode="text" value={customEmoji} onChange={(event) => { setCustomEmoji(event.target.value); setCustomError(null) }} maxLength={32} aria-invalid={Boolean(customError)} placeholder="Use device emoji picker" className="h-10 w-full rounded-lg border border-neutral-800 bg-black px-3 text-base outline-none focus:border-neutral-600 lg:h-9 lg:text-sm" />{customError ? <span className="mt-1 block text-[10px] text-red-400">{customError}</span> : null}</label>
             <button type="submit" className="h-10 rounded-lg bg-white px-3 text-xs font-semibold text-black lg:h-9">React</button>
         </form> : null}
     </div>

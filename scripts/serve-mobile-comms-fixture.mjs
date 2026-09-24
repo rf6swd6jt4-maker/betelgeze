@@ -21,6 +21,9 @@ const sources = [
     "components/communications/message-pane-observer.ts",
     "lib/chat-formatting.ts",
     "lib/chat-viewport-motion.ts",
+    "lib/mobile-conversation-motion.ts",
+    "lib/mobile-conversation-easing.ts",
+    "lib/mobile-conversation-viewport.ts",
     "lib/mobile-workspace-viewport.ts",
     "lib/communications/reading-visibility.ts",
     "lib/workspace-tab-activity.ts",
@@ -29,6 +32,8 @@ const sources = [
 const aliases = new Map(sources.map(path => ["@/" + path.replace(/\.(tsx?|js)$/, ""), "./" + path.split("/").at(-1).replace(/\.tsx?$/, ".js")]))
 aliases.set("./ComposerMentionPicker", "./fixture-mention-picker.js")
 aliases.set("./workspace-tabs.ts", "./workspace-tabs.js")
+aliases.set("./chat-viewport-motion.ts", "./chat-viewport-motion.js")
+aliases.set("./mobile-conversation-easing.ts", "./mobile-conversation-easing.js")
 for (const path of sources) {
     let source = readFileSync(path, "utf8")
     for (const [from, to] of aliases) source = source.replaceAll(`"${from}"`, JSON.stringify(to))

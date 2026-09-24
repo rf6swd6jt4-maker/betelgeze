@@ -1,6 +1,8 @@
 import React, { useLayoutEffect, useRef, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { flushSync } from "react-dom"
+import { EditorView } from "@codemirror/view"
+import { undo, redo, undoDepth, redoDepth } from "@codemirror/commands"
 import { ChatMotionViewport } from "./ChatMotionViewport.js"
 import { ComposerFooter } from "./ComposerFooter.js"
 import { ChatComposerInput } from "./ChatComposerInput.js"
@@ -22,6 +24,8 @@ function Chat({ story }) {
     const [text, setText] = useState("")
     const [reply, setReply] = useState(false)
     const [attachment, setAttachment] = useState(false)
+    const [active, setActive] = useState(true)
+    const [disabled, setDisabled] = useState(false)
     const editorRef = useRef(null)
     const paneRef = useRef(null)
     const followLatest = useRef(true)
@@ -29,6 +33,8 @@ function Chat({ story }) {
         story.setText = setText
         story.setReply = setReply
         story.setAttachment = setAttachment
+        story.setActive = setActive
+        story.setDisabled = setDisabled
         story.editorRef = editorRef
         story.pane = paneRef.current
         story.followLatest = followLatest
@@ -45,7 +51,7 @@ function Chat({ story }) {
                 reply ? h("div", { className: "reply", "data-reply-preview": true }, "Replying to synthetic message") : null,
                 attachment ? h("div", { className: "attachment", "data-attachment-preview": true }, "Synthetic attachment ready") : null,
                 h("form", { className: "form", onSubmit: event => event.preventDefault() },
-                    h(ChatComposerInput, { inputRef: editorRef, value: text, onChange: setText, onSend: () => {}, onFocus: () => story.onFocus?.(), onBlur: () => story.onBlur?.(), placeholder: "Synthetic message" }),
+                    h(ChatComposerInput, { inputRef: editorRef, value: text, onChange: setText, onSend: () => {}, onFocus: () => story.onFocus?.(), onBlur: () => story.onBlur?.(), active, disabled, placeholder: "Synthetic message" }),
                     h("button", { type: "submit", "aria-label": "Send synthetic message" }, "↑")))))
 }
 
@@ -58,6 +64,8 @@ function mountChat(container) {
         setText(value) { flushSync(() => story.setText(value)) },
         setReply(value) { flushSync(() => story.setReply(value)) },
         setAttachment(value) { flushSync(() => story.setAttachment(value)) },
+        setActive(value) { flushSync(() => story.setActive(value)) },
+        setDisabled(value) { flushSync(() => story.setDisabled(value)) },
         close() { flushSync(() => root.unmount()) },
     }
 }
@@ -184,6 +192,102 @@ if (location.pathname === "/frame") {
         return { mode, shell, panel, doc, q, rect, view, mount, controller, origin, visualOrigin, trace, motionCaptures, measuredFrames, sample, frames, focus, blur, move, checkChrome, checkGap, checkEnd, checkMonotonic, close, initial, layout }
     }
 
+    // These tests exercise event order in the actual CodeMirror composer.
+    // Synthetic pointers do not reproduce a native mobile keyboard or prove
+    // that the OS compositor paints keyboard transitions without displacement.
+    for (const mode of ["native", "resident-iframe"]) {
+        function watchFocus(f) {
+            const editor = f.q("[data-chat-composer]"), calls = []
+            const nativeFocus = f.view.HTMLElement.prototype.focus
+            editor.focus = options => { calls.push(options); nativeFocus.call(editor, options) }
+            const pointer = type => editor.dispatchEvent(new f.view.PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch", isPrimary: true, button: 0, clientX: 20, clientY: 20 }))
+            return { editor, calls, nativeFocus, pointer }
+        }
+        define(`${mode}: mobile surface keeps native activation before prevent-scroll reassertion`, async f => {
+            f.q(".chat").setAttribute("data-mobile-conversation-surface", "")
+            const { editor, calls, nativeFocus, pointer } = watchFocus(f)
+            assert(pointer("pointerdown") && pointer("pointerup"), "Composer cancelled native pointer activation")
+            assert(calls.length === 0 && f.doc.activeElement !== editor, "Pointer release forced focus before native activation")
+            let observedDuringFocus = 0
+            const afterFocus = () => { observedDuringFocus = calls.length }
+            editor.addEventListener("focusin", afterFocus)
+            nativeFocus.call(editor)
+            editor.removeEventListener("focusin", afterFocus)
+            assert(f.doc.activeElement === editor, "Native activation did not focus the editor")
+            assert(calls.length === 1 && calls[0]?.preventScroll === true && observedDuringFocus === 1, "Prevent-scroll reassertion was missing or deferred beyond focusin")
+            calls.length = 0
+            assert(pointer("pointerdown") && pointer("pointerup"), "Focused composer cancelled pointer events")
+            assert(calls.length === 0, "Focused touch release forced focus")
+            const click = new f.view.MouseEvent("click", { bubbles: true, cancelable: true })
+            editor.dispatchEvent(click)
+            assert(!click.defaultPrevented && calls.length === 1 && calls[0]?.preventScroll === true, "Already focused click did not synchronously retain prevent-scroll focus")
+            return { focusinSynchronous: true, clickWithoutFocusin: true, pointerFocusCalls: 0 }
+        })
+        define(`${mode}: native focus retention preserves editor, selection and undo history`, async f => {
+            f.q(".chat").setAttribute("data-mobile-conversation-surface", "")
+            f.mount.setText("one two three")
+            const editor = f.q("[data-chat-composer]"), view = EditorView.findFromDOM(editor)
+            assert(view, "Actual CodeMirror view was not available")
+            view.dispatch({ changes: { from: view.state.doc.length, insert: "!" }, userEvent: "input.type" })
+            await delay(30)
+            f.focus()
+            view.dispatch({ selection: { anchor: 4, head: 7 } })
+            await delay(30)
+            const selection = f.doc.getSelection(), beforeRange = selection.getRangeAt(0).cloneRange()
+            const before = { doc: view.state.doc, selection: view.state.selection, undo: undoDepth(view.state), redo: redoDepth(view.state), top: view.scrollDOM.scrollTop }
+            assert(before.undo > 0 && selection.toString() === "two", "Fixture did not establish undo history and native selection")
+            for (const type of ["focusin", "click", "click"]) editor.dispatchEvent(new f.view.Event(type, { bubbles: true, cancelable: true }))
+            const afterRange = selection.getRangeAt(0)
+            assert(f.q("[data-chat-composer]") === editor && EditorView.findFromDOM(editor) === view, "Focus retention replaced the editor")
+            assert(view.state.doc === before.doc && view.state.selection.eq(before.selection), "Focus retention changed CodeMirror content or selection")
+            assert(selection.toString() === "two" && beforeRange.startContainer === afterRange.startContainer && beforeRange.startOffset === afterRange.startOffset && beforeRange.endContainer === afterRange.endContainer && beforeRange.endOffset === afterRange.endOffset, "Focus retention replaced or moved the native selection")
+            assert(undoDepth(view.state) === before.undo && redoDepth(view.state) === before.redo && view.scrollDOM.scrollTop === before.top, "Focus retention changed undo history or scroller position")
+            assert(undo(view) && view.state.doc.toString() === "one two three", "Editing undo stopped working after native focus retention")
+            assert(redo(view) && view.state.doc.toString() === "one two three!", "Editing redo stopped working after native focus retention")
+            return { sameEditor: true, nativeSelection: "two", undoRedo: true }
+        })
+        define(`${mode}: inactive disabled hidden and inert surfaces do not reassert focus`, async f => {
+            const chat = f.q(".chat")
+            chat.setAttribute("data-mobile-conversation-surface", "")
+            const { editor, calls, nativeFocus, pointer } = watchFocus(f)
+            nativeFocus.call(editor)
+            const excluded = () => {
+                calls.length = 0
+                editor.dispatchEvent(new f.view.Event("focusin", { bubbles: true }))
+                editor.dispatchEvent(new f.view.MouseEvent("click", { bubbles: true }))
+                assert(calls.length === 0, "Excluded composer reasserted focus")
+            }
+            f.mount.setDisabled(true); excluded()
+            pointer("pointerdown"); pointer("pointerup")
+            assert(calls.length === 0, "Disabled composer forced pointer focus")
+            f.mount.setDisabled(false)
+            chat.inert = true; excluded(); chat.inert = false
+            chat.hidden = true; excluded(); chat.hidden = false
+            f.mount.setActive(false); excluded()
+            pointer("pointerdown"); pointer("pointerup")
+            assert(calls.length === 0, "Inactive composer forced pointer focus")
+            f.mount.setActive(true); nativeFocus.call(editor)
+            calls.length = 0
+            editor.dispatchEvent(new f.view.MouseEvent("click", { bubbles: true }))
+            assert(calls.length === 1 && calls[0]?.preventScroll === true, "Reactivated surface did not resume native focus retention")
+            return { disabled: true, inactive: true, hidden: true, inert: true, resumes: true }
+        })
+        define(`${mode}: composers outside mobile surfaces retain legacy activation`, async f => {
+            const { editor, calls, pointer } = watchFocus(f)
+            assert(!editor.closest("[data-mobile-conversation-surface]"), "Legacy test accidentally opted into mobile surface")
+            pointer("pointerdown")
+            assert(calls.length === 0, "Legacy touch focused before release")
+            pointer("pointerup")
+            assert(calls.length === 1 && calls[0]?.preventScroll === true, "Legacy touch no longer focuses on release")
+            calls.length = 0
+            editor.dispatchEvent(new f.view.MouseEvent("click", { bubbles: true }))
+            assert(calls.length === 0, "Legacy click unexpectedly reasserted focus")
+            editor.dispatchEvent(new f.view.PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse", isPrimary: true, button: 0 }))
+            assert(calls.length === 1 && calls[0]?.preventScroll === true, "Legacy mouse no longer focuses on contact")
+            return { touchRelease: true, mouseContact: true, extraClickFocus: false }
+        })
+    }
+
     if (desktop) {
         define("desktop: valid resize follows measured edge immediately", async f => {
             f.focus(); f.move(f.layout - 230)
@@ -307,6 +411,54 @@ if (location.pathname === "/frame") {
                 assert(Math.abs(actualShift - expectedShift) <= 2, `Scrolled history anchor shifted ${actualShift}px; expected pane-height shift ${expectedShift}px`)
                 assert(pane.scrollHeight - pane.clientHeight - pane.scrollTop > 24, "History unexpectedly jumped to latest")
                 return { anchorDelta: Math.round(actualShift), expectedShift, frames: samples.length }
+            })
+            define(`${mode}: scrolled history accessory removal compensates a native scroll clamp only once`, async f => {
+                // The mobile surface uses natural footer flex sizing; the
+                // legacy footer's height tween would hide this one-step clamp.
+                const chat = f.q(".chat")
+                chat.dataset.mobileConversationSurface = "true"
+                chat.dataset.phase = "open"
+                f.view.dispatchEvent(new f.view.Event("betelgeze:mobile-conversation-visibility"))
+                f.mount.setReply(true)
+                await f.frames(230)
+                const pane = f.mount.story.pane
+                assert(!f.q("[data-composer-slot]").style.height && !f.q("[data-composer-slot]").style.transition,
+                    "Accessory clamp fixture did not switch to natural mobile footer sizing")
+                const gapFromLatest = 12
+                f.mount.story.followLatest.current = false
+                pane.scrollTop = pane.scrollHeight - pane.clientHeight - gapFromLatest
+                await f.frames(70)
+                pane.dispatchEvent(new Event("conversation-layout-will-change"))
+                const anchor = [...pane.querySelectorAll("[data-message-scroll-anchor]")]
+                    .find(row => row.getBoundingClientRect().bottom > pane.getBoundingClientRect().top + 10)
+                assert(anchor, "Accessory clamp fixture has no visible history anchor")
+                const before = { top: pane.scrollTop, height: pane.clientHeight,
+                    anchorGap: pane.getBoundingClientRect().bottom - anchor.getBoundingClientRect().bottom }
+                const nativeScrollTo = pane.scrollTo.bind(pane), writes = []
+                pane.scrollTo = (...args) => {
+                    writes.push({ before: pane.scrollTop, target: args[0]?.top ?? args[1], height: pane.clientHeight })
+                    return nativeScrollTo(...args)
+                }
+                let samples
+                try { f.mount.setReply(false); samples = await f.frames(230) }
+                finally { pane.scrollTo = nativeScrollTo }
+                const expansion = pane.clientHeight - before.height
+                const expectedTop = before.top - expansion
+                assert(expansion > gapFromLatest + 10, "Accessory removal did not expand the pane enough to force native clamping")
+                const naturalMax = pane.scrollHeight - pane.clientHeight
+                assert(writes.some(write => write.height === pane.clientHeight && Math.abs(write.before - naturalMax) <= 1
+                    && write.before < before.top && write.before > write.target + 1),
+                    `Fixture did not observe browser clamping before observer correction: ${JSON.stringify(writes)}`)
+                assert(Math.abs(pane.scrollTop - expectedTop) <= 2,
+                    `Accessory removal compensated native clamp twice: scroll ${pane.scrollTop}, expected ${expectedTop}, expansion ${expansion}`)
+                assert(Math.abs((pane.scrollHeight - pane.clientHeight - pane.scrollTop) - gapFromLatest) <= 2,
+                    "Accessory removal changed the distance from latest while follow-latest was disabled")
+                const anchorGap = pane.getBoundingClientRect().bottom - anchor.getBoundingClientRect().bottom
+                assert(anchor.isConnected && Math.abs(anchorGap - before.anchorGap) <= 2,
+                    `Accessory removal displaced the bounded history anchor: ${anchorGap}, expected ${before.anchorGap}`)
+                assert(!f.mount.story.followLatest.current, "Accessory removal changed the history follow preference")
+                f.checkChrome(samples)
+                return { expansion, beforeTop: before.top, finalTop: pane.scrollTop, expectedTop, anchorGap, writes }
             })
             define(`${mode}: revised keyboard sample waits for held history touch`, async f => {
                 const pane = f.mount.story.pane

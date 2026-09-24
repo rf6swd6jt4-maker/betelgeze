@@ -83,9 +83,12 @@ export function AnchoredPopup({
     }, [active, align, anchor, anchorPoint])
 
     useLayoutEffect(() => {
-        updatePosition()
         const popup = popupRef.current
         if (!active || !anchor || !popup) return
+        // A moving conversation settles its presentation synchronously before
+        // this fixed popup measures the anchor, including a held touch gesture.
+        anchor.dispatchEvent(new Event("betelgeze:anchored-popup-opening", { bubbles: true }))
+        updatePosition()
         const resizeObserver = new ResizeObserver(updatePosition)
         resizeObserver.observe(anchor)
         resizeObserver.observe(popup)

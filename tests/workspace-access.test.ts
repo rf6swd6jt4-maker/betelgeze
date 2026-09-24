@@ -57,7 +57,9 @@ test("Staff see Library and Communications while operational roles reveal Relati
     const clientConnectionAssignee = ["client_connections.manage"] as const
     assert.equal(canAccessWorkspacePanel(byKey.get("relationships")!, "staff", baseline), false)
     assert.equal(canAccessWorkspacePanel(byKey.get("relationships")!, "staff", sellerOrManager), true)
-    assert.equal(canAccessWorkspacePanel(byKey.get("onboarding")!, "staff", ["onboarding.manage"]), false)
+    assert.equal(canAccessWorkspacePanel(byKey.get("onboarding")!, "staff", baseline), false)
+    assert.equal(canAccessWorkspacePanel(byKey.get("onboarding")!, "staff", ["onboarding.manage"]), true)
+    assert.equal(canAccessWorkspacePanel(byKey.get("onboarding")!, "staff", ["fulfilment.manage"]), false)
     assert.equal(byKey.has("fulfilment"), false)
     assert.equal(canAccessWorkspacePanel(byKey.get("communications")!, "staff", baseline), true)
     assert.equal(canAccessWorkspacePanel(byKey.get("client-connections")!, "staff", clientConnectionAssignee), true)
@@ -81,6 +83,8 @@ test("Client Connections activates for setup assignees while Appointment Setting
     assert.match(workspaceAccess, /allowedServiceIds\.some\(\(serviceId\) => appointmentSettingServices\.ids\.has\(serviceId\)\)/)
     assert.match(workspaceAccess, /\? \[APPOINTMENT_SETTING_CAPABILITY\] : \[\]/)
     assert.match(workspaceAccess, /clientConnectionAssignments\.data\?\.length \? \[CLIENT_CONNECTIONS_CAPABILITY\]/)
+    assert.match(workspaceAccess, /onboarding_services!inner\(workspace_service_capabilities\(capability\)\)/)
+    assert.match(workspaceAccess, /grant\.capability === ONBOARDING_CAPABILITY/)
 })
 
 test("workspace capability normalization remains deterministic", () => {

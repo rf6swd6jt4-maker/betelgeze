@@ -24,6 +24,7 @@ function isAdminRole(role: WorkspaceRole) {
 
 const APPOINTMENT_SETTING_CAPABILITY = "appointment_setting.manage" satisfies WorkspaceCapability
 const CLIENT_CONNECTIONS_CAPABILITY = "client_connections.manage" satisfies WorkspaceCapability
+const ONBOARDING_CAPABILITY = "onboarding.manage" satisfies WorkspaceCapability
 const APPOINTMENT_SETTING_TEMPLATE_ID = "appointment-setting"
 
 function serviceTemplateId(definition: unknown) {
@@ -86,7 +87,7 @@ export async function loadWorkspaceAccess(input: {
     const [assignmentResult, rolesResult, allocatedServices, clientConnectionAssignments] = await Promise.all([
         supabaseAdmin
             .from("workspace_member_service_access")
-            .select("service_id")
+            .select("service_id, onboarding_services!inner(workspace_service_capabilities(capability))")
             .eq("workspace_id", input.workspaceId)
             .eq("user_id", input.userId),
         supabaseAdmin.from("workspace_operational_roles").select("can_sell, can_manage").eq("workspace_id", input.workspaceId).eq("user_id", input.userId).maybeSingle(),
@@ -114,6 +115,10 @@ export async function loadWorkspaceAccess(input: {
         rolesResult.data?.can_sell || rolesResult.data?.can_manage ? ["relationships.view"] : [],
         allowedServiceIds.some((serviceId) => appointmentSettingServices.ids.has(serviceId)) ? [APPOINTMENT_SETTING_CAPABILITY] : [],
         clientConnectionAssignments.data?.length ? [CLIENT_CONNECTIONS_CAPABILITY] : [],
+        (assignments ?? []).some((assignment) => {
+            const service = assignment.onboarding_services as unknown as { workspace_service_capabilities: Array<{ capability: string }> } | null
+            return service?.workspace_service_capabilities?.some((grant) => grant.capability === ONBOARDING_CAPABILITY)
+        }) ? [ONBOARDING_CAPABILITY] : [],
     ])
 
     return { ...input, capabilities, allowedServiceIds, serviceAccessSchemaReady: appointmentSettingServices.ready }

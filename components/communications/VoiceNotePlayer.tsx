@@ -46,8 +46,10 @@ export function VoiceNotePlayer({ src, fileName, light = false, whiteOnColor = f
         try {
             await audio.play()
             setFailed(false)
-        } catch {
-            setFailed(true)
+        } catch (error) {
+            // Pausing or leaving the chat while play() is pending is a normal
+            // cancellation, not an unavailable recording.
+            if (!(error instanceof Error && error.name === "AbortError")) setFailed(true)
         }
     }
 
@@ -85,9 +87,9 @@ export function VoiceNotePlayer({ src, fileName, light = false, whiteOnColor = f
         <div className="flex items-center gap-2.5">
             <button type="button" onClick={() => void togglePlayback()} aria-label={`${playing ? "Pause" : "Play"} ${fileName}`} className="inline-flex h-9 w-9 shrink-0 items-center justify-center bg-transparent text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]"><PlayIcon playing={playing} /></button>
             <div className="min-w-0 flex-1">
-                <div className="relative flex h-7 items-center gap-[2px]" aria-hidden="true">
-                    {WAVEFORM.map((height, index) => <span key={index} style={{ height }} className={`min-w-px flex-1 rounded-full transition-colors ${index / WAVEFORM.length <= progress ? "bg-white" : whiteOnColor ? "bg-white/35" : light ? "bg-neutral-400" : "bg-neutral-600"}`} />)}
-                    <input aria-label={`Seek ${fileName}`} type="range" min={0} max={duration || 0} step={0.1} value={Math.min(currentTime, duration || 0)} onChange={(event) => seek(Number(event.target.value))} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+                <div className="relative flex h-7 items-center gap-[2px] rounded focus-within:ring-1 focus-within:ring-current">
+                    {WAVEFORM.map((height, index) => <span aria-hidden="true" key={index} style={{ height }} className={`min-w-px flex-1 rounded-full transition-colors ${index / WAVEFORM.length <= progress ? "bg-white" : whiteOnColor ? "bg-white/35" : light ? "bg-neutral-400" : "bg-neutral-600"}`} />)}
+                    <input aria-label={`Seek ${fileName}`} type="range" min={0} max={duration || 0} disabled={duration <= 0} step={0.1} value={Math.min(currentTime, duration || 0)} onChange={(event) => seek(Number(event.target.value))} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
                 </div>
                 <div className={`mt-0.5 flex items-center justify-between text-[10px] tabular-nums ${failed ? "text-red-500" : whiteOnColor ? "text-white/65" : "text-neutral-500"}`}><span>{failed ? "Audio unavailable" : formatPlaybackTime(currentTime)}</span><span>{formatPlaybackTime(duration)}</span></div>
             </div>

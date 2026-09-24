@@ -122,6 +122,8 @@ jobs:
           node scripts/browser/node_modules/playwright/cli.js install --with-deps "${{ matrix.engine }}"
       - name: Exercise viewport, departure, and draft recovery with synthetic data
         run: node scripts/browser/run-foundations.mjs "${{ matrix.engine }}"
+      - name: Exercise chat actions, popup lifecycle, media and safe areas with synthetic data
+        run: node scripts/browser/run-comms-polish.mjs "${{ matrix.engine }}"
       - name: Print detailed browser evidence
         if: always()
         run: |

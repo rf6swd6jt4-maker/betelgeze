@@ -287,6 +287,15 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const composerRef = useRef<HTMLElement | null>(null)
     const swipeStartRef = useRef<{ id: string; x: number; y: number; cancelled: boolean; maxDeltaX: number; verticalAtMax: number } | null>(null)
     const selectedRef = useRef(selectedId)
+    const actionScopeRef = useRef(0)
+    // A late UI result belongs to this visit, including A → B → A.
+    // The mutation and its reconciliation continue independently.
+    useLayoutEffect(() => () => { actionScopeRef.current++ }, [selectedId])
+
+    function actionErrorReporter() {
+        const scope = actionScopeRef.current
+        return (message: string) => { if (scope === actionScopeRef.current) setInteractionError(message) }
+    }
     const draftRef = useRef(draft)
     const whatsAppTypingTimerRef = useRef<number | null>(null)
     const whatsAppTypingCooldownTimersRef = useRef<Record<string, number>>({})
@@ -351,7 +360,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     useEffect(() => { draftRef.current = draft }, [draft])
 
     useEffect(() => {
-        const timer = window.setTimeout(() => setRecentReaction(localStorage.getItem(`betelgeze:communications:recent-reaction:${bootstrap.workspaceId}`)), 0)
+        const timer = window.setTimeout(() => { try { setRecentReaction(localStorage.getItem(`betelgeze:communications:recent-reaction:${bootstrap.workspaceId}`)) } catch { /* Recent emoji is optional when browser storage is unavailable. */ } }, 0)
         return () => window.clearTimeout(timer)
     }, [bootstrap.workspaceId])
 
@@ -428,21 +437,23 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
 
     function rememberRecentReaction(emoji: string) {
         setRecentReaction(emoji)
-        localStorage.setItem(`betelgeze:communications:recent-reaction:${bootstrap.workspaceId}`, emoji)
+        try { localStorage.setItem(`betelgeze:communications:recent-reaction:${bootstrap.workspaceId}`, emoji) } catch { /* Keep the reaction usable without optional preference persistence. */ }
     }
 
     async function copyMessage(message: CommunicationMessage) {
+        const reportError = actionErrorReporter()
         setActionMessageId(null)
         setInteractionError(null)
         const body = message.body && !(message.attachment && message.body === attachmentPlaceholder(message.attachment)) ? message.body : messagePreview(message)
         try {
             await copyMessageText(body)
         } catch (error) {
-            setInteractionError(error instanceof Error ? error.message : "Could not copy this message.")
+            reportError(error instanceof Error ? error.message : "Could not copy this message.")
         }
     }
 
     async function togglePinnedMessage(message: CommunicationMessage) {
+        const reportError = actionErrorReporter()
         if (!selected) return
         const relationshipId = selected.id
         const pinnedMessageId = selected.pinnedMessageId === message.id ? null : message.id
@@ -453,7 +464,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                 const result = await chatMutationRequest<{ pinnedMessageId: string | null }>(`/api/workspaces/${bootstrap.workspaceSlug}/communications/pins`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ relationshipId, messageId: pinnedMessageId }) })
                 if (result.pinnedMessageId !== pinnedMessageId) throw new ChatMutationError("Could not confirm the pinned message.", true)
             })
-        } catch (error) { setInteractionError(error instanceof Error ? error.message : "Could not pin message.") }
+        } catch (error) { reportError(error instanceof Error ? error.message : "Could not pin message.") }
         finally { void synchronize().catch(() => undefined) }
     }
 
@@ -480,6 +491,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     }
 
     async function uploadSticker(file: File) {
+        const reportError = actionErrorReporter()
         if (stickerUploadState === "uploading") return
         setStickerUploadState("uploading")
         setInteractionError(null)
@@ -491,7 +503,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
             if (!response.ok || !result?.sticker) throw new Error(result?.error ?? "Could not add this sticker.")
             setStickers((current) => [...current, result.sticker!])
         } catch (error) {
-            setInteractionError(error instanceof Error ? error.message : "Could not add this sticker.")
+            reportError(error instanceof Error ? error.message : "Could not add this sticker.")
         } finally {
             setStickerUploadState("idle")
             if (stickerInputRef.current) stickerInputRef.current.value = ""
@@ -499,6 +511,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     }
 
     async function saveSticker(message: CommunicationMessage) {
+        const reportError = actionErrorReporter()
         if (message.attachment?.kind !== "sticker" || savingStickerMessageId) return
         setSavingStickerMessageId(message.id)
         setInteractionError(null)
@@ -514,13 +527,14 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                 ? current
                 : [...current, result.sticker!])
         } catch (error) {
-            setInteractionError(error instanceof Error ? error.message : "Could not save this sticker.")
+            reportError(error instanceof Error ? error.message : "Could not save this sticker.")
         } finally {
             setSavingStickerMessageId(null)
         }
     }
 
     async function saveOrDownloadAttachment(message: CommunicationMessage) {
+        const reportError = actionErrorReporter()
         if (!message.attachment) return
         setActionMessageId(null)
         if (message.attachment.kind === "sticker") {
@@ -533,13 +547,15 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         try {
             await downloadMessageAttachment(message.attachment.url, message.attachment.fileName)
         } catch (error) {
-            setInteractionError(error instanceof Error ? error.message : "Could not download this attachment.")
+            reportError(error instanceof Error ? error.message : "Could not download this attachment.")
         } finally {
             setDownloadingMessageId(null)
         }
     }
 
     async function sendSticker(sticker: CommunicationSticker) {
+        const actionScope = actionScopeRef.current
+        const reportError = actionErrorReporter()
         if (whatsappWindowClosed || whatsappOptedOut) return
         if (!selected || !schemaReady || !selected.canSend) return
         const replyTarget = replyingTo
@@ -573,8 +589,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         try {
             await offline.queue(selected.id, selected.title, { relationshipId: selected.id, stickerId: sticker.id, replyToMessageId: replyTarget?.id, clientRequestId }, { ...optimistic })
             updateConversationMessages(selected.id, [optimistic], true)
-            if (selectedRef.current === selected.id) { setStickerTrayOpen(false); setReplyingTo(null); setInteractionError(null) }
-        } catch { setInteractionError("Could not save this message on your device. Your draft is still here; try again.") }
+            if (selectedRef.current === selected.id && actionScopeRef.current === actionScope) { setStickerTrayOpen(false); setReplyingTo((current) => current === replyTarget ? null : current); setInteractionError(null) }
+        } catch { reportError("Could not save this message on your device. Your draft is still here; try again.") }
         finally { enqueueingRef.current = false }
     }
 
@@ -592,6 +608,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     }
 
     async function sendReaction(message: CommunicationMessage, emoji: string) {
+        const reportError = actionErrorReporter()
         if (whatsappWindowClosed || whatsappOptedOut) return
         if (!selected || !message.providerMessageId) return
         const relationshipId = selected.id
@@ -604,7 +621,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                 if (!("reaction" in result)) throw new ChatMutationError("Could not confirm the reaction.", true)
                 return result.reaction
             })
-        } catch (error) { setInteractionError(error instanceof Error ? error.message : "Could not send reaction.") }
+        } catch (error) { reportError(error instanceof Error ? error.message : "Could not send reaction.") }
         finally { void synchronize().catch(() => undefined) }
     }
 
@@ -807,6 +824,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
 
 
     async function sendMessage(messageToRetry?: CommunicationMessage) {
+        const actionScope = actionScopeRef.current
+        const reportError = actionErrorReporter()
         if (whatsappWindowClosed || whatsappOptedOut) return
         if (!messageToRetry && uploads.blocked) return
         if (!selected || !schemaReady || !selected.canSend) return
@@ -848,16 +867,17 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
             await offline.queue(selected.id, selected.title, { relationshipId: selected.id, body: typedBody, attachment: messageAttachment, replyToMessageId: replyMessageId, clientRequestId, retry: Boolean(messageToRetry) }, { ...optimistic })
             updateConversationMessages(selected.id, [optimistic], true)
             if (!messageToRetry) uploads.queue.consume(selected.id, messageAttachment ? [messageAttachment] : [])
-            if (!messageToRetry && selectedRef.current === selected.id) {
+            if (!messageToRetry && selectedRef.current === selected.id && actionScopeRef.current === actionScope) {
                 setDraft((current) => current.trim() === typedBody ? "" : current)
                 setReplyingTo((current) => current === replyTarget ? null : current)
                 setInteractionError(null)
             }
-        } catch { setInteractionError("Could not save this message on your device. Your draft is still here; try again.") }
+        } catch { reportError("Could not save this message on your device. Your draft is still here; try again.") }
         finally { releaseAttachments(); enqueueingRef.current = false }
     }
 
     async function sendReconfirmation() {
+        const reportError = actionErrorReporter()
         if (!selected || !schemaReady || !whatsappWindowClosed || whatsappOptedOut || reconfirmationAwaitingReply || reconfirmPendingId) return
         if (!window.confirm(`The 24-hour WhatsApp response window has expired for ${selected.title}. Send the approved paid WhatsApp reconfirmation template? They must reply CONFIRM before ordinary WhatsApp messages can resume.`)) return
         setReconfirmPendingId(selected.id)
@@ -874,7 +894,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
             }
             setReconfirmRequestedKey(reconfirmationKey)
         } catch (error) {
-            setInteractionError(error instanceof Error ? error.message : "Could not send WhatsApp reconfirmation.")
+            reportError(error instanceof Error ? error.message : "Could not send WhatsApp reconfirmation.")
         } finally {
             setReconfirmPendingId(null)
         }
@@ -929,7 +949,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                             {conversationIdentity}
                         </Link>
                         <div className="hidden min-w-0 flex-1 items-center gap-3 rounded-lg [[data-mobile-conversation-surface]_&]:flex">{conversationIdentity}</div>
-                        <ClientPortalActions key={`portal-actions:${selected.id}`} workspaceSlug={bootstrap.workspaceSlug} relationshipId={selected.id} />
+                        <ClientPortalActions active={interactionActive} key={`portal-actions:${selected.id}`} workspaceSlug={bootstrap.workspaceSlug} relationshipId={selected.id} />
                         <ClientChatParticipants active={interactionActive} key={selected.id} workspaceSlug={bootstrap.workspaceSlug} conversation={selected} userId={bootstrap.currentUser.id} people={bootstrap.people} onSaved={synchronize} />
                         <CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} />
                     </header>
@@ -966,7 +986,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                             const readers = readCursors.filter((cursor) => cursor.relationshipId === selected.id && cursor.userId !== message.senderUserId && readCursorCoversMessage(cursor, message)).flatMap((cursor) => peopleById.get(cursor.userId) ?? [])
                             return <Fragment key={messageAnimationKey(message)}>
                                 {showDay ? <div className="my-3 flex justify-center"><time dateTime={message.createdAt} className="rounded-full border border-neutral-800 bg-neutral-950 px-3 py-1 text-[10px] text-neutral-500">{messageDay(message.createdAt)}</time></div> : null}
-                                <div data-message-scroll-anchor={messageAnimationKey(message)} data-message-interaction={message.id} className={`relative flex items-center gap-2 transition-[filter,opacity,transform] duration-150 ${message.direction === "outbound" ? "justify-end origin-right" : "justify-start origin-left"} ${replyingTo ? replyingTo.id === message.id ? "pointer-events-none z-10 scale-[1.03]" : "pointer-events-none opacity-30 blur-[1px]" : ""} ${enteringMessageIds.has(message.id) ? message.direction === "outbound" ? "betelgeze-message-enter-right" : "betelgeze-message-enter-left" : ""}`}>
+                                <div data-message-scroll-anchor={messageAnimationKey(message)} data-message-interaction={message.id} inert={Boolean(replyingTo)} className={`relative flex items-center gap-2 transition-[filter,opacity,transform] duration-150 ${message.direction === "outbound" ? "justify-end origin-right" : "justify-start origin-left"} ${replyingTo ? replyingTo.id === message.id ? "pointer-events-none z-10 scale-[1.03]" : "pointer-events-none opacity-30 blur-[1px]" : ""} ${enteringMessageIds.has(message.id) ? message.direction === "outbound" ? "betelgeze-message-enter-right" : "betelgeze-message-enter-left" : ""}`}>
                                     <span aria-hidden="true" style={{ opacity: Math.min(1, swipeOffset / 36) }} className="pointer-events-none absolute -inset-x-3 inset-y-0 bg-gradient-to-r from-white/20 via-white/5 to-transparent lg:hidden" />
                                     <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, swipeOffset / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, swipeOffset / 190)})` }} className="pointer-events-none absolute left-0 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-800 text-white lg:hidden"><ReplyIcon className="h-5 w-5" /></span>
                                     {message.direction === "outbound" && showActions ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}><MessageActionTray view={actionView} canInteract={canInteract} interactionBlocked={whatsappWindowClosed || whatsappOptedOut} currentEmoji={teamReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} onReply={() => beginReply(message)} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onShowReactions={() => setActionView("reactions")} pinned={selected.pinnedMessageId === message.id} side="right" onSave={canSaveAttachment ? () => void saveOrDownloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={saveAttachmentDisabled} saveActive={stickerSaved} /></MessageActionPopup> : null}
@@ -1033,14 +1053,14 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                                         {message.attachment ? <MessageAttachment key={message.attachment.storagePath} attachment={message.attachment} onOpenImage={setPreviewMedia} light={message.direction === "outbound"} whiteOnColor={isWhatsAppClientMessage} /> : null}
                                         {message.body && !(message.attachment && message.body === attachmentPlaceholder(message.attachment)) ? <ChatMessageText body={message.body} onToggleCheckbox={selected.canSend && message.id !== message.clientRequestId ? (line, checked, expectedBody) => toggleCheckbox(message, line, checked, expectedBody) : undefined} /> : null}
                                         {message.uploadedAssetId ? <a href={`/${bootstrap.workspaceSlug}/assets/${message.uploadedAssetId}`} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border border-current/20 px-3 py-1.5 text-sm font-medium hover:bg-black/5" onPointerDown={(event) => event.stopPropagation()}>View asset <span aria-hidden="true">↗</span></a> : null}
-                                        {isSticker && messageReactions.length ? <div className={`absolute bottom-5 z-10 flex gap-0.5 ${message.direction === "outbound" ? "right-0" : "left-0"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.direction}`} title={reaction.direction === "inbound" ? `Reacted by ${selected.title}` : `Reacted in Betelgeze by ${peopleById.get(reaction.reactorUserId ?? "")?.name ?? "Team"}`} className="rounded-full border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
+                                        {isSticker && messageReactions.length ? <div className={`relative z-10 -mt-5 flex max-w-full flex-wrap gap-0.5 ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.direction}`} title={reaction.direction === "inbound" ? `Reacted by ${selected.title}` : `Reacted in Betelgeze by ${peopleById.get(reaction.reactorUserId ?? "")?.name ?? "Team"}`} className="rounded-full border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
                                         <div className={`mt-1.5 flex items-center justify-between gap-3 text-[10px] ${isSticker ? "ml-auto min-w-20 rounded-full bg-neutral-950/80 px-2 py-0.5 text-neutral-400" : isWhatsAppClientMessage ? "text-white/65" : message.direction === "outbound" ? "text-neutral-500" : "text-neutral-600"}`}><MessageReadAvatars readers={readers} /><span className="flex shrink-0 items-center gap-1.5"><time dateTime={message.createdAt}>{messageTime(message.createdAt)}</time>{message.direction === "outbound" ? <DeliveryTicks message={message} /> : null}</span></div>
                                         {message.error ? <p className={`mt-1 text-[10px] ${message.status === "send_failed" || message.status === "delivery_failed" ? "text-red-600" : "text-amber-700"}`}>{message.error}</p> : null}
                                         {["send_failed", "partial_sent"].includes(message.status) && message.clientRequestId ? <button type="button" onClick={() => void sendMessage(message)} disabled={whatsappWindowClosed || whatsappOptedOut} className="mt-2 text-xs font-semibold underline underline-offset-2 disabled:text-neutral-500">Retry failed channel{message.status === "partial_sent" ? "" : "s"}</button> : null}
                                     </NativeMessageBubble>
                                     {message.direction === "inbound" && showActions ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}><MessageActionTray view={actionView} canInteract={canInteract} interactionBlocked={whatsappWindowClosed || whatsappOptedOut} currentEmoji={teamReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} onReply={() => beginReply(message)} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onShowReactions={() => setActionView("reactions")} pinned={selected.pinnedMessageId === message.id} side="left" onSave={canSaveAttachment ? () => void saveOrDownloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={saveAttachmentDisabled} saveActive={stickerSaved} /></MessageActionPopup> : null}
                                 </div>
-                                {!isSticker && messageReactions.length ? <div className={`flex gap-1 px-1 ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.direction}`} title={reaction.direction === "inbound" ? `Reacted by ${selected.title}` : `Reacted in Betelgeze by ${peopleById.get(reaction.reactorUserId ?? "")?.name ?? "Team"}`} className="rounded-full border border-neutral-800 bg-neutral-950 px-2 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
+                                {!isSticker && messageReactions.length ? <div inert={Boolean(replyingTo)} className={`flex max-w-full flex-wrap gap-1 px-1 transition-opacity duration-150 ${replyingTo && replyingTo.id !== message.id ? "pointer-events-none select-none opacity-30" : ""} ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.direction}`} title={reaction.direction === "inbound" ? `Reacted by ${selected.title}` : `Reacted in Betelgeze by ${peopleById.get(reaction.reactorUserId ?? "")?.name ?? "Team"}`} className="rounded-full border border-neutral-800 bg-neutral-950 px-2 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
                             </Fragment>
                         }) : <div data-conversation-empty className="flex min-h-64 items-center justify-center text-center"><div><p className="text-sm font-medium text-neutral-300">Start the conversation</p><p className="mt-2 text-xs text-neutral-600">Messages sent here use this relationship&apos;s connected SMS and WhatsApp channels.</p></div></div>}</div>
                     </div>

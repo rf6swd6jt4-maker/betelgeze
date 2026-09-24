@@ -221,6 +221,15 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const stickerInputRef = useRef<HTMLInputElement | null>(null)
     const swipeStartRef = useRef<MessageSwipe | null>(null)
     const selectedRef = useRef(selectedId)
+    const actionScopeRef = useRef(0)
+    // A late UI result belongs to this visit, including A → B → A.
+    // The mutation and its reconciliation continue independently.
+    useLayoutEffect(() => () => { actionScopeRef.current++ }, [selectedId])
+
+    function actionErrorReporter() {
+        const scope = actionScopeRef.current
+        return (message: string) => { if (scope === actionScopeRef.current) setError(message) }
+    }
     const conversationsRef = useRef(conversations)
     const sentTypingConversationRef = useRef<string | null>(null)
     const lastTypingBroadcastAtRef = useRef(0)
@@ -269,7 +278,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 
     useEffect(() => { selectedRef.current = selectedId; onSelectedConversationChange?.(selectedId) }, [onSelectedConversationChange, selectedId])
     useEffect(() => { conversationsRef.current = conversations }, [conversations])
-    useEffect(() => { const timer = window.setTimeout(() => setRecentReaction(localStorage.getItem(`betelgeze:communications:recent-reaction:${bootstrap.workspaceId}`)), 0); return () => window.clearTimeout(timer) }, [bootstrap.workspaceId])
+    useEffect(() => { const timer = window.setTimeout(() => { try { setRecentReaction(localStorage.getItem(`betelgeze:communications:recent-reaction:${bootstrap.workspaceId}`)) } catch { /* Recent emoji is optional when browser storage is unavailable. */ } }, 0); return () => window.clearTimeout(timer) }, [bootstrap.workspaceId])
     useConversationLayout(messagePaneRef, followLatestRef, selectedId, active && workspaceTabActive && documentVisible, setAtLatest, setShowJumpToLatest)
     useEffect(() => () => messageAnimationTimersRef.current.forEach((timer) => window.clearTimeout(timer)), [])
     useEffect(() => {
@@ -410,7 +419,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 
                             setReplyingTo((current) => current?.id === messageId ? null : current)
                             setEditingMessage((current) => current?.id === messageId ? null : current)
-                            if (editingSessionRef.current?.messageId === messageId) { editingSessionRef.current = null; setEditState("idle") }
+                            if (editingSessionRef.current?.messageId === messageId) { setDraft(editingSessionRef.current.draft); editingSessionRef.current = null; setEditState("idle") }
                             setActionMessageId((current) => current === messageId ? null : current)
                         }
                         return
@@ -493,6 +502,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 
 
     async function uploadSticker(file: File) {
+        const reportError = actionErrorReporter()
         if (stickerUploadState === "uploading") return
         setStickerUploadState("uploading"); setError(null)
         try {
@@ -501,11 +511,13 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
             const result = await response.json().catch(() => null) as { sticker?: CommunicationSticker; error?: string } | null
             if (!response.ok || !result?.sticker) throw new Error(result?.error ?? "Could not add this sticker.")
             setStickers((current) => current.some((sticker) => sticker.id === result.sticker!.id) ? current : [...current, result.sticker!])
-        } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : "Could not add this sticker.") }
+        } catch (uploadError) { reportError(uploadError instanceof Error ? uploadError.message : "Could not add this sticker.") }
         finally { setStickerUploadState("idle"); if (stickerInputRef.current) stickerInputRef.current.value = "" }
     }
 
     async function sendSticker(sticker: CommunicationSticker) {
+        const actionScope = actionScopeRef.current
+        const reportError = actionErrorReporter()
         if (!selected?.canWrite) return
         const clientRequestId = crypto.randomUUID(); const replyTarget = replyingTo
         const stickerAttachment: CommunicationAttachment = { kind: "sticker", fileName: sticker.fileName, mimeType: "image/webp", size: sticker.size, storagePath: sticker.storagePath, url: sticker.url }
@@ -515,12 +527,14 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         try {
             await offline.queue(selected.id, selected.title, { conversationId: selected.id, clientRequestId, body: "", replyToMessageId: replyTarget?.id, quote: replyTarget?.selectedQuote ?? null, attachment: stickerAttachment }, { ...optimistic })
             updateConversationMessages(selected.id, [optimistic], true)
-            if (selectedRef.current === selected.id) { setStickerTrayOpen(false); setReplyingTo(null); setError(null) }
-        } catch { setError("Could not save this message on your device. Your draft is still here; try again.") }
+            if (selectedRef.current === selected.id && actionScopeRef.current === actionScope) { setStickerTrayOpen(false); setReplyingTo((current) => current === replyTarget ? null : current); setError(null) }
+        } catch { reportError("Could not save this message on your device. Your draft is still here; try again.") }
         finally { enqueueingRef.current = false }
     }
 
     async function sendMessage() {
+        const actionScope = actionScopeRef.current
+        const reportError = actionErrorReporter()
         if (!selected?.canWrite || uploads.blocked) return
         const body = draft.trim(); if (!body && !attachment) return
         stopNativeTyping(selected.id)
@@ -533,12 +547,12 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
             await offline.queue(selected.id, selected.title, { conversationId: selected.id, clientRequestId, body, replyToMessageId: replyTarget?.id, quote: replyTarget?.selectedQuote ?? null, attachment: optimistic.attachment }, { ...optimistic })
             updateConversationMessages(selected.id, [optimistic], true)
             uploads.queue.consume(selected.id, attachmentBatch(optimistic.attachment))
-            if (selectedRef.current === selected.id) {
+            if (selectedRef.current === selected.id && actionScopeRef.current === actionScope) {
                 setDraft((current) => current.trim() === body ? "" : current)
                 setReplyingTo((current) => current === replyTarget ? null : current)
                 setError(null)
             }
-        } catch { setError("Could not save this message on your device. Your draft is still here; try again.") }
+        } catch { reportError("Could not save this message on your device. Your draft is still here; try again.") }
         finally { releaseAttachments(); enqueueingRef.current = false }
     }
 
@@ -608,6 +622,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     }
 
     async function sendReaction(message: NativeMessage, emoji: string) {
+        const reportError = actionErrorReporter()
         if (!selected?.canWrite) return
         const conversationId = selected.id
         const optimistic: NativeReaction | null = emoji ? { id: `optimistic:${message.id}`, conversationId, messageId: message.id, reactorUserId: bootstrap.currentUser.id, emoji, updatedAt: new Date().toISOString() } : null
@@ -619,26 +634,28 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 if (!("reaction" in result)) throw new ChatMutationError("Could not confirm the reaction.", true)
                 return result.reaction
             })
-        } catch (error) { setError(error instanceof Error ? error.message : "Could not send reaction.") }
+        } catch (error) { reportError(error instanceof Error ? error.message : "Could not send reaction.") }
         finally { void refresh().catch(() => undefined) }
     }
 
     function rememberRecentReaction(emoji: string) {
         setRecentReaction(emoji)
-        localStorage.setItem(`betelgeze:communications:recent-reaction:${bootstrap.workspaceId}`, emoji)
+        try { localStorage.setItem(`betelgeze:communications:recent-reaction:${bootstrap.workspaceId}`, emoji) } catch { /* Keep the reaction usable without optional preference persistence. */ }
     }
 
     async function copyMessage(message: NativeMessage) {
+        const reportError = actionErrorReporter()
         setActionMessageId(null)
         setError(null)
         try {
             await copyMessageText(messagePreview(message))
         } catch (copyError) {
-            setError(copyError instanceof Error ? copyError.message : "Could not copy this message.")
+            reportError(copyError instanceof Error ? copyError.message : "Could not copy this message.")
         }
     }
 
     async function downloadAttachment(message: NativeMessage) {
+        const reportError = actionErrorReporter()
         if (!message.attachment || message.attachment.kind === "sticker" || downloadingMessageId) return
         setActionMessageId(null)
         setDownloadingMessageId(message.id)
@@ -646,13 +663,14 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         try {
             for (const file of attachmentBatch(message.attachment)) await downloadMessageAttachment(file.url, file.fileName)
         } catch (downloadError) {
-            setError(downloadError instanceof Error ? downloadError.message : "Could not download this attachment.")
+            reportError(downloadError instanceof Error ? downloadError.message : "Could not download this attachment.")
         } finally {
             setDownloadingMessageId(null)
         }
     }
 
     async function togglePinnedMessage(message: NativeMessage) {
+        const reportError = actionErrorReporter()
         if (!selected) return
         const conversationId = selected.id
         const pinnedMessageId = selected.pinnedMessageId === message.id ? null : message.id
@@ -663,7 +681,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 const result = await chatMutationRequest<{ pinnedMessageId: string | null }>(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/pins`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId, messageId: pinnedMessageId }) })
                 if (result.pinnedMessageId !== pinnedMessageId) throw new ChatMutationError("Could not confirm the pinned message.", true)
             })
-        } catch (error) { setError(error instanceof Error ? error.message : "Could not pin message.") }
+        } catch (error) { reportError(error instanceof Error ? error.message : "Could not pin message.") }
         finally { void refresh().catch(() => undefined) }
     }
 
@@ -717,6 +735,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     }
 
     async function deleteMessage(message: NativeMessage) {
+        const reportError = actionErrorReporter()
         if (!selected?.canWrite || message.clientRequestId === message.id || message.conversationId !== selected.id || !selected.messages.some((candidate) => candidate.id === message.id)) return
         closeWorkspaceComposer(composerRef.current)
         if (!window.confirm(message.senderUserId === bootstrap.currentUser.id ? "Delete this message? This cannot be undone." : "Remove this message for everyone? This cannot be undone.")) return
@@ -724,7 +743,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         setActionMessageId(null)
         setReplyingTo((current) => current?.id === message.id ? null : current)
         setEditingMessage((current) => current?.id === message.id ? null : current)
-        if (editingSessionRef.current?.messageId === message.id) { editingSessionRef.current = null; setEditState("idle") }
+        if (editingSessionRef.current?.messageId === message.id) { setDraft(editingSessionRef.current.draft); editingSessionRef.current = null; setEditState("idle") }
         try {
             await updates.mutateMessage(message.id, null, async () => {
                 const params = new URLSearchParams({ conversationId, messageId: message.id })
@@ -732,15 +751,20 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 if (!result.deleted || result.conversationId !== conversationId || result.messageId !== message.id) throw new ChatMutationError("Could not confirm deletion.", true)
                 return null
             })
-        } catch (error) { setError(error instanceof Error ? error.message : "Could not delete message.") }
+        } catch (error) { reportError(error instanceof Error ? error.message : "Could not delete message.") }
         finally { void refresh().catch(() => undefined) }
     }
 
     async function clearPrivateChat() {
+        const reportError = actionErrorReporter()
         if (!selected || selected.kind !== "direct") return
         closeWorkspaceComposer(composerRef.current)
         if (!window.confirm("Clear this private chat from your view? The other participant will keep their history.")) return
         const conversationId = selected.id
+        setReplyingTo(null)
+        setEditingMessage(null)
+        if (editingSessionRef.current) { setDraft(editingSessionRef.current.draft); editingSessionRef.current = null; setEditState("idle") }
+        setActionMessageId(null)
         let request: Promise<{ cleared: boolean }> | undefined
         const clear = async () => {
             request ??= chatMutationRequest<{ cleared: boolean }>(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/clear`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId }) })
@@ -748,7 +772,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
             return null
         }
         try { if (selected.messages.length) await Promise.all(selected.messages.map((message) => updates.mutateMessage(message.id, null, clear))); else await clear() }
-        catch (error) { setError(error instanceof Error ? error.message : "Could not clear this private chat.") }
+        catch (error) { reportError(error instanceof Error ? error.message : "Could not clear this private chat.") }
         finally { void refresh().catch(() => undefined) }
     }
 
@@ -803,6 +827,8 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                             const index = history.startIndex + visibleIndex
                         const own = message.senderUserId === bootstrap.currentUser.id
                         const quoteSelectionMuted = Boolean(selectingQuote && selectingQuote.id !== message.id)
+                        const focusMuted = Boolean(focusedMessageId && focusedMessageId !== message.id)
+                        const interactionBlocked = Boolean(editingMessage || (selectingQuote ? quoteSelectionMuted : replyingTo))
                         const sender = message.senderUserId === "be" ? { name: "BE", avatarSrc: "/brand/betelgeze-logo.svg", former: false } : peopleById.get(message.senderUserId)
                         const reply = message.replyToMessageId ? selected.messages.find((candidate) => candidate.id === message.replyToMessageId) ?? null : null
                         const messageReactions = reactions.filter((reaction) => reaction.messageId === message.id)
@@ -821,7 +847,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         const saveAttachmentLabel = message.attachment?.additionalAttachments?.length ? "Download attachments" : `Download ${message.attachment?.fileName ?? "attachment"}`
                         return <Fragment key={messageAnimationKey(message)}>
                             {showDay ? <div className="my-3 flex justify-center"><time className="rounded-full border border-neutral-800 bg-neutral-950 px-3 py-1 text-[10px] text-neutral-500">{messageDay(message.createdAt)}</time></div> : null}
-                            <div data-message-scroll-anchor={messageAnimationKey(message)} data-message-interaction={message.id} inert={quoteSelectionMuted} className={`relative flex items-end transition-[filter,opacity,transform] duration-150 ${own ? "justify-end origin-right" : "justify-start origin-left"} ${selectingQuote ? quoteSelectionMuted ? "pointer-events-none select-none opacity-30 blur-[1px]" : "z-10 scale-[1.03]" : focusedMessageId ? focusedMessageId === message.id ? "pointer-events-none z-10 scale-[1.03]" : "pointer-events-none opacity-30 blur-[1px]" : ""} ${!quoteSelectionMuted && enteringMessageIds.has(message.id) ? own ? "betelgeze-message-enter-right" : "betelgeze-message-enter-left" : ""}`}>
+                            <div data-message-scroll-anchor={messageAnimationKey(message)} data-message-interaction={message.id} inert={interactionBlocked} className={`relative flex items-end transition-[filter,opacity,transform] duration-150 ${own ? "justify-end origin-right" : "justify-start origin-left"} ${selectingQuote ? quoteSelectionMuted ? "pointer-events-none select-none opacity-30 blur-[1px]" : "z-10 scale-[1.03]" : focusedMessageId ? focusedMessageId === message.id ? "pointer-events-none z-10 scale-[1.03]" : "pointer-events-none opacity-30 blur-[1px]" : ""} ${!quoteSelectionMuted && enteringMessageIds.has(message.id) ? own ? "betelgeze-message-enter-right" : "betelgeze-message-enter-left" : ""}`}>
                                 <span aria-hidden="true" style={{ opacity: Math.min(1, Math.abs(swipeOffset) / 36) }} className={`pointer-events-none absolute -inset-x-3 inset-y-0 lg:hidden ${swipeOffset < 0 ? "bg-gradient-to-l from-red-600/45 via-red-950/20 to-transparent" : "bg-gradient-to-r from-white/20 via-white/5 to-transparent"}`} />
                                 <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, swipeOffset) / 190)})` }} className="pointer-events-none absolute left-0 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-800 text-white lg:hidden"><ReplyIcon className="h-5 w-5" /></span>
                                 {canDelete ? <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, -swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, -swipeOffset) / 190)})` }} className="pointer-events-none absolute right-0 flex h-9 w-9 items-center justify-center rounded-full bg-red-600 text-white lg:hidden"><DeleteIcon className="h-5 w-5" /></span> : null}
@@ -871,14 +897,14 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                                     {message.replyToMessageId || message.quote ? <button type="button" disabled={!message.replyToMessageId} aria-label={message.quote ? "Jump to quoted text" : "Jump to replied message"} onPointerDown={(event) => { if (event.button === 0) event.preventDefault() }} onClick={(event) => { event.stopPropagation(); if (message.replyToMessageId) void jumpToMessage(message.replyToMessageId, message.quote) }} className={`block w-full text-left focus-visible:outline focus-visible:outline-2 mb-2 rounded-lg border-l-2 border-neutral-500 px-2.5 py-2 ${own ? "bg-black/10" : "bg-black/35"}`}><p className="truncate text-[10px] font-semibold opacity-70">{reply ? reply.senderUserId === bootstrap.currentUser.id ? "You" : peopleById.get(reply.senderUserId)?.name ?? "Team member" : message.replyToMessageId ? "Original message" : "Message unavailable"}</p><p className="mt-0.5 truncate text-xs opacity-65">{message.quote ? `“${message.quote.text}”` : reply ? messagePreview(reply) : "View original message"}</p></button> : null}
                                     {message.attachment ? <NativeAttachment key={message.attachment.storagePath} attachment={message.attachment} onOpenImage={setPreviewMedia} light={own} /> : null}
                                     {message.body ? <ChatMessageText body={message.body} quoteSelection={selectingQuote?.id === message.id} highlight={quoteHighlight?.messageId === message.id ? resolveMessageQuote(message.body, quoteHighlight.quote) : null} onToggleCheckbox={selected.canWrite && message.id !== message.clientRequestId ? (line, checked, expectedBody) => toggleCheckbox(message, line, checked, expectedBody) : undefined} /> : null}
-                                    {isSticker && messageReactions.length ? <div className={`absolute bottom-5 z-10 flex gap-0.5 ${own ? "right-0" : "left-0"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.reactorUserId}`} title={`${peopleById.get(reaction.reactorUserId)?.name ?? "Team member"} reacted`} className="rounded-full border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
+                                    {isSticker && messageReactions.length ? <div className={`relative z-10 -mt-5 flex max-w-full flex-wrap gap-0.5 ${own ? "justify-end" : "justify-start"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.reactorUserId}`} title={`${peopleById.get(reaction.reactorUserId)?.name ?? "Team member"} reacted`} className="rounded-full border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
                                     <div className={`mt-1.5 flex items-center justify-between gap-3 text-[10px] ${isSticker ? "ml-auto min-w-20 rounded-full bg-neutral-950/80 px-2 py-0.5 text-neutral-400" : own ? "text-neutral-500" : "text-neutral-600"}`}>
                                         {selected.kind === "team" ? <MessageReadAvatars readers={readers} /> : <span />}
                                         <span className="flex shrink-0 items-center gap-1.5">{message.editedAt ? <span>Edited</span> : null}<time>{messageTime(message.createdAt)}</time>{own ? <NativeDeliveryTicks message={message} read={readers.length > 0} /> : null}</span>
                                     </div>
                                 </NativeMessageBubble>
                             </div>
-                            {!isSticker && messageReactions.length ? <div inert={quoteSelectionMuted} className={`flex gap-1 px-1 transition-opacity duration-150 ${quoteSelectionMuted ? "pointer-events-none select-none opacity-30" : ""} ${own ? "justify-end" : "justify-start"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.reactorUserId}`} title={`${peopleById.get(reaction.reactorUserId)?.name ?? "Team member"} reacted`} className="rounded-full border border-neutral-800 bg-neutral-950 px-2 py-0.5 text-sm">{reaction.emoji}</span>)}</div> : null}
+                            {!isSticker && messageReactions.length ? <div inert={interactionBlocked} className={`flex max-w-full flex-wrap gap-1 px-1 transition-opacity duration-150 ${focusMuted ? "pointer-events-none select-none opacity-30" : ""} ${own ? "justify-end" : "justify-start"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.reactorUserId}`} title={`${peopleById.get(reaction.reactorUserId)?.name ?? "Team member"} reacted`} className="rounded-full border border-neutral-800 bg-neutral-950 px-2 py-0.5 text-sm">{reaction.emoji}</span>)}</div> : null}
                         </Fragment>
                     }) : selectedTypingPeople.length ? null : <div data-conversation-empty className="flex min-h-64 items-center justify-center text-center"><div><p className="text-sm font-medium text-neutral-300">Start the conversation</p><p className="mt-2 text-xs text-neutral-600">Native Betelgeze messages update instantly.</p></div></div>}
                     {selectedTypingPeople.length ? <NativeTypingDots label={selectedTypingLabel} /> : null}</div></div>{showJumpToLatest ? <JumpToLatestButton onClick={() => { followLatestRef.current = true; setAtLatest(true); messagePaneRef.current?.scrollTo({ top: messagePaneRef.current.scrollHeight, left: 0, behavior: "instant" }) }} /> : null}</div>
@@ -888,7 +914,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         {replyingTo ? <ComposerMessagePreview label={selected.kind === "team" ? `Replying to ${replyingTo.senderUserId === bootstrap.currentUser.id ? "yourself" : peopleById.get(replyingTo.senderUserId)?.name ?? "team member"}` : "Replying to message"} tooltip={selectingQuote ? "Reply to the whole message, or highlight text in it to quote a passage." : undefined} preview={replyingTo.selectedQuote ? `“${replyingTo.selectedQuote.text}”` : messagePreview(replyingTo)} onCancel={() => { setReplyingTo(null); composerRef.current?.focus({ preventScroll: true }) }} /> : null}
                         {!editingMessage ? <ComposerAttachments queue={uploads.queue} conversationId={selected.id} /> : null}
                         {stickerTrayOpen ? <div className="mx-auto mb-2 max-w-3xl rounded-2xl border border-neutral-800 bg-black p-3 shadow-2xl"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold text-neutral-200">Stickers</p><p className="mt-0.5 text-[10px] text-neutral-600">Shared across client and team chats.</p></div><button type="button" onClick={() => setStickerTrayOpen(false)} aria-label="Close sticker tray" className="h-8 w-8 text-neutral-500 hover:text-white">×</button></div><div data-composer-scroll className="mt-3 grid max-h-52 grid-cols-4 gap-2 overflow-y-auto overscroll-y-none sm:grid-cols-7">{stickers.map((sticker) => <button key={sticker.id} type="button" onClick={() => void sendSticker(sticker)} disabled={!selected.canWrite} title={sticker.fileName} className="flex aspect-square items-center justify-center rounded-xl bg-neutral-950 p-1.5 hover:bg-neutral-900 disabled:opacity-40"><Image unoptimized src={sticker.url} alt={sticker.fileName} width={512} height={512} className="h-full w-full object-contain" /></button>)}<button type="button" onClick={() => stickerInputRef.current?.click()} disabled={stickerUploadState === "uploading"} className="flex aspect-square flex-col items-center justify-center rounded-xl border border-dashed border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-white disabled:opacity-40"><span className="text-2xl">+</span><span className="mt-1 text-[9px]">{stickerUploadState === "uploading" ? "Converting…" : "Add sticker"}</span></button></div></div> : null}
-                        {error ? <div className="mx-auto mb-2 flex max-w-3xl justify-between rounded-lg bg-red-950/60 px-3 py-2 text-xs text-red-300"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
+                        {error ? <div className="mx-auto mb-2 flex max-w-3xl justify-between rounded-lg bg-red-950/60 px-3 py-2 text-xs text-red-300"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss interaction error">×</button></div> : null}
                         <input ref={attachmentInputRef} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) setError(uploads.queue.add(selected.id, files)) }} />
                         <input ref={stickerInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadSticker(file) }} />
                         <ChatOutboxStatus entries={offline.entries} conversationId={selected.id} />

@@ -1,7 +1,7 @@
 "use client"
 
 import { createPortal } from "react-dom"
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/lib/workspace-tabs"
 import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 import { anchoredPopupPosition } from "./anchored-popup-position"
@@ -12,6 +12,13 @@ type PopupPosition = {
     maxHeight: number
     maxWidth: number
 }
+
+const SAFE_AREA_STYLE = {
+    "--anchored-popup-safe-left": "env(safe-area-inset-left, 0px)",
+    "--anchored-popup-safe-right": "env(safe-area-inset-right, 0px)",
+    "--anchored-popup-safe-top": "env(safe-area-inset-top, 0px)",
+    "--anchored-popup-safe-bottom": "env(safe-area-inset-bottom, 0px)",
+} as CSSProperties
 
 function popupHost(anchor: HTMLElement) {
     const sourceDocument = anchor.ownerDocument
@@ -72,11 +79,20 @@ export function AnchoredPopup({
         const viewportTop = visualViewport?.offsetTop ?? 0
         const viewportWidth = visualViewport?.width ?? currentHost.window.innerWidth
         const viewportHeight = visualViewport?.height ?? currentHost.window.innerHeight
+        const styles = currentHost.window.getComputedStyle(popup)
+        const safe = (edge: string) => Number.parseFloat(styles.getPropertyValue(`--anchored-popup-safe-${edge}`)) || 0
+        // Apply device cutouts only at visible physical screen edges. A raised
+        // keyboard or panned visual viewport has already excluded that edge.
+        const leftInset = Math.max(0, safe("left") - viewportLeft)
+        const topInset = Math.max(0, safe("top") - viewportTop)
+        const rightInset = Math.max(0, safe("right") - Math.max(0, currentHost.window.innerWidth - viewportLeft - viewportWidth))
+        const bottomInset = Math.max(0, safe("bottom") - Math.max(0, currentHost.window.innerHeight - viewportTop - viewportHeight))
         setPosition(anchoredPopupPosition({
             trigger: triggerRect,
             popupWidth: popup.scrollWidth || popup.offsetWidth,
             popupHeight: popup.scrollHeight || popup.offsetHeight,
-            viewport: { left: viewportLeft, top: viewportTop, width: viewportWidth, height: viewportHeight },
+            viewport: { left: viewportLeft + leftInset, top: viewportTop + topInset,
+                width: Math.max(0, viewportWidth - leftInset - rightInset), height: Math.max(0, viewportHeight - topInset - bottomInset) },
             align,
             fallbackBelow: Boolean(anchorPoint),
         }))
@@ -154,12 +170,12 @@ export function AnchoredPopup({
         role={role}
         data-anchored-popup
         data-work-item-popup={workItemPopup ? "" : undefined}
-        style={position ? {
+        style={{ ...SAFE_AREA_STYLE, ...(position ? {
             left: position.left,
             top: position.top,
             maxHeight: position.maxHeight,
             maxWidth: position.maxWidth,
-        } : { visibility: "hidden" }}
+        } : { visibility: "hidden" }) }}
         className={`${position ? "betelgeze-popup-enter" : ""} fixed z-[2147483646] overflow-y-auto overscroll-contain ${className}`}
     >{children}</div>, host.container ?? host.document.body)
 }

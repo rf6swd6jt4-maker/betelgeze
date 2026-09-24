@@ -69,6 +69,14 @@ export function useMediaGalleryGestures({ viewportRef, trackRef, zoomed, index, 
             reset()
             horizontal = false
         }
+        const captureLost = (event: PointerEvent) => {
+            // Moving capture from the image to this viewport is intentional.
+            // Losing the viewport's own capture is an interrupted swipe: do
+            // not retain its translated strip or let a late up select media.
+            if (event.target !== viewport || !pointers.has(event.pointerId)) return
+            cancelled = true
+            end(event)
+        }
         const click = (event: MouseEvent) => {
             if (!suppressClick.current) return
             suppressClick.current = false
@@ -92,6 +100,7 @@ export function useMediaGalleryGestures({ viewportRef, trackRef, zoomed, index, 
         viewport.addEventListener("pointermove", move, { passive: false })
         viewport.addEventListener("pointerup", end)
         viewport.addEventListener("pointercancel", end)
+        viewport.addEventListener("lostpointercapture", captureLost)
         viewport.addEventListener("click", click, true)
         viewport.addEventListener("wheel", wheel, { passive: false })
         return () => {
@@ -99,6 +108,7 @@ export function useMediaGalleryGestures({ viewportRef, trackRef, zoomed, index, 
             viewport.removeEventListener("pointermove", move)
             viewport.removeEventListener("pointerup", end)
             viewport.removeEventListener("pointercancel", end)
+            viewport.removeEventListener("lostpointercapture", captureLost)
             viewport.removeEventListener("click", click, true)
             viewport.removeEventListener("wheel", wheel)
             track.style.transition = ""

@@ -162,6 +162,39 @@ html[data-mobile-conversation-open="true"] { background: #000; }
   padding-top: env(safe-area-inset-top);
 }
 
+/* A landscape cutout can be wider than ordinary chat padding. Keep controls
+   and message content inside that edge without insetting the opaque canvas,
+   changing its viewport owner, or changing spacing on rectangular screens. */
+.mobile-conversation-surface {
+  --conversation-header-padding: 0.75rem;
+  --conversation-message-padding: 0.75rem;
+}
+.mobile-conversation-surface > [data-native-chat-viewport] > header {
+  padding-left: max(var(--conversation-header-padding), env(safe-area-inset-left));
+  padding-right: max(var(--conversation-header-padding), env(safe-area-inset-right));
+}
+.mobile-conversation-surface > [data-native-chat-viewport] > button {
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+.mobile-conversation-surface [data-message-pane] {
+  padding-left: max(var(--conversation-message-padding), env(safe-area-inset-left));
+  padding-right: max(var(--conversation-message-padding), env(safe-area-inset-right));
+}
+.mobile-conversation-surface [data-composer-slot] > footer {
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+.mobile-conversation-surface [data-conversation-jump-control] {
+  right: max(1rem, env(safe-area-inset-right));
+}
+@media (min-width: 640px) {
+  .mobile-conversation-surface {
+    --conversation-header-padding: 1rem;
+    --conversation-message-padding: 1.5rem;
+  }
+}
+
 /* Empty conversations have no scrollable history. Bound their prompt by the
    real pane, rather than creating a 256px scroll extent behind a short keyboard
    viewport. The motion owner leaves this prompt in natural layout. */

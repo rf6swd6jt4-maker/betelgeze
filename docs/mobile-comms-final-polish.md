@@ -82,7 +82,9 @@ The first full test run caught reuse of a retired jump-button marker. The new
 safe-area hook uses a distinct marker; the original regression remains intact.
 The voice fixture was made deterministic because `preload=none` is only a hint:
 local blob metadata may already be loaded. It now explicitly exercises unknown
-and known duration instead of racing the browser's metadata timing.
+and known duration instead of racing the browser's metadata timing. Hosted CI
+also caught two legacy runners ignoring the selected engine; both now honor the
+per-engine argument, retaining all cases without installing the other browser.
 
 These are code, synthetic engine and rendered preview checks. Physical iPhone
 Safari/PWA, physical Android Chrome/PWA, native emoji/file pickers, actual provider

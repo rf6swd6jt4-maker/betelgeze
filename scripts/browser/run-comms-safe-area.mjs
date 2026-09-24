@@ -6,6 +6,8 @@ import assert from "node:assert/strict"
 import { chromium, webkit } from "playwright"
 
 const baseline = process.argv.includes("--baseline")
+const engines = process.argv.slice(2).filter(value => value !== "--baseline")
+if (engines.some(engine => !["chromium", "webkit"].includes(engine))) throw Error("Use chromium and/or webkit")
 const server = spawn(process.execPath, ["scripts/serve-fullscreen-comms-preview.mjs", "--host", "127.0.0.1", "--port", "0"], { stdio: ["ignore", "pipe", "pipe"] })
 const origin = await new Promise((resolve, reject) => {
     let output = ""
@@ -21,7 +23,7 @@ const origin = await new Promise((resolve, reject) => {
 const results = []
 await mkdir("browser-results", { recursive: true })
 try {
-    for (const engine of ["chromium", "webkit"]) {
+    for (const engine of engines.length ? engines : ["chromium", "webkit"]) {
         const browser = await ({ chromium, webkit })[engine].launch()
         try {
             for (const layout of [

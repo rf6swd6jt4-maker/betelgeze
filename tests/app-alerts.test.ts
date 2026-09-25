@@ -62,13 +62,14 @@ test('a selected visible chat does not erase unacknowledged unread badges', () =
 test('visibility requires a positioned latest row inside the real viewport', () => {
     const original = globalThis.CSS
     Object.assign(globalThis, { CSS: { escape: (id: string) => id } })
-    let bottom = 460, positioned = 'true', height = 500, scrolled = 0, keyboard = 600, exists = true, covered = false
-    const row = { getBoundingClientRect: () => ({ top: bottom - 100, bottom, height: 100, left: 0, right: 300 }), contains: () => false }
-    const pane = { get dataset() { return { positioned } }, get clientHeight() { return height }, scrollHeight: 500, get scrollTop() { return scrolled },
+    let bottom = 460, positioned = 'true', height = 500, scrolled = 0, keyboard = 600, exists = true, covered = false, inert = false
+    const row = { closest: () => inert ? {} : null, getBoundingClientRect: () => ({ top: bottom - 100, bottom, height: 100, left: 0, right: 300 }), contains: () => false }
+    const pane = { closest: () => inert ? {} : null, get dataset() { return { positioned } }, get clientHeight() { return height }, scrollHeight: 500, get scrollTop() { return scrolled },
         ownerDocument: { elementFromPoint: () => covered ? null : row, defaultView: { get visualViewport() { return { offsetTop: 0, height: keyboard } } } },
         getBoundingClientRect: () => ({ top: 0, bottom: 500 }), querySelector: () => exists ? row : null }
     try {
         assert.equal(latestMessageIsVisible(pane as unknown as HTMLElement, 'm'), true)
+        inert = true; assert.equal(latestMessageIsVisible(pane as unknown as HTMLElement, 'm'), false); inert = false
         covered = true; assert.equal(latestMessageIsVisible(pane as unknown as HTMLElement, 'm'), false); covered = false
         bottom = 650; assert.equal(latestMessageIsVisible(pane as unknown as HTMLElement, 'm'), false)
         bottom = 460; keyboard = 400; assert.equal(latestMessageIsVisible(pane as unknown as HTMLElement, 'm'), false)

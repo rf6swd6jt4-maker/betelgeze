@@ -52,6 +52,7 @@ import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
 import { useConversationRead } from "./useConversationRead"
 import { CommunicationsActivityTracker } from "./CommunicationsActivityTracker"
 import { mergeChatReadCursor, readCursorCoversMessage, subscribeChatReads } from "@/lib/communications/read-state"
+import { invalidateUnreadSummary } from "@/lib/communications/unread-broadcast"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import type { ClientConversation, CommunicationAttachment, CommunicationDelivery, CommunicationMessage, CommunicationReaction, CommunicationReadCursor, CommunicationSticker, CommunicationsBootstrap } from "@/lib/communications/types"
 import { communicationAttachmentFromRawPayload } from "@/lib/communications/attachments"
@@ -226,13 +227,14 @@ function mergeCursor(current: CommunicationReadCursor[], incoming: Communication
     return mergeChatReadCursor(current, incoming, cursor => cursor.relationshipId)
 }
 
-export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateChange, onOpenTeam, onSelectedConversationChange, onUnreadCountChange, teamUnreadCount, conversationListWidth, onConversationListWidthChange }: {
+export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateChange, onOpenTeam, onSelectedConversationChange, onUnreadCountChange, onUnreadInvalidated, teamUnreadCount, conversationListWidth, onConversationListWidthChange }: {
     active: boolean
     bootstrap: CommunicationsBootstrap
     onConnectionStateChange?: (state: CommunicationsConnectionState) => void
     onOpenTeam?: () => void
     onSelectedConversationChange?: (conversationId: string | null) => void
     onUnreadCountChange?: (count: number) => void
+    onUnreadInvalidated?: () => void
     teamUnreadCount?: number
     conversationListWidth: number
     onConversationListWidthChange: (width: number) => void
@@ -661,13 +663,15 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         result.conversations.forEach((conversation) => conversation.messages.forEach((message) => knownMessageKeysRef.current.add(messageAnimationKey(message))))
         setSchemaReady(result.schemaReady)
         if (!updates.applySnapshot(read, result)) return
+        invalidateUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
         setReadCursors((current) => result.readCursors.reduce((next, cursor) => mergeCursor(next, cursor), current))
         setStickers(result.stickers)
         await flushPendingRead()
-    }, [bootstrap.workspaceSlug, flushPendingRead, updates])
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, flushPendingRead, updates])
 
     const registerRealtime = useCallback((channel: ReturnType<typeof supabase.channel>) => channel
                 .on("postgres_changes", { event: "*", schema: "public", table: "client_messages", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => {
+                    if (payload.eventType === "INSERT" || payload.eventType === "DELETE") onUnreadInvalidated?.()
                     if (payload.eventType === "DELETE") {
                         const deleted = record(payload.old)
                         const messageId = stringValue(deleted.id)
@@ -745,7 +749,10 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                     const relationshipId = stringValue(row.relationship_id)
                     const userId = stringValue(row.user_id)
                     const lastReadAt = stringValue(row.last_read_at)
-                    if (relationshipId && userId && lastReadAt) setReadCursors((current) => mergeCursor(current, { relationshipId, userId, lastReadMessageId: stringValue(row.last_read_message_id), lastReadAt }))
+                    if (relationshipId && userId && lastReadAt) {
+                        setReadCursors((current) => mergeCursor(current, { relationshipId, userId, lastReadMessageId: stringValue(row.last_read_message_id), lastReadAt }))
+                        if (userId === bootstrap.currentUser.id) onUnreadInvalidated?.()
+                    }
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "communication_reactions", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => {
                     if (payload.eventType === "DELETE") {
@@ -763,7 +770,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                     // exists. Refresh the authorized roster for assignments,
                     // creation and archiving as well as pinned-message changes.
                     void synchronize().catch(() => undefined)
-                }), [bootstrap.workspaceId, bootstrap.workspaceSlug, supabase, updateConversationMessages, setConversations, updates, synchronize])
+                }), [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, onUnreadInvalidated, supabase, updateConversationMessages, setConversations, updates, synchronize])
 
     const connection = useReliableCommunicationsRealtime({
         active,

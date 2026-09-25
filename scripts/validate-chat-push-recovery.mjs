@@ -31,8 +31,8 @@ try {
  create table workspace_native_messages(id uuid primary key,workspace_id uuid,conversation_id uuid,sender_user_id uuid,client_request_id uuid,created_at timestamptz default clock_timestamp());
  create table client_messages(id uuid primary key,workspace_id uuid,relationship_id uuid,direction text,created_at timestamptz default clock_timestamp());
  create table work_queue_disputes(id uuid primary key,workspace_id uuid,resolver_id uuid);
- create table workspace_native_read_cursors(workspace_id uuid,conversation_id uuid,user_id uuid,last_read_at timestamptz,last_read_message_id uuid,primary key(workspace_id,conversation_id,user_id));
- create table communication_read_cursors(workspace_id uuid,relationship_id uuid,user_id uuid,last_read_message_id uuid,last_read_at timestamptz,primary key(workspace_id,relationship_id,user_id));
+ create table workspace_native_read_cursors(workspace_id uuid,conversation_id uuid,user_id uuid,last_read_at timestamptz,last_read_message_id uuid references workspace_native_messages(id) on delete set null,primary key(workspace_id,conversation_id,user_id));
+ create table communication_read_cursors(workspace_id uuid,relationship_id uuid,user_id uuid,last_read_message_id uuid references client_messages(id) on delete set null,last_read_at timestamptz,primary key(workspace_id,relationship_id,user_id));
  create table relationships(id uuid primary key,workspace_id uuid,status text,seller_user_id uuid,fulfilment_manager_user_id uuid);
  create table relationship_client_chat_members(workspace_id uuid,relationship_id uuid,user_id uuid);
  `)
@@ -43,6 +43,7 @@ try {
  await migration('20260917090000_chat_push_delivery_recovery')
  await migration('20260917090500_chat_subscription_integrity')
  await migration('20260917180000_app_alerts_reading_contract')
+ await migration('20260925120000_preserve_chat_read_positions')
  await query('insert into workspaces values($1)',[w])
  for(const user of [sender,recipient,outsider,removed]) {
   await query('insert into auth.users values($1)',[user]);await query('insert into workspace_memberships values($1,$2)',[w,user])
@@ -211,6 +212,28 @@ try {
  await query('update chat_push_deliveries set binding_version=binding_version-1 where id=$1',[jobs[1].id])
  assert.equal((await prepare(jobs[1])).state,'revoked','a delayed old enqueue cannot survive A-B-A routing')
  console.log('PASS binding epochs: current capture, stale queued jobs and delayed old enqueue rejected at final authorization')
+
+ // Historical cursor UUIDs still govern the unchanged latest push eligibility
+ // function after the referenced message is deleted; no delivery policy change.
+ for(const kind of ['native','client']) {
+  await reset()
+  const conversation=kind==='native'?direct:client
+  const first=await addMessage(kind,conversation),second=await addMessage(kind,conversation)
+  const table=kind==='native'?'workspace_native_messages':'client_messages'
+  const cursors=kind==='native'?'workspace_native_read_cursors':'communication_read_cursors'
+  const at=(await query('select now() at'))[0].at
+  await query(`update ${table} set created_at=$1 where id in($2,$3)`,[at,first,second])
+  await query('update chat_push_deliveries set message_created_at=$1 where message_id in($2,$3)',[at,first,second])
+  await query(`insert into ${cursors}(workspace_id,${kind==='native'?'conversation_id':'relationship_id'},user_id,last_read_message_id,last_read_at) values($1,$2,$3,$4,$5)`,[w,conversation,recipient,first,at])
+  await query(`delete from ${table} where id=$1`,[first])
+  const sameTimeJobs=(await claim(second)).filter(job=>job.user_id===recipient)
+  assert.equal(sameTimeJobs.length,2)
+  assert.deepEqual(await prepare(sameTimeJobs[0]),{state:'send',unreadCount:1},`${kind}: deleting a read predecessor cannot suppress an unread timestamp tie`)
+  await query(`update ${cursors} set last_read_message_id=$1 where user_id=$2`,[second,recipient])
+  assert.equal((await prepare(sameTimeJobs[1])).state,'read')
+ }
+ await reset()
+ console.log('PASS deleted read boundaries retain timestamp/UUID eligibility for client and native push jobs')
 
  // Scheduler contracts run against local network/cron substitutes. No real
  // provider, business message, database credential or HTTP request is used.

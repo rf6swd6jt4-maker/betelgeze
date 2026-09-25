@@ -50,6 +50,7 @@ import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
 import { useConversationRead } from "./useConversationRead"
 import { CommunicationsActivityTracker } from "./CommunicationsActivityTracker"
 import { mergeChatReadCursor, readCursorCoversMessage, subscribeChatReads } from "@/lib/communications/read-state"
+import { invalidateUnreadSummary } from "@/lib/communications/unread-broadcast"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import { useCommunicationsClient } from "./CommunicationsRuntime"
 import { mentionPreview } from "@/lib/chat-formatting"
@@ -157,13 +158,14 @@ function realtimeMessage(value: unknown): NativeMessage | null {
     return { id, clientRequestId: text(row.client_request_id), conversationId, senderUserId, senderWorkspaceRole: row.sender_workspace_role === "owner" || row.sender_workspace_role === "admin" || row.sender_workspace_role === "staff" ? row.sender_workspace_role : null, body: typeof row.body === "string" ? row.body : "", replyToMessageId: text(row.reply_to_message_id), quote: messageQuoteFromValue(row.quote), attachment, createdAt, editedAt: text(row.edited_at) }
 }
 
-export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionStateChange, onOpenClients, onSelectedConversationChange, onUnreadCountChange, clientUnreadCount, conversationListWidth, onConversationListWidthChange }: {
+export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionStateChange, onOpenClients, onSelectedConversationChange, onUnreadCountChange, onUnreadInvalidated, clientUnreadCount, conversationListWidth, onConversationListWidthChange }: {
     active: boolean
     bootstrap: NativeCommunicationsBootstrap
     onConnectionStateChange?: (state: CommunicationsConnectionState) => void
     onOpenClients: () => void
     onSelectedConversationChange?: (conversationId: string | null) => void
     onUnreadCountChange?: (count: number) => void
+    onUnreadInvalidated?: () => void
     clientUnreadCount?: number
     conversationListWidth: number
     onConversationListWidthChange: (width: number) => void
@@ -334,7 +336,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     })
     const flushPendingRead = reading.flush
 
-    const refresh = useCallback(async (selectId?: string | null) => {
+    const refresh = useCallback(async (selectId?: string | null, options: { unread?: boolean } = {}) => {
         const read = updates.beginRead()
         const conversationId = selectId === undefined ? selectedRef.current : selectId
         const search = conversationId ? `?conversation=${encodeURIComponent(conversationId)}` : ""
@@ -343,13 +345,14 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         if (!response.ok || !next) throw new Error("Could not refresh team conversations.")
         next.conversations.forEach((conversation) => conversation.messages.forEach((message) => knownMessageKeysRef.current.add(messageAnimationKey(message))))
         if (!updates.applySnapshot(read, next)) return
+        if (options.unread !== false) invalidateUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
         setSchemaReady(next.schemaReady); setTeams(next.teams); setReadCursors((current) => next.readCursors.reduce((result, cursor) => mergeCursor(result, cursor), current)); setStickers(next.stickers)
         setSelectedId((current) => {
             const requested = selectId === undefined ? current : selectId
             return requested && next.conversations.some((conversation) => conversation.id === requested) ? requested : null
         })
         await flushPendingRead()
-    }, [bootstrap.workspaceSlug, flushPendingRead, updates])
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, flushPendingRead, updates])
 
     useEffect(() => {
         if (!bootstrap.requestedDmUserId) return
@@ -412,6 +415,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     setTypingByConversation((current) => updateNativeTyping(current, conversationId, userId, typing.typing === true ? Date.now() + NATIVE_TYPING_EXPIRY_MS : null))
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_messages", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => {
+                    if (payload.eventType === "INSERT" || payload.eventType === "DELETE") onUnreadInvalidated?.()
                     if (payload.eventType === "DELETE") {
                         const deleted = record(payload.old); const messageId = text(deleted.id)
                         if (messageId) {
@@ -443,10 +447,16 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     if (payload.eventType === "DELETE") updates.receiveReaction(`${messageId}:${reactorUserId}`, null, text(row.updated_at) ?? undefined)
                     else { const id = text(row.id); const conversationId = text(row.conversation_id); const emoji = text(row.emoji); const updatedAt = text(row.updated_at); if (id && conversationId && emoji && updatedAt) updates.receiveReaction(`${messageId}:${reactorUserId}`, { id, conversationId, messageId, reactorUserId, emoji, updatedAt }) }
                 })
-                .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_read_cursors", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => { const row = record(payload.new); const conversationId = text(row.conversation_id); const userId = text(row.user_id); const lastReadAt = text(row.last_read_at); if (conversationId && userId && lastReadAt) setReadCursors((current) => mergeCursor(current, { conversationId, userId, lastReadMessageId: text(row.last_read_message_id), lastReadAt })) })
+                .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_read_cursors", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => {
+                    const row = record(payload.new); const conversationId = text(row.conversation_id); const userId = text(row.user_id); const lastReadAt = text(row.last_read_at)
+                    if (conversationId && userId && lastReadAt) {
+                        setReadCursors((current) => mergeCursor(current, { conversationId, userId, lastReadMessageId: text(row.last_read_message_id), lastReadAt }))
+                        if (userId === bootstrap.currentUser.id) onUnreadInvalidated?.()
+                    }
+                })
                 .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_conversations", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, () => { void refresh().catch(() => undefined) })
                 .on("postgres_changes", { event: "*", schema: "public", table: "workspace_team_members", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, () => { void refresh().catch(() => undefined) })
-        , [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, refresh, supabase, updateConversationMessages, updates])
+        , [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, onUnreadInvalidated, refresh, supabase, updateConversationMessages, updates])
 
     const connection = useReliableCommunicationsRealtime({ active, privateChannel: true, register: registerRealtime, schemaReady, supabase, synchronize: refresh, topic: `communications:${bootstrap.workspaceSlug}` })
     const sendRealtimeBroadcast = connection.sendBroadcast
@@ -605,7 +615,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 setEditState("idle")
             }
         } catch (error) { if (ownsEditor()) setError(error instanceof Error ? error.message : "Could not edit message.") }
-        finally { if (ownsEditor()) setEditState("idle"); void refresh().catch(() => undefined) }
+        finally { if (ownsEditor()) setEditState("idle"); void refresh(undefined, { unread: false }).catch(() => undefined) }
     }
 
     async function toggleCheckbox(message: NativeMessage, line: number, checked: boolean, expectedBody: string) {
@@ -618,7 +628,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 return { ...message, body: savedBody }
             })
             return savedBody
-        } finally { void refresh().catch(() => undefined) }
+        } finally { void refresh(undefined, { unread: false }).catch(() => undefined) }
     }
 
     async function sendReaction(message: NativeMessage, emoji: string) {
@@ -635,7 +645,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 return result.reaction
             })
         } catch (error) { reportError(error instanceof Error ? error.message : "Could not send reaction.") }
-        finally { void refresh().catch(() => undefined) }
+        finally { void refresh(undefined, { unread: false }).catch(() => undefined) }
     }
 
     function rememberRecentReaction(emoji: string) {
@@ -682,7 +692,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 if (result.pinnedMessageId !== pinnedMessageId) throw new ChatMutationError("Could not confirm the pinned message.", true)
             })
         } catch (error) { reportError(error instanceof Error ? error.message : "Could not pin message.") }
-        finally { void refresh().catch(() => undefined) }
+        finally { void refresh(undefined, { unread: false }).catch(() => undefined) }
     }
 
     function startQuotingMessage(message: NativeMessage) {
@@ -766,14 +776,21 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         if (editingSessionRef.current) { setDraft(editingSessionRef.current.draft); editingSessionRef.current = null; setEditState("idle") }
         setActionMessageId(null)
         let request: Promise<{ cleared: boolean }> | undefined
+        let confirmed = false
         const clear = async () => {
             request ??= chatMutationRequest<{ cleared: boolean }>(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/clear`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId }) })
-            if (!(await request).cleared) throw new ChatMutationError("Could not confirm chat clearance.", true)
+                .then(result => {
+                    if (!result.cleared) throw new ChatMutationError("Could not confirm chat clearance.", true)
+                    confirmed = true
+                    invalidateUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
+                    return result
+                })
+            await request
             return null
         }
         try { if (selected.messages.length) await Promise.all(selected.messages.map((message) => updates.mutateMessage(message.id, null, clear))); else await clear() }
         catch (error) { reportError(error instanceof Error ? error.message : "Could not clear this private chat.") }
-        finally { void refresh().catch(() => undefined) }
+        finally { void refresh(undefined, { unread: !confirmed }).catch(() => undefined) }
     }
 
     const normalizedSearch = search.trim().toLowerCase()

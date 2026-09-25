@@ -60,8 +60,10 @@ try {
         update workspace_native_messages set attachment_ciphertext='broken'::bytea where created_at > timestamptz '2026-01-01' + interval '5993 seconds';
         analyze;
     `)
-    await db.exec(`create table workspace_native_read_cursors(conversation_id uuid, user_id uuid, last_read_message_id uuid, last_read_at timestamptz, primary key(conversation_id,user_id));`)
+    await db.exec(`create table workspace_native_read_cursors(conversation_id uuid, user_id uuid, last_read_message_id uuid references workspace_native_messages(id) on delete set null, last_read_at timestamptz, primary key(conversation_id,user_id), workspace_id uuid default '00000000-0000-4000-8000-000000000001');
+        create table communication_read_cursors(workspace_id uuid,relationship_id uuid,user_id uuid,last_read_message_id uuid references client_messages(id) on delete set null,last_read_at timestamptz,primary key(workspace_id,relationship_id,user_id));`)
     await db.exec(await migration("20260911010000_native_communications_inbox.sql"))
+    await db.exec(await migration("20260925120000_preserve_chat_read_positions.sql"))
     await db.exec(`update workspace_native_messages set sender_user_id = '00000000-0000-4000-8000-000000000007';`)
     const w = "00000000-0000-4000-8000-000000000001", c = "00000000-0000-4000-8000-000000000004"
     const measure = async (query, params) => { const start=performance.now(); const result=await db.query(query,params); return {rows:result.rows,ms:Math.round(performance.now()-start)} }
@@ -96,6 +98,15 @@ try {
     console.log('PASS exact encrypted detail: body, quote, edit/delivery metadata, corrupt ciphertext, workspace isolation, participant revocation and indexed message lookup')
     await db.exec(`insert into workspace_native_read_cursors values('${c}','00000000-0000-4000-8000-000000000002',md5('native-5900')::uuid,'2026-01-02');`)
     assert.equal((await db.query("select communication_native_inbox($1) inbox",[w])).rows[0].inbox.unread[0].messages.length,100,"message cursor wins over later client clock")
+    await db.exec(`begin;
+        insert into workspace_native_messages(id,workspace_id,conversation_id,sender_user_id,created_at,body) values
+            ('00000000-0000-4000-8000-000000000901','${w}','${c}','00000000-0000-4000-8000-000000000007','2026-02-01 10:00:00.123456+00','Synthetic tie one'),
+            ('00000000-0000-4000-8000-000000000902','${w}','${c}','00000000-0000-4000-8000-000000000007','2026-02-01 10:00:00.123456+00','Synthetic tie two');
+        update workspace_native_read_cursors set last_read_message_id='00000000-0000-4000-8000-000000000901',last_read_at='2026-02-01 10:00:00.123456+00';
+        delete from workspace_native_messages where id='00000000-0000-4000-8000-000000000901';`)
+    const tie=(await db.query("select communication_native_inbox($1) inbox",[w])).rows[0].inbox
+    assert.deepEqual(tie.unread[0].messages.map(message=>message.id),['00000000-0000-4000-8000-000000000902'],"compact unread keeps a newer timestamp tie when its read-boundary message is deleted")
+    await db.exec('rollback')
     await db.exec(`insert into workspace_native_conversation_visibility values('${c}','00000000-0000-4000-8000-000000000002',timestamptz '2026-01-01' + interval '5950 seconds');`)
     assert.equal((await db.query("select communication_native_inbox($1) inbox",[w])).rows[0].inbox.unread[0].messages.length,50,"cleared messages stay absent")
     await db.exec(`update workspace_native_conversation_visibility set cleared_at = '2027-01-01';`)
@@ -108,7 +119,7 @@ try {
         assert.deepEqual(denied,{messages:[],unread:[]})
         assert.equal(await nativeDetail(),null);assert.equal(await clientDetail(),null)
     }
-    console.log("PASS: encrypted preview, 60-message window, full unread metadata, cursor, clear history, AAL1, non-member and anonymous denial")
+    console.log("PASS: encrypted preview, 60-message window, full unread metadata, cursor deletion ties, clear history, AAL1, non-member and anonymous denial")
 } catch (error) {
     console.error(error)
     process.exitCode = 1

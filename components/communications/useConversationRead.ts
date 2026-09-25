@@ -6,6 +6,7 @@ import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabAct
 import { chatDocumentHasAttention, useChatDocumentAttention } from "./useChatDocumentAttention"
 import { workspaceDocumentIsActive } from "@/lib/workspace-tab-activity"
 import { CHAT_READING_VISIBILITY_EVENT, latestMessageIsVisible } from "@/lib/communications/reading-visibility"
+import { observeChatReadingVisibility } from "@/lib/communications/reading-observer"
 import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
 import { createChatReadQueue } from "@/lib/communications/read-queue"
 import { compareReadPositions, publishChatRead, type ChatReadPosition, type ChatReadUpdate } from "@/lib/communications/read-state"
@@ -82,41 +83,40 @@ export function useConversationRead(input: {
 
     useLayoutEffect(() => {
         if (!active || !tabActive || !attentive || !conversationId || !latestId || !latestAt) return
-        const hostDocument = (window.top ?? window).document
         let first = 0, second = 0
+        let lastReading: boolean | undefined
+        let dismissed = false
+        const position = { lastReadMessageId: latestId, lastReadAt: latestAt }
+        const unread = !cursor || compareReadPositions(cursor, position) < 0
         // A mounted/selected row is not evidence it has painted. Recheck geometry
         // and shell identity after painting, including native resident tabs.
         const check = () => {
             cancelAnimationFrame(first); cancelAnimationFrame(second)
             first = requestAnimationFrame(() => {
                 second = requestAnimationFrame(() => {
-                    window.dispatchEvent(new Event(CHAT_READING_VISIBILITY_EVENT))
-                    if (!isReading()) return
-                    const position = { lastReadMessageId: latestId, lastReadAt: latestAt }
+                    const reading = isReading()
+                    if (reading !== lastReading) {
+                        lastReading = reading
+                        window.dispatchEvent(new Event(CHAT_READING_VISIBILITY_EVENT))
+                    }
+                    if (!reading) return
                     if (cursor && compareReadPositions(cursor, position) >= 0) {
-                        void dismissReadChatNotification(conversationId, cursor.lastReadAt, cursor.lastReadMessageId)
+                        if (!dismissed) {
+                            dismissed = true
+                            void dismissReadChatNotification(conversationId, cursor.lastReadAt, cursor.lastReadMessageId)
+                        }
                         return
                     }
                     queue.current?.observe({ ...position, workspaceId, userId, kind, conversationId })
                 })
             })
         }
-        check()
-        const unread = !cursor || compareReadPositions(cursor, { lastReadMessageId: latestId, lastReadAt: latestAt }) < 0
-        // Closing an overlay can reveal a still-unread row without scrolling.
-        // Only an unread foreground conversation needs these local listeners.
-        if (unread) {
-            hostDocument.addEventListener("pointerup", check)
-            document.addEventListener("pointerup", check)
-            document.addEventListener("keyup", check)
-        }
+        const stopObserving = observeChatReadingVisibility(window, () => pane.current, latestId, check, { interactions: unread })
         return () => {
+            stopObserving()
             cancelAnimationFrame(first); cancelAnimationFrame(second)
-            hostDocument.removeEventListener("pointerup", check)
-            document.removeEventListener("pointerup", check)
-            document.removeEventListener("keyup", check)
         }
-    }, [active, attentive, conversationId, cursor, isReading, kind, latestAt, latestId, tabActive, userId, workspaceId])
+    }, [active, attentive, conversationId, cursor, isReading, kind, latestAt, latestId, pane, tabActive, userId, workspaceId])
 
     const flush = useCallback(async () => { await queue.current?.flush() }, [])
     return { isReading, flush, error }

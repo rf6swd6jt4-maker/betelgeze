@@ -97,6 +97,31 @@ jobs:
           }, null, 2));
           NODE
 
+  communications-sql:
+    name: Isolated Communications read and unread SQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BE_PGLITE_ROOT: ${{ runner.temp }}/communications-pglite
+    steps:
+      - name: Check out exact read, inbox and push fixtures
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Install pinned optional SQL fixture runtime outside the application
+        run: npm install --prefix "$BE_PGLITE_ROOT" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8
+      - name: Validate atomic cursors, deletion boundaries, summaries and authorization
+        run: node scripts/validate-communications-unread-sql.mjs
+      - name: Validate encrypted compact inbox and historical read positions
+        run: node scripts/validate-native-inbox-sql.mjs
+      - name: Validate unchanged push eligibility against retained read boundaries
+        run: node scripts/validate-chat-push-recovery.mjs
+
   browser-regression:
     name: Browser foundations (${{ matrix.engine }})
     runs-on: ubuntu-24.04
@@ -124,11 +149,15 @@ jobs:
         run: node scripts/browser/run-foundations.mjs "${{ matrix.engine }}"
       - name: Exercise chat actions, popup lifecycle, media and safe areas with synthetic data
         run: node scripts/browser/run-comms-polish.mjs "${{ matrix.engine }}"
+      - name: Exercise acknowledged reads and unread updates on mobile and desktop
+        run: node scripts/browser/run-comms-reads.mjs "${{ matrix.engine }}"
       - name: Print detailed browser evidence
         if: always()
         run: |
-          if test -f browser-results/foundations.json; then
-            cat browser-results/foundations.json
-          else
-            echo "Browser evidence unavailable: inspect the failed installation or startup step above."
-          fi
+          for report in foundations comms-reads; do
+            if test -f "browser-results/$report.json"; then
+              cat "browser-results/$report.json"
+            else
+              echo "$report evidence unavailable: inspect the preceding installation or runner step."
+            fi
+          done

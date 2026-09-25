@@ -51,7 +51,7 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
     const [standalone, setStandalone] = useState(false)
     useEffect(() => { setStandalone(window.top === window && document.body.dataset.workspaceTabsHosted !== "true") }, [])
     // Hosted panels consume the shell's owner. Standalone routes need one owner.
-    useCommunicationsUnread(workspaceId, workspaceSlug, userId, standalone)
+    const { invalidate: invalidateUnread } = useCommunicationsUnread(workspaceId, workspaceSlug, userId, standalone)
     const [clientBootstrap, setClientBootstrap] = useState(initialClientBootstrap)
     const [nativeBootstrap, setNativeBootstrap] = useState(initialNativeBootstrap)
     const [loadErrors, setLoadErrors] = useState<Partial<Record<CommunicationsMode, string>>>({})
@@ -181,6 +181,7 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
                 onOpenTeam={() => setMode("team")}
                 onSelectedConversationChange={setClientSelectedId}
                 onUnreadCountChange={setClientUnreadCount}
+                onUnreadInvalidated={invalidateUnread}
                 teamUnreadCount={nativeUnreadCount}
                 conversationListWidth={conversationListWidth}
                 onConversationListWidthChange={setSharedConversationListWidth}
@@ -194,6 +195,7 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
                 onOpenClients={() => setMode("clients")}
                 onSelectedConversationChange={setNativeSelectedId}
                 onUnreadCountChange={setNativeUnreadCount}
+                onUnreadInvalidated={invalidateUnread}
                 clientUnreadCount={clientUnreadCount}
                 conversationListWidth={conversationListWidth}
                 onConversationListWidthChange={setSharedConversationListWidth}

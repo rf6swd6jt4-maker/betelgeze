@@ -42,7 +42,7 @@ export const COMMUNICATIONS_RECOVERY_EVENT="fixture:recover";
 export const WorkspaceTabOpeningState=()=>React.createElement("p",{"data-opening":true},"Opening synthetic chat");
 export const PanelRouteLoading=WorkspaceTabOpeningState;
 export const Status=({label})=>React.createElement("span",null,label);
-export function useCommunicationsUnread(){}
+export function useCommunicationsUnread(){return {invalidate(){}}}
 export const useRouter=()=>({}); export const usePathname=()=>location.pathname;
 export const useSearchParams=()=>new URLSearchParams(location.search);`)
 writeFileSync(join(directory, "supabase-fixture.js"), `

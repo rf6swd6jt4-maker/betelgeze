@@ -6,6 +6,16 @@ Established 17 September 2026. This is the protected behavioral contract for sta
 
 Read this document before changing anything that can affect message reading, unread counts, read receipts, foreground/active-chat detection, notification recipients, push subscriptions, delivery/retry/suppression, notification display/click handling, or their database functions and schedulers. **Do not edit this document or change those behaviors without the user's explicit permission for that scope.** An unrelated UI, performance, shell, authentication or cleanup task does not authorize changing these rules. Trace indirect effects before editing shared dependencies. Record the authorized scope, evidence, rollout and rollback here with any authorized change. Do not use a historical repair document to supersede this contract.
 
+### Authorized read/unread reliability repair (25 September 2026)
+
+The user explicitly requested repairs to unread/read/update mechanics after observing that reading chats failed to update unread counts. The newest-visible, active-foreground and server-acknowledgement rules below remain unchanged.
+
+The shared reader now rechecks after actual presentation/visibility changes, including the full-screen mobile entrance becoming readable, deferred positioning and an overlay disappearing. Hidden, inert, covered and inactive panes remain unread. Existing metadata owners now reconcile standalone message/read events, acknowledged private-chat clearance and accepted roster/recovery snapshots; request-settlement invalidations cannot be lost. No new socket or polling timer is introduced. Existing visible safety reconciliation may add one coalesced unread metadata request to recover missed changes outside loaded history. Mobile layout/focus/motion owners are unchanged.
+
+Migration `20260925120000_preserve_chat_read_positions.sql` preserves the historical message UUID in both read cursors after message deletion and uses that boundary in unread-summary/compact-inbox fallbacks. It drops only the two message-reference FKs, preserving all access checks, RLS and grants. No stored rows are rewritten; pre-existing null boundaries keep legacy semantics rather than inventing lost history. Apply and verify this narrow migration before releasing the complete repair. Application rollback is compatible; do not null retained cursor IDs to recreate those FKs.
+
+Validation, prerequisites, performance impact and rollout evidence are recorded separately in [the read/unread reliability report](docs/comms-read-reliability-2026-09-25.md). Production schema/deployment and physical-device confirmation remain distinct from isolated tests.
+
 ### Service fulfilment Team chats (20 September 2026)
 
 Seller and fulfilment manager changes also add the new responsible person to an existing active service Team chat.

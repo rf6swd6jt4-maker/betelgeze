@@ -4,9 +4,9 @@ export const CHAT_READING_VISIBILITY_EVENT = "betelgeze:chat-reading-visibility"
  * Tall messages count when their trailing edge is visible at the latest position.
  */
 export function latestMessageIsVisible(pane: HTMLElement | null, messageId: string) {
-    if (!pane || pane.dataset.positioned !== "true" || pane.clientHeight <= 0) return false
+    if (!pane || pane.closest("[inert], [hidden], [aria-hidden=true]") || pane.dataset.positioned !== "true" || pane.clientHeight <= 0) return false
     const row = pane.querySelector<HTMLElement>(`[data-message-interaction="${CSS.escape(messageId)}"]`)
-    if (!row) return false
+    if (!row || row.closest("[inert], [hidden], [aria-hidden=true]")) return false
     const bounds = pane.getBoundingClientRect()
     const message = row.getBoundingClientRect()
     const viewport = pane.ownerDocument.defaultView?.visualViewport

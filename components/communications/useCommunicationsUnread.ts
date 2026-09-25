@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
 import { subscribeChatReads } from "@/lib/communications/read-state"
-import { publishUnreadSummary } from "@/lib/communications/unread-broadcast"
+import { publishUnreadSummary, subscribeUnreadSummaryInvalidations } from "@/lib/communications/unread-broadcast"
 import { applyReadToSummary, createUnreadSummaryResource, type UnreadSummary } from "@/lib/communications/unread-summary"
 
 // The shell owns one metadata summary; mounted chat copies never overwrite it
@@ -41,6 +41,7 @@ export function useCommunicationsUnread(workspaceId: string, workspaceSlug: stri
             void resource.refresh()
         }
         invalidateRef.current = schedule
+        const unsubscribeInvalidations = subscribeUnreadSummaryInvalidations(workspaceId, userId, schedule)
         const unsubscribe = subscribeChatReads(workspaceId, userId, read => {
             setSnapshot(current => ({ scope, rows: applyReadToSummary(current.scope === scope ? current.rows : [], read), loaded: current.scope === scope && current.loaded }))
             schedule()
@@ -51,7 +52,7 @@ export function useCommunicationsUnread(workspaceId: string, workspaceSlug: stri
         schedule()
         return () => {
             invalidateRef.current = () => undefined
-            controller.abort(); resource.dispose(); unsubscribe()
+            controller.abort(); resource.dispose(); unsubscribe(); unsubscribeInvalidations()
             window.removeEventListener("focus", schedule)
             window.removeEventListener("online", schedule)
             document.removeEventListener("visibilitychange", schedule)

@@ -101,8 +101,6 @@ jobs:
     name: Isolated Communications read and unread SQL
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    env:
-      BE_PGLITE_ROOT: ${{ runner.temp }}/communications-pglite
     steps:
       - name: Check out exact read, inbox and push fixtures
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -114,7 +112,9 @@ jobs:
           node-version: 24.16.0
           package-manager-cache: false
       - name: Install pinned optional SQL fixture runtime outside the application
-        run: npm install --prefix "$BE_PGLITE_ROOT" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8
+        run: |
+          echo "BE_PGLITE_ROOT=$RUNNER_TEMP/communications-pglite" >> "$GITHUB_ENV"
+          npm install --prefix "$RUNNER_TEMP/communications-pglite" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8
       - name: Validate atomic cursors, deletion boundaries, summaries and authorization
         run: node scripts/validate-communications-unread-sql.mjs
       - name: Validate encrypted compact inbox and historical read positions

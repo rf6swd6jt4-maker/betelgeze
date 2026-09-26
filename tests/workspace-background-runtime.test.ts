@@ -123,7 +123,6 @@ test("relationship background autosave uses notes_summary and optimistic concurr
 
 test("representative workspace forms declare their loading behavior", () => {
     for (const path of [
-        "components/admin/WorkspaceOfficerSettings.tsx",
         "components/admin/WorkspaceOnboardingDomain.tsx",
         "components/admin/PendingWorkspaceInvitations.tsx",
         "app/[workspaceSlug]/settings/page.tsx",
@@ -134,7 +133,6 @@ test("representative workspace forms declare their loading behavior", () => {
     for (const path of [
         "components/list/ListActionMenu.tsx",
         "components/list/MobileCardActionSurface.tsx",
-        "components/admin/RemoveInvoiceForm.tsx",
     ]) {
         assert.match(source(path), /runWorkspaceMutation/, path)
     }

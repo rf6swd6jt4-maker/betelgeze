@@ -11,7 +11,7 @@ This local candidate extends the Pass 2 host/native departure repair to the prev
 | `RelationshipBackgroundEditor`, `RelationshipDealWorkspace` | Existing durable draft queues and checkpoint registrations retained unchanged. Their storage schema and recovered client drafts are not migrated or deleted. |
 | `AssetFieldsEditor` | Existing local draft/checkpoint/unload behavior retained unchanged. |
 | `AppointmentTable` | Existing checkpoint remains conditional on its draft-command feature path. This package does not expand that flag or certify the legacy path. |
-| `RelationshipAssets`, `SopAssetUpload` | Existing dirty/busy departure refusal remains. Upload bytes are not serialized into text journals. |
+| `SopAssetUpload` | Existing dirty/busy departure refusal remains. Upload bytes are not serialized into text journals. The unmounted `RelationshipAssets` UI was removed on 26 September; asset data and API owners remain. |
 | `ManualSettingsForm` | Legacy Lead Gen owner remains outside this package and behind the separately documented subsystem quarantine. |
 
 The new files are `lib/workspace-draft-journal.ts` and `components/workspace/WorkspaceDraftRecovery.tsx`. The two owner implementations are `components/work-items/useWorkItemTextDraft.ts` and `components/workspace/WorkspaceAutosaveForm.tsx`; their Note, SOP, work-item, native Library and Settings bindings supply stable actor/record/field identities. Work-item text and the two settings actions now reject a supplied expected actor that differs from the authenticated actor. This adds no authorization query. Optional actor parameters preserve old-client compatibility; current recovery callers always bind the actor. Existing server authorization remains authoritative.

@@ -24,12 +24,10 @@ test("compact selectors share the anchored drawer and canonical identity element
 })
 
 test("relationship and operational assignment paths use the shared selectors", async () => {
-    const [relationship, retention, create, settings, officers, okrs, workItem, mention] = await Promise.all([
+    const [relationship, create, settings, okrs, workItem, mention] = await Promise.all([
         readFile("app/[workspaceSlug]/relationships/[relationshipId]/RelationshipDealWorkspace.tsx", "utf8"),
-        readFile("components/workspace/RetentionRelationshipFields.tsx", "utf8"),
         readFile("components/workspace/WorkspaceCreateModal.tsx", "utf8"),
         readFile("components/settings/WorkspaceTeamSettings.tsx", "utf8"),
-        readFile("components/admin/WorkspaceOfficerSettings.tsx", "utf8"),
         readFile("components/admin/OkrWorkspace.tsx", "utf8"),
         readFile("app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields.tsx", "utf8"),
         readFile("components/communications/ComposerMentionPicker.tsx", "utf8"),
@@ -37,12 +35,10 @@ test("relationship and operational assignment paths use the shared selectors", a
 
     assert.match(relationship, /<CommunicationMethodSelector/)
     assert.match(relationship, /<AssignmentSelector/)
-    assert.match(retention, /<AssignmentSelector/)
     assert.doesNotMatch(create, /<CommunicationMethodSelector/)
     assert.match(await readFile("components/relationships/RelationshipContactCards.tsx", "utf8"), /<CommunicationMethodMark/)
     assert.match(await readFile("components/relationships/RelationshipServicesWorkspace.tsx", "utf8"), /<AssignmentSelector/)
     assert.match(settings, /<AssignmentSelector/)
-    assert.match(officers, /<AssignmentSelector/)
     assert.match(okrs, /<AssignmentSelector/)
     assert.doesNotMatch(okrs, /<select name="(?:owner_user_id|execution_owner_id)"/)
     assert.match(workItem, /<SelectorDrawer/)

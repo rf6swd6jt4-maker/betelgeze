@@ -117,3 +117,45 @@ test("expired preview generation destroys the original stream, releases deduplic
     assert.equal(getCount, 2)
     assert.equal(putCount, 1)
 })
+
+test("preview work is shared only within the same path and encryption scope", async () => {
+    const source = await readFile("lib/onboarding/uploads.ts", "utf8")
+    const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+    const keys = [null, Buffer.alloc(32, 1).toString("base64"), Buffer.alloc(32, 2).toString("base64")]
+    const reads: (string | null)[] = []
+    const writes: (string | null)[] = []
+    let release!: () => void
+    const blocked = new Promise<void>(resolve => { release = resolve })
+    class GetObjectCommand { input: { SSECustomerKey?: string }; constructor(input: { SSECustomerKey?: string }) { this.input = input } }
+    class PutObjectCommand { input: { SSECustomerKey?: string }; constructor(input: { SSECustomerKey?: string }) { this.input = input } }
+    const mocks: Record<string, unknown> = {
+        crypto: require("node:crypto"),
+        "@/lib/env": { getRequiredEnv: () => "fixture" },
+        "@/lib/communications/attachments": { COMMUNICATION_PREVIEW_SUFFIX: ".preview.webp" },
+        "@/lib/communications/image-preview": { prepareStoredCommunicationImage: async (bytes: Uint8Array) => ({ preview: bytes }) },
+        "@aws-sdk/client-s3": {
+            GetObjectCommand, PutObjectCommand,
+            S3Client: class {
+                async send(command: GetObjectCommand | PutObjectCommand) {
+                    const key = command.input.SSECustomerKey ?? null
+                    if (command instanceof PutObjectCommand) { writes.push(key); return {} }
+                    reads.push(key)
+                    await blocked
+                    return { ContentType: "image/jpeg", ContentLength: 1, Body: {
+                        transformToByteArray: async () => new Uint8Array([keys.indexOf(key)]),
+                    } }
+                }
+            },
+        },
+    }
+    const exports: { ensureCommunicationImagePreview?: (path: string, key: string | null) => Promise<Uint8Array | null> } = {}
+    new Function("require", "exports", compiled)((name: string) => mocks[name] ?? {}, exports)
+    const run = exports.ensureCommunicationImagePreview!
+    const requests = keys.flatMap(key => [run("private/path", key), run("private/path", key)])
+    assert.deepEqual(reads, keys)
+    release()
+    assert.deepEqual((await Promise.all(requests)).map(bytes => bytes?.[0]), [0, 0, 1, 1, 2, 2])
+    assert.deepEqual(writes, keys)
+    await run("private/path", keys[1])
+    assert.deepEqual(reads, [...keys, keys[1]], "Settled work must leave the deduplication map")
+})

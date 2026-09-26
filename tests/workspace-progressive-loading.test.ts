@@ -123,9 +123,12 @@ test("panel routes have instant fallbacks and shared lists defer off-screen pain
 test("workspace panel homes share one persistent banner inside their tab frame", () => {
     const layout = source("app/[workspaceSlug]/layout.tsx")
     const chrome = source("components/workspace/WorkspacePanelChrome.tsx")
+    const topBar = source("components/workspace/WorkspaceTopBar.tsx")
     assert.match(layout, /workspaceTabIdFromUrl/)
     assert.match(layout, /<WorkspacePanelChrome/)
     assert.match(chrome, /workspaceRouteUsesSharedBanner\(pathname\)/)
+    assert.match(topBar, /Suspense fallback=\{<WorkspaceBannerPending \/>\}/)
+    assert.doesNotMatch(topBar, /Suspense fallback=\{null\}.*WorkspaceNativeBanner/s)
 
     for (const pathname of [
         "/agency/admin",

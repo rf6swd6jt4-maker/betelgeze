@@ -153,10 +153,12 @@ jobs:
         run: node scripts/browser/run-comms-reads.mjs "${{ matrix.engine }}"
       - name: Exercise delayed chat pane attachment and reload initialization
         run: node scripts/browser/run-comms-pane-lifecycle.mjs "${{ matrix.engine }}"
+      - name: Exercise shared dialog dismissal and refresh presentation
+        run: node scripts/browser/run-ui-reconciliation.mjs "${{ matrix.engine }}"
       - name: Print detailed browser evidence
         if: always()
         run: |
-          for report in foundations comms-reads comms-pane-lifecycle; do
+          for report in foundations comms-reads comms-pane-lifecycle ui-reconciliation; do
             if test -f "browser-results/$report.json"; then
               cat "browser-results/$report.json"
             else

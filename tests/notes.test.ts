@@ -37,6 +37,15 @@ test("note creation is available in both shell quick-action placements and stays
     assert.doesNotMatch([shell, modal, topBar, list, detail].join("\n"), /relationship_context_assets|generation_context/)
 })
 
+test("the note field block and attachments section share one divider", async () => {
+    const [editor, attachments] = await Promise.all([
+        readFile("app/[workspaceSlug]/notes/[id]/NoteFieldsEditor.tsx", "utf8"),
+        readFile("components/detail/RecordAttachments.tsx", "utf8"),
+    ])
+    assert.match(editor, /noteField\("Description", descriptionDraft, 20000, "!border-b-0"\)/)
+    assert.match(attachments, /className="mt-6 border-t border-neutral-900 pt-5"/)
+})
+
 test("note routes participate in Library navigation, record tabs, restore, search, and shared banner chrome", async () => {
     const [panels, tabs, launch, search, chrome] = await Promise.all([
         readFile("lib/workspace-panels.ts", "utf8"),

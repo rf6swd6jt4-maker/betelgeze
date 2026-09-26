@@ -710,7 +710,8 @@ const pendingCommunicationPreviews = new Map<string, Promise<Uint8Array | null>>
 /** Call only after an authorized preview 404. Derivatives retain the original SSE-C key. */
 export async function ensureCommunicationImagePreview(path: string, customerKey: string | null, signal?: AbortSignal) {
     signal?.throwIfAborted()
-    const existing = pendingCommunicationPreviews.get(path)
+    const scope = `${path}:${customerKey ? createHash("sha256").update(customerKey).digest("hex") : "unencrypted"}`
+    const existing = pendingCommunicationPreviews.get(scope)
     if (existing) return existing
     const pending = (async () => {
         const client = getR2Client()
@@ -739,9 +740,9 @@ export async function ensureCommunicationImagePreview(path: string, customerKey:
             return prepared.preview
         } finally { signal?.removeEventListener("abort", abort); body.destroy?.() }
     })()
-    pendingCommunicationPreviews.set(path, pending)
+    pendingCommunicationPreviews.set(scope, pending)
     const release = () => {
-        if (pendingCommunicationPreviews.get(path) === pending) pendingCommunicationPreviews.delete(path)
+        if (pendingCommunicationPreviews.get(scope) === pending) pendingCommunicationPreviews.delete(scope)
     }
     signal?.addEventListener("abort", release, { once: true })
     try { return await pending } finally { release(); signal?.removeEventListener("abort", release) }

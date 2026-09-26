@@ -18,7 +18,7 @@
 /.az-owner-shards
 
 # next.js
-/.next/
+.next/
 /out/
 
 # production

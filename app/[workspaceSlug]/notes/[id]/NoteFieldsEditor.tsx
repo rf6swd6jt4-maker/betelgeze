@@ -8,8 +8,8 @@ import { saveNoteText } from "./actions"
 import { WorkspaceDraftRecovery } from "@/components/workspace/WorkspaceDraftRecovery"
 
 const saved = () => {}
-function noteField(label: string, draft: ReturnType<typeof useWorkItemTextDraft>, limit: number) {
-    return <DetailField label={label} icon={label === "Name" ? "identity" : "description"} multiline>
+function noteField(label: string, draft: ReturnType<typeof useWorkItemTextDraft>, limit: number, className = "") {
+    return <DetailField label={label} icon={label === "Name" ? "identity" : "description"} multiline className={className}>
         <div><AutoGrowTextarea ref={draft.ref} value={draft.value} onChange={event => draft.change(event.target.value)} onBlur={() => void draft.save()} required maxLength={limit} rows={1} aria-label={`Note ${label.toLowerCase()}`} className="block w-full bg-transparent text-sm leading-6 text-neutral-200 outline-none" />
             <div className="mt-1 flex items-center gap-2 text-xs text-neutral-500"><span aria-live="polite" className={draft.error ? "text-red-300" : undefined}>{draft.recoveryPending ? "Review this draft before saving" : draft.error ?? (draft.state === "saving" ? "Saving…" : draft.state === "saved" ? "Saved" : "Changes save automatically")}</span>
                 {draft.recoveryPending ? <button type="button" onClick={() => void draft.saveRecovered()} className="text-amber-200 underline">Save reviewed draft</button> : draft.conflict ? <button type="button" onClick={draft.useLatest} className="text-red-200 underline">Use latest saved version</button> : draft.error ? <button type="button" onClick={() => void draft.save()} className="text-red-200 underline">Retry</button> : null}
@@ -31,6 +31,6 @@ export function NoteFieldsEditor({ slug, noteId, userId, updatedAt, name, descri
         <DetailField label="Created by" icon="user">{creator}</DetailField>
         <DetailField label="Created" icon="time">{new Date(createdAt).toLocaleString("en-IE", { dateStyle: "medium", timeStyle: "short" })}</DetailField>
         {links}
-        {noteField("Description", descriptionDraft, 20000)}
+        {noteField("Description", descriptionDraft, 20000, "!border-b-0")}
     </DetailFields>
 }

@@ -39,7 +39,7 @@ export function RelationshipEngagement({ workspaceSlug, relationshipId, userId }
         const controller = new AbortController()
         void fetch(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/relationships/${encodeURIComponent(relationshipId)}/engagement`, { cache: "no-store", signal: controller.signal })
             .then(async response => { if (!response.ok) throw new Error("Metrics unavailable"); return response.json() as Promise<{ engagement: Engagement }> })
-            .then(result => { if (!controller.signal.aborted) { retained.set(key, { data: result.engagement, at: Date.now() }); setMetrics(result.engagement); setError(false) } })
+            .then(result => { if (!controller.signal.aborted) { retained.set(key, { data: result.engagement, at: Date.now() }); while (retained.size > 20) retained.delete(retained.keys().next().value!); setMetrics(result.engagement); setError(false) } })
             .catch(() => { if (!controller.signal.aborted) setError(true) })
         return () => controller.abort()
     }, [active, visible, key, workspaceSlug, relationshipId])

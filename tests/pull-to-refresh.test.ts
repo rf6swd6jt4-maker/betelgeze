@@ -32,7 +32,7 @@ test("mobile shell uses pull refresh while retaining the desktop reload control"
     assert.match(shell.slice(0, shell.indexOf("<aside data-workspace-sidebar")), /aria-label="Reload workspace"/)
 })
 
-test("pull refresh preserves native overscroll and covers only the refreshing tab", async () => {
+test("pull refresh preserves native overscroll and keeps refreshed content visible", async () => {
     const component = await readFile(new URL("../components/workspace/PullToRefresh.tsx", import.meta.url), "utf8")
     assert.match(component, /addEventListener\("touchmove", move, \{ passive: true \}\)/)
     assert.doesNotMatch(component, /preventDefault/)
@@ -40,6 +40,8 @@ test("pull refresh preserves native overscroll and covers only the refreshing ta
     assert.match(component, /document\.querySelector<HTMLElement>\("\[data-communications-panel\]"\)/)
     assert.match(component, /translate3d\(0, \$\{nextDistance\}px, 0\)/)
     assert.match(component, /-36 \+ progress \* 52/)
-    assert.match(component, /place-items-center bg-black/)
+    assert.match(component, /left-1\/2 top-2 z-\[80\].*h-9 w-9/)
+    assert.match(component, /bg-black\/90/)
+    assert.doesNotMatch(component, /inset-0 z-\[80\].*bg-black/)
     assert.match(component, /aria-label="Refreshing tab"/)
 })

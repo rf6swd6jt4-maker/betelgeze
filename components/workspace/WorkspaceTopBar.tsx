@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import { WorkspaceBannerPending } from "@/components/admin/WorkspaceBannerPending"
 import { WorkspaceNativeBanner } from "./WorkspaceNativeBanner"
 import { randomUUID } from "node:crypto"
 import { workspacePerformanceEnabled } from "@/lib/workspace-native"
@@ -62,7 +63,7 @@ export async function WorkspaceTopBar({ userId, workspace, workspaceAccess, shel
     return <WorkspaceTopBarClient
         workspace={workspace}
         nativePanelsEnabled={nativePanelsEnabled}
-        nativeBanner={nativePanelsEnabled ? <Suspense fallback={null}><WorkspaceNativeBanner workspaceSlug={workspace.slug} /></Suspense> : null}
+        nativeBanner={nativePanelsEnabled ? <Suspense fallback={<WorkspaceBannerPending />}><WorkspaceNativeBanner workspaceSlug={workspace.slug} /></Suspense> : null}
         initialWorkspaceUrl={initialWorkspaceUrl}
         initialTab={launchTab}
         launchServerTiming={launchServerTiming}

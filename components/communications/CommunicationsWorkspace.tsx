@@ -367,7 +367,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     }, [bootstrap.workspaceId])
 
 
-    useConversationLayout(messagePaneRef, followLatestRef, selectedId, active && workspaceTabActive && documentVisible, setAtLatest, setShowJumpToLatest)
+    const attachMessagePane = useConversationLayout(messagePaneRef, followLatestRef, selectedId, active && workspaceTabActive && documentVisible, setAtLatest, setShowJumpToLatest)
 
     useEffect(() => () => messageAnimationTimersRef.current.forEach((timer) => window.clearTimeout(timer)), [])
 
@@ -964,7 +964,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
 
                     <ChatMotionViewport key={selectedId}>
                     <div className="relative min-h-0 flex-1">
-                    <div key={selectedId} data-message-pane data-empty={!selected.messages.length ? "true" : undefined} tabIndex={0} ref={messagePaneRef} {...messagePaneInteractions} style={{ overflowAnchor: "none" }} className="invisible data-[positioned=true]:visible h-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-contain bg-[radial-gradient(circle_at_top,_rgba(38,38,38,0.5),_transparent_38%)] px-3 py-5 sm:px-6">
+                    <div key={selectedId} data-message-pane data-empty={!selected.messages.length ? "true" : undefined} tabIndex={0} ref={attachMessagePane} {...messagePaneInteractions} style={{ overflowAnchor: "none" }} className="invisible data-[positioned=true]:visible h-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-x-none overscroll-y-contain bg-[radial-gradient(circle_at_top,_rgba(38,38,38,0.5),_transparent_38%)] px-3 py-5 sm:px-6">
                         <div className="mx-auto flex min-h-full w-full min-w-0 max-w-3xl flex-col gap-2 lg:max-w-none">
                             {selected.messages.length ? <div aria-hidden="true" className="mt-auto" /> : null}
                             {history.hasEarlier ? <button type="button" disabled={history.loadingEarlier} onClick={() => { followLatestRef.current = false; void history.loadEarlier() }} className="mx-auto shrink-0 px-3 py-2 text-xs text-neutral-500 hover:text-white">{history.loadingEarlier ? "Loading earlier messages…" : "Load earlier messages"}</button> : null}

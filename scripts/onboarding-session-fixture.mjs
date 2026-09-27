@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { repositoryRoot } from './pglite-fixture.mjs'
-export async function validateSessionReadiness({db,q,one,w,owner,seller,staff,unrelated,relationship,uuid,pass}) {
+export async function validateSessionReadiness({db,q,one,w,owner,staff,unrelated,relationship,uuid,pass}) {
  await db.exec(`
  create unique index fixture_native_work_unique on work_items(workspace_id,native_kind,native_key) where native_kind is not null and native_key is not null;
  alter table relationship_onboarding_sessions add column if not exists original_source_sale_id uuid,add column if not exists restarted_from_session_id uuid;
@@ -26,6 +26,8 @@ export async function validateSessionReadiness({db,q,one,w,owner,seller,staff,un
  const teamSource=await readFile(`${repositoryRoot}/supabase/migrations/20260909100000_client_delivery_teams.sql`,'utf8')
  await db.exec(teamSource.slice(teamSource.indexOf('create function public.create_relationship_delivery_team('),teamSource.indexOf('-- Import existing sold clients')))
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20260913150000_onboarding_session_readiness.sql`,'utf8'))
+ const reviewQueueMigration=await readFile(`${repositoryRoot}/supabase/migrations/20260927120000_onboarding_review_queue_access.sql`,'utf8')
+ await db.exec(reviewQueueMigration.slice(reviewQueueMigration.indexOf('do $migration$'),reviewQueueMigration.indexOf('\n-- A shared review')))
  await db.exec('create trigger enforce_onboarding_block_requirements before update of status on work_items for each row execute function enforce_onboarding_block_requirements()')
  pass('SS04 migration compiles against the existing service/session foundation')
  const sessions=await q("select id,session_token,source_sale_id from relationship_onboarding_sessions where workspace_id=$1 and relationship_id=$2 and status='active' order by created_at",[w,relationship])
@@ -37,10 +39,10 @@ export async function validateSessionReadiness({db,q,one,w,owner,seller,staff,un
  const welcomeSteps=[]
  for(const [index,session] of [a,b].entries()) {
   await q('update relationship_onboarding_session_steps set sort_order=sort_order+100 where session_id=$1',[session.id])
-  const module=uuid(1510+index),step=uuid(1520+index),work=uuid(1530+index)
-  await q("insert into relationship_onboarding_session_modules(id,workspace_id,session_id,module_id,module_revision_id,source_kind,title,sort_order) values($1,$2,$3,$4,$5,'mandatory','Welcome',0)",[module,w,session.id,welcome,welcomeRevision])
-  await q("insert into relationship_onboarding_session_steps(id,workspace_id,session_id,session_module_id,module_revision_id,kind,title,sort_order,is_actionable) values($1,$2,$3,$4,$5,'video','Welcome',0,true)",[step,w,session.id,module,welcomeRevision])
-  await q("insert into work_items(id,workspace_id,title,status,native_kind,native_key,metadata) values($1,$2,'Welcome','todo','onboarding_step',$3,$4)",[work,w,session.id+':step:'+step,{session_id:session.id,session_step_id:step}]);welcomeSteps.push({module,step,work})
+  const sessionModule=uuid(1510+index),step=uuid(1520+index),work=uuid(1530+index)
+  await q("insert into relationship_onboarding_session_modules(id,workspace_id,session_id,module_id,module_revision_id,source_kind,title,sort_order) values($1,$2,$3,$4,$5,'mandatory','Welcome',0)",[sessionModule,w,session.id,welcome,welcomeRevision])
+  await q("insert into relationship_onboarding_session_steps(id,workspace_id,session_id,session_module_id,module_revision_id,kind,title,sort_order,is_actionable) values($1,$2,$3,$4,$5,'video','Welcome',0,true)",[step,w,session.id,sessionModule,welcomeRevision])
+  await q("insert into work_items(id,workspace_id,title,status,native_kind,native_key,metadata) values($1,$2,'Welcome','todo','onboarding_step',$3,$4)",[work,w,session.id+':step:'+step,{session_id:session.id,session_step_id:step}]);welcomeSteps.push({module:sessionModule,step,work})
  }
  // A two-step welcome needs proof for both steps; completion counts alone are insufficient.
  const welcomeSecond=uuid(1540),welcomeSecondWork=uuid(1541),requiredWelcomeBlock=uuid(1542)
@@ -93,6 +95,8 @@ export async function validateSessionReadiness({db,q,one,w,owner,seller,staff,un
   await q("insert into relationship_onboarding_session_steps(id,workspace_id,session_id,session_module_id,module_revision_id,kind,title,sort_order,is_actionable) values($1,$2,$3,$4,$5,'form','Service details',500+$6,true)",[st,w,b.id,m,revisionId,index])
   await q('insert into service_instance_module_requirements(workspace_id,instance_id,session_id,session_module_id) values($1,$2,$3,$4)',[w,instance.instance_id,b.id,m]);isolatedSteps.push(st)
  }
+ const sharedReviewModule=(await one('select session_module_id from relationship_onboarding_session_steps where id=$1',[isolatedSteps[0]])).session_module_id
+ await q('insert into service_instance_module_requirements(workspace_id,instance_id,session_id,session_module_id) values($1,$2,$3,$4)',[w,instances[1].instance_id,b.id,sharedReviewModule])
 
  const bsteps=await q('select * from relationship_onboarding_session_steps where session_id=$1 and is_actionable order by sort_order',[b.id])
  for(const step of bsteps){
@@ -100,7 +104,12 @@ export async function validateSessionReadiness({db,q,one,w,owner,seller,staff,un
   await q("update work_items set status='done',actual_completed_at=now() where workspace_id=$1 and native_key=$2",[w,b.id+':step:'+step.id])
  }
  await q('select refresh_service_onboarding_readiness($1,$2)',[w,b.id])
- const reviews=await q("select id,metadata from work_items where workspace_id=$1 and native_key like $2",[w,b.id+':service-review:%']);assert(reviews.length>0)
+ const reviews=await q("select id,metadata,service_id from work_items where workspace_id=$1 and native_key like $2",[w,b.id+':service-review:%']);assert(reviews.length>0)
+ for(const [index,stepId] of isolatedSteps.entries()) {
+  const instanceService=(await one('select service_id from relationship_service_instances where id=$1',[instances[index].instance_id])).service_id
+  assert.equal(reviews.find(review=>review.metadata.session_step_id===stepId)?.service_id,instanceService)
+ }
+ pass('new reviews inherit their service scope even when two instances share one service')
  for(const review of reviews.filter(review=>review.metadata.session_step_id!==isolatedSteps[1]))await q("update work_items set status='done',actual_completed_at=now() where id=$1",[review.id])
  assert.equal((await one('select stage from relationship_service_instances where id=$1',[instances[0].instance_id])).stage,'setup')
  assert.equal((await one('select stage from relationship_service_instances where id=$1',[instances[1].instance_id])).stage,'onboarding')

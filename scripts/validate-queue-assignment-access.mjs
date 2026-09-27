@@ -15,6 +15,9 @@ try{
  await db.exec(`create schema auth;create function auth.uid() returns uuid language sql as $$select null::uuid$$;
  alter table relationships add column seller_user_id uuid,add column fulfilment_manager_user_id uuid;
  alter table relationship_service_instances add column import_id uuid;
+ alter table work_items add column native_key text;
+ create table relationship_onboarding_session_steps(id uuid primary key,workspace_id uuid,session_id uuid,session_module_id uuid);
+ create table service_instance_module_requirements(workspace_id uuid,instance_id uuid,session_id uuid,session_module_id uuid,review_required boolean);
  create function workspace_user_can_access_session_step(uuid,uuid,uuid) returns boolean language sql as $$select false$$;
  create function workspace_user_fully_covers_relationship(uuid,uuid,uuid) returns boolean language sql as $$select false$$;
  create index fixture_work_relationship_scope on work_item_relationships(workspace_id,work_item_id,relationship_id);`)
@@ -50,6 +53,27 @@ try{
  await db.exec("update relationship_service_instances set import_id=null,disposition='paused'");assert.equal(await allowed(other),true);assert.equal((await queue(other)).ready,0)
  console.log('PASS: reassignment revokes the former worker; cancelled and staged imports cannot grant access; paused work is deferred')
  await db.exec("update relationship_service_instances set disposition='active'")
+ const review=id(130),session=id(131),sessionModule=id(132),step=id(133)
+ await db.query('insert into relationship_onboarding_session_steps values($1,$2,$3,$4)',[step,w,session,sessionModule])
+ await db.query('insert into work_items(id,workspace_id,title,execution_owner_id,workflow_role,native_kind,native_key,metadata) values($1,$2,$3,$4,$5,$6,$7,$8)',[review,w,'Meta Ads review',other,'review','relationship_workflow',`${session}:service-review:${step}`,{session_id:session,session_step_id:step}])
+ await db.query('insert into work_item_relationships values($1,$2,$3)',[w,review,client])
+ await db.query('insert into service_instance_work_items values($1,$2,$3)',[w,review,instance])
+ assert.equal((await one('select workspace_user_can_access_work_item($1,$2,$3) ok',[w,review,other])).ok,false)
+ await db.query('insert into service_instance_module_requirements values($1,$2,$3,$4,true)',[w,instance,session,sessionModule])
+ const next=await read('../supabase/migrations/20260927120000_onboarding_review_queue_access.sql')
+ await db.exec(next.slice(next.indexOf('create or replace function public.workspace_user_can_access_work_item('),next.indexOf('\nnotify pgrst')))
+ assert.equal((await one('select workspace_user_can_access_work_item($1,$2,$3) ok',[w,review,other])).ok,true)
+ assert.equal((await one('select personal_queue_owns($1,$2,$3) ok',[w,review,other])).ok,true)
+ let rv=(await one('select updated_at from work_items where id=$1',[review])).updated_at
+ await db.query("select personal_queue_command($1,$2,$3,'start',$4)",[w,other,review,rv])
+ rv=(await one('select updated_at from work_items where id=$1',[review])).updated_at
+ await db.query("select personal_queue_command($1,$2,$3,'pause',$4)",[w,other,review,rv])
+ await db.query('update service_instance_module_requirements set review_required=false where instance_id=$1',[instance])
+ assert.equal((await one('select workspace_user_can_access_work_item($1,$2,$3) ok',[w,review,other])).ok,false)
+ await db.query('update service_instance_module_requirements set review_required=true where instance_id=$1',[instance])
+ await db.query('update work_items set native_key=$1 where id=$2',['unrelated-review',review])
+ assert.equal((await one('select workspace_user_can_access_work_item($1,$2,$3) ok',[w,review,other])).ok,false)
+ console.log('PASS: linked shared review reaches its explicit owner and queue actions; mismatched review or module remains private')
  await db.query('insert into relationship_services values($1,$2,$3,$4)',[w,client,service,u]);assert.equal(await allowed(),true)
  console.log('PASS: existing legacy service access remains valid')
  await db.exec(`insert into work_items(id,workspace_id,service_id,title) select gen_random_uuid(),'${w}','${service}','Growth '||n from generate_series(1,1000)n;

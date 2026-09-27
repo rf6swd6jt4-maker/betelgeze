@@ -4,7 +4,10 @@ import {PGlite} from './pglite-fixture.mjs'
 const db=new PGlite(),id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,w=id(1),u=id(2),admin=id(3),other=id(4),client=id(5),team=id(6),conv=id(7)
 const sql=async(s,p=[])=>(await db.query(s,p)).rows,one=async(s,p=[])=>(await sql(s,p))[0]
 const base=await readFile(new URL('./validate-personal-queue-sql.mjs',import.meta.url),'utf8')
-await db.exec(base.split('await db.exec(`')[1].split('`)')[0])
+await db.exec(base.split('await db.exec(`')[1].split('`)')[0].replace(
+ /create function workspace_user_can_access_work_item[^\n]+\n/,
+ () => "create function workspace_user_can_access_work_item(p_workspace_id uuid,p_work_item_id uuid,p_user_id uuid) returns boolean language sql as $$ select exists(select 1 from workspace_memberships m join work_items t on t.workspace_id=m.workspace_id where m.workspace_id=p_workspace_id and m.user_id=p_user_id and t.id=p_work_item_id and (m.role in ('owner','admin') or (t.visibility='workspace' and t.area<>'admin'))) $$;\n"
+))
 await db.exec(`alter table workspaces add column slug text default 'test';alter table relationships add column fulfilment_manager_user_id uuid;
 create table workspace_teams(id uuid primary key,workspace_id uuid,name text,kind text,relationship_id uuid,archived_at timestamptz);
 create table workspace_native_conversations(id uuid primary key,workspace_id uuid,team_id uuid,kind text,archived_at timestamptz);
@@ -38,6 +41,30 @@ console.log('PASS: uncertain provider requests do not repeat; ordinary roles can
 for(let n=0;n<5;n++)await sql("insert into work_queue_effort_runs(workspace_id,work_item_id,user_id,bucket,source_fingerprint,base_minutes,active_seconds,completed_at) values($1,$2,$3,'sample','x',60,7200,now())",[w,id(11),u]);
 await sql('select calibrate_queue_effort($1,$2)',[w,u]);assert.equal(Number((await one("select factor from work_queue_calibration where bucket='sample'")).factor),1.05);await sql('select calibrate_queue_effort($1,$2)',[w,u]);assert.equal(Number((await one("select factor from work_queue_calibration where bucket='sample'")).factor),1.05);
 console.log('PASS: five samples make one bounded calibration update, replay makes none')
+await db.exec(`create schema auth;create function auth.uid() returns uuid language sql as $$select null::uuid$$;
+alter table relationships add column seller_user_id uuid;
+alter table relationship_service_instances add column import_id uuid;
+alter table work_items add column native_key text;
+create table relationship_onboarding_session_steps(id uuid primary key,workspace_id uuid,session_id uuid,session_module_id uuid);
+create table service_instance_module_requirements(workspace_id uuid,instance_id uuid,session_id uuid,session_module_id uuid,review_required boolean);
+create function workspace_user_can_access_session_step(uuid,uuid,uuid) returns boolean language sql as $$select false$$;
+create function workspace_user_fully_covers_relationship(uuid,uuid,uuid) returns boolean language sql as $$select false$$;`)
+const reviewMigration=await readFile(new URL('../supabase/migrations/20260927120000_onboarding_review_queue_access.sql',import.meta.url),'utf8')
+await db.exec(reviewMigration.slice(reviewMigration.indexOf('create or replace function public.workspace_user_can_access_work_item('),reviewMigration.indexOf('\nnotify pgrst')))
+const review=id(200),session=id(201),reviewModule=id(202),step=id(203),instance=id(204),service=id(205)
+await sql('insert into relationship_service_instances(id,workspace_id,relationship_id,service_id,assignee_user_id) values($1,$2,$3,$4,$5)',[instance,w,client,service,u])
+await sql('insert into relationship_onboarding_session_steps values($1,$2,$3,$4)',[step,w,session,reviewModule])
+await sql('insert into service_instance_module_requirements values($1,$2,$3,$4,true)',[w,instance,session,reviewModule])
+await sql('insert into work_items(id,workspace_id,execution_owner_id,title,instructions,workflow_role,native_kind,native_key,metadata) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[review,w,u,'Shared service review','Check the submitted access','review','relationship_workflow',`${session}:service-review:${step}`,{session_id:session,session_step_id:step}])
+await sql('insert into work_item_relationships values($1,$2,$3)',[w,review,client])
+await sql('insert into service_instance_work_items values($1,$2,$3)',[w,review,instance])
+assert.equal((await one('select personal_queue_owns($1,$2,$3) ok',[w,review,u])).ok,true)
+await cmd(200,'start')
+const reviewDispute=(await dispute(200)).q
+await one('select resolve_queue_dispute($1,$2,$3,$4,true)',[w,admin,reviewDispute.id,'The required access was supplied'])
+await cmd(200,'start');await cmd(200,'complete')
+assert.equal((await one('select status from work_items where id=$1',[review])).status,'done')
+console.log('PASS: scoped review owner can accept, dispute to the internal team, resume and complete')
 await db.exec(`create index fixture_queue_relationship on work_item_relationships(workspace_id,work_item_id);create index fixture_queue_links on service_instance_work_items(workspace_id,work_item_id);`)
 await sql("insert into work_items(id,workspace_id,execution_owner_id,title) select md5('feedback-growth-'||g)::uuid,$1,$2,'Growth item' from generate_series(1,1000) g",[w,u]);
 const plan=await sql('explain(analyze,buffers) select read_personal_work_queue($1,$2)',[w,u]);console.log(plan.map(x=>x['QUERY PLAN']).join('\n'));

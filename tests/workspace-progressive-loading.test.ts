@@ -169,60 +169,19 @@ test("workspace panel homes share one persistent banner inside their tab frame",
     ]) assert.doesNotMatch(source(path), /WorkspaceBanner/, `${path} must not rebuild shared banner chrome`)
 })
 
-test("route loading UI reflects each panel's real composition", () => {
-    const loading = source("components/workspace/PanelRouteLoading.tsx")
-    const currentLoading = source("components/workspace/CurrentPanelRouteLoading.tsx")
-    const opening = source("components/workspace/WorkspaceTabOpeningState.tsx")
-    assert.match(loading, /function CommunicationsLoading/)
-    assert.match(loading, /lg:grid-cols-\[22rem_minmax\(0,1fr\)\]/)
-    assert.match(loading, /function AssetsLoading/)
-    assert.match(loading, /aspect-\[4\/3\]/)
-    assert.match(loading, /function RelationshipsLoading/)
-    assert.match(loading, /function OnboardingLoading/)
-    assert.match(loading, /function SettingsLoading/)
-    assert.match(loading, /function OkrTableSkeleton/)
-    assert.match(loading, /tabs=\{\["Work", "OKRs", "Maintenance", "Activity"\]\} activeTab=\{activeTab\}/)
-    assert.match(loading, /const title = polls \? "Poll history" : "Saved leads"/)
-    assert.match(loading, /tabs=\{\["Work Items", "Assets", "Notes"\]\} activeTab="Assets"/)
-    assert.match(loading, /variant === "admin-okrs"[\s\S]*?<AdminLoading section="okrs"/)
-    assert.match(currentLoading, /searchParams\.get\("view"\) === "okrs"[\s\S]*?"admin-okrs"/)
-    assert.match(currentLoading, /searchParams\.get\("mode"\) === "team"[\s\S]*?"communications-team"/)
-    assert.match(opening, /nested === "okrs"[\s\S]*?"admin-okrs"/)
-    assert.match(source("components/admin/AdminPanelNav.tsx"), /admin\/okrs/)
+test("deferred onboarding and activity use the same shared pending bodies as route loading", () => {
+    const onboardingPage = source("app/[workspaceSlug]/onboarding/page.tsx")
+    const routeLoading = source("components/workspace/PanelRouteLoading.tsx")
+    const sharedLoading = source("components/panel/PanelLoading.tsx")
+    const activity = source("components/admin/ActivityTrends.tsx")
+    const activityRemote = source("components/admin/ActivityTrendsRemote.tsx")
 
-    const variants = {
-        admin: "admin",
-        "client-connections": "client-connections",
-        assets: "assets",
-        communications: "communications",
-        leadgen: "leadgen",
-        onboarding: "onboarding",
-        relationships: "relationships",
-        settings: "settings",
-        work: "fulfilment",
-        "work-items": "work-items",
-    }
-    for (const [route, variant] of Object.entries(variants)) {
-        assert.match(source(`app/[workspaceSlug]/${route}/loading.tsx`), new RegExp(`variant=\\"${variant}\\"`), `${route} needs its own loading composition`)
-    }
-
-    const nestedVariants = {
-        "admin/activity": "admin-activity",
-        "admin/maintenance": "admin-maintenance",
-        "admin/okrs": "admin-okrs",
-        "leadgen/polls": "leadgen-polls",
-        "admin/activity/[eventId]": "detail",
-        "admin/okrs/[okrId]": "detail",
-        "assets/[id]": "detail",
-        "leadgen/poll/[pollId]": "detail",
-        "leadgen/company/[companyId]": "detail",
-        "onboarding/[relationshipId]": "detail",
-        "work/[relationshipId]": "detail",
-        "work-items/[id]": "detail",
-    }
-    for (const [route, variant] of Object.entries(nestedVariants)) {
-        assert.match(source(`app/[workspaceSlug]/${route}/loading.tsx`), new RegExp(`variant=\\"${variant}\\"`), `${route} needs a route-shaped loading composition`)
-    }
+    assert.match(onboardingPage, /function OnboardingPanelFallback\(\)\s*\{\s*return <OnboardingPanelLoading \/>/)
+    assert.match(routeLoading, /function OnboardingLoading\(\)[\s\S]*?<OnboardingPanelLoading \/>/)
+    assert.match(sharedLoading, /export function OnboardingPanelLoading\(/)
+    assert.match(activity, /export \{ ActivityTrendsLoading \} from "@\/components\/panel\/PanelLoading"/)
+    assert.match(routeLoading, /section === "activity" \? <ActivityTrendsLoading \/>/)
+    assert.match(activityRemote, /<ActivityTrendsLoading \/>/)
 })
 
 test("shell-hosted loading states own their local desktop width without a second sidebar offset", () => {
@@ -230,7 +189,7 @@ test("shell-hosted loading states own their local desktop width without a second
     const detailLoading = source("components/workspace/DetailRouteLoading.tsx")
     const styles = source("app/globals.css")
 
-    assert.match(loading, /<main data-workspace-loading-root/)
+    assert.match(source("components/panel/PanelLoading.tsx"), /<main data-workspace-loading-root/)
     assert.match(detailLoading, /<main data-workspace-loading-root/)
     assert.match(styles, /main:not\(\[data-onboarding-full-window-preview\]\):not\(\[data-workspace-loading-root\]\)/)
     assert.match(loading, /className="absolute inset-0 overflow-hidden bg-black text-white"/)

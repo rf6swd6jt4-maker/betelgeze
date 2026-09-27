@@ -10,6 +10,18 @@ Keep the shell stacking order explicit: tab content `30`, relationship context `
 
 Top-bar mutation feedback uses short, bounded labels (`Saving…`, `Saved`, `Action failed`). Full error details stay in the originating form and the status tooltip/accessibility label; they must never expand the header or displace search, navigation, presence, or account controls.
 
+## Panel loading
+
+`PanelRouteLoading` is the presentation owner for panel opening, shared by `loading.tsx` and `WorkspaceTabOpeningState`. Use `components/panel/PanelLoading` for deferred sections of the same screen. Keep the shell, banner and any already resolved header outside section fallbacks.
+
+- Use the actual `PanelTabHeader`, compact statistics, filter rails and List geometry. Show stable titles and descriptions immediately, and reserve the normal action slot without creating an enabled action. Collections share restrained neutral placeholders; asset/catalogue grids and OKR tables retain their distinct content shape.
+- Loading tabs use the pure `PanelTabStrip` presentation, never the live `PanelTabs` navigation/prefetch owner. Until access is known, use neutral placeholders for optional Library destinations. No pending control should invite interaction or make a request.
+- Opening and deferred states must agree on layout. Reuse the same Onboarding rows/statistics and Activity chart placeholder between their route and section boundaries. A note detail uses a record fallback, not its parent collection fallback.
+- Communications keeps its conversation layout and Settings keeps its identity/form layout. Loading presentation does not own chat reads, viewport position, message anchoring or composer behavior.
+- Preserve warm content and existing cache ownership. Add no minimum loading duration, delayed reveal, extra request, timer, prefetch, transition on dimensions or whole-panel entrance animation. Replace placeholders as soon as their content is ready. Background refresh and writes retain their existing scoped owners and recovery semantics.
+- Decorative marks are hidden from assistive technology and use reduced-motion-aware animation. Label the pending region; avoid a live announcement on every skeleton row. Never present an empty result or a saved/completed claim while still waiting.
+- When changing a panel's structure, update its loading definition in the same change. Validate cold opening and section replacement at narrow mobile and desktop widths in both Chromium and WebKit; synthetic fixtures do not establish production latency or physical-device behavior.
+
 ## Offline recovery
 
 The online workspace retains its existing layout and network loading paths. `WorkspaceOfflineStatus` uses the shared compact `Status` mark and appears only when offline or messages need recovery; it links to saved chats. Sidebar destinations requiring a server are dimmed while offline, while loaded screens and chat composition remain available. Reconnection never reloads the active screen or interrupts typing.

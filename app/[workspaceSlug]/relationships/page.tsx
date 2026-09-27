@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import { PanelRouteLoading } from "@/components/workspace/PanelRouteLoading"
 import NativeRelationshipsPanel from "@/components/workspace/NativeRelationshipsPanel"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { RelationshipContextBridge } from "@/components/workspace/RelationshipContextBridge"
@@ -15,6 +16,6 @@ export default async function RelationshipPage({ params }: {params: Promise<{ wo
     const authorization = await requireWorkspacePanel(route.workspaceSlug, "relationships")
     return <>
         <WorkspaceTopBar userId={authorization.user.id} workspace={authorization.workspace} workspaceAccess={authorization.access} currentProduct="client-work" />
-        <Suspense fallback={<div className="px-4 py-6 text-sm text-neutral-500" role="status">Loading relationships…</div>}><Contents authorization={authorization} /></Suspense>
+        <Suspense fallback={<PanelRouteLoading variant="relationships" />}><Contents authorization={authorization} /></Suspense>
     </>
 }

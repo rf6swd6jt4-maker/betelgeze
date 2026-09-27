@@ -77,7 +77,7 @@ function UnifiedSection({ id, title, description, children }: { id: string; titl
 
 function SettingsSectionFallback({ id, title, description, height = "min-h-40" }: { id: string; title: string; description: string; height?: string }) {
     return <UnifiedSection id={id} title={title} description={description}>
-        <div aria-label={`Loading ${title} settings`} aria-busy="true" className={`${height} animate-pulse rounded-2xl border border-neutral-800 bg-neutral-900/70 p-5`}>
+        <div aria-label={`Loading ${title} settings`} aria-busy="true" className={`${height} motion-safe:animate-pulse rounded-2xl border border-neutral-800 bg-neutral-900/70 p-5`}>
             <div className="h-4 w-40 max-w-full rounded bg-neutral-800" />
             <div className="mt-4 h-10 rounded-lg bg-neutral-950" />
             <div className="mt-3 h-10 w-2/3 rounded-lg bg-neutral-950" />
@@ -87,7 +87,7 @@ function SettingsSectionFallback({ id, title, description, height = "min-h-40" }
 
 function IdentityFallback({ workspace }: { workspace: WorkspaceRecord }) {
     return <div aria-label="Loading workspace identity" aria-busy="true">
-        <div className="relative mb-16 h-48 animate-pulse rounded-xl border border-neutral-800 bg-neutral-900 sm:h-[var(--workspace-cover-height)] sm:rounded-2xl" style={{ "--workspace-cover-height": `${workspace.banner_height}px` } as CSSProperties}>
+        <div className="relative mb-16 h-48 motion-safe:animate-pulse rounded-xl border border-neutral-800 bg-neutral-900 sm:h-[var(--workspace-cover-height)] sm:rounded-2xl" style={{ "--workspace-cover-height": `${workspace.banner_height}px` } as CSSProperties}>
             {workspace.logo_path ? <div className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 sm:left-7 sm:h-[108px] sm:w-[108px]" /> : null}
         </div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 
 function LoadingMark() {
-    return <span aria-hidden="true" className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border border-neutral-700 border-t-neutral-300" />
+    return <span aria-hidden="true" className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin rounded-full border border-neutral-700 border-t-neutral-300" />
 }
 
 export function DetailLoadingLabel({ children }: { children: ReactNode }) {

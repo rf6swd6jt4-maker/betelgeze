@@ -69,9 +69,4 @@ export function ActivityTrends({ metrics, initialRange, stateKey, refreshing = f
     </div>
 }
 
-export function ActivityTrendsLoading() {
-    return <section className="mt-5" aria-label="Loading activity trends" aria-busy="true">
-        <div className="h-12 rounded border border-neutral-800 motion-safe:animate-pulse" />
-        <div className="mt-5 grid gap-3 md:grid-cols-2">{[0, 1, 2, 3].map((index) => <div key={index} className="aspect-[2/1] rounded-xl border border-neutral-800 bg-neutral-900 motion-safe:animate-pulse" />)}</div>
-    </section>
-}
+export { ActivityTrendsLoading } from "@/components/panel/PanelLoading"

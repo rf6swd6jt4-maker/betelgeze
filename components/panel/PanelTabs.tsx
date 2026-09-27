@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "@/components/workspace/WorkspaceNavigation"
 
 import { WORKSPACE_TAB_FRAME_PARAM, workspaceTabFrameUrl } from "@/lib/workspace-tabs"
+import { PanelTabStrip, panelTabClass } from "@/components/panel/PanelTabStrip"
 
 export type PanelTab = {
     key: string
@@ -37,7 +38,7 @@ export function PanelTabs({ items, active, ariaLabel }: { items: readonly PanelT
         return () => window.clearTimeout(timeout)
     }, [active, framedItems, router, tabId])
 
-    return <nav aria-label={ariaLabel} className="mt-5 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+    return <PanelTabStrip ariaLabel={ariaLabel}>
         {framedItems.map((item) => <Link
             key={item.key}
             href={item.navigationHref}
@@ -45,11 +46,11 @@ export function PanelTabs({ items, active, ariaLabel }: { items: readonly PanelT
             onPointerEnter={() => { if (tabId) router.prefetch(item.navigationHref) }}
             onFocus={() => { if (tabId) router.prefetch(item.navigationHref) }}
             onClick={() => setOptimisticSelection({ base: active, value: item.key })}
-            className={`shrink-0 rounded-lg px-3 py-2.5 sm:py-2 ${optimisticActive === item.key ? "bg-white font-medium text-black" : "border border-neutral-800 text-neutral-300 hover:border-neutral-600 hover:text-white"}`}
+            className={panelTabClass(optimisticActive === item.key)}
         >
             {item.label}
         </Link>)}
-    </nav>
+    </PanelTabStrip>
 }
 
 /** Local detail sections share panel-tab geometry without prefetching hidden data. */

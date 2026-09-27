@@ -1,3 +1,4 @@
+import { OnboardingPanelLoading, OnboardingLoadingRow, OnboardingLoadingSecondary } from "@/components/panel/PanelLoading"
 import Link from "next/link"
 import { Suspense } from "react"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
@@ -182,11 +183,7 @@ async function StuckBadge({ sessionId, detailsPromise }: { sessionId: string; de
 }
 
 function OnboardingSecondaryFallback() {
-    return <ListSecondaryRow className="min-h-[49px]">
-        <span aria-hidden="true" className="h-5 w-24 animate-pulse rounded-full bg-neutral-800" />
-        <span aria-hidden="true" className="hidden h-4 w-48 animate-pulse rounded bg-neutral-900 sm:inline" />
-        <span aria-hidden="true" className="ml-auto h-4 w-24 animate-pulse rounded bg-neutral-900" />
-    </ListSecondaryRow>
+    return <OnboardingLoadingSecondary />
 }
 
 async function OnboardingSecondary({ row, detailsPromise, staffMode, actions }: { row: OnboardingCoreRow; detailsPromise: Promise<OnboardingDetails>; staffMode: boolean; actions: Array<{ label: string; href?: string; copyText?: string }> }) {
@@ -313,18 +310,11 @@ async function OnboardingPanel({ workspaceId, workspaceSlug, customDomain, custo
 }
 
 function OnboardingListItemFallback() {
-    return <ListItem>
-        <ListPrimaryRow><span className="h-5 w-48 animate-pulse rounded bg-neutral-800" /><span className="ml-auto h-4 w-20 animate-pulse rounded bg-neutral-800" /></ListPrimaryRow>
-        <OnboardingSecondaryFallback />
-    </ListItem>
+    return <OnboardingLoadingRow />
 }
 
 function OnboardingPanelFallback() {
-    return <div aria-label="Loading onboarding" aria-busy="true">
-        <QuickStats items={[{ label: "Active", value: "—" }, { label: "Complete", value: "—" }, { label: "Stuck", value: "—" }]} />
-        <FilterRail ariaLabel="Loading onboarding filters">{[70, 84, 96, 78].map((width, index) => <span key={index} className="shrink-0 px-2 py-2"><span className="block h-4 animate-pulse rounded bg-neutral-800" style={{ width }} /></span>)}</FilterRail>
-        <List ariaLabel="Loading onboarding">{Array.from({ length: 5 }, (_, index) => <OnboardingListItemFallback key={index} />)}</List>
-    </div>
+    return <OnboardingPanelLoading />
 }
 
 export default async function RelationshipOnboardingPage({ params, searchParams }: PageProps) {

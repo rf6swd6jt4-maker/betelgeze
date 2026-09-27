@@ -9,7 +9,13 @@ function panelLoadingForUrl(value: string, workspaceSlug: string): { variant: Pa
     const [panel, nested] = segments
 
     if (panel === "sops" && nested) return { variant: "detail", title: "SOP" }
-    if (workspaceRouteIsRecordDetail(value, workspaceSlug, "http://localhost")) return { variant: "detail" as const, title: panel?.replace(/-/g, " ") ?? "record" }
+    if (workspaceRouteIsRecordDetail(value, workspaceSlug, "http://localhost")) {
+        const titles: Record<string, string> = {
+            relationships: "relationship", assets: "asset", notes: "note",
+            onboarding: "onboarding", work: "fulfilment", "work-items": "work item",
+        }
+        return { variant: "detail", title: panel === "admin" ? nested === "okrs" ? "OKR" : "activity event" : titles[panel] ?? "record" }
+    }
     if (panel === "admin") {
         if (nested === "activity") return { variant: "admin-activity" as const }
         if (nested === "maintenance") return { variant: "admin-maintenance" as const }
@@ -17,6 +23,7 @@ function panelLoadingForUrl(value: string, workspaceSlug: string): { variant: Pa
         if (!nested && url.searchParams.get("view") === "okrs") return { variant: "admin-okrs" as const }
         return { variant: "admin" as const }
     }
+    if (panel === "appointment-setting") return { variant: "client-connections" }
     if (panel === "leadgen") return { variant: nested === "polls" ? "leadgen-polls" as const : "leadgen" as const }
     if (panel === "communications" && (url.searchParams.get("mode") === "team" || url.searchParams.has("dm") || url.searchParams.has("nativeConversation"))) return { variant: "communications-team" as const }
     const variants: Record<string, PanelLoadingVariant> = {

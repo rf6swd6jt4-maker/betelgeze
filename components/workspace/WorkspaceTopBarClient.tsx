@@ -1,7 +1,7 @@
 "use client"
 
 import { workspaceFrameHasNavigationReceiver } from "@/lib/workspace-frame-navigation"
-import { captureWorkspaceFrameIdentity, confirmWorkspaceFrameDeparture, prepareWorkspaceFrameDeparture, workspaceResidentEvictions } from "@/lib/workspace-tab-departure"
+import { captureWorkspaceFrameIdentity, confirmWorkspaceFrameDeparture, prepareWorkspaceFrameDeparture, workspaceFrameDepartureReceiverReady, waitForWorkspaceFrameDepartureReceiver, workspaceResidentEvictions } from "@/lib/workspace-tab-departure"
 import { createWorkspaceShellStorage } from "@/lib/workspace-shell-storage"
 
 import { useOnline } from "@/components/pwa/useOnline"
@@ -510,6 +510,22 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         departureAbortRef.current?.abort()
         const controller = new AbortController()
         departureAbortRef.current = controller
+        // A duplicated frame can have real HTML before its root receiver mounts.
+        // Queue the latest destination until we can run the ordinary draft check.
+        if (options.destination) {
+            const { tabId, url } = options.destination
+            const frame = iframeRefs.current.get(tabId)
+            if (frame && !workspaceFrameDepartureReceiverReady(frame, tabId)) {
+                const ready = await waitForWorkspaceFrameDepartureReceiver(frame, tabId, window, controller.signal)
+                if (sequence !== nativeNavigationSequence.current || nativeAccountScopeRef.current !== accountScope || controller.signal.aborted || iframeRefs.current.get(tabId) !== frame) return false
+                if (!ready) {
+                    departureAbortRef.current = null
+                    navigationErrorRef.current.set(tabId, url)
+                    setNavigationStateByTab(current => ({ ...current, [tabId]: { status: "error", requestedUrl: url, error: "This tab is still starting. Please retry switching panels." } }))
+                    return false
+                }
+            }
+        }
         const residentSnapshot = residentTabIdsRef.current
         const departing = new Set<string>()
         if (options.closeTabId) departing.add(options.closeTabId)

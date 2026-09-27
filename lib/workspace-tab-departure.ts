@@ -24,6 +24,42 @@ export function captureWorkspaceFrameIdentity(frame: DepartureFrame) {
     } catch { return () => false }
 }
 
+/** Wait only for a newly committed frame's local receiver, never authorize departure.
+ * One cancellable, bounded wait belongs to the latest shell navigation intent.
+ */
+export function workspaceFrameDepartureReceiverReady(frame: DepartureFrame, tabId: string) {
+    try {
+        const root = frame.contentDocument?.documentElement
+        return Boolean(root && ((root.getAttribute(WORKSPACE_FRAME_NAVIGATION_ATTRIBUTE) === tabId && root.getAttribute(WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE))
+            || (!root.hasAttribute(WORKSPACE_FRAME_PAGE_ATTRIBUTE) && root.hasAttribute(WORKSPACE_FRAME_ERROR_ATTRIBUTE))))
+    } catch { return false }
+}
+
+export function waitForWorkspaceFrameDepartureReceiver(frame: DepartureFrame, tabId: string, host: Window, signal: AbortSignal, timeoutMs = 30_000): Promise<boolean> {
+    if (signal.aborted) return Promise.resolve(false)
+    if (workspaceFrameDepartureReceiverReady(frame, tabId)) return Promise.resolve(true)
+    return new Promise(resolve => {
+        let poll: number | undefined
+        let settled = false
+        const finish = (ready: boolean) => {
+            if (settled) return
+            settled = true
+            host.clearTimeout(deadline)
+            if (poll !== undefined) host.clearTimeout(poll)
+            signal.removeEventListener("abort", abort)
+            resolve(ready)
+        }
+        const abort = () => finish(false)
+        const check = () => {
+            if (workspaceFrameDepartureReceiverReady(frame, tabId)) finish(true)
+            else poll = host.setTimeout(check, 50)
+        }
+        const deadline = host.setTimeout(() => finish(false), timeoutMs)
+        signal.addEventListener("abort", abort, { once: true })
+        check()
+    })
+}
+
 /** Invoke in the task that commits removal, after all asynchronous checks finish. */
 export function confirmWorkspaceFrameDeparture(frame: DepartureFrame) {
     const confirm = confirmations.get(frame)

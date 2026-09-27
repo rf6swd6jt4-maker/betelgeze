@@ -13,7 +13,7 @@ const fixtures = [
     { name: "native-comms", expected: 6, script: "scripts/serve-native-comms-fixture.mjs", global: "nativeCommsFixtureResult", viewport: { width: 390, height: 850 } },
     { name: "native-comms-runtime", expected: 4, script: "scripts/serve-native-comms-fixture.mjs", args: ["--development"], global: "nativeCommsFixtureResult", query: "?runtime", viewport: { width: 390, height: 850 } },
     { name: "visual-origin", expected: 6, script: "scripts/serve-workspace-visual-origin-fixture.mjs" },
-    { name: "departure", expected: 32, script: "scripts/serve-workspace-departure-fixture.mjs", global: "departureFixtureResult" },
+    { name: "departure", expected: 34, script: "scripts/serve-workspace-departure-fixture.mjs", global: "departureFixtureResult" },
     { name: "drafts", expected: 25, script: "scripts/serve-workspace-draft-fixture.mjs", global: "workspaceDraftFixtureResult", query: "?autorun" },
     { name: "drafts-strict", expected: 25, script: "scripts/serve-workspace-draft-fixture.mjs", args: ["--development"], global: "workspaceDraftFixtureResult", query: "?autorun" },
     { name: "motion", expected: 5, script: "scripts/serve-chat-viewport-fixture.mjs" },

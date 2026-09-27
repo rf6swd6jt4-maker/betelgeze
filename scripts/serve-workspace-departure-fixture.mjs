@@ -165,6 +165,22 @@ await run('native owner replacement fences pending navigation',{slow:true},async
 await run('Suspense destination cannot accept late departed editor input',{late:'aftercheck'},async f=>{f.story.suspension=deferred();await f.context.navigateActiveTab('/fixture/native/suspense');f.story.suspension.done=true;f.story.suspension.release();await until(()=>f.element.querySelector('[data-route="/fixture/native/suspense"]'),'Suspense destination did not settle');});
 for(let index=0;index<5;index++)await run('synthetic warm native switch painted sample '+(index+1),{},async f=>{for(const owner of f.story.owners.values())owner.saved=owner.draft;const observation=f.armPaint('warm '+(index+1),state=>state.active==='b');await f.context.switchTab(f.context.tabsRef.current.find(t=>t.id==='b'));await until(()=>f.element.querySelector('[data-active="b"]'),'warm target did not commit');assert(f.context.activeTabIdRef.current==='b','wrong active tab');assert(f.element.querySelector('[data-editor="b"]'),'missing usable destination');await recordPaint(delays,observation)});
 for(let index=0;index<5;index++)await run('synthetic gated destination painted sample '+(index+1),{},async f=>{f.story.suspension=deferred();const observation=f.armPaint('gated destination '+(index+1),state=>state.tabs.find(tab=>tab.id==='a')?.url==='/fixture/native/cold');await f.context.navigateActiveTab('/fixture/native/cold');await wait(10);f.story.suspension.done=true;f.story.suspension.release();await until(()=>f.element.querySelector('[data-route="/fixture/native/cold"]'),'gated destination missing within 1500ms');await recordPaint(coldDelays,observation);for(const owner of f.story.owners.values())owner.saved=owner.draft});
+await run('new frame queues navigation until its receiver mounts',{frames:['a']},async f=>{
+ const frame=f.context.iframeRefs.current.get('a'),root=frame.contentDocument.documentElement,docId=root.getAttribute(departure.WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE);
+ root.removeAttribute(departure.WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE);root.removeAttribute('data-workspace-frame-navigation');
+ const pending=f.context.navigateActiveTab('/fixture/native/queued');await wait(70);
+ assert(f.context.tabsRef.current.find(t=>t.id==='a').url==='/fixture/native/a','destination committed before receiver');assert(!f.story.errors.length,'startup reported a save error');
+ const input=frame.contentDocument.querySelector('input');input.value='edit while starting';input.dispatchEvent(new frame.contentWindow.Event('input',{bubbles:true}));
+ root.setAttribute(departure.WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE,docId);root.setAttribute('data-workspace-frame-navigation','a');
+ await pending;assert(f.context.tabsRef.current.find(t=>t.id==='a').url==='/fixture/native/queued','queued destination lost');assert(!f.story.errors.length,'ready receiver refused');
+});
+await run('latest startup navigation wins and abort releases older wait',{frames:['a']},async f=>{
+ const frame=f.context.iframeRefs.current.get('a'),root=frame.contentDocument.documentElement,docId=root.getAttribute(departure.WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE);
+ root.removeAttribute(departure.WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE);root.removeAttribute('data-workspace-frame-navigation');
+ const first=f.context.navigateActiveTab('/fixture/native/old');await wait(20);const latest=f.context.navigateActiveTab('/fixture/native/latest');
+ root.setAttribute(departure.WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE,docId);root.setAttribute('data-workspace-frame-navigation','a');
+ await Promise.all([first,latest]);assert(f.context.tabsRef.current.find(t=>t.id==='a').url==='/fixture/native/latest','stale startup won');assert(!f.story.errors.length,'cancelled wait reported save error');
+});
 const report={status:'complete',sourceManifest:SOURCE_MANIFEST,variant:VARIANT,reactVersion:React.version,buildMode:BUILD_MODE,userAgent:navigator.userAgent,passed:results.filter(item=>item.passed).length,total:results.length,missingPaintSamples:missingPaint.length,missingPaint,paintDefinition:'Action start to matching committed Body layout effect plus the actual afterVisibleWorkspacePaint helper; both animation frame opportunities must be visible. Bounded at 2000ms with missing samples explicit.',cases:results,paintedWarmSwitchSamplesMs:delays.map(value=>Math.round(value*10)/10),paintedGatedDestinationSamplesMs:coldDelays.map(value=>Math.round(value*10)/10),limits:'Real React tree and extracted application callbacks, synthetic editors and mock shell dependencies. Synthetic frame receiver, no full app/auth/provider/physical-device evidence. Small timing samples are observations, not production speed.'};
 window.departureFixtureResult=report;document.querySelector('#result').textContent=JSON.stringify(report,null,2);document.title='Departure '+report.passed+'/'+report.total+' '+VARIANT;
 try{const response=await fetch('/results',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(report)});if(!response.ok)throw new Error('Result persistence HTTP '+response.status);document.querySelector('#result').textContent+='\nEvidence: '+(await response.json()).path}catch(error){document.querySelector('#result').textContent+='\nEvidence persistence failed: '+error.message}
@@ -175,7 +191,7 @@ import {WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE,WORKSPACE_FRAME_PAGE_ATTRIBUTE,WORKSP
 import {WORKSPACE_TAB_MESSAGE_SOURCE} from './workspace-tabs.js';
 const id=new URL(location.href).searchParams.get('id'),documentId=crypto.randomUUID(),input=document.querySelector('input');
 const story=window.story={draft:'unsaved '+id,saved:'saved '+id,lost:[],recordLoss:true};
-document.documentElement.setAttribute(WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE,documentId);document.documentElement.setAttribute(WORKSPACE_FRAME_PAGE_ATTRIBUTE,'true');
+document.documentElement.setAttribute('data-workspace-frame-navigation',id);document.documentElement.setAttribute(WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE,documentId);document.documentElement.setAttribute(WORKSPACE_FRAME_PAGE_ATTRIBUTE,'true');
 input.value=story.draft;input.addEventListener('input',()=>{story.draft=input.value});
 mutations.registerWorkspaceAutosaveFlusher(async()=>{if(story.fail)return false;story.saved=story.draft;return true},{checkpoint:()=>{if(story.checkpoint)story.saved=story.draft;return story.saved===story.draft}});
 let pending;

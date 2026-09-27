@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
-import { captureWorkspaceFrameIdentity, confirmWorkspaceFrameDeparture, prepareWorkspaceFrameDeparture, workspaceResidentEvictions, WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE, WORKSPACE_FRAME_PAGE_ATTRIBUTE, WORKSPACE_FRAME_ERROR_ATTRIBUTE } from "../lib/workspace-tab-departure.ts"
+import { captureWorkspaceFrameIdentity, confirmWorkspaceFrameDeparture, prepareWorkspaceFrameDeparture, waitForWorkspaceFrameDepartureReceiver, workspaceResidentEvictions, WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE, WORKSPACE_FRAME_PAGE_ATTRIBUTE, WORKSPACE_FRAME_ERROR_ATTRIBUTE } from "../lib/workspace-tab-departure.ts"
 import { checkpointWorkspaceAutosaves, registerWorkspaceAutosaveFlusher } from "../lib/workspace-mutations.ts"
 import { communicationsLocation } from "../lib/communications/native-host.ts"
 
@@ -120,7 +120,7 @@ test("residency preflights only displaced owners and excludes an explicitly clos
 
 const shell = ts.createSourceFile("shell.tsx", readFileSync("components/workspace/WorkspaceTopBarClient.tsx", "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 function evaluate(name: string, context: Record<string, unknown>) {
-    context = { captureWorkspaceFrameIdentity, nativeAccountScopeRef: { current: "scope" }, usesNativeCommunications: (url: string) => Boolean(communicationsLocation(url, "fixture")), flushSync: (commit: () => void) => commit(), ...context }
+    context = { workspaceFrameDepartureReceiverReady: () => true, captureWorkspaceFrameIdentity, nativeAccountScopeRef: { current: "scope" }, usesNativeCommunications: (url: string) => Boolean(communicationsLocation(url, "fixture")), flushSync: (commit: () => void) => commit(), ...context }
     let node: ts.Node | undefined
     function visit(item: ts.Node) {
         if ((ts.isFunctionDeclaration(item) && item.name?.text === name) || (ts.isVariableDeclaration(item) && item.name.getText(shell) === name)) node = item
@@ -412,5 +412,78 @@ test("actual superseded popstate cannot replace a newer committed address", asyn
         release(refusal === "at-commit" ? () => false : false)
         await pending
         assert.deepEqual(replacements, refusal === "current-failure" ? ["/fixture/a"] : [], refusal)
+    }
+})
+
+test("startup navigation waits before capturing the owner and still requires its draft acknowledgement", async () => {
+    for (const saves of [true, false]) {
+        let ready!: (ready: boolean) => void
+        let captured = 0, checked = 0, commits = 0
+        const errors: string[] = [], frame = {}
+        const context = {
+            useCallback: (fn: unknown) => fn, nativeNavigationSequence: { current: 0 }, warmAbortRef: { current: null }, departureAbortRef: { current: null },
+            residentTabIdsRef: { current: ["copy"] }, MAX_RESIDENT_WORKSPACE_FRAMES: 3, workspaceResidentEvictions,
+            iframeRefs: { current: new Map([["copy", frame]]) }, nativeRefs: { current: new Map() }, activeTabIdRef: { current: "copy" },
+            workspaceFrameDepartureReceiverReady: () => false,
+            waitForWorkspaceFrameDepartureReceiver: () => new Promise<boolean>(resolve => { ready = resolve }),
+            captureWorkspaceFrameIdentity: () => { captured++; return () => true },
+            prepareWorkspaceFrameDeparture: async () => { checked++; return saves }, confirmWorkspaceFrameDeparture: () => true,
+            window: {}, nativePanelsEnabled: true, nativeWorkspaceRoute: () => ({}), workspace: { slug: "fixture" },
+            setBackgroundMutationState() {}, setBackgroundMutationError: (error: string) => errors.push(error),
+        }
+        const pending = evaluate("prepareNativeLeave", context)({ destination: { tabId: "copy", url: "/fixture/assets" } })
+        assert.equal(captured, 0); assert.equal(checked, 0); assert.deepEqual(errors, [])
+        ready(true)
+        const confirmation = await pending
+        if (confirmation) confirmation(() => { commits++ })
+        assert.equal(captured, 1); assert.equal(checked, 1)
+        assert.equal(commits, saves ? 1 : 0)
+        assert.equal(errors.length, saves ? 0 : 1)
+    }
+})
+
+test("startup timeout is a navigation retry, not a failed save", async () => {
+    const errors: string[] = [], navigation: unknown[] = []
+    const context = {
+        useCallback: (fn: unknown) => fn, nativeNavigationSequence: { current: 0 }, warmAbortRef: { current: null }, departureAbortRef: { current: null },
+        iframeRefs: { current: new Map([["copy", {}]]) }, workspaceFrameDepartureReceiverReady: () => false,
+        waitForWorkspaceFrameDepartureReceiver: async () => false, window: {}, nativePanelsEnabled: true, workspace: { slug: "fixture" },
+        navigationErrorRef: { current: new Map() }, setNavigationStateByTab: (update: (state: object) => unknown) => navigation.push(update({})),
+        setBackgroundMutationState: (value: string) => errors.push(value), setBackgroundMutationError: (value: string) => errors.push(value),
+    }
+    assert.equal(await evaluate("prepareNativeLeave", context)({ destination: { tabId: "copy", url: "/fixture/assets" } }), false)
+    assert.deepEqual(errors, [])
+    assert.deepEqual(navigation, [{ copy: { status: "error", requestedUrl: "/fixture/assets", error: "This tab is still starting. Please retry switching panels." } }])
+})
+
+test("receiver wait observes readiness, expires and releases all timers on cancellation", async () => {
+    for (const outcome of ["ready", "timeout", "abort"] as const) {
+        let now = 0, id = 0
+        const timers = new Map<number, { at: number; callback: () => void }>()
+        const host = {
+            setTimeout(callback: () => void, delay: number) { const key = ++id; timers.set(key, { at: now + delay, callback }); return key },
+            clearTimeout(key: number) { timers.delete(key) },
+        }
+        const advance = (ms: number) => {
+            const end = now + ms
+            while (true) {
+                const next = [...timers].sort((a, b) => a[1].at - b[1].at)[0]
+                if (!next || next[1].at > end) break
+                now = next[1].at; timers.delete(next[0]); next[1].callback()
+            }
+            now = end
+        }
+        const attributes = new Map<string, string>()
+        const frame = { contentDocument: { documentElement: { getAttribute: (key: string) => attributes.get(key), hasAttribute: (key: string) => attributes.has(key) } } }
+        const controller = new AbortController()
+        const pending = waitForWorkspaceFrameDepartureReceiver(frame as unknown as HTMLIFrameElement, "copy", host as unknown as Window, controller.signal, 100)
+        if (outcome === "ready") {
+            attributes.set(WORKSPACE_FRAME_DOCUMENT_ATTRIBUTE, "new-document")
+            attributes.set("data-workspace-frame-navigation", "copy")
+            advance(50)
+        } else if (outcome === "abort") controller.abort()
+        else advance(100)
+        assert.equal(await pending, outcome === "ready")
+        assert.equal(timers.size, 0, outcome)
     }
 })

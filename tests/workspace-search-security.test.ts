@@ -3,163 +3,51 @@ import test from "node:test"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
 
+// These tests execute the HTTP owner against a compact RPC boundary. Actual
+// policy, grants, matching and revocation execute in validate-workspace-search-retrieval.mjs.
 type Row = Record<string, unknown>
-type QueryCall = { table: string; fields: string; filters: Array<[string, string, unknown]>; limit?: number }
-type SearchResult = { id: string; label: string; description: string; href: string; hubHref?: string }
-type SearchOptions = {
-    role?: "owner" | "admin" | "staff" | "unknown"
-    authenticated?: boolean
-    member?: boolean
-    workspaceStatus?: string
-    schemaReady?: boolean
-    capabilities?: string[]
-    relationships?: string[]
-    workItems?: string[]
-    canSell?: boolean
-    contactRelationships?: string[]
-    scopeError?: boolean
-    scopeValue?: unknown
-    tables?: Record<string, Row[]>
-    errors?: string[]
-    hangs?: string[]
-    deadlineMs?: number
-    preflight?: Promise<void>
-    deliveryScope?: Promise<void>
+type Result = { id: string; label: string; description: string; href: string }
+const id = (n: number) => `10000000-0000-0000-0000-${String(n).padStart(12, "0")}`
+const WORKSPACE = id(1), USER = id(2), RELATIONSHIP = id(3), WORK = id(4)
+const categories = ["relationships", "work_items", "okrs", "key_results", "admin_activity", "modules", "services", "clients", "assets", "notes", "channels", "activities"]
+function snapshot(role = "staff", records: Row = {}): Row {
+    return { workspace: { id: WORKSPACE, slug: "alpha", name: "Fixture workspace" }, role, can_sell: false,
+        capabilities: ["fulfilment.manage", "communications.manage"], ...Object.fromEntries(categories.map(key => [key, []])), ...records }
 }
-
-const WORKSPACE = "workspace-a"
-const USER = "user-a"
-const SENTINEL = "zephyrneedle"
-const adminTables = [ "client_activity", "workspace_okrs", "workspace_okr_key_results", "workspace_admin_activity", "onboarding_modules", "onboarding_module_revisions", "onboarding_services", "onboarding_service_revisions", "assets", "notes"]
+function records(): Row {
+    return {
+        relationships: [{ id: RELATIONSHIP, primary_person_name: "Needle person", primary_email: "needle@example.test", primary_phone: null, business_name: "Company" }],
+        work_items: [{ id: WORK, title: "Needle work", description: null, kind: "standard", visibility: "workspace", native_href: "/private-canary", native_id: "private-canary" }],
+        okrs: [{ id: id(5), objective: "Needle objective", objective_type: "committed", description: null, status: "active", period_end: "2026-12-31" }],
+        key_results: [{ id: id(6), name: "Needle result", description: null }],
+        admin_activity: [{ id: id(7), summary: "Needle event", category: "system", level: "info", entity_href: "/private-canary" }],
+        modules: [{ id: id(8), name: "Needle module", description: "Module", status: "published", definition: { secret: "private-canary" } }],
+        services: [{ id: id(9), name: "Needle service", description: null, state: "active" }],
+        clients: [{ id: id(10), name: "Needle client", email: null, phone: null, relationship_id: RELATIONSHIP }],
+        assets: [{ id: id(11), title: "Needle asset", storage_key: "private-canary" }],
+        notes: [{ id: id(12), name: "Needle note", description: "Note" }],
+        channels: [{ relationship_id: RELATIONSHIP, external_address: "needle@example.test", provider: "email", id: "private-canary" }],
+        activities: [{ id: id(13), relationship_id: RELATIONSHIP, activity_text: "Needle activity", activity_type: "update" }],
+    }
+}
 const codeCache = new Map<string, string>()
 function sourceCode(path: string) {
-    let code = codeCache.get(path)
-    if (!code) {
-        code = ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
-        codeCache.set(path, code)
-    }
-    return code
+    if (!codeCache.has(path)) codeCache.set(path, ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)
+    return codeCache.get(path)!
 }
-
-function relationship(id = "relationship-a", workspaceId = WORKSPACE): Row {
-    return { id, workspace_id: workspaceId, client_id: `client-${id}`, leadgen_company_id: null, primary_person_name: `${SENTINEL} person`, primary_email: `${SENTINEL}@example.test`, primary_phone: null, business_name: "Fixture company", notes_summary: `${SENTINEL} reference`, lifecycle_phase: "fulfilment", status: "active" }
-}
-function fixtures(): Record<string, Row[]> {
-    return {
-        relationships: [relationship()],
-        work_items: [{ id: "work-a", workspace_id: WORKSPACE, title: `${SENTINEL} work`, description: `${SENTINEL} instructions`, visibility: "workspace", kind: "standard", native_href: "/alpha/relationships/relationship-a" }, { id: "work-private", workspace_id: WORKSPACE, title: `${SENTINEL} private`, visibility: "admins_only", kind: "maintenance" }],
-        client_communication_channels: [{ id: "channel-a", workspace_id: WORKSPACE, client_id: "client-relationship-a", external_address: `${SENTINEL}@example.test`, provider: "email" }],
-        clients: [{ id: "client-relationship-a", workspace_id: WORKSPACE, relationship_id: "relationship-a", name: `${SENTINEL} client`, email: `${SENTINEL}@example.test`, archived_at: null }],
-        client_activity: [{ id: "activity-a", workspace_id: WORKSPACE, client_id: "client-relationship-a", activity_text: `${SENTINEL} activity`, activity_type: "update" }],
-        assets: [{ id: "asset-a", workspace_id: WORKSPACE, title: `${SENTINEL} asset`, description: "Asset", asset_kind: "file", source_kind: "upload" }],
-        notes: [{ id: "note-a", workspace_id: WORKSPACE, name: `${SENTINEL} note`, description: "Note" }],
-        workspace_okrs: [{ id: "okr-a", workspace_id: WORKSPACE, objective: `${SENTINEL} objective`, description: "Objective", objective_type: "committed", status: "active", period_end: "2026-12-31" }],
-        workspace_okr_key_results: [{ id: "kr-a", workspace_id: WORKSPACE, okr_id: "okr-a", name: `${SENTINEL} key result`, description: "Key result" }],
-        workspace_admin_activity: [{ id: "event-a", workspace_id: WORKSPACE, summary: `${SENTINEL} admin event`, category: "system", level: "info" }],
-        onboarding_modules: [{ id: "module-a", workspace_id: WORKSPACE, internal_code: "module-a", status: "published" }],
-        onboarding_module_revisions: [{ id: "module-revision-a", module_id: "module-a", workspace_id: WORKSPACE, definition: { name: `${SENTINEL} module`, description: "Module" }, status: "published" }],
-        onboarding_services: [{ id: "service-a", workspace_id: WORKSPACE, internal_code: "service-a", state: "active" }],
-        onboarding_service_revisions: [{ id: "service-revision-a", service_id: "service-a", workspace_id: WORKSPACE, name: `${SENTINEL} service`, description: "Service" }],
-    }
-}
-
-function harness(options: SearchOptions = {}) {
-    const role = options.role ?? "staff"
-    const privileged = role === "owner" || role === "admin"
-    const signals: AbortSignal[] = []
-    const calls: QueryCall[] = []
-    const ownerCalls: string[] = []
-    const rpcCalls: Array<{ name: string; args: Row }> = []
-    const tables: Record<string, Row[]> = {
-        ...fixtures(),
-        workspaces: [{ id: WORKSPACE, slug: "alpha", name: "Fixture workspace", status: options.workspaceStatus ?? "active" }],
-        workspace_memberships: options.member === false ? [] : [{ workspace_id: WORKSPACE, user_id: USER, role }],
-        search_contact_participants: (options.contactRelationships ?? []).map((relationship_id) => ({ workspace_id: WORKSPACE, user_id: USER, relationship_id })),
-        ...options.tables,
-    }
-    function waitForAbort(signal?: AbortSignal): Promise<never> {
-        assert.ok(signal, "A pending database read must receive the request signal")
-        return new Promise((_, reject) => {
-            if (signal.aborted) reject(signal.reason)
-            else signal.addEventListener("abort", () => reject(signal.reason), { once: true })
-        })
-    }
-    function from(table: string) {
-        const call: QueryCall = { table, fields: "*", filters: [] }
-        let signal: AbortSignal | undefined
-        let single = false
-        const query = {
-            abortSignal(value: AbortSignal) { signal = value; return this },
-            select(fields: string) { call.fields = fields; return this },
-            eq(field: string, value: unknown) { call.filters.push(["eq", field, value]); return this },
-            in(field: string, values: unknown[]) { call.filters.push(["in", field, values]); return this },
-            is(field: string, value: unknown) { call.filters.push(["is", field, value]); return this },
-            neq(field: string, value: unknown) { call.filters.push(["neq", field, value]); return this },
-            order() { return this },
-            limit(limit: number) { call.limit = limit; return this },
-            maybeSingle() { single = true; return this },
-            async then(resolve: (result: { data: unknown; error: unknown }) => unknown, reject: (reason: unknown) => unknown) {
-                calls.push(call)
-                if (signal) signals.push(signal)
-                if (options.hangs?.includes(table)) return waitForAbort(signal).then(resolve, reject)
-                if (options.errors?.includes(table)) return Promise.resolve(resolve({ data: null, error: { code: "TEST_FAILURE", message: "Synthetic read failure" } }))
-                let rows = (tables[table] ?? []).filter((row) => call.filters.every(([operation, field, value]) => operation === "in" ? (value as unknown[]).includes(row[field]) : operation === "neq" ? row[field] !== value : row[field] === value))
-                if (call.limit !== undefined) rows = rows.slice(0, call.limit)
-                if (call.fields !== "*") rows = rows.map((row) => Object.fromEntries(call.fields.split(",").map((field) => field.trim()).filter(Boolean).map((field) => {
-                    const [alias, expression] = field.split(":")
-                    if (!expression) return [field, row[field]]
-                    const [column, key] = expression.split("->")
-                    return [alias, key ? (row[column] as Row | undefined)?.[key] : row[column]]
-                })))
-                return Promise.resolve(resolve({ data: single ? rows[0] ?? null : rows, error: null }))
-            },
-        }
-        return query
-    }
-    const supabase = { from, rpc: (name: string, args: Row) => {
-        let signal: AbortSignal | undefined
-        const run = async () => {
-        rpcCalls.push({ name, args })
-        if (signal) signals.push(signal)
-        if (options.hangs?.includes(name)) return waitForAbort(signal)
-        if (name === "read_search_contact_channels") {
-            assert.equal(args.p_workspace_id, WORKSPACE)
-            assert.equal(args.p_user_id, USER)
-            if (options.errors?.includes(name)) return { data: null, error: { message: "Synthetic contact access failure" } }
-            const membership = tables.workspace_memberships.some((row) => row.workspace_id === args.p_workspace_id && row.user_id === args.p_user_id)
-            const readable = new Set(tables.search_contact_participants.filter((row) => membership && row.workspace_id === args.p_workspace_id && row.user_id === args.p_user_id).map((row) => row.relationship_id))
-            const clients = new Map(tables.clients.filter((row) => row.workspace_id === args.p_workspace_id && row.archived_at === null && readable.has(row.relationship_id)).map((row) => [row.id, row]))
-            return { data: tables.client_communication_channels.filter((row) => row.workspace_id === args.p_workspace_id && clients.has(row.client_id)).slice(0, 60).map((row) => ({ id: row.id, relationship_id: clients.get(row.client_id)!.relationship_id, external_address: row.external_address, provider: row.provider })), error: null }
-        }
-        if (name === "workspace_user_can_sell") return { data: options.canSell ?? privileged, error: options.errors?.includes(name) ? { message: "Synthetic failure" } : null }
-        throw new Error(`Unexpected RPC: ${name}`)
-        }
-        return {
-            abortSignal(value: AbortSignal) { signal = value; return this },
-            then(resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) { return run().then(resolve, reject) },
-        }
-    } }
-    const allowedRelationships = privileged ? null : new Set(options.relationships ?? [])
-    const allowedWorkItems = privileged ? null : new Set(options.workItems ?? [])
-    const workspaceAccess = { workspaceId: WORKSPACE, workspaceSlug: "alpha", userId: USER, role, capabilities: options.capabilities ?? ["fulfilment.manage", "communications.manage"], allowedServiceIds: [], serviceAccessSchemaReady: options.schemaReady !== false }
+function harness(options: { value?: unknown; authenticated?: boolean; authError?: boolean; authPending?: Promise<void>; error?: boolean; hangs?: boolean; deadlineMs?: number } = {}) {
+    let value = "value" in options ? options.value : snapshot()
+    const calls: Array<{ name: string; args: Row; signal: AbortSignal }> = []
+    const supabase = { rpc(name: string, args: Row) { return { async abortSignal(signal: AbortSignal) {
+        calls.push({ name, args, signal })
+        if (options.hangs) return new Promise(() => {}) // Prove the owner also bounds noncooperative transports.
+        return { data: value, error: options.error ? { message: "private backend canary" } : null }
+    } } } }
     const mocks: Record<string, unknown> = {
         "server-only": {},
         "@/lib/supabase/admin": { supabaseAdmin: supabase },
-        "@/lib/supabase/server": { createSupabaseServerClient: async () => supabase },
-        "@/lib/auth/aal": { getAal2User: async () => options.authenticated === false ? null : { id: USER } },
-        "@/lib/workspaces": { normalizeWorkspaceRole: (value: unknown) => ["owner", "admin", "staff"].includes(String(value)) ? value : null },
-        "@/lib/workspace-access": {
-            loadDeliveryScope: async (workspaceId: string, userId: string) => {
-                ownerCalls.push("loadDeliveryScope")
-                assert.equal(workspaceId, WORKSPACE)
-                assert.equal(userId, USER)
-                await options.deliveryScope
-                if (options.scopeError) throw new Error("Could not verify client delivery access.")
-                return "scopeValue" in options ? options.scopeValue : { relationships: [...(allowedRelationships ?? [])], full_relationships: [], work_items: [...(allowedWorkItems ?? [])] }
-            },
-            loadWorkspaceAccess: async () => { ownerCalls.push("loadWorkspaceAccess"); await options.preflight; return workspaceAccess },
-            workspaceAccessHasCapability: (access: typeof workspaceAccess, capability: string) => privileged || access.capabilities.includes(capability),
-        },
+        "@/lib/supabase/server": { createSupabaseServerClient: async () => ({}) },
+        "@/lib/auth/aal": { getAal2User: async () => { await options.authPending; if (options.authError) throw new Error("private auth canary"); return options.authenticated === false ? null : { id: USER } } },
     }
     const modules = new Map<string, Record<string, unknown>>()
     function load(path: string): Record<string, unknown> {
@@ -174,314 +62,174 @@ function harness(options: SearchOptions = {}) {
         return exports
     }
     const route = load("app/api/workspaces/[workspaceSlug]/search/route.ts")
-    return { calls, ownerCalls, rpcCalls, tables, signals, async search(query = SENTINEL, slug = "alpha", signal = new AbortController().signal) {
-        const response = await (route.GET as (request: unknown, context: unknown) => Promise<Response>)({ signal, nextUrl: new URL(`https://example.test/api/workspaces/${slug}/search?q=${encodeURIComponent(query)}`) }, { params: Promise.resolve({ workspaceSlug: slug }) })
+    return { calls, setValue(next: unknown) { value = next }, async search(query = "needle", signal = new AbortController().signal, slug = "alpha") {
+        const response = await (route.GET as (request: unknown, context: unknown) => Promise<Response>)({ signal, nextUrl: new URL(`https://example.test/api/workspaces/${slug}/search?q=${encodeURIComponent(query)}&userId=forged&role=owner`) }, { params: Promise.resolve({ workspaceSlug: slug }) })
         const body = await response.text()
-        return { response, body, results: (JSON.parse(body).results ?? []) as SearchResult[] }
+        return { response, body, results: JSON.parse(body).results as Result[], json: JSON.parse(body) }
     } }
 }
 
-test("search does not disclose unrelated contact identifiers or values to staff, sellers, or managers", async () => {
-    for (const capabilities of [["fulfilment.manage", "communications.manage"], ["relationships.view", "communications.manage"]]) {
-        const fixture = harness({ capabilities })
-        const { response, body, results } = await fixture.search()
-        assert.equal(response.status, 200)
-        assert.deepEqual(results, [])
-        assert.ok(!body.includes("channel-a") && !body.includes(SENTINEL))
-    }
-})
-
-test("owners and admins retain every existing searchable record category", async () => {
-    const expected = ["relationship-relationship-a", "work-work-a", "work-work-private", "okr-okr-a", "okr-key-result-kr-a", "admin-activity-event-a", "onboarding-module-module-a", "onboarding-service-service-a", "client-client-relationship-a", "asset-asset-a", "note-note-a", "contact-relationship-a-email", "activity-activity-a"]
-    for (const role of ["owner", "admin"] as const) {
-        const { results } = await harness({ role, contactRelationships: ["relationship-a"] }).search()
-        assert.deepEqual(results.map((item) => item.id).sort(), [...expected].sort())
-    }
-})
-
-test("assigned staff can find readable relationship references and work without private native links", async () => {
-    const { results } = await harness({ relationships: ["relationship-a"], workItems: ["work-a"] }).search()
-    assert.ok(results.some((item) => item.id === "relationship-relationship-a"))
-    const work = results.find((item) => item.id === "work-work-a")
-    assert.ok(work)
-    assert.equal(work.hubHref, undefined)
-    assert.ok(!results.some((item) => item.id === "work-work-private"))
-})
-
-test("staff never query admin-only category tables or private work items", async () => {
-    const fixture = harness({ relationships: ["relationship-a"], workItems: ["work-a"] })
-    await fixture.search()
-    assert.deepEqual(fixture.calls.filter((call) => adminTables.includes(call.table)), [])
-    assert.ok(!fixture.calls.some((call) => call.table === "work_items" && call.filters.some(([, field, value]) => field === "visibility" && value === "admins_only")))
-})
-
-test("authorization lookup failure closes search before record retrieval", async () => {
-    const fixture = harness({ schemaReady: false })
-    const { response, results, body } = await fixture.search()
-    assert.equal(response.status, 503)
-    assert.deepEqual(results, [])
-    assert.ok(!body.includes(SENTINEL))
-    assert.ok(fixture.calls.every((call) => ["workspaces", "workspace_memberships"].includes(call.table)))
-})
-
-test("scope failure returns no partial navigation or record results", async () => {
-    const fixture = harness({ scopeError: true })
-    const { response, results } = await fixture.search("work")
-    assert.equal(response.status, 503)
-    assert.deepEqual(results, [])
-})
-
-test("search requires MFA, current membership, an active workspace and a recognized role", async () => {
-    for (const options of [{ authenticated: false }, { member: false }, { workspaceStatus: "archived" }, { role: "unknown" as const }]) {
-        const fixture = harness(options)
-        const { response, results } = await fixture.search()
-        assert.equal(response.status, 401)
-        assert.deepEqual(results, [])
-        assert.deepEqual(fixture.ownerCalls, [])
-        assert.ok(fixture.calls.every((call) => ["workspaces", "workspace_memberships"].includes(call.table)))
-    }
-})
-
-test("cross-workspace records cannot appear even for an administrator", async () => {
-    const foreign = Object.fromEntries(Object.entries(fixtures()).map(([table, rows]) => [table, rows.map((row) => ({ ...row, workspace_id: "workspace-b" }))]))
-    const { response, results, body } = await harness({ role: "admin", tables: foreign }).search()
-    assert.equal(response.status, 200)
-    assert.deepEqual(results, [])
-    assert.ok(!body.includes(SENTINEL))
-    const unknownWorkspace = await harness({ role: "admin" }).search(SENTINEL, "beta")
-    assert.equal(unknownWorkspace.response.status, 401)
-})
-
-test("revoked scopes do not reuse another request's readable results", async () => {
-    const granted = await harness({ relationships: ["relationship-a"], workItems: ["work-a"] }).search()
-    assert.ok(granted.results.some((item) => item.id === "work-work-a"))
-    const revoked = await harness().search()
-    assert.deepEqual(revoked.results, [])
-    assert.ok(!revoked.body.includes(SENTINEL))
-})
-
-test("manager-only relationship visibility does not advertise the seller-only creation action", async () => {
-    const manager = await harness({ capabilities: ["relationships.view"], canSell: false }).search("new relationship")
-    assert.ok(!manager.results.some((item) => item.id === "action-new-relationship"))
-    const seller = await harness({ capabilities: ["relationships.view"], canSell: true }).search("new relationship")
-    assert.ok(seller.results.some((item) => item.id === "action-new-relationship"))
-})
-
-test("search responses explicitly forbid private-data caching on success and denial", async () => {
-    for (const options of [{ role: "admin" as const }, { member: false }, { schemaReady: false }]) {
-        const { response } = await harness(options).search()
-        assert.match(response.headers.get("cache-control") ?? "", /no-store/)
-        assert.match(response.headers.get("cache-control") ?? "", /private/)
-    }
-})
-
-
-test("contact discovery follows conversation participation for every role, independently of delivery scope", async () => {
-    for (const role of ["owner", "admin", "staff"] as const) {
-        const nonParticipant = await harness({ role, relationships: ["relationship-a"] }).search()
-        assert.ok(!nonParticipant.results.some((item) => item.id.startsWith("contact-")))
-        const fixture = harness({ role, contactRelationships: ["relationship-a"] })
-        const participant = await fixture.search()
-        const contact = participant.results.find((item) => item.id.startsWith("contact-"))
-        assert.ok(contact)
-        assert.equal(contact.label, `${SENTINEL}@example.test`)
-        assert.ok(!participant.body.includes("channel-a"))
-        assert.equal(contact.href, "/alpha/communications?conversation=relationship-a")
-        assert.equal(fixture.rpcCalls.filter((call) => call.name === "read_search_contact_channels").length, 1)
-        assert.ok(!fixture.calls.some((call) => call.table === "client_communication_channels"))
-    }
-})
-
-test("contact matching excludes internal channel and client identifiers", async () => {
-    for (const query of ["channel-a", "client-relationship-a"]) {
-        const { results } = await harness({ contactRelationships: ["relationship-a"] }).search(query)
-        assert.ok(!results.some((item) => item.id.startsWith("contact-")))
-    }
-})
-
-test("contact authorization errors disclose neither partial results nor backend diagnostics", async () => {
-    const { response, body, results } = await harness({ contactRelationships: ["relationship-a"], errors: ["read_search_contact_channels"] }).search()
-    assert.equal(response.status, 503)
-    assert.deepEqual(results, [])
-    assert.ok(!body.includes(SENTINEL) && !body.includes("Synthetic"))
-})
-
-
-test("malformed staff delivery scope cannot become unrestricted access", async () => {
-    for (const scopeValue of [null, {}, { relationships: null, work_items: [] }, { relationships: [], work_items: null }]) {
-        const { response, results, body } = await harness({ scopeValue }).search()
-        assert.equal(response.status, 503)
-        assert.deepEqual(results, [])
-        assert.ok(!body.includes(SENTINEL))
-    }
-})
-
-test("workspace, membership and seller permission errors fail closed", async () => {
-    for (const failed of ["workspaces", "workspace_memberships", "workspace_user_can_sell"]) {
-        const { response, results, body } = await harness({ errors: [failed] }).search(failed === "workspace_user_can_sell" ? "new relationship" : SENTINEL)
-        assert.equal(response.status, 503)
-        assert.deepEqual(results, [])
-        assert.ok(!body.includes(SENTINEL) && !body.includes("Synthetic"))
-    }
-})
-
-test("staff cannot discover admin-area work even if a stale delivery scope includes its id", async () => {
-    const { results } = await harness({ workItems: ["work-a", "work-private"], tables: {
-        work_items: [{ id: "work-a", workspace_id: WORKSPACE, title: `${SENTINEL} admin`, area: "admin", visibility: "workspace" }, { id: "work-private", workspace_id: WORKSPACE, title: `${SENTINEL} private`, visibility: "admins_only" }],
-    } }).search()
-    assert.ok(!results.some((item) => item.id.startsWith("work-")))
-})
-
-test("library capability alone cannot reveal administrator collections or actions", async () => {
-    const fixture = harness({ capabilities: ["library.manage", "communications.manage"] })
-    const { results } = await fixture.search()
-    assert.deepEqual(results, [])
-    assert.ok(!fixture.calls.some((call) => adminTables.includes(call.table)))
-    const navigation = await fixture.search("add note")
-    assert.ok(!navigation.results.some((item) => item.id === "action-new-note"))
-})
-
-test("search shares delivery authorization once per request and never checks permission per result", async () => {
-    for (const count of [1, 500]) {
-        const rows = Array.from({ length: count }, (_, i) => ({ id: `work-${i}`, workspace_id: WORKSPACE, title: `${SENTINEL} item ${i}`, visibility: "workspace" }))
-        const fixture = harness({ workItems: rows.map((row) => row.id), tables: { work_items: rows } })
-        const { results } = await fixture.search()
-        assert.ok(results.length <= 20)
-        assert.equal(fixture.ownerCalls.filter((name) => name === "loadDeliveryScope").length, 1)
-        assert.equal(fixture.rpcCalls.filter((call) => call.name === "workspace_user_can_sell").length, 0)
-        assert.equal(fixture.rpcCalls.filter((call) => call.name === "read_search_contact_channels").length, 1)
-        const workReads = fixture.calls.filter((call) => call.table === "work_items")
-        assert.equal(workReads.length, 1)
-        assert.ok(workReads[0].limit !== undefined && workReads[0].limit <= 80)
-    }
-})
-
-
-test("relationship matching does not expose hidden legacy client or lead identifiers", async () => {
-    const fixture = harness({ relationships: ["relationship-a"], tables: {
-        relationships: [{ ...relationship(), client_id: "hidden-client-canary", leadgen_company_id: "hidden-lead-canary" }],
-    } })
-    for (const query of ["hidden-client-canary", "hidden-lead-canary"]) {
-        const { results, body } = await fixture.search(query)
-        assert.deepEqual(results, [])
-        assert.ok(!body.includes("relationship-a"))
-    }
-})
-
-test("query admission accepts 200 characters and rejects 201 before search data reads", async () => {
-    const atLimit = await harness().search("x".repeat(200))
-    assert.equal(atLimit.response.status, 200)
+test("one abortable RPC uses only the verified actor and requested workspace", async () => {
     const fixture = harness()
-    const beyondLimit = await fixture.search("x".repeat(201))
-    assert.equal(beyondLimit.response.status, 400)
-    assert.deepEqual(beyondLimit.results, [])
-    assert.deepEqual(fixture.rpcCalls, [])
-    assert.ok(fixture.calls.every((call) => ["workspaces", "workspace_memberships"].includes(call.table)))
-    assert.match(beyondLimit.response.headers.get("cache-control") ?? "", /private, no-store/)
-    const unauthenticated = await harness({ authenticated: false }).search("x")
-    assert.equal(unauthenticated.response.status, 401)
+    assert.equal((await fixture.search("  NeEdLe  ")).response.status, 200)
+    assert.equal(fixture.calls.length, 1)
+    assert.deepEqual(fixture.calls[0].args, { p_workspace_slug: "alpha", p_user_id: USER, p_query: "needle" })
+    assert.equal(fixture.calls[0].name, "search_workspace_records")
+    assert.equal(fixture.calls[0].signal.aborted, true)
 })
 
-test("authorization failures expose only the generic private JSON response", async () => {
-    for (const options of [{ scopeError: true }, { schemaReady: false }, { errors: ["workspaces"] }, { errors: ["workspace_memberships"] }, { errors: ["workspace_user_can_sell"] }, { errors: ["read_search_contact_channels"] }]) {
-        const { response, body } = await harness(options).search(options.errors?.includes("workspace_user_can_sell") ? "new relationship" : SENTINEL)
-        assert.equal(response.status, 503)
-        assert.deepEqual(JSON.parse(body), { results: [], error: "Search unavailable" })
-        assert.match(response.headers.get("cache-control") ?? "", /private, no-store/)
+test("unauthenticated or incomplete MFA and failed authentication never query records", async () => {
+    for (const options of [{ authenticated: false }, { authError: true }]) {
+        const fixture = harness(options), response = await fixture.search()
+        assert.equal(response.response.status, options.authenticated === false ? 401 : 503)
+        assert.deepEqual(response.results, [])
+        assert.deepEqual(fixture.calls, [])
+        assert.ok(!response.body.includes("canary"))
     }
 })
 
-
-test("seller authorization runs only when the create action matches the search", async () => {
-    const unrelated = harness({ errors: ["workspace_user_can_sell"] })
-    assert.equal((await unrelated.search()).response.status, 200)
-    assert.equal(unrelated.rpcCalls.filter((call) => call.name === "workspace_user_can_sell").length, 0)
-    const action = harness({ canSell: true, capabilities: ["relationships.view"] })
-    const { results } = await action.search("new relationship")
-    assert.ok(results.some((item) => item.id === "action-new-relationship"))
-    assert.equal(action.rpcCalls.filter((call) => call.name === "workspace_user_can_sell").length, 1)
+test("denied workspace/member RPC snapshot has no navigation, scope or record disclosure", async () => {
+    const response = await harness({ value: null }).search("work")
+    assert.equal(response.response.status, 401)
+    assert.deepEqual(response.json, { results: [] })
 })
 
-
-test("every category read failure returns no partial discovery or backend error details", async () => {
-    for (const table of ["relationships", "clients", "work_items", ...adminTables]) {
-        const { response, results, body } = await harness({ role: "admin", errors: [table] }).search()
-        assert.equal(response.status, 503, table)
-        assert.deepEqual(results, [], table)
-        assert.deepEqual(JSON.parse(body), { results: [], error: "Search unavailable" }, table)
+test("owner and admin retain all existing record categories with canonical destinations", async () => {
+    for (const role of ["owner", "admin"]) {
+        const response = await harness({ value: snapshot(role, records()) }).search()
+        assert.equal(response.response.status, 200)
+        assert.equal(response.results.length, 12)
+        for (const result of response.results) assert.ok(result.href.startsWith("/alpha/"))
+        assert.equal(response.results.find(item => item.id === `work-${WORK}`)?.href, `/alpha/work-items/${WORK}`)
+        assert.equal(response.results.find(item => item.id.startsWith("admin-activity-"))?.href, `/alpha/admin/activity/${id(7)}`)
+        assert.equal(response.results.find(item => item.id.startsWith("contact-"))?.href, `/alpha/communications?conversation=${RELATIONSHIP}`)
+        assert.equal(response.results.find(item => item.id.startsWith("client-"))?.href, `/alpha/onboarding/${RELATIONSHIP}`)
+        assert.ok(!response.body.includes("private-canary"))
     }
 })
 
-test("successful empty and record responses identify the current account and workspace", async () => {
-    for (const query of ["", "x", SENTINEL, "nothing-matches-this-fixture"]) {
-        const fixture = harness({ role: "admin" })
-        const { response, body } = await fixture.search(query)
-        assert.equal(response.status, 200)
-        assert.deepEqual(JSON.parse(body).scope, { userId: USER, workspaceId: WORKSPACE })
-        if (query.length < 2) {
-            assert.deepEqual(fixture.ownerCalls, [])
-            assert.deepEqual(fixture.rpcCalls, [])
-        }
+test("staff relationship destination follows the permitted panel without a private native link", async () => {
+    for (const [capability, path] of [["fulfilment.manage", "work"], ["onboarding.manage", "onboarding"], ["relationships.view", "relationships"]]) {
+        const value = snapshot("staff", { relationships: records().relationships, work_items: records().work_items, capabilities: [capability] })
+        const response = await harness({ value }).search()
+        assert.equal(response.response.status, 200)
+        assert.equal(response.results.find(item => item.id.startsWith("relationship-"))?.href, `/alpha/${path}/${RELATIONSHIP}`)
+        assert.ok(!response.body.includes("private-canary"))
     }
 })
 
-test("the whole search deadline aborts pending reads and returns a generic timeout", async () => {
-    for (const name of ["relationships", "read_search_contact_channels"]) {
-        const fixture = harness({ hangs: [name], deadlineMs: 20 })
-        const { response, body, results } = await fixture.search()
-        assert.equal(response.status, 504)
-        assert.deepEqual(results, [])
-        assert.deepEqual(JSON.parse(body), { results: [], error: "Search timed out" })
-        assert.ok(fixture.signals.length > 0 && fixture.signals.every((signal) => signal.aborted))
+test("contact-only permission does not require a relationship hit or expose a channel ID", async () => {
+    for (const role of ["owner", "admin", "staff"]) {
+        const { results, body } = await harness({ value: snapshot(role, { channels: records().channels }) }).search()
+        assert.equal(results.length, 1)
+        assert.equal(results[0].href, `/alpha/communications?conversation=${RELATIONSHIP}`)
+        assert.ok(!body.includes("private-canary"))
     }
 })
 
-test("client cancellation aborts running reads and does not dispatch queued categories", async () => {
-    const abort = new AbortController()
-    const fixture = harness({ role: "admin", hangs: ["relationships", "clients", "work_items", "read_search_contact_channels", ...adminTables] })
-    const pending = fixture.search(SENTINEL, "alpha", abort.signal)
-    await new Promise((resolve) => setImmediate(resolve))
-    const calls = fixture.calls.length + fixture.rpcCalls.length
-    abort.abort()
-    const { response, body } = await pending
-    await new Promise((resolve) => setImmediate(resolve))
-    assert.equal(response.status, 503)
-    assert.deepEqual(JSON.parse(body), { results: [], error: "Search unavailable" })
-    assert.equal(fixture.calls.length + fixture.rpcCalls.length, calls)
-    assert.ok(fixture.signals.every((signal) => signal.aborted))
+test("staff rejects unexpected private rows instead of trusting capability flags", async () => {
+    for (const category of categories.filter(key => !["relationships", "work_items", "channels"].includes(key))) {
+        const value = snapshot("staff", { capabilities: ["library.manage", "admin.manage"], [category]: records()[category] })
+        const response = await harness({ value }).search("work")
+        assert.equal(response.response.status, 503, category)
+        assert.deepEqual(response.json, { results: [], error: "Search unavailable" })
+    }
+    const value = snapshot("staff", { work_items: [{ ...(records().work_items as Row[])[0], visibility: "admins_only" }] })
+    assert.equal((await harness({ value }).search()).response.status, 503)
 })
 
-test("late shared permission completion after deadline cannot start content reads", async () => {
+test("malformed or wrong-workspace snapshots fail closed with no partial navigation", async () => {
+    for (const value of [undefined, {}, [], snapshot("unknown"), snapshot("staff", { workspace: { id: WORKSPACE, slug: "beta", name: "Foreign" } }),
+        snapshot("staff", { capabilities: ["unknown"] }), snapshot("staff", { can_sell: null }), snapshot("staff", { channels: null }),
+        snapshot("staff", { relationships: [{ ...(records().relationships as Row[])[0], id: "../private-canary" }] }),
+        snapshot("staff", { relationships: [{ ...(records().relationships as Row[])[0], primary_person_name: null }] }),
+        snapshot("staff", { relationships: Array.from({ length: 9 }, () => (records().relationships as Row[])[0]) })]) {
+        const response = await harness({ value }).search("work")
+        assert.equal(response.response.status, 503)
+        assert.deepEqual(response.json, { results: [], error: "Search unavailable" })
+    }
+})
+
+test("fresh snapshots reflect access revocation without sharing private results across requests", async () => {
+    const fixture = harness({ value: snapshot("staff", { relationships: records().relationships }) })
+    assert.equal((await fixture.search()).results.length, 1)
+    fixture.setValue(snapshot())
+    assert.equal((await fixture.search()).results.length, 0)
+    fixture.setValue(null)
+    assert.equal((await fixture.search()).response.status, 401)
+    assert.equal(fixture.calls.length, 3)
+})
+
+test("seller-only action follows can_sell while manager visibility does not grant it", async () => {
+    for (const can_sell of [false, true]) {
+        const { results } = await harness({ value: snapshot("staff", { capabilities: ["relationships.view"], can_sell }) }).search("new relationship")
+        assert.equal(results.some(item => item.id === "action-new-relationship"), can_sell)
+    }
+})
+
+test("private shortcuts remain private even with staff capability flags", async () => {
+    for (const role of ["owner", "admin", "staff"]) {
+        const fixture = harness({ value: snapshot(role, { capabilities: ["library.manage", "admin.manage"] }) })
+        assert.equal((await fixture.search("teams")).results.some(item => item.id === "settings-teams"), role !== "staff")
+        assert.equal((await fixture.search("add note")).results.some(item => item.id === "action-new-note"), role !== "staff")
+    }
+})
+
+test("successful responses echo current account/workspace and final results remain capped at twenty", async () => {
+    const data = records()
+    for (const key of categories) data[key] = Array.from({ length: key === "relationships" ? 8 : ["activities", "channels"].includes(key) ? 4 : 6 }, () => (data[key] as Row[])[0])
+    const response = await harness({ value: snapshot("admin", data) }).search()
+    assert.equal(response.response.status, 200)
+    assert.equal(response.results.length, 20)
+    assert.deepEqual(response.json.scope, { userId: USER, workspaceId: WORKSPACE })
+})
+
+test("query admission and short queries preserve authentication, scope and parameterized literals", async () => {
+    const fixture = harness()
+    for (const query of ["", "x", "%_\\", "x".repeat(200)]) {
+        const response = await fixture.search(query)
+        assert.equal(response.response.status, 200)
+        assert.deepEqual(response.json.scope, { userId: USER, workspaceId: WORKSPACE })
+        assert.equal(fixture.calls.at(-1)?.args.p_query, query)
+    }
+    const before = fixture.calls.length
+    assert.equal((await fixture.search("x".repeat(201))).response.status, 400)
+    assert.equal(fixture.calls.length, before)
+    assert.equal((await harness({ authenticated: false }).search("x")).response.status, 401)
+})
+
+test("RPC failure, even with data, returns no partial discovery or diagnostics", async () => {
+    const response = await harness({ value: snapshot("admin", records()), error: true }).search("work")
+    assert.equal(response.response.status, 503)
+    assert.deepEqual(response.json, { results: [], error: "Search unavailable" })
+})
+
+test("success, denial, validation, error and timeout responses all forbid private caching", async () => {
+    for (const options of [{}, { authenticated: false }, { value: {} }, { error: true }, { hangs: true, deadlineMs: 10 }]) {
+        const { response } = await harness(options).search()
+        assert.equal(response.headers.get("cache-control"), "private, no-store")
+        assert.equal(response.headers.get("vary"), "Cookie")
+    }
+})
+
+test("the search deadline and cancellation bound even a noncooperative RPC", async () => {
+    const fixture = harness({ hangs: true, deadlineMs: 10 })
+    const response = await fixture.search()
+    assert.equal(response.response.status, 504)
+    assert.deepEqual(response.json, { results: [], error: "Search timed out" })
+    assert.ok(fixture.calls.every(call => call.signal.aborted))
+    const source = new AbortController(), cancelled = harness({ hangs: true })
+    const pending = cancelled.search("work", source.signal)
+    await new Promise(resolve => setImmediate(resolve)); source.abort()
+    assert.equal((await pending).response.status, 503)
+    assert.equal(cancelled.calls.length, 1)
+    assert.equal(cancelled.calls[0].signal.aborted, true)
+})
+
+test("late authentication after deadline cannot dispatch search retrieval", async () => {
     let release!: () => void
-    const preflight = new Promise<void>((resolve) => { release = resolve })
-    const fixture = harness({ preflight, deadlineMs: 20 })
+    const fixture = harness({ authPending: new Promise<void>(resolve => { release = resolve }), deadlineMs: 10 })
     assert.equal((await fixture.search()).response.status, 504)
-    release()
-    await new Promise((resolve) => setImmediate(resolve))
-    assert.ok(fixture.calls.every((call) => ["workspaces", "workspace_memberships"].includes(call.table)))
-    assert.deepEqual(fixture.rpcCalls, [])
-})
-
-
-test("record reads overlap delivery-scope resolution but cannot publish before it completes", async () => {
-    let release!: () => void
-    const deliveryScope = new Promise<void>((resolve) => { release = resolve })
-    const fixture = harness({ deliveryScope, relationships: ["relationship-a"], workItems: ["work-a"] })
-    let published = false
-    const pending = fixture.search().then(result => { published = true; return result })
-    await new Promise((resolve) => setImmediate(resolve))
-    assert.ok(fixture.calls.some(call => call.table === "relationships"))
-    assert.equal(published, false)
-    release()
-    const { response, results } = await pending
-    assert.equal(response.status, 200)
-    assert.ok(results.some(item => item.id === "relationship-relationship-a"))
-})
-
-
-test("private Teams settings remain discoverable only from the authorized server response", async () => {
-    const admin = await harness({ role: "admin" }).search("teams")
-    assert.ok(admin.results.some(item => item.id === "settings-teams" && item.href === "/alpha/settings#teams"))
-    const staff = await harness().search("teams")
-    assert.ok(!staff.results.some(item => item.id === "settings-teams"))
+    release(); await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(fixture.calls, [])
 })

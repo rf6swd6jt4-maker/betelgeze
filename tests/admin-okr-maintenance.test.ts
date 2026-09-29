@@ -349,18 +349,20 @@ test("the one-time OKR reset is exact, idempotent, and fails closed around repur
 })
 
 test("service-role query paths explicitly exclude private work for Staff surfaces", async () => {
-    const [relationships, createOptions, search, detail] = await Promise.all([
+    const [relationships, createOptions, search, searchRetrieval, detail] = await Promise.all([
         readFile("lib/relationships.ts", "utf8"),
         readFile("app/api/workspaces/[workspaceSlug]/shell-create-options/route.ts", "utf8"),
         readFile("app/api/workspaces/[workspaceSlug]/search/route.ts", "utf8"),
+        readFile("supabase/migrations/20260930120000_workspace_search_retrieval.sql", "utf8"),
         readFile("app/[workspaceSlug]/work-items/[id]/page.tsx", "utf8"),
     ])
     assert.match(relationships, /\.eq\("visibility", "workspace"\)/)
     assert.match(createOptions, /\.eq\("visibility", "workspace"\)/)
     assert.match(search, /const canAccessPrivatePanels = canAccessPrivateWorkspacePanels\(role\)/)
-    assert.match(search, /const privateRead[^\n]*=> canAccessPrivatePanels \? read\(query\(\)\) : Promise\.resolve\(\[\]/)
-    assert.match(search, /privateRead\(\(\) => supabaseAdmin\.from\("work_items"\)[^\n]*\.eq\("visibility", "admins_only"\)/)
-    assert.match(search, /\.eq\("visibility", "workspace"\)/)
+    assert.match(searchRetrieval, /v_private := v_role in \('owner', 'admin'\)/)
+    assert.match(searchRetrieval, /and \(i.visibility = 'workspace' or \(v_private and i.visibility = 'admins_only'\)\)/)
+    assert.match(searchRetrieval, /and \(v_private or i.area <> 'admin'\)/)
+    assert.match(searchRetrieval, /where v_private or public\.workspace_user_can_access_work_item\(v_workspace_id, m.id, p_user_id\)[\s\S]*?limit 6/)
     assert.match(detail, /item\.visibility === "admins_only" && role === "staff"/)
 })
 

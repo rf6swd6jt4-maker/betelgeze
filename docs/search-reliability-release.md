@@ -28,7 +28,7 @@ An attempted module JSON field extraction was removed: isolated SQL found lower 
 
 ## Validation and limits
 
-The durable comparison runs with `node scripts/measure-workspace-search.ts c06fe1a7`. It uses the actual baseline/candidate route and access helpers with synthetic data and prohibited network access. All 117 detailed result comparisons and eight role/query/growth comparisons pass. Matching, ordering and canonical destinations agree; only the deliberately retired optional `hubHref` is excluded from equality.
+The stage-II comparison is preserved at commit `bf74a26d4f514cb17737aeb56b4581e758943a88` and runs from that revision with `node scripts/measure-workspace-search.ts c06fe1a7`. The subsequent retrieval pass replaces this route-specific benchmark with `scripts/validate-workspace-search-retrieval.mjs`. The stage-II benchmark used the actual baseline/candidate route and access helpers with synthetic data and prohibited network access. All 117 detailed result comparisons and eight role/query/growth comparisons passed. Matching, ordering and canonical destinations agree; only the deliberately retired optional `hubHref` is excluded from equality.
 
 At 500 synthetic records per growing category (including large unused relationship metadata and module definitions):
 

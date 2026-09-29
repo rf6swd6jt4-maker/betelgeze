@@ -47,18 +47,23 @@ test("the note field block and attachments section share one divider", async () 
 })
 
 test("note routes participate in Library navigation, record tabs, restore, search, and shared banner chrome", async () => {
-    const [panels, tabs, launch, search, chrome] = await Promise.all([
+    const [panels, tabs, launch, search, searchRetrieval, chrome] = await Promise.all([
         readFile("lib/workspace-panels.ts", "utf8"),
         readFile("lib/workspace-tabs.ts", "utf8"),
         readFile("lib/workspace-launch.ts", "utf8"),
         readFile("app/api/workspaces/[workspaceSlug]/search/route.ts", "utf8"),
+        readFile("supabase/migrations/20260930120000_workspace_search_retrieval.sql", "utf8"),
         readFile("lib/workspace-panel-chrome.ts", "utf8"),
     ])
     assert.match(panels, /activeRoutes: \["work-items", "sops", "assets", "notes"\]/)
     assert.match(tabs, /suffix === "notes"/)
     assert.match(tabs, /"assets", "notes"/)
     assert.match(launch, /"assets", "notes"/)
-    assert.match(search, /from\("notes"\)/)
+    assert.match(searchRetrieval, /v_private := v_role in \('owner', 'admin'\)/)
+    const privateGate = searchRetrieval.lastIndexOf("    if v_private then")
+    assert.ok(privateGate > 0)
+    assert.doesNotMatch(searchRetrieval.slice(0, privateGate), /from public\.notes /)
+    assert.match(searchRetrieval.slice(privateGate, searchRetrieval.lastIndexOf("    end if;")), /select n.id, n.name, n.description from \(select[\s\S]*?from public\.notes n where n.workspace_id = v_workspace_id order by n.updated_at desc limit 80[\s\S]*?order by n.updated_at desc, n.id limit 6/)
     assert.match(search, /noteHref\(workspace\.slug, note\.id\)/)
     assert.match(chrome, /"notes"/)
 })

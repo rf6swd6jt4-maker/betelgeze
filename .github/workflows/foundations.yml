@@ -123,6 +123,8 @@ jobs:
         run: node scripts/validate-chat-push-recovery.mjs
       - name: Validate bounded search contact authorization and query plans
         run: node scripts/validate-search-contact-access.mjs
+      - name: Validate search retrieval, canonical access and discovery limits
+        run: node scripts/validate-workspace-search-retrieval.mjs
 
   browser-regression:
     name: Browser foundations (${{ matrix.engine }})

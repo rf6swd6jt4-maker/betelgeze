@@ -15,6 +15,7 @@ import {
 } from "../lib/workspace-roles.ts"
 
 const searchRoute = readFileSync("app/api/workspaces/[workspaceSlug]/search/route.ts", "utf8")
+const searchRetrieval = readFileSync("supabase/migrations/20260930120000_workspace_search_retrieval.sql", "utf8")
 const leadgenPanel = readFileSync("app/[workspaceSlug]/leadgen/page.tsx", "utf8")
 const leadgenCompanyPanel = readFileSync("app/[workspaceSlug]/leadgen/company/[companyId]/page.tsx", "utf8")
 const leadgenPollsPanel = readFileSync("app/[workspaceSlug]/leadgen/polls/page.tsx", "utf8")
@@ -117,8 +118,12 @@ test("search calls top-level destinations panels and hides all private records f
     assert.doesNotMatch(searchRoute, /type: "Page"/)
     assert.doesNotMatch(searchRoute, /from\("leadgen_(?:companies|polls)"\)/, "retired Lead Gen records must not be searched from the ordinary workspace search")
     assert.match(searchRoute, /canAccessWorkspacePanel\(panel, access\.role, access\.capabilities\)/)
-    assert.match(searchRoute, /loadDeliveryScope\(workspace.id, userId\)/)
-    assert.match(searchRoute, /new Set\(scope.work_items\)/)
+    assert.match(searchRoute, /rpc\("search_workspace_records", \{[\s\S]*?p_user_id: user.id/)
+    assert.match(searchRetrieval, /v_private := v_role in \('owner', 'admin'\)/)
+    assert.match(searchRetrieval, /where v_private or public\.workspace_user_can_access_relationship\(v_workspace_id, m.id, p_user_id\)/)
+    assert.match(searchRetrieval, /where v_private or public\.workspace_user_can_access_work_item\(v_workspace_id, m.id, p_user_id\)[\s\S]*?limit 6/)
+    assert.doesNotMatch(searchRetrieval, /workspace_delivery_access_scope|from public\.leadgen_(?:companies|polls)/)
+    assert.doesNotMatch(searchRoute, /loadDeliveryScope|createSearchReader/)
 })
 
 test("private Lead Gen routes require admin access", () => {

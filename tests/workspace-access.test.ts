@@ -117,8 +117,8 @@ test("search calls top-level destinations panels and hides all private records f
     assert.doesNotMatch(searchRoute, /type: "Page"/)
     assert.doesNotMatch(searchRoute, /from\("leadgen_(?:companies|polls)"\)/, "retired Lead Gen records must not be searched from the ordinary workspace search")
     assert.match(searchRoute, /canAccessWorkspacePanel\(panel, access\.role, access\.capabilities\)/)
-    assert.match(searchRoute, /accessibleRelationshipIds\(workspaceAccess\)/)
-    assert.match(searchRoute, /accessibleWorkItemIds\(workspaceAccess/)
+    assert.match(searchRoute, /loadDeliveryScope\(workspace.id, userId\)/)
+    assert.match(searchRoute, /new Set\(scope.work_items\)/)
 })
 
 test("private Lead Gen routes require admin access", () => {

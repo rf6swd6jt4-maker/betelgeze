@@ -17,7 +17,7 @@ import { okrDisplayTitle, type WorkspaceOkrType } from "@/lib/admin/okr-title"
 import { canAccessPrivateWorkspacePanels, canAccessWorkspacePanel, WORKSPACE_PANELS, workspacePanelHref } from "@/lib/workspace-panels"
 import { normalizeWorkspaceRole } from "@/lib/workspaces"
 import { getAal2User } from "@/lib/auth/aal"
-import { accessibleRelationshipIds, accessibleWorkItemIds, loadWorkspaceAccess, workspaceAccessHasCapability, type WorkspaceAccess } from "@/lib/workspace-access"
+import { loadDeliveryScope, loadWorkspaceAccess, workspaceAccessHasCapability, type WorkspaceAccess } from "@/lib/workspace-access"
 import { noteHref } from "@/lib/notes"
 
 export const dynamic = "force-dynamic"
@@ -49,12 +49,11 @@ function result(id: string, type: string, label: string, description: string, hr
     return { id, type, label, description, href, ...options }
 }
 
-function staticNavigationResults(workspace: { name: string; slug: string }, query: string, access: WorkspaceAccess): SearchResult[] {
+function staticNavigationResults(workspace: { name: string; slug: string }, query: string, access: WorkspaceAccess, canSell: boolean): SearchResult[] {
     const settingsPath = `${workspace.name} > Settings`
     const libraryPath = `${workspace.name} > Library`
     const canAccessPrivatePanels = canAccessPrivateWorkspacePanels(access.role)
-    const canAccessLibrary = workspaceAccessHasCapability(access, "library.manage")
-    const canAccessRelationships = workspaceAccessHasCapability(access, "relationships.view")
+    const canAccessLibrary = canAccessPrivatePanels
     const panelEntries = WORKSPACE_PANELS
         .filter((panel) => canAccessWorkspacePanel(panel, access.role, access.capabilities))
         .map((panel) => ({
@@ -75,7 +74,7 @@ function staticNavigationResults(workspace: { name: string; slug: string }, quer
             { id: "tab-notes", type: "Tab", label: "Notes", description: "Call notes and durable relationship context", href: workspaceHref(workspace.slug, "notes"), path: `${libraryPath} > Notes`, keywords: ["call notes", "context", "notes"] },
             { id: "action-new-note", type: "Action", label: "Add Note", description: "Create a note and link relationships or assets", href: workspaceHref(workspace.slug, "notes?create=note"), path: `${libraryPath} > Notes > New`, keywords: ["new note", "call note", "add context"] },
         ] : []),
-        ...(canAccessRelationships ? [{ id: "action-new-relationship", type: "Action", label: "Start New Relationship", description: "Create a relationship manually at any lifecycle stage", href: workspaceHref(workspace.slug, "relationships?create=relationship"), path: `${workspace.name} > Relationships > New`, keywords: ["manual relationship", "new relationship", "add relationship", "manual client", "new client", "add client"] }] : []),
+        ...(canSell ? [{ id: "action-new-relationship", type: "Action", label: "Start New Relationship", description: "Create a relationship manually at any lifecycle stage", href: workspaceHref(workspace.slug, "relationships?create=relationship"), path: `${workspace.name} > Relationships > New`, keywords: ["manual relationship", "new relationship", "add relationship", "manual client", "new client", "add client"] }] : []),
         ...(canAccessPrivatePanels ? [
             { id: "settings-workspace", type: "Settings", label: "Workspace", description: "Edit the workspace name", href: workspaceHref(workspace.slug, "settings#workspace"), path: `${settingsPath} > Workspace`, keywords: ["name", "identity"] },
             { id: "settings-services", type: "Settings", label: "Services", description: "Service catalogue, prices, assignees, and onboarding module assignments", href: workspaceHref(workspace.slug, "settings#services"), path: `${settingsPath} > Services`, keywords: ["catalogue", "pricing", "service modules"] },
@@ -107,22 +106,24 @@ async function requireSearchWorkspace(workspaceSlug: string) {
     const user = await getAal2User(supabase)
     if (!user) return null
 
-    const { data: workspace } = await supabaseAdmin
+    const { data: workspace, error: workspaceError } = await supabaseAdmin
         .from("workspaces")
         .select("id, slug, name, status")
         .eq("slug", workspaceSlug)
         .eq("status", "active")
         .maybeSingle()
 
+    if (workspaceError) throw new Error("Could not verify workspace")
     if (!workspace) return null
 
-    const { data: membership } = await supabaseAdmin
+    const { data: membership, error: membershipError } = await supabaseAdmin
         .from("workspace_memberships")
         .select("role")
         .eq("workspace_id", workspace.id)
         .eq("user_id", user.id)
         .maybeSingle()
 
+    if (membershipError) throw new Error("Could not verify membership")
     const role = normalizeWorkspaceRole(membership?.role)
     return membership && role ? {
         workspace: workspace as { id: string; slug: string; name: string; status: string },
@@ -131,29 +132,69 @@ async function requireSearchWorkspace(workspaceSlug: string) {
     } : null
 }
 
+function searchResponse(results: SearchResult[], status = 200, error?: string) {
+    return Response.json({ results, ...(error ? { error } : {}) }, {
+        status,
+        headers: { "Cache-Control": "private, no-store", "Vary": "Cookie" },
+    })
+}
+
 export async function GET(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
+    try {
+        return await search(request, context)
+    } catch {
+        // Never publish partial results after an authorization lookup failed.
+        return searchResponse([], 503, "Search unavailable")
+    }
+}
+
+async function search(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
     const access = await requireSearchWorkspace(workspaceSlug)
-    if (!access) return Response.json({ results: [] }, { status: 401 })
+    if (!access) return searchResponse([], 401)
     const { workspace, role, userId } = access
     const workspaceAccess = await loadWorkspaceAccess({ workspaceId: workspace.id, workspaceSlug: workspace.slug, userId, role })
     const canAccessPrivatePanels = canAccessPrivateWorkspacePanels(role)
     const canAccessCommunications = workspaceAccessHasCapability(workspaceAccess, "communications.manage")
-    const canAccessLibrary = workspaceAccessHasCapability(workspaceAccess, "library.manage")
+    const canAccessLibrary = canAccessPrivatePanels
     const canAccessRelationships = workspaceAccessHasCapability(workspaceAccess, "relationships.view")
     const canAccessOnboarding = workspaceAccessHasCapability(workspaceAccess, "onboarding.manage")
 
+    if (!workspaceAccess.serviceAccessSchemaReady) throw new Error("Could not verify workspace permissions")
+
     const rawQuery = request.nextUrl.searchParams.get("q") ?? ""
     const query = rawQuery.trim().toLowerCase()
-    if (query.length < 2) return Response.json({ results: [] })
+    if (query.length < 2) return searchResponse([])
+    if (query.length > 200) return searchResponse([], 400, "Search query is too long")
 
-    const results: SearchResult[] = []
-    results.push(...staticNavigationResults(workspace, query, workspaceAccess))
+    const navigation = staticNavigationResults(workspace, query, workspaceAccess, true)
 
-    const allowedRelationshipIds = await accessibleRelationshipIds(workspaceAccess)
-    const relationships = (await listRelationshipsForWorkspace(workspace.id)).filter((relationship) => !allowedRelationshipIds || allowedRelationshipIds.has(relationship.id))
+    // Explicit request-local sharing: React cache is not a Route Handler cache.
+    // Independent authorization reads run together; no permission RPC per result.
+    const [scope, seller, allRelationships, publicWorkItems, privateWorkItems, channelResult] = await Promise.all([
+        canAccessPrivatePanels ? Promise.resolve(null) : loadDeliveryScope(workspace.id, userId),
+        navigation.some((item) => item.id === "action-new-relationship")
+            ? supabaseAdmin.rpc("workspace_user_can_sell", { p_workspace_id: workspace.id, p_user_id: userId })
+            : Promise.resolve({ data: false, error: null }),
+        listRelationshipsForWorkspace(workspace.id),
+        supabaseAdmin.from("work_items").select("id, title, description, lifecycle_phase, kind, visibility, area").eq("workspace_id", workspace.id).eq("visibility", "workspace").limit(80),
+        canAccessPrivatePanels
+            ? supabaseAdmin.from("work_items").select("id, title, description, lifecycle_phase, kind, visibility, area").eq("workspace_id", workspace.id).eq("visibility", "admins_only").limit(80)
+            : Promise.resolve({ data: [], error: null }),
+        canAccessCommunications
+            ? supabaseAdmin.rpc("read_search_contact_channels", { p_workspace_id: workspace.id, p_user_id: userId })
+            : Promise.resolve({ data: [], error: null }),
+    ])
+    if (seller.error || channelResult.error) throw new Error("Could not verify search permissions")
+    if (!canAccessPrivatePanels && (!scope || !Array.isArray(scope.relationships) || !Array.isArray(scope.work_items))) {
+        throw new Error("Invalid search access scope")
+    }
+    const allowedRelationshipIds = scope ? new Set(scope.relationships) : null
+    const allowedWorkItemIds = scope ? new Set(scope.work_items) : null
+    const relationships = allRelationships.filter((relationship) => !allowedRelationshipIds || allowedRelationshipIds.has(relationship.id))
+    const results: SearchResult[] = navigation.filter((item) => item.id !== "action-new-relationship" || seller.data === true)
 
-    for (const relationship of relationships.filter((item) => relationshipSearchHaystack(item).includes(query) || includesQuery([item.id, item.client_id, item.leadgen_company_id], query)).slice(0, 8)) {
+    for (const relationship of relationships.filter((item) => relationshipSearchHaystack(item).includes(query) || includesQuery([item.id], query)).slice(0, 8)) {
         const staffHref = canAccessOnboarding ? onboardingDetailHref(workspace.slug, relationship.id) : workspaceHref(workspace.slug, `work/${relationship.id}`)
         results.push(result(
             `relationship-${relationship.id}`,
@@ -171,18 +212,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
 
     const relationshipByClientId = new Map(relationships.map((relationship) => [relationship.client_id, relationship]).filter((entry): entry is [string, RelationshipRecord] => Boolean(entry[0])))
 
-    const workItemSelect = "id, title, description, lifecycle_phase, native_href, native_kind, native_id, area, kind, visibility, maintenance_category"
-    const [publicWorkItems, privateWorkItems] = await Promise.all([
-        supabaseAdmin.from("work_items").select(workItemSelect).eq("workspace_id", workspace.id).eq("visibility", "workspace").limit(80),
-        canAccessPrivatePanels
-            ? supabaseAdmin.from("work_items").select(workItemSelect).eq("workspace_id", workspace.id).eq("visibility", "admins_only").limit(80)
-            : Promise.resolve({ data: [], error: null }),
-    ])
     const workItems = { data: [...(publicWorkItems.data ?? []), ...(privateWorkItems.data ?? [])], error: publicWorkItems.error ?? privateWorkItems.error }
-    const allowedWorkItemIds = await accessibleWorkItemIds(workspaceAccess, allowedRelationshipIds)
 
     if (!workItems.error) {
-        for (const item of (workItems.data ?? []).filter((item) => (!allowedWorkItemIds || allowedWorkItemIds.has(item.id)) && includesQuery([item.id, item.native_id, item.title, item.description, item.lifecycle_phase], query)).slice(0, 6)) {
+        for (const item of (workItems.data ?? []).filter((item) => (canAccessPrivatePanels || (item.visibility === "workspace" && item.area !== "admin" && allowedWorkItemIds?.has(item.id))) && includesQuery([item.id, item.title, item.description, item.lifecycle_phase], query)).slice(0, 6)) {
             const isPrivate = item.visibility === "admins_only"
             results.push(result(
                 `work-${item.id}`,
@@ -191,7 +224,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
                 item.description ?? (isPrivate ? "Admin work item" : "Workspace work item"),
                 workItemHref(workspace.slug, item.id),
                 {
-                    hubHref: role === "staff" ? undefined : item.native_href?.startsWith("/") ? item.native_href : undefined,
                     path: isPrivate
                         ? `${workspace.name} > Admin > ${item.kind === "maintenance" ? "Maintenance" : "Work"}`
                         : `${workspace.name} > Library > Work Items`,
@@ -251,7 +283,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
 
     const [
         { data: clients, error: clientError },
-        { data: channels, error: channelError },
         { data: activities, error: activityError },
         { data: assets, error: assetError },
         { data: notes, error: noteError },
@@ -263,11 +294,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
             .is("archived_at", null)
             .order("created_at", { ascending: false })
             .limit(80) : Promise.resolve({ data: [], error: null }),
-        canAccessCommunications ? supabaseAdmin
-            .from("client_communication_channels")
-            .select("id, client_id, external_address, provider")
-            .eq("workspace_id", workspace.id)
-            .limit(60) : Promise.resolve({ data: [], error: null }),
         canAccessPrivatePanels ? supabaseAdmin
             .from("client_activity")
             .select("id, client_id, activity_text, activity_type")
@@ -276,7 +302,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
             .limit(60) : Promise.resolve({ data: [], error: null }),
         canAccessLibrary ? supabaseAdmin
             .from("assets")
-            .select("id, asset_kind, source_kind, title, description, external_url, native_kind, native_id")
+            .select("id, asset_kind, source_kind, title, description")
             .eq("workspace_id", workspace.id)
             .order("created_at", { ascending: false })
             .limit(80) : Promise.resolve({ data: [], error: null }),
@@ -307,7 +333,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
     }
 
     if (!assetError) {
-        for (const asset of (assets ?? []).filter((asset) => includesQuery([asset.id, asset.native_id, asset.asset_kind, asset.source_kind, asset.title, asset.description, asset.external_url, asset.native_kind], query)).slice(0, 6)) {
+        for (const asset of (assets ?? []).filter((asset) => includesQuery([asset.id, asset.asset_kind, asset.source_kind, asset.title, asset.description], query)).slice(0, 6)) {
             results.push(result(
                 `asset-${asset.id}`,
                 "Asset",
@@ -331,22 +357,16 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
         }
     }
 
-    if (!channelError) {
-        for (const channel of (channels ?? []).filter((channel) => includesQuery([channel.id, channel.client_id, channel.external_address, channel.provider], query)).slice(0, 4)) {
-            const relationship = relationshipByClientId.get(channel.client_id)
-            results.push(result(
-                `contact-${channel.id}`,
-                "Contact",
-                channel.external_address,
-                channel.provider,
-                relationship ? communicationsHref(workspace.slug) : communicationsHref(workspace.slug),
-                {
-                    hubHref: relationship ? communicationsHref(workspace.slug) : undefined,
-                    path: `${workspace.name} > Communications`,
-                    recordId: channel.id,
-                }
-            ))
-        }
+    const channels = channelResult.data as Array<{ relationship_id: string; external_address: string; provider: string }> | null
+    for (const channel of (channels ?? []).filter((channel) => includesQuery([channel.external_address, channel.provider], query)).slice(0, 4)) {
+        results.push(result(
+            `contact-${channel.relationship_id}-${channel.provider}`,
+            "Contact",
+            channel.external_address,
+            channel.provider,
+            `${communicationsHref(workspace.slug)}?conversation=${encodeURIComponent(channel.relationship_id)}`,
+            { path: `${workspace.name} > Communications` }
+        ))
     }
 
     if (!activityError) {
@@ -367,5 +387,5 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
         }
     }
 
-    return Response.json({ results: results.slice(0, 20) })
+    return searchResponse(results.slice(0, 20))
 }

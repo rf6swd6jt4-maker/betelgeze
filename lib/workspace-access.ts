@@ -163,7 +163,7 @@ export function defaultWorkspaceHref(access: WorkspaceAccess) {
     return panel ? workspacePanelHref(access.workspaceSlug, panel) : `/${access.workspaceSlug}/no-access`
 }
 
-const loadDeliveryScope = cache(async (workspaceId: string, userId: string) => {
+export const loadDeliveryScope = cache(async (workspaceId: string, userId: string) => {
     const { data, error } = await supabaseAdmin.rpc("workspace_delivery_access_scope", { p_workspace_id: workspaceId, p_user_id: userId })
     if (error) throw new Error("Could not verify client delivery access.")
     return data as { relationships: string[]; full_relationships: string[]; work_items: string[] }

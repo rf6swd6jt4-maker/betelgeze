@@ -265,7 +265,7 @@ test("record navigation opens or reuses internal workspace tabs without changing
     assert.match(workspaceShell, /currentTabs\.find\(\(tab\) => tab\.url === url\)/)
     assert.match(workspaceShell, /currentTabs\.length >= 8/)
     assert.match(workspaceShell, /navigateWorkspaceDestination\(item\.href\); closeSidebarAfterNavigation\(\)/)
-    assert.match(workspaceShell, /navigateSearchDestination\(item\.href\)/)
+    assert.match(workspaceShell, /const current = search\.selected\(item\.id\)[\s\S]*?if \(!current\) return[\s\S]*?navigateSearchDestination\(current\.href\)/)
 })
 
 test("all configuration Server Actions re-authorize admins and use transactional RPCs", () => {
@@ -291,11 +291,14 @@ test("only the Scaylup workspace may retain the legacy onboarding seed", () => {
 })
 
 test("private search includes dynamic services and modules without weakening the Staff gate", () => {
-    assert.match(searchRoute, /if \(canAccessPrivatePanels\)[\s\S]*from\("onboarding_modules"\)/)
-    assert.match(searchRoute, /from\("onboarding_services"\)/)
+    assert.match(searchRoute, /const canAccessPrivatePanels = canAccessPrivateWorkspacePanels\(role\)/)
+    assert.match(searchRoute, /const privateRead[^\n]*=> canAccessPrivatePanels \? read\(query\(\)\) : Promise\.resolve\(\[\]/)
+    for (const table of ["onboarding_modules", "onboarding_module_revisions", "onboarding_services", "onboarding_service_revisions"]) {
+        assert.ok(searchRoute.includes(`privateRead(() => supabaseAdmin.from("${table}")`), `${table} must only be queried through the private gate`)
+    }
     assert.match(searchRoute, /onboarding-builder\?module=/)
     assert.match(searchRoute, /settings\?service=\$\{encodeURIComponent\(service\.item\.id\)\}#services/)
-    assert.match(searchRoute, /revision_number, status, definition/)
+    assert.match(searchRoute, /module_id, status, definition/)
     assert.match(searchRoute, /admin\/activity\/\$\{event\.id\}/)
     assert.doesNotMatch(searchRoute, /event\.source_href \?\? `\/\$\{workspace\.slug\}\/admin\/activity`/)
 })

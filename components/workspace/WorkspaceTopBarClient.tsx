@@ -36,10 +36,12 @@ import { AccountMenu } from "@/components/account/AccountMenu"
 import { Avatar } from "@/components/account/Avatar"
 import { LoadingOverlay } from "@/components/LoadingOverlay"
 import { UnreadMessageCount } from "@/components/communications/UnreadMessageCount"
-import { shortId } from "@/lib/ui/relative-time"
 import type { WorkspaceCreateActionState } from "@/app/[workspaceSlug]/relationships/actions"
 import { WorkspaceTabBridge } from "@/components/workspace/WorkspaceTabBridge"
 import { WorkspaceSuccessNotice } from "@/components/workspace/WorkspaceSuccessNotice"
+import { useWorkspaceSearch } from "@/components/workspace/useWorkspaceSearch"
+import { WorkspaceSearchResults } from "@/components/workspace/WorkspaceSearchResults"
+import type { WorkspaceSearchResult } from "@/lib/workspace-search"
 import { WorkspaceTabOpeningState } from "@/components/workspace/WorkspaceTabOpeningState"
 import { useCommunicationsUnread } from "@/components/communications/useCommunicationsUnread"
 import { publishWorkspaceTabActivity } from "@/lib/workspace-tab-activity"
@@ -164,17 +166,6 @@ type Props = {
     createOkrAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
 }
 
-type SearchResult = {
-    id: string
-    type: string
-    label: string
-    description: string
-    href: string
-    hubHref?: string
-    path?: string
-    recordId?: string
-}
-
 type CreationNotice = {
     label: string
     href: string
@@ -230,20 +221,6 @@ function ContextPanelIcon() {
 
 function SearchIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg>
-}
-
-function SearchResultContent({ item, mobile = false }: { item: SearchResult; mobile?: boolean }) {
-    return (
-        <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-neutral-100">{item.label}</p>
-                {item.path && <p className="mt-0.5 truncate text-[11px] text-neutral-400">{item.path}</p>}
-                <p className={`mt-0.5 text-xs text-neutral-500 ${mobile ? "line-clamp-2" : "truncate"}`}>{item.description}</p>
-                {item.recordId && <p className="mt-1 truncate font-mono text-[10px] text-neutral-600">{shortId(item.recordId)}</p>}
-            </div>
-            <span className="shrink-0 rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500">{item.type}</span>
-        </div>
-    )
 }
 
 function HomeIcon() {
@@ -375,6 +352,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     const desktopSearchInputRef = useRef<HTMLInputElement>(null)
     const mobileSearchRef = useRef<HTMLDivElement>(null)
     const mobileSearchInputRef = useRef<HTMLInputElement>(null)
+    const mobileSearchTriggerRef = useRef<HTMLButtonElement>(null)
     const sidebarTransitionTimeout = useRef<number | null>(null)
     const activeTabIdRef = useRef(initialTab.id)
     const tabsRef = useRef<WorkspaceTab[]>([initialTab])
@@ -481,8 +459,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     const [presenceError, setPresenceError] = useState<string | null>(null)
     const [query, setQuery] = useState("")
     const [searchOpen, setSearchOpen] = useState(false)
-    const [searchLoading, setSearchLoading] = useState(false)
-    const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+    const searchScope = JSON.stringify([currentUserId, workspace.id, workspace.slug, workspaceRole, [...workspaceCapabilities].sort()])
+    const search = useWorkspaceSearch({ scope: searchScope, userId: currentUserId, workspaceId: workspace.id, workspaceSlug: workspace.slug, query, open: searchOpen })
+    const invalidateSearch = search.invalidate
     const [searchShortcutLabel, setSearchShortcutLabel] = useState("Ctrl+J")
     const [createTarget, setCreateTarget] = useState<WorkspaceCreateTarget | null>(null)
     const [creationNotice, setCreationNotice] = useState<CreationNotice | null>(null)
@@ -592,7 +571,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     useEffect(() => () => { ++nativeNavigationSequence.current; departureAbortRef.current?.abort(); warmAbortRef.current?.abort() }, [])
     const defaultWorkspaceUrl = `/${workspace.slug}`
     const tabsStorageKey = `betelgeze:workspace-tabs:${workspace.slug}`
-    const capabilitySet = new Set(workspaceCapabilities)
     const canOpenWorkspaceUrl = useCallback((value: string) => canAccessWorkspaceUrl(value, workspace.slug, workspaceRole, workspaceCapabilities), [workspace.slug, workspaceRole, workspaceCapabilities])
     const activateWorkspaceTab = useCallback((tabId: string) => {
         activeTabIdRef.current = tabId
@@ -1958,7 +1936,12 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             if (!inDesktopSearch && !inMobileSearch) setSearchOpen(false)
         }
         const escape = (event: KeyboardEvent) => {
-            if (event.key === "Escape") setSearchOpen(false)
+            if (event.key !== "Escape" || event.isComposing || !searchOpen) return
+            // Focus can synchronously invoke the input's opening handler.
+            // Closing last keeps Escape closed even from the Retry button.
+            if (window.matchMedia("(min-width: 768px)").matches) desktopSearchInputRef.current?.focus()
+            else mobileSearchTriggerRef.current?.focus()
+            setSearchOpen(false)
         }
         const closeForOtherDropdown = (event: Event) => {
             if ((event as CustomEvent<string>).detail !== searchMenuId) setSearchOpen(false)
@@ -1971,7 +1954,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             document.removeEventListener("keydown", escape)
             window.removeEventListener("betelgeze:dropdown-open", closeForOtherDropdown)
         }
-    }, [searchMenuId])
+    }, [searchMenuId, searchOpen])
 
     useEffect(() => {
         const isMac = /Mac|iPhone|iPad|iPod/i.test(window.navigator.platform) || /Mac OS|iPhone|iPad|iPod/i.test(window.navigator.userAgent)
@@ -2034,37 +2017,17 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     }, [searchOpen])
 
     useEffect(() => {
-        const trimmed = query.trim()
-        if (trimmed.length < 2) {
-            deferNavigationStateUpdate(() => {
-                setSearchResults([])
-                setSearchLoading(false)
-            })
-            return
-        }
-
-        const controller = new AbortController()
-        const timeout = window.setTimeout(async () => {
-            setSearchLoading(true)
-            try {
-                const response = await fetch(`/api/workspaces/${workspace.slug}/search?q=${encodeURIComponent(trimmed)}`, {
-                    signal: controller.signal,
-                })
-                if (!response.ok) throw new Error("Search failed")
-                const payload = await response.json() as { results?: SearchResult[] }
-                setSearchResults(payload.results ?? [])
-            } catch (error) {
-                if ((error as Error).name !== "AbortError") setSearchResults([])
-            } finally {
-                setSearchLoading(false)
-            }
-        }, 180)
-
-        return () => {
-            controller.abort()
-            window.clearTimeout(timeout)
-        }
-    }, [query, workspace.slug])
+        // Auth notifications are local to the existing browser client. This
+        // listener does not change presence, subscriptions or unread behavior.
+        const client = createSupabaseBrowserClient()
+        const { data } = client.auth.onAuthStateChange((_event, session) => {
+            if (session?.user.id === currentUserId) return
+            invalidateSearch()
+            setSearchOpen(false)
+            setQuery("")
+        })
+        return () => data.subscription.unsubscribe()
+    }, [currentUserId, invalidateSearch])
 
     useEffect(() => {
         if (!tabsHydrated || !activeTabId) return
@@ -2167,22 +2130,25 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     }
 
 
-    function directSearchHref(value: string) {
-        const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ")
-        const canAccessPrivatePanels = canAccessPrivateWorkspacePanels(workspaceRole)
-        if (capabilitySet.has("communications.manage") && (normalized === "communications" || normalized === "communication" || normalized === "messages" || normalized === "client messages" || normalized === "chat")) return `/${workspace.slug}/communications`
-        if (capabilitySet.has("relationships.view") && (normalized === "manual relationship" || normalized === "start relationship" || normalized === "new relationship" || normalized === "add relationship" || normalized === "manual client" || normalized === "add manual client" || normalized === "new client" || normalized === "add client")) return `/${workspace.slug}/relationships?create=relationship`
-        if (canAccessPrivatePanels && (normalized === "teams" || normalized === "fulfilment teams" || normalized === "maintenance team" || normalized === "officers" || normalized === "responsible officers" || normalized === "global officer" || normalized === "maintenance routing")) return `/${workspace.slug}/settings#teams`
-        return null
+    function chooseSearchResult(item: WorkspaceSearchResult) {
+        const current = search.selected(item.id)
+        if (!current) return
+        setSearchOpen(false)
+        navigateSearchDestination(current.href)
     }
 
     function submitSearch(event: ReactKeyboardEvent<HTMLInputElement>) {
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return false
+        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) && search.state.status === "results") {
+            event.preventDefault()
+            search.moveSelection(event.key as "ArrowDown" | "ArrowUp" | "Home" | "End")
+            return true
+        }
         if (event.key !== "Enter") return false
-        const href = searchResults[0]?.href ?? directSearchHref(query)
-        if (!href) return false
         event.preventDefault()
-        setSearchOpen(false)
-        navigateSearchDestination(href)
+        const item = search.selected()
+        if (!item) return false
+        chooseSearchResult(item)
         return true
     }
 
@@ -2861,7 +2827,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                     </button>
                     <label className="relative block min-w-0 flex-1">
                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
-                        <input ref={desktopSearchInputRef} value={query} onKeyDown={submitSearch} onChange={(event) => { setQuery(event.target.value); openDesktopSearch() }} onFocus={openDesktopSearch} aria-label="Search Betelgeze" placeholder="Search relationships, work, files..." className="h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 pr-16 text-sm text-neutral-300 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
+                        <input ref={desktopSearchInputRef} value={query} role="combobox" aria-autocomplete="list" aria-expanded={searchOpen} aria-controls={`${searchMenuId}-desktop`} aria-activedescendant={searchOpen && search.state.status === "results" ? `${searchMenuId}-desktop-${search.state.selectedIndex}` : undefined} maxLength={200} onKeyDown={submitSearch} onChange={(event) => { setQuery(event.target.value); openDesktopSearch() }} onFocus={openDesktopSearch} aria-label="Search Betelgeze" placeholder="Search relationships, work, files..." className="h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 pr-16 text-sm text-neutral-300 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
                         <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-neutral-800 px-1.5 py-0.5 text-[10px] leading-none text-neutral-500">{searchShortcutLabel}</span>
                     </label>
                     <WorkspacePresenceAvatars members={workspacePresenceMembers} state={presenceState} error={presenceError} onOpenProfile={setProfileUserId} />
@@ -2869,21 +2835,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                     {searchOpen && (
                         <div className="betelgeze-popup-enter absolute left-[6.5rem] right-0 top-11 z-[70] max-h-[32rem] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/40">
                             <div className="max-h-[32rem] overflow-y-auto">
-                                {query.trim().length < 2 && <p className="px-3 py-3 text-sm text-neutral-500">Type at least two characters.</p>}
-                                {query.trim().length >= 2 && searchLoading && <p className="px-3 py-3 text-sm text-neutral-500">Searching...</p>}
-                                {query.trim().length >= 2 && !searchLoading && searchResults.length === 0 && <p className="px-3 py-3 text-sm text-neutral-500">No core results found.</p>}
-                                {query.trim().length >= 2 && !searchLoading && searchResults.map((item) => (
-                                    <div key={item.id} className="border-b border-neutral-900 last:border-0">
-                                        <Link href={item.href} data-global-loading="false" target={isStandaloneBuilderHref(item.href) ? "_blank" : undefined} rel={isStandaloneBuilderHref(item.href) ? "noopener noreferrer" : undefined} className="block px-3 py-2 hover:bg-neutral-900" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateSearchDestination(item.href) }}>
-                                            <SearchResultContent item={item} />
-                                        </Link>
-                                        {item.hubHref && item.hubHref !== item.href && (
-                                            <Link href={item.hubHref} data-global-loading="false" className="block px-3 pb-2 text-xs text-neutral-500 hover:text-neutral-200" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateActiveTab(item.hubHref!) }}>
-                                                View in Relationship Hub
-                                            </Link>
-                                        )}
-                                    </div>
-                                ))}
+                                <WorkspaceSearchResults id={`${searchMenuId}-desktop`} state={search.state} onChoose={chooseSearchResult} onRetry={search.retry} isStandalone={isStandaloneBuilderHref} />
                             </div>
                         </div>
                     )}
@@ -2896,25 +2848,11 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                                 <div className="border-b border-neutral-800 p-3">
                                     <label className="relative block">
                                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><SearchIcon /></span>
-                                        <input ref={mobileSearchInputRef} value={query} onKeyDown={submitSearch} onChange={(event) => setQuery(event.target.value)} aria-label="Search Betelgeze" placeholder="Search relationships, work, files..." className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-10 text-base text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
+                                        <input ref={mobileSearchInputRef} value={query} role="combobox" aria-autocomplete="list" aria-expanded={searchOpen} aria-controls={`${searchMenuId}-mobile`} aria-activedescendant={searchOpen && search.state.status === "results" ? `${searchMenuId}-mobile-${search.state.selectedIndex}` : undefined} maxLength={200} onKeyDown={submitSearch} onChange={(event) => setQuery(event.target.value)} aria-label="Search Betelgeze" placeholder="Search relationships, work, files..." className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-10 text-base text-neutral-200 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
                                     </label>
                                 </div>
                                 <div className="max-h-[calc(72vh-4.25rem)] overflow-y-auto">
-                                    {query.trim().length < 2 && <p className="px-3 py-3 text-sm text-neutral-500">Type at least two characters.</p>}
-                                    {query.trim().length >= 2 && searchLoading && <p className="px-3 py-3 text-sm text-neutral-500">Searching...</p>}
-                                    {query.trim().length >= 2 && !searchLoading && searchResults.length === 0 && <p className="px-3 py-3 text-sm text-neutral-500">No core results found.</p>}
-                                    {query.trim().length >= 2 && !searchLoading && searchResults.map((item) => (
-                                        <div key={item.id} className="border-b border-neutral-900 last:border-0">
-                                            <Link href={item.href} data-global-loading="false" target={isStandaloneBuilderHref(item.href) ? "_blank" : undefined} rel={isStandaloneBuilderHref(item.href) ? "noopener noreferrer" : undefined} className="block px-3 py-3 hover:bg-neutral-900" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateSearchDestination(item.href) }}>
-                                                <SearchResultContent item={item} mobile />
-                                            </Link>
-                                            {item.hubHref && item.hubHref !== item.href && (
-                                                <Link href={item.hubHref} data-global-loading="false" className="block px-3 pb-3 text-xs text-neutral-500 hover:text-neutral-200" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setSearchOpen(false); navigateActiveTab(item.hubHref!) }}>
-                                                    View in Relationship Hub
-                                                </Link>
-                                            )}
-                                        </div>
-                                    ))}
+                                    <WorkspaceSearchResults id={`${searchMenuId}-mobile`} state={search.state} mobile onChoose={chooseSearchResult} onRetry={search.retry} isStandalone={isStandaloneBuilderHref} />
                                 </div>
                             </div>
                         )}
@@ -3124,7 +3062,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                     <button data-icon-button type="button" onClick={() => { goForward(); closeSidebarAfterNavigation() }} disabled={!canGoForward} aria-label="Go forward" className={navButtonClass}>
                         <ArrowRightIcon />
                     </button>
-                    <button data-icon-button type="button" onClick={openMobileSearch} aria-label="Search Betelgeze" className={`${navButtonClass} ml-auto`}>
+                    <button ref={mobileSearchTriggerRef} data-icon-button type="button" onClick={openMobileSearch} aria-label="Search Betelgeze" className={`${navButtonClass} ml-auto`}>
                         <SearchIcon />
                     </button>
                 </div>

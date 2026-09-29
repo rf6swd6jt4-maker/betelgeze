@@ -6,6 +6,8 @@ import { chromium, webkit } from "playwright"
 import { assertFixtureReport } from "./report.mjs"
 
 const fixtures = [
+    { name: "search-desktop", expected: 24, script: "scripts/serve-workspace-search-fixture.mjs", global: "workspaceSearchFixtureResult", viewport: { width: 1280, height: 900 } },
+    { name: "search-mobile", expected: 24, script: "scripts/serve-workspace-search-fixture.mjs", global: "workspaceSearchFixtureResult", viewport: { width: 390, height: 844 } },
     { name: "mobile-conversation", expected: 16, script: "scripts/serve-mobile-conversation-fixture.mjs", global: "mobileConversationFixtureResult", viewport: { width: 390, height: 844 } },
     { name: "mobile-conversation-motion", expected: 33, script: "scripts/serve-mobile-conversation-motion-fixture.mjs", global: "mobileConversationMotionFixtureResult", viewport: { width: 390, height: 844 } },
     { name: "mobile-comms", expected: 17, script: "scripts/serve-mobile-comms-fixture.mjs", global: "mobileCommsFixtureResult", viewport: { width: 390, height: 850 } },
@@ -22,8 +24,11 @@ const fixtures = [
     { name: "comms-layout-desktop", expected: 9, script: "scripts/serve-comms-layout-fixture.mjs", global: "commsLayoutFixtureResult", viewport: { width: 1280, height: 900 }, query: "?desktop" },
 ]
 const selected = process.argv.slice(2)
-if (selected.some(value => !["chromium", "webkit"].includes(value))) throw Error("Usage: run-foundations.mjs [chromium|webkit]")
-const engines = selected.length ? selected : ["chromium", "webkit"]
+const fixtureNames = selected.filter(value => value.startsWith("--fixture=")).map(value => value.slice(10))
+const engines = selected.filter(value => !value.startsWith("--fixture="))
+if (engines.some(value => !["chromium", "webkit"].includes(value)) || fixtureNames.some(name => !fixtures.some(fixture => fixture.name === name))) throw Error("Usage: run-foundations.mjs [chromium|webkit] [--fixture=name]")
+if (!engines.length) engines.push("chromium", "webkit")
+const activeFixtures = fixtureNames.length ? fixtures.filter(fixture => fixtureNames.includes(fixture.name)) : fixtures
 const reports = []
 const servers = []
 function start(fixture) {
@@ -49,7 +54,7 @@ try {
     for (const engine of engines) {
         const browser = await ({ chromium, webkit })[engine].launch({ headless: true })
         try {
-            for (const fixture of fixtures) {
+            for (const fixture of activeFixtures) {
                 const url = await start(fixture)
                 const context = await browser.newContext({ viewport: fixture.viewport ?? { width: 1280, height: 900 }, ...(fixture.reducedMotion ? { reducedMotion: fixture.reducedMotion } : {}) })
                 const unexpected = [], errors = []

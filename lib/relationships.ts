@@ -865,7 +865,7 @@ export function nativeItemHref(workspaceSlug: string, item: RelationshipWorkItem
     return item.relationship_id ? relationshipHubHref(workspaceSlug, item.relationship_id) : workItemHref(workspaceSlug, item.id)
 }
 
-export function relationshipSearchHaystack(relationship: RelationshipRecord) {
+export function relationshipSearchHaystack(relationship: Pick<RelationshipRecord, "primary_person_name" | "primary_email" | "primary_phone" | "business_name" | "website_url" | "industry_value" | "location_value" | "source_label" | "primary_contact_role" | "notes_summary">) {
     return [
         relationship.primary_person_name,
         relationship.primary_email,

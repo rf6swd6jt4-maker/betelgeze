@@ -21,6 +21,10 @@ type SearchOptions = {
     scopeValue?: unknown
     tables?: Record<string, Row[]>
     errors?: string[]
+    hangs?: string[]
+    deadlineMs?: number
+    preflight?: Promise<void>
+    deliveryScope?: Promise<void>
 }
 
 const WORKSPACE = "workspace-a"
@@ -62,6 +66,7 @@ function fixtures(): Record<string, Row[]> {
 function harness(options: SearchOptions = {}) {
     const role = options.role ?? "staff"
     const privileged = role === "owner" || role === "admin"
+    const signals: AbortSignal[] = []
     const calls: QueryCall[] = []
     const ownerCalls: string[] = []
     const rpcCalls: Array<{ name: string; args: Row }> = []
@@ -72,11 +77,19 @@ function harness(options: SearchOptions = {}) {
         search_contact_participants: (options.contactRelationships ?? []).map((relationship_id) => ({ workspace_id: WORKSPACE, user_id: USER, relationship_id })),
         ...options.tables,
     }
+    function waitForAbort(signal?: AbortSignal): Promise<never> {
+        assert.ok(signal, "A pending database read must receive the request signal")
+        return new Promise((_, reject) => {
+            if (signal.aborted) reject(signal.reason)
+            else signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+        })
+    }
     function from(table: string) {
         const call: QueryCall = { table, fields: "*", filters: [] }
-        calls.push(call)
+        let signal: AbortSignal | undefined
         let single = false
         const query = {
+            abortSignal(value: AbortSignal) { signal = value; return this },
             select(fields: string) { call.fields = fields; return this },
             eq(field: string, value: unknown) { call.filters.push(["eq", field, value]); return this },
             in(field: string, values: unknown[]) { call.filters.push(["in", field, values]); return this },
@@ -85,18 +98,30 @@ function harness(options: SearchOptions = {}) {
             order() { return this },
             limit(limit: number) { call.limit = limit; return this },
             maybeSingle() { single = true; return this },
-            then(resolve: (result: { data: unknown; error: unknown }) => unknown) {
+            async then(resolve: (result: { data: unknown; error: unknown }) => unknown, reject: (reason: unknown) => unknown) {
+                calls.push(call)
+                if (signal) signals.push(signal)
+                if (options.hangs?.includes(table)) return waitForAbort(signal).then(resolve, reject)
                 if (options.errors?.includes(table)) return Promise.resolve(resolve({ data: null, error: { code: "TEST_FAILURE", message: "Synthetic read failure" } }))
                 let rows = (tables[table] ?? []).filter((row) => call.filters.every(([operation, field, value]) => operation === "in" ? (value as unknown[]).includes(row[field]) : operation === "neq" ? row[field] !== value : row[field] === value))
                 if (call.limit !== undefined) rows = rows.slice(0, call.limit)
-                if (call.fields !== "*") rows = rows.map((row) => Object.fromEntries(call.fields.split(",").map((field) => field.trim()).filter(Boolean).map((field) => [field, row[field]])))
+                if (call.fields !== "*") rows = rows.map((row) => Object.fromEntries(call.fields.split(",").map((field) => field.trim()).filter(Boolean).map((field) => {
+                    const [alias, expression] = field.split(":")
+                    if (!expression) return [field, row[field]]
+                    const [column, key] = expression.split("->")
+                    return [alias, key ? (row[column] as Row | undefined)?.[key] : row[column]]
+                })))
                 return Promise.resolve(resolve({ data: single ? rows[0] ?? null : rows, error: null }))
             },
         }
         return query
     }
-    const supabase = { from, rpc: async (name: string, args: Row) => {
+    const supabase = { from, rpc: (name: string, args: Row) => {
+        let signal: AbortSignal | undefined
+        const run = async () => {
         rpcCalls.push({ name, args })
+        if (signal) signals.push(signal)
+        if (options.hangs?.includes(name)) return waitForAbort(signal)
         if (name === "read_search_contact_channels") {
             assert.equal(args.p_workspace_id, WORKSPACE)
             assert.equal(args.p_user_id, USER)
@@ -108,6 +133,11 @@ function harness(options: SearchOptions = {}) {
         }
         if (name === "workspace_user_can_sell") return { data: options.canSell ?? privileged, error: options.errors?.includes(name) ? { message: "Synthetic failure" } : null }
         throw new Error(`Unexpected RPC: ${name}`)
+        }
+        return {
+            abortSignal(value: AbortSignal) { signal = value; return this },
+            then(resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) { return run().then(resolve, reject) },
+        }
     } }
     const allowedRelationships = privileged ? null : new Set(options.relationships ?? [])
     const allowedWorkItems = privileged ? null : new Set(options.workItems ?? [])
@@ -123,10 +153,11 @@ function harness(options: SearchOptions = {}) {
                 ownerCalls.push("loadDeliveryScope")
                 assert.equal(workspaceId, WORKSPACE)
                 assert.equal(userId, USER)
+                await options.deliveryScope
                 if (options.scopeError) throw new Error("Could not verify client delivery access.")
                 return "scopeValue" in options ? options.scopeValue : { relationships: [...(allowedRelationships ?? [])], full_relationships: [], work_items: [...(allowedWorkItems ?? [])] }
             },
-            loadWorkspaceAccess: async () => { ownerCalls.push("loadWorkspaceAccess"); return workspaceAccess },
+            loadWorkspaceAccess: async () => { ownerCalls.push("loadWorkspaceAccess"); await options.preflight; return workspaceAccess },
             workspaceAccessHasCapability: (access: typeof workspaceAccess, capability: string) => privileged || access.capabilities.includes(capability),
         },
     }
@@ -135,16 +166,16 @@ function harness(options: SearchOptions = {}) {
         if (modules.has(path)) return modules.get(path)!
         const exports: Record<string, unknown> = {}
         modules.set(path, exports)
-        new Function("require", "exports", sourceCode(path))((name: string) => {
+        new Function("require", "exports", "setTimeout", sourceCode(path))((name: string) => {
             if (name in mocks) return mocks[name]
             assert.ok(name.startsWith("@/"), `Unexpected dependency ${name}`)
             return load(`${name.slice(2)}.ts`)
-        }, exports)
+        }, exports, (callback: () => void, delay: number) => setTimeout(callback, delay === 25_000 ? options.deadlineMs ?? delay : delay))
         return exports
     }
     const route = load("app/api/workspaces/[workspaceSlug]/search/route.ts")
-    return { calls, ownerCalls, rpcCalls, tables, async search(query = SENTINEL, slug = "alpha") {
-        const response = await (route.GET as (request: unknown, context: unknown) => Promise<Response>)({ nextUrl: new URL(`https://example.test/api/workspaces/${slug}/search?q=${encodeURIComponent(query)}`) }, { params: Promise.resolve({ workspaceSlug: slug }) })
+    return { calls, ownerCalls, rpcCalls, tables, signals, async search(query = SENTINEL, slug = "alpha", signal = new AbortController().signal) {
+        const response = await (route.GET as (request: unknown, context: unknown) => Promise<Response>)({ signal, nextUrl: new URL(`https://example.test/api/workspaces/${slug}/search?q=${encodeURIComponent(query)}`) }, { params: Promise.resolve({ workspaceSlug: slug }) })
         const body = await response.text()
         return { response, body, results: (JSON.parse(body).results ?? []) as SearchResult[] }
     } }
@@ -369,4 +400,88 @@ test("seller authorization runs only when the create action matches the search",
     const { results } = await action.search("new relationship")
     assert.ok(results.some((item) => item.id === "action-new-relationship"))
     assert.equal(action.rpcCalls.filter((call) => call.name === "workspace_user_can_sell").length, 1)
+})
+
+
+test("every category read failure returns no partial discovery or backend error details", async () => {
+    for (const table of ["relationships", "clients", "work_items", ...adminTables]) {
+        const { response, results, body } = await harness({ role: "admin", errors: [table] }).search()
+        assert.equal(response.status, 503, table)
+        assert.deepEqual(results, [], table)
+        assert.deepEqual(JSON.parse(body), { results: [], error: "Search unavailable" }, table)
+    }
+})
+
+test("successful empty and record responses identify the current account and workspace", async () => {
+    for (const query of ["", "x", SENTINEL, "nothing-matches-this-fixture"]) {
+        const fixture = harness({ role: "admin" })
+        const { response, body } = await fixture.search(query)
+        assert.equal(response.status, 200)
+        assert.deepEqual(JSON.parse(body).scope, { userId: USER, workspaceId: WORKSPACE })
+        if (query.length < 2) {
+            assert.deepEqual(fixture.ownerCalls, [])
+            assert.deepEqual(fixture.rpcCalls, [])
+        }
+    }
+})
+
+test("the whole search deadline aborts pending reads and returns a generic timeout", async () => {
+    for (const name of ["relationships", "read_search_contact_channels"]) {
+        const fixture = harness({ hangs: [name], deadlineMs: 20 })
+        const { response, body, results } = await fixture.search()
+        assert.equal(response.status, 504)
+        assert.deepEqual(results, [])
+        assert.deepEqual(JSON.parse(body), { results: [], error: "Search timed out" })
+        assert.ok(fixture.signals.length > 0 && fixture.signals.every((signal) => signal.aborted))
+    }
+})
+
+test("client cancellation aborts running reads and does not dispatch queued categories", async () => {
+    const abort = new AbortController()
+    const fixture = harness({ role: "admin", hangs: ["relationships", "clients", "work_items", "read_search_contact_channels", ...adminTables] })
+    const pending = fixture.search(SENTINEL, "alpha", abort.signal)
+    await new Promise((resolve) => setImmediate(resolve))
+    const calls = fixture.calls.length + fixture.rpcCalls.length
+    abort.abort()
+    const { response, body } = await pending
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(response.status, 503)
+    assert.deepEqual(JSON.parse(body), { results: [], error: "Search unavailable" })
+    assert.equal(fixture.calls.length + fixture.rpcCalls.length, calls)
+    assert.ok(fixture.signals.every((signal) => signal.aborted))
+})
+
+test("late shared permission completion after deadline cannot start content reads", async () => {
+    let release!: () => void
+    const preflight = new Promise<void>((resolve) => { release = resolve })
+    const fixture = harness({ preflight, deadlineMs: 20 })
+    assert.equal((await fixture.search()).response.status, 504)
+    release()
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.ok(fixture.calls.every((call) => ["workspaces", "workspace_memberships"].includes(call.table)))
+    assert.deepEqual(fixture.rpcCalls, [])
+})
+
+
+test("record reads overlap delivery-scope resolution but cannot publish before it completes", async () => {
+    let release!: () => void
+    const deliveryScope = new Promise<void>((resolve) => { release = resolve })
+    const fixture = harness({ deliveryScope, relationships: ["relationship-a"], workItems: ["work-a"] })
+    let published = false
+    const pending = fixture.search().then(result => { published = true; return result })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.ok(fixture.calls.some(call => call.table === "relationships"))
+    assert.equal(published, false)
+    release()
+    const { response, results } = await pending
+    assert.equal(response.status, 200)
+    assert.ok(results.some(item => item.id === "relationship-relationship-a"))
+})
+
+
+test("private Teams settings remain discoverable only from the authorized server response", async () => {
+    const admin = await harness({ role: "admin" }).search("teams")
+    assert.ok(admin.results.some(item => item.id === "settings-teams" && item.href === "/alpha/settings#teams"))
+    const staff = await harness().search("teams")
+    assert.ok(!staff.results.some(item => item.id === "settings-teams"))
 })

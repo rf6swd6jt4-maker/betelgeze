@@ -18,17 +18,17 @@ The superseded category queries, application-side record matching/revision maps,
 
 ## Evidence and release status
 
-The final migration SHA256 is `de9fe722e783bb0c2f4642a7ede5ce58fa7150d40fdfd8cc7dadffd424a6a1dd`. Reproduce correctness with `BE_PGLITE_ROOT=<optional-runtime> node scripts/validate-workspace-search-retrieval.mjs`; add `--measure` for the 1,000/10,000-record comparison. `SEARCH_RETRIEVAL_SIZES=1000 SEARCH_RETRIEVAL_REVISIONS=30` measures deeper revision history. The optional pinned runtime is PGlite 0.5.8, PostgreSQL 18.3, installed outside application dependencies. CI runs the correctness gate.
+The final migration SHA256 is `de9fe722e783bb0c2f4642a7ede5ce58fa7150d40fdfd8cc7dadffd424a6a1dd`. Reproduce correctness with `BE_PGLITE_ROOT=<optional-runtime> node scripts/validate-workspace-search-retrieval.mjs`; add `--measure` for the 1,000/10,000-record comparison. `SEARCH_RETRIEVAL_SIZES=1000 SEARCH_RETRIEVAL_REVISIONS=30` measures deeper revision history. The optional pinned runtime is PGlite 0.5.8, PostgreSQL 18.3, installed outside application dependencies. CI runs the correctness gate. The fixture omits the unused composite activity index absent from production; its replacement single-client index is also omitted because neither search path uses it. The report records both fixture and migration hashes.
 
 The baseline is the complete prior search path after authentication: workspace/membership, capability setup, category reads, contact RPC and staff delivery-scope RPC. The user verified the baseline Data API ceiling as 1,000. Measurements include database JSON serialization, with five timed samples after warm-up per path; old independent-query medians are summed, so they are resource comparisons, **not wall-clock request latency**. Query fixtures include misses, common two-character terms, provider matches and positive admin/assigned-staff hits. The 24 KB module structures are repetitive synthetic strings; service definitions are 512 bytes, with three revisions per parent.
 
 | Synthetic fixture / actor | Previous database + JSON, ms | Replacement, ms | Search database calls |
 | --- | ---: | ---: | ---: |
-| 1,000 records/category, admin | 29.16 | 18.25–19.84 | 19 → 1 |
-| 10,000 records/category, admin | 97.85 | 65.85–72.28 | 19 → 1 |
-| 10,000 records/category, unassigned staff | 1,332.93 | 7.94–42.85 | 11 → 1 |
-| 10,000 records/category, assigned staff | 1,347.94 | 9.31–44.45 | 13 → 1 |
-| 1,000 parents, 30 revisions each, admin | 72.65 | 43.08–48.97 | 19 → 1 |
+| 1,000 records/category, admin | 28.80 | 17.53–19.35 | 19 → 1 |
+| 10,000 records/category, admin | 97.52 | 63.67–71.48 | 19 → 1 |
+| 10,000 records/category, unassigned staff | 1,336.26 | 7.94–43.26 | 11 → 1 |
+| 10,000 records/category, assigned staff | 1,384.55 | 9.52–43.65 | 13 → 1 |
+| 1,000 parents, 30 revisions each, admin | 69.18 | 44.22–49.42 | 19 → 1 |
 
 At 10,000 records/category, synthetic database-to-server payloads fall from 6.32 MB to 529–9,150 bytes for admin, 611 KB to 365 bytes for denied staff searches, and 1.28 MB to 528 bytes for assigned-staff hits. The unchanged Auth/MFA provider work is excluded from both sides. No new index, generated column, trigger or stored projection means no added per-record write maintenance. The first all-record private-scan prototype and its set-based revision alternative were rejected; lower transfer alone did not excuse their higher database CPU.
 
@@ -40,6 +40,6 @@ Detailed artifacts are in `/private/tmp/be-search-speed-release`. Hosted exact-c
 
 ## Installation and rollback
 
-Install the additive function before deploying its caller. The guarded release artifacts check existing policy bodies, indexes, ICU behavior and server-only grants without reading business records. Never replay historical migrations to satisfy a failed preflight. The original GitHub checkout path remains unchanged.
+Install the additive function before deploying its caller. The guarded release artifacts check existing policy bodies, indexes, ICU behavior and server-only grants without reading business records. Never replay historical migrations to satisfy a failed preflight. The first installer stopped before function creation because it required an unused historical activity index. User-supplied catalog results from production PostgreSQL 17.6 confirmed the other 27 reviewed indexes, matching ICU versions and the required Unicode behavior. The corrected installer removes only that unsupported index prerequisite; policy fingerprints, collation and service-role-only grants remain guarded. No index is added or repaired by this release. The original GitHub checkout path remains unchanged.
 
 Rollback application code to the stage-II base above; its security repair and contact function remain compatible. Leave the additive read-only function installed. No data/schema rollback or client-history deletion is needed. Keep the candidate and primary checkouts clean after release.

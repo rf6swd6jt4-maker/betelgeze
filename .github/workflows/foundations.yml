@@ -125,6 +125,8 @@ jobs:
         run: node scripts/validate-search-contact-access.mjs
       - name: Validate search retrieval, canonical access and discovery limits
         run: node scripts/validate-workspace-search-retrieval.mjs
+      - name: Validate search ranking, related destinations and archive boundaries
+        run: node scripts/validate-workspace-search-capability.mjs
 
   browser-regression:
     name: Browser foundations (${{ matrix.engine }})

@@ -148,6 +148,17 @@ await check("network error preserves an unrelated unsaved draft", async () => {
     ;(await request("alpha")).reject(new TypeError("Network unavailable")); await until(() => state().status === "error", "Network failure not visible")
     assert(document.querySelector("#sibling-draft") === draft && draft.value === "Still unsaved during failed search", "Search reset unrelated state")
 })
+await check("archive labels and match reasons preserve listbox selection and navigation", async () => {
+    const active = { ...item("Bruce Laing"), id: "active-bruce", href: "/alpha/relationships/36c6", recordId: "36c6", archived: false, matchReason: "Matched in name" }
+    const archived = { ...active, id: "archived-bruce", href: "/alpha/relationships/e037", recordId: "e037", archived: true }
+    respond(await request("bruce"), [active, archived]); await until(() => options().length === 2, "Bruce results missing")
+    assert(!options()[0].textContent.includes("Archived") && options()[1].textContent.includes("Archived"), "Archive state missing or applied to active record")
+    assert(options().every(option => option.textContent.includes("Matched in name") && option.textContent.includes("Relationship")), "Match reason or type label missing")
+    assert(options()[0].textContent.includes("36c6") && options()[1].textContent.includes("e037"), "Distinct record references missing")
+    key("End"); await until(() => state().selectedIndex === 1, "Archived result not keyboard-selectable")
+    assert(options()[1].getAttribute("aria-selected") === "true", "Archived selection not exposed")
+    key("Enter"); assert(navigations[0] === archived.href, "Archived result lost its destination")
+})
 await check("arrow selection and Enter navigate the selected current result", async () => {
     respond(await request("alpha"), [item("first"), item("second")]); await until(() => options().length === 2, "Results missing")
     key("ArrowDown"); await until(() => state().selectedIndex === 1, "Arrow selection missing")

@@ -23,8 +23,8 @@ try {
     visit(shell)
     if (!handlers.submitSearch || !handlers.chooseSearchResult || !handlers.escape) throw Error("Missing actual shell submitSearch handler")
     writeFileSync(join(directory, "keyboard.js"), ts.transpileModule(`export function searchHandlers(scope) { const { search, searchOpen, setSearchOpen, navigateSearchDestination, desktopSearchInputRef, mobileSearchTriggerRef } = scope; ${handlers.chooseSearchResult}; ${handlers.submitSearch}; ${handlers.escape}; return { submitSearch, chooseSearchResult, escape } }`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText)
-    // Bundle only the primitive consumed by this view; its implementation remains real.
-    writeFileSync(join(directory, "ui.ts"), 'export { RoundPill } from "@/components/ui/RoundPill"')
+    // Bundle only the primitives consumed by this view; their implementations remain real.
+    writeFileSync(join(directory, "ui.ts"), 'export { RoundPill } from "@/components/ui/RoundPill"; export { Status } from "@/components/ui/Status"')
     writeFileSync(join(directory, "runner.js"), readFileSync("scripts/browser/workspace-search-runner.mjs"))
     const cssPromise = postcss([tailwind({ base: process.cwd(), optimize: false })]).process(readFileSync("app/globals.css", "utf8"), { from: resolve("app/globals.css") }).then(result => result.css)
     const bundle = await new Promise((done, fail) => webpack({ mode: "production", devtool: false, entry: join(directory, "runner.js"), output: { path: directory, filename: "bundle.js" }, resolve: { alias: { "@/components/ui$": join(directory, "ui.ts"), "@": process.cwd() }, extensions: [".tsx", ".ts", ".js"], modules: [resolve("node_modules"), "node_modules"] }, module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: join(directory, "loader.cjs") }] }, optimization: { minimize: false } }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString({ all: false, errors: true }))) : done(readFileSync(join(directory, "bundle.js")))))

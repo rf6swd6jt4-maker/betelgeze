@@ -4,13 +4,13 @@ Established: 2026-09-11. Applies to every feature, fix, refactor, dependency, qu
 
 ## 1. Mandatory rule: preserve or improve speed
 
-Read this file before planning or implementing app changes. Performance is an acceptance requirement, alongside correctness and the established UI. Preserve the speed of existing user actions; improve it where practical. Do not knowingly introduce a regression, even if another action becomes faster or the slower action still meets a target.
+Read this file before planning or implementing app changes. Performance is an acceptance requirement, alongside correctness and the established UI. Preserve the speed of existing user actions; improve it where practical. Do not knowingly introduce a regression, even if another action becomes faster or the slower action still meets a target. The specific, explicitly user-approved search-capability allowance in section 7 is the only recorded exception to this per-action rule; it grants no allowance to unrelated operations.
 
 Speed includes launch, navigation, tab and conversation switching, typing, filtering, saving, media display, and recovery. It also includes database work, transferred data, memory, background CPU, subscriptions, and battery use that can make those actions slower as usage grows.
 
 This is a development and release gate, not a claim that every network request can always finish within one second. Existing slow paths are work to improve, not permission to make them worse. A skeleton, animation, stale result, or early success indicator is not a substitute for a completed action.
 
-Ordinary feature work must follow this standard. The only permitted way to supersede a performance rule is the explicit speed-update process in section 7. Do not quietly weaken the rules or relabel a feature as a speed update.
+Ordinary feature work must follow this standard. Any departure requires the explicit authorization and documentation in section 7; its search-capability allowance records a specific subsequent user instruction, not an inferred waiver from an ordinary feature request. Do not quietly weaken the rules or relabel a feature as a speed update.
 
 ## 2. Assess first; stop when a feature puts speed at risk
 
@@ -130,7 +130,7 @@ Baseline established from the performance work through PRs #37–#44 on 2026-09-
 | Loading | One shared banner; dark frame readiness; early diamond canvas | `components/workspace/WorkspacePanelChrome.tsx`, `components/workspace/WorkspaceTabOpeningState.tsx`, `components/AppStartupScreen.tsx`, `app/layout.tsx`, `app/globals.css` |
 | Team inbox | Authorized compact summaries and selected recent history on the enabled path | `lib/teams/server.ts`, `components/communications/TeamCommunicationsWorkspace.tsx`, `supabase/migrations/20260911010000_native_communications_inbox.sql` |
 | Chat correctness | Coordinated mutations, per-conversation history windows, accurate unread state, reconnect recovery | `lib/communications/coordinated-updates.ts`, `lib/communications/unread.ts`, `components/communications/useConversationHistory.ts` |
-| Workspace search | One fresh actor-bound database snapshot after session/MFA verification; compact results, retained source windows and canonical record policies; no whole-workspace permission enumeration or service-definition bootstrap | `app/api/workspaces/[workspaceSlug]/search/route.ts`, `supabase/migrations/20260930120000_workspace_search_retrieval.sql`, `docs/search-speed-release.md` |
+| Workspace search | One fresh actor-bound database snapshot after session/MFA verification; ranked canonical results and at most two relationship expansions using recent 80-work-link/20-session windows; independent destination policies and authorized early stopping; no whole-workspace permission enumeration | `app/api/workspaces/[workspaceSlug]/search/route.ts`, `supabase/migrations/20260930140000_workspace_search_capability.sql`, `docs/search-capability-release.md` |
 | Measurement | Separate usable paint, persistence, acknowledgement, and provider boundaries | `lib/workspace-performance-contract.ts`, `docs/workspace-performance-measurement.md` |
 | Rollout/recovery | Scoped flags, compatible fallbacks, recoverable accepted commands/jobs | `docs/workspace-performance-command-operations.md`, `docs/performance-baseline/pilot-rollout.md` |
 
@@ -138,7 +138,7 @@ Historical implementation/coordination documents contain earlier-stage descripti
 
 The baseline does not certify universal sub-second actions. Cold server reads, provider delivery, large transfers, first synchronization, and physical-device performance require their own evidence. Retain the faster verified paths while improving these separately.
 
-## 7. Only exception: an explicit speed update
+## 7. Explicitly authorized departures
 
 When the user explicitly authorizes performance work, an existing implementation rule may be superseded if doing so is necessary for a demonstrated improvement. This is a narrow, documented replacement of that rule, not permission to ignore this entire file. Correctness, security, honest completion, the risk-reporting gate, and evidence requirements still apply.
 
@@ -149,6 +149,8 @@ When the user explicitly authorizes performance work, an existing implementation
 5. Append an entry below with evidence, limitations, rollout, and rollback. The revised rules become mandatory for every subsequent feature and fix. A later rollback must restore the corresponding standard while retaining the history of both decisions.
 
 Never use this exception to relax a threshold after a failed feature benchmark, to remove a check, or to justify an unrelated slowdown.
+
+**Specific user-approved search-capability allowance — 30 September 2026:** after the slowdown was measured and explained, the user explicitly approved deployment of bounded related retrieval and accepted its disclosed regression for user evaluation, provided regular operations are not directly harmed. This subsequent instruction permits the measured added database work on selected expanded staff searches only: about 0.66 ms with readable candidates and 3.01 ms in the tested denial-heavy case. These observations are not universal latency ceilings or a general relaxation of the standard. Keep the existing request lifecycle and one RPC, at most two strong relationship seeds, and at most 80 recent work links/20 recent sessions per seed before usefulness and permission checks. Stop after enough permitted suggestions; never bypass independent destination authorization. No extra work is added to regular saves, messages, tab navigation or background operations. Any broader windows, new write/background costs or materially worse search behavior require fresh assessment and authorization. Production concurrency and user-perceived latency remain unverified; record user feedback separately. The rejected full-history scan is not approved.
 
 ## 8. Speed-standard change log
 
@@ -212,3 +214,12 @@ Suggested instruction for `AGENTS.md` or other development instructions:
 - **Updated standard:** search uses one compact, current-membership database snapshot after session/MFA verification. This replaces its former parallel category HTTP reads and whole-workspace delivery-scope lookup. Keep matching fields, canonical record policies and final authorized result limits intact. Existing source windows, including the verified 1,000-row Data API ceiling, are preserved in this speed pass; do not silently enlarge them or claim exhaustive discovery. Future retrieval expansion must demonstrate database, transfer and write costs against this baseline before removing a window.
 - **Evidence:** `docs/search-speed-release.md` records matched synthetic PostgreSQL comparisons and release checks. The broader private-scan prototype was rejected for higher database CPU. The accepted design adds no index, trigger, generated column, stored row, private cache or background task. Numeric latency targets are unchanged; database observations do not establish production interaction speed.
 - **Rollout/rollback:** install the guarded additive read-only RPC before deploying its caller. Revert the application to stage-II `bf74a26d` and restore its corresponding search baseline if needed; retain the installed functions and all client data. The rollout must pass exact-commit CI and independent deployment verification.
+
+
+### 2026-09-30 — Bounded search capability, explicit user acceptance
+
+- **Authorization:** after reviewing the direct search cost and shared-database caveat, the user approved deployment and accepted the specific disclosed regression for hands-on evaluation. This is an acknowledged capability tradeoff, not a claim that every search became faster.
+- **Updated search baseline:** retain the existing discovery windows; rank canonical identities and labelled archives; expand only one or two best-tier readable non-archived relationships for queries of at least three characters. Inspect at most 80 recent work links and 20 recent sessions per seed, with independent destination policies and output limits. Use existing indexes; add no triggers, stored projections, write maintenance or background work.
+- **Evidence:** refined SQL SHA256 `0f187d9d5e447689269a32eab2766d55247ada25f76e6fbd869715b58c7620ce`; eleven alternating warmed observations in isolated PostgreSQL 18/PGlite. At 10,000 linked records, assigned-staff readable search 4.17 → 4.83 ms and denial-heavy search 4.16 → 7.16 ms; admin cases about 34 → 17 ms. Unchanged-control sample ranges overlap; no absolute zero-cost claim is made. Source reads cap at 80/20 even with tied timestamps; readable cases stop after two work and two session checks. See `docs/search-capability-release.md`.
+- **Limits:** database-only synthetic observations exclude network, authentication, production concurrency and physical devices. A larger useful response adds bounded transfer bytes. No sustained-session or production latency guarantee follows.
+- **Rollout/rollback:** guarded in-place RPC replacement before the exact tested caller; preserve old-parser compatibility and all client data. Application rollback to `b789dca41a9ffb145e69e34235ac0e471060cacb` remains supported. Restore its corresponding search baseline if rolled back, preserving this historical acceptance record.

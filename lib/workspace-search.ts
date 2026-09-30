@@ -6,6 +6,8 @@ export type WorkspaceSearchResult = {
     href: string
     path?: string
     recordId?: string
+    archived?: boolean
+    matchReason?: string
 }
 
 export type WorkspaceSearchInput = {
@@ -59,7 +61,10 @@ function readResults(payload: unknown, input: WorkspaceSearchInput): WorkspaceSe
         const row = item as WorkspaceSearchResult | null
         if (!row || ![row.id, row.type, row.label, row.description].every((field) => typeof field === "string")
             || !safeHref(row.href, input.workspaceSlug)
-            || ![row.path, row.recordId].every((field) => field === undefined || typeof field === "string") || ids.has(row.id)) throw new Error("payload")
+            || ![row.path, row.recordId].every((field) => field === undefined || typeof field === "string")
+            || (row.archived !== undefined && typeof row.archived !== "boolean")
+            || (row.matchReason !== undefined && (typeof row.matchReason !== "string" || !row.matchReason.trim() || row.matchReason.length > 200))
+            || ids.has(row.id)) throw new Error("payload")
         ids.add(row.id)
         return row
     })

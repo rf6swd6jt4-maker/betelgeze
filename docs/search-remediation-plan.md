@@ -2,6 +2,10 @@
 
 Prepared 27 September 2026 for a separate implementation task. Investigation baseline: production/main `4ac3abac28a5f649e5e04f781d5109a9cb3e5015`; search/access code is unchanged from `6ba28cb5`. This document authorizes no production data cleanup or expansion of staff permissions. Search remains unchanged in the tab-startup release.
 
+## Implementation status — 30 September 2026
+
+Security and request reliability are already deployed; the speed pass is the current production base. See `search-security-protocol.md`, `search-reliability-release.md` and `search-speed-release.md` for those implemented contracts. The capability candidate is documented in `search-capability-release.md`: canonical identity ranking, archive disclosure and useful related destinations. The user selected bounded recent suggestions (80 work links and 20 onboarding sessions per matched relationship) after full-history stress tests failed. The original investigation below remains a historical design inventory; exhaustive retrieval, pagination and document/message search are not claims about this release.
+
 ## Confirmed problem and current behavior
 
 `app/api/workspaces/[workspaceSlug]/search/route.ts` requires an authenticated AAL2 user, an active workspace and workspace membership. It then uses `supabaseAdmin`, so application/RPC authorization must restrict every result; ordinary row-level security is not the protection for these reads.

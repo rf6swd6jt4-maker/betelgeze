@@ -9,13 +9,13 @@ import {
     workItemHref,
     workspaceHref,
 } from "@/lib/relationships"
-import { shortId } from "@/lib/ui/relative-time"
 import { okrDisplayTitle, type WorkspaceOkrType } from "@/lib/admin/okr-title"
 import { canAccessPrivateWorkspacePanels, canAccessWorkspacePanel, WORKSPACE_PANELS, workspacePanelHref } from "@/lib/workspace-panels"
 import { getAal2User } from "@/lib/auth/aal"
 import { noteHref } from "@/lib/notes"
 import { withSearchDeadline } from "@/lib/workspace-search-server"
 import { parseSearchSnapshot, type SearchSnapshot } from "@/lib/workspace-search-snapshot"
+import { rankWorkspaceSearchMatch, rankWorkspaceSearchResults } from "@/lib/workspace-search-ranking"
 import type { WorkspaceSearchResult as SearchResult } from "@/lib/workspace-search"
 
 export const dynamic = "force-dynamic"
@@ -28,7 +28,7 @@ function includesQuery(values: Array<unknown>, query: string) {
         .includes(query)
 }
 
-function result(id: string, type: string, label: string, description: string, href: string, options: Pick<SearchResult, "path" | "recordId"> = {}): SearchResult {
+function result(id: string, type: string, label: string, description: string, href: string, options: Pick<SearchResult, "path" | "recordId" | "archived" | "matchReason"> = {}): SearchResult {
     return { id, type, label, description, href, ...options }
 }
 
@@ -81,7 +81,6 @@ function staticNavigationResults(workspace: { name: string; slug: string }, quer
             href: entry.href,
             path: entry.path,
         }))
-        .slice(0, 6)
 }
 
 function searchResponse(results: SearchResult[], status = 200, error?: string, scope?: { userId: string; workspaceId: string }) {
@@ -123,15 +122,17 @@ async function search(request: NextRequest, context: { params: Promise<{ workspa
     if (data === null) return searchResponse([], 401)
     const snapshot = parseSearchSnapshot(data, workspaceSlug)
     const { workspace, role, relationships, work_items: workItems, okrs, key_results: keyResults,
-        admin_activity: adminActivity, modules, services, clients, assets, notes, channels, activities } = snapshot
+        admin_activity: adminActivity, modules, services, assets, notes, channels, activities, related } = snapshot
     const responseScope = { userId: user.id, workspaceId: workspace.id }
     if (query.length < 2) return searchResponse([], 200, undefined, responseScope)
     const canAccessPrivatePanels = canAccessPrivateWorkspacePanels(role)
     const canAccessRelationships = canAccessPrivatePanels || snapshot.capabilities.includes("relationships.view")
     const canAccessOnboarding = canAccessPrivatePanels || snapshot.capabilities.includes("onboarding.manage")
     const results = staticNavigationResults(workspace, query, snapshot, snapshot.can_sell)
+    const ranks = new Map<string, number>()
 
     for (const relationship of relationships) {
+        ranks.set(`relationship-${relationship.id}`, relationship.match_rank)
         const staffHref = canAccessOnboarding ? onboardingDetailHref(workspace.slug, relationship.id) : workspaceHref(workspace.slug, `work/${relationship.id}`)
         results.push(result(
             `relationship-${relationship.id}`,
@@ -141,7 +142,8 @@ async function search(request: NextRequest, context: { params: Promise<{ workspa
             canAccessRelationships ? relationshipHubHref(workspace.slug, relationship.id) : staffHref,
             {
                 path: canAccessRelationships ? `${workspace.name} > Relationships` : `${workspace.name} > ${canAccessOnboarding ? "Onboarding" : "Fulfilment"}`,
-                recordId: shortId(relationship.id),
+                recordId: relationship.id, archived: relationship.status === "archived",
+                matchReason: ({ email: "Matches email", phone: "Matches phone", notes: "Matches notes", details: "Matches relationship details" } as Record<string, string>)[relationship.match_field],
             }
         ))
     }
@@ -158,7 +160,7 @@ async function search(request: NextRequest, context: { params: Promise<{ workspa
                 path: isPrivate
                     ? `${workspace.name} > Admin > ${item.kind === "maintenance" ? "Maintenance" : "Work"}`
                     : `${workspace.name} > Library > Work Items`,
-                recordId: shortId(item.id),
+                recordId: item.id, archived: item.archived,
             }
         ))
     }
@@ -167,26 +169,22 @@ async function search(request: NextRequest, context: { params: Promise<{ workspa
         for (const okr of okrs) {
             const displayTitle = okrDisplayTitle({ objectiveType: okr.objective_type as WorkspaceOkrType | null, objective: okr.objective, deadline: okr.period_end })
             results.push(result(`okr-${okr.id}`, "OKR", displayTitle, okr.description ?? `${okr.status} objective`, `/${workspace.slug}/admin/okrs#okr-${okr.id}`, {
-                path: `${workspace.name} > Admin > OKRs`, recordId: shortId(okr.id),
+                path: `${workspace.name} > Admin > OKRs`, recordId: okr.id,
             }))
         }
         for (const keyResult of keyResults) {
             results.push(result(`okr-key-result-${keyResult.id}`, "Key Result", keyResult.name, keyResult.description ?? "Measurable OKR outcome", `/${workspace.slug}/admin/okrs#key-result-${keyResult.id}`, {
-                path: `${workspace.name} > Admin > OKRs`, recordId: shortId(keyResult.id),
+                path: `${workspace.name} > Admin > OKRs`, recordId: keyResult.id,
             }))
         }
         for (const event of adminActivity) {
             results.push(result(`admin-activity-${event.id}`, "Admin activity", event.summary, `${event.category} · ${event.level}`, `/${workspace.slug}/admin/activity/${event.id}`, {
-                path: `${workspace.name} > Admin > Activity`, recordId: shortId(event.id),
+                path: `${workspace.name} > Admin > Activity`, recordId: event.id,
             }))
         }
-        for (const moduleRecord of modules) results.push(result(`onboarding-module-${moduleRecord.id}`, "Onboarding module", moduleRecord.name, moduleRecord.description || `${moduleRecord.status} module`, `/${workspace.slug}/onboarding-builder?module=${encodeURIComponent(moduleRecord.id)}`, { path: `${workspace.name} > Onboarding Builder`, recordId: shortId(moduleRecord.id) }))
-        for (const service of services) results.push(result(`onboarding-service-${service.id}`, "Service", service.name, service.description ?? `${service.state} service`, `/${workspace.slug}/settings?service=${encodeURIComponent(service.id)}#services`, { path: `${workspace.name} > Settings > Services`, recordId: shortId(service.id) }))
-        for (const client of clients) results.push(result(
-            `client-${client.id}`, "Relationship", client.name ?? client.email ?? "Unnamed client",
-            client.email ?? client.phone ?? "Onboarding relationship", onboardingDetailHref(workspace.slug, client.relationship_id),
-            { path: `${workspace.name} > Onboarding`, recordId: client.id }
-        ))
+        for (const moduleRecord of modules) results.push(result(`onboarding-module-${moduleRecord.id}`, "Onboarding module", moduleRecord.name, moduleRecord.description || `${moduleRecord.status} module`, `/${workspace.slug}/onboarding-builder?module=${encodeURIComponent(moduleRecord.id)}`, { path: `${workspace.name} > Onboarding Builder`, recordId: moduleRecord.id, archived: moduleRecord.status === "archived" }))
+        for (const service of services) results.push(result(`onboarding-service-${service.id}`, "Service", service.name, service.description ?? `${service.state} service`, `/${workspace.slug}/settings?service=${encodeURIComponent(service.id)}#services`, { path: `${workspace.name} > Settings > Services`, recordId: service.id, archived: service.state === "archived" }))
+
     }
 
     for (const asset of assets) {
@@ -198,24 +196,24 @@ async function search(request: NextRequest, context: { params: Promise<{ workspa
             assetHref(workspace.slug, asset.id),
             {
                 path: `${workspace.name} > Library > Assets`,
-                recordId: shortId(asset.id),
+                recordId: asset.id, archived: asset.archived,
             }
         ))
     }
 
     for (const note of notes) {
         results.push(result(`note-${note.id}`, "Note", note.name, note.description ?? "", noteHref(workspace.slug, note.id), {
-            path: `${workspace.name} > Library > Notes`, recordId: shortId(note.id),
+            path: `${workspace.name} > Library > Notes`, recordId: note.id,
         }))
     }
 
     for (const channel of channels) {
         results.push(result(
-            `contact-${channel.relationship_id}-${channel.provider}`,
+            `client-chat-${channel.relationship_id}`,
             "Contact",
             channel.external_address,
             channel.provider,
-            `${communicationsHref(workspace.slug)}?conversation=${encodeURIComponent(channel.relationship_id)}`,
+            `${communicationsHref(workspace.slug)}?mode=clients&conversation=${encodeURIComponent(channel.relationship_id)}`,
             { path: `${workspace.name} > Communications` }
         ))
     }
@@ -234,5 +232,35 @@ async function search(request: NextRequest, context: { params: Promise<{ workspa
         ))
     }
 
-    return searchResponse(results.slice(0, 20), 200, undefined, responseScope)
+    for (const destination of related) {
+        const kind = destination.kind
+        const id = `${kind === "work_item" ? "work" : kind === "onboarding" ? "onboarding" : kind === "client_chat" ? "client-chat" : "team-chat"}-${destination.id}`
+        const direct = results.find(item => item.id === id)
+        if (direct) {
+            const directRank = rankWorkspaceSearchMatch(query, { ids: direct.recordId ? [direct.recordId] : [], primary: [direct.label], secondary: [direct.description] })
+            ranks.set(id, Math.min(ranks.get(id) ?? directRank, 4))
+            continue
+        }
+        ranks.set(id, 4)
+        const href = kind === "onboarding"
+            ? `${onboardingDetailHref(workspace.slug, destination.relationship_id)}${destination.session_id ? `?session=${encodeURIComponent(destination.session_id)}` : ""}`
+            : kind === "work_item" ? workItemHref(workspace.slug, destination.id)
+            : kind === "client_chat" ? `${communicationsHref(workspace.slug)}?mode=clients&conversation=${encodeURIComponent(destination.relationship_id)}`
+            : `${communicationsHref(workspace.slug)}?mode=team&nativeConversation=${encodeURIComponent(destination.id)}`
+        const type = kind === "onboarding" ? "Onboarding" : kind === "client_chat" ? "Client chat" : kind === "team_chat" ? "Team chat" : "Work item"
+        const detail = kind === "work_item"
+            ? `${({ todo: "Upcoming", doing: "In progress", waiting: "Waiting", blocked: "Blocked" } as Record<string, string>)[destination.status ?? "todo"]}${destination.due_date ? ` · Due ${destination.due_date}` : ""}`
+            : kind === "onboarding" ? destination.session_id ? "Open onboarding details" : "Choose an onboarding session"
+            : kind === "team_chat" ? destination.title : "Open client conversation"
+        results.push(result(id, type, kind === "work_item" ? destination.title : destination.relationship_name, detail, href, {
+            path: `${workspace.name} > ${kind === "onboarding" ? "Onboarding" : kind === "work_item" ? "Work" : "Communications"}`,
+            recordId: destination.id, matchReason: `Related to ${destination.relationship_name}`.slice(0, 200),
+        }))
+    }
+
+    const ranked = rankWorkspaceSearchResults(results.map(item => {
+        const match = rankWorkspaceSearchMatch(query, { ids: item.recordId ? [item.recordId] : [], primary: [item.label], secondary: [item.description] })
+        return { result: item, rank: ranks.get(item.id) ?? (Number.isFinite(match) ? match : 5) }
+    }))
+    return searchResponse(ranked, 200, undefined, responseScope)
 }

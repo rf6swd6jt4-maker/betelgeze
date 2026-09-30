@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { RoundPill } from "@/components/ui"
+import { RoundPill, Status } from "@/components/ui"
 import { shortId } from "@/lib/ui/relative-time"
 import type { WorkspaceSearchResult, WorkspaceSearchState } from "@/lib/workspace-search"
 
@@ -31,6 +31,8 @@ export function WorkspaceSearchResults({ id, state, mobile = false, onChoose, on
                         <p className="truncate text-sm font-medium text-neutral-100">{item.label}</p>
                         {item.path && <p className="mt-0.5 truncate text-[11px] text-neutral-400">{item.path}</p>}
                         <p className={`mt-0.5 text-xs text-neutral-500 ${mobile ? "line-clamp-2" : "truncate"}`}>{item.description}</p>
+                        {item.matchReason && <p className="mt-1 text-xs text-neutral-400">{item.matchReason}</p>}
+                        {item.archived && <div className="mt-1"><Status label="Archived" tone="grey" /></div>}
                         {item.recordId && <p className="mt-1 truncate font-mono text-[10px] text-neutral-600">{shortId(item.recordId)}</p>}
                     </div>
                     <RoundPill className="shrink-0">{item.type}</RoundPill>

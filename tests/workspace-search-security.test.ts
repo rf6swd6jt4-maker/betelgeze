@@ -6,28 +6,28 @@ import ts from "typescript"
 // These tests execute the HTTP owner against a compact RPC boundary. Actual
 // policy, grants, matching and revocation execute in validate-workspace-search-retrieval.mjs.
 type Row = Record<string, unknown>
-type Result = { id: string; label: string; description: string; href: string }
+type Result = { id: string; label: string; description: string; href: string; archived?: boolean; matchReason?: string }
 const id = (n: number) => `10000000-0000-0000-0000-${String(n).padStart(12, "0")}`
 const WORKSPACE = id(1), USER = id(2), RELATIONSHIP = id(3), WORK = id(4)
-const categories = ["relationships", "work_items", "okrs", "key_results", "admin_activity", "modules", "services", "clients", "assets", "notes", "channels", "activities"]
+const categories = ["relationships", "work_items", "okrs", "key_results", "admin_activity", "modules", "services", "assets", "notes", "channels", "activities", "related"]
 function snapshot(role = "staff", records: Row = {}): Row {
-    return { workspace: { id: WORKSPACE, slug: "alpha", name: "Fixture workspace" }, role, can_sell: false,
+    return { schema_version: 2, workspace: { id: WORKSPACE, slug: "alpha", name: "Fixture workspace" }, role, can_sell: false,
         capabilities: ["fulfilment.manage", "communications.manage"], ...Object.fromEntries(categories.map(key => [key, []])), ...records }
 }
 function records(): Row {
     return {
-        relationships: [{ id: RELATIONSHIP, primary_person_name: "Needle person", primary_email: "needle@example.test", primary_phone: null, business_name: "Company" }],
-        work_items: [{ id: WORK, title: "Needle work", description: null, kind: "standard", visibility: "workspace", native_href: "/private-canary", native_id: "private-canary" }],
+        relationships: [{ id: RELATIONSHIP, primary_person_name: "Needle person", primary_email: "needle@example.test", primary_phone: null, business_name: "Company", status: "active", match_rank: 2, match_field: "name" }],
+        work_items: [{ id: WORK, title: "Needle work", description: null, kind: "standard", visibility: "workspace", archived: false, native_href: "/private-canary", native_id: "private-canary" }],
         okrs: [{ id: id(5), objective: "Needle objective", objective_type: "committed", description: null, status: "active", period_end: "2026-12-31" }],
         key_results: [{ id: id(6), name: "Needle result", description: null }],
         admin_activity: [{ id: id(7), summary: "Needle event", category: "system", level: "info", entity_href: "/private-canary" }],
         modules: [{ id: id(8), name: "Needle module", description: "Module", status: "published", definition: { secret: "private-canary" } }],
         services: [{ id: id(9), name: "Needle service", description: null, state: "active" }],
-        clients: [{ id: id(10), name: "Needle client", email: null, phone: null, relationship_id: RELATIONSHIP }],
-        assets: [{ id: id(11), title: "Needle asset", storage_key: "private-canary" }],
+        assets: [{ id: id(11), title: "Needle asset", archived: false, storage_key: "private-canary" }],
         notes: [{ id: id(12), name: "Needle note", description: "Note" }],
         channels: [{ relationship_id: RELATIONSHIP, external_address: "needle@example.test", provider: "email", id: "private-canary" }],
         activities: [{ id: id(13), relationship_id: RELATIONSHIP, activity_text: "Needle activity", activity_type: "update" }],
+        related: [],
     }
 }
 const codeCache = new Map<string, string>()
@@ -98,12 +98,11 @@ test("owner and admin retain all existing record categories with canonical desti
     for (const role of ["owner", "admin"]) {
         const response = await harness({ value: snapshot(role, records()) }).search()
         assert.equal(response.response.status, 200)
-        assert.equal(response.results.length, 12)
+        assert.equal(response.results.length, 11)
         for (const result of response.results) assert.ok(result.href.startsWith("/alpha/"))
         assert.equal(response.results.find(item => item.id === `work-${WORK}`)?.href, `/alpha/work-items/${WORK}`)
         assert.equal(response.results.find(item => item.id.startsWith("admin-activity-"))?.href, `/alpha/admin/activity/${id(7)}`)
-        assert.equal(response.results.find(item => item.id.startsWith("contact-"))?.href, `/alpha/communications?conversation=${RELATIONSHIP}`)
-        assert.equal(response.results.find(item => item.id.startsWith("client-"))?.href, `/alpha/onboarding/${RELATIONSHIP}`)
+        assert.equal(response.results.find(item => item.id.startsWith("client-chat-"))?.href, `/alpha/communications?mode=clients&conversation=${RELATIONSHIP}`)
         assert.ok(!response.body.includes("private-canary"))
     }
 })
@@ -122,13 +121,13 @@ test("contact-only permission does not require a relationship hit or expose a ch
     for (const role of ["owner", "admin", "staff"]) {
         const { results, body } = await harness({ value: snapshot(role, { channels: records().channels }) }).search()
         assert.equal(results.length, 1)
-        assert.equal(results[0].href, `/alpha/communications?conversation=${RELATIONSHIP}`)
+        assert.equal(results[0].href, `/alpha/communications?mode=clients&conversation=${RELATIONSHIP}`)
         assert.ok(!body.includes("private-canary"))
     }
 })
 
 test("staff rejects unexpected private rows instead of trusting capability flags", async () => {
-    for (const category of categories.filter(key => !["relationships", "work_items", "channels"].includes(key))) {
+    for (const category of categories.filter(key => !["relationships", "work_items", "channels", "related"].includes(key))) {
         const value = snapshot("staff", { capabilities: ["library.manage", "admin.manage"], [category]: records()[category] })
         const response = await harness({ value }).search("work")
         assert.equal(response.response.status, 503, category)
@@ -177,7 +176,12 @@ test("private shortcuts remain private even with staff capability flags", async 
 
 test("successful responses echo current account/workspace and final results remain capped at twenty", async () => {
     const data = records()
-    for (const key of categories) data[key] = Array.from({ length: key === "relationships" ? 8 : ["activities", "channels"].includes(key) ? 4 : 6 }, () => (data[key] as Row[])[0])
+    for (const [categoryIndex, key] of categories.entries()) {
+        if (key === "related") continue
+        data[key] = Array.from({ length: key === "relationships" ? 8 : ["activities", "channels"].includes(key) ? 4 : 6 }, (_, index) => ({
+            ...(data[key] as Row[])[0], id: id(100 + categoryIndex * 10 + index), relationship_id: id(500 + categoryIndex * 10 + index),
+        }))
+    }
     const response = await harness({ value: snapshot("admin", data) }).search()
     assert.equal(response.response.status, 200)
     assert.equal(response.results.length, 20)
@@ -232,4 +236,97 @@ test("late authentication after deadline cannot dispatch search retrieval", asyn
     assert.equal((await fixture.search()).response.status, 504)
     release(); await new Promise(resolve => setImmediate(resolve))
     assert.deepEqual(fixture.calls, [])
+})
+
+function related(kind: string, options: Row = {}): Row {
+    return { kind, id: kind === "onboarding" || kind === "client_chat" ? RELATIONSHIP : id(40),
+        relationship_id: RELATIONSHIP, relationship_name: "Needle person", title: "Useful destination",
+        status: kind === "work_item" ? "doing" : null, session_id: null, due_date: null,
+        visibility: kind === "work_item" ? "workspace" : null, ...options }
+}
+
+test("Bruce name precedes contextual Jason and archived Bruce remains clearly identified last", async () => {
+    const base = (records().relationships as Row[])[0]
+    const relationships = [
+        { ...base, id: id(20), primary_person_name: "Jason", status: "active", match_rank: 5, match_field: "notes" },
+        { ...base, id: id(21), primary_person_name: "Bruce Laing", status: "archived" },
+        { ...base, id: id(22), primary_person_name: "Bruce Laing", status: "active" },
+    ]
+    const response = await harness({ value: snapshot("admin", { relationships }) }).search("bruce")
+    assert.equal(response.response.status, 200)
+    assert.deepEqual(response.results.map(item => item.id), [`relationship-${id(22)}`, `relationship-${id(20)}`, `relationship-${id(21)}`])
+    assert.equal(response.results[1].matchReason, "Matches notes")
+    assert.equal(response.results[2].archived, true)
+})
+
+test("explicit related destinations use canonical routes and deduplicate a direct work hit", async () => {
+    const value = snapshot("staff", { relationships: records().relationships, work_items: records().work_items,
+        capabilities: ["onboarding.manage", "fulfilment.manage", "communications.manage"],
+        related: [related("onboarding", { session_id: id(31) }), related("client_chat"), related("team_chat"), related("work_item", { id: WORK, title: "Needle work" })] })
+    const response = await harness({ value }).search()
+    assert.equal(response.response.status, 200)
+    assert.equal(response.results.filter(item => item.id === `work-${WORK}`).length, 1)
+    assert.equal(response.results.find(item => item.id === `onboarding-${RELATIONSHIP}`)?.href, `/alpha/onboarding/${RELATIONSHIP}?session=${id(31)}`)
+    assert.equal(response.results.find(item => item.id === `client-chat-${RELATIONSHIP}`)?.href, `/alpha/communications?mode=clients&conversation=${RELATIONSHIP}`)
+    assert.equal(response.results.find(item => item.id === `team-chat-${id(40)}`)?.href, `/alpha/communications?mode=team&nativeConversation=${id(40)}`)
+    assert.ok(!response.body.includes("private-canary"))
+})
+
+test("related projection errors fail closed before any result or navigation is published", async () => {
+    const cases: Row[] = [
+        { schema_version: 1 },
+        { related: [related("unknown")] },
+        { related: [related("team_chat", { relationship_id: id(99) })] },
+        { related: [related("team_chat", { relationship_name: "Foreign canary" })] },
+        { related: [related("team_chat", { session_id: id(31) })] },
+        { related: [related("work_item", { visibility: "admins_only" })] },
+        { related: [related("work_item", { status: "done" })] },
+        { related: [related("work_item", { due_date: "not-a-date" })] },
+        { related: [related("onboarding")], capabilities: ["fulfilment.manage"] },
+        { related: [related("client_chat", { id: id(99) })] },
+        { related: Array.from({ length: 3 }, (_, index) => related("work_item", { id: id(60 + index) })) },
+        { related: [related("onboarding"), related("onboarding")] },
+        { relationships: [{ ...(records().relationships as Row[])[0], status: "archived" }], related: [related("client_chat")] },
+        { relationships: [{ ...(records().relationships as Row[])[0], match_rank: 5 }], related: [related("client_chat")] },
+    ]
+    for (const change of cases) {
+        const response = await harness({ value: snapshot("staff", { relationships: records().relationships,
+            capabilities: ["onboarding.manage", "fulfilment.manage", "communications.manage"], ...change }) }).search("work")
+        assert.equal(response.response.status, 503, JSON.stringify(change))
+        assert.deepEqual(response.results, [])
+    }
+})
+
+
+test("related context promotes a secondary work hit without replacing its direct presentation", async () => {
+    const base = (records().relationships as Row[])[0]
+    const value = snapshot("staff", { relationships: [base, { ...base, id: id(51), match_rank: 5, match_field: "notes", primary_person_name: "A contextual mention" }],
+        work_items: [{ ...(records().work_items as Row[])[0], title: "Zebra task", description: "Needle description" }],
+        related: [related("work_item", { id: WORK, title: "Zebra task" })] })
+    const response = await harness({ value }).search()
+    assert.equal(response.response.status, 200)
+    const item = response.results.find(result => result.id === `work-${WORK}`)
+    assert.equal(item?.description, "Needle description")
+    assert.equal(response.results.filter(result => result.id === `work-${WORK}`).length, 1)
+    assert.ok(response.results.findIndex(result => result.id === `work-${WORK}`) < response.results.findIndex(result => result.id === `relationship-${id(51)}`))
+})
+
+test("archive metadata is required and archived catalogue hits follow active matches", async () => {
+    const work = { ...(records().work_items as Row[])[0], archived: true }
+    const asset = { ...(records().assets as Row[])[0], archived: false }
+    const response = await harness({ value: snapshot("admin", { work_items: [work], assets: [asset] }) }).search()
+    assert.equal(response.response.status, 200)
+    assert.deepEqual(response.results.map(item => item.id), [`asset-${id(11)}`, `work-${WORK}`])
+    assert.equal(response.results[1].archived, true)
+    for (const invalid of [undefined, "false", 0, null]) {
+        assert.equal((await harness({ value: snapshot("admin", { work_items: [{ ...work, archived: invalid }] }) }).search()).response.status, 503)
+        assert.equal((await harness({ value: snapshot("admin", { assets: [{ ...asset, archived: invalid }] }) }).search()).response.status, 503)
+    }
+})
+
+test("exact navigation matches survive earlier registry context matches", async () => {
+    const value = snapshot("admin", { workspace: { id: id(1), slug: "alpha", name: "Agency Branding" } })
+    const response = await harness({ value }).search("agency branding")
+    assert.equal(response.response.status, 200)
+    assert.equal(response.results[0].id, "settings-agency-branding")
 })

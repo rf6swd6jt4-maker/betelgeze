@@ -20,6 +20,7 @@ try {
         server.once("exit", code => { clearTimeout(timer); reject(Error(`Fixture exit ${code}: ${log}`)) })
     })
     const scenarios = [
+        ["work-items", "shell-opening"], ["settings", "shell-opening"], ["communications", "shell-opening"], ["detail", "shell-opening"],
         ["work-items", "route"], ["work-items", "opening"], ["work-items", "reference"], ["work-items", "reference", "limited"],
         ["sops", "route"], ["sops", "reference"], ["sops", "reference", "limited"],
         ["assets", "route"], ["notes", "route"], ["relationships", "route"], ["relationships", "reference"], ["onboarding", "route"], ["onboarding", "reference"], ["queue", "route"],
@@ -68,7 +69,7 @@ try {
                             assert.equal(measurement.busyRoots, 1, `${id}: expected one busy loading root`)
                             assert.equal(measurement.interactiveCount, 0, `${id}: loading state must not expose controls`)
                             assert(!measurement.tabFaces.includes("rgb(255, 255, 255)"), `${id}: pending tabs must not look like finished white controls`)
-                            assert.equal(measurement.bannerCount, 0, `${id}: duplicate banner`)
+                            assert.equal(measurement.bannerCount, stage === "shell-opening" && variant === "work-items" ? 1 : 0, `${id}: expected one shared banner only on eligible shell opening`)
                             assert.equal(measurement.startupCount, 0, `${id}: startup branding in panel`)
                         }
                         assert(measurement.overflow <= 1, `${id}: horizontal overflow ${measurement.overflow}px`)

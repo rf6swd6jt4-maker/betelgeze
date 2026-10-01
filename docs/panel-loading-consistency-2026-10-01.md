@@ -8,7 +8,7 @@
 - `WorkspaceBannerPending` obeys reduced motion.
 - Native context messages include their source URL for the coordinator's route-identity fencing. This adds no read or context capability.
 
-The integration change in `WorkspaceTopBarClient` must wrap the framed opening state in `WorkspacePanelChrome`, passing the destination pathname and existing `nativeBanner` (or `WorkspaceBannerPending`). This agent deliberately leaves that shared shell file to its coordinating workstream.
+The integrated `WorkspaceTopBarClient` wraps the framed opening state in `WorkspacePanelChrome`, passing the destination pathname and existing `nativeBanner` (or `WorkspaceBannerPending`). This adds no banner read to the legacy-only path.
 
 ## Validation
 

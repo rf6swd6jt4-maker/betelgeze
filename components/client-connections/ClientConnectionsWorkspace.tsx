@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useSearchParams } from "@/components/workspace/WorkspaceNavigation"
 import { useMemo, useState, useTransition, type FormEvent } from "react"
 import { connectClientAccount, refreshClientAccount } from "@/app/[workspaceSlug]/client-connections/actions"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
@@ -16,9 +17,12 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts, agency, ca
     agency: { connected: boolean; name: string | null; id: string | null }
     canManageAgency: boolean
 }) {
-    const unconnected = useMemo(() => accounts.filter((account) => !account.connected), [accounts])
+    const selectedRelationship = useSearchParams().get("relationship")
+    const visibleAccounts = useMemo(() => selectedRelationship ? accounts.filter(account => account.relationshipId === selectedRelationship) : accounts, [accounts, selectedRelationship])
+    const unconnected = useMemo(() => visibleAccounts.filter((account) => !account.connected), [visibleAccounts])
+    const [connectionChoices, setConnectionChoices] = useState<ClientConnectionAccount[]>([])
     const [open, setOpen] = useState(false)
-    const [relationshipId, setRelationshipId] = useState(unconnected[0]?.relationshipId ?? "")
+    const [relationshipId, setRelationshipId] = useState("")
     const [accountType, setAccountType] = useState<"client_account" | "agency_subaccount">("client_account")
     const [pending, startTransition] = useTransition()
     const [error, setError] = useState<string | null>(null)
@@ -43,7 +47,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts, agency, ca
     }
 
     return <div className="mx-auto max-w-7xl px-4 pb-8 pt-5 text-white sm:px-6">
-        <PanelTabHeader title="Client Connections" description="Connect client accounts to the systems used to deliver their services." actions={<button type="button" disabled={!unconnected.length} onClick={() => { setError(null); setOpen(true) }} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">＋ Add connection</button>} />
+        <PanelTabHeader title="Client Connections" description="Connect client accounts to the systems used to deliver their services." actions={<button type="button" disabled={!unconnected.length} onClick={() => { setError(null); setConnectionChoices(unconnected); setRelationshipId(unconnected[0]?.relationshipId ?? ""); setOpen(true) }} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">＋ Add connection</button>} />
 
         <section className="mt-6 rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
             <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-semibold">Agency Connection</h2><p className="mt-1 text-sm leading-6 text-neutral-400">The agency HighLevel account used to verify agency sub-accounts.</p></div><Status label={agency.connected ? "Connected" : "Not connected"} tone={agency.connected ? "green" : "grey"} /></div>
@@ -53,19 +57,20 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts, agency, ca
         </section>
 
         {error ? <p role="alert" className="mt-4 rounded-xl border border-red-900/70 bg-red-950/20 p-3 text-sm text-red-200">{error}</p> : null}
+        {selectedRelationship ? <div className="mt-5 flex items-center justify-between gap-3 text-sm"><span className="text-neutral-400">Selected relationship</span><Link href={`/${workspaceSlug}/client-connections`} className="py-2 text-neutral-200 underline underline-offset-4">Show all clients</Link></div> : null}
         <List ariaLabel="Client accounts">
-            {accounts.length ? accounts.map((account) => {
+            {visibleAccounts.length ? visibleAccounts.map((account) => {
                 const title = account.businessName ? `${account.clientName} – ${account.businessName}` : account.clientName
                 const status = account.connected ? account.error ? { label: "Needs attention", tone: "red" as const } : { label: "Ready", tone: "green" as const } : { label: "Getting ready", tone: "yellow" as const }
                 return <ListItem key={account.relationshipId}>
                     <ListPrimaryRow><ListTitle className="flex-1">{title}</ListTitle><Status label={status.label} tone={status.tone} /></ListPrimaryRow>
                     <ListSecondaryRow><span className="min-w-0 truncate text-neutral-400">{account.connected ? `${account.accountType === "agency_subaccount" ? "Agency sub-account" : "Client account"}${account.locationName ? ` · ${account.locationName}` : ""}` : "Waiting for a HighLevel account to be linked"}</span><ListTrailing>{account.connected ? <button type="button" disabled={pending} onClick={() => refresh(account.relationshipId)} className="h-8 rounded-md border border-neutral-700 px-2.5 text-xs text-neutral-300 disabled:opacity-40">Refresh</button> : null}</ListTrailing></ListSecondaryRow>
                 </ListItem>
-            }) : <div className="p-6"><p className="font-semibold">No Appointment Setting clients yet.</p><p className="mt-2 text-sm text-neutral-400">Clients appear here as soon as Appointment Setting is added to their relationship.</p></div>}
+            }) : <div className="p-6"><p className="font-semibold">{selectedRelationship ? "No available connection for this relationship." : "No Appointment Setting clients yet."}</p><p className="mt-2 text-sm text-neutral-400">{selectedRelationship ? "It may no longer be eligible or available to your account." : "Clients appear here as soon as Appointment Setting is added to their relationship."}</p></div>}
         </List>
 
         {open ? <CenteredDialog title="Add client connection" busy={pending} onClose={() => setOpen(false)}><form onSubmit={submit} className="space-y-4">
-            <label className="block text-sm text-neutral-300">Client<Selector name="relationshipId" required appearance="input" ariaLabel="Client account" value={relationshipId} onChange={setRelationshipId} options={unconnected.map((account) => ({ value: account.relationshipId, label: account.businessName ? `${account.clientName} – ${account.businessName}` : account.clientName }))} /></label>
+            <label className="block text-sm text-neutral-300">Client<Selector name="relationshipId" required appearance="input" ariaLabel="Client account" value={relationshipId} onChange={setRelationshipId} options={connectionChoices.map((account) => ({ value: account.relationshipId, label: account.businessName ? `${account.clientName} – ${account.businessName}` : account.clientName }))} /></label>
             <label className="block text-sm text-neutral-300">Account source<Selector name="accountType" required appearance="input" ariaLabel="Account source" value={accountType} onChange={(value) => setAccountType(value === "agency_subaccount" ? "agency_subaccount" : "client_account")} options={[{ value: "client_account", label: "Client account", description: "The client already owns this HighLevel account." }, { value: "agency_subaccount", label: "Agency sub-account", description: "Your team created this under the connected agency." }]} /></label>
             {accountType === "agency_subaccount" && !agency.connected ? <p role="alert" className="rounded-lg border border-yellow-800/60 bg-yellow-950/20 p-3 text-sm text-yellow-200">Connect the agency HighLevel account in Settings first.</p> : null}
             <label className="block text-sm text-neutral-300">Location ID<input name="locationId" required maxLength={80} autoComplete="off" className={field} /></label>

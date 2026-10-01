@@ -121,7 +121,7 @@ export function NativeCommunicationsTab({ tab, active, workspaceId, workspaceSlu
         back: () => { if (current.current.active) post({ type: "history-step", historyDelta: -1 }) },
         forward: () => { if (current.current.active) post({ type: "history-step", historyDelta: 1 }) },
         prefetch: () => {},
-        context: context => post({ type: "context-status", contextSupported: Boolean(context), relationshipId: context?.id ?? null, context }),
+        context: context => post({ type: "context-status", url: tab.url, contextSupported: Boolean(context), relationshipId: context?.id ?? null, context }),
     }), [tab.id, tab.url, workspaceSlug, active, blocked, replace, refresh, post])
     useEffect(() => {
         if (active && committed.current?.revision === session.revision && committed.current.sourceUrl === session.sourceUrl) reportMounted()

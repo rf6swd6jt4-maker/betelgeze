@@ -346,6 +346,15 @@ html:is([data-mobile-conversation-phase="open"], [data-mobile-conversation-phase
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes betelgeze-drawer-right-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.betelgeze-drawer-right {
+  animation: betelgeze-drawer-right-in 200ms ease-out;
+}
+
 @keyframes betelgeze-popup-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -416,6 +425,7 @@ details:not([open]) > .betelgeze-popup-enter {
   .betelgeze-message-enter-right,
   .betelgeze-popup-enter,
   .betelgeze-popup-fade,
+  .betelgeze-drawer-right,
   .betelgeze-typing-dot { animation: none; }
 }
 

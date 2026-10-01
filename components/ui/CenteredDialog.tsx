@@ -1,30 +1,16 @@
 "use client"
 
-import { useEffect, useId, useRef, type ReactNode } from "react"
+import { useId, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
+import { useModalDialog, useModalOwnerActive } from "@/components/ui/useModalDialog"
 
 /** Native top-layer focus containment, shared across cards and stepped workflows. */
 export function CenteredDialog({ title, children, onClose, busy = false, wide = false, short = false, footer }: {
     title: string; children: ReactNode; onClose: () => void; busy?: boolean; wide?: boolean; short?: boolean; footer?: ReactNode
 }) {
-    const active = useWorkspaceNavigation()?.active ?? true
-    const ref = useRef<HTMLDialogElement>(null)
+    const active = useModalOwnerActive()
+    const ref = useModalDialog(active)
     const heading = useId()
-    useEffect(() => {
-        const dialog = ref.current
-        let previous = dialog?.ownerDocument.activeElement as HTMLElement | null
-        // The dialog is portalled above resident frames; restore their actual trigger.
-        while (previous?.tagName === "IFRAME") {
-            try {
-                const nested = (previous as HTMLIFrameElement).contentDocument?.activeElement as HTMLElement | null
-                if (!nested) break
-                previous = nested
-            } catch { break }
-        }
-        if (active) dialog?.showModal()
-        return () => { dialog?.close(); if (previous?.isConnected) previous.focus({ preventScroll: true }) }
-    }, [active])
     const dismiss = () => {
         if (busy) return
         const dialog = ref.current

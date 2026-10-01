@@ -34,6 +34,9 @@ import { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
 import { nativeWorkspaceRoute } from "@/lib/workspace-native"
 import { AccountMenu } from "@/components/account/AccountMenu"
 import { Avatar } from "@/components/account/Avatar"
+import { relationshipContextMatchesRoute } from "@/lib/relationship-context"
+import { WorkspacePanelChrome } from "@/components/workspace/WorkspacePanelChrome"
+import { WorkspaceBannerPending } from "@/components/admin/WorkspaceBannerPending"
 import { LoadingOverlay } from "@/components/LoadingOverlay"
 import { UnreadMessageCount } from "@/components/communications/UnreadMessageCount"
 import type { WorkspaceCreateActionState } from "@/app/[workspaceSlug]/relationships/actions"
@@ -135,6 +138,7 @@ type WorkspaceTabDragPreview = {
 }
 
 type WorkspaceTabContextStatus = {
+    url?: string
     supported: boolean
     relationshipId: string | null
     context: WorkspaceTabRelationshipContext | null
@@ -421,7 +425,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     const lastTouchTabTapRef = useRef({ tabId: "", time: 0 })
     const createIntentHandledRef = useRef("")
     const contextStatusByTabRef = useRef<Record<string, WorkspaceTabContextStatus>>({})
-    const contextManualClosedByTabRef = useRef<Record<string, boolean>>({})
     const contextObstructedByTabRef = useRef<Record<string, boolean>>({})
     const creationNoticeTimeoutRef = useRef<number | null>(null)
     const shellSecondaryRequestedRef = useRef(false)
@@ -1156,7 +1159,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         contextStatusByTabRef.current = { ...contextStatusByTabRef.current, [tabId]: status }
         setContextStatusByTab((current) => {
             const existing = current[tabId]
-            if (existing?.supported === status.supported && existing.relationshipId === status.relationshipId && existing.context === status.context) return current
+            if (existing?.url === status.url && existing?.supported === status.supported && existing.relationshipId === status.relationshipId && existing.context === status.context) return current
             return { ...current, [tabId]: status }
         })
     }, [])
@@ -1521,7 +1524,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 })
                 if (!routeCanShowRelationshipContext(url)) {
                     setTabContextStatus(message.tabId, { supported: false, relationshipId: null, context: null })
-                    setTabContextOpen(message.tabId, false)
                 }
             }
 
@@ -1623,6 +1625,8 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             }
 
             if (message.type === "context-status") {
+                const currentUrl = tabsRef.current.find((tab) => tab.id === message.tabId)?.url
+                if (!relationshipContextMatchesRoute(message.url, currentUrl)) return
                 const relationshipId = message.relationshipId ?? null
                 const supported = message.contextSupported === true && Boolean(relationshipId)
 
@@ -1630,15 +1634,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                     const currentStatus = contextStatusByTabRef.current[message.tabId]
                     if (currentStatus?.supported && relationshipId && currentStatus.relationshipId !== relationshipId) return
                     setTabContextStatus(message.tabId, { supported: false, relationshipId: null, context: null })
-                    setTabContextOpen(message.tabId, false)
                     return
                 }
 
-                setTabContextStatus(message.tabId, { supported: true, relationshipId, context: message.context ?? null })
-                if (!contextManualClosedByTabRef.current[message.tabId]) {
-                    delete contextManualClosedByTabRef.current[message.tabId]
-                    setTabContextOpen(message.tabId, true)
-                }
+                setTabContextStatus(message.tabId, { url: message.url, supported: true, relationshipId, context: message.context ?? null })
             }
 
             if (message.type === "context-obstruction") {
@@ -2204,7 +2203,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 updateTabForShellNavigation(tabId, url)
                 if (!routeCanShowRelationshipContext(url)) {
                     setTabContextStatus(tabId, { supported: false, relationshipId: null, context: null })
-                    setTabContextOpen(tabId, false)
                 }
             }
 
@@ -2468,8 +2466,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             activeTabIdRef.current = tab.id
             setTabs(nextTabs)
             activateWorkspaceTab(tab.id)
-            const currentContextStatus = currentTab ? contextStatusByTabRef.current[currentTab.id] : null
-            const currentContextOpen = currentContextStatus?.supported ? true : currentTab ? contextOpenByTab[currentTab.id] ?? true : true
+            const currentContextOpen = currentTab ? contextOpenByTab[currentTab.id] ?? true : true
             shellStorage.set(workspaceTabContextStorageKey(workspace.slug, tab.id), currentContextOpen ? "true" : "false")
             setContextOpenByTab((current) => ({ ...current, [tab.id]: currentContextOpen }))
             saveTabsState(nextTabs, tab.id)
@@ -2483,8 +2480,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         const activeContextStatus = contextStatusByTabRef.current[tabId]
         if (!activeContextStatus?.supported) return
         const nextOpen = !(contextOpenByTab[tabId] ?? true)
-        if (nextOpen) delete contextManualClosedByTabRef.current[tabId]
-        else contextManualClosedByTabRef.current[tabId] = true
         setTabContextOpen(tabId, nextOpen)
     }
 
@@ -2550,7 +2545,6 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 return next
             })
             delete contextStatusByTabRef.current[tabId]
-            delete contextManualClosedByTabRef.current[tabId]
             delete contextObstructedByTabRef.current[tabId]
             setContextStatusByTab((current) => {
                 if (!(tabId in current)) return current
@@ -2599,7 +2593,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     const canGoBack = activeTabLoaded && activeTab.historyIndex > 0
     const canGoForward = activeTabLoaded && activeTab.historyIndex < activeTab.history.length - 1
     const activeContextStatus = contextStatusByTab[activeTab.id]
-    const activeContextSupported = activeContextStatus?.supported === true
+    const activeContextSupported = activeContextStatus?.supported === true && relationshipContextMatchesRoute(activeContextStatus.url, activeTab.url)
     const activeContextOpen = activeContextSupported && (contextOpenByTab[activeTab.id] ?? true)
     const activeContextObstructed = contextObstructedByTab[activeTab.id] === true
     const activeRelationshipContext = activeContextSupported && !activeContextObstructed ? activeContextStatus?.context ?? null : null
@@ -3001,7 +2995,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 <button data-icon-button type="button" onClick={toggleContextPanel} disabled={!activeContextSupported} aria-label={!activeContextSupported ? "Relationship context unavailable" : activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextSupported ? activeContextOpen : undefined} className="mb-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400 lg:inline-flex">
                     <ContextPanelIcon />
                 </button>
-                <button data-icon-button type="button" onClick={() => setMobileContextKey(`${activeTab.id}:${activeTab.url}`)} disabled={!activeContextSupported || activeContextObstructed || activeRouteLoading} aria-label="Show relationship context" aria-haspopup="dialog" className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-white disabled:opacity-30 lg:hidden">
+                <button data-icon-button type="button" onClick={event => { event.currentTarget.focus({ preventScroll: true }); setMobileContextKey(`${activeTab.id}:${activeTab.url}`) }} disabled={!activeContextSupported || activeContextObstructed || activeRouteLoading} aria-label="Show relationship context" aria-haspopup="dialog" className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-white disabled:opacity-30 lg:hidden">
                     <ContextPanelIcon />
                 </button>
             </div>
@@ -3028,7 +3022,9 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             ))}
             {!activeNativePanel && (!loadedTabIds.has(activeTabId) || activeNavigation || activeRouteLoading) && (
                 <div className="absolute inset-0 z-10 overflow-y-auto bg-neutral-950">
-                    <WorkspaceTabOpeningState url={activeTab.url} workspaceSlug={workspace.slug} detailPreview={activeTab.detailPreview} />
+                    <WorkspacePanelChrome pathname={activePathname} banner={nativeBanner ?? <WorkspaceBannerPending />}>
+                        <WorkspaceTabOpeningState url={activeTab.url} workspaceSlug={workspace.slug} detailPreview={activeTab.detailPreview} />
+                    </WorkspacePanelChrome>
                 </div>
             )}
             {tabsHydrated && activeNavigation?.status === "error" ? <div role="alert" className="absolute right-4 top-4 z-20 flex items-center gap-3 rounded-lg border border-red-500/30 bg-neutral-950/95 px-3 py-2 text-xs text-red-200 shadow-xl"><span>{activeNavigation.error}</span><button type="button" onClick={retryActiveNavigation} className="font-medium text-white underline decoration-neutral-600 underline-offset-2">Retry</button></div> : null}
@@ -3040,6 +3036,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 desktopOpen={activeContextOpen}
                 mobileOpen={mobileContextKey === `${activeTab.id}:${activeTab.url}`}
                 onClose={() => setMobileContextKey(null)}
+                currentUrl={activeTab.url}
                 context={activeRelationshipContext}
                 workspaceSlug={workspace.slug}
                 onNavigate={(href) => { setMobileContextKey(null); navigateActiveTab(href) }}

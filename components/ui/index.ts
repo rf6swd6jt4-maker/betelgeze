@@ -32,3 +32,5 @@ export { PillField } from "./PillField"
 export { CollapsedPillLinks } from "./CollapsedPillLinks"
 
 export { AssetGallery, AssetGalleryCard, AddAssetGalleryCard } from "./AssetGallery"
+
+export { SideDrawer } from "./SideDrawer"

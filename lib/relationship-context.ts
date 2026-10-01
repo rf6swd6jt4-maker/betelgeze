@@ -34,3 +34,25 @@ export function relationshipContactHref(kind: "Email" | "Phone" | "Website", val
         return ["http:", "https:"].includes(url.protocol) && url.hostname ? url.href : null
     } catch { return null }
 }
+
+/** Canonical destinations; Client Connections is a collection, not a detail route. */
+export function relationshipContextHref(destination: RelationshipContextDestination, workspaceSlug: string, relationshipId: string) {
+    const workspace = encodeURIComponent(workspaceSlug)
+    const id = encodeURIComponent(relationshipId)
+    if (destination === "client-connections") return `/${workspace}/client-connections?relationship=${id}`
+    const path = relationshipContextDestinations.find((item) => item.key === destination)!.path
+    return `/${workspace}/${path}/${id}`
+}
+
+/** Ignore frame transport and in-page anchors, retaining meaningful route queries. */
+export function relationshipContextRouteKey(value: string) {
+    const url = new URL(value, "http://workspace.invalid")
+    url.searchParams.delete("__betelgeze_tab")
+    url.searchParams.delete("pollStarted")
+    url.searchParams.sort()
+    return `${url.pathname}${url.search}`
+}
+
+export function relationshipContextMatchesRoute(reported: string | undefined, current: string | undefined) {
+    return Boolean(reported && current && relationshipContextRouteKey(reported) === relationshipContextRouteKey(current))
+}

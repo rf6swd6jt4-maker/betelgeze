@@ -79,12 +79,13 @@ test("private chat policy, recovery views, and participant moderation are databa
 })
 
 test("new chat attachments use R2 SSE-C and client media is referenced from Assets", async () => {
-    const [migration, uploads, media, cors, assets] = await Promise.all([
+    const [migration, uploads, media, cors, assets, preview] = await Promise.all([
         readFile("supabase/migrations/20260821150000_encrypted_communications.sql", "utf8"),
         readFile("lib/onboarding/uploads.ts", "utf8"),
         readFile("app/api/client-messages/media/[...path]/route.ts", "utf8"),
         readFile("lib/onboarding/r2-cors.ts", "utf8"),
         readFile("app/[workspaceSlug]/assets/page.tsx", "utf8"),
+        readFile("lib/assets/preview.ts", "utf8"),
     ])
     assert.match(migration, /communications_secure\.encrypted_files/)
     assert.match(migration, /communication_create_file_key/)
@@ -100,5 +101,6 @@ test("new chat attachments use R2 SSE-C and client media is referenced from Asse
     assert.match(media, /createEncryptedPrivateUploadSignedRequest/)
     assert.match(media, /redeemCommunicationMediaGrant/)
     assert.match(cors, /x-amz-server-side-encryption-customer-key-md5/)
-    assert.match(assets, /asset\.source_kind === "message" \? encryptedMessageAssetUrl/)
+    assert.match(assets, /assetPreviewUrl\(workspace.id, workspace.slug, asset, true\)/)
+    assert.match(preview, /asset\.source_kind === "message".*\/api\/client-messages\/media\//)
 })

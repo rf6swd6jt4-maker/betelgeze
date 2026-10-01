@@ -6,30 +6,23 @@ import type { InlineWorkItemFields } from "@/app/[workspaceSlug]/work-items/[id]
 import { workItemStatusPresentation } from "@/components/list/work-item-presentation"
 import { loadRelationshipContext } from "@/components/workspace/ClientContextPanel"
 import { listWorkItemKeyResultLinks } from "@/lib/admin/okrs"
-import { createUploadSignedUrl, createUploadSignedUrls } from "@/lib/onboarding/uploads"
+import { assetPreviewUrl } from "@/lib/assets/preview"
+import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { profileAvatarUrl } from "@/lib/profile-avatar"
 import { getAsset, getRelationship, getWorkItem, getWorkItemPlanningContext, listAssetRelationships, listAssetWorkItems, listWorkItemAssets, listWorkItemRelationships, listWorkspaceAssets, listWorkspaceWorkItems, onboardingDetailHref, type RelationshipAsset } from "@/lib/relationships"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { shortId } from "@/lib/ui/relative-time"
-import { accessibleAssetIds, accessibleRelationshipIds, accessibleWorkItemIds, requireWorkspaceAccess, requireWorkspacePanel, workspaceAccessHasCapability } from "@/lib/workspace-access"
+import { accessibleRelationshipIds, accessibleWorkItemIds, requireWorkspaceAccess, requireWorkspacePanel, workspaceAccessHasCapability } from "@/lib/workspace-access"
 
 function assetSummary(asset: RelationshipAsset) {
     return { id: asset.id, title: asset.title, description: asset.description, asset_kind: asset.asset_kind, source_kind: asset.source_kind, content_type: asset.content_type, file_size: asset.file_size, updated_at: asset.updated_at }
 }
 
-function assetPreview(asset: RelationshipAsset,workspaceSlug:string) {
-    if(asset.native_kind==='sop_extracted_image')return Promise.resolve(`/api/workspaces/${workspaceSlug}/sop-images/${asset.id}`)
-    if (!asset.storage_path) return Promise.resolve(asset.external_url)
-    return asset.source_kind === "message"
-        ? Promise.resolve(`/api/client-messages/media/${asset.storage_path.split("/").map(encodeURIComponent).join("/")}`)
-        : createUploadSignedUrl(asset.storage_path)
-}
-
 async function loadAssetList(workspaceSlug: string) {
-    const { workspace, user, access } = await requireWorkspacePanel(workspaceSlug, "library")
-    const [allAssets, allowedIds] = await Promise.all([listWorkspaceAssets(workspace.id), accessibleAssetIds(access)])
-    const assets = allAssets.filter((asset) => !allowedIds || allowedIds.has(asset.id))
-    const previewEntries = await Promise.all(assets.slice(0, 24).map(async (asset) => ({ asset: assetSummary(asset), previewUrl: asset.content_type?.startsWith("image/") && asset.storage_path ? await assetPreview(asset,workspace.slug)+(asset.native_kind==='sop_extracted_image'?'?thumbnail=1':'') : null })))
+    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "library")
+    const assets = await listWorkspaceAssets(workspace.id, await createSupabaseServerClient())
+    const previewEntries = await Promise.all(assets.slice(0, 24).map(async (asset) => ({ asset: assetSummary(asset), previewUrl: asset.content_type?.startsWith("image/") && asset.storage_path ? await assetPreviewUrl(workspace.id, workspace.slug, asset, true) : null })))
     return {
         userId: user.id, workspaceId: workspace.id, workspaceSlug: workspace.slug, kind: "assets" as const, context: null,
         previewEntries, counts: { total: assets.length, images: assets.filter((asset) => asset.content_type?.startsWith("image/")).length, documents: assets.filter((asset) => asset.asset_kind === "document" || asset.content_type === "application/pdf").length, uploads: assets.filter((asset) => asset.source_kind === "upload").length },
@@ -61,17 +54,17 @@ async function loadWorkItemList(workspaceSlug: string) {
 async function loadAssetDetail(workspaceSlug: string, id: string) {
     const { workspace, user, role, access } = await requireWorkspaceAccess(workspaceSlug)
     if (!workspaceAccessHasCapability(access, "fulfilment.manage") && !workspaceAccessHasCapability(access, "onboarding.manage")) notFound()
-    const relationshipScope = accessibleRelationshipIds(access)
-    const workItemScope = accessibleWorkItemIds(access)
-    const assetScope = Promise.all([relationshipScope, workItemScope]).then(([relationships, workItems]) => accessibleAssetIds(access, relationships, workItems))
-    const [asset, relationships, workItems, allowedRelationships, allowedWorkItems, allowedAssets] = await Promise.all([
-        getAsset(workspace.id, id), listAssetRelationships(workspace.id, id), listAssetWorkItems(workspace.id, id), relationshipScope, workItemScope, assetScope,
+    // Cookie-bound RLS checks the actor and each linked destination in the read
+    // itself. Do not infer asset permission from a workspace-wide ID snapshot.
+    const reader = await createSupabaseServerClient()
+    const [asset, relationships, workItems] = await Promise.all([
+        getAsset(workspace.id, id, reader), listAssetRelationships(workspace.id, id, reader), listAssetWorkItems(workspace.id, id, reader),
     ])
-    if (!asset || (allowedAssets && !allowedAssets.has(id))) notFound()
-    const scopedRelationships = relationships.filter((link) => !allowedRelationships || allowedRelationships.has(link.relationship_id)).map((link) => ({ relationship_id: link.relationship_id, relationship: link.relationship ? { business_name: link.relationship.business_name, primary_person_name: link.relationship.primary_person_name } : null }))
-    const scopedWorkItems = workItems.filter((link) => !allowedWorkItems || allowedWorkItems.has(link.work_item_id)).map((link) => ({ work_item_id: link.work_item_id, work_item: link.work_item ? { title: link.work_item.title } : null }))
+    if (!asset) notFound()
+    const scopedRelationships = relationships.map((link) => ({ relationship_id: link.relationship_id, relationship: link.relationship ? { business_name: link.relationship.business_name, primary_person_name: link.relationship.primary_person_name } : null }))
+    const scopedWorkItems = workItems.map((link) => ({ work_item_id: link.work_item_id, work_item: link.work_item ? { title: link.work_item.title } : null }))
     const contextRelationshipId = scopedRelationships[0]?.relationship_id
-    const [relationship, previewUrl] = await Promise.all([contextRelationshipId ? getRelationship(workspace.id, contextRelationshipId) : null, assetPreview(asset,workspace.slug)])
+    const [relationship, previewUrl] = await Promise.all([contextRelationshipId ? getRelationship(workspace.id, contextRelationshipId) : null, assetPreviewUrl(workspace.id, workspace.slug, asset)])
     const context = await loadRelationshipContext({ workspaceSlug, relationship, access, metrics: [{ label: "Reference", value: shortId(asset.id) }, { label: "Links", value: scopedRelationships.length + scopedWorkItems.length }] })
     const response = asset.asset_kind === "form_submission" ? asset.metadata.response : null
     const formEntries = response && typeof response === "object" && !Array.isArray(response)
@@ -79,7 +72,7 @@ async function loadAssetDetail(workspaceSlug: string, id: string) {
     const onboardingId = typeof asset.metadata.relationship_id === "string" ? asset.metadata.relationship_id : contextRelationshipId
     const step = typeof asset.metadata.step_key === "string" ? asset.metadata.step_key : ""
     const stepAnchor = step.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "step"
-    const onboardingBackHref = onboardingId && (!allowedRelationships || allowedRelationships.has(onboardingId)) && ["onboarding_form_submission", "onboarding_upload"].includes(asset.native_kind ?? "")
+    const onboardingBackHref = onboardingId && scopedRelationships.some((link) => link.relationship_id === onboardingId) && ["onboarding_form_submission", "onboarding_upload"].includes(asset.native_kind ?? "")
         ? `${onboardingDetailHref(workspace.slug, onboardingId)}${step ? `#step-${stepAnchor}` : ""}` : null
     return {
         userId: user.id, workspaceId: workspace.id, workspaceSlug: workspace.slug, kind: "asset-detail" as const,
@@ -95,8 +88,9 @@ async function loadWorkItemDetail(workspaceSlug: string, id: string) {
     if (!item || (allowedWorkItemIds && !allowedWorkItemIds.has(id)) || (item.visibility === "admins_only" && role === "staff")) notFound()
     const status = workItemStatusPresentation(item.status)
     const isAdminItem = item.area === "admin"
+    const reader = await createSupabaseServerClient()
     const [relationships, assets, planning, keyResultLinks] = await Promise.all([
-        isAdminItem ? [] : listWorkItemRelationships(workspace.id, item.id), isAdminItem ? [] : listWorkItemAssets(workspace.id, item.id),
+        isAdminItem ? [] : listWorkItemRelationships(workspace.id, item.id), isAdminItem ? [] : listWorkItemAssets(workspace.id, item.id, reader),
         getWorkItemPlanningContext(workspace.id, item, { includeAvailableWorkItems: false }), role !== "staff" ? listWorkItemKeyResultLinks(workspace.id, item.id) : [],
     ])
     const dependencies = planning.dependencies.filter((dependency) => !allowedWorkItemIds || allowedWorkItemIds.has(dependency.work_item_id))

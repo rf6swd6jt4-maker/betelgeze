@@ -16,6 +16,7 @@ import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { listWorkItemKeyResultLinks } from "@/lib/admin/okrs"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { accessibleRelationshipIds, accessibleWorkItemIds, requireWorkspaceAccess, workspaceAccessHasCapability } from "@/lib/workspace-access"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { InlineWorkItemFields } from "./InlineWorkItemFields"
 
 export const dynamic = "force-dynamic"
@@ -39,9 +40,10 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     if (item.visibility === "admins_only" && role === "staff") notFound()
     const isAdminItem = item.area === "admin"
     const canSeeOkrs = role !== "staff"
+    const reader = await createSupabaseServerClient()
     const [relationships, assets, planning, keyResultLinks] = await Promise.all([
         isAdminItem ? Promise.resolve([]) : listWorkItemRelationships(workspace.id, item.id),
-        isAdminItem ? Promise.resolve([]) : listWorkItemAssets(workspace.id, item.id),
+        isAdminItem ? Promise.resolve([]) : listWorkItemAssets(workspace.id, item.id, reader),
         getWorkItemPlanningContext(workspace.id, item, { includeAvailableWorkItems: false }),
         canSeeOkrs ? listWorkItemKeyResultLinks(workspace.id, item.id) : Promise.resolve([]),
     ])
@@ -50,12 +52,11 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     const scopedRelationships = relationships.filter((relationship) => !allowedRelationshipIds || allowedRelationshipIds.has(relationship.relationship_id))
     const contextRelationshipId = scopedRelationships[0]?.relationship_id
     const waitsForParent = planning.dependencies.some((dependency) => dependency.source === "parent_auto" && dependency.work_item_id === item.parent_work_item_id)
-    const imageStoragePaths = assets.flatMap((asset) => asset.storage_path && asset.content_type?.startsWith("image/") && asset.source_kind !== "message" && asset.native_kind !== "sop_extracted_image" ? [asset.storage_path] : []).slice(0, 24)
+
     const [contextRelationship, signedUrls] = await Promise.all([
         contextRelationshipId ? getRelationship(workspace.id, contextRelationshipId) : Promise.resolve(null),
         createUploadSignedUrls([
             ...[...planning.members, ...(planning.creator ? [planning.creator] : [])].map((person) => person.avatar_path).filter((path): path is string => Boolean(path)),
-            ...imageStoragePaths,
         ]),
     ])
     const personProps = (person: typeof planning.members[number]) => ({

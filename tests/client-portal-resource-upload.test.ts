@@ -9,13 +9,17 @@ import * as zipWriter from "@zip.js/zip.js/lib/zip-core-writer.js"
 import { UploadPartCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
+// These existing VM fixtures intentionally model dynamically loaded modules.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FixtureValue = any
+
 function load(path: string, dependencies: Record<string, unknown> = {}) {
     const code = ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
     const require = createRequire(resolve(path))
-    const module = new Module(resolve(path)) as Module & { _compile: (code: string, path: string) => void }
-    module.require = ((name: string) => name in dependencies ? dependencies[name] : name.startsWith("@/lib/") ? {} : require(name)) as typeof module.require
-    module._compile(code, path)
-    return module.exports
+    const loaded = new Module(resolve(path)) as Module & { _compile: (code: string, path: string) => void }
+    loaded.require = ((name: string) => name in dependencies ? dependencies[name] : name.startsWith("@/lib/") ? {} : require(name)) as typeof loaded.require
+    loaded._compile(code, path)
+    return loaded.exports
 }
 const forms = load("lib/onboarding/forms.ts")
 const resources = load("lib/client-portal/resources.ts", { "../onboarding/forms": forms })
@@ -25,12 +29,12 @@ const scope = { workspaceId: "workspace", relationshipId: "relationship", sessio
 const requestId = "00000000-0000-4000-8000-000000000001"
 const notFound = () => Object.assign(new Error("Not found"), { $metadata: { httpStatusCode: 404 } })
 
-function multipart(send: (command: any) => Promise<any>) {
+function multipart(send: (command: FixtureValue) => Promise<FixtureValue>) {
     return load("lib/client-portal/resource-multipart.ts", {
         "./resources": resources,
         "@/lib/env": { getRequiredEnv: () => "test-key" },
         "@/lib/onboarding/uploads": { getR2Client: () => ({ send }), getR2BucketName: () => "test-bucket" },
-        "@aws-sdk/s3-request-presigner": { getSignedUrl: async (_client: unknown, command: any) => { await send(command); return "https://storage.example/part" } },
+        "@aws-sdk/s3-request-presigner": { getSignedUrl: async (_client: unknown, command: FixtureValue) => { await send(command); return "https://storage.example/part" } },
     })
 }
 
@@ -55,13 +59,13 @@ test("folder archives preserve nested names, arbitrary bytes, empty files, and e
 
 test("folder enumeration drains every page beyond 100 entries and continues after an unreadable root", async () => {
     let page = 0
-    const directory = { name: "Photos", isDirectory: true, createReader: () => ({ readEntries(resolve: (entries: any[]) => void) {
+    const directory = { name: "Photos", isDirectory: true, createReader: () => ({ readEntries(resolve: (entries: FixtureValue[]) => void) {
         resolve(page++ < 2 ? Array.from({ length: 101 }, (_, i) => ({ name: `${page}-${i}.bin`, isFile: true, file: (done: (file: File) => void) => done(new File(["x"], `${i}.bin`)) })) : [])
     } }) }
     const unreadable = { name: "Unreadable", isDirectory: true, createReader: () => ({ readEntries(_resolve: unknown, reject: (e: Error) => void) { reject(new Error("Cannot read")) } }) }
     const items = [directory, unreadable].map((entry) => ({ kind: "file", webkitGetAsEntry: () => entry, getAsFile: () => null }))
     const loose = new File(["ok"], "Readme")
-    items.push({ kind: "file", webkitGetAsEntry: () => null as any, getAsFile: () => loose as any })
+    items.push({ kind: "file", webkitGetAsEntry: () => null as FixtureValue, getAsFile: () => loose as FixtureValue })
     const result = await selection.droppedResources({ items, files: [] })
     assert.equal(page, 3)
     assert.equal(result.selections.length, 2)
@@ -77,7 +81,7 @@ test("folder names that need normalization do not overwrite one another", async 
         { path: "Project/a_b/" }, { path: "Project/a_b/file", file },
         { path: "Project/a_b (2)/file", file },
     ])
-    assert.deepEqual(folder.entries.map((entry: any) => entry.path), ["Project/a_b/", "Project/a_b/file", "Project/a_b (2)/", "Project/a_b (2)/file", "Project/a_b (2) (2)/file"])
+    assert.deepEqual(folder.entries.map((entry: FixtureValue) => entry.path), ["Project/a_b/", "Project/a_b/file", "Project/a_b (2)/", "Project/a_b (2)/file", "Project/a_b (2) (2)/file"])
 })
 
 test("empty folder trees are distinguished from folders containing zero-byte files", () => {
@@ -96,15 +100,15 @@ test("an unreadable file fails the ZIP stream instead of producing a successful 
 })
 
 test("multipart tickets bind the file, path, part size, relationship, session, and lifetime", async () => {
-    const module = multipart(async () => ({ UploadId: "upload-id" }))
-    const ticket = await module.startResourceMultipart(scope, { name: "資料.zip", type: "application/zip", size: 20_000_000, folder: true, requestId })
-    assert.ok(module.validResourceTicket(ticket, scope, "test-key"))
+    const loaded = multipart(async () => ({ UploadId: "upload-id" }))
+    const ticket = await loaded.startResourceMultipart(scope, { name: "資料.zip", type: "application/zip", size: 20_000_000, folder: true, requestId })
+    assert.ok(loaded.validResourceTicket(ticket, scope, "test-key"))
     for (const changed of [{ path: "workspace/client-portal/other/session/file" }, { uploadId: "other" }, { name: "changed" }, { expectedSize: 100 }, { partSize: 1 }, { receipt: "bad" }]) {
-        assert.equal(module.validResourceTicket({ ...ticket, ...changed }, scope, "test-key"), false)
+        assert.equal(loaded.validResourceTicket({ ...ticket, ...changed }, scope, "test-key"), false)
     }
-    assert.equal(module.validResourceTicket(ticket, { ...scope, relationshipId: "other" }, "test-key"), false)
-    assert.equal(module.validResourceTicket(ticket, { ...scope, sessionId: "other" }, "test-key"), false)
-    assert.equal(module.validResourceTicket(ticket, scope, "test-key", ticket.issuedAt + 8 * 86400000), false)
+    assert.equal(loaded.validResourceTicket(ticket, { ...scope, relationshipId: "other" }, "test-key"), false)
+    assert.equal(loaded.validResourceTicket(ticket, { ...scope, sessionId: "other" }, "test-key"), false)
+    assert.equal(loaded.validResourceTicket(ticket, scope, "test-key", ticket.issuedAt + 8 * 86400000), false)
 })
 
 test("multipart completion verifies actual stored parts and is safe after a lost completion response", async () => {
@@ -112,22 +116,22 @@ test("multipart completion verifies actual stored parts and is safe after a lost
     let completions = 0
     let corrupt = true
     const partSize = resources.PORTAL_UPLOAD_PART_SIZE
-    const module = multipart(async (command) => {
+    const loaded = multipart(async (command) => {
         if (command.constructor.name === "CreateMultipartUploadCommand") return { UploadId: "upload-id" }
         if (command.constructor.name === "HeadObjectCommand") { if (!complete) throw notFound(); return { ContentLength: partSize + 12, ContentType: "application/octet-stream" } }
         if (command.constructor.name === "ListPartsCommand") return { Parts: [{ PartNumber: 1, Size: partSize, ETag: "one" }, { PartNumber: 2, Size: corrupt ? 11 : 12, ETag: "two" }] }
         if (command.constructor.name === "CompleteMultipartUploadCommand") { complete = true; completions++; return {} }
         throw new Error("Unexpected storage request")
     })
-    const ticket = await module.startResourceMultipart(scope, { name: "large.unknown", type: "", size: partSize + 12, folder: false, requestId })
-    await assert.rejects(module.completeResourceMultipart(ticket, partSize + 12, 2), /Incomplete/)
+    const ticket = await loaded.startResourceMultipart(scope, { name: "large.unknown", type: "", size: partSize + 12, folder: false, requestId })
+    await assert.rejects(loaded.completeResourceMultipart(ticket, partSize + 12, 2), /Incomplete/)
     assert.equal(completions, 0)
     corrupt = false
-    const saved = await module.completeResourceMultipart(ticket, partSize + 12, 2)
+    const saved = await loaded.completeResourceMultipart(ticket, partSize + 12, 2)
     assert.equal(saved.size, partSize + 12)
-    assert.deepEqual(await module.completeResourceMultipart(ticket, partSize + 12, 2), saved)
+    assert.deepEqual(await loaded.completeResourceMultipart(ticket, partSize + 12, 2), saved)
     assert.equal(completions, 1)
-    await assert.rejects(module.completeResourceMultipart(ticket, partSize + 11, 2), /Invalid upload size/)
+    await assert.rejects(loaded.completeResourceMultipart(ticket, partSize + 11, 2), /Invalid upload size/)
 })
 
 test("R2 signed browser parts do not carry a checksum of an empty request body", async () => {
@@ -139,7 +143,7 @@ test("R2 signed browser parts do not carry a checksum of an empty request body",
 
 test("retrying a failed second part reuses the first part and sends the exact remaining bytes", async () => {
     const oldFetch = globalThis.fetch
-    const oldXHR = (globalThis as any).XMLHttpRequest
+    const oldXHR = (globalThis as FixtureValue).XMLHttpRequest
     const parts = new Map<number, Uint8Array>()
     const calls: string[] = []
     let failSecond = true
@@ -157,8 +161,8 @@ test("retrying a failed second part reuses the first part and sends the exact re
         if (input.action === "complete") { assert.equal(input.size, file.size); assert.equal(input.partCount, 2); return Response.json({ resource: { id: "asset" } }) }
         throw new Error("Unexpected request")
     }) as typeof fetch
-    ;(globalThis as any).XMLHttpRequest = class {
-        upload: any = {}; status = 200; onload?: () => void; url = "";
+    ;(globalThis as FixtureValue).XMLHttpRequest = class {
+        upload: FixtureValue = {}; status = 200; onload?: () => void; url = "";
         open(_method: string, url: string) { this.url = url }
         setRequestHeader() {}
         send(body: Blob) { void body.arrayBuffer().then((bytes) => { parts.set(Number(this.url.split("/").at(-1)), new Uint8Array(bytes)); this.upload.onprogress?.({ loaded: body.size }); this.onload?.() }) }
@@ -171,7 +175,7 @@ test("retrying a failed second part reuses the first part and sends the exact re
         assert.equal(calls.filter((call) => call === "part:1").length, 1)
         assert.equal(parts.get(1)!.length, size)
         assert.deepEqual(parts.get(2), new Uint8Array([1, 2, 3, 255]))
-    } finally { globalThis.fetch = oldFetch; (globalThis as any).XMLHttpRequest = oldXHR }
+    } finally { globalThis.fetch = oldFetch; (globalThis as FixtureValue).XMLHttpRequest = oldXHR }
 })
 
 test("multipart API rejects revoked or cross-relationship tickets before storage and only saves verified completion", async () => {
@@ -195,7 +199,7 @@ test("multipart API rejects revoked or cross-relationship tickets before storage
         "@/lib/client-portal/resource-multipart": implementation,
         "@/lib/client-portal/resources": resources,
         "@/lib/env": { getRequiredEnv: () => "test-key" },
-        "@/lib/client-portal/resource-persistence": { persistPortalResource: async (upload: any, actualScope: any) => { assert.deepEqual(actualScope, scope); assert.equal(upload.size, 10); saves++; return { resource: { id: "asset" } } } },
+        "@/lib/client-portal/resource-persistence": { persistPortalResource: async (upload: FixtureValue, actualScope: FixtureValue) => { assert.deepEqual(actualScope, scope); assert.equal(upload.size, 10); saves++; return { resource: { id: "asset" } } } },
     })
     const post = (body: unknown) => route.POST(new Request("https://portal.example", { method: "POST", body: JSON.stringify(body) }), { params: Promise.resolve({ token: "token" }) })
     authorized = false
@@ -214,28 +218,27 @@ test("multipart API rejects revoked or cross-relationship tickets before storage
 
 test("team downloads enforce workspace, capabilities and asset access before signing", async () => {
     let permitted = true
-    let allowed: Set<string> | null = new Set()
-    let asset: any = { native_kind: "client_portal_resource", storage_path: "workspace/client-portal/relationship/session/folder", title: "施工資料.zip" }
+    let allowed = false
+    const sessionReader = {}
+    let asset: FixtureValue = { native_kind: "client_portal_resource", storage_path: "workspace/client-portal/relationship/session/folder", title: "施工資料.zip" }
     let reads = 0
     let signed = 0
     const route = load("app/api/workspaces/[workspaceSlug]/assets/[assetId]/download/route.ts", {
         "@/lib/workspace-access": {
             requireWorkspaceAccess: async () => ({ workspace: { id: "workspace" }, access: {} }),
             workspaceAccessHasCapability: () => permitted,
-            accessibleRelationshipIds: async () => new Set(["relationship"]),
-            accessibleWorkItemIds: async () => new Set(),
-            accessibleAssetIds: async () => allowed,
         },
-        "@/lib/relationships": { getAsset: async (workspace: string, id: string) => { assert.equal(workspace, "workspace"); assert.equal(id, "asset"); reads++; return asset } },
+        "@/lib/supabase/server": { createSupabaseServerClient: async () => sessionReader },
+        "@/lib/relationships": { getAsset: async (workspace: string, id: string, reader: unknown) => { assert.equal(workspace, "workspace"); assert.equal(id, "asset"); assert.equal(reader, sessionReader); reads++; return allowed ? asset : null } },
         "@/lib/onboarding/uploads": { createPrivateResourceDownloadUrl: async (path: string, name: string) => { assert.equal(path, asset.storage_path); assert.equal(name, "施工資料.zip"); signed++; return "https://storage.example/download" } },
     })
     const get = () => route.GET(new Request("https://app.example"), { params: Promise.resolve({ workspaceSlug: "agency", assetId: "asset" }) })
     assert.equal((await get()).status, 404)
-    assert.equal(reads, 0)
-    allowed = new Set(["asset"])
+    assert.equal(reads, 1)
+    allowed = true
     permitted = false
     assert.equal((await get()).status, 404)
-    assert.equal(reads, 0)
+    assert.equal(reads, 1)
     permitted = true
     asset = { ...asset, storage_path: "other/client-portal/file" }
     assert.equal((await get()).status, 404)

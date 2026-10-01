@@ -121,6 +121,8 @@ jobs:
         run: node scripts/validate-native-inbox-sql.mjs
       - name: Validate unchanged push eligibility against retained read boundaries
         run: node scripts/validate-chat-push-recovery.mjs
+      - name: Validate Library roles, private attachments and bounded authorization
+        run: node scripts/validate-library-authorization.mjs
       - name: Validate bounded search contact authorization and query plans
         run: node scripts/validate-search-contact-access.mjs
       - name: Validate search retrieval, canonical access and discovery limits

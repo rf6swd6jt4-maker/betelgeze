@@ -2,7 +2,7 @@
 
 ## Behavior and owners
 
-`WorkspaceTopBarClient` remains the navigation owner. Context publishers now include their route; the shell rejects late context updates and cleanup from another route. The existing activation/probe handshake replays a legacy frame's context after canonical redirects. Navigation to an unsupported page no longer overwrites the desktop open/closed preference. This changes local messages only, with no additional request or timer.
+`WorkspaceTopBarClient` remains the navigation owner. Context publishers now include their route; the shell rejects late context updates and cleanup from another route. The existing activation/probe handshake replays a legacy frame's context after canonical redirects. Asset and work-item detail routes retain their authorized context when their location acknowledgement arrives; the old allowlist incorrectly cleared it. Navigation to an unsupported page no longer overwrites the desktop open/closed preference. This changes local messages only, with no additional request or timer.
 
 `ShellRelationshipContextPanel` presents identity and lifecycle, contact actions, services/team, notes and optional metadata. Permission-aware quick links sit in a compact two-column area outside the scrolling content, with the current destination identified. Client Connections uses the existing collection route with a selected-relationship filter; the former `client-connections/<id>` route did not exist. Filtering reuses the authorized list. Opening Add connection captures the current eligible selection; changing the query cannot silently retarget an existing form or choose an unrelated client.
 

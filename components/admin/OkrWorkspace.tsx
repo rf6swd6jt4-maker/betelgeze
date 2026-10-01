@@ -7,6 +7,7 @@ import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
+import { useModalDialog } from "@/components/ui/useModalDialog"
 import { Assignee, AssignmentSelector, RoundPill, SquarePill, Status, TrendChart } from "@/components/ui"
 import { formatOkrMetricValue, okrGap, okrTrendScale } from "@/lib/admin/okr-metrics"
 import { addUtcDays, buildOkrReportingDays, okrReportingCadenceLabel, okrReportingPeriod, okrReportingPeriodIndex, type OkrReportingDay } from "@/lib/admin/okr-reporting"
@@ -151,19 +152,21 @@ function MetricEditor({ label, context, value, displayValue, pending, onSubmit, 
 
 function Modal({ title, description, error, size = "default", onClose, children }: { title: string; description?: string; error?: string | null; size?: "compact" | "default" | "medium" | "wide"; onClose: () => void; children: ReactNode }) {
     const active = useWorkspaceTabActive()
+    const dialogRef = useModalDialog(active)
+    const dismiss = () => { dialogRef.current?.close(); onClose() }
     const parentDocument = typeof window !== "undefined" && window.parent !== window ? window.parent.document : typeof document !== "undefined" ? document : null
     if (!parentDocument) return null
     const widthClass = size === "wide" ? "max-w-5xl" : size === "medium" ? "max-w-3xl" : size === "compact" ? "max-w-sm" : "max-w-2xl"
-    return createPortal(<div role="dialog" aria-modal="true" aria-label={title} aria-hidden={!active} style={active ? undefined : { display: "none" }} data-work-item-popup className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden overscroll-none bg-black/75 p-3 backdrop-blur-sm sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    return createPortal(<dialog ref={dialogRef} aria-label={title} data-work-item-popup className="fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none overflow-hidden overscroll-none border-0 bg-black/75 p-3 text-white backdrop-blur-sm backdrop:bg-transparent open:flex open:items-center open:justify-center sm:p-4" onCancel={event => { event.preventDefault(); dismiss() }} onClick={(event) => { if (event.target === event.currentTarget) dismiss() }}>
         <div className={`betelgeze-popup-enter max-h-[calc(100vh-1.5rem)] min-w-0 w-full ${widthClass} touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70 sm:max-h-[calc(100vh-2rem)]`}>
             <div className="sticky top-0 z-20 flex items-start gap-4 border-b border-neutral-800 bg-neutral-950/95 px-4 py-3 backdrop-blur sm:px-5 sm:py-4">
                 <div className="min-w-0 flex-1"><h2 className="truncate text-lg font-semibold text-white">{title}</h2>{description ? <p className="mt-1 text-sm leading-5 text-neutral-500">{description}</p> : null}</div>
-                <button type="button" onClick={onClose} aria-label="Close" className="rounded-md px-2 py-1 text-xl text-neutral-500 hover:bg-neutral-900 hover:text-white">×</button>
+                <button type="button" onClick={dismiss} aria-label="Close" className="rounded-md px-2 py-1 text-xl text-neutral-500 hover:bg-neutral-900 hover:text-white">×</button>
             </div>
             {error ? <div role="alert" className="mx-4 mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200 sm:mx-5">{error}</div> : null}
             {children}
         </div>
-    </div>, parentDocument.body)
+    </dialog>, parentDocument.body)
 }
 
 function NewKeyResultFields() {

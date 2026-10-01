@@ -1,7 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react"
 import { createPortal } from "react-dom"
+import { useModalOwnerActive } from "@/components/ui/useModalDialog"
+import { bindPortalOwnerLifetime } from "@/components/ui/portal-owner-lifetime"
 import { saveAgencyBranding } from "@/app/[workspaceSlug]/settings/branding-actions"
 import { publishVisualThemeDraft } from "@/app/[workspaceSlug]/onboarding-builder/visual-actions"
 import { ColourStyleEditor } from "@/components/settings/ColourStyleEditor"
@@ -58,14 +60,19 @@ function BrandAssetCard({
 }
 
 export function AgencyBrandingEditor({ workspaceSlug, workspaceName, initialTheme, publishedTheme: initialPublishedTheme, previewBookend, help, schemaReady, brandAssetSchemaReady, logoSrc, faviconSrc, uploadLogo, uploadFavicon }: { workspaceSlug: string; workspaceName: string; initialTheme: OnboardingThemeDefinition; publishedTheme: OnboardingThemeDefinition; previewBookend: OnboardingBookendDefinition; help: OnboardingHelpSettings; schemaReady: boolean; brandAssetSchemaReady: boolean; logoSrc: string | null; faviconSrc: string | null; uploadLogo: (formData: FormData) => Promise<void>; uploadFavicon: (formData: FormData) => Promise<void> }) {
+    const ownerActive = useModalOwnerActive()
     const [theme, setTheme] = useState(initialTheme)
     const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
     const [error, setError] = useState<string | null>(null)
     const [publishPending, startPublish] = useTransition()
     const [assignmentEditor, setAssignmentEditor] = useState<{ slot: OnboardingThemeSlot } | null>(null)
+    const [assignmentOpen, setAssignmentOpen] = useState(false)
     const [previewOpen, setPreviewOpen] = useState(false)
     const [publishReviewOpen, setPublishReviewOpen] = useState(false)
     const [publishedTheme, setPublishedTheme] = useState(initialPublishedTheme)
+    const assignmentRootRef = useRef<HTMLDivElement>(null)
+    const previewRootRef = useRef<HTMLDivElement>(null)
+    const assignmentReleaseRef = useRef<() => void>(() => {})
     const latestRef = useRef(theme)
     const lastSavedRef = useRef(themeKey(initialTheme))
     const timerRef = useRef<number | null>(null)
@@ -77,29 +84,59 @@ export function AgencyBrandingEditor({ workspaceSlug, workspaceName, initialThem
         return current.hex === next.hex ? [] : [{ slot, current, next }]
     }), [publishedTheme, theme])
 
+    const previousOwnerActive = useRef(ownerActive)
+    useLayoutEffect(() => {
+        const departed = previousOwnerActive.current && !ownerActive
+        previousOwnerActive.current = ownerActive
+        // The colour form keeps its local draft; the departed view stays closed.
+        if (departed) { setAssignmentOpen(false); setPreviewOpen(false); setPublishReviewOpen(false) }
+    }, [ownerActive])
+    const assignmentVisible = ownerActive && assignmentOpen
+
     useEffect(() => { latestRef.current = theme }, [theme])
 
     useEffect(() => {
-        if (!assignmentEditor) return
-        const hostDocument = window.parent !== window ? window.parent.document : document
+        const root = assignmentRootRef.current
+        if (!root) return
+        const lifetime = bindPortalOwnerLifetime(root, { suspend: ({ persisted }) => {
+            assignmentReleaseRef.current()
+            if (persisted) setAssignmentOpen(false)
+        } })
+        return () => lifetime.dispose()
+    }, [assignmentEditor, assignmentVisible])
+
+    useEffect(() => {
+        const root = assignmentRootRef.current
+        if (!assignmentEditor || !assignmentVisible || !root) return
+        const hostDocument = root.ownerDocument
         const dismiss = (event: globalThis.KeyboardEvent) => {
+            if (event.defaultPrevented || event.isComposing || hostDocument.querySelector("dialog:modal")) return
             if (event.key === "Escape") setAssignmentEditor(null)
         }
         hostDocument.addEventListener("keydown", dismiss)
-        return () => hostDocument.removeEventListener("keydown", dismiss)
-    }, [assignmentEditor])
+        const release = () => hostDocument.removeEventListener("keydown", dismiss)
+        assignmentReleaseRef.current = release
+        return release
+    }, [assignmentEditor, assignmentVisible])
 
     useEffect(() => {
-        if (!previewOpen) return
-        const hostDocument = window.parent !== window ? window.parent.document : document
+        const root = previewRootRef.current
+        if (!ownerActive || !previewOpen || !root) return
+        const hostDocument = root.ownerDocument
         const dismiss = (event: globalThis.KeyboardEvent) => {
+            if (event.defaultPrevented || event.isComposing || hostDocument.querySelector("dialog:modal")) return
             if (event.key !== "Escape") return
             if (publishReviewOpen) setPublishReviewOpen(false)
             else setPreviewOpen(false)
         }
         hostDocument.addEventListener("keydown", dismiss)
-        return () => hostDocument.removeEventListener("keydown", dismiss)
-    }, [previewOpen, publishReviewOpen])
+        const release = () => hostDocument.removeEventListener("keydown", dismiss)
+        const lifetime = bindPortalOwnerLifetime(root, { suspend: ({ persisted }) => {
+            release()
+            if (persisted) { setPreviewOpen(false); setPublishReviewOpen(false) }
+        } })
+        return () => { lifetime.dispose(); release() }
+    }, [ownerActive, previewOpen, publishReviewOpen])
 
     useEffect(() => {
         if (!schemaReady || themeKey(theme) === lastSavedRef.current) return
@@ -130,6 +167,7 @@ export function AgencyBrandingEditor({ workspaceSlug, workspaceName, initialThem
 
     function openAssignmentEditor(slot: OnboardingThemeSlot) {
         setAssignmentEditor({ slot })
+        setAssignmentOpen(true)
     }
 
     function assignSwatch(slot: OnboardingThemeSlot, swatchId: string) {
@@ -189,7 +227,7 @@ export function AgencyBrandingEditor({ workspaceSlug, workspaceName, initialThem
                             key={slot}
                             type="button"
                             aria-haspopup="dialog"
-                            aria-expanded={assignmentEditor?.slot === slot}
+                            aria-expanded={assignmentVisible && assignmentEditor?.slot === slot}
                             disabled={!schemaReady}
                             onClick={() => openAssignmentEditor(slot)}
                             className={`flex min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-neutral-900 disabled:cursor-default disabled:opacity-50 ${index > 0 ? "border-t border-neutral-800" : ""} ${index === 1 ? "sm:border-t-0" : ""} ${index % 2 === 1 ? "sm:border-l sm:border-neutral-800" : ""}`}
@@ -203,7 +241,7 @@ export function AgencyBrandingEditor({ workspaceSlug, workspaceName, initialThem
             </section>
             {warnings.length ? <section className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-100"><h3 className="font-medium">Contrast warnings</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-yellow-100/80">{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul><p className="mt-2 text-xs text-yellow-100/70">Warnings do not block saving.</p></section> : null}
             <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div aria-live="polite" className="min-h-5 min-w-0 text-xs text-neutral-500">{saveState === "saving" ? "Saving style draft…" : saveState === "saved" ? colourChanges.length ? "Unpublished style draft saved" : "Style is up to date" : saveState === "error" ? error : schemaReady ? colourChanges.length ? "Unpublished style draft" : "Style is up to date" : "Read-only compatibility view"}</div><button type="button" onClick={() => setPreviewOpen(true)} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-medium text-black"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>Preview</button></div>
-        {previewOpen && modalTarget ? createPortal(<div data-agency-branding-preview className="betelgeze-popup-fade fixed inset-0 z-[2147483646] overflow-hidden bg-neutral-100 text-white">
+        {ownerActive && previewOpen && modalTarget ? createPortal(<div ref={previewRootRef} data-agency-branding-preview className="betelgeze-popup-fade fixed inset-0 z-[2147483646] overflow-hidden bg-neutral-100 text-white">
             <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-3 sm:p-4">
                 <button type="button" onClick={() => { setPreviewOpen(false); setPublishReviewOpen(false) }} className="pointer-events-auto rounded-full border border-white/20 bg-neutral-700 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(0,0,0,0.24)] transition hover:bg-neutral-600 focus:outline-none focus:ring-2 focus:ring-white/70">Exit preview</button>
                 <button type="button" disabled={!schemaReady || publishPending || !colourChanges.length} onClick={() => { setError(null); setPublishReviewOpen(true) }} className="pointer-events-auto rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black shadow-[0_8px_24px_rgba(15,23,42,0.30),0_2px_6px_rgba(15,23,42,0.18)] transition hover:bg-neutral-100 disabled:cursor-default disabled:opacity-45">{colourChanges.length ? "Publish" : "Published"}</button>
@@ -220,7 +258,7 @@ export function AgencyBrandingEditor({ workspaceSlug, workspaceName, initialThem
                 </section>
             </div> : null}
         </div>, modalTarget) : null}
-        {assignmentEditor && editedSlot && modalTarget ? createPortal(<div className="fixed inset-0 z-[2147483646] flex items-center justify-center overflow-hidden overscroll-none bg-black/75 p-3 backdrop-blur-sm sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setAssignmentEditor(null) }}>
+        {assignmentEditor && editedSlot && modalTarget ? createPortal(<div ref={assignmentRootRef} hidden={!assignmentVisible} inert={!assignmentVisible} style={assignmentVisible ? undefined : { display: "none" }} className="fixed inset-0 z-[2147483646] flex items-center justify-center overflow-hidden overscroll-none bg-black/75 p-3 backdrop-blur-sm sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setAssignmentEditor(null) }}>
             <section role="dialog" aria-modal="true" aria-labelledby="colour-style-editor-title" className="betelgeze-popup-enter max-h-[min(92dvh,38rem)] w-full max-w-sm overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 text-white shadow-2xl shadow-black/70">
                 <ColourStyleEditor
                     key={editedSlot}

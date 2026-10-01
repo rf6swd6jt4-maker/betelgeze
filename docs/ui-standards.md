@@ -41,6 +41,7 @@ Every custom popup uses the shared opening motion on both mobile and desktop. Ap
 - Both shared classes disable animation for `prefers-reduced-motion: reduce`.
 - Keep motion limited to opacity and transform. Do not animate dimensions, layout coordinates, blur, or shadow; do not add animation libraries, JavaScript frame loops, persistent `will-change`, or retained animation transforms.
 - Preserve portal ownership, viewport clamping, stacking levels, focus behaviour, and outside-click/Escape dismissal. Existing sliding navigation panels and loading indicators retain their separate behaviour; browser-native selects and confirmation prompts remain browser-controlled.
+- A popup belongs to the view that opened it, even when its DOM is portalled into the parent shell. Release its backdrop when that view is hidden, removed, or navigated away. Retained drafts may remain mounted in a hidden, inert container; returning to a tab must not revive a dismissed or retired popup. A newer native modal owns Tab and Escape above a retained custom popup.
 
 ## Message action gestures
 

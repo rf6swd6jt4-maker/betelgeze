@@ -13,8 +13,11 @@ export function useRosterDialog(open: boolean, onClose: () => void) {
         const origin = host.activeElement as HTMLElement | null
         const previousOverflow = host.body.style.overflow
         function onKey(event: KeyboardEvent) {
+            if (event.key !== "Escape" && event.key !== "Tab") return
+            // A native modal above the roster owns focus and Escape. The
+            // underlying roster stays mounted for return after profile close.
+            if (event.defaultPrevented || event.isComposing || host.querySelector("dialog:modal")) return
             if (event.key === "Escape") { event.preventDefault(); closeRef.current(); return }
-            if (event.key !== "Tab") return
             const focusable = [...dialog!.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
                 .filter(element => element.getClientRects().length && !element.closest("[inert]"))
             if (!focusable.length) return

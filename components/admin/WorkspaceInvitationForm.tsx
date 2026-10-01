@@ -1,7 +1,9 @@
 "use client"
 
 import { createPortal } from "react-dom"
-import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
+import { useModalOwnerActive } from "@/components/ui/useModalDialog"
+import { bindPortalOwnerLifetime } from "@/components/ui/portal-owner-lifetime"
+import { useEffect, useLayoutEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import type { WorkspaceInvitationActionState } from "@/app/[workspaceSlug]/users/actions"
 import { Status, type StatusTone } from "@/components/ui"
 import { WorkspaceSuccessNotice } from "@/components/workspace/WorkspaceSuccessNotice"
@@ -35,7 +37,19 @@ export function WorkspaceInvitationForm({
     canInviteAdmins: boolean
     services: Array<{ id: string; name: string }>
 }) {
+    const ownerActive = useModalOwnerActive()
     const [open, setOpen] = useState(false)
+    const visible = ownerActive && open
+    const retainedDraft = useRef(false)
+    const previousOwnerActive = useRef(ownerActive)
+    useLayoutEffect(() => {
+        const departed = previousOwnerActive.current && !ownerActive
+        previousOwnerActive.current = ownerActive
+        if (departed) {
+            if (open) retainedDraft.current = true
+            setOpen(false)
+        }
+    }, [ownerActive, open])
     const [identifier, setIdentifier] = useState("")
     const [lookup, setLookup] = useState<InvitationLookup | null>(null)
     const [lookupState, setLookupState] = useState<"idle" | "checking" | "error">("idle")
@@ -56,11 +70,14 @@ export function WorkspaceInvitationForm({
     }, [notice])
 
     useEffect(() => {
-        if (!open) return
-        const hostDocument = dialogRef.current?.ownerDocument ?? document
+        if (!visible) return
+        const root = dialogRef.current?.parentElement
+        if (!root) return
+        const hostDocument = root.ownerDocument
         const previousOverflow = hostDocument.body.style.overflow
         const origin = hostDocument.activeElement instanceof HTMLElement ? hostDocument.activeElement : null
         const onKeyDown = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.isComposing || hostDocument.querySelector("dialog:modal")) return
             if (event.key === "Escape" && !pending) {
                 event.preventDefault()
                 setOpen(false)
@@ -77,15 +94,28 @@ export function WorkspaceInvitationForm({
         hostDocument.body.style.overflow = "hidden"
         hostDocument.addEventListener("keydown", onKeyDown)
         inputRef.current?.focus()
-        return () => {
+        let released = false
+        const release = () => {
+            if (released) return
+            released = true
             hostDocument.body.style.overflow = previousOverflow
             hostDocument.removeEventListener("keydown", onKeyDown)
-            origin?.focus()
         }
-    }, [open, pending])
+        const lifetime = bindPortalOwnerLifetime(root, { suspend: ({ persisted }) => {
+            release()
+            if (persisted) { retainedDraft.current = true; setOpen(false) }
+        } })
+        return () => {
+            lifetime.dispose()
+            release()
+            const frame = origin?.ownerDocument.defaultView?.frameElement
+            if (!lifetime.hasDeparted() && origin?.isConnected && !origin.closest("[hidden],[inert]") && origin.checkVisibility()
+                && (!frame || (!frame.closest("[hidden],[inert]") && frame.checkVisibility()))) origin.focus({ preventScroll: true })
+        }
+    }, [visible, pending])
 
     useEffect(() => {
-        if (!open) return
+        if (!visible) return
         const value = identifier.trim()
         if (value.replace(/^@/, "").length < 3) {
             return
@@ -108,9 +138,10 @@ export function WorkspaceInvitationForm({
             controller.abort()
             window.clearTimeout(timeout)
         }
-    }, [identifier, open, workspaceSlug])
+    }, [identifier, visible, workspaceSlug])
 
     function openDialog() {
+        if (retainedDraft.current) { retainedDraft.current = false; setOpen(true); return }
         setIdentifier("")
         setLookup(null)
         setLookupState("idle")
@@ -139,6 +170,7 @@ export function WorkspaceInvitationForm({
                 setSubmitError(result.message)
                 return
             }
+            retainedDraft.current = false
             setOpen(false)
             setNotice("Invitation email sent")
         })
@@ -146,7 +178,7 @@ export function WorkspaceInvitationForm({
 
     const status = lookup ? lookupStatus(lookup.status) : null
     const invitationDisabled = pending
-    const modal = open ? <div className="fixed inset-0 z-[2147483646] flex items-center justify-center overflow-hidden overscroll-none bg-black/75 p-3 text-white backdrop-blur-sm sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) setOpen(false) }}>
+    const modal = visible ? <div className="fixed inset-0 z-[2147483646] flex items-center justify-center overflow-hidden overscroll-none bg-black/75 p-3 text-white backdrop-blur-sm sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) setOpen(false) }}>
         <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="add-workspace-user-title" className="betelgeze-popup-enter flex max-h-[min(92dvh,44rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70">
             <header className="flex shrink-0 items-start gap-4 border-b border-neutral-800 px-4 py-4 sm:px-5">
                 <div className="min-w-0 flex-1">
@@ -199,6 +231,6 @@ export function WorkspaceInvitationForm({
     return <>
         <button type="button" onClick={openDialog} className="inline-flex h-10 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium text-black transition hover:bg-neutral-200">Add user</button>
         {modal && portalTarget ? createPortal(modal, portalTarget) : null}
-        {notice && portalTarget ? createPortal(<WorkspaceSuccessNotice label={notice} />, portalTarget) : null}
+        {ownerActive && notice && portalTarget ? createPortal(<WorkspaceSuccessNotice label={notice} />, portalTarget) : null}
     </>
 }

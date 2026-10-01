@@ -171,12 +171,22 @@ jobs:
         run: node scripts/browser/run-native-loading.mjs "${{ matrix.engine }}"
       - name: Exercise relationship drawers and native/iframe modal cleanup
         run: node scripts/browser/run-context-overlays.mjs "${{ matrix.engine }}"
+      - name: Exercise popup lifetime across frame removal and navigation
+        run: node scripts/browser/run-modal-owner-lifecycle.mjs "${{ matrix.engine }}"
+      - name: Exercise retained Settings popup ownership and drafts
+        run: node scripts/browser/run-settings-popup-ownership.mjs "${{ matrix.engine }}"
+      - name: Preserve initially open forms under StrictMode
+        run: SETTINGS_POPUP_STRICT=1 node scripts/browser/run-settings-popup-ownership.mjs "${{ matrix.engine }}"
+      - name: Exercise anchored menu owner departure
+        run: node scripts/browser/run-anchored-popup-lifetime.mjs "${{ matrix.engine }}"
+      - name: Exercise OKR dialog dismissal and owner departure
+        run: node scripts/browser/run-okr-popup-lifetime.mjs "${{ matrix.engine }}"
       - name: Exercise relationship shortcuts through actual shell routing
         run: node scripts/browser/run-workspace-linked-detail.mjs "${{ matrix.engine }}"
       - name: Print detailed browser evidence
         if: always()
         run: |
-          for report in foundations comms-reads comms-pane-lifecycle ui-reconciliation panel-loading native-loading context-overlays comms-roster-cleanup workspace-linked-detail; do
+          for report in foundations fullscreen-comms-actions comms-reads comms-pane-lifecycle ui-reconciliation panel-loading native-loading context-overlays modal-owner-lifecycle settings-popup-ownership settings-popup-ownership-strict anchored-popup-lifetime okr-popup-lifetime comms-roster-cleanup workspace-linked-detail; do
             if test -f "browser-results/$report.json"; then
               cat "browser-results/$report.json"
             else

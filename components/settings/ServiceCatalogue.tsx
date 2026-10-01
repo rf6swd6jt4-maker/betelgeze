@@ -3,6 +3,8 @@
 import { DeliveryUserPicker } from "@/components/settings/DeliveryUserPicker"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
+import { useModalOwnerActive } from "@/components/ui/useModalDialog"
+import { bindPortalOwnerLifetime } from "@/components/ui/portal-owner-lifetime"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { saveOnboardingService, setOnboardingServiceState } from "@/app/[workspaceSlug]/settings/service-actions"
@@ -82,10 +84,13 @@ function ServiceTemplatesModal({ onClose, onCreateCustom, onSelectTemplate }: { 
     const closeRef = useRef<HTMLButtonElement>(null)
 
     useEffect(() => {
-        const hostDocument = modalRef.current?.ownerDocument ?? document
+        const root = modalRef.current?.parentElement
+        if (!root) return
+        const hostDocument = root.ownerDocument
         const origin = hostDocument.activeElement instanceof HTMLElement ? hostDocument.activeElement : null
         const previousOverflow = hostDocument.body.style.overflow
         const handleKey = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.isComposing || hostDocument.querySelector("dialog:modal")) return
             if (event.key === "Escape") {
                 event.preventDefault()
                 onClose()
@@ -102,10 +107,23 @@ function ServiceTemplatesModal({ onClose, onCreateCustom, onSelectTemplate }: { 
         hostDocument.body.style.overflow = "hidden"
         hostDocument.addEventListener("keydown", handleKey)
         closeRef.current?.focus()
-        return () => {
+        let released = false
+        const release = () => {
+            if (released) return
+            released = true
             hostDocument.body.style.overflow = previousOverflow
             hostDocument.removeEventListener("keydown", handleKey)
-            origin?.focus()
+        }
+        const lifetime = bindPortalOwnerLifetime(root, { suspend: ({ persisted }) => {
+            release()
+            if (persisted) onClose()
+        } })
+        return () => {
+            lifetime.dispose()
+            release()
+            const frame = origin?.ownerDocument.defaultView?.frameElement
+            if (!lifetime.hasDeparted() && origin?.isConnected && !origin.closest("[hidden],[inert]") && origin.checkVisibility()
+                && (!frame || (!frame.closest("[hidden],[inert]") && frame.checkVisibility()))) origin.focus({ preventScroll: true })
         }
     }, [onClose])
 
@@ -145,7 +163,9 @@ function ServiceTemplatesModal({ onClose, onCreateCustom, onSelectTemplate }: { 
     </div>
 }
 
-function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schemaReady, onClose }: {
+function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schemaReady, onClose, onSuspend, visible }: {
+    visible: boolean
+    onSuspend: () => void
     workspaceSlug: string
     service: OnboardingServiceDefinition
     assignees: OnboardingAssigneeOption[]
@@ -163,15 +183,29 @@ function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schem
     const [uploading, setUploading] = useState(false)
     const editorRef = useRef<HTMLElement>(null)
     const closeRef = useRef<HTMLButtonElement>(null)
+    const presentationReleaseRef = useRef<() => void>(() => {})
+    const lifetimeRef = useRef<ReturnType<typeof bindPortalOwnerLifetime> | null>(null)
+    useEffect(() => {
+        const root = editorRef.current?.parentElement
+        if (!root) return
+        const lifetime = bindPortalOwnerLifetime(root, { suspend: ({ persisted }) => {
+            presentationReleaseRef.current()
+            if (persisted) onSuspend()
+        } })
+        lifetimeRef.current = lifetime
+        return () => lifetime.dispose()
+    }, [onSuspend, visible])
     const parsedUpfrontPriceCents = Math.max(0, Math.round((Number(upfrontPrice) || 0) * 100))
     const parsedRecurringPriceCents = draft.serviceType === "retainer" ? Math.max(0, Math.round((Number(recurringPrice) || 0) * 100)) : 0
     const effectiveDraft = { ...draft, defaultUpfrontPriceCents: parsedUpfrontPriceCents, defaultRecurringPriceCents: parsedRecurringPriceCents }
     const dirty = JSON.stringify(effectiveDraft) !== JSON.stringify(service) || JSON.stringify(deliveryUsers) !== JSON.stringify(eligibleUsers)
     useEffect(() => {
-        const hostDocument = editorRef.current?.ownerDocument ?? document
+        if (!visible || !editorRef.current) return
+        const hostDocument = window.parent !== window ? window.parent.document : document
         const origin = hostDocument.activeElement instanceof HTMLElement ? hostDocument.activeElement : null
         const previousOverflow = hostDocument.body.style.overflow
         const handleKey = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.isComposing || hostDocument.querySelector("dialog:modal")) return
             if (event.key === "Escape") {
                 event.preventDefault()
                 onClose()
@@ -188,12 +222,21 @@ function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schem
         hostDocument.body.style.overflow = "hidden"
         hostDocument.addEventListener("keydown", handleKey)
         closeRef.current?.focus()
-        return () => {
+        let released = false
+        const release = () => {
+            if (released) return
+            released = true
             hostDocument.body.style.overflow = previousOverflow
             hostDocument.removeEventListener("keydown", handleKey)
-            origin?.focus()
         }
-    }, [onClose])
+        presentationReleaseRef.current = release
+        return () => {
+            release()
+            const frame = origin?.ownerDocument.defaultView?.frameElement
+            if (!lifetimeRef.current?.hasDeparted() && origin?.isConnected && !origin.closest("[hidden],[inert]") && origin.checkVisibility()
+                && (!frame || (!frame.closest("[hidden],[inert]") && frame.checkVisibility()))) origin.focus({ preventScroll: true })
+        }
+    }, [onClose, visible])
 
     function run(operation: () => Promise<{ ok: boolean; error?: string }>) {
         setError(null)
@@ -250,7 +293,7 @@ function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schem
         || (draft.serviceType === "retainer" && (!draft.recurringName.trim() || parsedRecurringPriceCents < 1))
         || (service.state === "active" && !dirty && Boolean(service.id))
 
-    return <div className="fixed inset-0 z-[2147483646] flex items-center justify-center bg-black/70 p-3 text-white backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    return <div hidden={!visible} inert={!visible} style={visible ? undefined : { display: "none" }} className="fixed inset-0 z-[2147483646] flex items-center justify-center bg-black/70 p-3 text-white backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
         <section ref={editorRef} role="dialog" aria-modal="true" aria-labelledby="service-editor-title" className="betelgeze-popup-enter flex max-h-[min(92dvh,54rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70">
             <header className="flex shrink-0 items-start gap-4 border-b border-neutral-800 px-4 py-4 sm:px-6">
                 <div className="min-w-0 flex-1"><p className="text-xs font-medium text-neutral-500">{service.id ? `Revision ${service.version} · ${service.code}` : "Service catalogue"}</p><h2 id="service-editor-title" className="mt-1 truncate text-xl font-semibold">{service.id ? service.name : "New service"}</h2></div>
@@ -343,7 +386,9 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
     initialServiceId?: string | null
     eligibleUsers: Record<string, string[]>
 }) {
+    const ownerActive = useModalOwnerActive()
     const [selectedId, setSelectedId] = useState<string | null>(initialServiceId && initialServiceId !== "new" ? initialServiceId : null)
+    const [editorOpen, setEditorOpen] = useState(Boolean(initialServiceId && initialServiceId !== "new"))
     const [templatesOpen, setTemplatesOpen] = useState(false)
     const [orderedOverride, setOrderedOverride] = useState<string[] | null>(null)
     const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -369,7 +414,15 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
     const selected = selectedId === "new" ? blankService() : selectedTemplate ? blankService(selectedTemplate) : services.find((service) => service.id === selectedId) ?? null
     const assigneeById = useMemo(() => new Map(assignees.map((assignee) => [assignee.id, assignee])), [assignees])
     const portalTarget = typeof window !== "undefined" ? (window.parent !== window ? window.parent.document.body : document.body) : null
-    const closeEditor = useCallback(() => setSelectedId(null), [])
+    const suspendEditor = useCallback(() => setEditorOpen(false), [])
+    const closeEditor = useCallback(() => { setEditorOpen(false); setSelectedId(null) }, [])
+    const previousOwnerActive = useRef(ownerActive)
+    useLayoutEffect(() => {
+        const departed = previousOwnerActive.current && !ownerActive
+        previousOwnerActive.current = ownerActive
+        // Retain the editor draft, but require an explicit reopen after departure.
+        if (departed) { setTemplatesOpen(false); setEditorOpen(false) }
+    }, [ownerActive])
     const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services])
     const propOrderedIds = useMemo(() => serviceOrder(services).map((service) => service.id), [services])
     const orderedIds = orderedOverride
@@ -633,7 +686,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
                     <div className="flex shrink-0 items-center gap-1">
                         <Status label={status.label} tone={status.tone} className="mr-1 shrink-0" />
 
-                        <button type="button" onClick={() => setSelectedId(service.id)} aria-label={`Edit ${service.name}`} className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-medium text-neutral-300 transition hover:bg-neutral-900 hover:text-white sm:px-2.5">
+                        <button type="button" onClick={() => { setSelectedId(service.id); setEditorOpen(true) }} aria-label={`Edit ${service.name}`} className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-medium text-neutral-300 transition hover:bg-neutral-900 hover:text-white sm:px-2.5">
                             <svg viewBox="0 0 20 20" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m13.8 3.2 3 3L7 16H4v-3L13.8 3.2Z" /><path d="m12.5 4.5 3 3" /></svg>
                             <span className="hidden sm:inline">Edit</span>
                         </button>
@@ -645,8 +698,8 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
             </div>
         </section>
         {dragPreview ? <div ref={dragPreviewRef} aria-hidden="true" className="pointer-events-none fixed z-[120] flex items-center gap-3 rounded-xl border border-neutral-600 bg-neutral-900/95 px-4 shadow-2xl shadow-black/70 backdrop-blur" style={{ left: dragPreview.left, top: dragPreview.top, width: dragPreview.width, height: dragPreview.height, willChange: "transform" }}><span className="text-lg leading-none text-neutral-400">⠿</span>{(() => { const service = serviceById.get(dragPreview.id); return service ? <><div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-700 bg-black text-[7px] uppercase tracking-wide text-neutral-600">{service.thumbnailUrl ? <Image src={service.thumbnailUrl} alt="" width={40} height={40} unoptimized className="h-full w-full object-cover" /> : "Service"}</div><p className="min-w-0 truncate text-sm font-medium text-white">{service.name}</p></> : null })()}</div> : null}
-        {templatesOpen && portalTarget ? createPortal(<ServiceTemplatesModal onClose={() => setTemplatesOpen(false)} onCreateCustom={() => { setTemplatesOpen(false); setSelectedId("new") }} onSelectTemplate={(template) => { setTemplatesOpen(false); setSelectedId(`template:${template.id}`) }} />, portalTarget) : null}
-        {selected && portalTarget ? createPortal(<ServiceEditor key={selectedId ?? "new"} workspaceSlug={workspaceSlug} service={selected} assignees={assignees} eligibleUsers={eligibleUsers[selected.id] ?? []} schemaReady={schemaReady} onClose={closeEditor} />, portalTarget) : null}
+        {ownerActive && templatesOpen && portalTarget ? createPortal(<ServiceTemplatesModal onClose={() => setTemplatesOpen(false)} onCreateCustom={() => { setTemplatesOpen(false); setSelectedId("new"); setEditorOpen(true) }} onSelectTemplate={(template) => { setTemplatesOpen(false); setSelectedId(`template:${template.id}`); setEditorOpen(true) }} />, portalTarget) : null}
+        {selected && portalTarget ? createPortal(<ServiceEditor visible={ownerActive && editorOpen} key={selectedId ?? "new"} workspaceSlug={workspaceSlug} service={selected} assignees={assignees} eligibleUsers={eligibleUsers[selected.id] ?? []} schemaReady={schemaReady} onClose={closeEditor} onSuspend={suspendEditor} />, portalTarget) : null}
 
     </>
 }

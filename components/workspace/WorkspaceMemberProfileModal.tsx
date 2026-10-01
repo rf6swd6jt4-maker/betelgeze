@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import { Avatar } from "@/components/account/Avatar"
 import { Status } from "@/components/ui"
+import { useModalDialog } from "@/components/ui/useModalDialog"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
 
 type Profile = {
@@ -28,6 +29,8 @@ export function WorkspaceMemberProfileModal({ workspaceSlug, userId, initialProf
 }) {
     const [profile, setProfile] = useState<Profile | null>(null)
     const [error, setError] = useState<string | null>(null)
+    const dialogRef = useModalDialog(true)
+    const dismiss = () => { dialogRef.current?.close(); onClose() }
 
     useEffect(() => {
         const controller = new AbortController()
@@ -41,15 +44,12 @@ export function WorkspaceMemberProfileModal({ workspaceSlug, userId, initialProf
         return () => controller.abort()
     }, [userId, workspaceSlug])
 
-    useEffect(() => {
-        const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose() }
-        window.addEventListener("keydown", close)
-        return () => window.removeEventListener("keydown", close)
-    }, [onClose])
-
-    return <div role="dialog" aria-modal="true" aria-labelledby="workspace-member-profile-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }} className="fixed inset-0 z-[180] flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-sm">
+    return <dialog ref={dialogRef} aria-labelledby="workspace-member-profile-title"
+        onCancel={event => { event.preventDefault(); dismiss() }}
+        onClick={event => { if (event.target === event.currentTarget) dismiss() }}
+        className="fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none border-0 bg-black/75 px-4 py-6 text-white backdrop-blur-sm backdrop:bg-transparent open:flex open:items-center open:justify-center">
         <div className="betelgeze-popup-enter w-full max-w-md overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950 text-white shadow-2xl shadow-black/60">
-            <div className="flex justify-end px-4 pt-4"><button type="button" onClick={onClose} aria-label="Close profile" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-xl text-neutral-500 hover:bg-neutral-900 hover:text-white">×</button></div>
+            <div className="flex justify-end px-4 pt-4"><button type="button" onClick={dismiss} aria-label="Close profile" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-xl text-neutral-500 hover:bg-neutral-900 hover:text-white">×</button></div>
             {error ? <div className="px-6 pb-8 text-center"><p className="text-sm text-red-300">{error}</p></div> : !profile && initialProfile ? <section className="flex flex-col items-center px-6 pb-10 text-center">
                 <Avatar src={initialProfile.avatarSrc} name={initialProfile.displayName} className="h-28 w-28 border-2 border-neutral-700" />
                 <h2 id="workspace-member-profile-title" className="mt-5 max-w-full break-words text-4xl font-bold tracking-tight">{initialProfile.displayName}</h2>
@@ -69,5 +69,5 @@ export function WorkspaceMemberProfileModal({ workspaceSlug, userId, initialProf
                 </section>
             </>}
         </div>
-    </div>
+    </dialog>
 }

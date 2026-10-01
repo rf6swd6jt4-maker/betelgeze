@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/lib/workspace-tabs"
 import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 import { anchoredPopupPosition } from "./anchored-popup-position"
+import { bindPortalOwnerLifetime } from "./portal-owner-lifetime"
 
 type PopupPosition = {
     left: number
@@ -65,12 +66,13 @@ export function AnchoredPopup({
     const navigation = useWorkspaceNavigation()
     const active = navigation?.active !== false
     const popupRef = useRef<HTMLDivElement>(null)
+    const resizeObserverRef = useRef<ResizeObserver | null>(null)
     const [position, setPosition] = useState<PopupPosition | null>(null)
     const host = useMemo(() => anchor ? popupHost(anchor) : null, [anchor])
 
     const updatePosition = useCallback(() => {
         const popup = popupRef.current
-        if (!active || !anchor || !popup) return
+        if (!active || !anchor || !popup || !popup.isConnected || popup.hidden) return
         const currentHost = popupHost(anchor)
         const rect = anchorRectInHost(anchor, currentHost.frameRect)
         const triggerRect = anchorPoint ? { left: rect.left + anchorPoint.x, right: rect.left + anchorPoint.x, top: rect.top + anchorPoint.y } : rect
@@ -106,13 +108,18 @@ export function AnchoredPopup({
         anchor.dispatchEvent(new Event("betelgeze:anchored-popup-opening", { bubbles: true }))
         updatePosition()
         const resizeObserver = new ResizeObserver(updatePosition)
+        resizeObserverRef.current = resizeObserver
         resizeObserver.observe(anchor)
         resizeObserver.observe(popup)
-        return () => resizeObserver.disconnect()
+        return () => {
+            resizeObserver.disconnect()
+            if (resizeObserverRef.current === resizeObserver) resizeObserverRef.current = null
+        }
     }, [active, anchor, updatePosition])
 
     useEffect(() => {
-        if (!active || !anchor || !host) return
+        const popup = popupRef.current
+        if (!active || !anchor || !host || !popup) return
         const sourceDocument = anchor.ownerDocument
         const documents = sourceDocument === host.document ? [sourceDocument] : [sourceDocument, host.document]
         const sourceWindow = sourceDocument.defaultView
@@ -138,14 +145,14 @@ export function AnchoredPopup({
         sourceWindow?.addEventListener("resize", updatePosition)
         sourceWindow?.addEventListener(WORKSPACE_TAB_VISIBILITY_EVENT, dismissWhenOwnerBecomesInactive)
         sourceWindow?.addEventListener("betelgeze:workspace-navigation-start", dismissForOwnerNavigation)
-        sourceWindow?.addEventListener("pagehide", dismissForOwnerNavigation)
+        if (popup.ownerDocument === document) sourceWindow?.addEventListener("pagehide", dismissForOwnerNavigation)
         if (host.window !== sourceWindow) {
             host.window.addEventListener("scroll", updatePosition, true)
             host.window.addEventListener("resize", updatePosition)
         }
         visualViewport?.addEventListener("resize", updatePosition)
         visualViewport?.addEventListener("scroll", updatePosition)
-        return () => {
+        const releaseListeners = () => {
             for (const document of documents) {
                 document.removeEventListener(anchorPoint ? "pointerdown" : "mousedown", dismiss)
                 document.removeEventListener("keydown", escape)
@@ -162,6 +169,16 @@ export function AnchoredPopup({
             visualViewport?.removeEventListener("resize", updatePosition)
             visualViewport?.removeEventListener("scroll", updatePosition)
         }
+        const owner = bindPortalOwnerLifetime(popup, {
+            suspend: ({ persisted }) => {
+                resizeObserverRef.current?.disconnect()
+                releaseListeners()
+                // A cached document may commit dismissal when it resumes. A
+                // destroyed document cannot safely reconcile its removed portal.
+                if (persisted) onDismiss?.()
+            },
+        })
+        return () => { owner.dispose(); releaseListeners() }
     }, [active, anchor, anchorPoint, host, onDismiss, updatePosition])
 
     if (!active || !anchor || !host) return null

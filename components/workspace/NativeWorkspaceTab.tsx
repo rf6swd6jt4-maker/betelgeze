@@ -255,8 +255,8 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
 
     useEffect(() => {
         const context = snapshot.data?.context ?? null
-        post({ type: "context-status", contextSupported: Boolean(context), relationshipId: context?.id ?? null, context })
-    }, [post, snapshot.data?.context])
+        post({ type: "context-status", url: tab.url, contextSupported: Boolean(context), relationshipId: context?.id ?? null, context })
+    }, [post, tab.url, snapshot.data?.context])
 
     useEffect(() => {
         if (!active) {
@@ -327,7 +327,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
             void cache.load(nativePanelCacheKey(userId, workspaceId, target.key), (signal) => readNativePanel({ url: href, workspaceSlug, workspaceId, userId, signal }), { discardDataOnError: (error) => error instanceof NativePanelUnavailableError })
                 .catch(() => undefined).finally(() => prefetchReads.current.delete(target.key))
         },
-        context: (context) => post({ type: "context-status", contextSupported: Boolean(context), relationshipId: context?.id ?? null, context }),
+        context: (context) => post({ type: "context-status", url: tab.url, contextSupported: Boolean(context), relationshipId: context?.id ?? null, context }),
     }), [tab.id, tab.url, workspaceSlug, workspaceId, userId, active, navigate, refresh, cache, post, blockedByAccess])
 
     return <WorkspaceNavigationProvider value={navigation}><div ref={root} hidden={!active} aria-hidden={!active} data-native-workspace-tab={tab.id} data-native-context-open={contextOpen ? "true" : "false"} className="absolute inset-0 overflow-y-auto bg-neutral-950"
@@ -351,7 +351,7 @@ export function NativeWorkspaceTab({ tab, active, contextOpen, workspaceId, work
             if (anchor && event.pointerType === "mouse") prefetchTimer.current = setTimeout(() => navigation.prefetch(anchor.href), 200)
         }}
         onPointerLeave={() => { if (prefetchTimer.current) clearTimeout(prefetchTimer.current) }}>
-        <PullToRefresh active={active && !blockedByAccess} refreshing={snapshot.loading} onRefresh={refresh} getScrollElement={getScrollElement} getPullTarget={getPullTarget} placement="absolute" />
+        <PullToRefresh active={active && !blockedByAccess && Boolean(snapshot.data)} refreshing={snapshot.loading && Boolean(snapshot.data)} onRefresh={refresh} getScrollElement={getScrollElement} getPullTarget={getPullTarget} placement="absolute" />
         {navigationError ? <div role="alert" className="px-4 py-2 text-sm text-red-200">{navigationError}</div> : null}
         {blockedByAccess ? <div role="alert" className="px-4 py-2 text-sm text-red-200">{accountCleared ? "Your workspace session changed. Reload to continue." : accessError?.message} <button type="button" onClick={() => window.location.reload()} className="underline">Reload workspace</button></div> : null}
         {snapshot.error ? <div role="alert" className="border-b border-red-900/50 px-4 py-2 text-sm text-red-200">{snapshot.error} <button type="button" onClick={refresh} className="underline">Retry</button></div> : null}

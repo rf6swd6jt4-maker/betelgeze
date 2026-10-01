@@ -5,8 +5,10 @@ import { usePathname } from "./WorkspaceNavigation"
 
 import { workspaceRouteUsesSharedBanner } from "@/lib/workspace-panel-chrome"
 
-export function WorkspacePanelChrome({ banner, children }: { banner: ReactNode; children: ReactNode }) {
-    const pathname = usePathname()
+export function WorkspacePanelChrome({ banner, children, pathname: destinationPathname }: { banner: ReactNode; children: ReactNode; pathname?: string }) {
+    const currentPathname = usePathname()
+    // Shell fallbacks describe the pending destination before its frame mounts.
+    const pathname = destinationPathname ?? currentPathname
     const showBanner = workspaceRouteUsesSharedBanner(pathname)
 
     return <>

@@ -7,6 +7,7 @@ import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import ts from "typescript"
 import { WORKSPACE_PANELS } from "../lib/workspace-panels.ts"
+import { workspaceRouteUsesSharedBanner } from "../lib/workspace-panel-chrome.ts"
 import { workspaceRouteIsRecordDetail } from "../lib/workspace-tabs.ts"
 
 const openingPath = "components/workspace/WorkspaceTabOpeningState.tsx"
@@ -24,7 +25,8 @@ function load(path: string): Record<string, React.ComponentType<Record<string, u
     const compiled = new Module(full) as Module & { _compile: (source: string, filename: string) => void }
     compiled.require = ((name: string) => {
         if (name === "@/components/workspace/WorkspaceLink") return { default: "a" }
-        if (name === "@/components/workspace/WorkspaceNavigation") return { usePathname: () => "/fixture", useSearchParams: () => search, useWorkspaceNavigation: () => null }
+        if (name === "@/lib/workspace-panel-chrome") return { workspaceRouteUsesSharedBanner }
+        if (name === "@/components/workspace/WorkspaceNavigation" || name === "./WorkspaceNavigation") return { usePathname: () => "/fixture", useSearchParams: () => search, useWorkspaceNavigation: () => null }
         if (name === "@/components/workspace/DetailRouteLoading") return { DetailRouteLoading: ({ title }: { title: string }) => React.createElement("main", { "data-workspace-loading-root": "", "aria-label": "Opening " + title, "aria-busy": "true" }) }
         if (name === "@/lib/workspace-detail-preview") return { serializeWorkspaceDetailPreview: () => "" }
         if (name === "@/lib/workspace-tabs") return { workspaceRouteIsRecordDetail }
@@ -96,6 +98,7 @@ test("Library loading shows neutral tab shapes without presumed access", () => {
         assert.ok(markup.includes(tabs), variant + " should reserve the shared Library tab geometry")
         assert.match(tabs, /aria-hidden="true"/, variant)
         assert.doesNotMatch(tabs, /Work Items|Assets|Notes|SOPs|<nav|<a|<button/, variant)
+        assert.doesNotMatch(tabs, /bg-white|text-black|hover:/, variant + " must not look ready or interactive")
     }
 })
 
@@ -158,4 +161,19 @@ test("public onboarding requests the agency logo in its first fallback HTML", ()
     const markup = html(OnboardingStartupScreen)
     assert.ok(markup.includes("/api/client-branding/logo/onboarding/" + "a".repeat(64)))
     assert.doesNotMatch(markup, /Betelgeze|diamond|data-app-startup-screen/)
+})
+
+
+test("shell opening chrome follows the destination rather than the current framework path", () => {
+    const { WorkspacePanelChrome } = load("components/workspace/WorkspacePanelChrome.tsx")
+    const banner = React.createElement("div", { "data-fixture-banner": "" }, "Workspace identity")
+    for (const pathname of ["/fixture/assets", "/fixture/onboarding", "/fixture/admin/maintenance"]) {
+        const markup = html(WorkspacePanelChrome, { pathname, banner, children: "Pending content" })
+        assert.equal((markup.match(/data-workspace-shared-banner/g) ?? []).length, 1)
+        assert.ok(markup.indexOf("Workspace identity") < markup.indexOf("Pending content"))
+    }
+    for (const pathname of ["/fixture/communications", "/fixture/settings", "/fixture/assets/asset-id"]) {
+        assert.doesNotMatch(html(WorkspacePanelChrome, { pathname, banner, children: "Pending content" }), /data-workspace-shared-banner/)
+    }
+    assert.doesNotMatch(html(load("components/admin/WorkspaceBannerPending.tsx").WorkspaceBannerPending), /(?<!motion-safe:)animate-pulse/)
 })

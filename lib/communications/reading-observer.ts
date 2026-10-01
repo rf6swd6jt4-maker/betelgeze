@@ -67,6 +67,11 @@ export function observeChatReadingVisibility(view: Window, getPane: () => HTMLEl
             listen(document, "pointerup")
             listen(document, "keyup")
         }
+        // Native top-layer dialogs/popovers can close while their DOM stays
+        // mounted. Their non-bubbling lifecycle events reveal the row without
+        // a child mutation, animation or another pointer/keyboard interaction.
+        listen(document, "close", true)
+        listen(document, "toggle", true)
         listen(document, "transitionend", true)
         listen(document, "animationend", true)
     }

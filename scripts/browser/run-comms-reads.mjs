@@ -6,8 +6,8 @@ import { chromium, webkit } from "playwright"
 import { assertFixtureReport } from "./report.mjs"
 
 const fixtures = [
- {name:"comms-reading-mobile",expected:34,script:"scripts/serve-comms-reading-fixture.mjs",global:"commsReadingFixtureResult",viewport:{width:390,height:844}},
- {name:"comms-reading-desktop",expected:34,script:"scripts/serve-comms-reading-fixture.mjs",global:"commsReadingFixtureResult",viewport:{width:1280,height:900}},
+ {name:"comms-reading-mobile",expected:36,script:"scripts/serve-comms-reading-fixture.mjs",global:"commsReadingFixtureResult",viewport:{width:390,height:844}},
+ {name:"comms-reading-desktop",expected:36,script:"scripts/serve-comms-reading-fixture.mjs",global:"commsReadingFixtureResult",viewport:{width:1280,height:900}},
 ]
 const selected = process.argv.slice(2)
 if (selected.some(value => !["chromium", "webkit"].includes(value))) throw Error("Usage: run-comms-reads.mjs [chromium|webkit]")

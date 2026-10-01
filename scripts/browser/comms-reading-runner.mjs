@@ -56,6 +56,15 @@ for(const kind of ['native','client']){
  await run(kind+' covered row waits for programmatic reveal',async()=>{
   await setup(kind,{positioned:false});const modal=cover();api.setState(s=>({...s,positioned:true}));await wait(400);assert(requests.length===0,'covered read');modal.remove();await until(()=>requests.length===1,'uncovered without pointer event')
  })
+ await run(kind+' closing a retained native dialog rechecks the uncovered newest row',async()=>{
+  await setup(kind,{positioned:false});await wait(350)
+  const dialog=document.createElement('dialog');dialog.className='cover';dialog.textContent='Synthetic retained dialog';document.body.append(dialog);dialog.showModal()
+  api.setState(s=>({...s,positioned:true}));await wait(180)
+  assert(requests.length===0&&rowCount()===3&&shellNow.count===3,'dialog covered row was marked read')
+  dialog.close()
+  await until(()=>requests.length===1&&rowCount()===0&&shellNow.count===0,'native dialog close without removal, motion or pointer event')
+  assert(dialog.isConnected,'fixture must retain the closed dialog node');dialog.remove()
+ })
  await run(kind+' scrolled history never clears newest unread',async()=>{
   await setup(kind,{atLatest:false});await wait(400);assert(requests.length===0&&rowCount()===3,'history read incorrectly');api.setState(s=>({...s,atLatest:true}));await until(()=>requests.length===1&&rowCount()===0,'latest acknowledged')
  })

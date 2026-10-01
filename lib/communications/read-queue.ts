@@ -21,16 +21,16 @@ export function createChatReadQueue(options: {
         try { options.store([...pending.values()]); return true }
         catch { options.error("Read position is pending; this device could not store it for recovery."); return false }
     }
-    function flush(): Promise<void> {
+    function flush(attempted = new Map<string, ChatReadUpdate>()): Promise<void> {
         if (running) return running
         if (disposed) return Promise.resolve()
+        const next = () => [...pending.values()].find(value => !attempted.has(key(value)) || compareReadPositions(value, attempted.get(key(value))!) > 0)
         running = (async () => {
             // One bounded attempt per position per flush, including a newer
             // position observed while a save was in flight. Failures wait for
             // the existing online/focus/reconciliation recovery path.
-            const attempted = new Map<string, ChatReadUpdate>()
             while (!disposed) {
-                const read = [...pending.values()].find(value => !attempted.has(key(value)) || compareReadPositions(value, attempted.get(key(value))!) > 0)
+                const read = next()
                 if (!read) break
                 const id = key(read)
                 attempted.set(id, read)
@@ -47,7 +47,13 @@ export function createChatReadQueue(options: {
                     if (!disposed) options.error("Read position could not be saved. Retrying when messages reconnect.")
                 }
             }
-        })().finally(() => { running = null })
+        })().finally(() => {
+            running = null
+            // Observation can arrive after the loop finishes but before this
+            // promise settles. Drain only unattempted/newer positions, keeping
+            // failed saves bounded to one attempt until an explicit recovery.
+            if (!disposed && next()) return flush(attempted)
+        })
         return running
     }
     return {
@@ -60,7 +66,7 @@ export function createChatReadQueue(options: {
             persist()
             void flush()
         },
-        flush,
+        flush: () => flush(),
         dispose() { disposed = true },
     }
 }

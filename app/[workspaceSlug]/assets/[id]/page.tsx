@@ -16,9 +16,10 @@ import {
     relationshipHubHref,
     workItemHref,
 } from "@/lib/relationships"
-import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
+import { assetPreviewUrl } from "@/lib/assets/preview"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
-import { accessibleAssetIds, accessibleRelationshipIds, accessibleWorkItemIds, requireWorkspaceAccess, workspaceAccessHasCapability } from "@/lib/workspace-access"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { requireWorkspaceAccess, workspaceAccessHasCapability } from "@/lib/workspace-access"
 import { AssetFieldsEditor } from "./AssetFieldsEditor"
 
 export const dynamic = "force-dynamic"
@@ -72,36 +73,23 @@ export default async function AssetDetailPage({ params }: PageProps) {
     const { workspaceSlug, id } = await params
     const { workspace, user, role, access } = await requireWorkspaceAccess(workspaceSlug)
     if (!workspaceAccessHasCapability(access, "fulfilment.manage") && !workspaceAccessHasCapability(access, "onboarding.manage")) notFound()
-    const allowedRelationshipIdsPromise = accessibleRelationshipIds(access)
-    const allowedWorkItemIdsPromise = accessibleWorkItemIds(access)
-    const allowedAssetIdsPromise = Promise.all([allowedRelationshipIdsPromise, allowedWorkItemIdsPromise])
-        .then(([relationshipIds, workItemIds]) => accessibleAssetIds(access, relationshipIds, workItemIds))
-    const [asset, relationships, workItems, allowedRelationshipIds, allowedWorkItemIds, allowedAssetIds] = await Promise.all([
-        getAsset(workspace.id, id),
-        listAssetRelationships(workspace.id, id),
-        listAssetWorkItems(workspace.id, id),
-        allowedRelationshipIdsPromise,
-        allowedWorkItemIdsPromise,
-        allowedAssetIdsPromise,
+    const reader = await createSupabaseServerClient()
+    const [asset, scopedRelationships, scopedWorkItems] = await Promise.all([
+        getAsset(workspace.id, id, reader),
+        listAssetRelationships(workspace.id, id, reader),
+        listAssetWorkItems(workspace.id, id, reader),
     ])
-    if (allowedAssetIds && !allowedAssetIds.has(id)) notFound()
     if (!asset) notFound()
-    const scopedRelationships = relationships.filter((relationship) => !allowedRelationshipIds || allowedRelationshipIds.has(relationship.relationship_id))
-    const scopedWorkItems = workItems.filter((item) => !allowedWorkItemIds || allowedWorkItemIds.has(item.work_item_id))
     const contextRelationshipId = scopedRelationships[0]?.relationship_id
     const [contextRelationship, previewUrl] = await Promise.all([
         contextRelationshipId ? getRelationship(workspace.id, contextRelationshipId) : Promise.resolve(null),
-        asset.native_kind==='sop_extracted_image'?Promise.resolve(`/api/workspaces/${workspace.slug}/sop-images/${asset.id}`):asset.storage_path
-            ? asset.source_kind === "message"
-                ? Promise.resolve(`/api/client-messages/media/${asset.storage_path.split("/").map(encodeURIComponent).join("/")}`)
-                : createUploadSignedUrl(asset.storage_path)
-            : Promise.resolve(asset.external_url),
+        assetPreviewUrl(workspace.id, workspace.slug, asset),
     ])
     const formEntries = asset.asset_kind === "form_submission" ? responseEntries(asset.metadata) : []
     const downloadHref = asset.native_kind === "client_portal_resource" && asset.storage_path ? `/api/workspaces/${workspace.slug}/assets/${asset.id}/download` : null
     const onboardingRelationshipId = metadataValue(asset.metadata, "relationship_id") || contextRelationshipId
     const onboardingStepKey = metadataValue(asset.metadata, "step_key")
-    const onboardingBackHref = onboardingRelationshipId && (asset.native_kind === "onboarding_form_submission" || asset.native_kind === "onboarding_upload")
+    const onboardingBackHref = onboardingRelationshipId && scopedRelationships.some((link) => link.relationship_id === onboardingRelationshipId) && (asset.native_kind === "onboarding_form_submission" || asset.native_kind === "onboarding_upload")
         ? `${onboardingDetailHref(workspace.slug, onboardingRelationshipId)}${onboardingStepKey ? `#step-${slugAnchor(onboardingStepKey)}` : ""}`
         : null
 
@@ -120,7 +108,7 @@ export default async function AssetDetailPage({ params }: PageProps) {
                             updated={formatRelativeTime(asset.updated_at)}
                         />
 
-                        <AssetFieldsEditor workspaceSlug={workspace.slug} assetId={asset.id} userId={user.id} initialTitle={asset.title} initialDescription={asset.description ?? ""} updatedAt={asset.updated_at} canEdit>
+                        <AssetFieldsEditor workspaceSlug={workspace.slug} assetId={asset.id} userId={user.id} initialTitle={asset.title} initialDescription={asset.description ?? ""} updatedAt={asset.updated_at} canEdit={role === "owner" || role === "admin"}>
                             <DetailField label="Type" icon="file" className="lg:border-l lg:border-neutral-900 lg:pl-8">{asset.content_type ?? asset.asset_kind.replace(/_/g, " ")}</DetailField>
                             <DetailField label="Size" icon="size">{formatFileSize(asset.file_size)}</DetailField>
                             <DetailField label="Source" icon="source" className="lg:border-l lg:border-neutral-900 lg:pl-8">{asset.source_kind.replace(/_/g, " ")}</DetailField>

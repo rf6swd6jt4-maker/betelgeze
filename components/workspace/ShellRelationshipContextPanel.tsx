@@ -1,14 +1,17 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Assignee, ServiceStage, RoundPill } from "@/components/ui"
+import { Assignee, ServiceStage, RoundPill, RelationshipStage, SideDrawer } from "@/components/ui"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { shortId } from "@/lib/ui/relative-time"
-import { relationshipContactHref, relationshipContextDestinations } from "@/lib/relationship-context"
+import { relationshipContactHref, relationshipContextDestinations, relationshipContextHref, relationshipContextRouteKey } from "@/lib/relationship-context"
+import { relationshipPhaseTones } from "@/components/ui/RelationshipStage"
+import type { RelationshipPhase } from "@/lib/relationship-phases"
 import type { WorkspaceCapability } from "@/lib/workspace-capabilities"
 import type { WorkspaceTabRelationshipContext } from "@/lib/workspace-tabs"
 
 type Props = {
+    currentUrl?: string
     context: WorkspaceTabRelationshipContext
     workspaceSlug: string
     onNavigate: (href: string) => void
@@ -43,7 +46,7 @@ function ContactValue({ label, value }: { label: "Phone" | "Email" | "Website"; 
     </div>
 }
 
-function ContextContent({ context, workspaceSlug, workspaceCapabilities, onNavigate, onClose }: Pick<Props, "context" | "workspaceSlug" | "workspaceCapabilities" | "onNavigate"> & { onClose?: () => void }) {
+function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilities, onNavigate, onClose }: Pick<Props, "currentUrl" | "context" | "workspaceSlug" | "workspaceCapabilities" | "onNavigate"> & { onClose?: () => void }) {
     const company = context.business_name?.trim()
     const details = [
         { label: "Industry", value: context.industry_value?.replace(/_/g, " ") },
@@ -64,11 +67,17 @@ function ContextContent({ context, workspaceSlug, workspaceCapabilities, onNavig
                 <p className="text-xs text-neutral-500">Relationship context <span className="ml-1 font-mono text-neutral-600">{shortId(context.id)}</span></p>
                 {onClose ? <button data-icon-button type="button" autoFocus onClick={onClose} aria-label="Close relationship context" className="inline-flex h-8 w-8 items-center justify-center text-xl text-neutral-400 hover:text-white">×</button> : null}
             </div>
-            <h2 className="mt-2 break-words text-sm font-semibold">{company || context.primary_person_name}</h2>
+            <h2 className="mt-2 break-words text-base font-semibold">{company || context.primary_person_name}</h2>
             {company || context.primary_contact_role?.trim() ? <p className="mt-1 break-words text-xs leading-5 text-neutral-400">{[company ? context.primary_person_name : null, context.primary_contact_role?.trim()].filter(Boolean).join(" · ")}</p> : null}
+            {Object.hasOwn(relationshipPhaseTones, context.lifecycle_phase) ? <RelationshipStage phase={context.lifecycle_phase as RelationshipPhase} className="mt-3" /> : null}
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+            {contacts.length ? <section className="mb-4 border-b border-neutral-900 pb-3">
+                <h3 className="text-xs font-medium text-neutral-400">Contact</h3>
+                <dl>{contacts.map((contact) => <ContactValue key={`${context.id}-${contact.label}-${contact.value}`} label={contact.label} value={contact.value!.trim()} />)}</dl>
+            </section> : null}
+
             <section aria-label="Services and team">
                 <h3 className="text-xs font-medium text-neutral-400">Services and team</h3>
                 {context.teamUnavailable ? <p className="mt-2 text-xs text-neutral-500">Services and team could not be loaded. Reload to try again.</p> : <>
@@ -80,7 +89,7 @@ function ContextContent({ context, workspaceSlug, workspaceCapabilities, onNavig
                             <dd className="mt-1.5">{service.assignee ? <Assignee name={service.assignee.name} avatarSrc={service.assignee.avatarSrc} /> : <span className="text-xs text-neutral-400">Unassigned</span>}</dd>
                         </div>)}
                     </dl>
-                    {context.servicesHasMore ? <button type="button" onClick={() => onNavigate(`/${workspaceSlug}/relationships/${context.id}`)} className="py-2 text-xs text-neutral-400 underline">View all services</button> : null}
+                    {context.servicesHasMore && shortcuts.some(item => item.key === "relationships") ? <button type="button" onClick={() => onNavigate(`/${workspaceSlug}/relationships/${context.id}`)} className="py-2 text-xs text-neutral-400 underline">View all services</button> : null}
                     {!context.services?.length ? <p className="mt-2 text-xs text-neutral-500">No services available to show.</p> : null}
                 </>}
             </section>
@@ -90,10 +99,7 @@ function ContextContent({ context, workspaceSlug, workspaceCapabilities, onNavig
                 <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-neutral-300">{context.notes_summary.trim()}</p>
             </section> : null}
 
-            {contacts.length ? <section className="mt-4 border-t border-neutral-900 pt-3">
-                <h3 className="text-xs font-medium text-neutral-400">Contact</h3>
-                <dl>{contacts.map((contact) => <ContactValue key={`${context.id}-${contact.label}-${contact.value}`} label={contact.label} value={contact.value!.trim()} />)}</dl>
-            </section> : null}
+
 
             {details.length ? <details className="mt-4 border-t border-neutral-900 pt-3">
                 <summary className="cursor-pointer text-xs text-neutral-400 hover:text-white">More details</summary>
@@ -102,40 +108,39 @@ function ContextContent({ context, workspaceSlug, workspaceCapabilities, onNavig
             {context.metrics.length ? <QuickStats items={context.metrics} ariaLabel="Current view" /> : null}
         </div>
 
-        {shortcuts.length ? <nav aria-label="Relationship shortcuts" className="shrink-0 border-t border-neutral-800 px-4 py-2">
-            {shortcuts.map((destination) => <button key={destination.key} type="button" onClick={() => onNavigate(`/${workspaceSlug}/${destination.path}/${context.id}`)} className="flex min-h-9 w-full items-center justify-between gap-2 py-1.5 text-left text-xs text-neutral-300 hover:text-white">
-                {destination.label}<span aria-hidden="true" className="text-neutral-500">↗</span>
-            </button>)}
+        {shortcuts.length ? <nav aria-label="Relationship shortcuts" className="grid shrink-0 grid-cols-2 gap-x-3 border-t border-neutral-800 px-4 py-2">
+            {shortcuts.map((destination) => {
+                const href = relationshipContextHref(destination.key, workspaceSlug, context.id)
+                const current = Boolean(currentUrl && relationshipContextRouteKey(currentUrl).split("?")[0] === relationshipContextRouteKey(href).split("?")[0])
+                return <a key={destination.key} href={href} aria-current={current ? "page" : undefined} data-global-loading="false"
+                    onClick={event => {
+                        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                        event.preventDefault()
+                        if (!current) onNavigate(href)
+                    }} className={`flex min-h-11 min-w-0 items-center justify-between gap-2 py-1.5 text-xs focus-visible:outline focus-visible:outline-neutral-400 ${current ? "font-medium text-white" : "text-neutral-400 hover:text-white"}`}>
+                    {destination.label}<span aria-hidden="true" className="shrink-0 text-neutral-500">{current ? "•" : "→"}</span>
+                </a>
+            })}
         </nav> : null}
     </>
 }
 
 export function ShellRelationshipContextPanel({ desktopOpen, mobileOpen, onClose, standalone, ...props }: Props) {
-    const dialogRef = useRef<HTMLDialogElement>(null)
     const onCloseRef = useRef(onClose)
     useEffect(() => { onCloseRef.current = onClose }, [onClose])
     useEffect(() => {
-        const dialog = dialogRef.current
-        if (!dialog) return
-        if (mobileOpen) dialog.showModal()
-        else dialog.close()
+        if (!mobileOpen) return
         const media = window.matchMedia("(min-width: 1024px)")
-        function closeOnDesktop() { if (media.matches && dialog?.open) onCloseRef.current() }
+        function closeOnDesktop() { if (media.matches) onCloseRef.current() }
         closeOnDesktop()
         media.addEventListener("change", closeOnDesktop)
-        return () => { media.removeEventListener("change", closeOnDesktop); dialog.close() }
+        return () => media.removeEventListener("change", closeOnDesktop)
     }, [mobileOpen])
 
     return <>
         {desktopOpen ? <aside aria-label="Relationship context" className={`fixed right-4 z-[35] hidden w-80 flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20 sm:right-6 lg:flex ${standalone ? "top-6 h-[calc(100dvh-3rem)]" : "top-[7.75rem] h-[calc(100dvh-9.25rem)]"}`}>
             <ContextContent {...props} />
         </aside> : null}
-        <dialog ref={dialogRef} aria-label="Relationship context" onCancel={(event) => { event.preventDefault(); onClose() }} onClick={(event) => {
-            if (event.target !== event.currentTarget) return
-            const rect = event.currentTarget.getBoundingClientRect()
-            if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose()
-        }} className="fixed inset-y-0 left-auto right-0 m-0 h-dvh max-h-none w-[min(24rem,100vw)] max-w-none border-l border-neutral-800 bg-neutral-950 p-0 text-white backdrop:bg-black/60">
-            {mobileOpen ? <div className="betelgeze-popup-enter flex h-full flex-col overflow-hidden pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]"><ContextContent {...props} onClose={onClose} /></div> : null}
-        </dialog>
+        {mobileOpen ? <SideDrawer label="Relationship context" onClose={onClose}><ContextContent {...props} onClose={onClose} /></SideDrawer> : null}
     </>
 }

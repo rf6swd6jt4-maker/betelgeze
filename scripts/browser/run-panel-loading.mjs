@@ -20,6 +20,7 @@ try {
         server.once("exit", code => { clearTimeout(timer); reject(Error(`Fixture exit ${code}: ${log}`)) })
     })
     const scenarios = [
+        ["work-items", "shell-opening"], ["settings", "shell-opening"], ["communications", "shell-opening"], ["detail", "shell-opening"],
         ["work-items", "route"], ["work-items", "opening"], ["work-items", "reference"], ["work-items", "reference", "limited"],
         ["sops", "route"], ["sops", "reference"], ["sops", "reference", "limited"],
         ["assets", "route"], ["notes", "route"], ["relationships", "route"], ["relationships", "reference"], ["onboarding", "route"], ["onboarding", "reference"], ["queue", "route"],
@@ -59,7 +60,7 @@ try {
                             const list = panel.querySelector('[role="list"]')
                             const firstRow = list?.querySelector('[role="listitem"]')
                             const box = node => { const rect = node?.getBoundingClientRect(); return rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null }
-                            return { headingCount: panel.querySelectorAll("h1").length, heading: h1?.textContent ?? null, headingBox: box(h1), tabsBox: box(tabs), actionBox: box(headerAction), statsBox: box(stats), filtersBox: box(filters), listBox: box(list), rowBox: box(firstRow), tabs: tabs ? [...tabs.querySelectorAll("a,span")].map(node => node.textContent) : [], busyRoots: panel.querySelectorAll('[data-workspace-loading-root][aria-busy="true"]').length, interactiveCount: panel.querySelectorAll("button,a,input,select,textarea,[tabindex]:not([tabindex='-1'])").length, bannerCount: panel.querySelectorAll("[data-workspace-shared-banner]").length, startupCount: panel.querySelectorAll("[data-app-startup], [aria-label='Loading Betelgeze']").length, overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth, panel.scrollWidth) - innerWidth, panelBox: box(panel), rootBox: box(root), animatedCount: [...panel.querySelectorAll('[class*="animate-pulse"]')].filter(node => getComputedStyle(node).animationName !== "none").length }
+                            return { headingCount: panel.querySelectorAll("h1").length, heading: h1?.textContent ?? null, headingBox: box(h1), tabsBox: box(tabs), actionBox: box(headerAction), statsBox: box(stats), filtersBox: box(filters), listBox: box(list), rowBox: box(firstRow), tabs: tabs ? [...tabs.querySelectorAll("a,span")].map(node => node.textContent) : [], tabFaces: tabs ? [...tabs.children].map(node => getComputedStyle(node).backgroundColor) : [], busyRoots: panel.querySelectorAll('[data-workspace-loading-root][aria-busy="true"]').length, interactiveCount: panel.querySelectorAll("button,a,input,select,textarea,[tabindex]:not([tabindex='-1'])").length, bannerCount: panel.querySelectorAll("[data-workspace-shared-banner]").length, startupCount: panel.querySelectorAll("[data-app-startup], [aria-label='Loading Betelgeze']").length, overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth, panel.scrollWidth) - innerWidth, panelBox: box(panel), rootBox: box(root), animatedCount: [...panel.querySelectorAll('[class*="animate-pulse"]')].filter(node => getComputedStyle(node).animationName !== "none").length }
                         })
                         const record = { engine, viewport: viewport.name, variant, stage, role: role ?? null, firstFrameRowVisible, ...measurement, screenshot: `${id}.png` }
                         observations.push(record)
@@ -67,7 +68,8 @@ try {
                         if (stage !== "reference") {
                             assert.equal(measurement.busyRoots, 1, `${id}: expected one busy loading root`)
                             assert.equal(measurement.interactiveCount, 0, `${id}: loading state must not expose controls`)
-                            assert.equal(measurement.bannerCount, 0, `${id}: duplicate banner`)
+                            assert(!measurement.tabFaces.includes("rgb(255, 255, 255)"), `${id}: pending tabs must not look like finished white controls`)
+                            assert.equal(measurement.bannerCount, stage === "shell-opening" && variant === "work-items" ? 1 : 0, `${id}: expected one shared banner only on eligible shell opening`)
                             assert.equal(measurement.startupCount, 0, `${id}: startup branding in panel`)
                         }
                         assert(measurement.overflow <= 1, `${id}: horizontal overflow ${measurement.overflow}px`)

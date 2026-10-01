@@ -845,8 +845,8 @@ export async function listWorkspaceWorkItems(workspaceId: string): Promise<Relat
     return ((result.data ?? []) as Array<Record<string, unknown>>).map((row) => mapWorkItem(row))
 }
 
-export async function listWorkspaceAssets(workspaceId: string): Promise<RelationshipAsset[]> {
-    const result = await supabaseAdmin
+export async function listWorkspaceAssets(workspaceId: string, reader = supabaseAdmin): Promise<RelationshipAsset[]> {
+    const result = await reader
         .from("assets")
         .select("id, workspace_id, title, description, asset_kind, source_kind, storage_path, external_url, content_type, file_size, native_kind, native_id, metadata, created_by, created_at, updated_at")
         .eq("workspace_id", workspaceId)
@@ -854,6 +854,7 @@ export async function listWorkspaceAssets(workspaceId: string): Promise<Relation
         .order("updated_at", { ascending: false })
         .limit(160)
 
+    if (reader !== supabaseAdmin && result.error) throw new Error("Could not load asset access. Please retry.")
     if (isMissingPrimitiveSchema(result.error)) return []
     return ((result.data ?? []) as Array<Record<string, unknown>>).map((row) => mapAsset(row))
 }
@@ -1083,26 +1084,28 @@ export async function listWorkItemRelationships(workspaceId: string, workItemId:
     })
 }
 
-export async function getAsset(workspaceId: string, assetId: string): Promise<RelationshipAsset | null> {
-    const result = await supabaseAdmin
+export async function getAsset(workspaceId: string, assetId: string, reader = supabaseAdmin): Promise<RelationshipAsset | null> {
+    const result = await reader
         .from("assets")
         .select("id, workspace_id, title, description, asset_kind, source_kind, storage_path, external_url, content_type, file_size, native_kind, native_id, metadata, created_by, created_at, updated_at")
         .eq("workspace_id", workspaceId)
         .eq("id", assetId)
         .maybeSingle()
 
+    if (reader !== supabaseAdmin && result.error) throw new Error("Could not load asset access. Please retry.")
     if (isMissingPrimitiveSchema(result.error) || !result.data) return null
     return mapAsset(result.data as Record<string, unknown>)
 }
 
-export async function listAssetRelationships(workspaceId: string, assetId: string): Promise<AssetRelationshipLink[]> {
-    const result = await supabaseAdmin
+export async function listAssetRelationships(workspaceId: string, assetId: string, reader = supabaseAdmin): Promise<AssetRelationshipLink[]> {
+    const result = await reader
         .from("asset_relationships")
         .select("relationship_id, relationships(id, primary_person_name, business_name, client_id, lifecycle_phase)")
         .eq("workspace_id", workspaceId)
         .eq("asset_id", assetId)
         .order("created_at", { ascending: false })
 
+    if (reader !== supabaseAdmin && result.error) throw new Error("Could not load asset access. Please retry.")
     if (isMissingPrimitiveSchema(result.error)) return []
 
     return (result.data ?? []).map((row) => {
@@ -1117,14 +1120,15 @@ export async function listAssetRelationships(workspaceId: string, assetId: strin
     })
 }
 
-export async function listAssetWorkItems(workspaceId: string, assetId: string): Promise<AssetWorkItemLink[]> {
-    const result = await supabaseAdmin
+export async function listAssetWorkItems(workspaceId: string, assetId: string, reader = supabaseAdmin): Promise<AssetWorkItemLink[]> {
+    const result = await reader
         .from("asset_work_items")
         .select("work_item_id, work_items(id, title, status, lifecycle_phase)")
         .eq("workspace_id", workspaceId)
         .eq("asset_id", assetId)
         .order("created_at", { ascending: false })
 
+    if (reader !== supabaseAdmin && result.error) throw new Error("Could not load asset access. Please retry.")
     if (isMissingPrimitiveSchema(result.error)) return []
 
     return (result.data ?? []).map((row) => {
@@ -1139,14 +1143,15 @@ export async function listAssetWorkItems(workspaceId: string, assetId: string): 
     })
 }
 
-export async function listWorkItemAssets(workspaceId: string, workItemId: string): Promise<RelationshipAsset[]> {
-    const result = await supabaseAdmin
+export async function listWorkItemAssets(workspaceId: string, workItemId: string, reader = supabaseAdmin): Promise<RelationshipAsset[]> {
+    const result = await reader
         .from("asset_work_items")
         .select("assets!inner(id, workspace_id, title, description, asset_kind, source_kind, storage_path, external_url, content_type, file_size, native_kind, native_id, native_key, metadata, created_by, created_at, updated_at)")
         .eq("workspace_id", workspaceId)
         .eq("work_item_id", workItemId)
         .order("created_at", { ascending: false })
 
+    if (reader !== supabaseAdmin && result.error) throw new Error("Could not load asset access. Please retry.")
     if (isMissingPrimitiveSchema(result.error)) return []
 
     return ((result.data ?? []) as Array<{ assets: Record<string, unknown> | Record<string, unknown>[] }>).flatMap((row) => {

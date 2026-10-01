@@ -37,6 +37,78 @@ test('a late acknowledgement cannot discard a newer observed message; saves seri
     assert.deepEqual(acknowledgements.map(r => r.lastReadMessageId), ['m1', 'm3'])
 })
 
+test('a newest position observed during save settlement is acknowledged without another recovery event', async () => {
+    const attempts: ChatReadUpdate[] = [], acknowledged: ChatReadUpdate[] = []
+    let stored: ChatReadUpdate[] = []
+    const queue = createChatReadQueue({
+        load: () => [], store: rows => { stored = rows }, error() {},
+        save: async position => { attempts.push(position); return position },
+        acknowledge: position => {
+            acknowledged.push(position)
+            if (position.lastReadMessageId === 'm1') queueMicrotask(() => queue.observe(read('a', 2)))
+        },
+    })
+    queue.observe(read('a', 1))
+    await queue.flush()
+    assert.deepEqual(attempts.map(position => position.lastReadMessageId), ['m1', 'm2'])
+    assert.deepEqual(acknowledged.map(position => position.lastReadMessageId), ['m1', 'm2'])
+    assert.deepEqual(stored, [])
+    queue.dispose()
+})
+
+test('settlement recovery admits new intent without automatically retrying a failed position', async () => {
+    const attempts: string[] = []
+    let stored: ChatReadUpdate[] = []
+    const queue = createChatReadQueue({
+        load: () => [], store: rows => { stored = rows }, acknowledge() {},
+        save: async position => { attempts.push(position.lastReadMessageId!); throw Error('offline') },
+        error: () => { if (attempts.length === 1) queueMicrotask(() => queue.observe(read('a', 2))) },
+    })
+    queue.observe(read('a', 1))
+    await queue.flush()
+    assert.deepEqual(attempts, ['m1', 'm2'])
+    assert.deepEqual(stored.map(position => position.lastReadMessageId), ['m2'])
+    await Promise.resolve()
+    assert.equal(attempts.length, 2, 'failed intent must wait for a recovery event')
+    queue.dispose()
+})
+
+test('settlement drainage does not repeat an earlier failed conversation', async () => {
+    const attempts: string[] = []
+    let stored: ChatReadUpdate[] = []
+    const queue = createChatReadQueue({
+        load: () => [], store: rows => { stored = rows }, error() {},
+        save: async position => {
+            attempts.push(position.conversationId)
+            if (position.conversationId === 'failed') throw Error('offline')
+            return position
+        },
+        acknowledge: position => {
+            if (position.conversationId === 'saved') queueMicrotask(() => queue.observe(read('newest', 2)))
+        },
+    })
+    queue.observe(read('failed'))
+    queue.observe(read('saved'))
+    await queue.flush()
+    assert.deepEqual(attempts, ['failed', 'saved', 'newest'])
+    assert.deepEqual(stored.map(position => position.conversationId), ['failed'])
+    queue.dispose()
+})
+
+test('disposing during settlement preserves new intent without saving it for a departed owner', async () => {
+    const attempts: string[] = []
+    let stored: ChatReadUpdate[] = []
+    const queue = createChatReadQueue({
+        load: () => [], store: rows => { stored = rows }, error() {},
+        save: async position => { attempts.push(position.lastReadMessageId!); return position },
+        acknowledge: () => queueMicrotask(() => { queue.observe(read('a', 2)); queue.dispose() }),
+    })
+    queue.observe(read('a', 1))
+    await queue.flush()
+    assert.deepEqual(attempts, ['m1'])
+    assert.deepEqual(stored.map(position => position.lastReadMessageId), ['m2'])
+})
+
 test('account mismatches and older server responses cannot acknowledge a pending read', async () => {
     for (const result of [{ ...read(), userId: 'someone-else' }, read('a', 0)]) {
         let stored: ChatReadUpdate[] = []

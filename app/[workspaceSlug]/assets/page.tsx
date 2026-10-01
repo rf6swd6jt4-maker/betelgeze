@@ -6,9 +6,10 @@ import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { assetHref, listWorkspaceAssets, workspaceHref, type RelationshipAsset } from "@/lib/relationships"
-import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
+import { assetPreviewUrl } from "@/lib/assets/preview"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { serializeWorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { requireWorkspacePanel } from "@/lib/workspace-access"
 
 export const dynamic = "force-dynamic"
@@ -27,21 +28,17 @@ function isImage(asset: RelationshipAsset) {
     return Boolean(asset.content_type?.startsWith("image/"))
 }
 
-function encryptedMessageAssetUrl(storagePath: string) {
-    return `/api/client-messages/media/${storagePath.split("/").map(encodeURIComponent).join("/")}`
-}
-
 export default async function AssetsPage({ params }: PageProps) {
     const { workspaceSlug } = await params
     const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "library")
-    const assets = await listWorkspaceAssets(workspace.id)
+    const assets = await listWorkspaceAssets(workspace.id, await createSupabaseServerClient())
     const imageAssets = assets.filter(isImage)
     const documentCount = assets.filter((asset) => asset.asset_kind === "document" || asset.content_type === "application/pdf").length
     const uploadCount = assets.filter((asset) => asset.source_kind === "upload").length
     const previewEntries = await Promise.all(assets.slice(0, 24).map(async (asset) => ({
         asset,
         previewUrl: isImage(asset) && asset.storage_path
-            ? asset.native_kind==='sop_extracted_image'?`/api/workspaces/${workspace.slug}/sop-images/${asset.id}?thumbnail=1`:asset.source_kind === "message" ? encryptedMessageAssetUrl(asset.storage_path) : await createUploadSignedUrl(asset.storage_path)
+            ? await assetPreviewUrl(workspace.id, workspace.slug, asset, true)
             : null,
     })))
 

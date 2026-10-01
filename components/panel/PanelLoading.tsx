@@ -13,8 +13,8 @@ export function LoadingPulse({ className = "", style }: { className?: string; st
 /** Static tab geometry; access and destination links are unknown while a route is pending. */
 export function PanelLoadingTabs({ count = 4, active = 0 }: { count?: number; active?: number }) {
     return <PanelTabStrip ariaLabel="Loading panel sections" decorative>
-        {Array.from({ length: count }, (_, index) => <span key={index} aria-hidden="true" className={panelTabClass(index === active)}>
-            <LoadingPulse className={`h-5 ${index === active ? "w-16 bg-neutral-500" : "w-14 bg-neutral-700"}`} />
+        {Array.from({ length: count }, (_, index) => <span key={index} aria-hidden="true" className={panelTabClass(index === active, true)}>
+            <LoadingPulse className={`h-5 ${index === active ? "w-16 bg-neutral-700" : "w-14 bg-neutral-800"}`} />
         </span>)}
     </PanelTabStrip>
 }

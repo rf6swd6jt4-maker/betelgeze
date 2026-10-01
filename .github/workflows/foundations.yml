@@ -121,6 +121,8 @@ jobs:
         run: node scripts/validate-native-inbox-sql.mjs
       - name: Validate unchanged push eligibility against retained read boundaries
         run: node scripts/validate-chat-push-recovery.mjs
+      - name: Validate Library roles, private attachments and bounded authorization
+        run: node scripts/validate-library-authorization.mjs
       - name: Validate bounded search contact authorization and query plans
         run: node scripts/validate-search-contact-access.mjs
       - name: Validate search retrieval, canonical access and discovery limits
@@ -163,10 +165,14 @@ jobs:
         run: node scripts/browser/run-ui-reconciliation.mjs "${{ matrix.engine }}"
       - name: Exercise shared panel loading on mobile and desktop
         run: node scripts/browser/run-panel-loading.mjs "${{ matrix.engine }}"
+      - name: Exercise native loading, refresh, retry and access loss
+        run: node scripts/browser/run-native-loading.mjs "${{ matrix.engine }}"
+      - name: Exercise relationship drawers and native/iframe modal cleanup
+        run: node scripts/browser/run-context-overlays.mjs "${{ matrix.engine }}"
       - name: Print detailed browser evidence
         if: always()
         run: |
-          for report in foundations comms-reads comms-pane-lifecycle ui-reconciliation panel-loading; do
+          for report in foundations comms-reads comms-pane-lifecycle ui-reconciliation panel-loading native-loading context-overlays; do
             if test -f "browser-results/$report.json"; then
               cat "browser-results/$report.json"
             else

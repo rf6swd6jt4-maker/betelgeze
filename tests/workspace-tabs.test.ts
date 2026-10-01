@@ -94,7 +94,11 @@ test("only treats a frame as synchronized when route, query, hash, and tab ident
     )
 })
 
-test("workspace shell only supports relationship context on detail routes", () => {
+test("workspace shell retains authorized context for every publishing detail route", () => {
+    assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/assets/asset-1", "scaylup", origin), true)
+    assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/work-items/work-1", "scaylup", origin), true)
+    assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/notes/note-1", "scaylup", origin), false)
+    assert.equal(workspaceRouteCanShowRelationshipContext("https://other.test/scaylup/assets/asset-1", "scaylup", origin), false)
     assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/relationships/client-1", "scaylup", origin), true)
     assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/onboarding/client-1", "scaylup", origin), true)
     assert.equal(workspaceRouteCanShowRelationshipContext("/scaylup/work/client-1", "scaylup", origin), true)

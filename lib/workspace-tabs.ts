@@ -189,13 +189,10 @@ export function workspaceTabContextStorageKey(workspaceSlug: string, tabId: stri
 }
 
 export function workspaceRouteCanShowRelationshipContext(value: string, workspaceSlug: string, origin: string) {
-    const parsed = new URL(value, origin)
-    const defaultWorkspaceUrl = `/${workspaceSlug}`
-    const suffix = parsed.pathname.startsWith(`${defaultWorkspaceUrl}/`)
-        ? parsed.pathname.slice(defaultWorkspaceUrl.length + 1)
-        : ""
-    const [section, id] = suffix.split("/")
-    return Boolean(id) && (section === "relationships" || section === "onboarding" || section === "work")
+    if (!workspaceRouteIsRecordDetail(value, workspaceSlug, origin)) return false
+    const section = new URL(value, origin).pathname.slice(`/${workspaceSlug}/`.length).split("/")[0]
+    // Asset and work-item details also publish their authorized relationship.
+    return ["relationships", "onboarding", "work", "assets", "work-items"].includes(section)
 }
 
 export function isReopenClosedTabShortcut(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">) {

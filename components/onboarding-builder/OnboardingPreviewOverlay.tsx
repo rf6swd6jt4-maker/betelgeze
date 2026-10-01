@@ -1,13 +1,14 @@
 "use client"
 
-import { type ComponentProps, type ReactNode, useState, useEffect, useRef } from "react"
+import { type ComponentProps, type ReactNode, useState } from "react"
 import { createPortal } from "react-dom"
+import { useModalDialog, useModalOwnerActive } from "@/components/ui/useModalDialog"
 import { BuilderPreview } from "./BuilderPreview"
 
 // The POS preview surface is shared by every relationship preview entry point.
 export function OnboardingPreviewOverlay({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
-    const dialogRef = useRef<HTMLDialogElement>(null)
-    useEffect(() => { const dialog = dialogRef.current; if (open) dialog?.showModal(); return () => dialog?.close() }, [open])
+    const active = useModalOwnerActive()
+    const dialogRef = useModalDialog(open && active)
     const parentDocument = typeof window !== "undefined" && window.parent !== window ? window.parent.document : typeof document !== "undefined" ? document : null
     if (!open || !parentDocument) return null
     return createPortal(<dialog ref={dialogRef} onCancel={event => { event.preventDefault(); onClose() }} aria-label="Onboarding preview" data-pos-onboarding-preview className="betelgeze-popup-fade m-0 h-dvh max-h-none w-full max-w-none border-0 p-0 fixed inset-0 z-[2147483646] overflow-hidden bg-neutral-100 text-white">

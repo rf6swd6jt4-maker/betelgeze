@@ -59,6 +59,11 @@ export function installPreviewIO() {
         if (url.pathname === "/__preview/layout-trace" || url.pathname === "/__preview/diagnostic") return assetFetch(input, init)
         if (!url.pathname.startsWith("/api/")) return assetFetch(input, init)
         const method = init?.method ?? "GET"
+        const profileId = url.pathname.match(/^\/api\/workspaces\/local-preview\/members\/([^/]+)\/profile$/)?.[1]
+        if (method === "GET" && profileId) {
+            const person = people.find(person => person.id === profileId)
+            return person ? json({ profile: { id: person.id, displayName: person.name, username: null, email: "sample@example.invalid", avatarSrc: null, lastSeenAt: null, isSelf: person.id === currentUser.id, sharedWorkspaces: [{ name: "Local preview", slug: "local-preview", current: true }] } }) : json({ error: "Sample person not found" }, 404)
+        }
         const data = typeof init?.body === "string" ? JSON.parse(init.body) : {}
         const native = url.pathname.includes("/native/")
         const bootstrap = native ? teamBootstrap : clientBootstrap

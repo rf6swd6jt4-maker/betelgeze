@@ -13,6 +13,8 @@ import {
     insertWorkspaceTabAfter,
     WORKSPACE_TAB_FRAME_PARAM,
     workspaceTabFrameMatchesUrl,
+    workspaceTabRedirectUrl,
+    workspaceTabRedirectMatches,
     workspaceTabFrameUrl,
     workspaceTabHistoryStep,
     workspaceTabIsCommunications,
@@ -242,4 +244,38 @@ test("new tabs append when the source is last or no longer exists", () => {
         assert.deepEqual(insertWorkspaceTabAfter(tabs, { id: "new" }, source).map((tab) => tab.id), ["one", "two", "new"])
     }
     assert.deepEqual(insertWorkspaceTabAfter([], { id: "new" }, "closed"), [{ id: "new" }])
+})
+
+
+test("framed canonical redirects preserve identity without nesting transport metadata", () => {
+    const source = "/scaylup/onboarding/client-1?page=0&__betelgeze_tab=tab-2"
+    const destination = "/scaylup/onboarding/client-1?session=session-1"
+    const redirected = new URL(workspaceTabRedirectUrl(destination, source, origin), origin)
+    assert.equal(redirected.searchParams.get("__betelgeze_tab"), "tab-2")
+    assert.equal(redirected.searchParams.get("__betelgeze_redirect"), "/scaylup/onboarding/client-1?page=0")
+    assert.equal(normalizeWorkspaceUrl(redirected.href, "scaylup", origin), destination)
+    const next = new URL(workspaceTabRedirectUrl(destination, redirected.href, origin), origin)
+    assert.equal(next.searchParams.get("__betelgeze_redirect"), destination)
+    assert.equal(workspaceTabRedirectUrl(destination, "/scaylup/onboarding/client-1", origin), destination)
+    assert.equal(workspaceTabRedirectUrl(destination, null, origin), destination)
+    assert.equal(workspaceTabRedirectUrl(destination, "https://other.test" + source, origin), destination)
+})
+
+test("server redirect readiness requires the current requested source and actual same-origin frame identity", () => {
+    const input = {
+        source: "/scaylup/onboarding/client-1", expectedUrl: "/scaylup/onboarding/client-1",
+        destination: "/scaylup/onboarding/client-1?session=session-1",
+        actualUrl: origin + "/scaylup/onboarding/client-1?session=session-1&__betelgeze_tab=tab-2",
+        tabId: "tab-2", workspaceSlug: "scaylup", origin,
+    }
+    assert.equal(workspaceTabRedirectMatches(input), true)
+    for (const changed of [
+        { expectedUrl: undefined }, { expectedUrl: "/scaylup/work/client-1" },
+        { source: "https://other.test/scaylup/onboarding/client-1" },
+        { destination: "https://other.test/scaylup/onboarding/client-1?session=session-1" },
+        { actualUrl: input.actualUrl.replace(origin, "https://other.test") },
+        { actualUrl: input.actualUrl.replace("tab-2", "wrong-tab") },
+        { actualUrl: input.actualUrl.replace("session-1", "stale-session") },
+        { actualUrl: input.actualUrl + "#different" },
+    ]) assert.equal(workspaceTabRedirectMatches({ ...input, ...changed }), false, JSON.stringify(changed))
 })

@@ -157,6 +157,8 @@ jobs:
         run: node scripts/browser/run-foundations.mjs "${{ matrix.engine }}"
       - name: Exercise chat actions, popup lifecycle, media and safe areas with synthetic data
         run: node scripts/browser/run-comms-polish.mjs "${{ matrix.engine }}"
+      - name: Exercise roster dismissal and hidden chrome cleanup
+        run: node scripts/browser/run-comms-roster-cleanup.mjs "${{ matrix.engine }}"
       - name: Exercise acknowledged reads and unread updates on mobile and desktop
         run: node scripts/browser/run-comms-reads.mjs "${{ matrix.engine }}"
       - name: Exercise delayed chat pane attachment and reload initialization
@@ -169,10 +171,12 @@ jobs:
         run: node scripts/browser/run-native-loading.mjs "${{ matrix.engine }}"
       - name: Exercise relationship drawers and native/iframe modal cleanup
         run: node scripts/browser/run-context-overlays.mjs "${{ matrix.engine }}"
+      - name: Exercise relationship shortcuts through actual shell routing
+        run: node scripts/browser/run-workspace-linked-detail.mjs "${{ matrix.engine }}"
       - name: Print detailed browser evidence
         if: always()
         run: |
-          for report in foundations comms-reads comms-pane-lifecycle ui-reconciliation panel-loading native-loading context-overlays; do
+          for report in foundations comms-reads comms-pane-lifecycle ui-reconciliation panel-loading native-loading context-overlays comms-roster-cleanup workspace-linked-detail; do
             if test -f "browser-results/$report.json"; then
               cat "browser-results/$report.json"
             else

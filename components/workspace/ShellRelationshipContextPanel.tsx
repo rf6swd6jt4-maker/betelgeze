@@ -141,6 +141,6 @@ export function ShellRelationshipContextPanel({ desktopOpen, mobileOpen, onClose
         {desktopOpen ? <aside aria-label="Relationship context" className={`fixed right-4 z-[35] hidden w-80 flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20 sm:right-6 lg:flex ${standalone ? "top-6 h-[calc(100dvh-3rem)]" : "top-[7.75rem] h-[calc(100dvh-9.25rem)]"}`}>
             <ContextContent {...props} />
         </aside> : null}
-        {mobileOpen ? <SideDrawer label="Relationship context" onClose={onClose}><ContextContent {...props} onClose={onClose} /></SideDrawer> : null}
+        {mobileOpen ? <SideDrawer label="Relationship context" onClose={onClose} modal={standalone}>{dismiss => <ContextContent {...props} onClose={dismiss} onNavigate={href => { dismiss(); props.onNavigate(href) }} />}</SideDrawer> : null}
     </>
 }

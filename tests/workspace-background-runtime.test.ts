@@ -87,9 +87,11 @@ test("workspace frames acknowledge readiness with the current activation state",
     const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
     const bridge = source("components/workspace/WorkspaceTabBridge.tsx")
 
-    assert.match(bridge, /type: "location"/)
+    assert.match(bridge, /type: proof \? "location-replace" : "location"/)
     assert.match(shell, /message\.type === "location"[\s\S]*postToTab\(message\.tabId, \{ type: "activate", active: message\.tabId === activeTabIdRef\.current, refresh: false \}\)/)
-    assert.match(shell, /message\.type === "location-replace"[\s\S]*postToTab\(message\.tabId, \{ type: "activate", active: message\.tabId === activeTabIdRef\.current, refresh: false \}\)/)
+    const canonicalCommit = shell.slice(shell.indexOf('if (message.type === "location-replace" && message.url)'), shell.indexOf('if (message.type === "location" && message.url)'))
+    assert.match(canonicalCommit, /workspaceTabRedirectMatches\(/)
+    assert.match(canonicalCommit, /postToTab\(message\.tabId, \{ type: "activate", active: message\.tabId === activeTabIdRef\.current, refresh: false, url \}\)/)
 })
 
 test("workspace mutations treat business failures as failures and forms opt into background behavior explicitly", () => {

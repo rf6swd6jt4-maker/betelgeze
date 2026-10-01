@@ -17,7 +17,7 @@ The active reader listens for native `close` and `toggle` in capture phase on it
 
 - Focused queue/read-state/unread propagation tests: **30 passed**, including settlement success/failure, unrelated failed chat preservation, disposal, newer arrivals, scope isolation, microseconds, stale summaries and server acknowledgement.
 - Actual reader/summary hooks, mobile surface, queue and broadcasts: **144/144 browser checks passed**, 36 each in Chromium mobile/desktop and WebKit mobile/desktop. Team/client paths retain counts under delayed/failed saves and clear shell/row counts only after acknowledgement. Retained native dialog close now reconciles without another interaction. Existing opening cases continue to issue exactly one acknowledged read.
-- An initial full repository run passed **1,395 tests** before adding the final unrelated-failed-conversation regression; that final regression is included in the 30 focused tests above. The combined consolidation full suite/build remains an integration gate.
+- The combined consolidation suite passed **1,407 tests**, and the production build passed. See [integrated validation](consolidation-validation-2026-10-01.md) for the final source and evidence boundaries.
 - Changed-file lint, historical migration preservation and whitespace gate passed. No schema changes.
 - Source resource comparison: two extra event listeners per active reader document (at most the local and top documents), disposed with the reader; one extra bounded pending-map check per settled drain, at most 256 currently pending positions. No timer, polling loop, socket, metadata/history request, message-body load or provider operation is added. Existing request serialization and quiet recovery remain intact.
 
@@ -25,6 +25,6 @@ All browser account/message I/O is synthetic and external requests are blocked. 
 
 ## Release and rollback
 
-Application-only repair. Integration must preserve the current read/summary RPC prerequisites and pass the release gate against the exact combined commit. This report is not deployment or production-schema evidence. No branch was pushed and no production mutation was performed for this workstream.
+Application-only repair. Integration must preserve the current read/summary RPC prerequisites and pass the release gate against the exact combined commit. This report is not deployment or production-schema evidence. No production mutation was performed. Draft PR and hosted-check status are tracked separately from this local workstream evidence.
 
 Rollback the application changes if needed; preserve stored read positions, messages, files and existing migrations. No data reversal or notification-policy change is necessary.

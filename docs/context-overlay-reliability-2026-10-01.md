@@ -16,7 +16,7 @@ Mobile uses the shared `SideDrawer` with a right-edge 200ms entrance, a stationa
 - 40 actual-component/CSS browser checks passed: Chromium and WebKit at 390×844, 320×568 with reduced motion, and 1280×900. Cases cover right-edge geometry, motion policy, current/canonical links, close/Escape/backdrop, focus restoration, breakpoint change, owner unmount, native and iframe inactivity, retained drafts and selected-client changes. All requests were loopback synthetic data.
 - The original `CenteredDialog` from base `36747562` fails the new iframe-deactivation check: its portalled modal stays open after the owning frame is hidden. The candidate passes.
 - Existing UI reconciliation suite passed 28/28 checks, including immediate native dismissal before deferred parent cleanup and blocked busy-dialog dismissal.
-- The panel matrix includes the actual framed opening wrapper: exactly one shared banner on eligible collection routes, none on Communications, Settings or record details.
+- The panel matrix composes the shared opening components in a synthetic shell: exactly one shared banner on eligible collection routes, none on Communications, Settings or record details.
 
 Integration test/build and hosted evidence are recorded in `consolidation-validation-2026-10-01.md`.
 

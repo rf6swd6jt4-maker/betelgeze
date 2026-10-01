@@ -199,7 +199,8 @@ test("Settings keeps every category inside the mobile content track", () => {
 test("Agency Branding edits semantic colours in a compact centred modal", () => {
     assert.match(brandingUi, /Client colour roles/)
     assert.match(brandingUi, /createPortal/)
-    assert.match(brandingUi, /backdrop-blur-sm/)
+    assert.match(brandingUi, /bg-black\/75/)
+    assert.doesNotMatch(brandingUi, /backdrop-blur/)
     assert.match(brandingUi, /max-h-\[min\(92dvh,38rem\)\]/)
     assert.match(brandingUi, /<ColourStyleEditor/)
     assert.match(colourStyleUi, />Styles</)

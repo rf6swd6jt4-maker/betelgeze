@@ -56,7 +56,7 @@ function Preview() {
     const openClients = () => { setSeenClients(true); setMode("clients") }
     const navigation = { tabId: "preview-comms", workspaceSlug: "local-preview", url: `/local-preview/communications?mode=${mode}`, active: tab === "comms", push() {}, replace() {}, refresh() {}, back() {}, forward() {}, prefetch() {}, context() {} }
     return <div ref={root} data-workspace-shell-root>
-        <header data-workspace-topbar className="fixed left-0 top-0 z-[55] h-14 w-full border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/20 backdrop-blur">
+        <header data-workspace-topbar className="fixed left-0 top-0 z-[55] h-14 w-full border-b border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20">
             <div className="grid h-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 sm:px-6">
                 <div className="flex min-w-0 items-center gap-2.5"><Image unoptimized src="/brand/betelgeze-logo.svg" alt="" width={32} height={32} className="h-8 w-8 object-contain" /><p className="min-w-0 truncate text-sm font-semibold text-neutral-100">Betelgeze</p><button type="button" aria-label="Toggle sidebar" onClick={() => setSidebar(!sidebar)} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400"><svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.5"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg></button></div>
                 <div className="flex items-center gap-3"><button type="button" disabled={diagnosticState === "saving"} className="text-xs text-neutral-300" onClick={() => {
@@ -66,7 +66,7 @@ function Preview() {
                 }}>{diagnosticState === "recording" ? "Stop & save" : diagnosticState === "saving" ? "Saving log…" : diagnosticState === "error" ? "Retry saving log" : diagnosticState === "saved" ? "Saved · Record again" : "Local v7 · Record test"}</button><Avatar src={null} name="You" className="h-9 w-9" /></div>
             </div>
         </header>
-        <div data-workspace-tabbar className="fixed left-0 top-14 z-40 h-11 w-full border-b border-neutral-800 bg-neutral-950/95 text-white shadow-lg shadow-black/10 backdrop-blur">
+        <div data-workspace-tabbar className="fixed left-0 top-14 z-40 h-11 w-full border-b border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/10">
             <div role="tablist" aria-label="Workspace tabs" className="flex h-full min-w-0 items-end gap-1 overflow-x-auto px-2 pt-1">{["comms", "work"].map(id => <div key={id} className={`group flex h-9 min-w-32 max-w-56 shrink-0 items-center rounded-t-lg border px-2 text-sm ${tab === id ? "border-neutral-700 border-b-neutral-950 bg-neutral-950 text-white" : "border-transparent bg-neutral-900/55 text-neutral-400"}`}><button type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className="min-w-0 flex-1 truncate text-left">{id === "comms" ? "Comms" : "Work"}</button></div>)}</div>
         </div>
         <main data-workspace-tab-panels className="fixed left-0 top-[6.25rem] h-[calc(100dvh-6.25rem)] w-full overflow-hidden bg-black">

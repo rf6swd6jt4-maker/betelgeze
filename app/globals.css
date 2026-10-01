@@ -222,6 +222,16 @@ html[data-mobile-conversation-open="true"] { background: #000; }
   flex-shrink: 1;
 }
 
+/* Navigation and modal dimming surfaces use plain paint. Retained chrome
+   must never create a backdrop-filter layer that a popup can recompose over
+   the conversation header, including while chrome enters/leaves visibility. */
+:is([data-workspace-topbar], [data-workspace-tabbar], dialog,
+    [role="dialog"][aria-modal="true"], [data-loading-overlay]),
+dialog::backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* Underlying navigation stays mounted, but cannot flash through a native
    keyboard/compositor excursion while the conversation is fully presented.
    Group opacity also suppresses descendants that explicitly set visibility:
@@ -232,10 +242,6 @@ html:is([data-mobile-conversation-phase="open"], [data-mobile-conversation-phase
   :is([data-workspace-topbar], [data-workspace-tabbar], [data-workspace-tab-panels]) {
   visibility: hidden;
   opacity: 0;
-  /* Retire hidden backdrop inputs while roster/profile popups are composed
-     over the conversation; normal chrome filters return with its visibility. */
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
 }
 
 /* Bound rich drafts and trays to the actual space below the conversation

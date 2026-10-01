@@ -34,7 +34,7 @@ The service worker's recovery document (`public/offline.html`) is deliberately i
 
 Every custom popup uses the shared opening motion on both mobile and desktop. Apply `betelgeze-popup-enter` to the visible menu, tooltip, field editor, or dialog surface: a `140ms ease-out` opacity fade with `4px` of upward travel into its final position. `AnchoredPopup` applies this automatically once its initial position is measured; do not animate its children a second time.
 
-- Animate the dialog card, not its full-screen backdrop. Backdrops appear immediately and remain stationary.
+- Animate the dialog card, not its full-screen backdrop. Backdrops appear immediately and remain stationary. Use the existing translucent black tint without `backdrop-filter` or backdrop blur. Workspace top/tab navigation uses opaque neutral surfaces without backdrop filtering, in every visible or hidden phase. Popup opening/dismissal must not create, toggle or retain a background blur layer.
 - Use `betelgeze-popup-fade` for full-screen previews, lightboxes, and viewport-filling client panels where movement would expose an edge or disturb fixed descendants.
 - Closing is immediate. Do not delay dismissal, navigation, focus restoration, or input behind an exit animation.
 - Opening motion runs once when the surface appears, not when its contents load, resize, scroll, or update. Do not key an entire popup by changing form values or search results.

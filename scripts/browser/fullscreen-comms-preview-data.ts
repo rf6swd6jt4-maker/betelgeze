@@ -51,6 +51,7 @@ export function installPreviewIO() {
     // to synthetic IDs; it is never included in the application bundle.
     if (!crypto.randomUUID) Object.defineProperty(crypto, "randomUUID", { value: () => "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c => (Number(c) ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> Number(c) / 4).toString(16)) })
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
+    const portal = { hasFulfilment: true, leadMode: "empty", actions: [{ id: "preview-action", title: "Confirm launch details", status: "open", completedAt: null, updatedAt: new Date(now).toISOString() }], progress: [{ id: "preview-progress", serviceName: "Sample service", status: "preparing", updatedAt: new Date(now).toISOString() }] }
     const assetFetch = window.fetch.bind(window)
     window.fetch = async (input, init) => {
         const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href)
@@ -65,6 +66,13 @@ export function installPreviewIO() {
             return person ? json({ profile: { id: person.id, displayName: person.name, username: null, email: "sample@example.invalid", avatarSrc: null, lastSeenAt: null, isSelf: person.id === currentUser.id, sharedWorkspaces: [{ name: "Local preview", slug: "local-preview", current: true }] } }) : json({ error: "Sample person not found" }, 404)
         }
         const data = typeof init?.body === "string" ? JSON.parse(init.body) : {}
+        if (/^\/api\/workspaces\/local-preview\/relationships\/preview-client-0\/portal$/.test(url.pathname)) {
+            if (method === "PATCH") {
+                const item = data.kind === "progress" ? portal.progress.find(item => item.id === data.id) : portal.actions.find(item => item.id === data.id)
+                if (item) { item.status = data.status; item.updatedAt = new Date().toISOString() }
+            }
+            return json(portal)
+        }
         const native = url.pathname.includes("/native/")
         const bootstrap = native ? teamBootstrap : clientBootstrap
         const id = data.conversationId ?? data.relationshipId ?? url.searchParams.get("conversationId") ?? url.searchParams.get("relationshipId")

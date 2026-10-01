@@ -14,7 +14,7 @@ export function LoadingOverlay({
     return createPortal(
         <div
             data-loading-overlay
-            className="fixed inset-0 z-[2147483647] grid place-items-center overflow-hidden bg-black/72 backdrop-blur-[2px]"
+            className="fixed inset-0 z-[2147483647] grid place-items-center overflow-hidden bg-black/72"
             style={{ width: "100vw", height: "100dvh", minHeight: "100svh", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}
             role="status"
             aria-live="polite"

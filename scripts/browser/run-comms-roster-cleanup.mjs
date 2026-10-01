@@ -107,6 +107,29 @@ try {
                     await page.screenshot({ path: `browser-results/${engine}-comms-roster-cleanup-failure.png` })
                 }
             }
+            await page.goto(origin)
+            await check("chrome never creates a blur input in any conversation phase", async () => {
+                const states = await page.evaluate(() => {
+                    const root = document.documentElement
+                    const original = root.getAttribute("data-mobile-conversation-phase")
+                    const states = [null, "entering", "open", "dismissing-keyboard", "leaving"].map(phase => {
+                        if (phase === null) root.removeAttribute("data-mobile-conversation-phase")
+                        else root.setAttribute("data-mobile-conversation-phase", phase)
+                        return { phase, layers: [...document.querySelectorAll("[data-workspace-topbar], [data-workspace-tabbar]")].map(node => {
+                            const style = getComputedStyle(node)
+                            return { backdrop: style.backdropFilter, webkitBackdrop: style.getPropertyValue("-webkit-backdrop-filter"), background: style.backgroundColor }
+                        }) }
+                    })
+                    if (original === null) root.removeAttribute("data-mobile-conversation-phase")
+                    else root.setAttribute("data-mobile-conversation-phase", original)
+                    return states
+                })
+                for (const { layers } of states) for (const layer of layers) {
+                    assert.equal(layer.backdrop, "none"); assert(["", "none"].includes(layer.webkitBackdrop))
+                    assert.match(layer.background, /^(oklch\(0\.145 0 0\)|rgb\(10, 10, 10\))$/)
+                }
+                return states
+            })
             for (const mode of ["team", "client"]) {
                 await page.goto(origin)
                 if (mode === "client") await page.getByRole("tab", { name: "Clients", exact: true }).click()
@@ -127,7 +150,7 @@ try {
                             await dialog.getByRole("button", { name: "Open Alex Morgan profile", exact: true }).tap()
                             const profile = page.getByRole("dialog", { name: "Alex Morgan", exact: true })
                             await profile.waitFor()
-                            assert.equal(await profile.evaluate(node => getComputedStyle(node).backdropFilter), "blur(8px)")
+                            assert.equal(await profile.evaluate(node => getComputedStyle(node).backdropFilter), "none")
                             await profile.getByRole("button", { name: "Close profile", exact: true }).tap()
                             await profile.waitFor({ state: "detached" })
                         }
@@ -192,6 +215,45 @@ try {
                     assert.equal(await page.getByRole("dialog").count(), 0)
                     return { touchCloseAndBackdrop: true, restoredProfileTriggerFocus: true, remainingDialogs: 0 }
                 })
+                if (mode === "client") {
+                    const portalTrigger = header.getByRole("button", { name: "Client portal actions", exact: true })
+                    const portal = page.getByRole("dialog", { name: "Client portal", exact: true })
+                    // Prime existing data once: the loaded action-count badge is intentional state.
+                    await portalTrigger.tap(); await portal.getByRole("button", { name: "Confirm launch details", exact: true }).waitFor()
+                    await portal.getByRole("button", { name: "Close popup", exact: true }).tap(); await portal.waitFor({ state: "detached" })
+                    for (const dismiss of ["close", "escape", "backdrop"]) await check(`portal actions: repeated ${dismiss} restores all pixels and modal effects`, async () => {
+                        await settle(page)
+                        const key = `${engine}-portal-${dismiss}`
+                        const before = await capture(page, `${key}-before`)
+                        const overflow = await page.evaluate(() => document.body.style.overflow)
+                        for (let cycle = 0; cycle < 3; cycle++) {
+                            await portalTrigger.tap(); await portal.waitFor()
+                            assert.equal(await portal.evaluate(node => node.matches(":modal")), true)
+                            assert.equal(await portal.evaluate(node => getComputedStyle(node).backdropFilter), "none")
+                            if (dismiss === "escape") await page.keyboard.press("Escape")
+                            else if (dismiss === "backdrop") await portal.tap({ position: { x: 3, y: 3 } })
+                            else await portal.getByRole("button", { name: "Close popup", exact: true }).tap()
+                            await portal.waitFor({ state: "detached" })
+                            assert.equal(await page.locator("dialog:modal").count(), 0)
+                            assert.equal(await page.evaluate(() => document.body.style.overflow), overflow)
+                        }
+                        await settle(page)
+                        const after = await capture(page, `${key}-after`)
+                        assert.deepEqual(after.state.layers.filter(layer => layer.effect), [])
+                        return { cycles: 3, pixels: await compareViewport(before, after, key), remainingModals: 0 }
+                    })
+                    await check("portal progress: saved change survives dismissal without presentation residue", async () => {
+                        await portalTrigger.tap(); await portal.getByRole("button", { name: /Sample service/ }).tap()
+                        await portal.getByRole("button", { name: "In progress", exact: true }).tap()
+                        await portal.getByRole("button", { name: /Sample service/ }).waitFor()
+                        await portal.getByRole("button", { name: "Close popup", exact: true }).tap(); await portal.waitFor({ state: "detached" })
+                        await portalTrigger.tap(); await portal.getByRole("button", { name: /Sample service/ }).tap()
+                        assert.match(await portal.getByRole("button", { name: "In progress", exact: true }).textContent(), /✓/)
+                        await portal.getByRole("button", { name: "Close popup", exact: true }).tap(); await portal.waitFor({ state: "detached" })
+                        assert.equal(await page.locator("dialog:modal").count(), 0)
+                        return { savedProgress: "in_progress", remainingModals: 0 }
+                    })
+                }
                 await check(`${mode}: hidden chrome releases backdrop filters`, async () => {
                     const layers = await page.locator("[data-workspace-topbar], [data-workspace-tabbar]").evaluateAll(nodes => nodes.map(node => {
                         const style = getComputedStyle(node)
@@ -212,7 +274,7 @@ try {
                         const style = getComputedStyle(node)
                         return { visibility: style.visibility, opacity: style.opacity, backdrop: style.backdropFilter }
                     }))
-                    for (const layer of layers) assert.deepEqual(layer, { visibility: "visible", opacity: "1", backdrop: "blur(8px)" })
+                    for (const layer of layers) assert.deepEqual(layer, { visibility: "visible", opacity: "1", backdrop: "none" })
                     return layers
                 })
             }
@@ -224,5 +286,5 @@ try {
     server.kill("SIGTERM")
     await writeFile("browser-results/comms-roster-cleanup.json", JSON.stringify({ observedAt: new Date().toISOString(), results, limits: "Actual components and synthetic local I/O in Chromium/WebKit mobile emulation. Normal motion, real touch, scale 3, full viewport pixels (only thin intentional keyboard focus-ring boundaries allowed), and visible element/pseudo-element filters are checked; the reported device residue is not reproduced by this fixture." }, null, 2))
 }
-assert.equal(results.length, (selected.length || 2) * 16)
+assert.equal(results.length, (selected.length || 2) * 21)
 assert(results.every(result => result.passed), "Roster cleanup regression failed")

@@ -157,9 +157,9 @@ function Modal({ title, description, error, size = "default", onClose, children 
     const parentDocument = typeof window !== "undefined" && window.parent !== window ? window.parent.document : typeof document !== "undefined" ? document : null
     if (!parentDocument) return null
     const widthClass = size === "wide" ? "max-w-5xl" : size === "medium" ? "max-w-3xl" : size === "compact" ? "max-w-sm" : "max-w-2xl"
-    return createPortal(<dialog ref={dialogRef} aria-label={title} data-work-item-popup className="fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none overflow-hidden overscroll-none border-0 bg-black/75 p-3 text-white backdrop-blur-sm backdrop:bg-transparent open:flex open:items-center open:justify-center sm:p-4" onCancel={event => { event.preventDefault(); dismiss() }} onClick={(event) => { if (event.target === event.currentTarget) dismiss() }}>
+    return createPortal(<dialog ref={dialogRef} aria-label={title} data-work-item-popup className="fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none overflow-hidden overscroll-none border-0 bg-black/75 p-3 text-white backdrop:bg-transparent open:flex open:items-center open:justify-center sm:p-4" onCancel={event => { event.preventDefault(); dismiss() }} onClick={(event) => { if (event.target === event.currentTarget) dismiss() }}>
         <div className={`betelgeze-popup-enter max-h-[calc(100vh-1.5rem)] min-w-0 w-full ${widthClass} touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70 sm:max-h-[calc(100vh-2rem)]`}>
-            <div className="sticky top-0 z-20 flex items-start gap-4 border-b border-neutral-800 bg-neutral-950/95 px-4 py-3 backdrop-blur sm:px-5 sm:py-4">
+            <div className="sticky top-0 z-20 flex items-start gap-4 border-b border-neutral-800 bg-neutral-950 px-4 py-3 sm:px-5 sm:py-4">
                 <div className="min-w-0 flex-1"><h2 className="truncate text-lg font-semibold text-white">{title}</h2>{description ? <p className="mt-1 text-sm leading-5 text-neutral-500">{description}</p> : null}</div>
                 <button type="button" onClick={dismiss} aria-label="Close" className="rounded-md px-2 py-1 text-xl text-neutral-500 hover:bg-neutral-900 hover:text-white">×</button>
             </div>

@@ -9,7 +9,7 @@ import { listWorkItemKeyResultLinks } from "@/lib/admin/okrs"
 import { assetPreviewUrl } from "@/lib/assets/preview"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { profileAvatarUrl } from "@/lib/profile-avatar"
-import { getAsset, getRelationship, getWorkItem, getWorkItemPlanningContext, listAssetRelationships, listAssetWorkItems, listWorkItemAssets, listWorkItemRelationships, listWorkspaceAssets, listWorkspaceWorkItems, onboardingDetailHref, type RelationshipAsset } from "@/lib/relationships"
+import { getAsset, getRelationship, getWorkItem, getWorkItemPlanningContext, listAssetRelationships, listAssetWorkItems, listWorkItemRelationships, listWorkspaceAssets, listWorkspaceWorkItems, onboardingDetailHref, type RelationshipAsset } from "@/lib/relationships"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { shortId } from "@/lib/ui/relative-time"
@@ -88,9 +88,8 @@ async function loadWorkItemDetail(workspaceSlug: string, id: string) {
     if (!item || (allowedWorkItemIds && !allowedWorkItemIds.has(id)) || (item.visibility === "admins_only" && role === "staff")) notFound()
     const status = workItemStatusPresentation(item.status)
     const isAdminItem = item.area === "admin"
-    const reader = await createSupabaseServerClient()
-    const [relationships, assets, planning, keyResultLinks] = await Promise.all([
-        isAdminItem ? [] : listWorkItemRelationships(workspace.id, item.id), isAdminItem ? [] : listWorkItemAssets(workspace.id, item.id, reader),
+    const [relationships, planning, keyResultLinks] = await Promise.all([
+        isAdminItem ? [] : listWorkItemRelationships(workspace.id, item.id),
         getWorkItemPlanningContext(workspace.id, item, { includeAvailableWorkItems: false }), role !== "staff" ? listWorkItemKeyResultLinks(workspace.id, item.id) : [],
     ])
     const dependencies = planning.dependencies.filter((dependency) => !allowedWorkItemIds || allowedWorkItemIds.has(dependency.work_item_id))
@@ -116,11 +115,10 @@ async function loadWorkItemDetail(workspaceSlug: string, id: string) {
         keyResults: keyResultLinks.map((result) => ({ id: result.id, name: result.name, objective: result.objective, unit: result.unit, currency_code: result.currency_code, expected_movement: result.expected_movement, impact_hypothesis: result.impact_hypothesis, code: `KR-${shortId(result.id)}` })),
         keyResultOptions: [], editorOptionsHref: `/api/workspaces/${encodeURIComponent(workspace.slug)}/work-items/${encodeURIComponent(item.id)}/editor-options`, linksLocked: item.native_kind === "onboarding_step",
     } satisfies ComponentProps<typeof InlineWorkItemFields>
-    const context = await loadRelationshipContext({ workspaceSlug, relationship, access, metrics: [{ label: "Status", value: status.label }, { label: "Assets", value: assets.length }] })
+    const context = await loadRelationshipContext({ workspaceSlug, relationship, access, metrics: [{ label: "Status", value: status.label }] })
     return {
         userId: user.id, workspaceId: workspace.id, workspaceSlug: workspace.slug, kind: "work-item-detail" as const,
         context, role, item: { id: item.id, title: item.title, updated_at: item.updated_at }, isAdminItem, fields,
-        assets: assets.map((asset) => ({ id: asset.id, title: asset.title, updated_at: asset.updated_at })),
     }
 }
 

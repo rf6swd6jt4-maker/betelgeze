@@ -12,7 +12,7 @@ const version = "2026-10-01T12:00:00.000Z"
 const asset = { id: assetId, workspace_id: workspace, title: "Private image", source_kind: "upload", native_kind: "manual_upload", storage_path: `${workspace}/assets/${user}/${assetId}/original`, external_url: null }
 function load(path: string, mocks: Values): Values {
     const exports = {}
-    const code = ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+    const code = ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
     new Function("require", "exports", code)((name: string) => {
         assert.ok(name in mocks, `Unexpected dependency ${name}`)
         return mocks[name]
@@ -160,4 +160,50 @@ test("private attachment cursors hide denied candidate IDs and reject tampering 
     assert.throws(() => decode(encoded.slice(0, 20) + "?" + encoded.slice(21), scope))
     assert.equal(encode({ asset: null, note: null }, scope), null)
     assert.deepEqual(decode((pages.encodeAttachmentCursor as (value: unknown) => string)(value), scope), value, "already-open legacy page positions remain accepted and cannot grant record access")
+})
+
+
+test("native and legacy work details leave attachment loading to the bounded shared owner", async () => {
+    const rendered: Array<{ type: string; props: Values }> = []
+    const metrics: unknown[] = []
+    const item = { id: assetId, title: "Assigned work", visibility: "workspace", area: "delivery", status: "todo", updated_at: version }
+    const forbidPrefetch = () => { throw new Error("Work detail must not enumerate or sign attachment history") }
+    const jsx = (type: string, props: Values) => { const value = { type, props }; rendered.push(value); return value }
+    const common: Values = {
+        "server-only": {}, "react/jsx-runtime": { jsx, jsxs: jsx },
+        "next/navigation": { notFound: () => { throw new Error("Not found") } },
+        "@/lib/relationships": {
+            getWorkItem: async () => item, listWorkItemRelationships: async () => [], listWorkItemAssets: forbidPrefetch,
+            getWorkItemPlanningContext: async () => ({ members: [], creator: null, assignees: [], dependencies: [], parent: null }),
+        },
+        "@/lib/workspace-access": {
+            requireWorkspaceAccess: async () => ({ workspace: { id: workspace, slug: "alpha" }, user: { id: user }, role: "staff", access: {} }),
+            workspaceAccessHasCapability: () => true, accessibleRelationshipIds: async () => new Set(), accessibleWorkItemIds: async () => new Set([assetId]),
+        },
+        "@/lib/supabase/server": { createSupabaseServerClient: forbidPrefetch },
+        "@/lib/supabase/admin": { supabaseAdmin: { from: forbidPrefetch } },
+        "@/lib/onboarding/uploads": { createUploadSignedUrls: async (paths: string[]) => { assert.deepEqual(paths, []); return new Map() } },
+        "@/lib/assets/preview": { assetPreviewUrl: forbidPrefetch },
+        "@/lib/admin/okrs": {}, "@/lib/profile-avatar": {},
+        "@/lib/ui/relative-time": { shortId: () => "REF", formatRelativeTime: () => "Now" },
+        "@/components/list/work-item-presentation": { workItemStatusPresentation: () => ({ label: "To do", tone: "neutral" }) },
+        "@/components/workspace/ClientContextPanel": { loadRelationshipContext: async (input: Values) => { metrics.push(input.metrics); return {} }, ClientContextPanel: "ClientContextPanel" },
+        "@/components/workspace/WorkspaceTopBar": { WorkspaceTopBar: "WorkspaceTopBar" },
+        "@/components/detail": { DetailDangerAction: "DetailDangerAction", DetailDangerButton: "DetailDangerButton", DetailDangerZone: "DetailDangerZone", DetailPageHeader: "DetailPageHeader" },
+        "@/components/ui": { SquarePill: "SquarePill" }, "@/components/detail/RecordAttachments": { RecordAttachments: "RecordAttachments" },
+        "./InlineWorkItemFields": { InlineWorkItemFields: "InlineWorkItemFields" },
+    }
+    const native = load("lib/workspace-native-library.ts", common)
+    const snapshot = await (native.loadNativeLibrary as (slug: string, kind: string, id: string) => Promise<Values>)("alpha", "work-items", assetId)
+    assert.equal(snapshot.kind, "work-item-detail")
+    assert.equal("assets" in snapshot, false, "no unused unbounded attachment payload")
+    assert.deepEqual(metrics, [[{ label: "Status", value: "To do" }]])
+    const legacy = load("app/[workspaceSlug]/work-items/[id]/page.tsx", common)
+    await (legacy.default as (props: unknown) => Promise<unknown>)({ params: Promise.resolve({ workspaceSlug: "alpha", id: assetId }) })
+    assert.equal(rendered.filter(node => node.type === "RecordAttachments").length, 1)
+    const owner = rendered.find(node => node.type === "RecordAttachments")!.props
+    assert.equal(owner.ownerId, assetId)
+    assert.equal(owner.owner, "work-item")
+    assert.equal(owner.initialAssets, undefined)
+    assert.deepEqual(rendered.find(node => node.type === "ClientContextPanel")!.props.metrics, [{ label: "Status", value: "To do" }])
 })

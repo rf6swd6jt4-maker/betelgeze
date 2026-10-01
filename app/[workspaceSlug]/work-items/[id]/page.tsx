@@ -10,13 +10,11 @@ import {
     getWorkItemPlanningContext,
     getRelationship,
     listWorkItemRelationships,
-    listWorkItemAssets,
 } from "@/lib/relationships"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { listWorkItemKeyResultLinks } from "@/lib/admin/okrs"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { accessibleRelationshipIds, accessibleWorkItemIds, requireWorkspaceAccess, workspaceAccessHasCapability } from "@/lib/workspace-access"
-import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { InlineWorkItemFields } from "./InlineWorkItemFields"
 
 export const dynamic = "force-dynamic"
@@ -40,10 +38,8 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     if (item.visibility === "admins_only" && role === "staff") notFound()
     const isAdminItem = item.area === "admin"
     const canSeeOkrs = role !== "staff"
-    const reader = await createSupabaseServerClient()
-    const [relationships, assets, planning, keyResultLinks] = await Promise.all([
+    const [relationships, planning, keyResultLinks] = await Promise.all([
         isAdminItem ? Promise.resolve([]) : listWorkItemRelationships(workspace.id, item.id),
-        isAdminItem ? Promise.resolve([]) : listWorkItemAssets(workspace.id, item.id, reader),
         getWorkItemPlanningContext(workspace.id, item, { includeAvailableWorkItems: false }),
         canSeeOkrs ? listWorkItemKeyResultLinks(workspace.id, item.id) : Promise.resolve([]),
     ])
@@ -118,7 +114,6 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                         relationship={contextRelationship}
                         metrics={[
                             { label: "Status", value: status.label },
-                            { label: "Assets", value: assets.length },
                         ]}
                     />
                 </div>

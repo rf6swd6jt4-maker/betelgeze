@@ -1,4 +1,6 @@
 import Link from "next/link"
+import { headers } from "next/headers"
+import { workspaceTabRedirectUrl } from "@/lib/workspace-tabs"
 import { Suspense } from "react"
 import { loadOnboardingSessionPage, onboardingPageNumber } from "@/lib/onboarding/session-access"
 import { notFound, redirect } from "next/navigation"
@@ -790,7 +792,9 @@ export default async function OnboardingDetailPage({ params, searchParams }: Pag
     if (!query.session) {
         const page = onboardingPageNumber(query.page)
         const { sessions, access: sessionAccess, hasMore } = await loadOnboardingSessionPage(workspace.id, user.id, page, relationshipId)
-        if (sessions.length === 1 && !hasMore && page === 0) redirect(`/${workspaceSlug}/onboarding/${relationshipId}?session=${sessions[0].id}`)
+        if (sessions.length === 1 && !hasMore && page === 0) {
+            redirect(workspaceTabRedirectUrl(`/${workspaceSlug}/onboarding/${relationshipId}?session=${sessions[0].id}`, (await headers()).get("x-betelgeze-current-path")))
+        }
         return <OnboardingSessionChooser chrome={<WorkspaceTopBar userId={user.id} workspace={workspace} workspaceAccess={access} currentProduct="client-work" />} workspaceSlug={workspaceSlug} relationshipId={relationshipId} relationship={relationship} sessions={sessions} sessionAccess={sessionAccess} page={page} hasMore={hasMore} />
     }
     const data = startOnboardingDetailData({

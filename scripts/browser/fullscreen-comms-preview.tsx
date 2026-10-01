@@ -6,6 +6,8 @@ import { TeamCommunicationsWorkspace } from "@/components/communications/TeamCom
 import { CommunicationsWorkspace } from "@/components/communications/CommunicationsWorkspace"
 import { WorkspaceNavigationProvider } from "@/components/workspace/WorkspaceNavigation"
 import { Avatar } from "@/components/account/Avatar"
+import { WorkspaceMemberProfileModal } from "@/components/workspace/WorkspaceMemberProfileModal"
+import { WORKSPACE_MEMBER_PROFILE_EVENT } from "@/lib/workspace-member-profile"
 import { observeMobileWorkspaceViewport } from "@/lib/mobile-workspace-viewport"
 import { MOBILE_CONVERSATION_VISIBILITY_EVENT, mobileConversationIsOpen } from "@/lib/mobile-conversation-viewport"
 import { installPreviewLayoutTrace } from "./fullscreen-comms-preview-layout"
@@ -29,6 +31,15 @@ function Preview() {
     const [sidebar, setSidebar] = useState(false)
     const [seenClients, setSeenClients] = useState(false)
     const [selection, setSelection] = useState<string | null>(null)
+    const [profileUserId, setProfileUserId] = useState<string | null>(null)
+    useLayoutEffect(() => {
+        const open = (event: Event) => {
+            const userId = (event as CustomEvent<{ userId?: string }>).detail?.userId
+            if (userId && teamBootstrap.people.some(person => person.id === userId)) setProfileUserId(userId)
+        }
+        window.addEventListener(WORKSPACE_MEMBER_PROFILE_EVENT, open)
+        return () => window.removeEventListener(WORKSPACE_MEMBER_PROFILE_EVENT, open)
+    }, [])
     useLayoutEffect(() => { document.body.dataset.workspaceActiveTabId = tab === "comms" ? "preview-comms" : "preview-work"; window.dispatchEvent(new Event(WORKSPACE_TAB_VISIBILITY_EVENT)) }, [tab])
     useLayoutEffect(() => {
         const shell = root.current!
@@ -68,6 +79,8 @@ function Preview() {
             {tab === "work" ? <section className="p-6"><h1 className="text-xl font-semibold">Work</h1><p className="mt-3 text-sm text-neutral-500">This local preview focuses on Comms. Return to the Comms tab to continue.</p></section> : null}
             {sidebar ? <aside className="absolute inset-y-0 left-0 z-50 w-64 border-r border-neutral-800 bg-neutral-950 p-4"><button type="button" className="mb-4 text-sm text-neutral-400" onClick={() => setSidebar(false)}>Close sidebar</button><button type="button" className="block w-full rounded-lg bg-neutral-800 p-3 text-left text-sm" onClick={() => { setTab("comms"); setSidebar(false) }}>Communications</button><p className="mt-6 text-xs leading-5 text-neutral-500">Synthetic conversations only. Messages and attachments stay in this browser. No account or provider is connected.</p></aside> : null}
         </main>
+        {profileUserId ? <WorkspaceMemberProfileModal key={profileUserId} workspaceSlug="local-preview" userId={profileUserId}
+            active canMessage={false} onClose={() => setProfileUserId(null)} onMessage={() => {}} /> : null}
         <output id="preview-state" hidden>{JSON.stringify({ mode, tab, selection })}</output>
     </div>
 }

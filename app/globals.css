@@ -110,6 +110,21 @@ html[data-workspace-viewport-locked="true"] [data-mobile-comms-viewport="true"] 
   transform: none;
 }
 
+/* Navigation drawers share the shell's existing viewport measurements. They
+   start below the header and never create another visual-viewport owner. */
+@media (max-width: 1023px) {
+  [data-workspace-shell-root] :is([data-workspace-side-drawer], [data-workspace-sidebar], [data-workspace-sidebar-dismiss]) {
+    top: calc(3.5rem + var(--workspace-visual-origin-offset, 0px));
+    bottom: auto;
+    height: max(0px, calc(var(--workspace-visual-viewport-bottom, 100dvh) - 3.5rem));
+  }
+
+  [data-workspace-shell-root][data-mobile-comms-viewport="true"] :is([data-workspace-side-drawer], [data-workspace-sidebar], [data-workspace-sidebar-dismiss]) {
+    top: calc(var(--mobile-workspace-top) + var(--mobile-workspace-header-height));
+    height: max(0px, calc(var(--mobile-workspace-height) - var(--mobile-workspace-header-height)));
+  }
+}
+
 /* The conversation uses the document origin. A fixed containing block would
    reintroduce WebKit's separate fixed-layer keyboard pan; a positioned/clipped
    body would make pageTop relative to the wrong origin or crop the moving frame.
@@ -217,6 +232,10 @@ html:is([data-mobile-conversation-phase="open"], [data-mobile-conversation-phase
   :is([data-workspace-topbar], [data-workspace-tabbar], [data-workspace-tab-panels]) {
   visibility: hidden;
   opacity: 0;
+  /* Retire hidden backdrop inputs while roster/profile popups are composed
+     over the conversation; normal chrome filters return with its visibility. */
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* Bound rich drafts and trays to the actual space below the conversation

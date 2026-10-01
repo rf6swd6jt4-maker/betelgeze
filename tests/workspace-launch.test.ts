@@ -83,7 +83,7 @@ test("the first workspace panel is server-rendered before tab restoration", () =
     assert.match(client, /const frameTabs = orderWorkspaceTabsByStableIds\(tabs, tabFrameOrder\)/)
     assert.doesNotMatch(client, /\{tabsHydrated && frameTabs\.map/)
     assert.match(client, /type: "probe"/)
-    assert.match(source("components/workspace/WorkspaceTabBridge.tsx"), /message\.type === "probe"[\s\S]*type: "location"/)
+    assert.match(source("components/workspace/WorkspaceTabBridge.tsx"), /message\.type === "probe"[\s\S]*type: proof \? "location-replace" : "location"[\s\S]*url: current/)
 })
 
 test("workspace launch uses one narrow access bootstrap and defers secondary shell reads", () => {

@@ -35,15 +35,53 @@ try {
                             assert.equal(result.backdropAnimation, "none")
                             await page.waitForTimeout(230)
                             const box = await drawer.boundingBox(); assert(box.x >= 47); assert(Math.abs(box.x + box.width - viewport.width) <= 1)
+                            const header = await page.locator("[data-workspace-topbar]").boundingBox()
+                            assert.equal(box.y, header.y + header.height, "drawer must start below intact shell header")
+                            assert.equal(box.y + box.height, viewport.height, "drawer must stay inside the shell viewport")
+                            assert.equal(await page.locator("dialog:modal").count(), 0, "shell drawer must not make the app header inert")
+                            assert.equal(await page.locator("[data-workspace-tabbar]").evaluate(node => node.inert), true)
+                            await page.locator("#shell-header-action").click()
+                            assert.equal(await page.evaluate(() => window.headerClicks), 1)
                             assert.equal(await page.locator("dialog[open]").count(), 1)
                             assert.equal(await page.locator('dialog [aria-current="page"]').count(), 1)
                             await page.screenshot({ path: `browser-results/context-overlays/${engine}-${name}.png` })
                         })
+                        await check("drawer reuses shell visual viewport bounds without moving the header", async () => {
+                            await page.evaluate(() => {
+                                const root = document.querySelector("[data-workspace-shell-root]")
+                                root.dataset.mobileCommsViewport = "true"
+                                for (const [name, value] of Object.entries({ "--mobile-workspace-top": "34px", "--mobile-workspace-height": "480px", "--mobile-workspace-header-height": "56px", "--mobile-workspace-tabs-height": "44px" })) root.style.setProperty(name, value)
+                            })
+                            const header = await page.locator("[data-workspace-topbar]").boundingBox()
+                            const drawer = await page.locator("[data-side-drawer]").boundingBox()
+                            assert.equal(header.y, 34); assert.equal(drawer.y, 90)
+                            assert.equal(drawer.height, 424); assert.equal(drawer.y + drawer.height, 514)
+                            await page.evaluate(() => {
+                                const root = document.querySelector("[data-workspace-shell-root]")
+                                delete root.dataset.mobileCommsViewport
+                                root.removeAttribute("style")
+                            })
+                        })
+                        await check("Escape leaves a newer non-native modal above the drawer", async () => {
+                            await page.evaluate(() => {
+                                const modal = document.createElement("div")
+                                modal.id = "header-profile-test"
+                                modal.setAttribute("role", "dialog"); modal.setAttribute("aria-modal", "true")
+                                modal.textContent = "Header profile"
+                                modal.style.cssText = "position:fixed;inset:0;z-index:180;background:#111"
+                                document.body.append(modal)
+                            })
+                            await page.keyboard.press("Escape")
+                            assert.equal(await page.locator("[data-workspace-side-drawer][open]").count(), 1)
+                            await page.evaluate(() => document.querySelector("#header-profile-test").remove())
+                        })
                         await check("close releases backdrop and restores trigger focus", async () => {
                             await page.getByRole("button", { name: "Close relationship context", exact: true }).click()
+                            assert.equal(await page.evaluate(() => window.drawerOpenAtClose), false, "close must release the drawer before parent callback")
                             assert.equal(await page.locator("dialog[open], [data-side-drawer]").count(), 0)
                             assert.equal(await page.evaluate(() => document.activeElement.id), "context-trigger")
                             await page.locator("#background").click()
+                            assert.equal(await page.locator("[data-workspace-tabbar]").evaluate(node => node.inert), false)
                         })
                         await check("reopen, Escape and backdrop dismiss immediately", async () => {
                             await page.locator("#context-trigger").click(); await page.keyboard.press("Escape")
@@ -111,6 +149,16 @@ try {
                         assert.equal(await add.isDisabled(), true)
                         await page.evaluate(() => window.fixture.setUrl("/fixture/client-connections?relationship=unknown"))
                         assert.equal(await add.isDisabled(), true)
+                    })
+                    if (name !== "desktop") await check("standalone context retains native full-viewport modality", async () => {
+                        await page.goto(origin + "?standalone")
+                        await page.locator("#context-trigger").click()
+                        await page.locator("dialog:modal").waitFor()
+                        const drawer = await page.locator("[data-side-drawer]").boundingBox()
+                        assert.equal(drawer.y, 0); assert.equal(drawer.height, viewport.height)
+                        await page.keyboard.press("Escape")
+                        assert.equal(await page.locator("dialog[open]").count(), 0)
+                        assert.equal(await page.evaluate(() => document.activeElement.id), "context-trigger")
                     })
                     assert.deepEqual(errors, []); assert.deepEqual(external, [])
                     reports.push({ engine, viewport: name, passed: cases.length, cases }); console.log(`${engine}/${name}: ${cases.length} passed`)

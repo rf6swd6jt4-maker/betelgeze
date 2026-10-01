@@ -80,6 +80,7 @@ import {
     WORKSPACE_TAB_MESSAGE_SOURCE,
     workspaceTabContextStorageKey,
     workspaceTabFrameMatchesUrl,
+    workspaceTabRedirectMatches,
     workspaceTabHistoryStep,
     workspaceTabFrameUrl,
     workspaceTabIsCommunications,
@@ -1463,6 +1464,17 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
 
             if (message.type === "location-replace" && message.url) {
                 const url = normalizeWorkspaceUrl(message.url)
+                if (message.replacedUrl !== undefined) {
+                    const expectedUrl = pendingNavigationRef.current.get(message.tabId)
+                        ?? navigationErrorRef.current.get(message.tabId)
+                        ?? tabsRef.current.find((tab) => tab.id === message.tabId)?.url
+                    try {
+                        if (!frame?.contentWindow || !workspaceTabRedirectMatches({
+                            actualUrl: frame.contentWindow.location.href, destination: message.url, source: message.replacedUrl,
+                            expectedUrl, tabId: message.tabId, workspaceSlug: workspace.slug, origin: window.location.origin,
+                        })) return
+                    } catch { return }
+                }
                 markTabFrameReady(message.tabId)
                 reportInitialPanelReady(message.tabId)
                 readyTabIdsRef.current.add(message.tabId)
@@ -1471,7 +1483,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 // handshake instead of relying solely on the iframe load
                 // event, which can fire before the frame installs its message
                 // listener.
-                postToTab(message.tabId, { type: "activate", active: message.tabId === activeTabIdRef.current, refresh: false })
+                postToTab(message.tabId, { type: "activate", active: message.tabId === activeTabIdRef.current, refresh: false, url })
                 pendingNavigationRef.current.delete(message.tabId)
                 // Unlike a probe, this reports a committed in-frame URL
                 // replacement (for example an auto-selected conversation).
@@ -1943,6 +1955,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             setSearchOpen(false)
         }
         const closeForOtherDropdown = (event: Event) => {
+            setMobileContextKey(null)
             if ((event as CustomEvent<string>).detail !== searchMenuId) setSearchOpen(false)
         }
         document.addEventListener("mousedown", close)
@@ -2170,6 +2183,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     }
 
     function toggleSidebar() {
+        setMobileContextKey(null)
         if (sidebarTransitionTimeout.current) window.clearTimeout(sidebarTransitionTimeout.current)
         setSidebarTransitionEnabled(true)
         sidebarTransitionTimeout.current = window.setTimeout(() => {
@@ -2804,7 +2818,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 <div className="flex min-w-0 items-center gap-2.5">
                     <WorkspaceLogo src={workspaceLogoSrc} name={workspace.name} />
                     <p className="min-w-0 truncate text-sm font-semibold text-neutral-100">{workspace.name}</p>
-                    <button data-icon-button type="button" onClick={toggleSidebar} aria-label="Toggle sidebar" aria-expanded={sidebarOpen} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-8 md:w-8">
+                    <button data-icon-button type="button" onClick={event => { event.currentTarget.focus({ preventScroll: true }); toggleSidebar() }} aria-label="Toggle sidebar" aria-expanded={sidebarOpen} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-8 md:w-8">
                         <SidebarIcon />
                     </button>
                 </div>
@@ -2995,7 +3009,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 <button data-icon-button type="button" onClick={toggleContextPanel} disabled={!activeContextSupported} aria-label={!activeContextSupported ? "Relationship context unavailable" : activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextSupported ? activeContextOpen : undefined} className="mb-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400 lg:inline-flex">
                     <ContextPanelIcon />
                 </button>
-                <button data-icon-button type="button" onClick={event => { event.currentTarget.focus({ preventScroll: true }); setMobileContextKey(`${activeTab.id}:${activeTab.url}`) }} disabled={!activeContextSupported || activeContextObstructed || activeRouteLoading} aria-label="Show relationship context" aria-haspopup="dialog" className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-white disabled:opacity-30 lg:hidden">
+                <button data-icon-button type="button" onClick={event => { event.currentTarget.focus({ preventScroll: true }); setSidebarOpen(false); setMobileContextKey(`${activeTab.id}:${activeTab.url}`) }} disabled={!activeContextSupported || activeContextObstructed || activeRouteLoading} aria-label="Show relationship context" aria-haspopup="dialog" className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-white disabled:opacity-30 lg:hidden">
                     <ContextPanelIcon />
                 </button>
             </div>
@@ -3048,7 +3062,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
 
         {creationNotice ? <WorkspaceSuccessNotice label={creationNotice.label} actionLabel="View" onAction={viewCreatedRecord} /> : null}
 
-        {sidebarOpen && <button type="button" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} className="fixed inset-x-0 bottom-0 top-14 z-[45] cursor-default md:hidden" />}
+        {sidebarOpen && <button data-workspace-sidebar-dismiss type="button" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} className="fixed inset-x-0 bottom-0 top-14 z-[45] cursor-default md:hidden" />}
 
         <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-50 h-[calc(100dvh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950 ${sidebarTransitionEnabled ? "transition-transform duration-200 ease-out" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex h-full touch-pan-y flex-col gap-2 overflow-y-auto overscroll-contain px-4 py-5 md:gap-1 md:overflow-visible md:overscroll-auto md:px-3 md:py-4">

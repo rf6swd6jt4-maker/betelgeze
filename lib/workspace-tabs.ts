@@ -2,6 +2,7 @@ import type { WorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 import type { RelationshipContextDestination, RelationshipContextPerson, RelationshipContextService } from "./relationship-context"
 
 export const WORKSPACE_TAB_FRAME_PARAM = "__betelgeze_tab"
+export const WORKSPACE_TAB_REDIRECT_PARAM = "__betelgeze_redirect"
 export const WORKSPACE_TAB_FRAME_NAME_PREFIX = "betelgeze-tab:"
 export const WORKSPACE_TAB_MESSAGE_SOURCE = "betelgeze-workspace-tabs"
 export const WORKSPACE_TAB_VISIBILITY_EVENT = "betelgeze:workspace-tab-visibility"
@@ -54,6 +55,7 @@ export type WorkspaceTabFrameMessage = {
     safe?: boolean
     failureReason?: "drafts"
     retainedUrl?: string
+    replacedUrl?: string
 }
 
 export function workspaceTabIsCommunications(value: string, workspaceSlug: string, origin: string) {
@@ -90,6 +92,7 @@ export type WorkspaceTabRelationshipContext = {
 export function normalizeWorkspaceUrl(value: string, workspaceSlug: string, origin: string) {
     const parsed = new URL(value, origin)
     parsed.searchParams.delete(WORKSPACE_TAB_FRAME_PARAM)
+    parsed.searchParams.delete(WORKSPACE_TAB_REDIRECT_PARAM)
     const search = parsed.search
     const hash = parsed.hash
     const path = parsed.pathname
@@ -104,6 +107,36 @@ export function workspaceTabFrameUrl(value: string, tabId: string, origin: strin
     const parsed = new URL(value, origin)
     parsed.searchParams.set(WORKSPACE_TAB_FRAME_PARAM, tabId)
     return `${parsed.pathname}${parsed.search}${parsed.hash}`
+}
+
+/** Preserve a framed server redirect's identity and original requested route. */
+export function workspaceTabRedirectUrl(destination: string, currentPath: string | null, origin = "http://localhost") {
+    if (!currentPath) return destination
+    const source = new URL(currentPath, origin)
+    const target = new URL(destination, origin)
+    const tabId = source.searchParams.get(WORKSPACE_TAB_FRAME_PARAM)
+    if (!tabId || source.origin !== new URL(origin).origin || target.origin !== source.origin) return destination
+    source.searchParams.delete(WORKSPACE_TAB_FRAME_PARAM)
+    // A later redirect must never nest the previous internal URL in itself.
+    source.searchParams.delete(WORKSPACE_TAB_REDIRECT_PARAM)
+    target.searchParams.set(WORKSPACE_TAB_FRAME_PARAM, tabId)
+    target.searchParams.set(WORKSPACE_TAB_REDIRECT_PARAM, `${source.pathname}${source.search}${source.hash}`)
+    return `${target.pathname}${target.search}${target.hash}`
+}
+
+/** Only the requested route's real, same-origin document can replace its URL. */
+export function workspaceTabRedirectMatches(input: {
+    actualUrl: string; destination: string; source: string; expectedUrl?: string
+    tabId: string; workspaceSlug: string; origin: string
+}) {
+    try {
+        const { actualUrl, destination, source, expectedUrl, tabId, workspaceSlug, origin } = input
+        if (!expectedUrl) return false
+        const base = new URL(origin).origin
+        if (new URL(source, origin).origin !== base || new URL(destination, origin).origin !== base) return false
+        return normalizeWorkspaceUrl(source, workspaceSlug, origin) === normalizeWorkspaceUrl(expectedUrl, workspaceSlug, origin)
+            && workspaceTabFrameMatchesUrl(actualUrl, destination, tabId, origin)
+    } catch { return false }
 }
 
 export function workspaceTabTitleForUrl(value: string, workspaceSlug: string) {

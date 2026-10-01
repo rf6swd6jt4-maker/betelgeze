@@ -7,6 +7,7 @@ import {
     isReopenClosedTabShortcut,
     normalizeWorkspaceUrl,
     WORKSPACE_TAB_FRAME_PARAM,
+    WORKSPACE_TAB_REDIRECT_PARAM,
     WORKSPACE_TAB_MESSAGE_SOURCE,
     workspaceTabRecordTitleForUrl,
     workspaceRouteIsRecordDetail,
@@ -37,6 +38,7 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
     const pathname = usePathname()
     const router = useRouter()
     const searchParams = useSearchParams()
+    const redirectProofRef = useRef<{ url: string; replacedUrl: string } | null>(null)
     const refreshStartedRef = useRef(false)
     const [refreshPending, startRefreshTransition] = useTransition()
     const refresh = useCallback(() => startRefreshTransition(() => router.refresh()), [router])
@@ -76,12 +78,26 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
             params.delete("pollStarted")
             const query = params.toString()
             const url = normalizeWorkspaceUrl(`${pathname}${query ? `?${query}` : ""}${window.location.hash}`, workspaceSlug, window.location.origin)
+            const current = new URL(window.location.href)
+            const replacedUrl = current.searchParams.get(WORKSPACE_TAB_REDIRECT_PARAM)
+            const committedRedirect = replacedUrl && current.searchParams.get(WORKSPACE_TAB_FRAME_PARAM) === tabId
+                && normalizeWorkspaceUrl(current.href, workspaceSlug, window.location.origin) === url
+            if (committedRedirect) {
+                // Consume transport metadata without starting another Next read.
+                current.searchParams.delete(WORKSPACE_TAB_REDIRECT_PARAM)
+                window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`)
+                redirectProofRef.current = { url, replacedUrl }
+            } else if (redirectProofRef.current?.url !== url) {
+                redirectProofRef.current = null
+            }
+            const proof = redirectProofRef.current
             const message: WorkspaceTabFrameMessage = {
                 source: WORKSPACE_TAB_MESSAGE_SOURCE,
                 target: "host",
                 tabId,
-                type: "location",
+                type: proof ? "location-replace" : "location",
                 url,
+                ...(proof ? { replacedUrl: proof.replacedUrl } : {}),
             }
             window.parent.postMessage(message, window.location.origin)
         }
@@ -204,15 +220,24 @@ export function WorkspaceTabBridge({ tabId, workspaceSlug }: Props) {
 
             if (message.type === "probe") {
                 const current = normalizeWorkspaceUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`, workspaceSlug, window.location.origin)
+                // Replay a missed commit acknowledgement using the existing
+                // probe, without retaining metadata in the URL or reading again.
+                if (redirectProofRef.current?.url !== current) redirectProofRef.current = null
+                const proof = redirectProofRef.current
                 const reply: WorkspaceTabFrameMessage = {
                     source: WORKSPACE_TAB_MESSAGE_SOURCE,
                     target: "host",
                     tabId,
-                    type: "location",
+                    type: proof ? "location-replace" : "location",
                     url: current,
+                    ...(proof ? { replacedUrl: proof.replacedUrl } : {}),
                 }
                 window.parent.postMessage(reply, window.location.origin)
             } else if (message.type === "activate") {
+                if (message.url && redirectProofRef.current?.url === normalizeWorkspaceUrl(message.url, workspaceSlug, window.location.origin)
+                    && redirectProofRef.current.url === normalizeWorkspaceUrl(window.location.href, workspaceSlug, window.location.origin)) {
+                    redirectProofRef.current = null
+                }
                 setActive(Boolean(message.active))
                 if (!message.active) focusedChatComposer(document)?.blur()
                 document.body.dataset.workspaceTabActive = message.active ? "true" : "false"

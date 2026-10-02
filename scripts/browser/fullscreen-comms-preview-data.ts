@@ -5,6 +5,9 @@ import type { CommunicationsBootstrap } from "@/lib/communications/types"
 const currentUser = { id: "preview-you", name: "You", avatarSrc: null }
 const people = [currentUser, { id: "preview-alex", name: "Alex Morgan", avatarSrc: null }, { id: "preview-sam", name: "Sam Taylor", avatarSrc: null }, { id: "preview-jamie", name: "Jamie Reed", avatarSrc: null }]
 const now = Date.now()
+// Opt-in media for popup regression checks; other layout fixtures keep their
+// established message geometry. The runner supplies a synthetic PNG locally.
+const popupMedia = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("popup-media")
 const bodies = [
     "Morning! I’ve added the latest notes for the team.",
     "Thanks — I’ll have a look after this call.",
@@ -24,7 +27,10 @@ function messages(conversationId: string, other: string, amount = 28, age = 0): 
         id: `${conversationId}-message-${index}`, clientRequestId: null, conversationId,
         senderUserId: index % 3 === 1 ? currentUser.id : other, senderWorkspaceRole: index % 3 === 1 ? "owner" : "staff",
         body: bodies[index % bodies.length], replyToMessageId: index === amount - 3 ? `${conversationId}-message-${amount - 5}` : null,
-        attachment: null, createdAt: new Date(now - age - (amount - index) * 180000).toISOString(), editedAt: null,
+        attachment: popupMedia && index === amount - 1 ? {
+            kind: "image", fileName: "Popup regression.png", mimeType: "image/png", size: 1024,
+            storagePath: `${conversationId}/popup-regression.png`, url: "/__preview/popup-image.png", width: 240, height: 160, hasPreview: true,
+        } : null, createdAt: new Date(now - age - (amount - index) * 180000).toISOString(), editedAt: null,
     }))
 }
 export const teamBootstrap: NativeCommunicationsBootstrap = {

@@ -1,4 +1,4 @@
-// Actual roster, member-profile and mobile surface with synthetic local I/O.
+// Actual roster, portal actions, gallery and mobile surface with synthetic local I/O.
 import { spawn } from "node:child_process"
 import { mkdir, writeFile } from "node:fs/promises"
 import assert from "node:assert/strict"
@@ -14,6 +14,45 @@ async function settle(page) {
         await Promise.allSettled(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished))
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     })
+}
+
+// This observes author-layer eligibility for WebKit's top-edge heuristic. It
+// does not claim to reproduce iOS's native scroll-edge rendering in Playwright.
+async function topEdgeEligibility(page) {
+    return page.evaluate(() => {
+        const viewport = { width: document.documentElement.clientWidth, height: window.innerHeight }
+        const hit = document.elementFromPoint(viewport.width / 2, 1)
+        const chain = []
+        for (let node = hit; node; node = node.parentElement) chain.push(node)
+        const header = chain.find(node => node.matches("[data-mobile-conversation-surface] > [data-native-chat-viewport] > header"))
+        if (!header) return { eligible: false, reason: "No conversation header in top hit-test ancestry", hit: hit?.tagName }
+        const rect = header.getBoundingClientRect(), style = getComputedStyle(header)
+        const canvas = document.createElement("canvas"), context = canvas.getContext("2d")
+        context.fillStyle = style.backgroundColor; context.fillRect(0, 0, 1, 1)
+        const alpha = context.getImageData(0, 0, 1, 1).data[3]
+        const opaque = alpha === 255 && chain.slice(chain.indexOf(header)).every(node => getComputedStyle(node).opacity === "1")
+        const visible = header.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && !header.closest("[hidden],[inert]")
+        const width = Math.min(rect.right, viewport.width) - Math.max(rect.left, 0)
+        return { eligible: visible && opaque && ["fixed", "sticky"].includes(style.position)
+            && rect.top <= 1 && rect.bottom > 1 && width >= viewport.width * 0.9 && rect.height <= viewport.height / 4,
+            visible, opaque, position: style.position, top: rect.top, width, height: rect.height, viewport }
+    })
+}
+function requireTopEdge(eligibility) {
+    assert.equal(eligibility.eligible, true, `Conversation header is not top-edge eligible: ${JSON.stringify(eligibility)}`)
+}
+async function assertTopEdge(page) {
+    const eligibility = await topEdgeEligibility(page)
+    requireTopEdge(eligibility)
+    return eligibility
+}
+async function assertOverlayCoverage(dialog) {
+    const covered = await dialog.evaluate(node => [0.5, 0.9, 0.99].map(fraction => {
+        const target = document.elementFromPoint(document.documentElement.clientWidth / 2, Math.min(innerHeight - 1, innerHeight * fraction))
+        return { fraction, covered: Boolean(target && node.contains(target)) }
+    }))
+    assert(covered.every(point => point.covered), `Popup must cover messages and composer: ${JSON.stringify(covered)}`)
+    return covered
 }
 
 async function capture(page, key) {
@@ -84,6 +123,10 @@ const origin = await new Promise((resolve, reject) => {
     server.once("exit", code => { clearTimeout(timer); reject(Error(`Preview ${code}: ${output}`)) })
 })
 const results = []
+const mediaCanvas = createCanvas(240, 160), mediaContext = mediaCanvas.getContext("2d")
+mediaContext.fillStyle = "#246b73"; mediaContext.fillRect(0, 0, 240, 160)
+mediaContext.fillStyle = "#f6cf64"; mediaContext.fillRect(24, 24, 192, 112)
+const syntheticImage = mediaCanvas.toBuffer("image/png")
 await mkdir("browser-results", { recursive: true })
 try {
     for (const engine of selected.length ? selected : ["chromium", "webkit"]) {
@@ -93,6 +136,7 @@ try {
             const errors = [], external = []
             await context.route("**/*", route => {
                 const url = new URL(route.request().url())
+                if (url.origin === origin && url.pathname === "/__preview/popup-image.png") return route.fulfill({ status: 200, contentType: "image/png", body: syntheticImage })
                 if (url.origin === origin || ["data:", "blob:"].includes(url.protocol)) return route.continue()
                 external.push(url.origin); return route.abort()
             })
@@ -139,13 +183,29 @@ try {
                 const header = surface().locator("[data-native-chat-viewport]>header")
                 const dialog = page.getByRole("dialog", { name: mode === "team" ? "Project team" : "Client conversation", exact: true })
                 const trigger = header.getByRole("button", { name: mode === "team" ? "View Project team members" : "Client conversation participants", exact: true })
+                await check(`${mode}: static-header negative control fails top-edge eligibility`, async () => {
+                    await settle(page)
+                    const before = await assertTopEdge(page)
+                    const override = await page.addStyleTag({ content: ".mobile-conversation-surface > [data-native-chat-viewport] > header { position: static !important; top: auto !important; z-index: auto !important; }" })
+                    let baseline
+                    try {
+                        baseline = await topEdgeEligibility(page)
+                        assert.throws(() => requireTopEdge(baseline), /not top-edge eligible/)
+                        assert.equal(baseline.position, "static")
+                    } finally { await override.evaluate(node => node.remove()) }
+                    const restored = await assertTopEdge(page)
+                    assert.deepEqual(restored, before, "Removing the baseline override restores geometry and eligibility")
+                    return { current: restored, previousStaticHeader: baseline, nativeIOSEffectSimulated: false }
+                })
                 for (const dismiss of ["close", "escape", "backdrop", "member profile"]) {
                     await check(`${mode}: ${dismiss} retires overlays and restores full viewport`, async () => {
                         const key = `${engine}-${mode}-${dismiss.replaceAll(" ", "-")}`
                         await settle(page)
                         const before = await capture(page, `${key}-before`)
+                        const edgeBefore = await assertTopEdge(page)
                         const overflow = await page.evaluate(() => document.body.style.overflow)
                         await trigger.tap(); await dialog.waitFor()
+                        await assertOverlayCoverage(dialog)
                         if (dismiss === "member profile") {
                             await dialog.getByRole("button", { name: "Open Alex Morgan profile", exact: true }).tap()
                             const profile = page.getByRole("dialog", { name: "Alex Morgan", exact: true })
@@ -169,10 +229,12 @@ try {
                         const pixels = await compareViewport(before, after, key)
                         const filter = await header.evaluate(node => ({ filter: getComputedStyle(node).filter, backdrop: getComputedStyle(node).backdropFilter }))
                         assert.deepEqual(filter, { filter: "none", backdrop: "none" })
-                        return { pixels, remainingDialogs: 0, remainingFilterLayers: 0, restoredOverflow: true }
+                        return { pixels, remainingDialogs: 0, remainingFilterLayers: 0, restoredOverflow: true,
+                            edgeBefore, edgeAfter: await assertTopEdge(page) }
                     })
                 }
                 await check(`${mode}: nested profile owns keyboard dismissal and restores roster focus`, async () => {
+                    await assertTopEdge(page)
                     await trigger.tap(); await dialog.waitFor()
                     const rosterSelector = mode === "team" ? '[aria-labelledby="team-roster-title"]' : '[aria-labelledby="client-participants-title"]'
                     const profileTrigger = dialog.getByRole("button", { name: "Open Alex Morgan profile", exact: true })
@@ -194,9 +256,10 @@ try {
                     assert.equal(await page.locator("dialog:modal").count(), 0)
                     await page.keyboard.press("Escape")
                     await dialog.waitFor({ state: "detached" })
-                    return { coveredRosterPreserved: true, restoredProfileTriggerFocus: true, remainingDialogs: 0 }
+                    return { coveredRosterPreserved: true, restoredProfileTriggerFocus: true, remainingDialogs: 0, edgeAfter: await assertTopEdge(page) }
                 })
                 await check(`${mode}: profile touch dismissal leaves the roster usable`, async () => {
+                    await assertTopEdge(page)
                     await trigger.tap(); await dialog.waitFor()
                     const profileTrigger = dialog.getByRole("button", { name: "Open Alex Morgan profile", exact: true })
                     for (const dismiss of ["close", "backdrop"]) {
@@ -213,21 +276,26 @@ try {
                     await dialog.getByRole("button", { name: mode === "team" ? "Close team members" : "Close participants", exact: true }).tap()
                     await dialog.waitFor({ state: "detached" })
                     assert.equal(await page.getByRole("dialog").count(), 0)
-                    return { touchCloseAndBackdrop: true, restoredProfileTriggerFocus: true, remainingDialogs: 0 }
+                    return { touchCloseAndBackdrop: true, restoredProfileTriggerFocus: true, remainingDialogs: 0, edgeAfter: await assertTopEdge(page) }
                 })
                 if (mode === "client") {
                     const portalTrigger = header.getByRole("button", { name: "Client portal actions", exact: true })
                     const portal = page.getByRole("dialog", { name: "Client portal", exact: true })
                     // Prime existing data once: the loaded action-count badge is intentional state.
+                    await assertTopEdge(page)
                     await portalTrigger.tap(); await portal.getByRole("button", { name: "Confirm launch details", exact: true }).waitFor()
                     await portal.getByRole("button", { name: "Close popup", exact: true }).tap(); await portal.waitFor({ state: "detached" })
+                    await assertTopEdge(page)
                     for (const dismiss of ["close", "escape", "backdrop"]) await check(`portal actions: repeated ${dismiss} restores all pixels and modal effects`, async () => {
                         await settle(page)
                         const key = `${engine}-portal-${dismiss}`
                         const before = await capture(page, `${key}-before`)
+                        const edgeBefore = await assertTopEdge(page)
                         const overflow = await page.evaluate(() => document.body.style.overflow)
                         for (let cycle = 0; cycle < 3; cycle++) {
+                            await assertTopEdge(page)
                             await portalTrigger.tap(); await portal.waitFor()
+                            await assertOverlayCoverage(portal)
                             assert.equal(await portal.evaluate(node => node.matches(":modal")), true)
                             assert.equal(await portal.evaluate(node => getComputedStyle(node).backdropFilter), "none")
                             if (dismiss === "escape") await page.keyboard.press("Escape")
@@ -236,24 +304,76 @@ try {
                             await portal.waitFor({ state: "detached" })
                             assert.equal(await page.locator("dialog:modal").count(), 0)
                             assert.equal(await page.evaluate(() => document.body.style.overflow), overflow)
+                            await assertTopEdge(page)
                         }
                         await settle(page)
                         const after = await capture(page, `${key}-after`)
                         assert.deepEqual(after.state.layers.filter(layer => layer.effect), [])
-                        return { cycles: 3, pixels: await compareViewport(before, after, key), remainingModals: 0 }
+                        return { cycles: 3, pixels: await compareViewport(before, after, key), remainingModals: 0, edgeBefore, edgeAfter: await assertTopEdge(page) }
                     })
                     await check("portal progress: saved change survives dismissal without presentation residue", async () => {
+                        await assertTopEdge(page)
                         await portalTrigger.tap(); await portal.getByRole("button", { name: /Sample service/ }).tap()
                         await portal.getByRole("button", { name: "In progress", exact: true }).tap()
                         await portal.getByRole("button", { name: /Sample service/ }).waitFor()
                         await portal.getByRole("button", { name: "Close popup", exact: true }).tap(); await portal.waitFor({ state: "detached" })
+                        await assertTopEdge(page)
                         await portalTrigger.tap(); await portal.getByRole("button", { name: /Sample service/ }).tap()
                         assert.match(await portal.getByRole("button", { name: "In progress", exact: true }).textContent(), /✓/)
                         await portal.getByRole("button", { name: "Close popup", exact: true }).tap(); await portal.waitFor({ state: "detached" })
                         assert.equal(await page.locator("dialog:modal").count(), 0)
-                        return { savedProgress: "in_progress", remainingModals: 0 }
+                        return { savedProgress: "in_progress", remainingModals: 0, edgeAfter: await assertTopEdge(page) }
                     })
                 }
+                // Reload only this opt-in scenario with image data. Existing
+                // roster/profile/progress baselines retain their original layout.
+                await page.goto(`${origin}/?popup-media=1`)
+                if (mode === "client") await page.getByRole("tab", { name: "Clients", exact: true }).click()
+                await page.getByText(title, { exact: true }).click()
+                await page.waitForFunction(() => document.querySelector("[data-mobile-conversation-surface]:not([hidden])")?.dataset.phase === "open")
+                const mediaTrigger = surface().getByRole("button", { name: "Open Popup regression.png", exact: true })
+                const gallery = page.getByRole("dialog", { name: "Image preview", exact: true })
+                for (const dismiss of ["close", "escape", "backdrop"]) await check(`${mode} gallery: repeated ${dismiss} restores viewport and top-edge eligibility`, async () => {
+                    await mediaTrigger.scrollIntoViewIfNeeded()
+                    await mediaTrigger.locator("img").evaluate(image => image.decode())
+                    // Match keyboard modality on both sides of Escape. A newly
+                    // introduced focus outline can change image rasterization;
+                    // keyboard open/close must restore the same focused control.
+                    if (dismiss === "escape") { await page.keyboard.press("Tab"); await mediaTrigger.focus() }
+                    await settle(page)
+                    const key = `${engine}-${mode}-gallery-${dismiss}`
+                    const before = await capture(page, `${key}-before`)
+                    const overflow = await page.evaluate(() => document.body.style.overflow)
+                    const edges = []
+                    for (let cycle = 0; cycle < 3; cycle++) {
+                        edges.push({ before: await assertTopEdge(page) })
+                        if (dismiss === "escape") await page.keyboard.press("Enter")
+                        else await mediaTrigger.tap()
+                        await gallery.waitFor()
+                        await gallery.getByRole("img", { name: "Popup regression.png", exact: true }).evaluate(image => image.decode())
+                        await settle(page)
+                        await assertOverlayCoverage(gallery)
+                        if (dismiss === "escape") await page.keyboard.press("Escape")
+                        else if (dismiss === "backdrop") {
+                            const backdrop = gallery.locator(":scope > div").first()
+                            assert.equal(await backdrop.evaluate(node => {
+                                const rect = node.getBoundingClientRect()
+                                return document.elementFromPoint(rect.left + 3, rect.top + 3) === node
+                            }), true, "Touch must hit the gallery backdrop rather than image or controls")
+                            await backdrop.tap({ position: { x: 3, y: 3 } })
+                        }
+                        else await gallery.getByRole("button", { name: "Close image preview", exact: true }).tap()
+                        await gallery.waitFor({ state: "detached" })
+                        if (dismiss === "escape") assert.equal(await mediaTrigger.evaluate(node => document.activeElement === node), true, "Escape must restore the media control's keyboard focus")
+                        assert.equal(await page.getByRole("dialog").count(), 0)
+                        assert.equal(await page.evaluate(() => document.body.style.overflow), overflow)
+                        await settle(page)
+                        edges.at(-1).after = await assertTopEdge(page)
+                    }
+                    const after = await capture(page, `${key}-after`)
+                    assert.deepEqual(after.state.layers.filter(layer => layer.effect), [])
+                    return { cycles: 3, pixels: await compareViewport(before, after, key), remainingDialogs: 0, edges }
+                })
                 await check(`${mode}: hidden chrome releases backdrop filters`, async () => {
                     const layers = await page.locator("[data-workspace-topbar], [data-workspace-tabbar]").evaluateAll(nodes => nodes.map(node => {
                         const style = getComputedStyle(node)
@@ -284,7 +404,7 @@ try {
     }
 } finally {
     server.kill("SIGTERM")
-    await writeFile("browser-results/comms-roster-cleanup.json", JSON.stringify({ observedAt: new Date().toISOString(), results, limits: "Actual components and synthetic local I/O in Chromium/WebKit mobile emulation. Normal motion, real touch, scale 3, full viewport pixels (only thin intentional keyboard focus-ring boundaries allowed), and visible element/pseudo-element filters are checked; the reported device residue is not reproduced by this fixture." }, null, 2))
+    await writeFile("browser-results/comms-roster-cleanup.json", JSON.stringify({ observedAt: new Date().toISOString(), results, limits: "Actual components and synthetic local I/O in Chromium/WebKit mobile emulation. Normal motion, real touch, scale 3, full viewport pixels (only thin intentional keyboard focus-ring boundaries allowed), visible element/pseudo-element filters, and top hit-test ancestry with an opaque fixed/sticky header are checked. Header eligibility includes a static-header negative control; it does not simulate native iOS scroll-edge rendering or reproduce the reported device residue." }, null, 2))
 }
-assert.equal(results.length, (selected.length || 2) * 21)
+assert.equal(results.length, (selected.length || 2) * 29)
 assert(results.every(result => result.passed), "Roster cleanup regression failed")

@@ -2,6 +2,8 @@
 
 Base: `04e35ea01d9cdecea302817cce4573f0e787d054` (PR #51).
 
+**Physical outcome, 2 October:** the user confirmed that released commit `155f59f0` did not resolve the effect, and that dismissing an image preview also triggers it. The retained CSS-filter explanation below was a hypothesis, not the established cause. Its removal passed the stated checks but did not fix the reported iPhone behavior. The follow-up [edge-bar investigation](comms-popup-edge-bar-2026-10-02.md) supersedes that diagnosis.
+
 ## Evidence and cause addressed
 
 The supplied physical iPhone recording shows the client-chat header sharp before opening the participants popup, blurred after dismissal, then sharp again after leaving/reopening the chat. The same popup/dismissal reproduces the residue a second time. The message pane is sharp after dismissal, and no member profile is opened. This rules out the nested-profile ownership failure as the trigger in this recording. The popup's full-screen dimming surface disappears; its teardown triggers a persistent header rendering defect.
@@ -25,6 +27,6 @@ Validation results and release identity are appended below after completion. Phy
 - All 1,423 application tests pass; changed-file lint, foundation migration/whitespace gate and production Webpack build pass. No migration added or changed.
 - Popup suite: 42/42 cases in Chromium/WebKit at device scale 3 with normal motion. Repeated portal dismissal checks preserve full-viewport pixels; saved progress is retained.
 - Full foundation fixture suite: 32 engine/fixture runs and 550 assertions pass. These include conversation motion/layout, departure, retained drafts and search.
-- Unchanged-source comparison: both engines report two 8px navigation blur layers at rest, entering and leaving; open/dismissing-keyboard report none. The candidate reports none in all five states. This proves removal of the residual blur mechanism, not independent reproduction of the physical iPhone compositor defect.
+- Unchanged-source comparison: both engines report two 8px navigation blur layers at rest, entering and leaving; open/dismissing-keyboard report none. The candidate reports none in all five states. This proves removal of those CSS filter inputs only; the user subsequently confirmed the physical bug remained.
 
 Hosted checks and production advancement use the exact candidate commit on the linked pull request.

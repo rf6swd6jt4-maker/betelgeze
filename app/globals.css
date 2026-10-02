@@ -172,7 +172,15 @@ html[data-mobile-conversation-open="true"] { background: #000; }
   width: 100%;
   height: 100%;
 }
+/* Keep the opaque chat header recognizable as an edge bar after a fixed
+   popup leaves. WebKit otherwise treats the absolute conversation as scrolling
+   page content and can restore its native top-edge blur over the header.
+   Sticky stays in the existing flex layout; the conversation still owns the
+   visual viewport. Elevate its nested roster above the composer stacking layer. */
 .mobile-conversation-surface > [data-native-chat-viewport] > header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   height: calc(3.5rem + env(safe-area-inset-top));
   padding-top: env(safe-area-inset-top);
 }

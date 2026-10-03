@@ -1,6 +1,7 @@
 "use client"
 
 import type { MentionPerson } from "@/lib/chat-formatting"
+import type { RecordReferenceResult, ReferenceContext } from "@/lib/communications/references"
 import { ChatComposerInput } from "@/components/communications/ChatComposerInput"
 
 import { useEffect, useRef, type ReactNode, type RefObject } from "react"
@@ -10,6 +11,9 @@ export function MessageComposer({
     active = true,
     textareaRef,
     mentionPeople,
+    referenceContext,
+    referenceLabels,
+    onReferenceSelected,
     draft,
     placeholder,
     disabled,
@@ -24,6 +28,9 @@ export function MessageComposer({
     active?: boolean
     textareaRef: RefObject<HTMLElement | null>
     mentionPeople?: MentionPerson[]
+    referenceContext?: ReferenceContext
+    referenceLabels?: ReadonlyMap<string, RecordReferenceResult>
+    onReferenceSelected?: (reference: RecordReferenceResult) => void
     draft: string
     placeholder: string
     disabled: boolean
@@ -66,6 +73,9 @@ export function MessageComposer({
                 active={active}
                 inputRef={textareaRef}
                 mentionPeople={mentionPeople}
+                referenceContext={referenceContext}
+                referenceLabels={referenceLabels}
+                onReferenceSelected={onReferenceSelected}
                 value={draft}
                 onChange={onDraftChange}
                 onSend={onSend}

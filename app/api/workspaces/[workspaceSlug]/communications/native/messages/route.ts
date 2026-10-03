@@ -13,6 +13,9 @@ import { NATIVE_MESSAGE_EDIT_WINDOW_MS } from "@/lib/teams/message-editing"
 import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 import { messageQuoteFromValue, messageQuoteMatches } from "@/lib/communications/message-quotes"
 
+import { chatRecordReferences } from "@/lib/communications/references"
+import { CommunicationReferenceError, validateCommunicationReferences } from "@/lib/communications/references-server"
+
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -74,6 +77,13 @@ async function handlePOST(request: Request, context: { params: Promise<{ workspa
             return Response.json({ error: "The earlier encrypted message attempt could not be recovered. Please send the message again." }, { status: 409 })
         } catch (error) {
             return Response.json({ error: error instanceof Error ? error.message : "Could not recover the earlier message request." }, { status: 503 })
+        }
+    }
+    if (body.toLowerCase().includes("(record:")) {
+        try {
+            await validateCommunicationReferences({ workspaceSlug, workspaceId: workspace.id, userId: user.id, conversationId, body, signal: request.signal })
+        } catch (error) {
+            return Response.json({ error: error instanceof Error ? error.message : "Could not verify references." }, { status: error instanceof CommunicationReferenceError ? error.status : 503 })
         }
     }
     if (replyToMessageId) {
@@ -150,6 +160,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ works
     if (!targetResult.data) return Response.json({ error: "Message not found." }, { status: 404 })
     if (targetResult.data.sender_user_id !== user.id) return Response.json({ error: "You can only edit your own messages." }, { status: 403 })
 
+    if (chatRecordReferences(body).length) {
+        try {
+            const original = await loadNativeMessageForCurrentUser({ workspaceId: workspace.id, messageId })
+            if (!original || original.conversationId !== conversationId) return Response.json({ error: "The original message is unavailable." }, { status: 409 })
+            await validateCommunicationReferences({ workspaceSlug, workspaceId: workspace.id, userId: user.id, conversationId, body, originalBody: original.body, signal: request.signal })
+        } catch (error) {
+            return Response.json({ error: error instanceof Error ? error.message : "Could not verify references." }, { status: error instanceof CommunicationReferenceError ? error.status : 503 })
+        }
+    }
     const editCutoff = new Date(Date.now() - NATIVE_MESSAGE_EDIT_WINDOW_MS).toISOString()
     const editedAt = new Date().toISOString()
     const updateResult = await supabaseAdmin

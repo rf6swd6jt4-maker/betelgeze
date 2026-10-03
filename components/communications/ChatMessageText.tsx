@@ -2,6 +2,7 @@ import { useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from 
 import { chatListLine, chatLineStartsWithHeader, type ChatInline } from "@/lib/chat-formatting"
 import { chatTextLines, type MessageQuote } from "@/lib/communications/message-quotes"
 import { createChecklistUpdates, type SaveChatCheckbox } from "@/lib/communications/checklist-updates"
+import { ChatPersonReference, ChatRecordReference } from "./MessageReferences"
 
 export function ChatMessageText({ body, className = "leading-5", linkClassName = "underline decoration-current/40 underline-offset-2 hover:decoration-current", onToggleCheckbox, quoteSelection = false, highlight }: { body: string; className?: string; linkClassName?: string; onToggleCheckbox?: SaveChatCheckbox; quoteSelection?: boolean; highlight?: MessageQuote | null }) {
     const [updates] = useState(() => createChecklistUpdates(body))
@@ -12,11 +13,12 @@ export function ChatMessageText({ body, className = "leading-5", linkClassName =
             if ("text" in token) {
                 const start = position.offset
                 position.offset += token.text.length
+                if (token.kind === "reference" && !quoteSelection && !highlight) return <ChatRecordReference key={index} reference={token} className={linkClassName} />
                 const from = Math.max(0, (highlight?.start ?? position.offset) - start)
                 const to = Math.min(token.text.length, (highlight?.end ?? start) - start)
                 const content = from < to ? <>{token.text.slice(0, from)}<mark data-chat-quote-highlight className="rounded-sm bg-yellow-300 text-neutral-950">{token.text.slice(from, to)}</mark>{token.text.slice(to)}</> : token.text
                 const run = <span data-chat-text-start={start}>{content}</span>
-                return token.kind === "mention" ? <strong key={index}>{run}</strong> : token.kind === "link" && !quoteSelection ? <a key={index} href={token.text} target="_blank" rel="noreferrer" className={linkClassName}>{run}</a> : <span key={index}>{run}</span>
+                return token.kind === "mention" ? quoteSelection ? <strong key={index}>{run}</strong> : <ChatPersonReference key={index} userId={token.userId} className={linkClassName}>{run}</ChatPersonReference> : token.kind === "link" && !quoteSelection ? <a key={index} href={token.text} target="_blank" rel="noreferrer" className={linkClassName}>{run}</a> : <span key={index}>{run}</span>
             }
             const Tag = token.kind === "bold" ? "strong" : token.kind === "italic" ? "em" : token.kind === "header" ? "span" : "s"
             return <Tag key={index} className={token.kind === "header" ? "text-[1.15em] font-bold" : undefined}>{inline(token.children, position)}</Tag>

@@ -129,6 +129,10 @@ jobs:
         run: node scripts/validate-workspace-search-retrieval.mjs
       - name: Validate search ranking, related destinations and archive boundaries
         run: node scripts/validate-workspace-search-capability.mjs
+      - name: Validate bounded Comms references and guarded installation
+        run: |
+          node scripts/validate-communication-references-sql.mjs
+          node scripts/validate-communication-references-release.mjs
 
   browser-regression:
     name: Browser foundations (${{ matrix.engine }})

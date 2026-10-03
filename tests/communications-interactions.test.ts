@@ -324,7 +324,9 @@ test("message interactions keep the approved mobile and profile parity", async (
     assert.match(readAvatars, /h-4 w-4 shrink-0 aspect-square/)
     assert.match(composer, /flex shrink-0 items-center -space-x-1/)
     assert.match(clients, /<MessageComposer/)
-    assert.match(team, /<MessageComposer/)
+    assert.match(team, /<NativeReferenceComposer/)
+    const nativeComposer = await readFile("components/communications/MessageReferences.tsx", "utf8")
+    assert.match(nativeComposer, /<MessageComposer \{\.\.\.props\}/)
     assert.doesNotMatch(clients, /window\.addEventListener\("resize", resizeComposer\)/)
     assert.doesNotMatch(team, /window\.addEventListener\("resize", resizeComposer\)/)
     for (const source of [clients, team]) {

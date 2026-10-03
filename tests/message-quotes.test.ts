@@ -23,7 +23,7 @@ function load(path: string, dependencies: Record<string, unknown>) {
 const attachmentBatches = load("lib/communications/attachment-batch.ts", { "@/lib/communications/attachments": attachmentValues })
 const quotes = load("lib/communications/message-quotes.ts", { "@/lib/chat-formatting": formatting }) as typeof import("../lib/communications/message-quotes")
 const checklists = load("lib/communications/checklist-updates.ts", { "@/lib/chat-formatting": formatting, "@/lib/communications/coordinated-updates": coordinated })
-const { ChatMessageText } = load("components/communications/ChatMessageText.tsx", { "@/lib/chat-formatting": formatting, "@/lib/communications/message-quotes": quotes, "@/lib/communications/checklist-updates": checklists })
+const { ChatMessageText } = load("components/communications/ChatMessageText.tsx", { "@/lib/chat-formatting": formatting, "@/lib/communications/message-quotes": quotes, "@/lib/communications/checklist-updates": checklists, "./MessageReferences": { ChatRecordReference: () => React.createElement("span", null, "Unavailable reference") } })
 
 test("quote offsets refer to visible formatted text, nested lists and Unicode", () => {
     const body = "##Plan##\n- **First __item__**\n  [x] Done 😀\n\nhttps://example.com/a__b"
@@ -99,6 +99,8 @@ function fixture(options: { access?: boolean; original?: boolean; originalBody?:
         }, "@/lib/supabase/server": {},
         "@/lib/communications/encryption": { communicationFileKeyForCurrentUser: async () => "private-key" }, "@/lib/teams/message-editing": {}, "@/lib/communications/message-quotes": quotes,
         "@/lib/communications/history-page": historyPage,
+        "@/lib/communications/references": formatting,
+        "@/lib/communications/references-server": { CommunicationReferenceError: Error, validateCommunicationReferences: async ({ body }: { body: string }) => { assert.deepEqual(formatting.chatRecordReferences(body), []) } },
     })
     return { writes, verified, send: (patch: Record<string, unknown> = {}) => route.POST(new Request("http://localhost/api", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId, clientRequestId, replyToMessageId: messageId, body: "reply", quote: { text: "two", start: 4, end: 7 }, ...patch }) }), { params: Promise.resolve({ workspaceSlug: "test" }) }) as Promise<Response> }
 }

@@ -1,4 +1,18 @@
 export type MentionPerson = { id: string; name: string; avatarSrc?: string | null }
+export type RecordReference = { type: "work_item" | "asset" | "relationship"; id: string }
+export type RecordReferenceResult = RecordReference & { label: string; detail?: string; href: string }
+export type ReferenceContext = { workspaceSlug: string; workspaceId: string; userId: string; conversationId: string }
+export const CHAT_RECORD_REFERENCE_PATTERN = String.raw`@\[ref\]\(record:(work_item|asset|relationship):([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\)`
+export function recordReferenceKey(reference: RecordReference) { return `${reference.type}:${reference.id.toLowerCase()}` }
+export function chatRecordReferenceSource(reference: RecordReference) { return `@[ref](record:${recordReferenceKey(reference)})` }
+export function chatRecordReferences(body: string) {
+    if (!/\(record:/i.test(body)) return []
+    return [...body.matchAll(new RegExp(CHAT_RECORD_REFERENCE_PATTERN, "gi"))].map((match) => ({
+        type: match[1].toLowerCase() as RecordReference["type"], id: match[2].toLowerCase(),
+        text: "Reference", source: match[0], from: match.index, to: match.index + match[0].length,
+    }))
+}
+export function recordReferencesPreview(body: string) { return body.replace(new RegExp(CHAT_RECORD_REFERENCE_PATTERN, "gi"), "Reference") }
 export const CHAT_MENTION_PATTERN = String.raw`@\[[^\]\n]+\]\(mention:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\)`
 
 export function readChatMention(source: string) {
@@ -24,15 +38,16 @@ export function chatMentions(body: string) {
 }
 
 export function mentionPreview(body: string) {
-    return body.replace(new RegExp(CHAT_MENTION_PATTERN, "gi"), (source) => readChatMention(source)?.text ?? source)
+    return recordReferencesPreview(body.replace(new RegExp(CHAT_MENTION_PATTERN, "gi"), (source) => readChatMention(source)?.text ?? source))
 }
 
 export function mentionQuery(body: string, from: number, to = from) {
-    if (from !== to || chatMentions(body).some((mention) => from > mention.from && from <= mention.to)) return null
+    const completed = [...chatMentions(body), ...chatRecordReferences(body)]
+    if (from !== to || completed.some((mention) => from > mention.from && from <= mention.to)) return null
     const match = /(?:^|[\s(])@([^@\n\r]{0,80})$/.exec(body.slice(0, from))
     if (!match) return null
     const start = from - match[1].length - 1
-    if (chatMentions(body).some((mention) => start >= mention.from && start < mention.to)) return null
+    if (completed.some((mention) => start >= mention.from && start < mention.to)) return null
     return { from: start, to: from, query: match[1] }
 }
 
@@ -51,16 +66,25 @@ export function chatListLine(line: string) {
     return match ? { indent: match[1].length, marker: match[2], text: match[3], prefixLength: line.length - match[3].length } : null
 }
 
-export type ChatInline = { kind: "mention"; text: string; userId: string; source: string } | { kind: "text"; text: string } | { kind: "link"; text: string } | { kind: "bold" | "italic" | "strike" | "header"; children: ChatInline[] }
+export type ChatInline = { kind: "mention"; text: string; userId: string; source: string } | ({ kind: "reference"; text: string; source: string } & RecordReference) | { kind: "text"; text: string } | { kind: "link"; text: string } | { kind: "bold" | "italic" | "strike" | "header"; children: ChatInline[] }
 
 export function parseChatInline(text: string, depth = 0): ChatInline[] {
     if (depth > 12) return [{ kind: "text", text }]
     const tokens: ChatInline[] = []
-    const pattern = new RegExp(`${CHAT_MENTION_PATTERN}|https?:\\/\\/[^\\s<>)]+|\\*\\*|__|~~|##`, "gi")
+    const pattern = new RegExp(`${CHAT_RECORD_REFERENCE_PATTERN}|${CHAT_MENTION_PATTERN}|https?:\\/\\/[^\\s<>)]+|\\*\\*|__|~~|##`, "gi")
     let offset = 0
     let match: RegExpExecArray | null
     while ((match = pattern.exec(text))) {
         const token = match[0]
+        if (token.toLowerCase().startsWith("@[ref](record:")) {
+            const reference = chatRecordReferences(token)[0]
+            if (reference) {
+                if (match.index > offset) tokens.push({ kind: "text", text: text.slice(offset, match.index) })
+                tokens.push({ kind: "reference", type: reference.type, id: reference.id, source: token, text: reference.text })
+                offset = pattern.lastIndex
+                continue
+            }
+        }
         if (token.startsWith("@[")) {
             const mention = readChatMention(token)
             if (!mention) continue
@@ -133,7 +157,7 @@ export function chatComposerDecorations(body: string): ChatDecoration[] {
         }
         function walk(tokens: ChatInline[], offset: number) {
             for (const token of tokens) {
-                if (token.kind === "mention") { offset += token.source.length; continue }
+                if (token.kind === "mention" || token.kind === "reference") { offset += token.source.length; continue }
                 if (token.kind === "text" || token.kind === "link") { offset += token.text.length; continue }
                 const start = offset
                 decorations.push({ from: start, to: start + 2, className: "chat-syntax" })

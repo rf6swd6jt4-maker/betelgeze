@@ -1,4 +1,4 @@
-const CACHE_NAME = "betelgeze-pwa-v6";
+const CACHE_NAME = "betelgeze-pwa-v7"; // Refresh offline reference text; notification behaviour is unchanged.
 const STATIC_ASSETS = [
   "/icons/betelgeze-icon-192.png",
   "/icons/betelgeze-icon-512.png",

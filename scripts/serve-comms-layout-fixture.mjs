@@ -20,6 +20,7 @@ const sources = [
     "components/communications/composer-touch.ts",
     "components/communications/message-pane-observer.ts",
     "lib/chat-formatting.ts",
+    ...(!baseline ? ["lib/communications/references.ts", "lib/communications/reference-suggestions.ts", "components/communications/ReferenceIcon.tsx"] : []),
     "lib/chat-viewport-motion.ts",
     "lib/mobile-conversation-motion.ts",
     "lib/mobile-conversation-easing.ts",
@@ -32,6 +33,9 @@ const sources = [
 ]
 const aliases = new Map(sources.map(path => ["@/" + path.replace(/\.(tsx?|js)$/, ""), "./" + path.split("/").at(-1).replace(/\.tsx?$/, ".js")]))
 aliases.set("./ComposerMentionPicker", "./fixture-mention-picker.js")
+aliases.set("./ReferenceIcon", "./ReferenceIcon.js")
+aliases.set("../chat-formatting.ts", "./chat-formatting.js")
+aliases.set("./references.ts", "./references.js")
 aliases.set("./workspace-tabs.ts", "./workspace-tabs.js")
 aliases.set("./chat-viewport-motion.ts", "./chat-viewport-motion.js")
 aliases.set("./mobile-conversation-easing.ts", "./mobile-conversation-easing.js")

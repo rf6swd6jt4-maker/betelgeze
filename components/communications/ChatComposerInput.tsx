@@ -2,13 +2,16 @@
 
 import { useLayoutEffect, useRef, useState, type RefObject } from "react"
 import { createComposerPointerFocus, retainNativeComposerFocus } from "./composer-pointer-focus"
-import { Annotation, Compartment, EditorState, StateField, Transaction } from "@codemirror/state"
+import { Annotation, Compartment, EditorState, StateEffect, StateField, Transaction } from "@codemirror/state"
 import { Decoration, EditorView, WidgetType, drawSelection, keymap, placeholder as editorPlaceholder } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap, insertNewline } from "@codemirror/commands"
 import { chatComposerDecorations, chatComposerListMarkers, chatLineStartsWithHeader, chatListEdit } from "@/lib/chat-formatting"
 
-import { chatMentions, chatMentionSource, mentionQuery, matchingMentionPeople, type MentionPerson } from "@/lib/chat-formatting"
+import { chatMentions, chatMentionSource, mentionQuery, type MentionPerson } from "@/lib/chat-formatting"
+import { chatRecordReferences, chatRecordReferenceSource, recordReferenceKey, type RecordReference, type RecordReferenceResult } from "@/lib/communications/references"
+import { composerMentionSuggestions, referenceContextKey, type ComposerMentionSuggestion, type ReferenceContext } from "@/lib/communications/reference-suggestions"
 import { ComposerMentionPicker } from "./ComposerMentionPicker"
+import { REFERENCE_ICON_PATHS } from "./ReferenceIcon"
 
 class MentionWidget extends WidgetType {
     constructor(readonly text: string) { super() }
@@ -17,10 +20,43 @@ class MentionWidget extends WidgetType {
     ignoreEvent() { return false }
 }
 
+class ReferenceWidget extends WidgetType {
+    constructor(readonly text: string, readonly type: RecordReference["type"], readonly resolved: boolean) { super() }
+    eq(other: ReferenceWidget) { return this.text === other.text && this.type === other.type && this.resolved === other.resolved }
+    toDOM() {
+        const node = document.createElement("strong")
+        node.className = "chat-record-reference"
+        if (!this.resolved) node.style.opacity = "0.5"
+        const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+        icon.setAttribute("viewBox", "0 0 24 24")
+        icon.setAttribute("aria-hidden", "true")
+        icon.setAttribute("fill", "none")
+        icon.setAttribute("stroke", "currentColor")
+        icon.setAttribute("stroke-width", "2")
+        for (const d of REFERENCE_ICON_PATHS[this.type]) {
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
+            path.setAttribute("d", d)
+            icon.appendChild(path)
+        }
+        node.append(icon, document.createTextNode(this.text))
+        return node
+    }
+    ignoreEvent() { return false }
+}
+
 const externalChange = Annotation.define<boolean>()
+const referenceLabelsChanged = StateEffect.define<ReadonlyMap<string, RecordReferenceResult>>()
 const formatting = StateField.define({
-    create: (state) => decorate(state.doc.toString()),
-    update: (value, transaction) => transaction.docChanged ? decorate(transaction.newDoc.toString()) : value,
+    create: (state) => decorate(state.doc.toString(), new Map()),
+    update: (value, transaction) => {
+        const labels = transaction.effects.find(effect => effect.is(referenceLabelsChanged))?.value as ReadonlyMap<string, RecordReferenceResult> | undefined
+        if (transaction.docChanged) return decorate(transaction.newDoc.toString(), labels ?? value.labels)
+        if (!labels) return value
+        // Resolving references in message history must not reformat an unrelated
+        // draft. Only changed labels actually present in this editor need work.
+        return value.referenceKeys.some(key => value.labels.get(key)?.label !== labels.get(key)?.label)
+            ? decorate(transaction.newDoc.toString(), labels) : { ...value, labels }
+    },
     provide: (field) => [
         EditorView.decorations.from(field, (value) => value.decorations),
         EditorView.atomicRanges.of((view) => view.state.field(field).atomic),
@@ -45,11 +81,18 @@ class ListMarker extends WidgetType {
     }
     ignoreEvent() { return false }
 }
-function decorate(body: string) {
+function decorate(body: string, labels: ReadonlyMap<string, RecordReferenceResult>) {
     const ranges = chatComposerDecorations(body).map(({ from, to, className }) => Decoration.mark({ class: className }).range(from, to))
     const atomic = []
     for (const mention of chatMentions(body)) {
         const replacement = Decoration.replace({ widget: new MentionWidget(mention.text) }).range(mention.from, mention.to)
+        ranges.push(replacement)
+        atomic.push(replacement)
+    }
+    const references = chatRecordReferences(body)
+    for (const reference of references) {
+        const label = labels.get(recordReferenceKey(reference))?.label
+        const replacement = Decoration.replace({ widget: new ReferenceWidget(label ?? "Reference", reference.type, Boolean(label)) }).range(reference.from, reference.to)
         ranges.push(replacement)
         atomic.push(replacement)
     }
@@ -65,12 +108,15 @@ function decorate(body: string) {
         if (index > 0 && lines[index - 1].trim() && chatLineStartsWithHeader(lines[index])) ranges.push(Decoration.line({ class: "chat-heading-line" }).range(offset))
         offset += lines[index].length + 1
     }
-    return { decorations: Decoration.set(ranges, true), atomic: Decoration.set(atomic, true) }
+    return { labels, referenceKeys: references.map(recordReferenceKey), decorations: Decoration.set(ranges, true), atomic: Decoration.set(atomic, true) }
 }
 
-export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, onBlur, active = true, disabled = false, sendDisabled = false, placeholder, maxLength = 8000, portal = false, mentionPeople }: {
+export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, onBlur, active = true, disabled = false, sendDisabled = false, placeholder, maxLength = 8000, portal = false, mentionPeople, referenceContext, referenceLabels, onReferenceSelected }: {
     active?: boolean
     mentionPeople?: MentionPerson[]
+    referenceContext?: ReferenceContext
+    referenceLabels?: ReadonlyMap<string, RecordReferenceResult>
+    onReferenceSelected?: (reference: RecordReferenceResult) => void
     inputRef: RefObject<HTMLElement | null>
     value: string
     onChange: (value: string) => void
@@ -88,16 +134,25 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
     const current = useRef({ value, onChange, onSend, onFocus, onBlur, active, disabled, sendDisabled, placeholder, maxLength })
     useLayoutEffect(() => { current.current = { value, onChange, onSend, onFocus, onBlur, active, disabled, sendDisabled, placeholder, maxLength } })
     const cancelPointerFocus = useRef<(() => void) | null>(null)
-    const [mentionMenu, setMentionMenu] = useState<{ from: number; to: number; query: string; active: number; anchor: HTMLElement } | null>(null)
+    const [mentionMenu, setMentionMenu] = useState<{ from: number; to: number; query: string; active: number; anchor: HTMLElement; frozenSuggestions?: ComposerMentionSuggestion[] } | null>(null)
     const menu = useRef(mentionMenu)
     const peopleRef = useRef(mentionPeople)
-    useLayoutEffect(() => { peopleRef.current = mentionPeople })
-    function updateMenu(next: typeof mentionMenu) { menu.current = next; setMentionMenu(next) }
-    function selectMention(person: MentionPerson) {
+    const referencesEnabled = useRef(Boolean(referenceContext))
+    const suggestionsRef = useRef<{ query: string; suggestions: ComposerMentionSuggestion[] } | null>(null)
+    const contextKey = referenceContextKey(referenceContext)
+    useLayoutEffect(() => { peopleRef.current = mentionPeople; referencesEnabled.current = Boolean(referenceContext) })
+    function updateMenu(next: typeof mentionMenu) { menu.current = next; if (!next) suggestionsRef.current = null; setMentionMenu(next) }
+    function selectMention(suggestion: ComposerMentionSuggestion) {
         const view = editor.current, selection = menu.current
         if (!view || !selection || !current.current.active || current.current.disabled) return
-        const source = chatMentionSource(person) + " "
+        const source = (suggestion.type === "person" ? chatMentionSource(suggestion.person) : chatRecordReferenceSource(suggestion)) + " "
         if (view.state.doc.length - (selection.to - selection.from) + source.length > current.current.maxLength) return
+        if (suggestion.type !== "person") {
+            const labels = new Map(view.state.field(formatting).labels)
+            labels.set(recordReferenceKey(suggestion), suggestion)
+            view.dispatch({ effects: referenceLabelsChanged.of(labels) })
+            onReferenceSelected?.(suggestion)
+        }
         updateMenu(null)
         view.dispatch({ changes: { from: selection.from, to: selection.to, insert: source }, selection: { anchor: selection.from + source.length }, userEvent: "input.complete", scrollIntoView: true })
         view.contentDOM.focus({ preventScroll: true })
@@ -121,19 +176,22 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
             view.dispatch({ changes: { from, to: end, insert: edit.value.slice(from, newEnd) }, selection: { anchor: edit.start, head: edit.end }, scrollIntoView: true, userEvent: "input" })
             return true
         }
+        const visibleSuggestions = (state: NonNullable<typeof mentionMenu>) => state.frozenSuggestions
+            ?? (suggestionsRef.current?.query === state.query ? suggestionsRef.current.suggestions : composerMentionSuggestions(peopleRef.current ?? [], [], state.query))
         const chooseMention = () => {
             const state = menu.current
-            if (!state || !peopleRef.current?.length) return false
-            const person = matchingMentionPeople(peopleRef.current ?? [], state.query)[state.active]
-            if (person) mentionActions.current.selectMention(person)
+            if (!state) return false
+            const suggestion = visibleSuggestions(state)[state.active]
+            if (suggestion) mentionActions.current.selectMention(suggestion)
             else mentionActions.current.updateMenu(null)
             return true
         }
         const moveMention = (direction: number) => {
             const state = menu.current
-            if (!state || !peopleRef.current?.length) return false
-            const count = matchingMentionPeople(peopleRef.current ?? [], state.query).length
-            mentionActions.current.updateMenu({ ...state, active: count ? (state.active + direction + count) % count : 0 })
+            if (!state) return false
+            const suggestions = visibleSuggestions(state)
+            const count = suggestions.length
+            mentionActions.current.updateMenu({ ...state, active: count ? (state.active + direction + count) % count : 0, frozenSuggestions: count ? suggestions : undefined })
             return true
         }
         const enter = (view: EditorView) => {
@@ -193,7 +251,7 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
                     EditorView.updateListener.of((update) => {
                         if (update.docChanged || update.selectionSet) {
                             const selection = update.state.selection.main
-                            const query = current.current.active && peopleRef.current?.length && !current.current.disabled && !update.transactions.some((transaction) => transaction.annotation(externalChange))
+                            const query = current.current.active && (peopleRef.current?.length || referencesEnabled.current) && !current.current.disabled && !update.transactions.some((transaction) => transaction.annotation(externalChange))
                                 ? mentionQuery(update.state.doc.toString(), selection.from, selection.to) : null
                             mentionActions.current.updateMenu(query ? { ...query, active: 0, anchor: update.view.contentDOM } : null)
                         }
@@ -226,6 +284,7 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
                         ".chat-italic": { fontStyle: "italic" },
                         ".chat-strike": { textDecoration: "line-through" },
                         ".chat-header": { fontSize: "1.15em", fontWeight: "700" },
+                        ".chat-record-reference svg": { display: "inline", width: "0.9em", height: "0.9em", marginRight: "0.2em", verticalAlign: "-0.1em" },
                         "@media (min-width: 1024px)": {
                             ".cm-content": { minHeight: "36px", padding: "8px 0" },
                             ".cm-scroller": { fontSize: "14px", lineHeight: "20px", maxHeight: "156px" },
@@ -240,6 +299,15 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
         const releaseNativeFocus = retainNativeComposerFocus(view.contentDOM, nativeFocus)
         return () => { releaseNativeFocus(); cancelPointerFocus.current = null; inputRef.current = null; editor.current = null; view.destroy() }
     }, [inputRef])
+    useLayoutEffect(() => {
+        // Context changes must never reuse another account/conversation's labels
+        // or leave its asynchronous picker mounted when the draft text matches.
+        mentionActions.current.updateMenu(null)
+        suggestionsRef.current = null
+    }, [contextKey])
+    useLayoutEffect(() => {
+        editor.current?.dispatch({ effects: referenceLabelsChanged.of(referenceLabels ?? new Map()) })
+    }, [referenceLabels, contextKey])
     useLayoutEffect(() => {
         const view = editor.current
         if (!view) return
@@ -258,5 +326,5 @@ export function ChatComposerInput({ inputRef, value, onChange, onSend, onFocus, 
         }
         view.dispatch({ effects: placeholderConfig.current.reconfigure(editorPlaceholder(placeholder)) })
     }, [active, value, disabled, placeholder])
-    return <><div ref={host} className={`min-w-0 flex-1 ${portal ? "px-2.5" : ""}`} data-chat-composer-host />{active && mentionMenu && !disabled && mentionPeople ? <ComposerMentionPicker anchor={mentionMenu.anchor} people={matchingMentionPeople(mentionPeople, mentionMenu.query)} active={mentionMenu.active} onSelect={selectMention} onDismiss={() => updateMenu(null)} /> : null}</>
+    return <><div ref={host} className={`min-w-0 flex-1 ${portal ? "px-2.5" : ""}`} data-chat-composer-host />{active && mentionMenu && !disabled && (mentionPeople || referenceContext) ? <ComposerMentionPicker key={contextKey} anchor={mentionMenu.anchor} people={mentionPeople ?? []} query={mentionMenu.query} referenceContext={referenceContext} frozenSuggestions={mentionMenu.frozenSuggestions} active={mentionMenu.active} onSelect={selectMention} onSuggestions={(query, suggestions) => { suggestionsRef.current = { query, suggestions } }} onHighlight={(active, frozenSuggestions) => { const state = menu.current; if (state) updateMenu({ ...state, active, frozenSuggestions }) }} onDismiss={() => updateMenu(null)} /> : null}</>
 }

@@ -13,6 +13,8 @@ import { chatCheckboxBody } from "@/lib/chat-formatting"
 import { MessageQuoteSelection } from "@/components/communications/MessageQuoteSelection"
 import { messageQuoteFromValue, resolveMessageQuote, type MessageQuote } from "@/lib/communications/message-quotes"
 import { ChatMessageText } from "@/components/communications/ChatMessageText"
+import { MessageReferences, NativeReferenceComposer } from "@/components/communications/MessageReferences"
+import { personMentionDestinations } from "@/lib/communications/reference-suggestions"
 
 import Image from "next/image"
 import { ComposerFooter } from "@/components/communications/ComposerFooter"
@@ -23,7 +25,6 @@ import { ComposerMessagePreview } from "@/components/communications/ComposerMess
 import { copyMessageText, downloadMessageAttachment, MessageReactionActions, MessageActionPopup, PrimaryMessageActions, type MessageActionView } from "@/components/communications/MessageActionMenu"
 import { CancelIcon, CheckIcon, DeleteIcon, DoubleDeliveryCheckIcon, ReplyIcon, SingleDeliveryCheckIcon } from "@/components/communications/MessageInteractionIcons"
 import { JumpToLatestButton, messagePaneCanShowNewMessage } from "@/components/communications/JumpToLatestButton"
-import { MessageComposer } from "@/components/communications/MessageComposer"
 import { MessageMediaLightbox, type MessageMediaPreview } from "@/components/communications/MessageMediaLightbox"
 import { MessageReadAvatars } from "@/components/communications/MessageReadAvatars"
 import { PinnedMessageBar } from "@/components/communications/PinnedMessageBar"
@@ -277,6 +278,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     useEffect(() => () => { if (quoteHighlightTimer.current) clearTimeout(quoteHighlightTimer.current) }, [])
     const focusedMessageId = editingMessage?.id ?? replyingTo?.id ?? null
     const peopleById = useMemo(() => new Map([...bootstrap.people, ...bootstrap.formerPeople, { id: "be", name: "BE", avatarSrc: "/brand/betelgeze-logo.svg" }].map((person) => [person.id, person])), [bootstrap.formerPeople, bootstrap.people])
+    const personDestinations = useMemo(() => personMentionDestinations({ workspaceSlug: bootstrap.workspaceSlug, currentUserId: bootstrap.currentUser.id, canStartDirect: bootstrap.canManageTeams, people: bootstrap.people, conversations }), [bootstrap.workspaceSlug, bootstrap.currentUser.id, bootstrap.canManageTeams, bootstrap.people, conversations])
 
     useEffect(() => { selectedRef.current = selectedId; onSelectedConversationChange?.(selectedId) }, [onSelectedConversationChange, selectedId])
     useEffect(() => { conversationsRef.current = conversations }, [conversations])
@@ -803,7 +805,8 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         ? `${selectedTypingPeople.map((person) => person.name).join(", ")} are typing`
         : `${selectedTypingPeople[0]?.name ?? selected?.title ?? "Someone"} is typing`
 
-    return <section data-workspace-record-title={active ? selected?.title : undefined} aria-label="Team communications" className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-black">
+    return <MessageReferences context={{ workspaceSlug: bootstrap.workspaceSlug, workspaceId: bootstrap.workspaceId, userId: bootstrap.currentUser.id, conversationId: selectedId ?? "" }} active={interactionActive && Boolean(selected) && !selected?.system} personDestinations={personDestinations}>
+    <section data-workspace-record-title={active ? selected?.title : undefined} aria-label="Team communications" className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-black">
         {active ? <CommunicationsActivityTracker workspaceId={bootstrap.workspaceId} conversationKind="native" conversationId={selectedId} connectionState={connection.state} isReading={reading.isReading} /> : null}
         {!schemaReady ? <div className="shrink-0 border-b border-amber-900 bg-amber-950 px-4 py-2 text-center text-xs text-amber-100">Apply the Teams database migration to enable native messaging.</div> : null}
         <ResizableConversationColumns listWidth={conversationListWidth} onListWidthChange={onConversationListWidthChange}>
@@ -936,10 +939,11 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         <input ref={stickerInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadSticker(file) }} />
                         <ChatOutboxStatus entries={offline.entries} conversationId={selected.id} />
                         </>}>
-                        <MessageComposer
+                        <NativeReferenceComposer
                             active={interactionActive}
+                            referenceContext={selected.system ? undefined : { workspaceSlug: bootstrap.workspaceSlug, workspaceId: bootstrap.workspaceId, userId: bootstrap.currentUser.id, conversationId: selected.id }}
                             textareaRef={composerRef}
-                            mentionPeople={selected.kind === "team" ? bootstrap.people.filter((person) => selected.memberIds.includes(person.id)) : undefined}
+                            mentionPeople={selected.system ? undefined : bootstrap.people.filter((person) => selected.memberIds.includes(person.id))}
                             draft={draft}
                             placeholder={selected.system ? "Private updates from BE" : selected.canWrite ? `Message ${selected.title}` : "Archived conversation"}
                             disabled={!selected.canWrite}
@@ -962,5 +966,5 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
             {interactionActive ? <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} /> : null}
             </MobileConversationSurface>
         </ResizableConversationColumns>
-    </section>
+    </section></MessageReferences>
 }

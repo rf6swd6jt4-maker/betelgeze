@@ -79,6 +79,10 @@ jobs:
         env:
           BE_RECORDS_PG_EVIDENCE: ${{ runner.temp }}/records-postgres-evidence.json
         run: node scripts/validate-records-postgres-concurrency.mjs
+      - name: Rehearse concurrent Comms indexes and guarded RPC installation
+        env:
+          BE_REFERENCES_PG_EVIDENCE: ${{ runner.temp }}/references-postgres-evidence.json
+        run: node scripts/validate-communication-references-postgres.mjs
       - name: Print tested SQL runtime and source manifest
         if: always()
         env:
@@ -95,6 +99,15 @@ jobs:
             runtime: evidence.observations.find((item) => item.name === 'runtime'),
             sources: evidence.sources,
           }, null, 2));
+          NODE
+      - name: Print concurrent index rehearsal evidence
+        if: always()
+        env:
+          BE_REFERENCES_PG_EVIDENCE: ${{ runner.temp }}/references-postgres-evidence.json
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          console.log(readFileSync(process.env.BE_REFERENCES_PG_EVIDENCE, 'utf8'));
           NODE
 
   communications-sql:
@@ -133,6 +146,7 @@ jobs:
         run: |
           node scripts/validate-communication-references-sql.mjs
           node scripts/validate-communication-references-release.mjs
+          node scripts/validate-communication-references-online-release.mjs
 
   browser-regression:
     name: Browser foundations (${{ matrix.engine }})

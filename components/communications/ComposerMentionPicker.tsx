@@ -54,7 +54,10 @@ export function ComposerMentionPicker({ anchor, people, query, referenceContext,
             {suggestions.map((suggestion, index) => {
                 const detail = distinguishingDetail(suggestion)
                 return <SelectorOption key={suggestionKey(suggestion)} data-mention-index={index} aria-label={`${suggestion.type === "person" ? "Mention" : suggestion.type === "work_item" ? "Reference work item" : `Reference ${suggestion.type}`} ${suggestion.label}${detail ? `, ${detail}` : ""}`} aria-current={index === active || undefined} selected={index === active} active={index === active} showCheck={false}
-                onPointerDown={(event) => { event.preventDefault(); onHighlight(index, suggestions) }}
+                // Let WebKit produce the tap's click. Preventing pointerdown can
+                // suppress it; mousedown is the focus default we need to cancel.
+                onPointerDown={() => onHighlight(index, suggestions)}
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => onSelect(suggestion)}>
                 <span className="flex min-h-8 min-w-0 items-center gap-2">
                     {suggestion.type === "person" ? <Assignee compact name={suggestion.person.name} avatarSrc={suggestion.person.avatarSrc} /> : <ReferenceIcon type={suggestion.type} className="h-[18px] w-[18px] text-neutral-400" />}

@@ -393,7 +393,33 @@ define("people navigate directly using the current roster without discovery requ
     assert(f.requests.length === 0 && f.story.prefetches === 0, "People references introduced discovery/prefetch work")
 })
 
-if (new URLSearchParams(location.search).has("preview")) {
+if (new URLSearchParams(location.search).has("native-input")) {
+    // This branch is driven by browser input, not DOM-dispatched clicks. Keep
+    // the actual editor/source observable so focus loss cannot mask a failure.
+    const f = await fixture()
+    const kind = new URLSearchParams(location.search).get("kind")
+    f.write(kind === "record" ? "@Draft" : "@")
+    await delay(220)
+    f.requests[0].resolve(payload(kind === "record" ? [record(20, "Private project draft")] : []))
+    await frame(); await frame()
+    window.commsReferenceNativeInput = {
+        ready: true,
+        snapshot: () => ({
+            value: f.story.value,
+            focused: document.activeElement === f.story.input.current,
+            sends: f.story.sends,
+            requests: f.requests.length,
+            options: f.options().length,
+            pickerScroll: document.querySelector("[data-reference-picker]")?.scrollTop,
+            geometry: Object.fromEntries(["[data-mobile-conversation-surface]", "[data-fixture-header]", ".cm-content"].map(selector => {
+                const bounds = document.querySelector(selector).getBoundingClientRect()
+                return [selector, { top: bounds.top, bottom: bounds.bottom, left: bounds.left, right: bounds.right }]
+            })),
+            documentScroll: document.scrollingElement.scrollTop,
+            historyScroll: document.querySelector("[data-fixture-history]").scrollTop,
+        }),
+    }
+} else if (new URLSearchParams(location.search).has("preview")) {
     const f = await fixture()
     f.mutate(story => story.setMessages([`@[Alex](mention:${uuid(1)}), please review ${source(20)} before launch.`, `This earlier file is ${source(21)}.`]))
     await delay(100)

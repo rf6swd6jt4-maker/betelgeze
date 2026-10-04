@@ -4,10 +4,13 @@ import { spawn } from "node:child_process"
 import { mkdir, writeFile } from "node:fs/promises"
 import { chromium, webkit } from "playwright"
 import { assertFixtureReport } from "./report.mjs"
+import { runCommsReferenceNativeInput } from "./comms-reference-native-input.mjs"
 
 const fixtures = [
     { name: "comms-references-mobile", expected: 22, script: "scripts/serve-comms-references-fixture.mjs", global: "commsReferencesFixtureResult", viewport: { width: 390, height: 844 } },
     { name: "comms-references-desktop", expected: 22, script: "scripts/serve-comms-references-fixture.mjs", global: "commsReferencesFixtureResult", viewport: { width: 1280, height: 800 } },
+    { name: "comms-references-native-touch", expected: 3, script: "scripts/serve-comms-references-fixture.mjs", nativeInput: "touch", viewport: { width: 390, height: 844 } },
+    { name: "comms-references-native-mouse", expected: 3, script: "scripts/serve-comms-references-fixture.mjs", nativeInput: "mouse", viewport: { width: 1280, height: 800 } },
     { name: "search-desktop", expected: 25, script: "scripts/serve-workspace-search-fixture.mjs", global: "workspaceSearchFixtureResult", viewport: { width: 1280, height: 900 } },
     { name: "search-mobile", expected: 25, script: "scripts/serve-workspace-search-fixture.mjs", global: "workspaceSearchFixtureResult", viewport: { width: 390, height: 844 } },
     { name: "mobile-conversation", expected: 16, script: "scripts/serve-mobile-conversation-fixture.mjs", global: "mobileConversationFixtureResult", viewport: { width: 390, height: 844 } },
@@ -58,7 +61,7 @@ try {
         try {
             for (const fixture of activeFixtures) {
                 const url = await start(fixture)
-                const context = await browser.newContext({ viewport: fixture.viewport ?? { width: 1280, height: 900 }, ...(fixture.reducedMotion ? { reducedMotion: fixture.reducedMotion } : {}) })
+                const context = await browser.newContext({ viewport: fixture.viewport ?? { width: 1280, height: 900 }, ...(fixture.reducedMotion ? { reducedMotion: fixture.reducedMotion } : {}), ...(fixture.nativeInput === "touch" ? { isMobile: true, hasTouch: true } : {}) })
                 const unexpected = [], errors = []
                 await context.route("**/*", route => {
                     const requestUrl = new URL(route.request().url())
@@ -70,13 +73,16 @@ try {
                 page.on("pageerror", error => errors.push(error.message))
                 let report
                 try {
-                    await page.goto(url + (fixture.query ?? ""))
-                    await page.bringToFront()
-                    await page.waitForFunction(key => {
-                        const data = key ? window[key] : (() => { try { return JSON.parse(document.querySelector("#result")?.textContent ?? "") } catch { return null } })()
-                        return data && Number.isInteger(data.total) && Array.isArray(data.cases) && (!data.status || data.status === "complete")
-                    }, fixture.global, { timeout: 180_000 })
-                    report = await page.evaluate(key => key ? window[key] : JSON.parse(document.querySelector("#result").textContent), fixture.global)
+                    if (fixture.nativeInput) report = await runCommsReferenceNativeInput(page, { engine, input: fixture.nativeInput, url })
+                    else {
+                        await page.goto(url + (fixture.query ?? ""))
+                        await page.bringToFront()
+                        await page.waitForFunction(key => {
+                            const data = key ? window[key] : (() => { try { return JSON.parse(document.querySelector("#result")?.textContent ?? "") } catch { return null } })()
+                            return data && Number.isInteger(data.total) && Array.isArray(data.cases) && (!data.status || data.status === "complete")
+                        }, fixture.global, { timeout: 180_000 })
+                        report = await page.evaluate(key => key ? window[key] : JSON.parse(document.querySelector("#result").textContent), fixture.global)
+                    }
                     assertFixtureReport(report, fixture.expected)
                     if (unexpected.length || errors.length) throw Error(`Unexpected network/page errors: ${JSON.stringify({ unexpected, errors })}`)
                     reports.push({ engine, fixture: fixture.name, outcome: "passed", report })

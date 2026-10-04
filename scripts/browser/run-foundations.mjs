@@ -6,7 +6,8 @@ import { chromium, webkit } from "playwright"
 import { assertFixtureReport } from "./report.mjs"
 
 const fixtures = [
-    { name: "comms-references-mobile", expected: 19, script: "scripts/serve-comms-references-fixture.mjs", global: "commsReferencesFixtureResult", viewport: { width: 390, height: 844 } },
+    { name: "comms-references-mobile", expected: 22, script: "scripts/serve-comms-references-fixture.mjs", global: "commsReferencesFixtureResult", viewport: { width: 390, height: 844 } },
+    { name: "comms-references-desktop", expected: 22, script: "scripts/serve-comms-references-fixture.mjs", global: "commsReferencesFixtureResult", viewport: { width: 1280, height: 800 } },
     { name: "search-desktop", expected: 25, script: "scripts/serve-workspace-search-fixture.mjs", global: "workspaceSearchFixtureResult", viewport: { width: 1280, height: 900 } },
     { name: "search-mobile", expected: 25, script: "scripts/serve-workspace-search-fixture.mjs", global: "workspaceSearchFixtureResult", viewport: { width: 390, height: 844 } },
     { name: "mobile-conversation", expected: 16, script: "scripts/serve-mobile-conversation-fixture.mjs", global: "mobileConversationFixtureResult", viewport: { width: 390, height: 844 } },

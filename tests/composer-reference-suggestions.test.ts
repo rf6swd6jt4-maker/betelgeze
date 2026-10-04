@@ -10,11 +10,11 @@ const references: RecordReferenceResult[] = [
     { type: "relationship", id: "relationship-1", label: "Alex company", href: "/demo/relationships/relationship-1" },
 ]
 
-test("the picker bounds the combined list to four and mixes locally available people with records", () => {
+test("the picker keeps a short scrollable set and exposes already fetched records beyond the first four rows", () => {
     const result = composerMentionSuggestions(people, references, "Alex")
-    assert.equal(result.length, 4)
-    assert.deepEqual(result.map(item => item.type), ["person", "work_item", "person", "asset"])
-    assert.equal(composerMentionSuggestions(people, [], "").length, 4)
+    assert.equal(result.length, 8)
+    assert.deepEqual(result.map(item => item.type), ["person", "work_item", "person", "asset", "person", "relationship", "person", "person"])
+    assert.equal(composerMentionSuggestions(people, [], "").length, 8)
 })
 
 test("an exact record name precedes partial people and record matches", () => {

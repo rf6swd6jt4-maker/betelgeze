@@ -29,7 +29,7 @@ export function personMentionDestinations(input: {
     return destinations
 }
 
-/** Four choices across all types, exact labels first, preserving server relevance. */
+/** A short scrollable set of existing choices; exact labels retain precedence. */
 export function composerMentionSuggestions(people: MentionPerson[], references: RecordReferenceResult[], query: string): ComposerMentionSuggestion[] {
     const normalized = query.trim().toLocaleLowerCase()
     const words = normalized.split(/\s+/)
@@ -46,5 +46,5 @@ export function composerMentionSuggestions(people: MentionPerson[], references: 
         if (seen.has(key)) return false
         seen.add(key)
         return true
-    }).sort((left, right) => Number(right.label.toLocaleLowerCase() === normalized) - Number(left.label.toLocaleLowerCase() === normalized)).slice(0, 4)
+    }).sort((left, right) => Number(right.label.toLocaleLowerCase() === normalized) - Number(left.label.toLocaleLowerCase() === normalized)).slice(0, 8)
 }

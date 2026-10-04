@@ -30,15 +30,17 @@ function Composer({ story }) {
     const [active, setActive] = useState(true)
     const [scope, setScope] = useState(context)
     const [messages, setMessages] = useState(["Existing messages remain mounted"])
+    const [mentionPeople, setMentionPeople] = useState(people)
     const [quoteSelection, setQuoteSelection] = useState(false)
     const input = useRef(null)
     const [labels, setLabels] = useState(new Map())
-    useLayoutEffect(() => { Object.assign(story, { value, setValue, setActive, setScope, setMessages, setQuoteSelection, input }) }, [story, value])
+    useLayoutEffect(() => { Object.assign(story, { value, setValue, setActive, setScope, setMessages, setMentionPeople, setQuoteSelection, input }) }, [story, value])
     const navigation = { tabId: "synthetic", workspaceSlug: scope.workspaceSlug, url: "/synthetic/communications", active, push: href => story.navigation.push(href), prefetch: () => story.prefetches++, context() {} }
     return h(WorkspaceNavigationProvider, { value: navigation }, h(MessageReferences, { context: scope, active, personDestinations },
+        h("header", { "data-fixture-header": true, style: { flex: "none", height: 44 } }, "Synthetic conversation"),
         h("div", { style: { flex: 1, minHeight: 0, overflow: "auto" }, "data-fixture-history": true, onClickCapture: nativeCapture({ active, navigation, workspaceSlug: scope.workspaceSlug }) }, messages.map((body, index) => h("div", { key: index, style: { marginBottom: 12 } }, h(ChatMessageText, { body, quoteSelection })))),
         h("div", { style: { display: "flex", flex: "none", border: "1px solid #333", borderRadius: 12, padding: 8 }, "data-mobile-conversation-surface": true },
-            h(ChatComposerInput, { inputRef: input, value, onChange: setValue, onSend: () => story.sends++, active, placeholder: "Synthetic message", mentionPeople: people, referenceContext: scope, referenceLabels: labels, onReferenceSelected: result => setLabels(previous => new Map(previous).set(`${result.type}:${result.id}`, result)) }))))
+            h(ChatComposerInput, { inputRef: input, value, onChange: setValue, onSend: () => story.sends++, active, placeholder: "Synthetic message", mentionPeople, referenceContext: scope, referenceLabels: labels, onReferenceSelected: result => setLabels(previous => new Map(previous).set(`${result.type}:${result.id}`, result)) }))))
 }
 
 async function fixture() {
@@ -69,15 +71,107 @@ define("ordinary entry and typing add no discovery or prefetch work", async f =>
     assert(!f.options().length, "Ordinary typing opened the picker")
 })
 
-define("local suggestions appear immediately and remain capped at four", async f => {
+define("local suggestions appear immediately in a compact viewport with eight bounded choices", async f => {
     f.write("@")
     await frame()
-    assert(f.options().length === 4, `Expected four local rows, got ${f.options().length}`)
+    assert(f.options().length === 8, `Expected eight bounded local choices, got ${f.options().length}`)
     assert(f.requests.length === 0, "Local suggestions waited on server search")
     assert(document.activeElement === f.story.input.current, "Picker stole composer focus")
     for (const row of f.options()) assert(row.getBoundingClientRect().height >= 44, "Mobile row is smaller than 44px")
     const bounds = document.querySelector('[role="listbox"]').getBoundingClientRect()
     assert(bounds.left >= 7 && bounds.right <= innerWidth - 7, "Picker escaped viewport width")
+    const picker = document.querySelector("[data-reference-picker]")
+    assert(picker.clientHeight <= 192 && picker.scrollHeight > picker.clientHeight, "All choices expanded the compact four-row viewport")
+})
+
+function pickerGeometry() {
+    const rect = selector => {
+        const bounds = document.querySelector(selector).getBoundingClientRect()
+        return { top: bounds.top, bottom: bounds.bottom, left: bounds.left, right: bounds.right }
+    }
+    return { popup: rect("[data-anchored-popup]"), composer: rect("[data-mobile-conversation-surface]"), anchor: rect(".cm-content"), header: rect("[data-fixture-header]"), documentScroll: document.scrollingElement.scrollTop, historyScroll: document.querySelector("[data-fixture-history]").scrollTop }
+}
+function unchangedPickerGeometry(before, message) {
+    const after = pickerGeometry()
+    for (const name of ["popup", "composer", "anchor", "header"]) for (const edge of ["top", "bottom", "left", "right"]) {
+        assert(Math.abs(before[name][edge] - after[name][edge]) <= 1.5, `${message}: ${name}.${edge} moved from ${before[name][edge]} to ${after[name][edge]}`)
+    }
+    assert(after.documentScroll === before.documentScroll && after.historyScroll === before.historyScroll, `${message}: surrounding content scrolled`)
+}
+async function withConstrainedPicker(action) {
+    const style = document.createElement("style")
+    style.textContent = "[data-reference-picker]{max-height:104px!important}"
+    document.head.append(style)
+    try { await action() } finally { style.remove() }
+}
+function touchGesture(target, fromY, toY) {
+    const fire = (type, y) => {
+        const event = new Event(type, { bubbles: true, cancelable: true })
+        Object.defineProperty(event, "touches", { value: type === "touchend" ? [] : [{ clientX: 60, clientY: y }] })
+        target.dispatchEvent(event)
+        return event.defaultPrevented
+    }
+    fire("touchstart", fromY)
+    const prevented = fire("touchmove", toY)
+    fire("touchend", toY)
+    return prevented
+}
+
+define("pending and resolved picker scroll only its list without moving its anchor or surrounding layout", async f => {
+    await withConstrainedPicker(async () => {
+        f.write("@"); await delay(220); await frame()
+        const picker = document.querySelector("[data-reference-picker]")
+        const popup = document.querySelector("[data-anchored-popup]")
+        const before = pickerGeometry()
+        assert(picker.scrollHeight > picker.clientHeight, "Scroll test did not constrain the list")
+        assert(popup.scrollHeight <= popup.clientHeight + 1, "Hidden loading status escaped the picker into popup overflow")
+        picker.scrollTop = picker.scrollHeight
+        await frame(); await frame()
+        assert(picker.scrollTop > 0, "Pending picker could not scroll")
+        unchangedPickerGeometry(before, "Pending internal scroll")
+        f.requests[0].resolve(payload([]))
+        await frame(); await frame()
+        picker.scrollTop = 0
+        await frame(); await frame()
+        unchangedPickerGeometry(before, "Loading completion and reverse scroll")
+        picker.scrollTop = picker.scrollHeight
+        await frame(); await frame()
+        unchangedPickerGeometry(before, "Resolved internal scroll")
+        const last = f.options().at(-1).getBoundingClientRect(), bounds = picker.getBoundingClientRect()
+        assert(last.top >= bounds.top - 1 && last.bottom <= bounds.bottom + 1, "Final choice could not be fully revealed")
+        assert(document.activeElement === f.story.input.current, "Internal scrolling stole composer focus")
+        assert(f.requests.length === 1, "Internal scrolling fetched additional references")
+    })
+})
+
+define("picker touch policy allows internal travel and contains both scroll edges", async f => {
+    await withConstrainedPicker(async () => {
+        f.write("@"); await delay(220)
+        const picker = document.querySelector("[data-reference-picker]"), row = f.options()[0]
+        picker.scrollTop = 0
+        assert(!touchGesture(row, 120, 80), "Picker prevented native scrolling toward later choices")
+        assert(touchGesture(row, 80, 120), "Top-edge drag was not contained locally")
+        picker.scrollTop = picker.scrollHeight
+        await frame(); await frame()
+        assert(touchGesture(f.options().at(-1), 120, 80), "Bottom-edge drag was not contained locally")
+        assert(!touchGesture(f.options().at(-1), 80, 120), "Picker prevented native scrolling toward earlier choices")
+        assert(touchGesture(document.querySelector("[data-anchored-popup]"), 120, 80), "Popup padding drag escaped local containment")
+    })
+})
+
+define("short picker contains edge gestures and selecting the final visible row keeps focus", async f => {
+    f.mutate(story => story.setMentionPeople(people.slice(0, 4)))
+    f.write("@"); await delay(220)
+    f.requests[0].resolve(payload([])); await frame(); await frame()
+    const picker = document.querySelector("[data-reference-picker]")
+    assert(picker.scrollHeight <= picker.clientHeight + 1, "Short-list edge test unexpectedly overflowed")
+    const before = pickerGeometry(), row = f.options().at(-1)
+    assert(touchGesture(row, 120, 80) && touchGesture(row, 80, 120), "Non-overflowing picker allowed page-pan gestures")
+    unchangedPickerGeometry(before, "Short-list edge gestures")
+    row.dispatchEvent(new PointerEvent("pointerdown", { pointerType: "touch", bubbles: true, cancelable: true }))
+    row.click(); await frame()
+    assert(f.story.value.includes(`mention:${uuid(4)}`), "Final visible choice was not inserted")
+    assert(document.activeElement === f.story.input.current, "Choice insertion stole composer focus")
 })
 
 define("search debounces rapid typing and ignores a superseded response", async f => {

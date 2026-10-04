@@ -6,6 +6,7 @@ import type { MentionPerson } from "@/lib/chat-formatting"
 import { composerMentionSuggestions, suggestionKey, type ComposerMentionSuggestion, type ReferenceContext } from "@/lib/communications/reference-suggestions"
 import { ReferenceIcon } from "./ReferenceIcon"
 import { useComposerReferenceSearch } from "./useComposerReferenceSearch"
+import { containComposerTouch } from "./composer-touch"
 
 export function ComposerMentionPicker({ anchor, people, query, referenceContext, frozenSuggestions, active, onSelect, onSuggestions, onHighlight, onDismiss }: {
     anchor: HTMLElement | null
@@ -22,6 +23,12 @@ export function ComposerMentionPicker({ anchor, people, query, referenceContext,
     const options = useRef<HTMLDivElement>(null)
     const search = useComposerReferenceSearch(referenceContext, query)
     const suggestions = useMemo(() => frozenSuggestions ?? composerMentionSuggestions(people, search.results, query), [frozenSuggestions, people, search.results, query])
+    useLayoutEffect(() => {
+        // The picker is portalled outside the footer. Contain its edge gestures
+        // locally without changing the composer or the mobile viewport owner.
+        const popup = options.current?.closest<HTMLElement>("[data-anchored-popup]")
+        if (popup) return containComposerTouch(popup)
+    }, [anchor])
     useLayoutEffect(() => { onSuggestions(query, suggestions) }, [onSuggestions, query, suggestions])
     useLayoutEffect(() => {
         const button = options.current?.querySelector<HTMLButtonElement>(`[data-mention-index="${active}"]`)
@@ -39,8 +46,11 @@ export function ComposerMentionPicker({ anchor, people, query, referenceContext,
         if (!twins.length || (suggestion.detail && twins.every(item => item.type !== "person" && item.detail !== suggestion.detail))) return suggestion.detail
         return `${suggestion.detail ? `${suggestion.detail} · ` : ""}#${suggestion.id.slice(-8)}`
     }
-    return <SelectorDrawer anchor={anchor} onDismiss={onDismiss} ariaLabel="Insert a reference" autoFocusOptions={false}>
-        <div ref={options} data-composer-scroll data-reference-picker aria-busy={search.status === "loading"} className="max-h-[min(12rem,40dvh)] touch-pan-y overflow-y-auto overscroll-contain">
+    // Propagate the viewport limit to one scroll owner. Its relative positioning
+    // also contains the hidden loading status so it cannot inflate popup height.
+    return <SelectorDrawer anchor={anchor} onDismiss={onDismiss} ariaLabel="Insert a reference" autoFocusOptions={false}
+        className="flex flex-col [&>[role=listbox]]:flex [&>[role=listbox]]:min-h-0 [&>[role=listbox]]:flex-col [&>[role=listbox]]:overflow-hidden">
+        <div ref={options} data-composer-scroll data-reference-picker aria-busy={search.status === "loading"} className="relative min-h-0 max-h-[min(12rem,40dvh)] touch-pan-y overflow-y-auto overscroll-contain">
             {suggestions.map((suggestion, index) => {
                 const detail = distinguishingDetail(suggestion)
                 return <SelectorOption key={suggestionKey(suggestion)} data-mention-index={index} aria-label={`${suggestion.type === "person" ? "Mention" : suggestion.type === "work_item" ? "Reference work item" : `Reference ${suggestion.type}`} ${suggestion.label}${detail ? `, ${detail}` : ""}`} aria-current={index === active || undefined} selected={index === active} active={index === active} showCheck={false}

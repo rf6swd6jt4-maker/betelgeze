@@ -76,14 +76,15 @@ test("Staff see Library and Communications while operational roles reveal Relati
     assert.equal(canAccessWorkspaceUrl("/acme/work", "acme", "staff", baseline), true)
 })
 
-test("Client Connections activates for setup assignees while Appointment Setting services remain detectable", () => {
+test("Client Connections reuses Appointment Setting eligibility and retains explicit setup grants", () => {
     const clientConnectionsPanel = WORKSPACE_PANELS.find((panel) => panel.key === "client-connections")!
     assert.equal("requiresService" in clientConnectionsPanel && clientConnectionsPanel.requiresService, true)
     assert.match(workspaceAccess, /APPOINTMENT_SETTING_TEMPLATE_ID = "appointment-setting"/)
     assert.match(workspaceAccess, /\.neq\("state", "archived"\)/)
     assert.match(workspaceAccess, /allowedServiceIds\.some\(\(serviceId\) => appointmentSettingServices\.ids\.has\(serviceId\)\)/)
     assert.match(workspaceAccess, /\? \[APPOINTMENT_SETTING_CAPABILITY\] : \[\]/)
-    assert.match(workspaceAccess, /clientConnectionAssignments\.data\?\.length \? \[CLIENT_CONNECTIONS_CAPABILITY\]/)
+    assert.match(workspaceAccess, /clientConnectionAssignments\.data\?\.length \|\| hasAppointmentSettingEligibility \? \[CLIENT_CONNECTIONS_CAPABILITY\]/)
+    assert.doesNotMatch(workspaceAccess, /rpc\("service_assignee_can_setup_client"/)
     assert.match(workspaceAccess, /onboarding_services!inner\(workspace_service_capabilities\(capability\)\)/)
     assert.match(workspaceAccess, /grant\.capability === ONBOARDING_CAPABILITY/)
 })

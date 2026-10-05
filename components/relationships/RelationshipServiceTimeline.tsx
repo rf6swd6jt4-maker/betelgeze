@@ -1,5 +1,4 @@
 "use client"
-import { useSopWorkRefresh } from "@/components/sops/useSopWorkRefresh"
 import dynamic from "next/dynamic"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
@@ -13,15 +12,25 @@ import { ganttSyncChannelName } from "@/lib/ui/gantt-sync"
 
 const Gantt = dynamic(() => import("@/app/[workspaceSlug]/relationships/[relationshipId]/RelationshipGantt").then(m => m.RelationshipGantt), { loading: () => <DetailContentLoading label="Loading service timelines…" /> })
 type Timeline = { userId: string; relationshipId: string; services: RelationshipServiceRow[]; hasMore: boolean; plan: RelationshipGanttPlan; workTruncated: boolean }
+class RelationshipWorkReadError extends Error {
+    constructor(readonly accessLost: boolean) {
+        super(accessLost ? "Your access changed. Reload the relationship." : "Could not load relationship work. Retry when connected.")
+    }
+}
 async function get<T>(endpoint: string, userId: string, signal: AbortSignal): Promise<T> {
     const response = await fetch(endpoint,{signal:AbortSignal.any([signal,AbortSignal.timeout(30_000)]),cache:"no-store",credentials:"same-origin",redirect:"error",headers:{"x-workspace-user":userId}})
-    if (!response.ok) throw new Error([401,403,409].includes(response.status) ? "Your access changed. Reload the relationship." : "Could not load relationship work. Retry when connected.")
+    if (!response.ok) throw new RelationshipWorkReadError([401,403,404,409].includes(response.status))
     return response.json()
 }
 function Paging({ page, hasMore, change }: {page:number;hasMore:boolean;change:(n:number)=>void}) {
     return page || hasMore ? <div className="mt-2 flex items-center justify-between gap-3 text-sm"><button disabled={!page} className="min-h-11 px-2 disabled:opacity-40" onClick={() => change(page-1)}>Previous</button><span className="text-neutral-500">Page {page+1}</span><button disabled={!hasMore} className="min-h-11 px-2 disabled:opacity-40" onClick={() => change(page+1)}>Next</button></div> : null
 }
-export function RelationshipQueue({ endpoint, slug, relationshipId, userId, revision, publishedQueue, onGeneration }: {endpoint:string;slug:string;relationshipId:string;userId:string;revision:unknown;publishedQueue?:RelationshipQueuePage|null;onGeneration?:(instanceId:string)=>void}) {
+type RelationshipQueueProps = {endpoint:string;slug:string;relationshipId:string;userId:string;revision:unknown;publishedQueue?:RelationshipQueuePage|null;onGeneration?:(instanceId:string)=>void}
+export function RelationshipQueue(props: RelationshipQueueProps) {
+    // A different account or destination must never inherit the preceding queue.
+    return <RelationshipQueueContent key={`${props.userId}:${props.endpoint}`} {...props} />
+}
+function RelationshipQueueContent({ endpoint, slug, relationshipId, userId, revision, publishedQueue, onGeneration }: RelationshipQueueProps) {
     const active = useWorkspaceNavigation()?.active ?? true
     const host = useRef<HTMLDivElement>(null)
     const inFlight = useRef<AbortController | null>(null)
@@ -30,6 +39,8 @@ export function RelationshipQueue({ endpoint, slug, relationshipId, userId, revi
     const [data,setData] = useState<RelationshipQueuePage | null>(null)
     const [error,setError] = useState("")
     const [retry,setRetry] = useState(0)
+    const [settledRetry,setSettledRetry] = useState(0)
+    const refreshing = retry !== settledRetry
     const [receivedQueue, setReceivedQueue] = useState(publishedQueue)
     const presented = useRef(new Set<string>())
     useEffect(() => {
@@ -42,15 +53,20 @@ export function RelationshipQueue({ endpoint, slug, relationshipId, userId, revi
         if(!visible || !active)return
         const controller = new AbortController()
         inFlight.current = controller
-        void get<RelationshipQueuePage>(`${endpoint}?kind=queue&offset=${page*30}`,userId,controller.signal).then(value => {if(!controller.signal.aborted){setData(value);setError("")}}).catch(e => {if(!controller.signal.aborted)setError(e.message)}).finally(() => { if (inFlight.current === controller) inFlight.current = null })
+        void get<RelationshipQueuePage>(`${endpoint}?kind=queue&offset=${page*30}`,userId,controller.signal).then(value => {if(!controller.signal.aborted){setData(value);setError("")}}).catch(e => {
+            if (!controller.signal.aborted) {
+                if (e instanceof RelationshipWorkReadError && e.accessLost) setData(null)
+                setError(e.message)
+            }
+        }).finally(() => { if (inFlight.current === controller) { inFlight.current = null; setSettledRetry(retry) } })
         return () => { controller.abort(); if (inFlight.current === controller) inFlight.current = null }
     },[endpoint,userId,page,revision,visible,active,retry,publishedQueue])
     useEffect(() => {if(typeof BroadcastChannel === "undefined")return;const channel=new BroadcastChannel(ganttSyncChannelName(slug));channel.onmessage=()=>setRetry(n=>n+1);return()=>channel.close()},[slug])
-    useSopWorkRefresh(Boolean(data?.generation?.some(run => ["pending", "queued", "running"].includes(run.status))), visible, () => { if (!inFlight.current) setRetry(n => n + 1) })
-    return <div ref={host} className="flex h-full min-h-0 flex-col" aria-label="Relationship work queue"><h2 className="mb-3 shrink-0 text-base font-semibold">Queue</h2>
+    const refresh = () => { if (!inFlight.current) setRetry(n => n + 1) }
+    return <div ref={host} className="flex h-full min-h-0 flex-col" aria-label="Relationship work queue"><div className="mb-3 flex shrink-0 items-center justify-between gap-3"><h2 className="text-base font-semibold">Queue</h2><button type="button" disabled={!active || !data || refreshing} onClick={refresh} className="min-h-11 text-sm text-neutral-400 hover:text-white disabled:opacity-50"><span aria-live="polite">{refreshing ? "Refreshing…" : "Refresh queue"}</span></button></div>
 
-        {error ? <p role="alert" className="py-2 text-sm text-red-200">{error}<button className="ml-2 min-h-11 underline" onClick={()=>setRetry(n=>n+1)}>Retry</button></p> : null}
-        {!data ? <p role="status" className="py-5 text-sm text-neutral-500">Loading work queue…</p> : <div className="flex min-h-0 flex-1 flex-col"><List ariaLabel="Relationship work queue" className="!mt-0 min-h-0 flex-1 !overflow-y-auto">{data.items.length ? data.items.map(item => {
+        {error ? <p role="alert" className="py-2 text-sm text-red-200">{error}<button type="button" disabled={!active || refreshing} className="ml-2 min-h-11 underline disabled:opacity-50" onClick={refresh}>Retry</button></p> : null}
+        {!data ? !error ? <p role="status" className="py-5 text-sm text-neutral-500">Loading work queue…</p> : null : <div className="flex min-h-0 flex-1 flex-col"><List ariaLabel="Relationship work queue" className="!mt-0 min-h-0 flex-1 !overflow-y-auto">{data.items.length ? data.items.map(item => {
             const href = item.workflow_action === "sell_client" ? `/${slug}/relationships/${relationshipId}/pos` : `/${slug}/work-items/${item.id}`
             const creatorName = item.automated ? "BE automation" : item.creator?.username
             return <ListItem key={item.id}><ListPrimaryRow><ListTitle href={href}>{item.title}</ListTitle><ListTrailing><Status label={item.queue_state} tone={item.queue_state === "Blocked" ? "red" : ["Waiting","Scheduled"].includes(item.queue_state) ? "yellow" : "green"} /></ListTrailing></ListPrimaryRow><ListSecondaryRow><span className="flex min-w-0 items-center gap-2 overflow-hidden">{item.services[0] ? <RoundPill tone="emerald" className="min-w-0 shrink">{item.services[0]}</RoundPill> : null}{item.services.length > 1 ? <span className="shrink-0 text-xs text-neutral-500">+{item.services.length - 1}</span> : null}{item.assignees[0] ? <Assignee name={item.assignees[0].username} userId={item.assignees[0].userId} className="min-w-0" /> : <span className="text-neutral-500">Unassigned</span>}{item.assignees.length > 1 ? <span className="shrink-0 text-xs text-neutral-500">+{item.assignees.length - 1}</span> : null}</span><ListTrailing>{item.due_date ? <span className="text-neutral-500">Due {new Date(`${item.due_date}T12:00:00`).toLocaleDateString("en-IE",{day:"numeric",month:"short"})}</span> : null}{creatorName ? <span className="hidden sm:inline-flex" title={`${item.automated ? "Generated by" : "Created by"} ${creatorName} · ${new Date(item.created_at).toLocaleString("en-IE")}`}><Assignee name={creatorName} userId={item.automated ? null : item.creator?.userId} avatarSrc={item.automated ? "/brand/betelgeze-logo.svg" : item.creator?.avatarUrl} compact compactSize="md" /></span> : null}</ListTrailing></ListSecondaryRow></ListItem>

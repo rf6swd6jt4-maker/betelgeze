@@ -147,6 +147,12 @@ jobs:
           node scripts/validate-communication-references-sql.mjs
           node scripts/validate-communication-references-release.mjs
           node scripts/validate-communication-references-online-release.mjs
+      - name: Validate service transfer ownership, recovery and immutable history
+        run: node scripts/validate-service-assignee-transfer.mjs
+      - name: Validate service-scoped appointment booking commands
+        run: node scripts/validate-appointment-service-booking-commands.mjs
+      - name: Validate guarded service-transfer installation and rollback
+        run: node scripts/validate-service-transfer-release.mjs
 
   browser-regression:
     name: Browser foundations (${{ matrix.engine }})
@@ -187,6 +193,10 @@ jobs:
         run: node scripts/browser/run-panel-loading.mjs "${{ matrix.engine }}"
       - name: Exercise native loading, refresh, retry and access loss
         run: node scripts/browser/run-native-loading.mjs "${{ matrix.engine }}"
+      - name: Exercise service transfer preview, acknowledgement and recovery
+        run: node scripts/browser/run-service-transfer.mjs "${{ matrix.engine }}"
+      - name: Exercise on-demand relationship queue refresh and access loss
+        run: node scripts/browser/run-relationship-queue-refresh.mjs "${{ matrix.engine }}"
       - name: Exercise relationship drawers and native/iframe modal cleanup
         run: node scripts/browser/run-context-overlays.mjs "${{ matrix.engine }}"
       - name: Exercise popup lifetime across frame removal and navigation
@@ -204,7 +214,7 @@ jobs:
       - name: Print detailed browser evidence
         if: always()
         run: |
-          for report in foundations fullscreen-comms-actions comms-reads comms-pane-lifecycle ui-reconciliation panel-loading native-loading context-overlays modal-owner-lifecycle settings-popup-ownership settings-popup-ownership-strict anchored-popup-lifetime okr-popup-lifetime comms-roster-cleanup workspace-linked-detail; do
+          for report in foundations fullscreen-comms-actions comms-reads comms-pane-lifecycle ui-reconciliation panel-loading native-loading relationship-queue-refresh context-overlays modal-owner-lifecycle settings-popup-ownership settings-popup-ownership-strict anchored-popup-lifetime okr-popup-lifetime comms-roster-cleanup workspace-linked-detail; do
             if test -f "browser-results/$report.json"; then
               cat "browser-results/$report.json"
             else

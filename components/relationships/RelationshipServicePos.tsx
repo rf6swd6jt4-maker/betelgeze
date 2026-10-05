@@ -67,12 +67,14 @@ type Props = {
 }
 function AssigneeField({
     endpoint,
+    userId,
     row,
     value,
     onChange,
     disabled,
 }: {
     endpoint: string
+    userId: string
     row: ServicePosRow
     value: string
     onChange: (id: string) => void
@@ -83,18 +85,18 @@ function AssigneeField({
     const [attempt, setAttempt] = useState(0)
     useEffect(() => {
         const controller = new AbortController()
-        fetch(`${endpoint}?kind=assignees&service=${row.service_id}`, { signal: controller.signal, cache: "no-store" })
+        fetch(`${endpoint}?kind=assignees&service=${row.service_id}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]), cache: "no-store", headers: { "x-workspace-user": userId } })
             .then(async (r) => {
                 const data = await r.json()
                 if (!r.ok) throw new Error(data.error ?? "Could not load people.")
                 return data
             })
-            .then(setPeople)
+            .then(value => { if (!controller.signal.aborted) setPeople(value) })
             .catch((e) => {
                 if (!controller.signal.aborted) setError(e.message)
             })
         return () => controller.abort()
-    }, [endpoint, row.service_id, attempt])
+    }, [endpoint, userId, row.service_id, attempt])
     return (
         <div>
             <AssignmentSelector
@@ -377,7 +379,7 @@ export function RelationshipServicePos(props: Props) {
                 <AttachmentCards label="Services to sell" selection>{page.items.map(row => {
                     const line = input.lines.find(line => line.id === row.id)
                     return <AttachmentCard key={row.id} title={row.name} thumbnail={<ServiceThumbnail service={row} />} selected={Boolean(line)} inactive={!line} onClick={() => toggle(row)} disabled={locked || !ready} subtitle={line ? "Selected" : row.stage === "declined" ? "Declined · available to sell" : "Select service"}>
-                        {line ? <div className="grid min-w-0 grid-cols-2 gap-3"><MoneyField label={`Upfront for ${row.name}`} value={line.upfrontCents} onChange={upfrontCents => patchLine(row.id, { upfrontCents })} disabled={locked} />{row.service_type === "retainer" ? <MoneyField label={`Monthly for ${row.name}`} value={line.recurringCents} onChange={recurringCents => patchLine(row.id, { recurringCents })} disabled={locked} /> : null}<div className="col-span-2 min-w-0"><AssigneeField endpoint={servicesEndpoint} row={row} value={line.assigneeId} onChange={assigneeId => patchLine(row.id, { assigneeId })} disabled={locked} /></div></div> : <p className="text-xs text-neutral-500">{money(row.upfront_cents, row.currency)} upfront{row.recurring_cents ? ` + ${money(monthlyServicePrice(row), row.currency)} / month` : ""}</p>}
+                        {line ? <div className="grid min-w-0 grid-cols-2 gap-3"><MoneyField label={`Upfront for ${row.name}`} value={line.upfrontCents} onChange={upfrontCents => patchLine(row.id, { upfrontCents })} disabled={locked} />{row.service_type === "retainer" ? <MoneyField label={`Monthly for ${row.name}`} value={line.recurringCents} onChange={recurringCents => patchLine(row.id, { recurringCents })} disabled={locked} /> : null}<div className="col-span-2 min-w-0"><AssigneeField key={`${userId}:${servicesEndpoint}:${row.service_id}`} endpoint={servicesEndpoint} userId={userId} row={row} value={line.assigneeId} onChange={assigneeId => patchLine(row.id, { assigneeId })} disabled={locked} /></div></div> : <p className="text-xs text-neutral-500">{money(row.upfront_cents, row.currency)} upfront{row.recurring_cents ? ` + ${money(monthlyServicePrice(row), row.currency)} / month` : ""}</p>}
                     </AttachmentCard>
                 })}</AttachmentCards>
                 {!page.items.length ? <p className="py-4 text-sm text-neutral-400">Add a service from the relationship’s catalogue before selling.</p> : null}

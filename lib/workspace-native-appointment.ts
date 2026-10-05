@@ -14,7 +14,7 @@ export async function loadNativeAppointment(workspaceSlug: string, relationshipI
     if (relationshipId) {
         await requireRelationshipAccess(access, relationshipId)
         const [relationship, serviceId] = await Promise.all([getRelationship(workspace.id, relationshipId), loadAppointmentSettingRelationshipService(access, relationshipId)])
-        if (!relationship || !serviceId || relationship.status === "archived" || relationship.lifecycle_phase !== "retention") notFound()
+        if (!relationship || !serviceId || relationship.status === "archived") notFound()
         const [appointments, configuration, context] = await Promise.all([
             listAppointmentSettingAppointments({ workspaceId: workspace.id, relationshipId, serviceId }),
             loadAppointmentSettingConfiguration({ workspaceId: workspace.id, relationshipId, serviceId }),

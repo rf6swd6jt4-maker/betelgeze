@@ -258,8 +258,7 @@ export function filterAppointmentSettingRelationships(
     appointmentSettingRelationshipIds: ReadonlySet<string>,
 ) {
     return relationships.filter((relationship) => (
-        relationship.lifecycle_phase === "retention"
-        && relationship.status !== "archived"
+        relationship.status !== "archived"
         && appointmentSettingRelationshipIds.has(relationship.id)
         && (!accessibleIds || accessibleIds.has(relationship.id))
     ))

@@ -92,7 +92,7 @@ async function requireAppointmentSettingContext(workspaceSlug: string, relations
         getRelationship(context.workspace.id, relationshipId),
         loadAppointmentSettingRelationshipService(context.access, relationshipId),
     ])
-    if (!relationship || relationship.status === "archived" || relationship.lifecycle_phase !== "retention") {
+    if (!relationship || relationship.status === "archived") {
         throw new Error("This relationship is not available for Appointment Setting.")
     }
     if (!serviceId) throw new Error("This relationship does not have an accessible Appointment Setting service.")

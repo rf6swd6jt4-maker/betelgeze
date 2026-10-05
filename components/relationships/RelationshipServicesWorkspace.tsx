@@ -21,6 +21,8 @@ import { addRelationshipService, changeRelationshipService, cancelRelationshipSe
 import { SERVICE_STAGES, type RelationshipServicePage, type RelationshipServiceRow, type ServiceCatalogueChoice } from "@/lib/service-stages"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 
+const ServiceTransferDialog = dynamic(() => import("./ServiceTransferDialog").then(module => module.ServiceTransferDialog), { ssr: false })
+
 type Props = { workspaceSlug: string; relationshipId: string; userId: string; initial: RelationshipServicePage; canAdd: boolean; canImport: boolean; canSeeHistory: boolean; legacy: boolean }
 const buttonClass = "inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
 const inputClass = "min-h-11 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-base text-white sm:text-sm"
@@ -74,9 +76,9 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
     useEffect(() => {
         if (!serviceId) return
         const controller = new AbortController()
-        void read<Array<{id: string; name: string}>>(`${endpoint}?kind=assignees&service=${encodeURIComponent(serviceId)}`, controller.signal).then(setPeople).catch(error => { if (!controller.signal.aborted) setPeopleError(error.message) })
+        void read<Array<{id: string; name: string}>>(`${endpoint}?kind=assignees&service=${encodeURIComponent(serviceId)}`, controller.signal, props.userId).then(setPeople).catch(error => { if (!controller.signal.aborted) setPeopleError(error.message) })
         return () => controller.abort()
-    }, [endpoint, serviceId, retry])
+    }, [endpoint, serviceId, retry, props.userId])
     const completedImport = !row && origin === "already_onboarded" && stage === "completed"
     useEffect(() => {
         if (!completedImport) return
@@ -122,7 +124,7 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
             {row || service ? <DetailFields columns={1}>
                 {!row ? <DetailField label="Start from" icon="status"><Selector ariaLabel="Service entry" disabled={pending || uncertain} value={origin} onChange={value => { setOrigin(value); setStage(value === "negotiation" ? "negotiating" : "setup") }} options={[{value:"negotiation",label:"Negotiating",description:"Discuss this service before selling it"}, ...(props.canImport ? [{value:"already_onboarded",label:"Already onboarded",description:"Record existing delivery without checkout"}] : [])]} /></DetailField> : null}
                 {row || origin === "already_onboarded" ? <DetailField label="Stage" icon="status"><Selector ariaLabel="Service stage" disabled={pending || uncertain} value={stage} onChange={setStage} options={stages.map(s => ({ value: s.key, label: s.label }))} /></DetailField> : null}
-                <DetailField label="Assignee" icon="user"><AssignmentSelector ariaLabel="Service assignee" disabled={!people || pending || uncertain} value={assignee} onChange={setAssignee} clearLabel="Unassigned" people={people ?? []} />{serviceId && !people && !peopleError ? <p className="text-xs text-neutral-500">Loading eligible people…</p> : null}</DetailField>
+                <DetailField label="Assignee" icon="user"><AssignmentSelector ariaLabel="Service assignee" disabled={!people || pending || uncertain || Boolean(row && ["onboarding", "setup", "maintenance"].includes(row.stage ?? ""))} value={assignee} onChange={setAssignee} clearLabel="Unassigned" people={people ?? []} />{serviceId && !people && !peopleError ? <p className="text-xs text-neutral-500">Loading eligible people…</p> : null}</DetailField>
                 {cashEdit ? <DetailField label="Cash collected" icon="status"><div><input aria-label="Cash collected" type="number" min="0" max="10000000000" step="0.01" value={cashCollected} disabled={!cashRecord || Boolean(cashError)} onChange={event => { setCashCollected(event.target.value); requestId.current = null }} className={inputClass} placeholder={cashRecord ? "Not recorded" : "Loading…"} /><p className="mt-1 text-xs text-neutral-500">{row?.currency} received for this completed service. No charge is created.</p></div></DetailField> : null}
                 {completedImport ? <>
                     <DetailField label="Seller" icon="user"><AssignmentSelector required ariaLabel="Relationship seller" disabled={!responsibility || pending || uncertain} value={seller} onChange={setSeller} clearLabel="Choose seller" placeholder="Choose seller" people={responsibility?.sellers ?? []} /></DetailField>
@@ -188,6 +190,7 @@ export function RelationshipServicesWorkspace(props: Props) {
     const [serviceBusy, setServiceBusy] = useState(false)
     const [editing, setEditing] = useState<RelationshipServiceRow | null>(null)
     const [opened, setOpened] = useState<ServiceCardDetail | null>(null)
+    const [transferring, setTransferring] = useState<RelationshipServiceRow | null>(null)
     const [canceling, setCanceling] = useState<ServiceCardDetail | null>(null)
     const [pos, setPos] = useState<string | null>(null)
     const [page, setPage] = useState(0)
@@ -206,7 +209,7 @@ export function RelationshipServicesWorkspace(props: Props) {
         return () => controller.abort()
     }, [endpoint, page, props.initial, props.userId, active, visible, retry])
     function resumeGeneration(instanceId: string) { if (!adding && !editing && !resumedGeneration) { setServiceBusy(true); setResumedGeneration(instanceId) } }
-    function saved(queue?: RelationshipQueuePage) { if (queue) setPublishedQueue(queue); setGenerating(false); setResumedGeneration(null); setAdding(false); setEditing(null); setOpened(null); setCanceling(null); setRetry(value => value + 1); router.refresh() }
+    function saved(queue?: RelationshipQueuePage) { if (queue) setPublishedQueue(queue); setGenerating(false); setResumedGeneration(null); setAdding(false); setEditing(null); setOpened(null); setCanceling(null); setTransferring(null); setRetry(value => value + 1); router.refresh() }
     function closePos() { setPos(null); if (search.has("sell")) { const next = new URLSearchParams(search.toString()); next.delete("sell"); router.replace(`/${props.workspaceSlug}/relationships/${props.relationshipId}${next.size ? `?${next}` : ""}`) } }
     const requestedPos = pos ?? search.get("sell")
     return <section className="mt-5" aria-label="Relationship services and work">
@@ -223,12 +226,13 @@ export function RelationshipServicesWorkspace(props: Props) {
         {adding ? <CenteredDialog title={generating ? "Generating work…" : "Add service"} busy={serviceBusy} onClose={() => setAdding(false)}><ServiceForm onGenerating={setGenerating} onBusyChange={setServiceBusy} endpoint={endpoint} props={props} onDone={saved} onClose={() => setAdding(false)} /></CenteredDialog> : null}
         {editing ? <CenteredDialog title={generating ? "Generating work…" : "Edit service"} busy={serviceBusy} onClose={() => setEditing(null)}><ServiceForm onGenerating={setGenerating} onBusyChange={setServiceBusy} key={editing.id} row={editing} endpoint={endpoint} props={props} onDone={saved} onClose={() => setEditing(null)} /></CenteredDialog> : null}
         {resumedGeneration ? <CenteredDialog title="Generating work…" busy={serviceBusy} onClose={() => setResumedGeneration(null)}><SopWorkProgress onBusyChange={setServiceBusy} endpoint={endpoint} instanceId={resumedGeneration} userId={props.userId} onComplete={saved} onClose={() => setResumedGeneration(null)} /></CenteredDialog> : null}
-        {opened ? <ServiceDetailDialog row={opened} endpoint={endpoint} userId={props.userId} onClose={() => setOpened(null)} onEdit={opened.disposition !== "cancelled" && editable(opened) ? () => { setEditing(opened); setOpened(null) } : undefined} onSell={opened.disposition !== "cancelled" && canSell(opened) ? () => { setPos(opened.id); setOpened(null) } : undefined} onCancel={opened.disposition !== "cancelled" && !opened.legacy && props.canAdd && (props.canImport || opened.origin === "negotiation") ? () => { setCanceling(opened); setOpened(null) } : undefined} /> : null}
+        {opened ? <ServiceDetailDialog row={opened} endpoint={endpoint} userId={props.userId} onClose={() => setOpened(null)} onTransfer={props.canImport && !opened.legacy ? row => { setTransferring(row); setOpened(null) } : undefined} onEdit={opened.disposition !== "cancelled" && editable(opened) ? () => { setEditing(opened); setOpened(null) } : undefined} onSell={opened.disposition !== "cancelled" && canSell(opened) ? () => { setPos(opened.id); setOpened(null) } : undefined} onCancel={opened.disposition !== "cancelled" && !opened.legacy && props.canAdd && (props.canImport || opened.origin === "negotiation") ? () => { setCanceling(opened); setOpened(null) } : undefined} /> : null}
+        {transferring ? <ServiceTransferDialog key={`${props.userId}:${transferring.id}`} row={transferring} endpoint={endpoint} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} recoveryOnly={transferring.disposition !== "active" || !["onboarding", "setup", "maintenance"].includes(transferring.stage ?? "")} onClose={() => setTransferring(null)} onDone={() => saved()} /> : null}
         {canceling ? <CancelServiceDialog row={canceling} props={props} onDone={saved} onClose={() => setCanceling(null)} /> : null}
         {requestedPos ? <PosDialog workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} selectedId={requestedPos === "1" ? undefined : requestedPos} onClose={closePos} /> : null}
     </section>
 }
-function ServiceDetailDialog({ row, endpoint, userId, onClose, onEdit, onSell, onCancel }: { row: ServiceCardDetail; endpoint: string; userId: string; onClose: () => void; onEdit?: () => void; onSell?: () => void; onCancel?: () => void }) {
+function ServiceDetailDialog({ row, endpoint, userId, onClose, onEdit, onSell, onCancel, onTransfer }: { row: ServiceCardDetail; endpoint: string; userId: string; onClose: () => void; onEdit?: () => void; onSell?: () => void; onCancel?: () => void; onTransfer?: (row: ServiceCardDetail) => void }) {
     const [data, setData] = useState(row)
     const [error, setError] = useState("")
     useEffect(() => {
@@ -238,7 +242,7 @@ function ServiceDetailDialog({ row, endpoint, userId, onClose, onEdit, onSell, o
     }, [endpoint, row, userId])
     const showCataloguePrices = !(data.origin === "already_onboarded" && data.stage === "completed")
     const money = (cents: number) => new Intl.NumberFormat("en", { style: "currency", currency: data.sold_currency ?? data.currency }).format(cents / 100)
-    return <CenteredDialog title={row.name} onClose={onClose} footer={onSell || onEdit || onCancel ? <div className="flex flex-wrap justify-end gap-3">{onCancel ? <button className="min-h-11 px-3 text-sm text-red-300" onClick={onCancel}>Cancel service</button> : null}{onEdit ? <button className="min-h-11 px-3 text-sm text-neutral-300" onClick={onEdit}>Edit service</button> : null}{onSell ? <button className={buttonClass} onClick={onSell}>Sell service</button> : null}</div> : undefined}>
+    return <CenteredDialog title={row.name} onClose={onClose} footer={onSell || onEdit || onCancel || onTransfer ? <div className="flex flex-wrap justify-end gap-3">{onCancel ? <button className="min-h-11 px-3 text-sm text-red-300" onClick={onCancel}>Cancel service</button> : null}{onTransfer ? <button className="min-h-11 px-3 text-sm text-neutral-300" onClick={() => onTransfer(data)}>{data.disposition === "active" && ["onboarding", "setup", "maintenance"].includes(data.stage ?? "") ? "Transfer assignee" : "Review saved transfers"}</button> : null}{onEdit ? <button className="min-h-11 px-3 text-sm text-neutral-300" onClick={onEdit}>Edit service</button> : null}{onSell ? <button className={buttonClass} onClick={onSell}>Sell service</button> : null}</div> : undefined}>
         {data.disposition === "cancelled" ? <Status label="Cancelled" tone="red" /> : <ServiceStage stage={data.stage} />}
         {data.description ? <p className="mt-3 text-sm leading-6 text-neutral-400">{data.description}</p> : null}
         <DetailFields columns={1}>{showCataloguePrices ? <><DetailField label="Upfront" icon="status">{money(data.sold_upfront_cents ?? data.upfront_cents)}</DetailField><DetailField label="Recurring" icon="status">{money(data.sold_recurring_cents ?? data.recurring_cents)} / {data.billing_interval_count ?? 1} {data.billing_interval ?? "month"}</DetailField></> : null}<DetailField label="Assigned to" icon="person">{data.assignee_name}</DetailField>{data.manager ? <DetailField label="Manager" icon="person">{data.manager}</DetailField> : null}{data.seller ? <DetailField label="Seller" icon="person">{data.seller}</DetailField> : null}<DetailField label="Notes" icon="description">{data.notes || "No notes"}</DetailField></DetailFields>

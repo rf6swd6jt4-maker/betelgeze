@@ -37,6 +37,9 @@ export async function changeRelationshipService(slug: string, relationshipId: st
         || (input.cashVersion !== undefined && (!Number.isSafeInteger(input.cashVersion) || input.cashVersion < 0))) return { ok: false, error: "Check the service change and cash collected." }
     const instance = await supabaseAdmin.from("relationship_service_instances").select("relationship_id,service_id,origin,stage,assignee_user_id").eq("workspace_id", workspace.id).eq("id", input.instanceId).single()
     if (instance.error || instance.data.relationship_id !== relationshipId) return { ok: false, error: "Service not found." }
+    if (["onboarding", "setup", "maintenance"].includes(instance.data.stage) && (instance.data.assignee_user_id ?? "") !== input.assigneeId) {
+        return { ok: false, error: "Use Transfer assignee to review open work and access before changing responsibility." }
+    }
     const completedCashEdit = instance.data.origin === "already_onboarded" && instance.data.stage === "completed" && input.stage === "completed" && input.cashVersion !== undefined
     const serviceChanged = instance.data.stage !== input.stage || (instance.data.assignee_user_id ?? "") !== input.assigneeId
     if ((serviceChanged || !completedCashEdit) && !input.reason.trim()) return { ok: false, error: "Give a reason for the service change." }
@@ -73,4 +76,26 @@ export async function cancelRelationshipService(slug: string, relationshipId: st
     revalidatePath(`/${slug}/relationships/${relationshipId}`)
     revalidatePath(`/${slug}/work-items`)
     return { ok: true }
+}
+
+export async function transferRelationshipService(slug: string, relationshipId: string, input: {
+    expectedUserId: string; requestId: string; instanceId: string; recipientId: string;
+    fingerprint: string; workIds: string[]; reason: string;
+}) {
+    const { workspace, user, access } = await requireWorkspacePanel(slug, "relationships")
+    await requireRelationshipAccess(access, relationshipId)
+    if (user.id !== input.expectedUserId || !["owner", "admin"].includes(access.role)
+        || !uuid.test(input.requestId) || !uuid.test(input.instanceId) || !uuid.test(input.recipientId)
+        || !/^[a-f0-9]{32}$/.test(input.fingerprint) || !Array.isArray(input.workIds) || input.workIds.length > 200
+        || input.workIds.some(id => !uuid.test(id)) || typeof input.reason !== "string" || !input.reason.trim() || input.reason.length > 1000) {
+        return { ok: false, uncertain: false, error: "Review the recipient, work selection and reason." }
+    }
+    const { data, error } = await supabaseAdmin.rpc("transfer_service_assignee", {
+        p_workspace: workspace.id, p_relationship: relationshipId, p_instance: input.instanceId,
+        p_actor: user.id, p_request: input.requestId,
+        p_input: { recipientId: input.recipientId, fingerprint: input.fingerprint, workIds: input.workIds, reason: input.reason.trim() },
+    })
+    if (error) return { ok: false, uncertain: error.code === "BT001" || !/^[0-9A-Z]{5}$/.test(error.code ?? ""), error: ["P0001", "BT001"].includes(error.code) ? error.message : "The transfer could not be confirmed. Retry the same transfer." }
+    // The receipt proves commit independently of the following UI refresh.
+    return { ok: true, receipt: data }
 }

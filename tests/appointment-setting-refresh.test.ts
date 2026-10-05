@@ -53,7 +53,7 @@ test("failed or redirected refreshes reject without supplying a replacement snap
     await assert.rejects(fetchAppointmentSettingSnapshot("acme", "r"), /Could not refresh/)
 })
 
-test("appointment refresh route retains workspace, relationship, service and lifecycle authorization", () => {
+test("appointment refresh route retains workspace, relationship and current service authorization", () => {
     const route = readFileSync("app/api/workspaces/[workspaceSlug]/appointment-setting/[relationshipId]/route.ts", "utf8")
     const table = readFileSync("components/appointment-setting/AppointmentTable.tsx", "utf8")
     const server = readFileSync("lib/appointment-setting-server.ts", "utf8")
@@ -61,11 +61,12 @@ test("appointment refresh route retains workspace, relationship, service and lif
     assert.match(route, /requireRelationshipAccess\(access, relationshipId\)/)
     assert.match(route, /loadAppointmentSettingRelationshipService\(access, relationshipId\)/)
     assert.match(route, /relationship\.status === "archived"/)
-    assert.match(route, /relationship\.lifecycle_phase !== "retention"/)
+    assert.doesNotMatch(route, /relationship\.lifecycle_phase !== "retention"/)
     assert.match(route, /listAppointmentSettingAppointments\(\{ workspaceId: workspace.id, relationshipId, serviceId \}\)/)
     assert.match(route, /private, no-store/)
     assert.doesNotMatch(route, /loadAppointmentSettingConfiguration/)
-    assert.match(server, /if \(relationshipId\) query = query.eq\("relationship_id", relationshipId\)/)
+    assert.match(server, /rpc\("read_assigned_appointment_services"/)
+    assert.match(server, /p_relationship: relationshipId \?\? null/)
     assert.doesNotMatch(table, /readAppointmentSettingState|router\.refresh\(/)
     assert.match(table, /fetchAppointmentSettingSnapshot\(workspaceSlug, relationshipId, controller.signal\)/)
 })

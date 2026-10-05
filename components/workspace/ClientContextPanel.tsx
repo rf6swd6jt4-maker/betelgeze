@@ -1,6 +1,7 @@
 import { Suspense } from "react"
+import { supabaseAdmin } from "@/lib/supabase/admin"
 import type { RelationshipRecord } from "@/lib/relationships"
-import { loadAppointmentSettingServiceIds, requireRelationshipAccess, type WorkspaceAccess } from "@/lib/workspace-access"
+import { requireRelationshipAccess, type WorkspaceAccess } from "@/lib/workspace-access"
 import { loadWorkspaceMemberProfiles } from "@/lib/teams/server"
 import { readRelationshipServices } from "@/lib/relationship-services-server"
 import { relationshipContextShortcuts } from "@/lib/relationship-context"
@@ -28,10 +29,10 @@ export async function loadRelationshipContext({ relationship, access, metrics = 
         allowedDestinations: relationshipContextShortcuts(access.capabilities, false),
     }
     try {
-        const [serviceResult, people, appointmentServices] = await Promise.all([
+        const [serviceResult, people, setupAccess] = await Promise.all([
             readRelationshipServices(access.workspaceId, relationship.id, access.userId),
             loadWorkspaceMemberProfiles(access.workspaceId),
-            loadAppointmentSettingServiceIds(access.workspaceId),
+            supabaseAdmin.rpc("service_assignee_can_setup_client", { p_workspace: access.workspaceId, p_user: access.userId, p_relationship: relationship.id }),
         ])
         const services = serviceResult.items
         context.servicesHasMore = serviceResult.hasMore
@@ -45,10 +46,8 @@ export async function loadRelationshipContext({ relationship, access, metrics = 
             name: service.name, stage: service.stage,
             assignee: person(service.assignee_user_id),
         }))
-        const appointmentSettingAvailable = relationship.lifecycle_phase === "retention" && relationship.status !== "archived"
-            && services.some((service) => appointmentServices.ids.has(service.service_id)
-                && (access.role !== "staff" || access.allowedServiceIds.includes(service.service_id)))
-        context.allowedDestinations = relationshipContextShortcuts(access.capabilities, appointmentSettingAvailable)
+        if (setupAccess.error) throw new Error("Could not verify client setup access")
+        context.allowedDestinations = relationshipContextShortcuts(access.capabilities, relationship.status !== "archived" && setupAccess.data === true)
     } catch {
         context.teamUnavailable = true
     }

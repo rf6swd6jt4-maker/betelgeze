@@ -43,8 +43,8 @@ test("Appointment Setting owners receive Client Connections while active onboard
     assert.match(migration, /appointment_setting_setup_assignees/)
     assert.match(migration, /Existing session snapshots are never rewritten/)
     assert.doesNotMatch(migration, /update public\.relationship_onboarding_session_blocks/)
-    assert.match(access, /appointment_setting_setup_assignees/)
-    assert.match(access, /clientConnectionAssignments\.data\?\.length \? \[CLIENT_CONNECTIONS_CAPABILITY\]/)
+    assert.match(access, /from\("appointment_setting_setup_assignees"\)[^\n]*\.limit\(1\)/)
+    assert.match(access, /clientConnectionAssignments\.data\?\.length \|\| hasAppointmentSettingEligibility \? \[CLIENT_CONNECTIONS_CAPABILITY\]/)
 })
 
 test("future Appointment Setting onboarding uses one CRM setup block", () => {

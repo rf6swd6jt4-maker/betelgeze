@@ -13,7 +13,7 @@ export async function GET(_request: Request, context: { params: Promise<{ worksp
         getRelationship(workspace.id, relationshipId),
         loadAppointmentSettingRelationshipService(access, relationshipId),
     ])
-    if (!relationship || !serviceId || relationship.status === "archived" || relationship.lifecycle_phase !== "retention") notFound()
+    if (!relationship || !serviceId || relationship.status === "archived") notFound()
     try {
         const appointments = await listAppointmentSettingAppointments({ workspaceId: workspace.id, relationshipId, serviceId })
         const delivery = await loadAppointmentSettingDeliveryState({ workspaceId: workspace.id, relationshipId, appointments })

@@ -36,7 +36,13 @@ function validBootstrap(value: unknown, expectedSlug: string, userId: string) {
     if (!raw) return null
     const role = normalizeWorkspaceRole(raw.role)
     if (!role || typeof raw.workspace_id !== "string" || typeof raw.workspace_name !== "string" || raw.workspace_slug !== expectedSlug) return null
-    const capabilities = combineWorkspaceCapabilities([stringArray(raw.capabilities)])
+    const suppliedCapabilities = stringArray(raw.capabilities)
+    // Reuse the existing bootstrap's service eligibility for navigation. The
+    // Client Connections reader still authorizes each client independently.
+    const capabilities = combineWorkspaceCapabilities([
+        suppliedCapabilities,
+        suppliedCapabilities.includes("appointment_setting.manage") ? ["client_connections.manage"] : [],
+    ])
     const access: WorkspaceAccess = {
         workspaceId: raw.workspace_id,
         workspaceSlug: expectedSlug,

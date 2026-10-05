@@ -29,7 +29,7 @@ test("Appointment Setting includes only visible, non-archived Retention relation
             new Set(["retention-allowed", "retention-archived", "fulfilment-allowed"]),
             new Set(["retention-allowed", "retention-unassigned", "retention-archived", "fulfilment-allowed"]),
         ).map((item) => item.id),
-        ["retention-allowed"],
+        ["retention-allowed", "fulfilment-allowed"],
     )
     assert.deepEqual(
         filterAppointmentSettingRelationships(relationships, null, new Set(["retention-allowed"])).map((item) => item.id),

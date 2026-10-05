@@ -10,7 +10,7 @@ import {
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { appointmentNotificationStatus, type AppointmentDeliveryState } from "@/lib/appointment-setting-delivery"
 import { resolveCommunicationDestinations } from "@/lib/client-messages/omnichannel"
-import { loadAppointmentSettingServiceIds, type WorkspaceAccess } from "@/lib/workspace-access"
+import { type WorkspaceAccess } from "@/lib/workspace-access"
 
 // Call only after verifying the viewer's Appointment Setting service assignment.
 // Return delivery states only, never message bodies or channel credentials.
@@ -37,31 +37,10 @@ export async function loadAppointmentSettingDeliveryState(input: {
 }
 
 export async function loadAppointmentSettingRelationshipServices(access: WorkspaceAccess, relationshipId?: string) {
-    const appointmentSettingServices = await loadAppointmentSettingServiceIds(access.workspaceId)
-    const grants = access.role === "staff"
-        ? await supabaseAdmin.from("workspace_service_capabilities").select("service_id").eq("workspace_id", access.workspaceId).eq("capability", "appointment_setting.manage")
-        : { data: null, error: null }
-    if (grants.error) throw new Error("Could not verify Appointment Setting permissions.")
-    const enabledServiceIds = new Set((grants.data ?? []).map((grant) => grant.service_id))
-    const allowedServiceIds = access.role === "staff"
-        ? new Set(access.allowedServiceIds)
-        : null
-    const serviceIds = [...appointmentSettingServices.ids].filter((serviceId) => (
-        !allowedServiceIds || (allowedServiceIds.has(serviceId) && enabledServiceIds.has(serviceId))
-    ))
-    if (!serviceIds.length) return new Map<string, string>()
-
-    let query = supabaseAdmin
-        .from("relationship_services")
-        .select("relationship_id, service_id, created_at")
-        .eq("workspace_id", access.workspaceId)
-        .in("service_id", serviceIds)
-        .order("created_at", { ascending: true })
-    // Eligibility opens the panel; only a client's actual assignee can book for it.
-    if (access.role === "staff") query = query.eq("assignee_user_id", access.userId)
-    if (relationshipId) query = query.eq("relationship_id", relationshipId)
-    const { data, error } = await query
-    if (error) throw new Error(error.message)
+    const { data, error } = await supabaseAdmin.rpc("read_assigned_appointment_services", {
+        p_workspace: access.workspaceId, p_user: access.userId, p_relationship: relationshipId ?? null,
+    })
+    if (error) throw new Error("Could not verify Appointment Setting assignments.")
 
     const servicesByRelationship = new Map<string, string>()
     for (const row of data ?? []) {

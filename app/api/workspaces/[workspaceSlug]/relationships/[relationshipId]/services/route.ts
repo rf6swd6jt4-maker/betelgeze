@@ -14,6 +14,15 @@ export async function GET(request: Request, context: { params: Promise<{workspac
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > 10000) return Response.json({ error: "Invalid page" }, { status: 400, headers })
     try {
         const kind = query.get("kind")
+        if (kind === "transfer") {
+            if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })
+            if (!["owner", "admin"].includes(access.role)) return Response.json({ error: "Owner or admin required." }, { status: 403, headers })
+            const instanceId = query.get("id") ?? "", recipientId = query.get("recipient") ?? ""
+            if (![instanceId, recipientId].every(value => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value))) return Response.json({ error: "Choose a service and recipient." }, { status: 400, headers })
+            const { data, error } = await supabaseAdmin.rpc("preview_service_assignee_transfer", { p_workspace: workspace.id, p_relationship: relationshipId, p_instance: instanceId, p_actor: user.id, p_recipient: recipientId })
+            if (error) return Response.json({ error: error.code === "P0001" ? error.message : "Could not preview the transfer." }, { status: 409, headers })
+            return Response.json(data, { headers })
+        }
         if (!kind) return Response.json(await readRelationshipServices(workspace.id, relationshipId, user.id, offset), { headers })
         if (kind === "all_time") {
             if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })
@@ -59,6 +68,7 @@ export async function GET(request: Request, context: { params: Promise<{workspac
             const {buildRelationshipServicePlan} = await import("@/lib/relationship-service-plan")
             return Response.json({userId:user.id,relationshipId,services:result.data.services.slice(0,30),hasMore:result.data.services.length>30,workTruncated:result.data.workTruncated,plan:buildRelationshipServicePlan(result.data)},{headers})
         }
+        if (kind === "assignees" && request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })
         const result = kind === "catalogue" ? await supabaseAdmin.rpc("relationship_service_catalogue", { ...parameters, p_query: (query.get("q") ?? "").slice(0, 100), p_offset: offset })
             : kind === "assignees" ? await supabaseAdmin.rpc("relationship_service_assignees", { ...parameters, p_relationship_id: relationshipId, p_service_id: query.get("service") })
             : kind === "responsibility" ? await supabaseAdmin.rpc("relationship_service_responsibility_choices", { ...parameters, p_relationship_id: relationshipId })

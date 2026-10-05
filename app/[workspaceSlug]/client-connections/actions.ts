@@ -9,7 +9,14 @@ export type ClientConnectionActionResult = { ok: true } | { ok: false; error: st
 export async function connectClientAccount(workspaceSlug: string, input: { relationshipId: string; accountType: "client_account" | "agency_subaccount"; locationId: string; privateToken: string }): Promise<ClientConnectionActionResult> {
     try {
         const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "client-connections")
-        await connectClientHighLevel({ workspaceId: workspace.id, userId: user.id, ...input })
+        await connectClientHighLevel({
+            relationshipId: input.relationshipId,
+            accountType: input.accountType,
+            locationId: input.locationId,
+            privateToken: input.privateToken,
+            workspaceId: workspace.id,
+            userId: user.id,
+        })
         revalidatePath(`/${workspaceSlug}/client-connections`)
         return { ok: true }
     } catch (error) {

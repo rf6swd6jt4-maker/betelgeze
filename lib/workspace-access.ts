@@ -110,11 +110,14 @@ export async function loadWorkspaceAccess(input: {
     const appointmentSettingServices = allowedServiceIds.length
         ? await loadAppointmentSettingServiceIds(input.workspaceId)
         : { ids: new Set<string>(), ready: true }
+    const hasAppointmentSettingEligibility = allowedServiceIds.some((serviceId) => appointmentSettingServices.ids.has(serviceId))
     const capabilities = combineWorkspaceCapabilities([
         baseCapabilities,
         rolesResult.data?.can_sell || rolesResult.data?.can_manage ? ["relationships.view"] : [],
-        allowedServiceIds.some((serviceId) => appointmentSettingServices.ids.has(serviceId)) ? [APPOINTMENT_SETTING_CAPABILITY] : [],
-        clientConnectionAssignments.data?.length ? [CLIENT_CONNECTIONS_CAPABILITY] : [],
+        hasAppointmentSettingEligibility ? [APPOINTMENT_SETTING_CAPABILITY] : [],
+        // Panel visibility reuses service eligibility. Exact client access is
+        // checked by manage_client_ghl_connection when the panel is opened.
+        clientConnectionAssignments.data?.length || hasAppointmentSettingEligibility ? [CLIENT_CONNECTIONS_CAPABILITY] : [],
         (assignments ?? []).some((assignment) => {
             const service = assignment.onboarding_services as unknown as { workspace_service_capabilities: Array<{ capability: string }> } | null
             return service?.workspace_service_capabilities?.some((grant) => grant.capability === ONBOARDING_CAPABILITY)

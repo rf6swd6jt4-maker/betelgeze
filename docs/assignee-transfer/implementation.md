@@ -73,6 +73,14 @@ Not established: real concurrent PostgreSQL interleavings, production performanc
 
 ## Acceptance and release boundary
 
+### Transfer portrait redesign — 6 October 2026, local validation
+
+The choice step presents the current service assignee and recipient with 80px shared `Assignee` portraits, a one-time reduced-motion-aware arrow, and the shared searchable selector with a wrapping name trigger. **Confirm** is disabled until selection and opens the existing work/access review. Reason, acknowledgement, exact-request retry and device recovery remain required by their existing owners.
+
+Portrait metadata loads independently through an avatar-only view of the existing authenticated workspace member-profile route. Each visible portrait performs two parallel indexed identity lookups (membership scoped by workspace/user; profile scoped by user), returning only the existing versioned image URL. This avoids the full profile's auth-admin and shared-workspace reads. There is no polling, startup fetch or migration; delayed/failed photos never gate the transfer. These bounded reads add on-demand media work; no production latency improvement is claimed.
+
+Validation: 1,471 unit tests passed; changed-file lint and foundation guards passed with all 275 historical migrations unchanged; `npx next build --webpack` passed. The transfer browser runner passed 26 synthetic scenarios across Chromium and WebKit, including 320px/390px/1280px layouts, keyboard search/selection, review focus, reduced motion, delayed/broken photos, stale previews, storage failure and exact-request recovery. Screenshots were inspected at narrow phone and desktop widths. These are mocked local component tests, not authenticated staff, production-photo or physical-device acceptance. This redesign has not been deployed.
+
 Use isolated test relationships for authenticated transfer acceptance. In the admin test workspace, review a service transfer with open, completed, shared and independently owned work; confirm the receipt and refreshed service. Under the recipient's own login, open Work Queue → Ready and Waiting & scheduled, open the selected item, then Client Connections and the permitted test client. Under the former assignee's login, verify the access retained in the preview and loss of service-derived booking/setup access where no independent source exists. Jason's real records may be inspected read-only as an acceptance reference; do not transfer them as a test.
 
 Do not represent backend booking authorization as an available booking screen while redirects remain. If a booking UI is explicitly restored, verify its reachable route and actual draft/submit workflow separately with isolated data.

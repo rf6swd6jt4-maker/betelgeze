@@ -3,10 +3,12 @@ export function Avatar({
     src,
     name,
     className = "h-12 w-12",
+    onError,
 }: {
     src?: string | null
     name: string
     className?: string
+    onError?: () => void
 }) {
     if (src) {
         return (
@@ -16,6 +18,7 @@ export function Avatar({
                 width={96}
                 height={96}
                 decoding="async"
+                onError={onError}
                 className={`${className} block shrink-0 aspect-square overflow-hidden rounded-full object-cover object-center`}
                 style={{ aspectRatio: "1 / 1", objectFit: "cover", objectPosition: "50% 50%" }}
             />

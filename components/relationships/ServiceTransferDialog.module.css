@@ -1,0 +1,12 @@
+.arrow {
+    animation: transfer-arrow 360ms ease-out;
+}
+
+@keyframes transfer-arrow {
+    from { opacity: 0.4; transform: translateX(-6px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .arrow { animation: none; }
+}

@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
 import assert from 'node:assert/strict'
+import { mkdirSync } from 'node:fs'
+mkdirSync('browser-results/service-transfer', { recursive: true })
 import { chromium, webkit } from 'playwright'
 const engines=process.argv.slice(2)
 if(engines.some(engine=>!['chromium','webkit'].includes(engine)))throw Error('Use chromium and/or webkit')
@@ -8,13 +10,21 @@ try {
  const origin=await new Promise((resolve,reject)=>{let log='';const timer=setTimeout(()=>reject(Error(log)),60000);const read=chunk=>{log+=chunk;const match=log.match(/http:\/\/127\.0\.0\.1:\d+\//);if(match){clearTimeout(timer);resolve(match[0])}};server.stdout.on('data',read);server.stderr.on('data',read);server.on('exit',()=>reject(Error(log)))})
  for(const name of engines.length?engines:['chromium','webkit']) {
  const browser=await ({chromium,webkit})[name].launch()
- try { for(const scenario of ['success','uncertain','stale','preview-error','recover','recover-closed','recover-closed-rejected','recovery-empty','storage-failure']) {
-  const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage(),errors=[],serviceReads=[]
+ try { for(const scenario of ['success','desktop','narrow','portrait-failure','portrait-loading','uncertain','stale','preview-error','recover','recover-closed','recover-closed-rejected','recovery-empty','storage-failure']) {
+  const context=await browser.newContext({viewport:{width:scenario==='desktop'?1280:scenario==='narrow'?320:390,height:844},reducedMotion:scenario==='narrow'?'reduce':'no-preference'}),page=await context.newPage(),errors=[],serviceReads=[]
   page.on('pageerror',e=>errors.push(e.message))
   await page.addInitScript(scenario=>{window.calls=[];window.fixtureTransfer=async input=>{window.calls.push(input);if(scenario==='uncertain'&&window.calls.length===1)throw Error('Lost response');if(['recover','recover-closed','recover-closed-rejected'].includes(scenario)&&!sessionStorage.getItem('sent')){sessionStorage.setItem('sent','1');throw Error('Lost response')}if(scenario==='recover-closed-rejected')return{ok:false,uncertain:false,error:'Choose an active delivery service.'};if(scenario==='stale')return{ok:false,uncertain:false,error:'The work changed. Review a fresh preview.'};return{ok:true,receipt:{version:2}}};if(scenario==='storage-failure')Storage.prototype.setItem=function(){throw Error('No device storage')}},scenario)
+  let releasePortrait
+  const portraitGate=new Promise(resolve=>{releasePortrait=resolve})
+  await page.route('**/members/*/profile?view=avatar', async route=>{
+   if(scenario==='portrait-loading')await portraitGate
+   return route.fulfill({json:{avatarSrc:scenario==='portrait-failure'?'/broken-portrait.svg':'/portrait.svg'}})
+  })
+  await page.route('**/portrait.svg', route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="#405669"/><circle cx="48" cy="35" r="18" fill="#dfc4ad"/><path d="M13 96v-9a35 30 0 0 1 70 0v9" fill="#a6baca"/></svg>'}))
+  await page.route('**/broken-portrait.svg', route=>route.fulfill({status:404,body:''}))
   await page.route('**/api/services?*',async route=>{
    const url=new URL(route.request().url()); const kind=url.searchParams.get('kind');serviceReads.push(kind)
-   if(kind==='assignees')return route.fulfill({json:[{id:'00000000-0000-4000-8000-000000000005',name:'New Staff'}]})
+   if(kind==='assignees')return route.fulfill({json:[{id:'00000000-0000-4000-8000-000000000005',name:'New Staff'},...Array.from({length:7},(_,i)=>({id:`other-${i}`,name:`Eligible colleague ${i}`}))]})
    if(scenario==='preview-error')return route.fulfill({status:409,json:{error:'This service changed. Reload the preview.'}})
    return route.fulfill({json:{instanceId:'00000000-0000-4000-8000-000000000006',recipientName:'New Staff',formerName:'Former',fingerprint:'a'.repeat(32),version:1,stage:'setup',formerId:'00000000-0000-4000-8000-000000000004',recipientId:'00000000-0000-4000-8000-000000000005',appointment:true,bookingEnabled:true,formerSetupRetained:true,formerBookingRetained:false,teamMembershipRetained:true,items:[
     {id:'00000000-0000-4000-8000-000000000010',title:'Prepare campaign',status:'todo',execution_owner_id:'00000000-0000-4000-8000-000000000004',assignees:['00000000-0000-4000-8000-000000000004'],movable:true,shared:false},
@@ -32,8 +42,25 @@ try {
    assert.deepEqual(serviceReads,[]);assert.equal(await page.evaluate(()=>window.calls.length),0)
    assert.deepEqual(errors,[]);await context.close();console.log(`PASS ${name}: ${scenario}`);continue
   }
+  assert.equal(await page.getByRole('button',{name:'Confirm',exact:true}).isEnabled(),false)
+  if(scenario==='success')await page.screenshot({path:`browser-results/service-transfer/${name}-choose.png`})
   await page.getByRole('button',{name:'New service assignee'}).click()
-  await page.getByRole('option',{name:'New Staff'}).click()
+  await page.getByRole('textbox',{name:'Search new service assignee'}).fill('New Staff')
+  await page.getByRole('textbox',{name:'Search new service assignee'}).press('ArrowDown')
+  await page.getByRole('option',{name:'New Staff'}).press('Enter')
+  assert.equal(await page.getByRole('button',{name:'Confirm',exact:true}).isEnabled(),true)
+  assert.equal(await page.getByRole('textbox',{name:'Reason'}).count(),0)
+  assert.equal(await page.evaluate(()=>window.calls.length),0)
+  if(['success','desktop','narrow','portrait-failure','portrait-loading'].includes(scenario)){
+   const geometry=await page.locator('[aria-label="Service assignee handoff"]').evaluate(node=>({width:node.clientWidth,scroll:node.scrollWidth}))
+   assert.ok(geometry.scroll<=geometry.width)
+   if(scenario==='narrow')assert.equal(await page.locator('[aria-label="Service assignee handoff"] > svg').evaluate(node=>getComputedStyle(node).animationName),'none')
+   if(scenario==='portrait-failure')await page.locator('[aria-label="Service assignee handoff"] img').waitFor({state:'detached'})
+   await page.screenshot({path:`browser-results/service-transfer/${name}-${scenario}-selected.png`})
+  }
+  await page.getByRole('button',{name:'Confirm',exact:true}).click()
+  assert.equal(await page.getByText('Review the work and access before transferring.').evaluate(node=>node===document.activeElement),true)
+  releasePortrait()
   if(scenario==='preview-error'){
    await page.getByRole('alert').waitFor();assert.equal(await page.getByRole('button',{name:'Transfer assignee',exact:true}).isEnabled(),false)
   }else{

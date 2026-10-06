@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { Assignee } from "./Assignee"
 import { Selector, type SelectorAppearance } from "./Selector"
 
@@ -10,7 +11,7 @@ export type AssignmentPerson = {
     description?: string
 }
 
-export function AssignmentSelector({ value, people, onChange, onCommit, ariaLabel, placeholder = "Choose person", clearLabel, name, required = false, disabled = false, appearance = "field", className = "", title = "Assign person", description, workItemPopup = false }: {
+export function AssignmentSelector({ value, people, onChange, onCommit, ariaLabel, placeholder = "Choose person", clearLabel, name, required = false, disabled = false, appearance = "field", className = "", title = "Assign person", description, workItemPopup = false, triggerContent }: {
     value: string
     people: AssignmentPerson[]
     onChange: (value: string) => void
@@ -26,6 +27,7 @@ export function AssignmentSelector({ value, people, onChange, onCommit, ariaLabe
     title?: string
     description?: string
     workItemPopup?: boolean
+    triggerContent?: ReactNode
 }) {
     const options = [
         ...(clearLabel ? [{ value: "", label: clearLabel, content: <span className="text-neutral-500">{clearLabel}</span> }] : []),
@@ -37,5 +39,5 @@ export function AssignmentSelector({ value, people, onChange, onCommit, ariaLabe
             content: <Assignee name={person.name} avatarSrc={person.avatarSrc} />,
         })),
     ]
-    return <Selector value={value} options={options} onChange={onChange} onCommit={onCommit} ariaLabel={ariaLabel} placeholder={placeholder} name={name} required={required} disabled={disabled} appearance={appearance} className={className} title={title} description={description} searchPlaceholder="Find a person…" workItemPopup={workItemPopup} />
+    return <Selector value={value} options={options} onChange={onChange} onCommit={onCommit} ariaLabel={ariaLabel} placeholder={placeholder} name={name} required={required} disabled={disabled} appearance={appearance} className={className} title={title} description={description} searchPlaceholder="Find a person…" workItemPopup={workItemPopup} triggerContent={triggerContent} />
 }

@@ -6,10 +6,22 @@ export const dynamic = "force-dynamic"
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-export async function GET(_: Request, context: { params: Promise<{ workspaceSlug: string; userId: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ workspaceSlug: string; userId: string }> }) {
     const { workspaceSlug, userId } = await context.params
     const { workspace, user } = await requireWorkspace(workspaceSlug)
     if (!UUID_PATTERN.test(userId)) return Response.json({ error: "Profile not found." }, { status: 404 })
+    // Portraits do not need email, auth-admin reads or shared-workspace history.
+    if (new URL(request.url).searchParams.get("view") === "avatar") {
+        const headers = { "Cache-Control": "private, no-store" }
+        if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })
+        const [membership, profile] = await Promise.all([
+            supabaseAdmin.from("workspace_memberships").select("user_id").eq("workspace_id", workspace.id).eq("user_id", userId).maybeSingle(),
+            supabaseAdmin.from("user_profiles").select("username, avatar_path").eq("user_id", userId).maybeSingle(),
+        ])
+        if (membership.error || profile.error) return Response.json({ error: "Portrait unavailable." }, { status: 503, headers })
+        if (!membership.data || !profile.data) return Response.json({ error: "Profile not found." }, { status: 404, headers })
+        return Response.json({ avatarSrc: profile.data.avatar_path && profile.data.username ? profileAvatarUrl(profile.data.username, profile.data.avatar_path) : null }, { headers })
+    }
     const [{ data: targetMembership, error: membershipError }, { data: currentMemberships }] = await Promise.all([
         supabaseAdmin.from("workspace_memberships").select("last_seen_at").eq("workspace_id", workspace.id).eq("user_id", userId).maybeSingle(),
         supabaseAdmin.from("workspace_memberships").select("workspace_id").eq("user_id", user.id),

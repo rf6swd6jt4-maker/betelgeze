@@ -112,7 +112,7 @@ export function SelectorOption({ selected = false, active = false, showCheck = t
     </div>
 }
 
-export function Selector({ value, options, onChange, onCommit, ariaLabel, placeholder = "Choose…", name, required = false, disabled = false, appearance = "field", surface = "dark", className = "", popupClassName = "", title, description, searchThreshold = 7, searchPlaceholder = "Search…", workItemPopup = false }: {
+export function Selector({ value, options, onChange, onCommit, ariaLabel, placeholder = "Choose…", name, required = false, disabled = false, appearance = "field", surface = "dark", className = "", popupClassName = "", title, description, searchThreshold = 7, searchPlaceholder = "Search…", workItemPopup = false, triggerContent }: {
     value: string
     options: SelectorOptionDefinition[]
     onChange: (value: string) => void
@@ -131,6 +131,7 @@ export function Selector({ value, options, onChange, onCommit, ariaLabel, placeh
     searchThreshold?: number
     searchPlaceholder?: string
     workItemPopup?: boolean
+    triggerContent?: ReactNode
 }) {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null)
     const open = Boolean(anchor)
@@ -153,7 +154,7 @@ export function Selector({ value, options, onChange, onCommit, ariaLabel, placeh
     return <>
         {name ? <input type="hidden" name={name} value={value} /> : null}
         <SelectorTrigger open={open} appearance={appearance} surface={surface} disabled={disabled} aria-label={ariaLabel} aria-required={required || undefined} onClick={(event) => { setQuery(""); setAnchor((current) => current ? null : event.currentTarget) }} className={className}>
-            {selected?.content ?? selected?.label ?? <span className="text-neutral-600">{placeholder}</span>}
+            {triggerContent ?? selected?.content ?? selected?.label ?? <span className="text-neutral-600">{placeholder}</span>}
         </SelectorTrigger>
         {open ? <SelectorDrawer anchor={anchor} ariaLabel={ariaLabel} title={title} description={description} search={query} onSearch={searchable ? setQuery : undefined} searchPlaceholder={searchPlaceholder} onDismiss={() => { setAnchor(null); setQuery("") }} className={popupClassName} workItemPopup={workItemPopup}>
             {visible.map((option) => <SelectorOption key={option.value || "__empty"} selected={option.value === value} disabled={option.disabled} description={option.description} onClick={() => choose(option.value)}>{option.content ?? option.label}</SelectorOption>)}

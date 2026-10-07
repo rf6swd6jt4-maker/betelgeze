@@ -683,10 +683,26 @@ and stretches to the full metadata-card row height when assets are present.
 The Assets category uses the shared `AssetLibrary` in both standard and resident
 panels. Right-clicking a card (or Shift+F10 while focused) opens Select and Download
 in `AnchoredPopup`. Select mode shows native checkboxes in each card's top-right
-corner; clicking the card also toggles its checkbox. Files without a downloadable
-original are disabled. The header replaces New asset with Download N assets and
-uses Cancel to leave selection. Selection is local to the loaded authorized cards;
-one file downloads directly and multiple files download as one streamed ZIP.
+corner; clicking the card also toggles its checkbox. Preview and metadata elements
+retain their mounted identity across selection changes; sibling card actions and
+checkboxes must not replace the preview's ancestors or nest interactive controls.
+Files without a downloadable original are disabled with an explanation. The header
+replaces New asset with Download N assets and uses Cancel to leave selection.
+Select all visible and Clear selection act only on the loaded authorized cards;
+show the selected count, known bytes and explicitly unknown sizes. Block more than
+24 files or a known archive size above 500 MiB locally, preserving the selection.
+One file downloads directly and multiple files download as one streamed ZIP.
+
+Native downloads clear only the requested selection and report Download requested,
+with Select again recovery against the complete current authorized selection.
+Never claim a browser-owned download finished saving. On supporting browsers,
+Save ZIP as offers a location picker for multiple files and streams directly to the
+chosen file. Invoke the picker in the user gesture, lazy-load transfer code, and
+report ZIP saved only after the writable closes successfully. Cancellation and
+failure preserve current choices; successful saves clear only the requested IDs.
+Show local status/error feedback through Status and allow explicit cancellation
+or retry. No file buffering, extra preflight request, automatic retry, polling,
+Downloads history, sharing grant, or shell navigation change belongs to this flow.
 
 SOP details use the standard detail header, inline autosaving Name and Description,
 a Services field, the Assets gallery, and the admin danger zone. There is no separate

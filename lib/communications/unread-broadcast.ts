@@ -1,3 +1,4 @@
+import { recordVersionKey } from "../record-version.js"
 import type { UnreadSummary } from "./unread-summary"
 
 export type UnreadSnapshot = { workspaceId: string; userId: string; rows: UnreadSummary[]; stale: boolean }
@@ -7,17 +8,34 @@ const slot = Symbol.for("betelgeze:unread-summary")
 type Host = Window & { [slot]?: UnreadSnapshot }
 const host = () => (window.top ?? window) as Host
 
-/** Ask the existing owner to reconcile after an acknowledged change which
- * does not emit a message/read-cursor event (for example, clearing a chat).
+/** One committed database event has the same identity on shell/frame sockets.
+ * Incomplete event metadata deliberately falls back to ordinary invalidation.
  */
-export function invalidateUnreadSummary(workspaceId: string, userId: string) {
-    host().dispatchEvent(new CustomEvent(invalidationEventName, { detail: { workspaceId, userId } }))
+export function unreadMessageEventKey(kind: "client" | "native", value: unknown): string | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+    const payload = value as Record<string, unknown>
+    const eventType = payload.eventType
+    const committedAt = payload.commit_timestamp
+    if (typeof eventType !== "string" || !["INSERT", "UPDATE", "DELETE"].includes(eventType)
+        || typeof committedAt !== "string" || committedAt.length > 64 || !Number.isFinite(Date.parse(committedAt))) return undefined
+    const valueRow = eventType === "DELETE" ? payload.old : payload.new
+    if (!valueRow || typeof valueRow !== "object" || Array.isArray(valueRow)) return undefined
+    const id = (valueRow as Record<string, unknown>).id
+    if (typeof id !== "string" || !id || id.length > 128) return undefined
+    return `${kind}:${eventType}:${id}:${recordVersionKey(committedAt)}`
 }
 
-export function subscribeUnreadSummaryInvalidations(workspaceId: string, userId: string, invalidate: () => void) {
+/** Ask the existing owner to reconcile an event or accepted recovery snapshot. */
+export function invalidateUnreadSummary(workspaceId: string, userId: string, eventKey?: string) {
+    host().dispatchEvent(new CustomEvent(invalidationEventName, { detail: { workspaceId, userId, eventKey } }))
+}
+
+export function subscribeUnreadSummaryInvalidations(workspaceId: string, userId: string, invalidate: (eventKey?: string) => void) {
     const listener = (event: Event) => {
-        const scope = (event as CustomEvent<{ workspaceId: string; userId: string }>).detail
-        if (scope?.workspaceId === workspaceId && scope.userId === userId) invalidate()
+        const scope = (event as CustomEvent<{ workspaceId: string; userId: string; eventKey?: unknown }>).detail
+        if (scope?.workspaceId !== workspaceId || scope.userId !== userId) return
+        const eventKey = typeof scope.eventKey === "string" && scope.eventKey.length > 0 && scope.eventKey.length <= 256 ? scope.eventKey : undefined
+        invalidate(eventKey)
     }
     const target = host()
     target.addEventListener(invalidationEventName, listener)

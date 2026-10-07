@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { RealtimeChannel } from "@supabase/supabase-js"
 import type { CommunicationsClient } from "./CommunicationsRuntime"
+import { createCommunicationsSyncOwner } from "@/lib/communications/sync-owner"
 
 import { useWorkspaceTabActive, WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
 
@@ -20,14 +21,16 @@ export function useReliableCommunicationsRealtime({
     supabase,
     synchronize,
     topic,
+    userId,
 }: {
     active: boolean
     privateChannel: boolean
     register: (channel: RealtimeChannel) => RealtimeChannel
     schemaReady: boolean
     supabase: CommunicationsClient
-    synchronize: () => Promise<void>
+    synchronize: (signal: AbortSignal) => Promise<void>
     topic: string
+    userId: string
 }) {
     const workspaceTabActive = useWorkspaceTabActive()
     const activeRef = useRef(active)
@@ -78,7 +81,6 @@ export function useReliableCommunicationsRealtime({
         let channel: RealtimeChannel | null = null
         let retryTimer: number | null = null
         let retryAttempt = 0
-        let syncPromise: Promise<void> | null = null
         let subscribed = false
         let attemptedConnection = false
 
@@ -86,8 +88,10 @@ export function useReliableCommunicationsRealtime({
             return activeRef.current && workspaceTabActiveRef.current && document.visibilityState === "visible"
         }
 
-        async function refreshRealtimeAuth() {
+        async function refreshRealtimeAuth(signal?: AbortSignal) {
             const session = await supabase.auth.getSession()
+            signal?.throwIfAborted()
+            if (disposed) return
             const accessToken = session.data.session?.access_token
             if (!accessToken) throw new Error("Sign in again to restore live messages.")
             // Proxy refreshes the shared session cookie during Communications
@@ -97,17 +101,18 @@ export function useReliableCommunicationsRealtime({
             await supabase.realtime.setAuth(accessToken)
         }
 
-        async function runSync(showState: boolean) {
-            if (disposed) return
-            if (syncPromise) return syncPromise
+        const syncOwner = createCommunicationsSyncOwner(async signal => {
+            await synchronizeRef.current(signal)
+            signal.throwIfAborted()
+            await refreshRealtimeAuth(signal)
+            signal.throwIfAborted()
+            if (!disposed && subscribed) updateState("live")
+        })
+
+        function runSync(showState: boolean) {
+            if (disposed) return Promise.resolve()
             if (showState) updateState("syncing")
-            syncPromise = synchronizeRef.current()
-                .then(async () => {
-                    await refreshRealtimeAuth()
-                    if (!disposed && subscribed) updateState("live")
-                })
-                .finally(() => { syncPromise = null })
-            return syncPromise
+            return syncOwner.run()
         }
 
         function scheduleReconnect(message: string) {
@@ -152,8 +157,8 @@ export function useReliableCommunicationsRealtime({
                 // to-subscribe race, without fetching all history twice at entry.
                 const refreshBeforeConnect = attemptedConnection
                 attemptedConnection = true
-                if (refreshBeforeConnect) await synchronizeRef.current()
-                await refreshRealtimeAuth()
+                if (refreshBeforeConnect) await runSync(false)
+                else await refreshRealtimeAuth()
                 if (disposed) return
                 const candidate = registerRef.current(supabase.channel(topic, { config: { private: privateChannel, broadcast: { self: false, ack: true } } }))
                 channel = candidate
@@ -210,6 +215,7 @@ export function useReliableCommunicationsRealtime({
 
         return () => {
             disposed = true
+            syncOwner.dispose()
             if (retryTimer !== null) window.clearTimeout(retryTimer)
             window.clearInterval(interval)
             authSubscription.data.subscription.unsubscribe()
@@ -224,7 +230,7 @@ export function useReliableCommunicationsRealtime({
                 void supabase.removeChannel(channel)
             }
         }
-    }, [privateChannel, schemaReady, supabase, topic, updateState])
+    }, [privateChannel, schemaReady, supabase, topic, updateState, userId])
 
     return { state, error, workspaceTabActive, sendBroadcast }
 }

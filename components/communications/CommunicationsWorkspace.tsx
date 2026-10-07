@@ -51,8 +51,8 @@ import { SquarePill } from "@/components/ui"
 import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
 import { useConversationRead } from "./useConversationRead"
 import { CommunicationsActivityTracker } from "./CommunicationsActivityTracker"
-import { mergeChatReadCursor, readCursorCoversMessage, subscribeChatReads } from "@/lib/communications/read-state"
-import { invalidateUnreadSummary } from "@/lib/communications/unread-broadcast"
+import { compareReadPositions, mergeChatReadCursor, mergeChatReadCursors, normalizeChatReadUpdate, publishChatRead, publishChatReads, readCursorCoversMessage, subscribeChatReadBatches } from "@/lib/communications/read-state"
+import { invalidateUnreadSummary, unreadMessageEventKey } from "@/lib/communications/unread-broadcast"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import type { ClientConversation, CommunicationAttachment, CommunicationDelivery, CommunicationMessage, CommunicationReaction, CommunicationReadCursor, CommunicationSticker, CommunicationsBootstrap } from "@/lib/communications/types"
 import { communicationAttachmentFromRawPayload } from "@/lib/communications/attachments"
@@ -234,7 +234,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     onOpenTeam?: () => void
     onSelectedConversationChange?: (conversationId: string | null) => void
     onUnreadCountChange?: (count: number) => void
-    onUnreadInvalidated?: () => void
+    onUnreadInvalidated?: (eventKey?: string) => void
     teamUnreadCount?: number
     conversationListWidth: number
     onConversationListWidthChange: (width: number) => void
@@ -276,8 +276,19 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const [enteringMessageIds, setEnteringMessageIds] = useState<Set<string>>(() => new Set())
     const [reactionCutoff] = useState(() => Date.now() - 30 * 24 * 60 * 60 * 1_000)
     const [readCursors, setReadCursors] = useState(bootstrap.readCursors)
-    useEffect(() => subscribeChatReads(bootstrap.workspaceId, bootstrap.currentUser.id, update => {
-        if (update.kind === "client") setReadCursors(current => mergeCursor(current, { relationshipId: update.conversationId, userId: update.userId, lastReadAt: update.lastReadAt, lastReadMessageId: update.lastReadMessageId }))
+    const knownReadCursors = useRef(readCursors)
+    useLayoutEffect(() => { knownReadCursors.current = readCursors }, [readCursors])
+    const publishedReadSnapshot = useRef(false)
+    const syncLifetime = useRef<{ controller: AbortController; userId: string; workspaceId: string } | null>(null)
+    useEffect(() => {
+        const lifetime = { controller: new AbortController(), userId: bootstrap.currentUser.id, workspaceId: bootstrap.workspaceId }
+        syncLifetime.current = lifetime
+        publishedReadSnapshot.current = false
+        return () => { lifetime.controller.abort(); if (syncLifetime.current === lifetime) syncLifetime.current = null }
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId])
+    useEffect(() => subscribeChatReadBatches(bootstrap.workspaceId, bootstrap.currentUser.id, reads => {
+        const incoming = reads.filter(read => read.kind === "client").map(read => ({ relationshipId: read.conversationId, userId: read.userId, lastReadAt: read.lastReadAt, lastReadMessageId: read.lastReadMessageId }))
+        if (incoming.length) setReadCursors(current => mergeChatReadCursors(current, incoming, cursor => cursor.relationshipId))
     }), [bootstrap.workspaceId, bootstrap.currentUser.id])
     const messagePaneRef = useRef<HTMLDivElement | null>(null)
     const followLatestRef = useRef(true)
@@ -653,25 +664,37 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     }, [bootstrap.workspaceSlug, selectedId, updateConversationMessages, updates])
 
 
-    const synchronize = useCallback(async () => {
+    const synchronize = useCallback(async (ownerSignal?: AbortSignal) => {
+        const lifetime = syncLifetime.current
+        if (!lifetime || lifetime.userId !== bootstrap.currentUser.id || lifetime.workspaceId !== bootstrap.workspaceId) return
+        const signal = AbortSignal.any([lifetime.controller.signal, ownerSignal ?? AbortSignal.timeout(30_000)])
+        signal.throwIfAborted()
         const read = updates.beginRead()
         const conversationId = selectedRef.current
         const search = conversationId ? `?conversation=${encodeURIComponent(conversationId)}` : ""
-        const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/sync${search}`, { cache: "no-store" })
+        const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/sync${search}`, { cache: "no-store", signal })
         const result = await response.json().catch(() => null) as CommunicationsBootstrap | { error?: string } | null
+        signal.throwIfAborted()
         if (!response.ok || !result || !("conversations" in result)) throw new Error(result && "error" in result ? result.error ?? "Could not check for missed messages." : "Could not check for missed messages.")
         result.conversations.forEach((conversation) => conversation.messages.forEach((message) => knownMessageKeysRef.current.add(messageAnimationKey(message))))
         setSchemaReady(result.schemaReady)
         if (!updates.applySnapshot(read, result)) return
+        const knownPositions = new Map(knownReadCursors.current.filter(cursor => cursor.userId === bootstrap.currentUser.id).map(cursor => [cursor.relationshipId, cursor]))
+        publishChatReads(result.readCursors.flatMap(cursor => {
+            const confirmed = normalizeChatReadUpdate({ workspaceId: bootstrap.workspaceId, userId: bootstrap.currentUser.id, kind: "client" }, cursor)
+            const previous = knownPositions.get(cursor.relationshipId)
+            return confirmed && (!publishedReadSnapshot.current || !previous || compareReadPositions(confirmed, previous) > 0) ? [confirmed] : []
+        }), { reconcile: false })
+        publishedReadSnapshot.current = true
         invalidateUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
-        setReadCursors((current) => result.readCursors.reduce((next, cursor) => mergeCursor(next, cursor), current))
+        setReadCursors((current) => mergeChatReadCursors(current, result.readCursors, cursor => cursor.relationshipId))
         setStickers(result.stickers)
-        await flushPendingRead()
+        void flushPendingRead().catch(() => undefined)
     }, [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, flushPendingRead, updates])
 
     const registerRealtime = useCallback((channel: ReturnType<typeof supabase.channel>) => channel
                 .on("postgres_changes", { event: "*", schema: "public", table: "client_messages", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => {
-                    if (payload.eventType === "INSERT" || payload.eventType === "DELETE") onUnreadInvalidated?.()
+                    if (payload.eventType === "INSERT" || payload.eventType === "DELETE") onUnreadInvalidated?.(unreadMessageEventKey("client", payload))
                     if (payload.eventType === "DELETE") {
                         const deleted = record(payload.old)
                         const messageId = stringValue(deleted.id)
@@ -751,7 +774,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                     const lastReadAt = stringValue(row.last_read_at)
                     if (relationshipId && userId && lastReadAt) {
                         setReadCursors((current) => mergeCursor(current, { relationshipId, userId, lastReadMessageId: stringValue(row.last_read_message_id), lastReadAt }))
-                        if (userId === bootstrap.currentUser.id) onUnreadInvalidated?.()
+                        const confirmed = normalizeChatReadUpdate({ workspaceId: bootstrap.workspaceId, userId: bootstrap.currentUser.id, kind: "client" }, row)
+                        if (confirmed) publishChatRead(confirmed)
                     }
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "communication_reactions", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => {
@@ -774,6 +798,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
 
     const connection = useReliableCommunicationsRealtime({
         active,
+        userId: bootstrap.currentUser.id,
         privateChannel: false,
         register: registerRealtime,
         schemaReady,

@@ -142,9 +142,6 @@ test("client and team chats reconcile missed Realtime events without a reload", 
     ])
 
     assert.match(hook, /status === "SUBSCRIBED"/)
-    assert.match(hook, /synchronizeRef\.current\(\)/)
-    assert.match(hook, /await synchronizeRef\.current\(\)\s+await refreshRealtimeAuth\(\)\s+if \(disposed\) return/)
-    assert.match(hook, /\.then\(async \(\) => \{\s+await refreshRealtimeAuth\(\)/)
     assert.match(hook, /supabase\.realtime\.setAuth\(accessToken\)/)
     assert.match(hook, /broadcast: \{ self: false, ack: true \}/)
     assert.match(hook, /Live activity could not be sent\. Reconnecting…/)

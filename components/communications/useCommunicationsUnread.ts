@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
-import { subscribeChatReads } from "@/lib/communications/read-state"
+import { subscribeChatReadBatches } from "@/lib/communications/read-state"
 import { publishUnreadSummary, subscribeUnreadSummaryInvalidations } from "@/lib/communications/unread-broadcast"
-import { applyReadToSummary, createUnreadSummaryResource, type UnreadSummary } from "@/lib/communications/unread-summary"
+import { applyReadsToSummary, createConfirmedReadLedger, createUnreadSummaryResource, type UnreadSummary } from "@/lib/communications/unread-summary"
 
 // The shell owns one metadata summary; mounted chat copies never overwrite it
 // with their independently loaded (and potentially stale) local totals.
@@ -22,6 +22,8 @@ export function useCommunicationsUnread(workspaceId: string, workspaceSlug: stri
     useEffect(() => {
         if (!enabled) return
         const controller = new AbortController()
+        const confirmedReads = createConfirmedReadLedger(workspaceId, userId)
+        const invalidationEvents = new Set<string>()
         const resource = createUnreadSummaryResource(async () => {
             const timing = beginWorkspaceInteraction({ workspaceSlug, operation: "command", command: "message.unread", routeSection: "communications", cacheState: "network" })
             try {
@@ -32,7 +34,7 @@ export function useCommunicationsUnread(workspaceId: string, workspaceSlug: stri
                 timing.finish("completed", "data_ready")
                 return result.conversations as UnreadSummary[]
             } catch (error) { timing.finish(controller.signal.aborted ? "aborted" : "failed"); throw error }
-        }, next => { setSnapshot({ scope, rows: next, loaded: true }); setStale(false) }, () => setStale(true))
+        }, next => { setSnapshot({ scope, rows: confirmedReads.apply(next), loaded: true }); setStale(false) }, () => setStale(true))
         const schedule = () => {
             resource.invalidate()
             if (document.visibilityState !== "visible") return
@@ -41,10 +43,22 @@ export function useCommunicationsUnread(workspaceId: string, workspaceSlug: stri
             void resource.refresh()
         }
         invalidateRef.current = schedule
-        const unsubscribeInvalidations = subscribeUnreadSummaryInvalidations(workspaceId, userId, schedule)
-        const unsubscribe = subscribeChatReads(workspaceId, userId, read => {
-            setSnapshot(current => ({ scope, rows: applyReadToSummary(current.scope === scope ? current.rows : [], read), loaded: current.scope === scope && current.loaded }))
+        const unsubscribeInvalidations = subscribeUnreadSummaryInvalidations(workspaceId, userId, eventKey => {
+            if (eventKey) {
+                if (invalidationEvents.has(eventKey)) return
+                invalidationEvents.add(eventKey)
+                if (invalidationEvents.size > 256) invalidationEvents.delete(invalidationEvents.values().next().value!)
+            }
             schedule()
+        })
+        const unsubscribe = subscribeChatReadBatches(workspaceId, userId, (reads, options) => {
+            const accepted = confirmedReads.accept(reads)
+            if (!accepted.length) return
+            setSnapshot(current => ({ scope, rows: applyReadsToSummary(current.scope === scope ? current.rows : [], accepted), loaded: current.scope === scope && current.loaded }))
+            // A database event and its resident-frame copy are one acknowledgement.
+            // Snapshot callers already perform their single recovery invalidation.
+            resource.invalidate()
+            if (options.reconcile && document.visibilityState === "visible") void resource.refresh()
         })
         window.addEventListener("focus", schedule)
         window.addEventListener("online", schedule)
@@ -52,7 +66,7 @@ export function useCommunicationsUnread(workspaceId: string, workspaceSlug: stri
         schedule()
         return () => {
             invalidateRef.current = () => undefined
-            controller.abort(); resource.dispose(); unsubscribe(); unsubscribeInvalidations()
+            controller.abort(); resource.dispose(); confirmedReads.clear(); invalidationEvents.clear(); unsubscribe(); unsubscribeInvalidations()
             window.removeEventListener("focus", schedule)
             window.removeEventListener("online", schedule)
             document.removeEventListener("visibilitychange", schedule)

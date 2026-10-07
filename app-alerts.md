@@ -6,6 +6,14 @@ Established 17 September 2026. This is the protected behavioral contract for sta
 
 Read this document before changing anything that can affect message reading, unread counts, read receipts, foreground/active-chat detection, notification recipients, push subscriptions, delivery/retry/suppression, notification display/click handling, or their database functions and schedulers. **Do not edit this document or change those behaviors without the user's explicit permission for that scope.** An unrelated UI, performance, shell, authentication or cleanup task does not authorize changing these rules. Trace indirect effects before editing shared dependencies. Record the authorized scope, evidence, rollout and rollback here with any authorized change. Do not use a historical repair document to supersede this contract.
 
+### Authorized cross-device read convergence repair (7 October 2026)
+
+The user approved the scoped application repair and its deployment after the read-only investigation reproduced hosted unread-owner forwarding and stalled recovery failures. Existing newest-visible, active-foreground, server-acknowledgement, recipient and push rules remain unchanged.
+
+Confirmed current-user read positions received through database events and authorized recovery snapshots now enter the same shared acknowledgement path as local read responses. The existing unread owner applies covered positions immediately, preserves newer messages, and deduplicates advancing positions in bounded account/workspace-scoped memory. Snapshot positions are batched before the existing single metadata reconciliation. Hosted panels forward invalidations to that owner instead of a disabled local callback.
+
+The two conversation synchronization GETs have a 30-second deadline including response parsing and owner cancellation. Routine and reconnect synchronization share one in-flight operation. Pending durable read saves continue in their existing queue without blocking synchronization. No new polling interval, socket, database function, migration or visibility shortcut is introduced. Validation, performance observations, rollout and rollback evidence are recorded separately in [the cross-device read report](docs/comms-cross-device-read-reliability-2026-10-07.md).
+
 ### Authorized read/unread reliability repair (25 September 2026)
 
 The user explicitly requested repairs to unread/read/update mechanics after observing that reading chats failed to update unread counts. The newest-visible, active-foreground and server-acknowledgement rules below remain unchanged.

@@ -3,6 +3,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { PanelRouteLoading } from "@/components/workspace/PanelRouteLoading"
 import { useCommunicationsUnread } from "./useCommunicationsUnread"
+import { invalidateUnreadSummary } from "@/lib/communications/unread-broadcast"
 import { Status } from "@/components/ui"
 import { createCommunicationsModeResource, type CommunicationsMode } from "@/lib/communications/mode-resource"
 import { DEFAULT_CONVERSATION_LIST_WIDTH } from "@/components/communications/ResizableConversationColumns"
@@ -51,7 +52,8 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
     const [standalone, setStandalone] = useState(false)
     useEffect(() => { setStandalone(window.top === window && document.body.dataset.workspaceTabsHosted !== "true") }, [])
     // Hosted panels consume the shell's owner. Standalone routes need one owner.
-    const { invalidate: invalidateUnread } = useCommunicationsUnread(workspaceId, workspaceSlug, userId, standalone)
+    useCommunicationsUnread(workspaceId, workspaceSlug, userId, standalone)
+    const invalidateUnread = useCallback((eventKey?: string) => invalidateUnreadSummary(workspaceId, userId, eventKey), [workspaceId, userId])
     const [clientBootstrap, setClientBootstrap] = useState(initialClientBootstrap)
     const [nativeBootstrap, setNativeBootstrap] = useState(initialNativeBootstrap)
     const [loadErrors, setLoadErrors] = useState<Partial<Record<CommunicationsMode, string>>>({})

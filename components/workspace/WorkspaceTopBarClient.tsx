@@ -47,6 +47,8 @@ import { WorkspaceSearchResults } from "@/components/workspace/WorkspaceSearchRe
 import type { WorkspaceSearchResult } from "@/lib/workspace-search"
 import { WorkspaceTabOpeningState } from "@/components/workspace/WorkspaceTabOpeningState"
 import { useCommunicationsUnread } from "@/components/communications/useCommunicationsUnread"
+import { normalizeChatReadUpdate, publishChatRead } from "@/lib/communications/read-state"
+import { invalidateUnreadSummary, unreadMessageEventKey } from "@/lib/communications/unread-broadcast"
 import { publishWorkspaceTabActivity } from "@/lib/workspace-tab-activity"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
@@ -2695,10 +2697,18 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                 channel = candidate
                 presenceChannelRef.current = candidate
                 candidate
-                    .on("postgres_changes", { event: "*", schema: "public", table: "client_messages", filter: `workspace_id=eq.${workspace.id}` }, refreshCommunicationsUnread)
-                    .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_messages", filter: `workspace_id=eq.${workspace.id}` }, refreshCommunicationsUnread)
-                    .on("postgres_changes", { event: "*", schema: "public", table: "communication_read_cursors", filter: `workspace_id=eq.${workspace.id}` }, refreshCommunicationsUnread)
-                    .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_read_cursors", filter: `workspace_id=eq.${workspace.id}` }, refreshCommunicationsUnread)
+                    .on("postgres_changes", { event: "*", schema: "public", table: "client_messages", filter: `workspace_id=eq.${workspace.id}` }, payload => invalidateUnreadSummary(workspace.id, currentUserId, unreadMessageEventKey("client", payload)))
+                    .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_messages", filter: `workspace_id=eq.${workspace.id}` }, payload => invalidateUnreadSummary(workspace.id, currentUserId, unreadMessageEventKey("native", payload)))
+                    .on("postgres_changes", { event: "*", schema: "public", table: "communication_read_cursors", filter: `workspace_id=eq.${workspace.id}` }, payload => {
+                        const confirmed = normalizeChatReadUpdate({ workspaceId: workspace.id, userId: currentUserId, kind: "client" }, payload.new)
+                        if (confirmed) publishChatRead(confirmed)
+                        else if (payload.eventType === "DELETE") refreshCommunicationsUnread()
+                    })
+                    .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_read_cursors", filter: `workspace_id=eq.${workspace.id}` }, payload => {
+                        const confirmed = normalizeChatReadUpdate({ workspaceId: workspace.id, userId: currentUserId, kind: "native" }, payload.new)
+                        if (confirmed) publishChatRead(confirmed)
+                        else if (payload.eventType === "DELETE") refreshCommunicationsUnread()
+                    })
                     .on("presence", { event: "sync" }, () => {
                         if (disposed || channel !== candidate) return
                         setActiveWorkspaceUsers(visibleWorkspacePresence(candidate.presenceState<WorkspacePresencePayload>(), currentUserId, workspaceMembersRef.current))

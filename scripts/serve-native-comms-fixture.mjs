@@ -18,12 +18,15 @@ const sources = [
     "components/communications/CommunicationsRuntime.tsx",
     "lib/communications/native-host.ts",
     "lib/communications/mode-resource.ts",
+    "lib/communications/unread-broadcast.ts",
+    "lib/record-version.js",
     "lib/workspace-record-cache.ts",
     "lib/workspace-navigation-lifecycle.ts",
     "lib/workspace-tabs.ts",
 ]
 const aliases = new Map(sources.map(path => ["@/" + path.replace(/\.(tsx?|js)$/, ""), "./" + path.split("/").at(-1).replace(/\.tsx?$/, ".js")]))
 aliases.set("./WorkspaceNavigation", "./WorkspaceNavigation.js")
+aliases.set("../record-version.js", "./record-version.js")
 for (const from of ["./WorkspaceTabOpeningState", "@/components/workspace/PanelRouteLoading", "./useCommunicationsUnread", "@/components/ui", "@/components/communications/ResizableConversationColumns", "@/components/communications/useReliableCommunicationsRealtime"]) aliases.set(from, "./stubs.js")
 aliases.set("@supabase/supabase-js", "./supabase-fixture.js")
 aliases.set("@/lib/supabase/browser", "./supabase-fixture.js")

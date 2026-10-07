@@ -2,8 +2,9 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 import ts from "typescript"
-import { createUnreadSummaryResource } from "../lib/communications/unread-summary.ts"
-import { invalidateUnreadSummary, subscribeUnreadSummaryInvalidations } from "../lib/communications/unread-broadcast.ts"
+import { applyReadToSummary, createUnreadSummaryResource, type UnreadSummary } from "../lib/communications/unread-summary.ts"
+import { normalizeChatReadUpdate, publishChatRead, subscribeChatReadBatches, type ChatReadUpdate } from "../lib/communications/read-state.ts"
+import { invalidateUnreadSummary, subscribeUnreadSummaryInvalidations, unreadMessageEventKey } from "../lib/communications/unread-broadcast.ts"
 
 test("unread invalidation during response settlement still receives its coalesced refresh", async () => {
     let loads = 0
@@ -91,7 +92,7 @@ test("clearing a chat invalidates unread once on acknowledgement even when the l
     assert.equal(invalidations, 1)
 })
 
-function registerWorkspaceRealtime(kind: "client" | "native", invalidated?: () => void) {
+function registerWorkspaceRealtime(kind: "client" | "native", invalidated?: () => void, acknowledged: (read: ChatReadUpdate) => void = () => undefined) {
     const name = kind === "client" ? "CommunicationsWorkspace" : "TeamCommunicationsWorkspace"
     const file = `components/communications/${name}.tsx`
     const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
@@ -107,6 +108,7 @@ function registerWorkspaceRealtime(kind: "client" | "native", invalidated?: () =
     const dependencies = {
         bootstrap: { workspaceId: "w", workspaceSlug: "fixture", currentUser: { id: "me" } },
         onUnreadInvalidated: invalidated,
+        normalizeChatReadUpdate, publishChatRead: acknowledged, unreadMessageEventKey,
         updates: { removeMessage() {}, beginRead() {}, getSnapshot: () => ({ conversations: [] }) },
         record: (value: unknown) => value ?? {},
         text: (value: unknown) => typeof value === "string" ? value : null,
@@ -123,9 +125,10 @@ function registerWorkspaceRealtime(kind: "client" | "native", invalidated?: () =
 }
 
 for (const kind of ["client", "native"] as const) {
-    test(`${kind} standalone counts refresh on message changes and the current user's remote read`, () => {
+    test(`${kind} messages invalidate while own remote reads use confirmed-read ingress`, () => {
         let invalidations = 0
-        const handlers = registerWorkspaceRealtime(kind, () => invalidations++)
+        const confirmed: ChatReadUpdate[] = []
+        const handlers = registerWorkspaceRealtime(kind, () => invalidations++, read => confirmed.push(read))
         const messages = handlers.get(kind === "client" ? "client_messages" : "workspace_native_messages")!
         const reads = handlers.get(kind === "client" ? "communication_read_cursors" : "workspace_native_read_cursors")!
         // An encrypted event may not carry a decodable body. Its metadata
@@ -139,12 +142,49 @@ for (const kind of ["client", "native"] as const) {
         reads({ eventType: "UPDATE", new: row })
         assert.equal(invalidations, 2, "another person's receipt cannot clear this person's unread count")
         reads({ eventType: "UPDATE", new: { ...row, user_id: "me" } })
-        assert.equal(invalidations, 3)
+        assert.equal(invalidations, 2, "a confirmed read must not also create a duplicate invalidation")
+        assert.equal(confirmed.length, 1)
+        assert.equal(confirmed[0].userId, "me")
+        assert.equal(confirmed[0].conversationId, "c")
     })
 
-    test(`${kind} hosted chat does not create a second unread owner`, () => {
-        const handlers = registerWorkspaceRealtime(kind)
-        const messages = handlers.get(kind === "client" ? "client_messages" : "workspace_native_messages")!
-        assert.doesNotThrow(() => messages({ eventType: "INSERT", new: {}, old: {} }))
+    test(`${kind} hosted remote cursor reaches the shared owner when its separate shell event is missed`, async () => {
+        const previous = { window: globalThis.window, BroadcastChannel: globalThis.BroadcastChannel }
+        Object.assign(globalThis, { window: { top: new EventTarget() }, BroadcastChannel: undefined })
+        let rows: UnreadSummary[] = [{ kind, conversationId: "c", count: 3, latestMessageId: "m3", latestMessageAt: "2026-10-07T10:00:00.000003Z" }]
+        let loads = 0, fail!: (error: Error) => void, failed = false
+        const resource = createUnreadSummaryResource(() => { loads++; return new Promise((_resolve, reject) => { fail = reject }) }, next => { rows = next }, () => { failed = true })
+        const unsubscribe = subscribeChatReadBatches("w", "me", reads => {
+            for (const read of reads) rows = applyReadToSummary(rows, read)
+            resource.invalidate(); void resource.refresh()
+        })
+        try {
+            const handlers = registerWorkspaceRealtime(kind, () => assert.fail("Hosted cursor must not rely on a disabled owner"), publishChatRead)
+            const reads = handlers.get(kind === "client" ? "communication_read_cursors" : "workspace_native_read_cursors")!
+            const row = { workspace_id: "w", relationship_id: "c", conversation_id: "c", user_id: "me", last_read_at: "2026-10-07T10:00:00.000003Z", last_read_message_id: "m3" }
+            reads({ eventType: "UPDATE", new: { ...row, user_id: "other" } })
+            assert.equal(rows[0].count, 3)
+            assert.equal(loads, 0, "another user's receipt cannot refresh this user's count")
+            reads({ eventType: "UPDATE", new: row })
+            assert.deepEqual(rows, [], "accepted remote cursor clears known-covered messages before summary response")
+            assert.equal(loads, 1)
+            fail(new Error("Synthetic summary offline"))
+            await resource.refresh()
+            assert.equal(failed, true)
+            assert.deepEqual(rows, [], "failed reconciliation cannot restore acknowledged unread")
+        } finally { unsubscribe(); resource.dispose(); Object.assign(globalThis, previous) }
+    })
+
+    test(`${kind} hosted older read cannot clear a newer message`, () => {
+        const previous = { window: globalThis.window, BroadcastChannel: globalThis.BroadcastChannel }
+        Object.assign(globalThis, { window: { top: new EventTarget() }, BroadcastChannel: undefined })
+        let rows: UnreadSummary[] = [{ kind, conversationId: "c", count: 1, latestMessageId: "m4", latestMessageAt: "2026-10-07T10:00:00.000004Z" }]
+        const unsubscribe = subscribeChatReadBatches("w", "me", reads => { for (const read of reads) rows = applyReadToSummary(rows, read) })
+        try {
+            const handlers = registerWorkspaceRealtime(kind, undefined, publishChatRead)
+            handlers.get(kind === "client" ? "communication_read_cursors" : "workspace_native_read_cursors")!({ eventType: "UPDATE", new: { workspace_id: "w", relationship_id: "c", conversation_id: "c", user_id: "me", last_read_at: "2026-10-07T10:00:00.000003Z", last_read_message_id: "m3" } })
+            assert.equal(rows.length, 1)
+            assert.equal(rows[0].count, 1)
+        } finally { unsubscribe(); Object.assign(globalThis, previous) }
     })
 }

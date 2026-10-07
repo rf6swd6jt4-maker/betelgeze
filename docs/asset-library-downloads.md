@@ -60,5 +60,7 @@ workspace fixture reports are generated under `browser-results/`. Reproduce with
 `node scripts/browser/run-foundations.mjs --fixture=departure --fixture=drafts --fixture=drafts-strict`
 after installing the separate browser tooling per the reliability release gate.
 
-Not deployed. Hosted CI, authenticated production downloads, sustained-session
+At implementation handoff, this change was not deployed. Subsequent release evidence
+is reported separately. Authenticated production downloads, sustained-session
 performance, and physical Android/Chrome and iPhone/Safari/PWA checks remain unverified.
+The asset browser fixture also runs in both hosted Foundations browser jobs.

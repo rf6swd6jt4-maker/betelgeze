@@ -158,6 +158,8 @@ async function verifySavePicker(browser, engine, mobile, origin) {
         assert.equal(await page.getByRole("checkbox", { name: "Select Campaign image", exact: true }).isChecked(), false)
         assert.equal(await page.getByRole("checkbox", { name: "Select Procedure document", exact: true }).isChecked(), false)
         await page.evaluate(() => window.fixture.reset())
+        // Fixture updates schedule a React render; wait for the removed card before inspecting selection.
+        await page.getByRole("checkbox", { name: "Select Additional asset 3", exact: true }).waitFor({ state: "detached" })
         assert.equal(await selected().count(), 0)
         await page.screenshot({ path: `${output}/${label}-saved.png` })
         assert.equal(nativeDownloads, 0, "Save as streams to its chosen destination without starting a second browser download")

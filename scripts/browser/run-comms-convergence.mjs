@@ -20,6 +20,18 @@ const read = page => page.evaluate(() => window.commsConvergence.state)
 const until = (page, predicate) => page.waitForFunction(predicate, null, { timeout: 5000 })
 async function load(page, kind) { await page.goto(`${url}?kind=${kind}`); await until(page, () => window.commsConvergence?.state.loaded && window.commsConvergence.state.row === 3); await page.waitForTimeout(30) }
 async function assertCleared(page) { await until(page, () => window.commsConvergence.state.row === 0 && window.commsConvergence.state.shell === 0) }
+async function settledScrollPosition(locator) {
+    return locator.evaluate(node => new Promise((resolve, reject) => {
+        let position = node.scrollTop, changedAt = performance.now(), frame = 0
+        const deadline = setTimeout(() => { cancelAnimationFrame(frame); reject(Error("Wheel scrolling did not settle within five seconds")) }, 5000)
+        const sample = now => {
+            if (node.scrollTop !== position) { position = node.scrollTop; changedAt = now }
+            if (position > 0 && now - changedAt >= 250) { clearTimeout(deadline); resolve(position); return }
+            frame = requestAnimationFrame(sample)
+        }
+        frame = requestAnimationFrame(sample)
+    }))
+}
 try {
     for (const engine of engines.length ? engines : ["chromium", "webkit"]) {
         const browser = await ({ chromium, webkit })[engine].launch({ headless: true })
@@ -115,8 +127,9 @@ try {
                     await load(receiver, kind)
                     await receiver.locator("#composer").fill("Draft must survive badge reconciliation")
                     await receiver.locator("#pane").hover(); await receiver.mouse.wheel(0, 350)
-                    await receiver.waitForTimeout(50)
-                    const scroll = await receiver.locator("#pane").evaluate(node => node.scrollTop)
+                    // WebKit may keep applying a wheel animation after wheel() resolves.
+                    // Capture its settled position before testing exact preservation.
+                    const scroll = await settledScrollPosition(receiver.locator("#pane"))
                     assert.ok(scroll > 0, "Real wheel interaction must scroll fixture")
                     await receiver.evaluate(() => { window.commsConvergence.summary([], "hold"); window.commsConvergence.remote() })
                     if (!baseline) await assertCleared(receiver)

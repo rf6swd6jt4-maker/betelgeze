@@ -1,14 +1,8 @@
-import { AssetGallery, AssetGalleryCard } from "@/components/ui/AssetGallery"
-
-import Link from "next/link"
-import { LibraryTabs } from "@/components/library/LibraryTabs"
-import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
-import { QuickStats } from "@/components/panel/QuickStats"
+import { AssetLibrary } from "@/components/library/AssetLibrary"
+import { assetDownloadHref } from "@/lib/assets/download"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
-import { assetHref, listWorkspaceAssets, workspaceHref, type RelationshipAsset } from "@/lib/relationships"
+import { listWorkspaceAssets, type RelationshipAsset } from "@/lib/relationships"
 import { assetPreviewUrl } from "@/lib/assets/preview"
-import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
-import { serializeWorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { requireWorkspacePanel } from "@/lib/workspace-access"
 
@@ -16,12 +10,6 @@ export const dynamic = "force-dynamic"
 
 type PageProps = {
     params: Promise<{ workspaceSlug: string }>
-}
-
-function formatFileSize(size: number | null) {
-    if (!size) return "No file size"
-    if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
-    return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
 function isImage(asset: RelationshipAsset) {
@@ -36,7 +24,8 @@ export default async function AssetsPage({ params }: PageProps) {
     const documentCount = assets.filter((asset) => asset.asset_kind === "document" || asset.content_type === "application/pdf").length
     const uploadCount = assets.filter((asset) => asset.source_kind === "upload").length
     const previewEntries = await Promise.all(assets.slice(0, 24).map(async (asset) => ({
-        asset,
+        asset: { id: asset.id, title: asset.title, content_type: asset.content_type, file_size: asset.file_size, updated_at: asset.updated_at },
+        downloadHref: assetDownloadHref(workspace.slug, asset),
         previewUrl: isImage(asset) && asset.storage_path
             ? await assetPreviewUrl(workspace.id, workspace.slug, asset, true)
             : null,
@@ -46,32 +35,7 @@ export default async function AssetsPage({ params }: PageProps) {
         <main className="min-h-screen bg-neutral-950 px-4 pb-7 text-white sm:px-6">
             <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
             <div className="mx-auto max-w-7xl">
-                <PanelTabHeader
-                    title="Assets"
-                    description="Workspace files and media available for relationship and work-item use."
-                    actions={<Link href={workspaceHref(workspace.slug, "assets?create=asset")} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">New asset</Link>}
-                    tabs={<LibraryTabs workspaceSlug={workspace.slug} active="assets" />}
-                />
-
-                <QuickStats ariaLabel="Asset statistics" items={[
-                    { label: "Total", value: assets.length, hideOnMobile: true },
-                    { label: "Images", value: imageAssets.length },
-                    { label: "Documents", value: documentCount },
-                    { label: "Uploads", value: uploadCount },
-                ]} />
-
-                <section className="mt-5">
-                    {previewEntries.length ? (
-                        <AssetGallery label="Assets">{previewEntries.map(({ asset, previewUrl }) => <AssetGalleryCard key={asset.id} href={assetHref(workspace.slug, asset.id)} title={asset.title} subtitle={shortId(asset.id)} previewUrl={previewUrl} format={asset.title.split(".").at(-1)} detail={<span className="flex justify-between gap-2"><span>{formatRelativeTime(asset.updated_at)}</span><span>{formatFileSize(asset.file_size)}</span></span>} navigationPreview={serializeWorkspaceDetailPreview({ category: "Asset", reference: shortId(asset.id), title: asset.title, updated: formatRelativeTime(asset.updated_at) })} />)}</AssetGallery>
-                    ) : (
-                        <div className="rounded-2xl border border-neutral-800 bg-black p-6">
-                            <p className="text-lg font-semibold">No assets yet.</p>
-                            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">
-                                Upload files from here or attach assets from relationship and work item pages.
-                            </p>
-                        </div>
-                    )}
-                </section>
+                <AssetLibrary key={workspace.slug} workspaceSlug={workspace.slug} previewEntries={previewEntries} counts={{ total: assets.length, images: imageAssets.length, documents: documentCount, uploads: uploadCount }} />
             </div>
         </main>
     )

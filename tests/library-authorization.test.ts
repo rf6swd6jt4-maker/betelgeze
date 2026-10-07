@@ -94,7 +94,13 @@ test("private resource download uses actor-bound asset read on every request and
     let current: Values | null = { ...asset, native_kind: "client_portal_resource", storage_path: `${workspace}/client-portal/file` }
     let signed = 0, reads = 0
     const session = {}
+    const download = load("lib/assets/download.ts", {})
+    const response = load("lib/assets/download-response.ts", {
+        "server-only": {}, "./download": download,
+        "@/lib/onboarding/uploads": { createPrivateResourceDownloadUrl: async () => { signed++; return "https://storage.test/private" } },
+    })
     const loaded = load("app/api/workspaces/[workspaceSlug]/assets/[assetId]/download/route.ts", {
+        "@/lib/assets/download-response": response,
         "@/lib/workspace-access": { requireWorkspaceAccess: async () => ({ workspace: { id: workspace }, access: {} }), workspaceAccessHasCapability: () => true },
         "@/lib/supabase/server": { createSupabaseServerClient: async () => session },
         "@/lib/relationships": { getAsset: async (w: string, id: string, reader: unknown) => { assert.equal(w, workspace); assert.equal(id, assetId); assert.equal(reader, session); reads++; return current } },
@@ -184,6 +190,7 @@ test("native and legacy work details leave attachment loading to the bounded sha
         "@/lib/supabase/admin": { supabaseAdmin: { from: forbidPrefetch } },
         "@/lib/onboarding/uploads": { createUploadSignedUrls: async (paths: string[]) => { assert.deepEqual(paths, []); return new Map() } },
         "@/lib/assets/preview": { assetPreviewUrl: forbidPrefetch },
+        "@/lib/assets/download": { assetDownloadHref: forbidPrefetch },
         "@/lib/admin/okrs": {}, "@/lib/profile-avatar": {},
         "@/lib/ui/relative-time": { shortId: () => "REF", formatRelativeTime: () => "Now" },
         "@/components/list/work-item-presentation": { workItemStatusPresentation: () => ({ label: "To do", tone: "neutral" }) },

@@ -1,6 +1,6 @@
 "use client"
 import { RecordAttachments } from "@/components/detail/RecordAttachments"
-import { AssetGallery, AssetGalleryCard } from "@/components/ui/AssetGallery"
+import { AssetLibrary } from "@/components/library/AssetLibrary"
 import { CollapsedPillLinks } from "@/components/ui/CollapsedPillLinks"
 /* eslint-disable @next/next/no-img-element */
 
@@ -20,13 +20,11 @@ import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, 
 import { AssetFieldsEditor } from "@/app/[workspaceSlug]/assets/[id]/AssetFieldsEditor"
 import { InlineWorkItemFields } from "@/app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
-import { serializeWorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 import { workItemPriorityLabel } from "@/lib/work-item-priority"
 import type { NativeLibrarySnapshot } from "@/lib/workspace-native-library"
 import { useSearchParams } from "./WorkspaceNavigation"
 
 const workspaceHref = (slug: string, suffix: string) => `/${slug}/${suffix}`
-const assetHref = (slug: string, id: string) => `/${slug}/assets/${id}`
 const workItemHref = (slug: string, id: string) => `/${slug}/work-items/${id}`
 const relationshipHubHref = (slug: string, id: string) => `/${slug}/relationships/${id}`
 
@@ -41,36 +39,10 @@ function isAudio(contentType: string | null) { return Boolean(contentType?.start
 function isPdf(contentType: string | null, title: string) { return contentType === "application/pdf" || title.toLowerCase().endsWith(".pdf") }
 
 function Assets({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "assets" }> }) {
-    const { previewEntries, counts } = data
     return (
         <main className="min-h-full bg-neutral-950 px-4 pb-7 text-white sm:px-6">
             <div className="mx-auto max-w-7xl">
-                <PanelTabHeader
-                    title="Assets"
-                    description="Workspace files and media available for relationship and work-item use."
-                    actions={<Link href={workspaceHref(data.workspaceSlug, "assets?create=asset")} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">New asset</Link>}
-                    tabs={<LibraryTabs workspaceSlug={data.workspaceSlug} active="assets" />}
-                />
-
-                <QuickStats ariaLabel="Asset statistics" items={[
-                    { label: "Total", value: counts.total, hideOnMobile: true },
-                    { label: "Images", value: counts.images },
-                    { label: "Documents", value: counts.documents },
-                    { label: "Uploads", value: counts.uploads },
-                ]} />
-
-                <section className="mt-5">
-                    {previewEntries.length ? (
-                        <AssetGallery label="Assets">{previewEntries.map(({ asset, previewUrl }) => <AssetGalleryCard key={asset.id} href={assetHref(data.workspaceSlug, asset.id)} title={asset.title} subtitle={shortId(asset.id)} previewUrl={previewUrl} format={asset.title.split(".").at(-1)} detail={<span className="flex justify-between gap-2"><span>{formatRelativeTime(asset.updated_at)}</span><span>{formatFileSize(asset.file_size)}</span></span>} navigationPreview={serializeWorkspaceDetailPreview({ category: "Asset", reference: shortId(asset.id), title: asset.title, updated: formatRelativeTime(asset.updated_at) })} />)}</AssetGallery>
-                    ) : (
-                        <div className="rounded-2xl border border-neutral-800 bg-black p-6">
-                            <p className="text-lg font-semibold">No assets yet.</p>
-                            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">
-                                Upload files from here or attach assets from relationship and work item pages.
-                            </p>
-                        </div>
-                    )}
-                </section>
+                <AssetLibrary key={data.workspaceSlug} workspaceSlug={data.workspaceSlug} previewEntries={data.previewEntries} counts={data.counts} />
             </div>
         </main>
     )
@@ -122,7 +94,7 @@ function AssetDetail({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "a
                         ) : null}
 
                 <section className="mt-6">
-                    {downloadHref ? <a href={downloadHref} target="_blank" rel="noreferrer" className="mb-4 inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-medium text-black">Download file</a> : null}
+                    {downloadHref ? <a href={downloadHref} download target="_blank" rel="noreferrer" className="mb-4 inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-medium text-black">Download file</a> : null}
                     <div className="min-h-[24rem] overflow-hidden rounded-xl border border-neutral-800 bg-black">
                         {formEntries.length > 0 && (
                             <div className="divide-y divide-neutral-900">
@@ -155,7 +127,7 @@ function AssetDetail({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "a
                         {previewUrl && !isImage(asset.content_type) && !isVideo(asset.content_type) && !isAudio(asset.content_type) && !isPdf(asset.content_type, asset.title) && (
                             <div className="flex min-h-[24rem] flex-col items-center justify-center px-6 text-center">
                                 <p className="text-lg font-semibold">Preview is not available for this file type.</p>
-                                <a href={downloadHref ?? previewUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black">
+                                <a href={downloadHref ?? previewUrl} download={downloadHref ? true : undefined} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black">
                                     {downloadHref ? "Download file" : "Open file"}
                                 </a>
                             </div>

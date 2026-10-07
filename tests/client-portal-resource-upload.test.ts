@@ -220,10 +220,16 @@ test("team downloads enforce workspace, capabilities and asset access before sig
     let permitted = true
     let allowed = false
     const sessionReader = {}
-    let asset: FixtureValue = { native_kind: "client_portal_resource", storage_path: "workspace/client-portal/relationship/session/folder", title: "施工資料.zip" }
+    let asset: FixtureValue = { id: "asset", workspace_id: "workspace", native_kind: "client_portal_resource", source_kind: "upload", storage_path: "workspace/client-portal/relationship/session/folder", title: "施工資料.zip" }
     let reads = 0
     let signed = 0
+    const download = load("lib/assets/download.ts")
+    const downloadResponse = load("lib/assets/download-response.ts", {
+        "server-only": {}, "./download": download,
+        "@/lib/onboarding/uploads": { createPrivateResourceDownloadUrl: async (path: string, name: string) => { assert.equal(path, asset.storage_path); assert.equal(name, "施工資料.zip"); signed++; return "https://storage.example/download" } },
+    })
     const route = load("app/api/workspaces/[workspaceSlug]/assets/[assetId]/download/route.ts", {
+        "@/lib/assets/download-response": downloadResponse,
         "@/lib/workspace-access": {
             requireWorkspaceAccess: async () => ({ workspace: { id: "workspace" }, access: {} }),
             workspaceAccessHasCapability: () => permitted,

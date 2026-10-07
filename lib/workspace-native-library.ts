@@ -6,6 +6,7 @@ import type { InlineWorkItemFields } from "@/app/[workspaceSlug]/work-items/[id]
 import { workItemStatusPresentation } from "@/components/list/work-item-presentation"
 import { loadRelationshipContext } from "@/components/workspace/ClientContextPanel"
 import { listWorkItemKeyResultLinks } from "@/lib/admin/okrs"
+import { assetDownloadHref } from "@/lib/assets/download"
 import { assetPreviewUrl } from "@/lib/assets/preview"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { profileAvatarUrl } from "@/lib/profile-avatar"
@@ -22,7 +23,7 @@ function assetSummary(asset: RelationshipAsset) {
 async function loadAssetList(workspaceSlug: string) {
     const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "library")
     const assets = await listWorkspaceAssets(workspace.id, await createSupabaseServerClient())
-    const previewEntries = await Promise.all(assets.slice(0, 24).map(async (asset) => ({ asset: assetSummary(asset), previewUrl: asset.content_type?.startsWith("image/") && asset.storage_path ? await assetPreviewUrl(workspace.id, workspace.slug, asset, true) : null })))
+    const previewEntries = await Promise.all(assets.slice(0, 24).map(async (asset) => ({ asset: assetSummary(asset), downloadHref: assetDownloadHref(workspace.slug, asset), previewUrl: asset.content_type?.startsWith("image/") && asset.storage_path ? await assetPreviewUrl(workspace.id, workspace.slug, asset, true) : null })))
     return {
         userId: user.id, workspaceId: workspace.id, workspaceSlug: workspace.slug, kind: "assets" as const, context: null,
         previewEntries, counts: { total: assets.length, images: assets.filter((asset) => asset.content_type?.startsWith("image/")).length, documents: assets.filter((asset) => asset.asset_kind === "document" || asset.content_type === "application/pdf").length, uploads: assets.filter((asset) => asset.source_kind === "upload").length },
@@ -77,7 +78,7 @@ async function loadAssetDetail(workspaceSlug: string, id: string) {
     return {
         userId: user.id, workspaceId: workspace.id, workspaceSlug: workspace.slug, kind: "asset-detail" as const,
         context, role, asset: assetSummary(asset), scopedRelationships, scopedWorkItems, previewUrl, formEntries, onboardingBackHref,
-        downloadHref: asset.native_kind === "client_portal_resource" && asset.storage_path ? `/api/workspaces/${workspace.slug}/assets/${asset.id}/download` : null,
+        downloadHref: assetDownloadHref(workspace.slug, asset),
     }
 }
 

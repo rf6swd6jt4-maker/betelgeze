@@ -85,7 +85,13 @@ test("the Admin work queue uses the same canonical row anatomy", async () => {
 })
 
 test("the Assets sibling keeps the shared Library shell without becoming a canonical list", async () => {
-    const source = await readFile("app/[workspaceSlug]/assets/page.tsx", "utf8")
+    const [page, resident, source] = await Promise.all([
+        readFile("app/[workspaceSlug]/assets/page.tsx", "utf8"),
+        readFile("components/workspace/NativeLibraryPanel.tsx", "utf8"),
+        readFile("components/library/AssetLibrary.tsx", "utf8"),
+    ])
+    assert.match(page, /<AssetLibrary/)
+    assert.match(resident, /<AssetLibrary/)
     assert.match(source, /<PanelTabHeader/)
     assert.match(source, /<LibraryTabs/)
     assert.match(source, /<QuickStats/)

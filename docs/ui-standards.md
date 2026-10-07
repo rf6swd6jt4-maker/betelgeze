@@ -680,6 +680,14 @@ Assets category share `AssetGallery` and `AssetGalleryCard`. Add-file controls i
 these galleries use `AddAssetGalleryCard`, which keeps a 4:3 minimum when empty
 and stretches to the full metadata-card row height when assets are present.
 
+The Assets category uses the shared `AssetLibrary` in both standard and resident
+panels. Right-clicking a card (or Shift+F10 while focused) opens Select and Download
+in `AnchoredPopup`. Select mode shows native checkboxes in each card's top-right
+corner; clicking the card also toggles its checkbox. Files without a downloadable
+original are disabled. The header replaces New asset with Download N assets and
+uses Cancel to leave selection. Selection is local to the loaded authorized cards;
+one file downloads directly and multiple files download as one streamed ZIP.
+
 SOP details use the standard detail header, inline autosaving Name and Description,
 a Services field, the Assets gallery, and the admin danger zone. There is no separate
 Edit details form or Linked services section. Text edits compare the field baseline

@@ -102,7 +102,18 @@ try {
             }
             async function check(name, run) {
                 try { await run(); results.push({ engine, name, passed: true }); console.log(`${engine}: ${name}`) }
-                catch (error) { results.push({ engine, name, passed: false, error: String(error) }); await page.screenshot({ path: `browser-results/${engine}-comms-action-edge-failure.png` }); throw error }
+                catch (error) {
+                    console.error(`${engine}: ${name}:`, error)
+                    const failure = { engine, name, passed: false, error: String(error) }
+                    results.push(failure)
+                    try {
+                        await page.screenshot({ path: `browser-results/${engine}-comms-action-edge-failure.png`, timeout: 5_000 })
+                    } catch (screenshotError) {
+                        failure.screenshotError = String(screenshotError)
+                        console.error(`${engine}: failure screenshot unavailable:`, screenshotError)
+                    }
+                    throw error
+                }
             }
 
             for (const fail of [false, true]) {

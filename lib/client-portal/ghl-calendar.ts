@@ -1,8 +1,8 @@
 export type GhlCalendarEvent = { id: string; title: string; start: string; end: string; status: string; kind: "appointment" | "busy"; allDay: boolean; originalTitle?: string; contactCity?: string }
-export type GhlCalendarSnapshot = { source: "owner-user"; owner: { id: string; name: string }; timezone: string; month: string; events: GhlCalendarEvent[]; snapshotId?: string; namesStatus?: "pending" | "ready" | "unavailable" }
+export type GhlCalendarSnapshot = { source: "owner-user" | "booking-calendar"; calendarId?: string; owner: { id: string; name: string }; timezone: string; month: string; events: GhlCalendarEvent[]; snapshotId?: string; namesStatus?: "pending" | "ready" | "unavailable" }
 export type GhlCalendarState = { revision: string | null; snapshot: GhlCalendarSnapshot | null; refreshedAt: string | null; error: string | null; busy: boolean }
 export const calendarErrors: Record<string, string> = {
-    permissions: "Allow Users and Calendar Events read access in your GHL private integration, then try again.",
+    permissions: "Allow Calendars and Calendar Events read access in your GHL private integration, then try again.",
     owner_unavailable: "GHL could not identify one owner for this account. Ask your team to check the account owner setup, then refresh.",
     credentials: "Check your GHL connection, then try again.",
     unavailable: "GHL could not be reached. Your saved calendar has been kept.",

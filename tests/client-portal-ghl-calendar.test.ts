@@ -46,3 +46,22 @@ test('title lookup fails safely for permissions and oversized provider responses
 test('title endpoint rejects injected IDs before acquiring a lease',async()=>{for(const body of [{snapshotId:'00000000-0000-4000-8000-000000000009',contactId},{snapshotId:'not-a-uuid'},{}]){const r=await handlePortalGhlCalendarNames(request(body),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:()=>{throw Error('must not call')}});assert.equal(r.status,400)}})
 test('title enrichment uses only the leased snapshot and sanitizes its response',async()=>{const snapshot=await titleSnapshot(),actions:string[]=[];const r=await handlePortalGhlCalendarNames(request({snapshotId:'00000000-0000-4000-8000-000000000009'}),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:async(p)=>{actions.push(String(p.p_action));assert.equal(p.p_workspace_id,'w');return {data:p.p_action==='begin'?{...credentials,snapshot}:{snapshot:{...snapshot,contactLabels:p.p_labels},privateToken:'secret'},error:null}},fetchNames:async(_c,s)=>{assert.equal(s,snapshot);return {[contactId]:{name:'Manuel Rodriguez'}}}});assert.deepEqual(actions,['begin','finish']);const view=await r.json();assert.equal(view.snapshot.events[0].title,'Manuel Rodriguez');assert.equal(JSON.stringify(view).includes('secret'),false)})
 test('title errors release their own lease without changing schedule data',async()=>{const actions:string[]=[];const r=await handlePortalGhlCalendarNames(request({snapshotId:'00000000-0000-4000-8000-000000000009'}),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:async(p)=>{actions.push(String(p.p_action));return {data:p.p_action==='begin'?{...credentials,snapshot:await titleSnapshot()}:{},error:null}},fetchNames:async()=>{throw Error('private provider error')}});assert.deepEqual(actions,['begin','fail']);assert.equal(r.status,503);assert.equal(JSON.stringify(await r.json()).includes('private provider'),false)})
+
+const {fetchGhlCalendars}=load('ghl-calendar-list-provider') as typeof import('../lib/client-portal/ghl-calendar-list-provider')
+test('calendar discovery projects only bounded location-owned choices',async()=>{
+ const rows=[{id:'calendar123456789',name:'Sales visits',locationId:credentials.locationId,privateNotes:'secret'}]
+ const choices=await fetchGhlCalendars(credentials,async(input)=>{const u=new URL(String(input));assert.equal(u.pathname,'/calendars/');assert.equal(u.searchParams.get('locationId'),credentials.locationId);return Response.json({calendars:rows})})
+ assert.deepEqual(choices,[{id:rows[0].id,name:rows[0].name}])
+ for(const calendars of [[{...rows[0],locationId:'otherlocation123'}],[...rows,...rows],Array(201).fill(rows[0])]) await assert.rejects(fetchGhlCalendars(credentials,async()=>Response.json({calendars})),/response/)
+ await assert.rejects(fetchGhlCalendars(credentials,async()=>new Response('private',{status:403})),/permissions/)
+})
+test('selected calendar includes different assignees but rejects other calendars',async()=>{
+ const selected={calendarId:event.calendarId,calendarName:'Sales visits'}
+ const f=fixture((p,v)=>p==='/calendars/events'?{events:[{...event,assignedUserId:'anotheruser12345'}]}:v)
+ const snapshot=await fetchGhlCalendar(credentials,'2026-09',selected,f.fetcher)
+ assert.equal(snapshot.source,'booking-calendar');assert.equal(snapshot.events.length,1)
+ assert.equal(f.calls.some(u=>u.pathname==='/users/search'),false)
+ for(const u of f.calls.filter(u=>u.pathname.startsWith('/calendars/'))){assert.equal(u.searchParams.get('calendarId'),selected.calendarId);assert.equal(u.searchParams.has('userId'),false)}
+ const wrong=fixture((p,v)=>p==='/calendars/events'?{events:[{...event,calendarId:'othercalendar123'}]}:v)
+ await assert.rejects(fetchGhlCalendar(credentials,'2026-09',selected,wrong.fetcher),/location/)
+})

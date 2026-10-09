@@ -1,0 +1,55 @@
+BE CLIENT CONNECTIONS - GHL PRIVATE INTEGRATION PERMISSIONS
+Updated: 9 October 2026
+
+JASON / CLIENT SUB-ACCOUNT TOKEN
+Open the client's GHL sub-account, then Settings > Private Integrations.
+Create an integration named "Betelgeze client portal".
+In Scopes, select these read permissions (search the scope identifier if the
+friendly label differs in your GHL interface):
+
+View Locations              locations.readonly
+View Contacts               contacts.readonly
+View Opportunities          opportunities.readonly
+View Calendars              calendars.readonly
+View Calendar Events        calendars/events.readonly
+
+locations.readonly: verifies the sub-account, agency ownership and timezone.
+contacts.readonly: CRM totals and names/cities for appointment contacts.
+opportunities.readonly: CRM opportunity totals and status counts.
+calendars.readonly: lists the calendars available for the portal selector.
+calendars/events.readonly: reads appointments and blocked slots.
+
+Optional legacy compatibility:
+View Users                  users.readonly
+Only needed for existing connections still using the automatic owner schedule.
+It is not required after selecting a specific calendar in Client Connections.
+
+Save the integration. Copy its token into BE's Private Integration Token field,
+and enter that same sub-account's Location ID. Select Agency sub-account if it
+belongs to your agency, then Load calendars, choose Client portal calendar, and
+Connect account / Save connection. Do not paste the token into a chat message.
+When editing, leave the token blank to keep the existing token. Changing the
+Location ID requires a token for the replacement sub-account.
+
+AGENCY TOKEN - SEPARATE FROM THE CLIENT TOKEN
+BE Settings > Connections > HighLevel uses an agency-level integration:
+
+View Companies              companies.readonly
+
+This verifies agency identity. It does not replace the client's location token.
+The existing agency connection does not need to be replaced for this feature.
+
+COMMUNICATIONS / WHATSAPP
+No GHL Conversations, Conversation Messages, SMS or WhatsApp scopes are needed
+for this release. BE's current WhatsApp delivery uses its separate Meta
+WhatsApp connection. New-lead WhatsApp automation is a separate future change.
+Do not add write/edit scopes for this calendar-display integration.
+
+BE reads GHL data; it does not create/delete GHL appointments or contacts.
+Removing the connection unlinks BE and its saved credential; it does not delete
+the GHL sub-account or revoke the token at GHL.
+
+Official references (scope identifiers verified on 9 October 2026):
+https://marketplace.gohighlevel.com/docs/Authorization/Scopes/
+https://marketplace.gohighlevel.com/docs/ghl/calendars/get-calendars/
+https://marketplace.gohighlevel.com/docs/ghl/calendars/get-calendar-events/

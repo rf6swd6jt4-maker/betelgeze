@@ -6,7 +6,7 @@ type Dependencies={resolve:(token:string)=>Promise<{workspace:{id:string}}|null>
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{"Cache-Control":"private, no-store","Referrer-Policy":"no-referrer","X-Content-Type-Options":"nosniff"}})
 export function projectCalendar(value:Record<string,unknown>){
  const raw=value.snapshot as import("./ghl-calendar-provider").OwnerCalendarResult|null
- const snapshot=raw?.source==="owner-user"?{source:raw.source,owner:{id:raw.owner.id,name:raw.owner.name},timezone:raw.timezone,month:raw.month,snapshotId:raw.snapshotId,namesStatus:raw.namesStatus,events:raw.events.map(e=>{
+ const snapshot=(raw?.source==="owner-user"||raw?.source==="booking-calendar")?{source:raw.source,owner:{id:raw.owner.id,name:raw.owner.name},timezone:raw.timezone,month:raw.month,snapshotId:raw.snapshotId,namesStatus:raw.namesStatus,events:raw.events.map(e=>{
   const contactId=e.kind==="appointment"?raw.eventContacts?.[e.id]:null
   const label=contactId?raw.contactLabels?.[contactId]:null
   const title=label?[label.name,label.city].filter(Boolean).join(" · "):e.title
@@ -22,7 +22,7 @@ export async function handlePortalGhlCalendar(request:Request,token:string,deps:
   if(request.headers.get("sec-fetch-site")==="cross-site")return reply({error:"Use the calendar in this portal."},403)
   if(!request.headers.get("content-type")?.startsWith("application/json"))return reply({error:"Expected a JSON request."},415)
   let body:Record<string,unknown>;try{body=await readGhlJson(new Response(request.body),2048)}catch{return reply({error:"Invalid calendar request."},400)}
-  if(!validMonth(body.month)||Object.keys(body).some(key=>key!=="month"))return reply({error:"Choose a valid month. The owner calendar is selected automatically."},400)
+  if(!validMonth(body.month)||Object.keys(body).some(key=>key!=="month"))return reply({error:"Choose a valid month. Your team selects the calendar in Client Connections."},400)
   op=randomUUID();const started=await call("begin",{p_operation_id:op,p_month:body.month});const credentials=parseGhlCredentials(started);if(!credentials)throw new GhlError("credentials")
   const snapshot=await(deps.fetchCalendar??fetchGhlCalendar)(credentials,body.month,parseOwnerBinding(started.binding))
   const saved=await call("finish",{p_operation_id:op,p_snapshot:snapshot});op=null;return reply(projectCalendar(saved))

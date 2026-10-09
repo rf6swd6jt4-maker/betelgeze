@@ -2,6 +2,7 @@ import { GhlError, readGhlJson } from "./ghl-provider"
 import { monthWindow, validMonth, type GhlCalendarSnapshot } from "./ghl-calendar"
 const identifier = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9_-]{10,80}$/.test(value)
 type Credentials = { locationId: string; privateToken: string }
+export type SelectedCalendarBinding = { calendarId: string; calendarName: string }
 export type OwnerBinding = { companyId: string; timezone: string; owner: { id: string; name: string } }
 export type OwnerCalendarResult = GhlCalendarSnapshot & { companyId: string; eventContacts?: Record<string, string>; contactLabels?: import("./ghl-calendar-names-provider").ContactLabels }
 
@@ -18,12 +19,14 @@ function validTimezone(timezone: unknown): timezone is string {
     if (typeof timezone !== "string") return false
     try { new Intl.DateTimeFormat("en", { timeZone: timezone }).format(); return true } catch { return false }
 }
-export function parseOwnerBinding(value: unknown): OwnerBinding | null {
+export function parseOwnerBinding(value: unknown): OwnerBinding | SelectedCalendarBinding | null {
     if (!value || typeof value !== "object") return null
+    const selected = value as SelectedCalendarBinding
+    if (identifier(selected.calendarId) && typeof selected.calendarName === "string") return { calendarId: selected.calendarId, calendarName: selected.calendarName.slice(0, 200) }
     const b = value as OwnerBinding
     return identifier(b.companyId) && validTimezone(b.timezone) && identifier(b.owner?.id) && typeof b.owner.name === "string" ? { companyId: b.companyId, timezone: b.timezone, owner: { id: b.owner.id, name: b.owner.name.slice(0,160) } } : null
 }
-export async function fetchGhlCalendar(credentials: Credentials, month: string, binding: OwnerBinding | null = null, fetcher: typeof fetch = fetch): Promise<OwnerCalendarResult> {
+export async function fetchGhlCalendar(credentials: Credentials, month: string, binding: OwnerBinding | SelectedCalendarBinding | null = null, fetcher: typeof fetch = fetch): Promise<OwnerCalendarResult> {
     if (!validMonth(month)) throw new GhlError("response")
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 20_000)
     const request = async (path: string) => {
@@ -35,28 +38,32 @@ export async function fetchGhlCalendar(credentials: Credentials, month: string, 
     try {
         // Resolve the owner once when establishing the connection's calendar.
         // Later refreshes verify this owner alongside the two schedule reads.
+        const selected = binding && "calendarId" in binding ? binding : null
+        let ownerBinding: OwnerBinding | null = binding && "companyId" in binding ? binding : null
         let ownerCheck: Promise<{ id: string; name: string }>
-        if (!binding) {
+        if (!ownerBinding) {
             const identity = await request(`/locations/${encodeURIComponent(credentials.locationId)}`)
             const location = identity.location as Record<string, unknown> | undefined
             if (location?.id !== credentials.locationId || !identifier(location.companyId)) throw new GhlError("location")
             if (!validTimezone(location.timezone)) throw new GhlError("response")
-            const owner = ownerFromUsers(await users(location.companyId), credentials.locationId)
-            binding = { companyId: location.companyId, timezone: location.timezone, owner }
+            const owner = selected
+                ? { id: selected.calendarId, name: selected.calendarName }
+                : ownerFromUsers(await users(location.companyId), credentials.locationId)
+            ownerBinding = { companyId: location.companyId, timezone: location.timezone, owner }
             ownerCheck = Promise.resolve(owner)
         } else {
-            ownerCheck = users(binding.companyId, binding.owner.id).then(value => ownerFromUsers(value, credentials.locationId, binding!.owner.id))
+            ownerCheck = users(ownerBinding.companyId, ownerBinding.owner.id).then(value => ownerFromUsers(value, credentials.locationId, ownerBinding!.owner.id))
         }
-        const { timezone, companyId } = binding
+        const { timezone, companyId } = ownerBinding
         const window = monthWindow(month, timezone)
-        const query = new URLSearchParams({ locationId: credentials.locationId, userId: binding.owner.id, startTime: String(window.start), endTime: String(window.end - 1) })
+        const query = new URLSearchParams({ locationId: credentials.locationId, ...(selected ? { calendarId: selected.calendarId } : { userId: ownerBinding.owner.id }), startTime: String(window.start), endTime: String(window.end - 1) })
         const [owner, appointments, blocks] = await Promise.all([ownerCheck, request(`/calendars/events?${query}`), request(`/calendars/blocked-slots?${query}`)])
         if (!Array.isArray(appointments.events) || !Array.isArray(blocks.events) || appointments.events.length + blocks.events.length > 1000) throw new GhlError("response")
-        const snapshot: OwnerCalendarResult = { source: "owner-user", companyId, owner, timezone, month, events: [], eventContacts: {}, namesStatus: "pending" }
+        const snapshot: OwnerCalendarResult = { source: selected ? "booking-calendar" : "owner-user", ...(selected ? { calendarId: selected.calendarId } : {}), companyId, owner, timezone, month, events: [], eventContacts: {}, namesStatus: "pending" }
         const seen = new Set<string>(), midnight = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })
         for (const [rows, kind] of [[appointments.events, "appointment"], [blocks.events, "busy"]] as const) {
             for (const row of rows) {
-                if (typeof row.id !== "string" || !/^[a-zA-Z0-9_-]{1,256}$/.test(row.id) || row.assignedUserId !== owner.id || row.locationId !== credentials.locationId) throw new GhlError("location")
+                if (typeof row.id !== "string" || !/^[a-zA-Z0-9_-]{1,256}$/.test(row.id) || (selected ? row.calendarId !== selected.calendarId : row.assignedUserId !== owner.id) || row.locationId !== credentials.locationId) throw new GhlError("location")
                 if (typeof row.startTime !== "string" || typeof row.endTime !== "string" || !/(Z|[+-]\d{2}:?\d{2})$/.test(row.startTime) || !/(Z|[+-]\d{2}:?\d{2})$/.test(row.endTime)) throw new GhlError("response")
                 const start = Date.parse(row.startTime), end = Date.parse(row.endTime)
                 if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new GhlError("response")

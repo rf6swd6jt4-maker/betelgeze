@@ -1,5 +1,7 @@
 import "server-only"
 
+import { fetchGhlCalendars } from "@/lib/client-portal/ghl-calendar-list-provider"
+import { fetchGhlCalendar } from "@/lib/client-portal/ghl-calendar-provider"
 import { randomUUID } from "node:crypto"
 import { fetchGhlMetrics, GhlError, parseGhlCredentials } from "@/lib/client-portal/ghl-provider"
 import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
@@ -14,6 +16,9 @@ export type ClientConnectionAccount = {
     locationId: string | null
     locationName: string | null
     refreshedAt: string | null
+    revision?: string | null
+    calendarId?: string | null
+    calendarName?: string | null
     readyAt: string | null
     error: string | null
     busy: boolean
@@ -36,7 +41,7 @@ async function call(workspaceId: string, userId: string, action: string, params:
 }
 
 export async function listClientConnections(workspaceId: string, userId: string): Promise<ClientConnectionAccount[]> {
-    const data = await call(workspaceId, userId, "list")
+    const data = await managementCall(workspaceId, userId, "list")
     if (!Array.isArray(data)) throw new Error("Client connections could not be loaded.")
     return data.flatMap((value): ClientConnectionAccount[] => {
         if (!value || typeof value !== "object") return []
@@ -49,6 +54,9 @@ export async function listClientConnections(workspaceId: string, userId: string)
             connected: row.connected === true, locationId: typeof row.locationId === "string" ? row.locationId : null,
             locationName: typeof row.locationName === "string" ? row.locationName : null,
             refreshedAt: typeof row.refreshedAt === "string" ? row.refreshedAt : null,
+            revision: typeof row.revision === "string" ? row.revision : null,
+            calendarId: typeof row.calendarId === "string" ? row.calendarId : null,
+            calendarName: typeof row.calendarName === "string" ? row.calendarName : null,
             readyAt: typeof row.readyAt === "string" ? row.readyAt : null,
             error: typeof row.error === "string" ? row.error : null, busy: row.busy === true,
         }]
@@ -92,4 +100,56 @@ export async function refreshClientHighLevel(input: { workspaceId: string; userI
         await call(input.workspaceId, input.userId, "fail", { p_relationship_id: input.relationshipId, p_operation_id: operationId, p_error: code }).catch(() => {})
         throw new Error(failureMessages[code] ?? "The HighLevel connection could not be refreshed.")
     }
+}
+
+export type ClientConnectionEdit = {
+    relationshipId: string; accountType: "client_account" | "agency_subaccount";
+    locationId: string; privateToken: string; expectedRevision: string | null; calendarId: string;
+}
+async function managementCall(workspaceId: string, userId: string, action: string, params: Record<string, unknown> = {}) {
+    const { data, error } = await supabaseAdmin.rpc("manage_client_ghl_connection_v2", { p_workspace_id: workspaceId, p_user_id: userId, p_action: action, ...params })
+    if (error || !data || typeof data !== "object") throw new Error(failureMessages.storage)
+    if (typeof data.failure === "string") throw new Error(failureMessages[data.failure] ?? failureMessages.unavailable)
+    return data as Record<string, unknown>
+}
+async function editCredentials(workspaceId: string, userId: string, input: Pick<ClientConnectionEdit, "relationshipId" | "locationId" | "privateToken" | "expectedRevision">) {
+    const saved = await managementCall(workspaceId, userId, "credentials", { p_relationship_id: input.relationshipId, p_expected_revision: input.expectedRevision })
+    if (!input.privateToken.trim() && saved.locationId !== input.locationId.trim()) throw new Error("Enter a new token when changing the Location ID.")
+    const credentials = parseGhlCredentials({ locationId: input.locationId, privateToken: input.privateToken.trim() || saved.privateToken })
+    if (!credentials) throw new Error("Enter a valid Location ID and Private Integration Token.")
+    return credentials
+}
+export async function loadClientCalendars(workspaceId: string, userId: string, input: Pick<ClientConnectionEdit, "relationshipId" | "locationId" | "privateToken" | "expectedRevision">) {
+    const credentials = await editCredentials(workspaceId, userId, input)
+    try { return await fetchGhlCalendars(credentials) }
+    catch (error) { throw new Error(error instanceof GhlError ? failureMessages[error.code] ?? failureMessages.unavailable : failureMessages.unavailable) }
+}
+export async function saveClientConnection(workspaceId: string, userId: string, input: ClientConnectionEdit) {
+    if (!["client_account", "agency_subaccount"].includes(input.accountType)) throw new Error("Choose an account source.")
+    const credentials = await editCredentials(workspaceId, userId, input)
+    const operationId = randomUUID()
+    await managementCall(workspaceId, userId, "begin_connect", { p_relationship_id: input.relationshipId, p_operation_id: operationId, p_expected_revision: input.expectedRevision })
+    try {
+        const [result, calendars] = await Promise.all([fetchGhlMetrics(credentials), fetchGhlCalendars(credentials)])
+        const calendar = calendars.find(item => item.id === input.calendarId)
+        if (!calendar) throw new GhlError("location")
+        if (input.accountType === "agency_subaccount") {
+            const agency = await getWorkspaceProviderConfig(workspaceId, "ghl")
+            if (!result.companyId || result.companyId !== agency.company_id) throw new GhlError("agency")
+        }
+        // Validate event-read permission before calling the selected calendar ready.
+        await fetchGhlCalendar(credentials, new Date().toISOString().slice(0, 7), { calendarId: calendar.id, calendarName: calendar.name })
+        await managementCall(workspaceId, userId, "finish", {
+            p_relationship_id: input.relationshipId, p_operation_id: operationId, p_account_type: input.accountType,
+            p_location_id: credentials.locationId, p_private_token: input.privateToken.trim() ? credentials.privateToken : null,
+            p_location_name: result.locationName, p_metrics: result.metrics, p_calendar_id: calendar.id, p_calendar_name: calendar.name,
+        })
+    } catch (error) {
+        const code = error instanceof GhlError ? error.code : "unavailable"
+        await managementCall(workspaceId, userId, "fail", { p_relationship_id: input.relationshipId, p_operation_id: operationId, p_error: code }).catch(() => {})
+        throw error instanceof GhlError ? new Error(failureMessages[code] ?? failureMessages.unavailable) : error
+    }
+}
+export async function removeClientConnection(workspaceId: string, userId: string, relationshipId: string, expectedRevision: string) {
+    await managementCall(workspaceId, userId, "remove", { p_relationship_id: relationshipId, p_expected_revision: expectedRevision })
 }

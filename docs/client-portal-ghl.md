@@ -86,3 +86,36 @@ Contacts Search uses location-scoped OR groups of exact `id eq` filters, up to 1
 `20260912070000_client_portal_ghl_contact_titles.sql` adds an independent service-only title lease. It verifies portal/workspace access, connection revision and a unique calendar snapshot ID (`20260912080000_client_portal_ghl_title_snapshot_identity.sql` closes the same-timestamp race). Late completions cannot enrich a replaced snapshot, another month or a disconnected/replaced account. The title lease does not block a calendar refresh. Existing original event titles are preserved in storage, and the routine owner binding includes only company, timezone and owner metadata.
 
 Verification: 934 repository tests, production build, changed-file lint, isolated SQL authorization/concurrency tests, and Chromium/WebKit at 1440×1000, 390×844 and 320×568. Browser fixtures covered exact titles, original-title retention, independent loading, Files/Results switching, month navigation during a delayed lookup, stale responses and lookup failures. Actual GHL data returned the two directly linked contacts and kept ten Busy blocks private. Physical iOS/Android devices were not tested; no platform-wide latency claim is made. The broader GHL milestone and richer appointment briefs remain open.
+
+## Staff calendar selection and connection controls — 9 October 2026
+
+Client Connections now offers Edit and Remove through a row context menu, Shift+F10,
+or the touch-accessible actions button. Editing can keep a saved token, replace it,
+change location/account source, and select one published calendar. A replacement
+location requires its own token. Loading calendars is an explicit, bounded HTTP
+request; list entry and portal snapshot reads never contact GHL. Successful writes
+reconcile the list locally without a document reload.
+
+New and edited connections require `calendars.readonly` as well as Locations,
+Contacts, Opportunities and Calendar Events read access. A save verifies agency
+ownership when applicable, catalog membership and event access before committing.
+The selected calendar is relationship-scoped; portal callers cannot override it.
+Its appointments are read by calendarId regardless of assigned user. Existing
+owner schedules remain unchanged until staff explicitly choose a calendar.
+See `ghl-private-integration-permissions.txt` for the token setup checklist.
+
+The additive `20261009170000_client_connection_calendar_controls.sql` migration
+requires the existing client-connection manager and latest calendar/title RPCs.
+It preserves those functions, adds a service-only v2 manager, and extends the
+portal RPCs to support both snapshot sources. Revision checks reject stale edits
+and removals; replacement credentials/calendar choices invalidate cached snapshots
+and fence pending refresh/title results. Removal deletes only the selected BE link,
+its managed Vault secret and derived snapshots; provider data and client history
+remain. Apply this migration before the application release. Application rollback
+preserves the new schema and selections; an old application cannot render selected
+calendar snapshots, so roll forward to restore that view rather than deleting data.
+
+Synthetic verification: client-connection SQL fixture, provider/authorization tests,
+and Chromium/WebKit connection-panel fixtures. Actual provider credentials and
+physical Android/iPhone operation are separate acceptance evidence. No WhatsApp
+sending, template setup, GHL booking writes or alerts changes are included.

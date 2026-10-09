@@ -54,6 +54,10 @@ jobs:
         run: npm ci
       - name: Migration history, new migrations, whitespace and changed JS/TS lint
         run: node scripts/check-foundation-changes.mjs --base "$FOUNDATION_BASE" --lint
+      - name: Client connection calendar SQL regression
+        run: |
+          npm install --prefix "$RUNNER_TEMP/be-pglite" --no-save --ignore-scripts @electric-sql/pglite@0.5.8
+          BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-client-connection-controls-sql.mjs
       - name: Full test suite
         run: npm test
       - name: Production webpack build with local placeholders

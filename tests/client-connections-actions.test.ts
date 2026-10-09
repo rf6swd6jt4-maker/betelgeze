@@ -33,6 +33,8 @@ function fixture(options: { grantedUser?: string; grantedWorkspace?: string; pan
     }
     const manager = compiled("lib/client-connections.ts", {
         "server-only": {},
+        "@/lib/client-portal/ghl-calendar-list-provider": {},
+        "@/lib/client-portal/ghl-calendar-provider": {},
         "node:crypto": { randomUUID },
         "@/lib/client-portal/ghl-provider": {
             GhlError,

@@ -201,6 +201,8 @@ jobs:
         run: node scripts/browser/run-native-loading.mjs "${{ matrix.engine }}"
       - name: Exercise asset selection and single and archive downloads
         run: node scripts/browser/run-asset-library.mjs "${{ matrix.engine }}"
+      - name: Exercise client connection menus and calendar selection
+        run: node scripts/browser/run-client-connections.mjs "${{ matrix.engine }}"
       - name: Exercise service transfer preview, acknowledgement and recovery
         run: node scripts/browser/run-service-transfer.mjs "${{ matrix.engine }}"
       - name: Exercise on-demand relationship queue refresh and access loss

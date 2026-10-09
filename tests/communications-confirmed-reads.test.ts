@@ -4,11 +4,14 @@ import { setImmediate } from "node:timers/promises"
 import test from "node:test"
 import ts from "typescript"
 import { mergeChatReadCursor, mergeChatReadCursors, normalizeChatReadUpdate, publishChatRead, publishChatReads, subscribeChatReadBatches, type ChatReadUpdate } from "../lib/communications/read-state.ts"
-import { applyReadsToSummary, createConfirmedReadLedger, createUnreadSummaryResource, type UnreadSummary } from "../lib/communications/unread-summary.ts"
+import { applyReadToSummary, createConfirmedReadLedger, createUnreadSummaryResource, type UnreadSummary } from "../lib/communications/unread-summary.ts"
+import { publishDeviceChatRead, subscribeDeviceChatReads } from "../lib/communications/device-read-state.ts"
 import { invalidateUnreadSummary, subscribeUnreadSummaryInvalidations, unreadMessageEventKey } from "../lib/communications/unread-broadcast.ts"
 
 const scope = { workspaceId: "w", userId: "me", kind: "native" as const }
 const read: ChatReadUpdate = { ...scope, conversationId: "chat", lastReadAt: "2026-10-07T10:00:00.123456Z", lastReadMessageId: "b" }
+const deviceId = "installation-a"
+const acknowledgeDeviceRead = (cursor: ChatReadUpdate = read) => publishDeviceChatRead({ ...cursor, deviceId })
 const summary: UnreadSummary = { kind: "native", conversationId: "chat", count: 3, latestMessageAt: read.lastReadAt, latestMessageId: "b" }
 
 test("batch cursor merging matches ordered single updates and retains unchanged array identity", () => {
@@ -109,12 +112,15 @@ test("batch transport preserves legacy singles, isolates scope and lets sibling 
     } finally { unsubscribe(); fixture.restore() }
 })
 
-function mountUnreadOwner() {
+function mountUnreadOwner(withPresence = false) {
     const fixture = browserFixture()
+    if (withPresence) Object.assign(window, { top: window, location: { pathname: "/fixture" } })
     const cleanups: Array<() => void> = []
     const effects: Array<() => void | (() => void)> = []
     const states: unknown[] = []
-    const requests: Array<{ resolve: (rows: UnreadSummary[]) => void; reject: (error: Error) => void }> = []
+    type ReplyOptions = { deviceId?: string; readCursors?: ChatReadUpdate[]; cursorsIncluded?: boolean; status?: number }
+    const observations: Array<{ resolve: (status?: number) => void; reject: (error: Error) => void }> = []
+    const requests: Array<{ includesCursors: boolean; resolve: (rows: UnreadSummary[], options?: ReplyOptions) => void; reject: (error: Error) => void }> = []
     let stateIndex = 0
     const dependencies = {
         useCallback: (callback: unknown) => callback,
@@ -126,36 +132,60 @@ function mountUnreadOwner() {
         },
         useEffect: (effect: () => void | (() => void)) => effects.push(effect),
         beginWorkspaceInteraction: () => ({ mark() {}, finish() {} }),
-        subscribeChatReadBatches, subscribeUnreadSummaryInvalidations, publishUnreadSummary() {},
-        applyReadsToSummary, createConfirmedReadLedger, createUnreadSummaryResource,
-        fetch: () => new Promise((resolve, reject) => requests.push({ resolve: rows => resolve({ ok: true, json: async () => ({ conversations: rows }) }), reject })),
+        subscribeDeviceChatReads, subscribeUnreadSummaryInvalidations, publishUnreadSummary() {},
+        applyReadToSummary, mergeChatReadCursors, normalizeChatReadUpdate, createConfirmedReadLedger, createUnreadSummaryResource,
+        fetch: (url: string) => new Promise((resolve, reject) => {
+            if (url === "/api/account/devices") {
+                observations.push({ resolve: (status = 200) => resolve({ ok: status === 200, status }), reject })
+                return
+            }
+            const includesCursors = new URL(url, "https://fixture.test").searchParams.get("cursors") === "1"
+            requests.push({ includesCursors, reject, resolve: (rows, options = {}) => {
+                const cursorsIncluded = options.cursorsIncluded ?? includesCursors
+                const status = options.status ?? 200
+                resolve({ ok: status === 200, status, json: async () => ({ deviceId: options.deviceId ?? deviceId, conversations: rows, cursorsIncluded, ...(cursorsIncluded ? { readCursors: options.readCursors ?? [] } : {}) }) })
+            } })
+        }),
     }
     const file = "components/communications/useCommunicationsUnread.ts"
     const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true)
-    const declaration = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.getText(source) === "useCommunicationsUnread")!
-    const code = ts.transpileModule(declaration.getText(source).replace(/^export /, ""), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+    const code = ts.transpileModule(source.statements.filter(node => !ts.isImportDeclaration(node)).map(node => node.getText(source)).join("\n").replace(/^export /gm, ""), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
     const mount = new Function(...Object.keys(dependencies), `${code}; return useCommunicationsUnread`)(...Object.values(dependencies))
+    if (withPresence) {
+        const file = "components/account/AccountDevicePresence.tsx"
+        const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true)
+        const code = ts.transpileModule(source.statements.filter(node => !ts.isImportDeclaration(node)).map(node => node.getText(source)).join("\n").replace(/^export /gm, ""), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+        new Function(...Object.keys(dependencies), `${code}; return AccountDevicePresence`)(...Object.values(dependencies))()
+    }
     mount("w", "fixture", "me", true)
     for (const effect of effects) { const cleanup = effect(); if (cleanup) cleanups.push(cleanup) }
     return {
-        requests,
+        requests, observations,
         rows: () => (states[0] as { rows: UnreadSummary[] }).rows,
+        snapshot: () => states[0] as { deviceId: string | null; readCursors: ChatReadUpdate[]; loaded: boolean },
         stale: () => states[1],
         unmount: () => cleanups.forEach(cleanup => cleanup()),
         dispose: () => { cleanups.forEach(cleanup => cleanup()); fixture.restore() },
     }
 }
 
-test("the real summary hook immediately applies remote receipts, deduplicates copies and survives a failed reconciliation", async () => {
+test("the real summary hook ignores account receipts, applies own device ACKs and survives failed reconciliation", async () => {
     const owner = mountUnreadOwner()
     try {
         owner.requests[0].resolve([summary])
         await setImmediate()
         assert.deepEqual(owner.rows(), [summary])
         publishChatRead(read)
-        assert.deepEqual(owner.rows(), [], "clear from confirmed metadata before any second HTTP response")
+        publishChatReads([read])
+        assert.deepEqual(owner.rows(), [summary], "account-wide receipts cannot clear this installation's badge")
+        assert.equal(owner.requests.length, 1)
+        publishDeviceChatRead({ ...read, deviceId: "installation-b" })
+        assert.deepEqual(owner.rows(), [summary], "another installation's acknowledgement cannot clear this badge")
+        acknowledgeDeviceRead()
+        assert.deepEqual(owner.rows(), [], "clear from confirmed device metadata before any second HTTP response")
         assert.equal(owner.requests.length, 2)
-        publishChatRead(read)
+        assert.equal(owner.requests[1].includesCursors, false, "read reconciliation fetches counts only")
+        acknowledgeDeviceRead()
         publishChatReads([read])
         assert.equal(owner.requests.length, 2, "shell/frame/browser copies do not invalidate the pending request")
         owner.requests[1].reject(new Error("temporary failure"))
@@ -170,7 +200,7 @@ test("the real summary hook immediately applies remote receipts, deduplicates co
     } finally { owner.dispose() }
 })
 
-test("a recovery batch plus its existing invalidation starts one refresh and preserves newer arrivals", async () => {
+test("account recovery receipts do not change badges and one existing invalidation reconciles device counts", async () => {
     const owner = mountUnreadOwner()
     try {
         const newer = { ...summary, latestMessageId: "c" }
@@ -178,29 +208,33 @@ test("a recovery batch plus its existing invalidation starts one refresh and pre
         owner.requests[0].resolve([newer, second])
         await setImmediate()
         publishChatReads([read, { ...read, conversationId: "second" }], { reconcile: false })
-        assert.deepEqual(owner.rows(), [newer])
+        assert.deepEqual(owner.rows(), [newer, second])
         assert.equal(owner.requests.length, 1)
         invalidateUnreadSummary("w", "me")
         assert.equal(owner.requests.length, 2)
         publishChatReads([read, { ...read, conversationId: "second" }], { reconcile: false })
-        owner.requests[1].resolve([newer])
+        owner.requests[1].resolve([newer, second])
         await setImmediate()
         assert.equal(owner.requests.length, 2)
-        assert.deepEqual(owner.rows(), [newer])
+        assert.equal(owner.requests[1].includesCursors, false)
+        assert.deepEqual(owner.rows(), [newer, second])
     } finally { owner.dispose() }
 })
 
-test("a receipt during initial loading fences the earlier result", async () => {
+test("a device acknowledgement during initial loading fences the earlier result until server identity verification", async () => {
     const owner = mountUnreadOwner()
     try {
-        publishChatRead(read)
+        acknowledgeDeviceRead()
         owner.requests[0].resolve([summary])
         await setImmediate()
         assert.equal(owner.requests.length, 2)
         assert.deepEqual(owner.rows(), [])
-        owner.requests[1].resolve([summary])
+        assert.equal(owner.snapshot().loaded, false)
+        assert.equal(owner.requests[1].includesCursors, true)
+        owner.requests[1].resolve([], { readCursors: [read] })
         await setImmediate()
         assert.deepEqual(owner.rows(), [])
+        assert.deepEqual(owner.snapshot().readCursors, [read])
     } finally { owner.dispose() }
 })
 
@@ -209,7 +243,7 @@ test("disposing an unread owner ignores both a late response and later read broa
     const owner = mountUnreadOwner()
     try {
         owner.unmount()
-        publishChatRead(read)
+        acknowledgeDeviceRead()
         owner.requests[0].resolve([summary])
         await setImmediate()
         assert.equal(owner.requests.length, 1)
@@ -281,5 +315,163 @@ test("event deduplication forgets old identities after its bounded window", asyn
         assert.equal(owner.requests.length, 4, "old identities are evicted instead of growing without bound")
         owner.requests[3].resolve([])
         await setImmediate()
+    } finally { owner.dispose() }
+})
+
+
+for (const olderRequestFails of [false, true]) {
+    test(`a requested cursor refresh survives a superseded count request that ${olderRequestFails ? "fails" : "completes"}`, async () => {
+        const owner = mountUnreadOwner()
+        try {
+            const newer = { ...summary, latestMessageId: "c" }
+            owner.requests[0].resolve([newer], { readCursors: [read] })
+            await setImmediate()
+            assert.equal(owner.requests[0].includesCursors, true)
+            invalidateUnreadSummary("w", "me")
+            assert.equal(owner.requests[1].includesCursors, false)
+            window.dispatchEvent(new Event("focus"))
+            if (olderRequestFails) owner.requests[1].reject(new Error("older count request failed"))
+            else owner.requests[1].resolve([])
+            await setImmediate()
+            assert.deepEqual(owner.rows(), [newer], "superseded counts cannot replace the accepted snapshot")
+            assert.equal(owner.requests.length, 3)
+            assert.equal(owner.requests[2].includesCursors, true, "resume's cursor requirement survives the older request")
+            owner.requests[2].reject(new Error("full snapshot temporarily failed"))
+            await setImmediate()
+            assert.equal(owner.requests.length, 3, "a failure does not start its own retry")
+            invalidateUnreadSummary("w", "me")
+            assert.equal(owner.requests[3].includesCursors, true, "routine recovery still fulfills the unsatisfied cursor requirement")
+            owner.requests[3].resolve([newer], { readCursors: [read] })
+            await setImmediate()
+            invalidateUnreadSummary("w", "me")
+            assert.equal(owner.requests[4].includesCursors, false, "accepted full metadata returns routine refreshes to counts only")
+            owner.requests[4].resolve([newer])
+            await setImmediate()
+            assert.deepEqual(owner.snapshot().readCursors, [read])
+        } finally { owner.dispose() }
+    })
+}
+
+test("a count-only identity change retains stale badges but replaces positions only after one full snapshot", async () => {
+    const owner = mountUnreadOwner()
+    try {
+        const newer = { ...summary, latestMessageId: "c" }
+        owner.requests[0].resolve([newer], { readCursors: [read] })
+        await setImmediate()
+        invalidateUnreadSummary("w", "me")
+        owner.requests[1].resolve([], { deviceId: "installation-b" })
+        await setImmediate()
+        assert.equal(owner.snapshot().deviceId, null)
+        assert.equal(owner.stale(), true)
+        assert.deepEqual(owner.rows(), [newer], "changing identity does not falsely report zero unread")
+        assert.equal(owner.requests.length, 3)
+        assert.equal(owner.requests[2].includesCursors, true)
+        owner.requests[2].resolve([summary], { deviceId: "installation-b", readCursors: [] })
+        await setImmediate()
+        assert.equal(owner.snapshot().deviceId, "installation-b")
+        assert.deepEqual(owner.snapshot().readCursors, [], "previous installation positions cannot leak into the new scope")
+        assert.deepEqual(owner.rows(), [summary])
+        assert.equal(owner.stale(), false)
+        assert.equal(owner.requests.length, 3, "one forced full snapshot is enough")
+    } finally { owner.dispose() }
+})
+
+test("temporary unbound identity keeps confirmed badges and requires full metadata on recovery", async () => {
+    const owner = mountUnreadOwner()
+    try {
+        owner.requests[0].resolve([summary])
+        await setImmediate()
+        invalidateUnreadSummary("w", "me")
+        owner.requests[1].resolve([], { status: 409 })
+        await setImmediate()
+        assert.deepEqual(owner.rows(), [summary])
+        assert.equal(owner.snapshot().loaded, true)
+        assert.equal(owner.snapshot().deviceId, null)
+        assert.equal(owner.stale(), true)
+        assert.equal(owner.requests.length, 2)
+        window.dispatchEvent(new Event("betelgeze:device-observed"))
+        assert.equal(owner.requests[2].includesCursors, true)
+        owner.requests[2].resolve([summary])
+        await setImmediate()
+        assert.equal(owner.snapshot().deviceId, deviceId)
+        assert.equal(owner.stale(), false)
+    } finally { owner.dispose() }
+})
+
+
+test("a transient first device observation recovers while visible through one coalesced binding retry", async () => {
+    const owner = mountUnreadOwner(true)
+    try {
+        assert.equal(owner.observations.length, 1)
+        owner.requests[0].resolve([], { status: 409 })
+        await setImmediate()
+        assert.equal(owner.observations.length, 1, "binding retry shares the in-flight canonical owner")
+        owner.observations[0].resolve(503)
+        await setImmediate()
+        assert.equal(owner.observations.length, 2, "one requested recovery is retained despite the paired-event throttle")
+        owner.observations[1].resolve()
+        await setImmediate()
+        assert.equal(owner.requests.length, 2, "successful binding signals the existing summary owner")
+        owner.requests[1].resolve([summary])
+        await setImmediate()
+        assert.equal(owner.snapshot().deviceId, deviceId)
+        assert.equal(owner.stale(), false)
+        assert.equal(owner.observations.length, 2)
+    } finally { owner.dispose() }
+})
+
+test("failed device observation recovers on online without focus and repeated unbound summaries cannot poll", async () => {
+    const owner = mountUnreadOwner(true)
+    try {
+        owner.observations[0].reject(new Error("offline"))
+        await setImmediate()
+        owner.requests[0].resolve([], { status: 409 })
+        await setImmediate()
+        owner.observations[1].resolve(503)
+        await setImmediate()
+        for (let index = 0; index < 3; index++) {
+            invalidateUnreadSummary("w", "me")
+            owner.requests.at(-1)!.resolve([], { status: 409 })
+            await setImmediate()
+        }
+        assert.equal(owner.observations.length, 2, "one unresolved binding episode cannot create a POST/GET retry loop")
+        window.dispatchEvent(new Event("online"))
+        assert.equal(owner.observations.length, 3, "online retries presence even without another foreground visit")
+        owner.requests.at(-1)!.resolve([], { status: 409 })
+        await setImmediate()
+        owner.observations[2].resolve()
+        await setImmediate()
+        owner.requests.at(-1)!.resolve([summary])
+        await setImmediate()
+        assert.equal(owner.snapshot().deviceId, deviceId)
+        assert.equal(owner.snapshot().loaded, true)
+        assert.equal(owner.stale(), false)
+        assert.equal(owner.observations.length, 3)
+    } finally { owner.dispose() }
+})
+
+test("a new unbound cookie after a valid summary can request one fresh binding recovery without a focus event", async () => {
+    const owner = mountUnreadOwner(true)
+    try {
+        owner.observations[0].resolve()
+        await setImmediate()
+        owner.requests[0].resolve([])
+        await setImmediate()
+        owner.requests[1].resolve([summary], { readCursors: [] })
+        await setImmediate()
+        invalidateUnreadSummary("w", "me")
+        owner.requests[2].resolve([], { deviceId: "installation-b", status: 409 })
+        await setImmediate()
+        assert.equal(owner.snapshot().deviceId, null)
+        assert.deepEqual(owner.rows(), [summary])
+        assert.equal(owner.observations.length, 2)
+        owner.observations[1].resolve()
+        await setImmediate()
+        assert.equal(owner.requests[3].includesCursors, true)
+        owner.requests[3].resolve([summary], { deviceId: "installation-b" })
+        await setImmediate()
+        assert.equal(owner.snapshot().deviceId, "installation-b")
+        assert.deepEqual(owner.snapshot().readCursors, [])
+        assert.equal(owner.observations.length, 2)
     } finally { owner.dispose() }
 })

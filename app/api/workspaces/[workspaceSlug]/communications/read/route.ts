@@ -1,3 +1,4 @@
+import { communicationDeviceId, deviceReadError } from "@/lib/communications/device-server"
 import { withChatPerformance } from "@/lib/communications/performance-server"
 import { after, NextRequest } from "next/server"
 
@@ -11,11 +12,26 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 async function handlePOST(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
     const { workspace, user } = await requireCommunicationsWorkspace(workspaceSlug)
-    const input = await request.json().catch(() => null) as { relationshipId?: unknown; messageId?: unknown } | null
+    const input = await request.json().catch(() => null) as { relationshipId?: unknown; messageId?: unknown; deviceId?: unknown } | null
     const relationshipId = typeof input?.relationshipId === "string" ? input.relationshipId : ""
     const messageId = typeof input?.messageId === "string" ? input.messageId : ""
     if (!UUID_PATTERN.test(relationshipId) || !UUID_PATTERN.test(messageId)) return Response.json({ error: "Invalid read cursor" }, { status: 400 })
     const supabase = await createSupabaseServerClient()
+    if (input && "deviceId" in input) {
+        const deviceId = await communicationDeviceId()
+        if (!deviceId || input.deviceId !== deviceId) return Response.json({ error: "The current device changed. Refresh unread counts and retry.", code: "device_changed" }, { status: 409 })
+        const { data, error } = await supabase.rpc("advance_communication_device_read", { p_workspace_id: workspace.id, p_device_id: deviceId, p_kind: "client", p_conversation_id: relationshipId, p_message_id: messageId })
+        if (error || !data) return deviceReadError(error)
+        // Keep the existing account-wide legacy notification cleanup until the
+        // separate notification-policy decision is approved.
+        after(async () => {
+            try { await clearReadChatPushNotifications({ userId: user.id, conversationKind: "client", conversationId: relationshipId, readThroughCreatedAt: data.cursor.lastReadAt }) }
+            catch { console.warn("Confirmed chat read; legacy notification cleanup remains pending") }
+        })
+        // Cursor is retained for account-level receipts. New readers acknowledge
+        // only deviceCursor, which may legitimately trail another device.
+        return Response.json(data, { headers: { "Cache-Control": "private, no-store" } })
+    }
     const { data: position, error } = await supabase.rpc("advance_communication_read", { p_workspace_id: workspace.id, p_kind: "client", p_conversation_id: relationshipId, p_message_id: messageId })
     // The atomic RPC checks MFA, membership, conversation access and message scope.
     if (error?.code === "42501") return Response.json({ error: "Conversation not found." }, { status: 404 })

@@ -1,3 +1,4 @@
+import { communicationDeviceId, deviceReadError } from "@/lib/communications/device-server"
 import { withChatPerformance } from "@/lib/communications/performance-server"
 import { after } from "next/server"
 import { clearReadChatPushNotifications } from "@/lib/push/chat-notifications"
@@ -16,6 +17,21 @@ async function handlePOST(request: Request, context: { params: Promise<{ workspa
     const messageId = typeof input?.messageId === "string" ? input.messageId : ""
     if (!UUID_PATTERN.test(conversationId) || !UUID_PATTERN.test(messageId)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const supabase = await createSupabaseServerClient()
+    if (input && "deviceId" in input) {
+        const deviceId = await communicationDeviceId()
+        if (!deviceId || input.deviceId !== deviceId) return Response.json({ error: "The current device changed. Refresh unread counts and retry.", code: "device_changed" }, { status: 409 })
+        const { data, error } = await supabase.rpc("advance_communication_device_read", { p_workspace_id: workspace.id, p_device_id: deviceId, p_kind: "native", p_conversation_id: conversationId, p_message_id: messageId })
+        if (error || !data) return deviceReadError(error)
+        // Keep the existing account-wide legacy notification cleanup until the
+        // separate notification-policy decision is approved.
+        after(async () => {
+            try { await clearReadChatPushNotifications({ userId: user.id, conversationKind: "native", conversationId: conversationId, readThroughCreatedAt: data.cursor.lastReadAt }) }
+            catch { console.warn("Confirmed chat read; legacy notification cleanup remains pending") }
+        })
+        // Cursor is retained for account-level receipts. New readers acknowledge
+        // only deviceCursor, which may legitimately trail another device.
+        return Response.json(data, { headers: { "Cache-Control": "private, no-store" } })
+    }
     const { data: position, error } = await supabase.rpc("advance_communication_read", { p_workspace_id: workspace.id, p_kind: "native", p_conversation_id: conversationId, p_message_id: messageId })
     // The atomic RPC checks MFA, membership, conversation access and message scope.
     if (error?.code === "42501") return Response.json({ error: "Conversation not found." }, { status: 404 })

@@ -83,6 +83,13 @@ jobs:
         env:
           BE_REFERENCES_PG_EVIDENCE: ${{ runner.temp }}/references-postgres-evidence.json
         run: node scripts/validate-communication-references-postgres.mjs
+      - name: Validate concurrent device and global read boundaries
+        env:
+          BE_DEVICE_READ_PG_EVIDENCE: ${{ runner.temp }}/device-read-postgres.json
+        run: node scripts/validate-device-unread-postgres.mjs
+      - name: Print device read concurrency evidence
+        if: always()
+        run: cat "${{ runner.temp }}/device-read-postgres.json"
       - name: Print tested SQL runtime and source manifest
         if: always()
         env:
@@ -130,6 +137,8 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/communications-pglite" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8
       - name: Validate atomic cursors, deletion boundaries, summaries and authorization
         run: node scripts/validate-communications-unread-sql.mjs
+      - name: Validate independent device unread boundaries and bounded query plans
+        run: node scripts/validate-device-communications-sql.mjs
       - name: Validate encrypted compact inbox and historical read positions
         run: node scripts/validate-native-inbox-sql.mjs
       - name: Validate unchanged push eligibility against retained read boundaries
@@ -185,8 +194,10 @@ jobs:
         run: node scripts/browser/run-comms-roster-cleanup.mjs "${{ matrix.engine }}"
       - name: Exercise acknowledged reads and unread updates on mobile and desktop
         run: node scripts/browser/run-comms-reads.mjs "${{ matrix.engine }}"
-      - name: Exercise confirmed remote reads across isolated browser contexts
+      - name: Exercise account receipts and the independent device badge owner
         run: node scripts/browser/run-comms-convergence.mjs "${{ matrix.engine }}"
+      - name: Per-device unread HTTP and cookie browser regression
+        run: node scripts/browser/run-device-unread.mjs "${{ matrix.engine }}"
       - name: Exercise delayed chat pane attachment and reload initialization
         run: node scripts/browser/run-comms-pane-lifecycle.mjs "${{ matrix.engine }}"
       - name: Exercise shared dialog dismissal and refresh presentation
@@ -218,7 +229,7 @@ jobs:
       - name: Print detailed browser evidence
         if: always()
         run: |
-          for report in foundations fullscreen-comms-actions comms-reads comms-convergence-candidate comms-pane-lifecycle ui-reconciliation panel-loading native-loading relationship-queue-refresh context-overlays modal-owner-lifecycle settings-popup-ownership settings-popup-ownership-strict anchored-popup-lifetime okr-popup-lifetime comms-roster-cleanup workspace-linked-detail; do
+          for report in foundations fullscreen-comms-actions comms-reads comms-convergence-candidate device-unread comms-pane-lifecycle ui-reconciliation panel-loading native-loading relationship-queue-refresh context-overlays modal-owner-lifecycle settings-popup-ownership settings-popup-ownership-strict anchored-popup-lifetime okr-popup-lifetime comms-roster-cleanup workspace-linked-detail; do
             if test -f "browser-results/$report.json"; then
               cat "browser-results/$report.json"
             else

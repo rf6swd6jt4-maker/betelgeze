@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client"
 import { useCommunicationsUnread } from "./useCommunicationsUnread.js"
 import { useSharedUnreadSummary } from "./useSharedUnreadSummary.js"
 import * as reads from "./read-state.js"
+import {publishDeviceChatRead} from "./device-read-state.js"
 import * as unreadBroadcast from "./unread-broadcast.js"
 const { invalidateUnreadSummary } = unreadBroadcast
 import { clientRealtime, nativeRealtime, clientSnapshot, nativeSnapshot, panelInvalidator } from "./callbacks.js"
@@ -13,14 +14,14 @@ let summaryRows = [{ kind, conversationId: "chat", count: 3, latestMessageId: po
 let snapshotRead = null, mode = "immediate", pending = [], counters = { summary: 0, snapshot: 0, reads: 0, readBatches: 0 }, eventStarted = 0, observations = []
 let visible = { shell: -1, row: -1 }, trigger, messageTrigger, recover
 window.addEventListener("betelgeze:chat-read", () => { counters.readBatches++ })
-function response(rows) { return { ok: true, json: async () => ({ conversations: rows }) } }
+function response(rows,cursorsIncluded) { return { ok: true, json: async () => ({ deviceId:"fixture-device",cursorsIncluded,...cursorsIncluded?{readCursors:[]}: {},conversations: rows }) } }
 window.fetch = async (url) => {
-    if (String(url).endsWith("/unread")) {
+    if (String(url).includes("/unread?scope=device")) {
         counters.summary++
-        const rows = structuredClone(summaryRows)
-        if (mode === "hold") return new Promise((resolve, reject) => pending.push({ resolve: () => resolve(response(rows)), reject }))
+        const rows = structuredClone(summaryRows), cursorsIncluded=String(url).includes("cursors=1")
+        if (mode === "hold") return new Promise((resolve, reject) => pending.push({ resolve: () => resolve(response(rows,cursorsIncluded)), reject }))
         if (mode === "fail") throw Error("Synthetic summary offline")
-        return response(rows)
+        return response(rows,cursorsIncluded)
     }
     if (String(url).includes("/sync") || String(url).includes("/native/conversations")) {
         counters.snapshot++
@@ -70,7 +71,7 @@ window.commsConvergence = {
     settle(fail = false) { const requests = pending; pending = []; for (const request of requests) { if (fail) request.reject(Error("Synthetic held summary failed")); else request.resolve() } },
     remote(n = 3, userId = "me") { eventStarted = performance.now(); trigger({ eventType: "UPDATE", new: { workspace_id: "w", conversation_id: "chat", relationship_id: "chat", user_id: userId, last_read_message_id: position(n).lastReadMessageId, last_read_at: position(n).lastReadAt } }) },
     duplicate(n = 3) { for (let i = 0; i < 12; i++) this.remote(n) },
-    acknowledge(n = 3) { eventStarted = performance.now(); reads.publishChatRead({ workspaceId: "w", userId: "me", kind, conversationId: "chat", ...position(n) }) },
+    acknowledge(n = 3) { eventStarted = performance.now(); publishDeviceChatRead({ workspaceId: "w", userId: "me", deviceId:"fixture-device", kind, conversationId: "chat", ...position(n) }) },
     async snapshot(n = 3, unread = true) { snapshotRead = position(n); eventStarted = performance.now(); if (kind === "native") await recover(undefined, { unread }); else await recover() },
     messageEvent() { messageTrigger({ eventType: "DELETE", commit_timestamp: "2026-10-07T12:00:00Z", old: { id: "synthetic-deleted-message" }, new: {} }) },
     invalidate() { invalidateUnreadSummary("w", "me") },

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs"
+import { webcrypto } from "node:crypto"
 import { createRequire } from "node:module"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -49,7 +50,7 @@ function sourceRuntime(overrides = {}) {
                 if (name.startsWith("@/")) return load(`${name.slice(2)}.ts`)
                 return require(name)
             },
-            URL, Headers, Request, Response, performance, console,
+            URL, Headers, Request, Response, performance, console, crypto: webcrypto,
             process: { env: environment },
         }, { filename: path })
         return compiledModule.exports

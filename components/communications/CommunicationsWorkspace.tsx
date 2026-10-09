@@ -51,14 +51,13 @@ import { SquarePill } from "@/components/ui"
 import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
 import { useConversationRead } from "./useConversationRead"
 import { CommunicationsActivityTracker } from "./CommunicationsActivityTracker"
-import { compareReadPositions, mergeChatReadCursor, mergeChatReadCursors, normalizeChatReadUpdate, publishChatRead, publishChatReads, readCursorCoversMessage, subscribeChatReadBatches } from "@/lib/communications/read-state"
+import { mergeChatReadCursor, mergeChatReadCursors, normalizeChatReadUpdate, publishChatRead, readCursorCoversMessage, subscribeChatReadBatches } from "@/lib/communications/read-state"
 import { invalidateUnreadSummary, unreadMessageEventKey } from "@/lib/communications/unread-broadcast"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import type { ClientConversation, CommunicationAttachment, CommunicationDelivery, CommunicationMessage, CommunicationReaction, CommunicationReadCursor, CommunicationSticker, CommunicationsBootstrap } from "@/lib/communications/types"
 import { communicationAttachmentFromRawPayload } from "@/lib/communications/attachments"
 import { useCommunicationsClient } from "./CommunicationsRuntime"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
-import { clientConversationUnreadCount } from "@/lib/communications/unread"
 import { clientMessageSupportsReaction } from "@/lib/communications/interactions"
 import { closeWorkspaceComposer } from "@/lib/workspace-composer-viewport"
 
@@ -276,14 +275,10 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const [enteringMessageIds, setEnteringMessageIds] = useState<Set<string>>(() => new Set())
     const [reactionCutoff] = useState(() => Date.now() - 30 * 24 * 60 * 60 * 1_000)
     const [readCursors, setReadCursors] = useState(bootstrap.readCursors)
-    const knownReadCursors = useRef(readCursors)
-    useLayoutEffect(() => { knownReadCursors.current = readCursors }, [readCursors])
-    const publishedReadSnapshot = useRef(false)
     const syncLifetime = useRef<{ controller: AbortController; userId: string; workspaceId: string } | null>(null)
     useEffect(() => {
         const lifetime = { controller: new AbortController(), userId: bootstrap.currentUser.id, workspaceId: bootstrap.workspaceId }
         syncLifetime.current = lifetime
-        publishedReadSnapshot.current = false
         return () => { lifetime.controller.abort(); if (syncLifetime.current === lifetime) syncLifetime.current = null }
     }, [bootstrap.currentUser.id, bootstrap.workspaceId])
     useEffect(() => subscribeChatReadBatches(bootstrap.workspaceId, bootstrap.currentUser.id, reads => {
@@ -419,7 +414,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const reading = useConversationRead({
         workspaceId: bootstrap.workspaceId, workspaceSlug: bootstrap.workspaceSlug, userId: bootstrap.currentUser.id,
         kind: "client", conversationId: selectedId, latest: selected?.messages.findLast(message => message.id !== message.clientRequestId),
-        cursor: readCursors.find(cursor => cursor.relationshipId === selectedId && cursor.userId === bootstrap.currentUser.id),
+        deviceId: unreadSummary?.deviceId ?? null,
+        cursor: unreadSummary?.readCursors.find(cursor => cursor.kind === "client" && cursor.conversationId === selectedId),
         active: active && schemaReady, atLatest, pane: messagePaneRef,
     })
     const flushPendingRead = reading.flush
@@ -679,13 +675,6 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         result.conversations.forEach((conversation) => conversation.messages.forEach((message) => knownMessageKeysRef.current.add(messageAnimationKey(message))))
         setSchemaReady(result.schemaReady)
         if (!updates.applySnapshot(read, result)) return
-        const knownPositions = new Map(knownReadCursors.current.filter(cursor => cursor.userId === bootstrap.currentUser.id).map(cursor => [cursor.relationshipId, cursor]))
-        publishChatReads(result.readCursors.flatMap(cursor => {
-            const confirmed = normalizeChatReadUpdate({ workspaceId: bootstrap.workspaceId, userId: bootstrap.currentUser.id, kind: "client" }, cursor)
-            const previous = knownPositions.get(cursor.relationshipId)
-            return confirmed && (!publishedReadSnapshot.current || !previous || compareReadPositions(confirmed, previous) > 0) ? [confirmed] : []
-        }), { reconcile: false })
-        publishedReadSnapshot.current = true
         invalidateUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
         setReadCursors((current) => mergeChatReadCursors(current, result.readCursors, cursor => cursor.relationshipId))
         setStickers(result.stickers)
@@ -846,10 +835,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
 
     useEffect(() => onConnectionStateChange?.(connection.state), [connection.state, onConnectionStateChange])
 
-    const unreadCount = useMemo(() => unreadByConversation ? [...unreadByConversation.values()].reduce((total, count) => total + count, 0) : conversations.reduce((total, conversation) => {
-        const ownCursor = readCursors.find((cursor) => cursor.relationshipId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-        return total + clientConversationUnreadCount(conversation, ownCursor)
-    }, 0), [bootstrap.currentUser.id, conversations, readCursors, unreadByConversation])
+    const unreadCount = useMemo(() => unreadByConversation ? [...unreadByConversation.values()].reduce((total, count) => total + count, 0) : 0, [unreadByConversation])
 
     useEffect(() => onUnreadCountChange?.(unreadCount), [onUnreadCountChange, unreadCount])
 
@@ -963,8 +949,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{visibleConversations.length ? visibleConversations.map((conversation) => {
                     const latest = conversation.messages.at(-1)
-                    const ownCursor = readCursors.find((cursor) => cursor.relationshipId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-                    const unread = unreadByConversation ? unreadByConversation.get(conversation.id) ?? 0 : clientConversationUnreadCount(conversation, ownCursor)
+                    const unread = unreadByConversation?.get(conversation.id) ?? 0
                     return <button key={conversation.id} type="button" onClick={() => selectConversation(conversation.id)} aria-current={selectedId === conversation.id ? "page" : undefined} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left transition ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}>
                         <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-800 text-sm font-semibold text-neutral-200">{initials(conversation.title)}</span>
                         <span className="min-w-0"><span className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{conversation.title}</span><span className="flex shrink-0 items-center gap-2">{conversation.isTest ? <SquarePill tone="yellow" className="!min-h-5 !px-2 !py-0.5 !text-[10px] !leading-3">Test</SquarePill> : null}{latest ? <time dateTime={latest.createdAt} className={`text-[11px] ${unread ? "text-white" : "text-neutral-600"}`}>{formatRelativeTime(latest.createdAt)}</time> : null}</span></span><span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-neutral-500">{latest?.direction === "outbound" ? <DeliveryTicks message={latest} /> : null}<span className="truncate">{latest?.body || "No messages yet"}</span>{unread ? <span className="ml-auto"><UnreadMessageCount count={unread} label="unread messages" /></span> : null}</span></span>

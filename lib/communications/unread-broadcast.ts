@@ -1,10 +1,11 @@
 import { recordVersionKey } from "../record-version.js"
 import type { UnreadSummary } from "./unread-summary"
+import type { ChatReadUpdate } from "./read-state"
 
-export type UnreadSnapshot = { workspaceId: string; userId: string; rows: UnreadSummary[]; stale: boolean }
-const eventName = "betelgeze:unread-summary"
+export type UnreadSnapshot = { workspaceId: string; userId: string; deviceId: string | null; rows: UnreadSummary[]; readCursors: ChatReadUpdate[]; loaded: boolean; stale: boolean }
+const eventName = "betelgeze:device-unread-summary:v1"
 const invalidationEventName = "betelgeze:unread-summary-invalidated"
-const slot = Symbol.for("betelgeze:unread-summary")
+const slot = Symbol.for("betelgeze:device-unread-summary:v1")
 type Host = Window & { [slot]?: UnreadSnapshot }
 const host = () => (window.top ?? window) as Host
 

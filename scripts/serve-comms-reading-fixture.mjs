@@ -17,7 +17,7 @@ const sources = [
  'components/communications/useCommunicationsUnread.ts', 'components/communications/useSharedUnreadSummary.ts',
  'lib/mobile-conversation-viewport.ts', 'lib/workspace-tabs.ts', 'lib/workspace-tab-activity.ts',
  'lib/communications/reading-visibility.ts', 'lib/communications/reading-observer.ts',
- 'lib/communications/read-queue.ts', 'lib/communications/read-state.ts', 'lib/record-version.js',
+ 'lib/communications/read-queue.ts', 'lib/communications/read-state.ts', 'lib/communications/device-read-state.ts', 'lib/record-version.js',
  'lib/communications/unread-summary.ts', 'lib/communications/unread-broadcast.ts',
 ].filter(existsSync)
 const aliases = new Map(sources.flatMap(path => {

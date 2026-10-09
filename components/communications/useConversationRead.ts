@@ -9,17 +9,19 @@ import { CHAT_READING_VISIBILITY_EVENT, latestMessageIsVisible } from "@/lib/com
 import { observeChatReadingVisibility } from "@/lib/communications/reading-observer"
 import { beginWorkspaceInteraction } from "@/lib/workspace-performance"
 import { createChatReadQueue } from "@/lib/communications/read-queue"
-import { compareReadPositions, publishChatRead, type ChatReadPosition, type ChatReadUpdate } from "@/lib/communications/read-state"
+import { compareReadPositions, normalizeChatReadUpdate, publishChatRead, type ChatReadPosition, type ChatReadUpdate } from "@/lib/communications/read-state"
 import { dismissReadChatNotification } from "@/lib/push/browser-notifications"
 import { WORKSPACE_TAB_FRAME_PARAM } from "@/lib/workspace-tabs"
+import { normalizeDeviceChatRead, publishDeviceChatRead, type DeviceChatReadUpdate } from "@/lib/communications/device-read-state"
+import { invalidateUnreadSummary } from "@/lib/communications/unread-broadcast"
 
 export function useConversationRead(input: {
-    workspaceId: string; workspaceSlug: string; userId: string; kind: "client" | "native"
+    workspaceId: string; workspaceSlug: string; userId: string; deviceId: string | null; kind: "client" | "native"
     conversationId: string | null; latest: { id: string; createdAt: string } | undefined
     cursor: ChatReadPosition | undefined; active: boolean; atLatest: boolean
     pane: RefObject<HTMLDivElement | null>
 }) {
-    const { workspaceId, workspaceSlug, userId, kind, conversationId, latest, cursor, active, atLatest, pane } = input
+    const { workspaceId, workspaceSlug, userId, deviceId, kind, conversationId, latest, cursor, active, atLatest, pane } = input
     const tabId = useWorkspaceNavigation()?.tabId
     const tabActive = useWorkspaceTabActive()
     const { attentive } = useChatDocumentAttention()
@@ -32,8 +34,9 @@ export function useConversationRead(input: {
         && latestMessageIsVisible(pane.current, latestId)), [active, atLatest, latestId, pane, tabActive, tabId])
 
     useEffect(() => {
+        if (!deviceId) return
         const ownerId = tabId ?? new URLSearchParams(window.location.search).get(WORKSPACE_TAB_FRAME_PARAM) ?? (window.name || "standalone")
-        const storageKey = `betelgeze:chat-reads:v1:${workspaceId}:${userId}:${kind}:${ownerId}`
+        const storageKey = `betelgeze:chat-reads:v2:${workspaceId}:${userId}:${deviceId}:${kind}:${ownerId}`
         const controller = new AbortController()
         const owner = createChatReadQueue({
             load: () => {
@@ -45,23 +48,30 @@ export function useConversationRead(input: {
             save: async read => {
                 const timing = beginWorkspaceInteraction({ workspaceSlug, operation: "command", command: "message.read", routeSection: "communications", cacheState: "network", background: !chatDocumentHasAttention() || !workspaceDocumentIsActive(tabId) })
                 try {
+                    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)])
                     const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/communications/${kind === "native" ? "native/" : ""}read`, {
                         method: "POST", headers: { "Content-Type": "application/json" },
-                        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
-                        body: JSON.stringify({ [kind === "native" ? "conversationId" : "relationshipId"]: read.conversationId, messageId: read.lastReadMessageId }),
+                        signal,
+                        body: JSON.stringify({ deviceId, [kind === "native" ? "conversationId" : "relationshipId"]: read.conversationId, messageId: read.lastReadMessageId }),
                     })
                     const result = await response.json()
-                    if (!response.ok || !result.cursor) throw new Error("Read save failed")
-                    const confirmed = { ...read, ...result.cursor }
-                    if (confirmed.userId !== read.userId || confirmed.workspaceId !== read.workspaceId || confirmed.kind !== read.kind
-                        || confirmed.conversationId !== read.conversationId || compareReadPositions(confirmed, read) < 0) throw new Error("Read position was not acknowledged")
+                    signal.throwIfAborted()
+                    if (response.status === 409 || (result.deviceId && result.deviceId !== deviceId)) invalidateUnreadSummary(workspaceId, userId)
+                    if (!response.ok || result.deviceId !== deviceId) throw new Error("Read save failed")
+                    const confirmed = normalizeDeviceChatRead(workspaceId, userId, deviceId, result.deviceCursor)
+                    const receiptCursor = normalizeChatReadUpdate({ workspaceId, userId, kind }, result.cursor)
+                    if (!confirmed || confirmed.kind !== read.kind || confirmed.conversationId !== read.conversationId
+                        || compareReadPositions(confirmed, read) < 0 || !receiptCursor || receiptCursor.conversationId !== read.conversationId
+                        || compareReadPositions(receiptCursor, read) < 0) throw new Error("Read position was not acknowledged")
                     timing.mark("server_ack")
                     timing.finish("completed", "server_ack")
-                    return confirmed
+                    return { ...confirmed, receiptCursor }
                 } catch (error) { timing.finish(controller.signal.aborted ? "aborted" : "failed"); throw error }
             },
             acknowledge: read => {
-                publishChatRead(read)
+                const confirmed = read as DeviceChatReadUpdate & { receiptCursor: ChatReadUpdate }
+                publishDeviceChatRead(confirmed)
+                publishChatRead(confirmed.receiptCursor)
                 void dismissReadChatNotification(read.conversationId, read.lastReadAt, read.lastReadMessageId)
             },
             error: setError,
@@ -79,7 +89,7 @@ export function useConversationRead(input: {
             window.removeEventListener("focus", recover)
             document.removeEventListener("visibilitychange", recover)
         }
-    }, [kind, tabId, userId, workspaceId, workspaceSlug])
+    }, [deviceId, kind, tabId, userId, workspaceId, workspaceSlug])
 
     useLayoutEffect(() => {
         if (!active || !tabActive || !attentive || !conversationId || !latestId || !latestAt) return
@@ -99,7 +109,7 @@ export function useConversationRead(input: {
                         lastReading = reading
                         window.dispatchEvent(new Event(CHAT_READING_VISIBILITY_EVENT))
                     }
-                    if (!reading) return
+                    if (!reading || !deviceId) return
                     if (cursor && compareReadPositions(cursor, position) >= 0) {
                         if (!dismissed) {
                             dismissed = true
@@ -116,7 +126,7 @@ export function useConversationRead(input: {
             stopObserving()
             cancelAnimationFrame(first); cancelAnimationFrame(second)
         }
-    }, [active, attentive, conversationId, cursor, isReading, kind, latestAt, latestId, pane, tabActive, userId, workspaceId])
+    }, [active, attentive, conversationId, cursor, deviceId, isReading, kind, latestAt, latestId, pane, tabActive, userId, workspaceId])
 
     const flush = useCallback(async () => { await queue.current?.flush() }, [])
     return { isReading, flush, error }

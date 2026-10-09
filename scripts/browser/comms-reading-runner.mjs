@@ -4,7 +4,8 @@ import {MobileConversationSurface} from './MobileConversationSurface.js'
 import {useConversationRead} from './useConversationRead.js'
 import {useCommunicationsUnread} from './useCommunicationsUnread.js'
 import {useSharedUnreadSummary} from './useSharedUnreadSummary.js'
-import {subscribeChatReads,compareReadPositions} from './read-state.js'
+import {compareReadPositions} from './read-state.js'
+import {subscribeDeviceChatReads} from './device-read-state.js'
 import {Navigation} from './stubs.js'
 import {invalidateUnreadSummary} from './unread-broadcast.js'
 const h=React.createElement, wait=ms=>new Promise(done=>setTimeout(done,ms))
@@ -18,8 +19,8 @@ function App({kind,initial}){
  const pane=useRef(null)
  const summary=useCommunicationsUnread('workspace','fixture','user',true)
  const shared=useSharedUnreadSummary('workspace','user')
- const reading=useConversationRead({workspaceId:'workspace',workspaceSlug:'fixture',userId:'user',kind,conversationId:'chat',latest:state.latest,cursor,active:state.active,atLatest:state.atLatest,pane})
- useEffect(()=>subscribeChatReads('workspace','user',read=>{if(read.kind===kind&&read.conversationId==='chat')setCursor(read)}),[kind])
+ const reading=useConversationRead({workspaceId:'workspace',workspaceSlug:'fixture',userId:'user',deviceId:shared?.deviceId??null,kind,conversationId:'chat',latest:state.latest,cursor,active:state.active,atLatest:state.atLatest,pane})
+ useEffect(()=>subscribeDeviceChatReads('workspace','user',read=>{if(read.kind===kind&&read.conversationId==='chat')setCursor(read)}),[kind])
  useLayoutEffect(()=>{api={setState,summary,reading};sharedNow=shared;shellNow=summary},[state,shared,summary,reading])
  return h(Navigation.Provider,{value:{tabId:'fixture-tab',active:state.active}},h('div',{style:{height:'100%'}},h(MobileConversationSurface,{selected:true,active:state.active,onClose(){}},h('section',{className:'fixture-chat'},h('header',null,'Synthetic chat'),state.showPane?h('div',{ref:pane,className:'fixture-pane','data-message-pane':true,'data-positioned':state.positioned?'true':'false'},state.showRow?h('div',{className:'fixture-row','data-message-interaction':state.latest.id},'Synthetic newest message'):null):null,h('footer',null,'Composer')))))
 }
@@ -30,14 +31,14 @@ async function setup(kind,initial={}){
  requests=[];readGates=[];failReads=0;server={kind,latest:message(1),cursor:null};api=null;sharedNow=null;shellNow=null
  document.body.dataset.workspaceActiveTabId='fixture-tab'
  window.fetch=async(url,options={})=>{
-  if(String(url).endsWith('/unread'))return {ok:true,json:async()=>({conversations:remaining()?[{kind,conversationId:'chat',count:3,latestMessageId:server.latest.id,latestMessageAt:server.latest.createdAt}]:[]})}
+  if(String(url).includes('/unread?scope=device'))return {ok:true,json:async()=>({deviceId:'fixture-device',cursorsIncluded:String(url).includes('cursors=1'),...(String(url).includes('cursors=1')?{readCursors:server.cursor?[server.cursor]:[]}:{}),conversations:remaining()?[{kind,conversationId:'chat',count:3,latestMessageId:server.latest.id,latestMessageAt:server.latest.createdAt}]:[]})}
   if(!String(url).endsWith('/read'))throw Error('Unexpected fixture request: '+url)
   const body=JSON.parse(options.body),position={workspaceId:'workspace',userId:'user',kind,conversationId:body.conversationId??body.relationshipId,lastReadAt:message(Number(body.messageId.slice(-12))).createdAt,lastReadMessageId:body.messageId}
   requests.push(position)
   if(readGates.length)await readGates.shift()
   if(failReads>0){failReads--;throw Error('Synthetic offline failure')}
   if(!server.cursor||compareReadPositions(position,server.cursor)>0)server.cursor=position
-  return {ok:true,json:async()=>({cursor:server.cursor})}
+  return {ok:true,json:async()=>({deviceId:'fixture-device',cursor:server.cursor,deviceCursor:server.cursor})}
  }
  root=createRoot(document.getElementById('stage'));root.render(h(App,{kind,initial}));await until(()=>api&&sharedNow,'hooks mounted')
 }
@@ -108,14 +109,14 @@ for(const kind of ['native','client']){
  })
  await run(kind+' acknowledged clear/reconciliation updates the existing summary owner',async()=>{
   await setup(kind,{positioned:false});await until(()=>rowCount()===3,'initial count')
-  server.cursor={lastReadAt:message(1).createdAt,lastReadMessageId:message(1).id}
+  server.cursor={workspaceId:'workspace',userId:'user',kind,conversationId:'chat',lastReadAt:message(1).createdAt,lastReadMessageId:message(1).id}
   invalidateUnreadSummary('other-workspace','user');await wait(80);assert(rowCount()===3,'cross-workspace event affected count')
   invalidateUnreadSummary('workspace','user');await until(()=>rowCount()===0&&shellNow.count===0,'clear acknowledgement invalidation');assert(requests.length===0,'summary invented a read')
  })
- await run(kind+' confirmed read from another browser reaches row and shell',async()=>{
+ await run(kind+' confirmed read from same-installation sibling reaches row and shell',async()=>{
   await setup(kind,{positioned:false});await until(()=>rowCount()===3,'initial count')
   const cursor={workspaceId:'workspace',userId:'user',kind,conversationId:'chat',lastReadAt:message(1).createdAt,lastReadMessageId:message(1).id}
-  server.cursor=cursor;const channel=new BroadcastChannel('betelgeze:chat-read:workspace:user');channel.postMessage(cursor)
+  server.cursor=cursor;const channel=new BroadcastChannel('betelgeze:device-chat-read:v1:workspace:user');channel.postMessage({...cursor,deviceId:'fixture-device'})
   await until(()=>rowCount()===0&&shellNow.count===0,'cross-browser confirmed read');channel.close();assert(requests.length===0,'remote acknowledgement generated local save')
  })
  await run(kind+' older acknowledgement cannot clear newer arrival',async()=>{

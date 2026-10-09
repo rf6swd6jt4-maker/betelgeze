@@ -12,7 +12,7 @@ const { webpack } = require("next/dist/compiled/webpack/webpack")
 const baseline = process.env.COMMS_CONVERGENCE_BASELINE
 const read = path => baseline ? execFileSync("git", ["show", `${baseline}:${path}`], { encoding: "utf8" }) : readFileSync(path, "utf8")
 const directory = mkdtempSync(join(tmpdir(), "be-comms-convergence-"))
-const sources = ["components/communications/useCommunicationsUnread.ts", "components/communications/useSharedUnreadSummary.ts", "lib/communications/read-state.ts", "lib/communications/unread-summary.ts", "lib/communications/unread-broadcast.ts", "lib/record-version.js"]
+const sources = ["components/communications/useCommunicationsUnread.ts", "components/communications/useSharedUnreadSummary.ts", "lib/communications/read-state.ts", "lib/communications/device-read-state.ts", "lib/communications/unread-summary.ts", "lib/communications/unread-broadcast.ts", "lib/record-version.js"]
 const aliases = new Map(sources.flatMap(path => {
     const file = path.split("/").at(-1), compiled = "./" + file.replace(/\.ts$/, ".js")
     return [["@/" + path.replace(/\.(ts|js)$/, ""), compiled], ["./" + file, compiled], ["./" + file.replace(/\.(ts|js)$/, ""), compiled]]

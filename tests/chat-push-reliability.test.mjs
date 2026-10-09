@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
+import * as pushDevice from '../lib/push/device.ts'
 import { chatActivityIsActive, createChatActivitySequence } from '../lib/push/activity.ts'
 import { subscriptionFingerprint } from '../lib/push/subscription-fingerprint.ts'
 
@@ -193,6 +194,7 @@ test('logout reaches its original host with the device cookie before auth refres
   '@supabase/ssr':{createServerClient:()=>{throw new Error('Logout must not depend on auth refresh')}},
   'next/server':{NextResponse:{next:options=>({kind:'next',options}),redirect:()=>{throw new Error('Device cookie would be lost')}}},
   '@/lib/supabase/legacy-cookies':{},'@/lib/supabase/session-cookies':{},
+  '@/lib/push/device':pushDevice,
   '@/lib/auth/origin':{authHostname:()=> 'auth.betelgeze.com',authOrigin:()=> 'https://auth.betelgeze.com'},
   '@/lib/workspace-tabs':{},'@/lib/workspace-shell':{},'@/lib/workspace-launch':{},
  },{Headers,process:{env:{}}})

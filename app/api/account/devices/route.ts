@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     // supplied account/session ID or privileged client participates in this read.
     const { data, error } = await supabase.rpc("account_devices", { p_device: device, p_agent: request.headers.get("user-agent"), p_list: input?.list === true })
     if (error) return NextResponse.json({ error: "Could not load signed-in devices. Please retry." }, { status: error.code === "42501" ? 401 : 503, headers: response.headers })
-    const result = NextResponse.json({ ...data, devices: data.devices?.map((entry: { user_agent: string | null }) => {
+    const result = NextResponse.json({ ...data, deviceId: device, devices: data.devices?.map((entry: { user_agent: string | null }) => {
         const { user_agent, ...safe } = entry
         return { ...safe, ...devicePlatform(user_agent) }
     }) }, { headers: response.headers })

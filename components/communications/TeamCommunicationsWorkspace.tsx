@@ -50,7 +50,7 @@ import { useReliableCommunicationsRealtime, type CommunicationsConnectionState }
 import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
 import { useConversationRead } from "./useConversationRead"
 import { CommunicationsActivityTracker } from "./CommunicationsActivityTracker"
-import { compareReadPositions, mergeChatReadCursor, mergeChatReadCursors, normalizeChatReadUpdate, publishChatRead, publishChatReads, readCursorCoversMessage, subscribeChatReadBatches } from "@/lib/communications/read-state"
+import { mergeChatReadCursor, mergeChatReadCursors, normalizeChatReadUpdate, publishChatRead, readCursorCoversMessage, subscribeChatReadBatches } from "@/lib/communications/read-state"
 import { invalidateUnreadSummary, unreadMessageEventKey } from "@/lib/communications/unread-broadcast"
 import { useWorkspaceTabActive } from "@/components/workspace/useWorkspaceTabActive"
 import { useCommunicationsClient } from "./CommunicationsRuntime"
@@ -58,7 +58,6 @@ import { mentionPreview } from "@/lib/chat-formatting"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { openWorkspaceMemberProfile } from "@/lib/workspace-member-profile"
 import type { CommunicationAttachment, CommunicationSticker } from "@/lib/communications/types"
-import { nativeConversationUnreadCount } from "@/lib/communications/unread"
 import { Assignee } from "@/components/ui"
 import { List, ListItem } from "@/components/list/List"
 import { nativeMessageCanEdit } from "@/lib/teams/message-editing"
@@ -180,14 +179,10 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [schemaReady, setSchemaReady] = useState(bootstrap.schemaReady)
     const [teams, setTeams] = useState(bootstrap.teams)
     const [readCursors, setReadCursors] = useState(bootstrap.readCursors)
-    const knownReadCursors = useRef(readCursors)
-    useLayoutEffect(() => { knownReadCursors.current = readCursors }, [readCursors])
-    const publishedReadSnapshot = useRef(false)
     const syncLifetime = useRef<{ controller: AbortController; userId: string; workspaceId: string } | null>(null)
     useEffect(() => {
         const lifetime = { controller: new AbortController(), userId: bootstrap.currentUser.id, workspaceId: bootstrap.workspaceId }
         syncLifetime.current = lifetime
-        publishedReadSnapshot.current = false
         return () => { lifetime.controller.abort(); if (syncLifetime.current === lifetime) syncLifetime.current = null }
     }, [bootstrap.currentUser.id, bootstrap.workspaceId])
     useEffect(() => subscribeChatReadBatches(bootstrap.workspaceId, bootstrap.currentUser.id, reads => {
@@ -344,7 +339,8 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const reading = useConversationRead({
         workspaceId: bootstrap.workspaceId, workspaceSlug: bootstrap.workspaceSlug, userId: bootstrap.currentUser.id,
         kind: "native", conversationId: selectedId, latest: selected?.messages.findLast(message => message.id !== message.clientRequestId),
-        cursor: readCursors.find(cursor => cursor.conversationId === selectedId && cursor.userId === bootstrap.currentUser.id),
+        deviceId: unreadSummary?.deviceId ?? null,
+        cursor: unreadSummary?.readCursors.find(cursor => cursor.kind === "native" && cursor.conversationId === selectedId),
         active: active && schemaReady, atLatest, pane: messagePaneRef,
     })
     const flushPendingRead = reading.flush
@@ -363,13 +359,6 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         if (!response.ok || !next) throw new Error("Could not refresh team conversations.")
         next.conversations.forEach((conversation) => conversation.messages.forEach((message) => knownMessageKeysRef.current.add(messageAnimationKey(message))))
         if (!updates.applySnapshot(read, next)) return
-        const knownPositions = new Map(knownReadCursors.current.filter(cursor => cursor.userId === bootstrap.currentUser.id).map(cursor => [cursor.conversationId, cursor]))
-        publishChatReads(next.readCursors.flatMap(cursor => {
-            const confirmed = normalizeChatReadUpdate({ workspaceId: bootstrap.workspaceId, userId: bootstrap.currentUser.id, kind: "native" }, cursor)
-            const previous = knownPositions.get(cursor.conversationId)
-            return confirmed && (!publishedReadSnapshot.current || !previous || compareReadPositions(confirmed, previous) > 0) ? [confirmed] : []
-        }), { reconcile: options.unread === false })
-        publishedReadSnapshot.current = true
         if (options.unread !== false) invalidateUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
         setSchemaReady(next.schemaReady); setTeams(next.teams); setReadCursors((current) => mergeChatReadCursors(current, next.readCursors, cursor => cursor.conversationId)); setStickers(next.stickers)
         setSelectedId((current) => {
@@ -528,10 +517,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 
     useEffect(() => onConnectionStateChange?.(connection.state), [connection.state, onConnectionStateChange])
 
-    const unreadCount = useMemo(() => unreadByConversation ? [...unreadByConversation.values()].reduce((total, count) => total + count, 0) : conversations.reduce((total, conversation) => {
-        const ownCursor = readCursors.find((cursor) => cursor.conversationId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-        return total + nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id)
-    }, 0), [bootstrap.currentUser.id, conversations, readCursors, unreadByConversation])
+    const unreadCount = useMemo(() => unreadByConversation ? [...unreadByConversation.values()].reduce((total, count) => total + count, 0) : 0, [unreadByConversation])
 
     useEffect(() => onUnreadCountChange?.(unreadCount), [onUnreadCountChange, unreadCount])
 
@@ -843,8 +829,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 <div className="min-h-0 flex-1 overflow-y-auto">{visible.length ? visible.map((conversation) => {
                     const latest = conversation.messages.at(-1)
                     const showTypingPreview = conversation.id !== selectedId && Object.keys(typingByConversation[conversation.id] ?? {}).length > 0
-                    const ownCursor = readCursors.find((cursor) => cursor.conversationId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-                    const unread = unreadByConversation ? unreadByConversation.get(conversation.id) ?? 0 : nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id)
+                    const unread = unreadByConversation?.get(conversation.id) ?? 0
                     const latestRead = Boolean(latest && readCursors.some((cursor) => cursor.conversationId === conversation.id && cursor.userId !== latest.senderUserId && readCursorCoversMessage(cursor, latest)))
                     return <button key={conversation.id} type="button" onClick={() => selectConversation(conversation.id)} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}><TeamAvatar conversation={conversation} currentUserId={bootstrap.currentUser.id} /><span className="min-w-0"><span className="flex items-start justify-between gap-3"><span className="truncate text-sm font-semibold">{conversation.title}</span>{latest ? <time className={unread ? "text-[11px] text-white" : "text-[11px] text-neutral-600"}>{formatRelativeTime(latest.createdAt)}</time> : null}</span><span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">{!showTypingPreview && latest?.senderUserId === bootstrap.currentUser.id ? <NativeDeliveryTicks message={latest} read={latestRead} /> : null}<span className={`truncate ${showTypingPreview ? "font-medium text-neutral-300" : ""}`}>{showTypingPreview ? "typing…" : latest ? `${latest.senderUserId === bootstrap.currentUser.id ? "You: " : ""}${messagePreview(latest)}` : conversation.subtitle}</span>{unread ? <span className="ml-auto"><UnreadMessageCount count={unread} label="unread messages" /></span> : null}</span></span></button>
                 }) : <div className="p-6 text-center"><p className="text-sm text-neutral-300">{showArchived ? "No archived teams" : "No team conversations yet"}</p><p className="mt-2 text-xs text-neutral-600">{showArchived ? "Archived team history will appear here." : "Open a profile to start a DM or create a team."}</p></div>}</div>

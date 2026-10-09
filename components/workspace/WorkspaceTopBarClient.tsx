@@ -2702,12 +2702,10 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                     .on("postgres_changes", { event: "*", schema: "public", table: "communication_read_cursors", filter: `workspace_id=eq.${workspace.id}` }, payload => {
                         const confirmed = normalizeChatReadUpdate({ workspaceId: workspace.id, userId: currentUserId, kind: "client" }, payload.new)
                         if (confirmed) publishChatRead(confirmed)
-                        else if (payload.eventType === "DELETE") refreshCommunicationsUnread()
                     })
                     .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_read_cursors", filter: `workspace_id=eq.${workspace.id}` }, payload => {
                         const confirmed = normalizeChatReadUpdate({ workspaceId: workspace.id, userId: currentUserId, kind: "native" }, payload.new)
                         if (confirmed) publishChatRead(confirmed)
-                        else if (payload.eventType === "DELETE") refreshCommunicationsUnread()
                     })
                     .on("presence", { event: "sync" }, () => {
                         if (disposed || channel !== candidate) return

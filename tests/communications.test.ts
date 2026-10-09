@@ -164,7 +164,10 @@ test("client and team chats reconcile missed Realtime events without a reload", 
         assert.match(workspace, /useConversationRead/)
         assert.match(workspace, /mergeChatReadCursor/)
         assert.match(workspace, /useSharedUnreadSummary/)
-        assert.match(workspace, /ConversationUnreadCount\(conversation, ownCursor/)
+        assert.match(workspace, /deviceId: unreadSummary\?\.deviceId \?\? null/)
+        assert.match(workspace, /unreadSummary\?\.readCursors\.find/)
+        assert.match(workspace, /unreadByConversation\?\.get\(conversation\.id\) \?\? 0/)
+        assert.doesNotMatch(workspace, /ConversationUnreadCount\(conversation, ownCursor/)
         assert.match(workspace, /<CommunicationsConnectionStatus/)
     }
 })

@@ -4,6 +4,7 @@ import test from "node:test"
 import ts from "typescript"
 import { applyReadToSummary, createUnreadSummaryResource, type UnreadSummary } from "../lib/communications/unread-summary.ts"
 import { normalizeChatReadUpdate, publishChatRead, subscribeChatReadBatches, type ChatReadUpdate } from "../lib/communications/read-state.ts"
+import { publishDeviceChatRead, subscribeDeviceChatReads } from "../lib/communications/device-read-state.ts"
 import { invalidateUnreadSummary, subscribeUnreadSummaryInvalidations, unreadMessageEventKey } from "../lib/communications/unread-broadcast.ts"
 
 test("unread invalidation during response settlement still receives its coalesced refresh", async () => {
@@ -125,7 +126,7 @@ function registerWorkspaceRealtime(kind: "client" | "native", invalidated?: () =
 }
 
 for (const kind of ["client", "native"] as const) {
-    test(`${kind} messages invalidate while own remote reads use confirmed-read ingress`, () => {
+    test(`${kind} messages invalidate while own remote account reads publish receipts only`, () => {
         let invalidations = 0
         const confirmed: ChatReadUpdate[] = []
         const handlers = registerWorkspaceRealtime(kind, () => invalidations++, read => confirmed.push(read))
@@ -142,49 +143,50 @@ for (const kind of ["client", "native"] as const) {
         reads({ eventType: "UPDATE", new: row })
         assert.equal(invalidations, 2, "another person's receipt cannot clear this person's unread count")
         reads({ eventType: "UPDATE", new: { ...row, user_id: "me" } })
-        assert.equal(invalidations, 2, "a confirmed read must not also create a duplicate invalidation")
+        assert.equal(invalidations, 2, "an account receipt must not invalidate device unread counts")
         assert.equal(confirmed.length, 1)
         assert.equal(confirmed[0].userId, "me")
         assert.equal(confirmed[0].conversationId, "c")
     })
 
-    test(`${kind} hosted remote cursor reaches the shared owner when its separate shell event is missed`, async () => {
+    test(`${kind} hosted remote cursor updates receipts without entering the device badge channel`, () => {
         const previous = { window: globalThis.window, BroadcastChannel: globalThis.BroadcastChannel }
         Object.assign(globalThis, { window: { top: new EventTarget() }, BroadcastChannel: undefined })
-        let rows: UnreadSummary[] = [{ kind, conversationId: "c", count: 3, latestMessageId: "m3", latestMessageAt: "2026-10-07T10:00:00.000003Z" }]
-        let loads = 0, fail!: (error: Error) => void, failed = false
-        const resource = createUnreadSummaryResource(() => { loads++; return new Promise((_resolve, reject) => { fail = reject }) }, next => { rows = next }, () => { failed = true })
-        const unsubscribe = subscribeChatReadBatches("w", "me", reads => {
-            for (const read of reads) rows = applyReadToSummary(rows, read)
-            resource.invalidate(); void resource.refresh()
+        const original: UnreadSummary = { kind, conversationId: "c", count: 3, latestMessageId: "m3", latestMessageAt: "2026-10-07T10:00:00.000003Z" }
+        let rows = [original]
+        const receipts: ChatReadUpdate[] = []
+        const unsubscribeReceipts = subscribeChatReadBatches("w", "me", reads => receipts.push(...reads))
+        const unsubscribeDevice = subscribeDeviceChatReads("w", "me", read => {
+            if (read.deviceId === "installation-a") rows = applyReadToSummary(rows, read)
         })
         try {
-            const handlers = registerWorkspaceRealtime(kind, () => assert.fail("Hosted cursor must not rely on a disabled owner"), publishChatRead)
+            const handlers = registerWorkspaceRealtime(kind, () => assert.fail("Account receipt cannot refresh device unread"), publishChatRead)
             const reads = handlers.get(kind === "client" ? "communication_read_cursors" : "workspace_native_read_cursors")!
-            const row = { workspace_id: "w", relationship_id: "c", conversation_id: "c", user_id: "me", last_read_at: "2026-10-07T10:00:00.000003Z", last_read_message_id: "m3" }
+            const row = { workspace_id: "w", relationship_id: "c", conversation_id: "c", user_id: "me", last_read_at: original.latestMessageAt, last_read_message_id: "m3" }
             reads({ eventType: "UPDATE", new: { ...row, user_id: "other" } })
-            assert.equal(rows[0].count, 3)
-            assert.equal(loads, 0, "another user's receipt cannot refresh this user's count")
+            assert.deepEqual(rows, [original])
+            assert.equal(receipts.length, 0)
             reads({ eventType: "UPDATE", new: row })
-            assert.deepEqual(rows, [], "accepted remote cursor clears known-covered messages before summary response")
-            assert.equal(loads, 1)
-            fail(new Error("Synthetic summary offline"))
-            await resource.refresh()
-            assert.equal(failed, true)
-            assert.deepEqual(rows, [], "failed reconciliation cannot restore acknowledged unread")
-        } finally { unsubscribe(); resource.dispose(); Object.assign(globalThis, previous) }
+            assert.equal(receipts.length, 1, "account read receipt still reaches its existing consumer")
+            assert.deepEqual(rows, [original], "even a covering account receipt leaves the installation unread")
+            publishDeviceChatRead({ ...receipts[0], deviceId: "installation-b" })
+            assert.deepEqual(rows, [original], "another installation is also isolated")
+            publishDeviceChatRead({ ...receipts[0], deviceId: "installation-a" })
+            assert.deepEqual(rows, [], "only this installation's acknowledged position enters its badge path")
+        } finally { unsubscribeReceipts(); unsubscribeDevice(); Object.assign(globalThis, previous) }
     })
 
-    test(`${kind} hosted older read cannot clear a newer message`, () => {
+    test(`${kind} an older device read retains a newer arrival even after a covering account receipt`, () => {
         const previous = { window: globalThis.window, BroadcastChannel: globalThis.BroadcastChannel }
         Object.assign(globalThis, { window: { top: new EventTarget() }, BroadcastChannel: undefined })
-        let rows: UnreadSummary[] = [{ kind, conversationId: "c", count: 1, latestMessageId: "m4", latestMessageAt: "2026-10-07T10:00:00.000004Z" }]
-        const unsubscribe = subscribeChatReadBatches("w", "me", reads => { for (const read of reads) rows = applyReadToSummary(rows, read) })
+        const original: UnreadSummary = { kind, conversationId: "c", count: 1, latestMessageId: "m4", latestMessageAt: "2026-10-07T10:00:00.000004Z" }
+        let rows = [original]
+        const unsubscribe = subscribeDeviceChatReads("w", "me", read => { if (read.deviceId === "installation-a") rows = applyReadToSummary(rows, read) })
         try {
             const handlers = registerWorkspaceRealtime(kind, undefined, publishChatRead)
-            handlers.get(kind === "client" ? "communication_read_cursors" : "workspace_native_read_cursors")!({ eventType: "UPDATE", new: { workspace_id: "w", relationship_id: "c", conversation_id: "c", user_id: "me", last_read_at: "2026-10-07T10:00:00.000003Z", last_read_message_id: "m3" } })
-            assert.equal(rows.length, 1)
-            assert.equal(rows[0].count, 1)
+            handlers.get(kind === "client" ? "communication_read_cursors" : "workspace_native_read_cursors")!({ eventType: "UPDATE", new: { workspace_id: "w", relationship_id: "c", conversation_id: "c", user_id: "me", last_read_at: original.latestMessageAt, last_read_message_id: "m4" } })
+            publishDeviceChatRead({ workspaceId: "w", userId: "me", kind, deviceId: "installation-a", conversationId: "c", lastReadAt: "2026-10-07T10:00:00.000003Z", lastReadMessageId: "m3" })
+            assert.deepEqual(rows, [original])
         } finally { unsubscribe(); Object.assign(globalThis, previous) }
     })
 }

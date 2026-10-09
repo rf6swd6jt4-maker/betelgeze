@@ -6,6 +6,7 @@ import { authHostname, authOrigin } from "@/lib/auth/origin"
 import { WORKSPACE_TAB_FRAME_PARAM } from "@/lib/workspace-tabs"
 import { WORKSPACE_SHELL_INTERNAL_PREFIX, WORKSPACE_SHELL_REQUEST_HEADER, workspaceRouteUsesShell, workspaceShellRoute } from "@/lib/workspace-shell"
 import { parseWorkspaceLaunchHint, WORKSPACE_LAUNCH_COOKIE } from "@/lib/workspace-launch"
+import { PUSH_DEVICE_COOKIE, PUSH_DEVICE_COOKIE_MAX_AGE, UUID_PATTERN as DEVICE_UUID_PATTERN } from "@/lib/push/device"
 
 async function refreshSession(request: NextRequest) {
     const startedAt = performance.now()
@@ -39,6 +40,17 @@ async function refreshSession(request: NextRequest) {
     // getClaims verifies locally when the project uses asymmetric signing
     // keys, while still refreshing an expired session when needed.
     const { data } = await supabase.auth.getClaims()
+    // Establish the installation before the shell's parallel metadata reads.
+    // AccountDevicePresence still owns verified session binding and push consent.
+    const installation = request.cookies.get(PUSH_DEVICE_COOKIE)?.value
+    if (data?.claims?.sub && data.claims.aal === "aal2" && (!installation || !DEVICE_UUID_PATTERN.test(installation))) {
+        const deviceId = crypto.randomUUID()
+        request.cookies.set(PUSH_DEVICE_COOKIE, deviceId)
+        response = carrySessionResponse(response, NextResponse.next({ request: { headers: requestHeadersWithCurrentPath(request) } }))
+        response.cookies.set(PUSH_DEVICE_COOKIE, deviceId, {
+            httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: PUSH_DEVICE_COOKIE_MAX_AGE,
+        })
+    }
     return {
         response,
         aal: typeof data?.claims?.aal === "string" ? data.claims.aal : null,

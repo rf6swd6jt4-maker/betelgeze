@@ -2,7 +2,30 @@ import type { GhlMetrics } from "./ghl-types"
 
 export class GhlError extends Error {
     code: string
-    constructor(code: string) { super(code); this.code = code }
+    diagnostic?: string
+    constructor(code: string, diagnostic?: string) { super(code); this.code = code; this.diagnostic = diagnostic }
+}
+
+const readChecks = {
+    location: ["location details", "locations.readonly"],
+    contacts: ["contacts", "contacts.readonly"],
+    opportunities: ["opportunities", "opportunities.readonly"],
+    calendars: ["calendar list", "calendars.readonly"],
+    events: ["calendar events", "calendars/events.readonly"],
+    blocks: ["calendar blocked slots", "calendars/events.readonly"],
+    users: ["calendar owner", "users.readonly"],
+} as const
+export type GhlReadCheck = keyof typeof readChecks
+
+// Static staff diagnostics only: never include URLs, account IDs, tokens or
+// provider bodies. A 401 can mean missing scopes, not just an invalid token.
+export function ghlHttpError(status: number, check: GhlReadCheck, policy: "metrics" | "calendar" = "metrics") {
+    const code = status === 401 ? policy === "calendar" ? "permissions" : "credentials" : status === 403 ? "permissions" : status === 404 && policy === "metrics" ? "location" : status === 429 ? "rate_limit" : "unavailable"
+    const [label, scope] = readChecks[check]
+    const diagnostic = status === 401 || status === 403
+        ? `HighLevel denied the ${label} check (HTTP ${status}). Check that the sub-account token includes ${scope} and belongs to this Location ID. Calendar-list access alone does not verify CRM or event permissions.`
+        : `HighLevel failed the ${label} check (HTTP ${status}). ${status === 429 ? "Wait before trying again." : "The connection could not be verified. Try again or check the HighLevel integration."}`
+    return new GhlError(code, diagnostic)
 }
 
 export function parseGhlCredentials(value: unknown): { locationId: string; privateToken: string } | null {
@@ -56,7 +79,7 @@ export async function fetchGhlMetrics(credentials: { locationId: string; private
     const controller = new AbortController()
     const deadline = setTimeout(() => controller.abort(), 20_000)
     const { locationId, privateToken } = credentials
-    const request = async (path: string, body?: Record<string, unknown>) => {
+    const request = async (path: string, check: GhlReadCheck, body?: Record<string, unknown>) => {
         const response = await fetcher(`https://services.leadconnectorhq.com${path}`, {
             method: body ? "POST" : "GET", redirect: "error", cache: "no-store", signal: controller.signal,
             headers: { Authorization: `Bearer ${privateToken}`, Version: "v3", Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}) },
@@ -64,25 +87,25 @@ export async function fetchGhlMetrics(credentials: { locationId: string; private
         })
         if (!response.ok) {
             await response.body?.cancel()
-            throw new GhlError(response.status === 401 ? "credentials" : response.status === 403 ? "permissions" : response.status === 404 ? "location" : response.status === 429 ? "rate_limit" : "unavailable")
+            throw ghlHttpError(response.status, check)
         }
         return readGhlJson(response)
     }
     try {
         // Validate the account before any counts; an arbitrary/ignored location must not look connected.
-        const identity = (await request(`/locations/${encodeURIComponent(locationId)}`)).location
+        const identity = (await request(`/locations/${encodeURIComponent(locationId)}`, "location")).location
         if (!identity || typeof identity !== "object" || (identity as Record<string, unknown>).id !== locationId) throw new GhlError("location")
         const locationName = (identity as Record<string, unknown>).name
         if (typeof locationName !== "string" || !locationName.trim()) throw new GhlError("response")
         const rawCompanyId = (identity as Record<string, unknown>).companyId
         const companyId = typeof rawCompanyId === "string" && /^[a-zA-Z0-9_-]{10,80}$/.test(rawCompanyId) ? rawCompanyId : null
-        const opportunityCount = async (status?: string) => total(await request("/opportunities/search", {
+        const opportunityCount = async (status?: string) => total(await request("/opportunities/search", "opportunities", {
             locationId, query: "", page: 0, limit: 1,
             filters: status ? [{ field: "status", operator: "eq", value: status }] : [],
             additionalDetails: { notes: false, tasks: false, calendarEvents: false, unReadConversations: false },
         }), "opportunities", locationId, status)
         const [contacts, opportunities, open, won, lost] = await Promise.all([
-            request("/contacts/search", { locationId, page: 1, pageLimit: 1 }).then((result) => total(result, "contacts", locationId)),
+            request("/contacts/search", "contacts", { locationId, page: 1, pageLimit: 1 }).then((result) => total(result, "contacts", locationId)),
             opportunityCount(), opportunityCount("open"), opportunityCount("won"), opportunityCount("lost"),
         ])
         return { locationName: locationName.trim().slice(0, 200), ...(companyId ? { companyId } : {}), metrics: { contacts, opportunities, open, won, lost } }

@@ -27,7 +27,7 @@ export type ClientConnectionAccount = {
 const failureMessages: Record<string, string> = {
     access: "You do not have access to this client connection.", busy: "This client connection is already being updated.",
     cooldown: "Wait a few seconds before trying again.", changed: "The connection changed while it was being verified. Reload and try again.",
-    credentials: "HighLevel rejected these credentials.", permissions: "The HighLevel token does not have the required read permissions.",
+    credentials: "HighLevel denied access. Check the token's read permissions and Location ID.", permissions: "The HighLevel token does not have the required read permissions.",
     location: "HighLevel could not find that Location ID.", rate_limit: "HighLevel is temporarily rate limiting requests.",
     response: "HighLevel returned an unexpected response.", duplicate: "That HighLevel location is already linked to another client.",
     agency: "That location does not belong to the connected agency.", unavailable: "HighLevel could not be reached.", storage: "The connection could not be saved.",
@@ -78,7 +78,7 @@ export async function connectClientHighLevel(input: { workspaceId: string; userI
     } catch (error) {
         const code = error instanceof GhlError ? error.code : "unavailable"
         await call(input.workspaceId, input.userId, "fail", { p_relationship_id: input.relationshipId, p_operation_id: operationId, p_error: code }).catch(() => {})
-        throw new Error(failureMessages[code] ?? "The HighLevel connection could not be verified.")
+        throw new Error(error instanceof GhlError && error.diagnostic ? error.diagnostic : failureMessages[code] ?? "The HighLevel connection could not be verified.")
     }
 }
 
@@ -98,7 +98,7 @@ export async function refreshClientHighLevel(input: { workspaceId: string; userI
     } catch (error) {
         const code = error instanceof GhlError ? error.code : "unavailable"
         await call(input.workspaceId, input.userId, "fail", { p_relationship_id: input.relationshipId, p_operation_id: operationId, p_error: code }).catch(() => {})
-        throw new Error(failureMessages[code] ?? "The HighLevel connection could not be refreshed.")
+        throw new Error(error instanceof GhlError && error.diagnostic ? error.diagnostic : failureMessages[code] ?? "The HighLevel connection could not be refreshed.")
     }
 }
 
@@ -122,7 +122,7 @@ async function editCredentials(workspaceId: string, userId: string, input: Pick<
 export async function loadClientCalendars(workspaceId: string, userId: string, input: Pick<ClientConnectionEdit, "relationshipId" | "locationId" | "privateToken" | "expectedRevision">) {
     const credentials = await editCredentials(workspaceId, userId, input)
     try { return await fetchGhlCalendars(credentials) }
-    catch (error) { throw new Error(error instanceof GhlError ? failureMessages[error.code] ?? failureMessages.unavailable : failureMessages.unavailable) }
+    catch (error) { throw new Error(error instanceof GhlError ? error.diagnostic ?? failureMessages[error.code] ?? failureMessages.unavailable : failureMessages.unavailable) }
 }
 export async function saveClientConnection(workspaceId: string, userId: string, input: ClientConnectionEdit) {
     if (!["client_account", "agency_subaccount"].includes(input.accountType)) throw new Error("Choose an account source.")
@@ -147,7 +147,7 @@ export async function saveClientConnection(workspaceId: string, userId: string, 
     } catch (error) {
         const code = error instanceof GhlError ? error.code : "unavailable"
         await managementCall(workspaceId, userId, "fail", { p_relationship_id: input.relationshipId, p_operation_id: operationId, p_error: code }).catch(() => {})
-        throw error instanceof GhlError ? new Error(failureMessages[code] ?? failureMessages.unavailable) : error
+        throw error instanceof GhlError ? new Error(error.diagnostic ?? failureMessages[code] ?? failureMessages.unavailable) : error
     }
 }
 export async function removeClientConnection(workspaceId: string, userId: string, relationshipId: string, expectedRevision: string) {

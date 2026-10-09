@@ -1,4 +1,4 @@
-import { GhlError, readGhlJson } from "./ghl-provider"
+import { GhlError, ghlHttpError, readGhlJson } from "./ghl-provider"
 
 export type GhlCalendarChoice = { id: string; name: string }
 export async function fetchGhlCalendars(credentials: { locationId: string; privateToken: string }, fetcher: typeof fetch = fetch): Promise<GhlCalendarChoice[]> {
@@ -10,7 +10,7 @@ export async function fetchGhlCalendars(credentials: { locationId: string; priva
         })
         if (!response.ok) {
             await response.body?.cancel()
-            throw new GhlError([401, 403].includes(response.status) ? "permissions" : response.status === 429 ? "rate_limit" : "unavailable")
+            throw ghlHttpError(response.status, "calendars", "calendar")
         }
         const body = await readGhlJson(response, 524288)
         if (!Array.isArray(body.calendars) || body.calendars.length > 200) throw new GhlError("response")

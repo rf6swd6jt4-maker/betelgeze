@@ -1,4 +1,4 @@
-import { GhlError, readGhlJson } from "./ghl-provider"
+import { GhlError, ghlHttpError, readGhlJson, type GhlReadCheck } from "./ghl-provider"
 import { monthWindow, validMonth, type GhlCalendarSnapshot } from "./ghl-calendar"
 const identifier = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9_-]{10,80}$/.test(value)
 type Credentials = { locationId: string; privateToken: string }
@@ -29,12 +29,12 @@ export function parseOwnerBinding(value: unknown): OwnerBinding | SelectedCalend
 export async function fetchGhlCalendar(credentials: Credentials, month: string, binding: OwnerBinding | SelectedCalendarBinding | null = null, fetcher: typeof fetch = fetch): Promise<OwnerCalendarResult> {
     if (!validMonth(month)) throw new GhlError("response")
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 20_000)
-    const request = async (path: string) => {
+    const request = async (path: string, check: GhlReadCheck) => {
         const response = await fetcher(`https://services.leadconnectorhq.com${path}`, { headers: { Authorization: `Bearer ${credentials.privateToken}`, Version: "v3", Accept: "application/json" }, cache: "no-store", redirect: "error", signal: controller.signal })
-        if (!response.ok) { await response.body?.cancel(); throw new GhlError(response.status === 401 || response.status === 403 ? "permissions" : response.status === 429 ? "rate_limit" : "unavailable") }
+        if (!response.ok) { await response.body?.cancel(); throw ghlHttpError(response.status, check, "calendar") }
         return readGhlJson(response, 524288)
     }
-    const users = (companyId: string, id?: string) => request(`/users/search?${new URLSearchParams({ companyId, locationId: credentials.locationId, limit: id ? "2" : "100", ...(id ? { ids: id } : {}) })}`)
+    const users = (companyId: string, id?: string) => request(`/users/search?${new URLSearchParams({ companyId, locationId: credentials.locationId, limit: id ? "2" : "100", ...(id ? { ids: id } : {}) })}`, "users")
     try {
         // Resolve the owner once when establishing the connection's calendar.
         // Later refreshes verify this owner alongside the two schedule reads.
@@ -42,7 +42,7 @@ export async function fetchGhlCalendar(credentials: Credentials, month: string, 
         let ownerBinding: OwnerBinding | null = binding && "companyId" in binding ? binding : null
         let ownerCheck: Promise<{ id: string; name: string }>
         if (!ownerBinding) {
-            const identity = await request(`/locations/${encodeURIComponent(credentials.locationId)}`)
+            const identity = await request(`/locations/${encodeURIComponent(credentials.locationId)}`, "location")
             const location = identity.location as Record<string, unknown> | undefined
             if (location?.id !== credentials.locationId || !identifier(location.companyId)) throw new GhlError("location")
             if (!validTimezone(location.timezone)) throw new GhlError("response")
@@ -57,7 +57,7 @@ export async function fetchGhlCalendar(credentials: Credentials, month: string, 
         const { timezone, companyId } = ownerBinding
         const window = monthWindow(month, timezone)
         const query = new URLSearchParams({ locationId: credentials.locationId, ...(selected ? { calendarId: selected.calendarId } : { userId: ownerBinding.owner.id }), startTime: String(window.start), endTime: String(window.end - 1) })
-        const [owner, appointments, blocks] = await Promise.all([ownerCheck, request(`/calendars/events?${query}`), request(`/calendars/blocked-slots?${query}`)])
+        const [owner, appointments, blocks] = await Promise.all([ownerCheck, request(`/calendars/events?${query}`, "events"), request(`/calendars/blocked-slots?${query}`, "blocks")])
         if (!Array.isArray(appointments.events) || !Array.isArray(blocks.events) || appointments.events.length + blocks.events.length > 1000) throw new GhlError("response")
         const snapshot: OwnerCalendarResult = { source: selected ? "booking-calendar" : "owner-user", ...(selected ? { calendarId: selected.calendarId } : {}), companyId, owner, timezone, month, events: [], eventContacts: {}, namesStatus: "pending" }
         const seen = new Set<string>(), midnight = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })

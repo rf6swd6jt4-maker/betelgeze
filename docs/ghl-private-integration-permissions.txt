@@ -31,6 +31,19 @@ Connect account / Save connection. Do not paste the token into a chat message.
 When editing, leave the token blank to keep the existing token. Changing the
 Location ID requires a token for the replacement sub-account.
 
+IF CALENDARS LOAD BUT CONNECT ACCOUNT FAILS
+View Calendars only allows BE to list calendar choices. Saving also verifies
+location details, contacts, opportunities, appointments and blocked slots.
+Check that ALL FIVE required scopes above are present in the saved integration.
+In particular, View Calendar Events is separate from View Calendars, and
+View Opportunities is separate from View Contacts.
+
+An HTTP 401 can indicate insufficient access; it does not by itself prove that
+the token was copied incorrectly. Check the scope named by BE's failed check
+before replacing the token. Edit the existing integration's scopes in GHL,
+save that change, and retry the connection in BE with the same Location ID.
+Do not remove CRM/event verification or add write permissions to bypass it.
+
 AGENCY TOKEN - SEPARATE FROM THE CLIENT TOKEN
 BE Settings > Connections > HighLevel uses an agency-level integration:
 

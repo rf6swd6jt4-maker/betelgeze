@@ -39,22 +39,32 @@ export async function getCurrentUser() {
     return getAal2User(supabase)
 }
 
-const loadRequiredWorkspace = cache(async function loadRequiredWorkspace(
+type WorkspaceIdentity = Pick<Workspace, "id" | "slug" | "status">
+type WorkspaceProjection = "full" | "identity"
+type WorkspaceContext<P extends WorkspaceProjection> = {
+    user: User
+    workspace: P extends "identity" ? WorkspaceIdentity : Workspace
+    role: WorkspaceRole
+}
+
+const loadRequiredWorkspace = cache(async function loadRequiredWorkspace<P extends WorkspaceProjection = "full">(
     slug: string,
-    minimumRole: WorkspaceRole = "staff"
-): Promise<{ user: User; workspace: Workspace; role: WorkspaceRole }> {
-    const supabase = await createSupabaseServerClient()
+    minimumRole: WorkspaceRole = "staff",
+    projection: P = "full" as P,
+    existingSupabase?: Awaited<ReturnType<typeof createSupabaseServerClient>>
+): Promise<WorkspaceContext<P>> {
+    const supabase = existingSupabase ?? await createSupabaseServerClient()
     const [user, workspaceResult] = await Promise.all([
         requireAal2User(supabase),
         supabaseAdmin
             .from("workspaces")
-            .select("id, name, slug, status, banner_path, logo_path, banner_height, banner_position, leadgen_banner_path, leadgen_banner_height, leadgen_banner_position, custom_onboarding_domain, custom_onboarding_domain_status, custom_onboarding_domain_records, custom_onboarding_domain_error, custom_client_portal_domain, custom_client_portal_domain_status, custom_client_portal_domain_records, custom_client_portal_domain_error")
+            .select(projection === "identity" ? "id, slug, status" : "id, name, slug, status, banner_path, logo_path, banner_height, banner_position, leadgen_banner_path, leadgen_banner_height, leadgen_banner_position, custom_onboarding_domain, custom_onboarding_domain_status, custom_onboarding_domain_records, custom_onboarding_domain_error, custom_client_portal_domain, custom_client_portal_domain_status, custom_client_portal_domain_records, custom_client_portal_domain_error")
             .eq("slug", slug)
-            .maybeSingle() as unknown as Promise<{ data: Workspace | null; error: { message: string } | null }>,
+            .maybeSingle() as unknown as Promise<{ data: Workspace | WorkspaceIdentity | null; error: { message: string } | null }>,
     ])
 
     let workspace = workspaceResult.data
-    if (workspaceResult.error?.message.includes("custom_onboarding_domain") || workspaceResult.error?.message.includes("custom_client_portal_domain") || workspaceResult.error?.message.includes("leadgen_banner")) {
+    if (projection === "full" && (workspaceResult.error?.message.includes("custom_onboarding_domain") || workspaceResult.error?.message.includes("custom_client_portal_domain") || workspaceResult.error?.message.includes("leadgen_banner"))) {
         const { data: legacyWorkspace, error: legacyError } = await supabaseAdmin
             .from("workspaces")
             .select("id, name, slug, status, banner_path, logo_path, banner_height, banner_position")
@@ -92,11 +102,22 @@ const loadRequiredWorkspace = cache(async function loadRequiredWorkspace(
         redirect("/workspaces")
     }
 
-    return { user, workspace, role }
+    return { user, workspace, role } as WorkspaceContext<P>
 })
 
 export function requireWorkspace(slug: string, minimumRole: WorkspaceRole = "staff") {
     return loadRequiredWorkspace(slug, minimumRole)
+}
+
+/** Use the same authorization path without fetching presentation fields. The
+ * caller supplies its request-scoped client so the following mutation reuses it.
+ */
+export function requireWorkspaceIdentity(
+    slug: string,
+    supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    minimumRole: WorkspaceRole = "staff"
+) {
+    return loadRequiredWorkspace(slug, minimumRole, "identity", supabase)
 }
 
 export async function getWorkspaceForPublicOnboarding(slug: string) {

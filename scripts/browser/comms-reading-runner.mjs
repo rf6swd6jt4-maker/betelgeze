@@ -19,7 +19,7 @@ function App({kind,initial}){
  const summary=useCommunicationsUnread('workspace','fixture','user',true)
  const shared=useSharedUnreadSummary('workspace','user')
  const reading=useConversationRead({workspaceId:'workspace',workspaceSlug:'fixture',userId:'user',kind,conversationId:'chat',latest:state.latest,cursor,active:state.active,atLatest:state.atLatest,pane})
- useEffect(()=>subscribeChatReads('workspace','user',read=>{if(read.kind===kind&&read.conversationId==='chat')setCursor(read)}),[kind])
+ useEffect(()=>subscribeChatReads('workspace','user',read=>{if(!state.holdCursor&&read.kind===kind&&read.conversationId==='chat')setCursor(read)}),[kind,state.holdCursor])
  useLayoutEffect(()=>{api={setState,summary,reading};sharedNow=shared;shellNow=summary},[state,shared,summary,reading])
  return h(Navigation.Provider,{value:{tabId:'fixture-tab',active:state.active}},h('div',{style:{height:'100%'}},h(MobileConversationSurface,{selected:true,active:state.active,onClose(){}},h('section',{className:'fixture-chat'},h('header',null,'Synthetic chat'),state.showPane?h('div',{ref:pane,className:'fixture-pane','data-message-pane':true,'data-positioned':state.positioned?'true':'false'},state.showRow?h('div',{className:'fixture-row','data-message-interaction':state.latest.id},'Synthetic newest message'):null):null,h('footer',null,'Composer')))))
 }
@@ -33,11 +33,12 @@ async function setup(kind,initial={}){
   if(String(url).endsWith('/unread'))return {ok:true,json:async()=>({conversations:remaining()?[{kind,conversationId:'chat',count:3,latestMessageId:server.latest.id,latestMessageAt:server.latest.createdAt}]:[]})}
   if(!String(url).endsWith('/read'))throw Error('Unexpected fixture request: '+url)
   const body=JSON.parse(options.body),position={workspaceId:'workspace',userId:'user',kind,conversationId:body.conversationId??body.relationshipId,lastReadAt:message(Number(body.messageId.slice(-12))).createdAt,lastReadMessageId:body.messageId}
+  const requestServer=server
   requests.push(position)
   if(readGates.length)await readGates.shift()
   if(failReads>0){failReads--;throw Error('Synthetic offline failure')}
-  if(!server.cursor||compareReadPositions(position,server.cursor)>0)server.cursor=position
-  return {ok:true,json:async()=>({cursor:server.cursor})}
+  if(!requestServer.cursor||compareReadPositions(position,requestServer.cursor)>0)requestServer.cursor=position
+  return {ok:true,json:async()=>({cursor:requestServer.cursor})}
  }
  root=createRoot(document.getElementById('stage'));root.render(h(App,{kind,initial}));await until(()=>api&&sharedNow,'hooks mounted')
 }
@@ -117,6 +118,18 @@ for(const kind of ['native','client']){
   const cursor={workspaceId:'workspace',userId:'user',kind,conversationId:'chat',lastReadAt:message(1).createdAt,lastReadMessageId:message(1).id}
   server.cursor=cursor;const channel=new BroadcastChannel('betelgeze:chat-read:workspace:user');channel.postMessage(cursor)
   await until(()=>rowCount()===0&&shellNow.count===0,'cross-browser confirmed read');channel.close();assert(requests.length===0,'remote acknowledgement generated local save')
+ })
+ await run(kind+' repeated visible events before parent cursor propagation do not resend a confirmed read',async()=>{
+  await setup(kind,{holdCursor:true});await until(()=>requests.length===1&&rowCount()===0,'server acknowledgement while parent cursor is delayed')
+  for(let attempt=0;attempt<4;attempt++){document.querySelector('.fixture-pane').dispatchEvent(new Event('scroll'));await wait(80)}
+  assert(requests.length===1,'already confirmed position created duplicate HTTP saves ('+requests.length+' POSTs)')
+  server.latest=message(2);api.setState(s=>({...s,latest:message(2)}));await until(()=>requests.length===2&&server.cursor?.lastReadMessageId===message(2).id,'genuinely newer position still saved')
+ })
+ await run(kind+' disposed reader cannot publish a late successful acknowledgement',async()=>{
+  await setup(kind,{positioned:false});let release;readGates.push(new Promise(done=>release=done));let published=0
+  const unsubscribe=subscribeChatReads('workspace','user',()=>published++)
+  try{api.setState(s=>({...s,positioned:true}));await until(()=>requests.length===1,'held read before disposal');root.unmount();root=null;release();await wait(180);assert(published===0,'disposed owner published late acknowledgement');assert(requests.length===1,'disposed owner scheduled another save')}
+  finally{unsubscribe()}
  })
  await run(kind+' older acknowledgement cannot clear newer arrival',async()=>{
   await setup(kind,{positioned:false});let first,second;readGates.push(new Promise(done=>first=done),new Promise(done=>second=done));api.setState(s=>({...s,positioned:true}));await until(()=>requests.length===1,'first save');server.latest=message(2);api.setState(s=>({...s,latest:message(2)}));await wait(100);first();await until(()=>requests.length===2,'new position queued');await wait(100);assert(rowCount()===3&&shellNow.count===3,'old acknowledgement cleared new arrival');second();await until(()=>rowCount()===0,'new arrival acknowledged')

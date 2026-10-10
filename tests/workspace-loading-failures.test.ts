@@ -3,6 +3,7 @@ import test from "node:test"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
 import { WorkspaceRecordCache } from "../lib/workspace-record-cache.ts"
+import { normalizeWorkspaceRole, workspaceRoleMeetsMinimum } from "../lib/workspace-roles.ts"
 import { nativeWorkspaceRoute } from "../lib/workspace-native.ts"
 
 // Execute production functions with isolated network/auth fixtures, without
@@ -23,17 +24,25 @@ function moduleFunctions(path: string, context: Record<string, unknown>, names?:
 
 const user = { id: "fixture-user" }
 const workspace = { id: "fixture-workspace", slug: "fixture", status: "active" }
-function workspaceFixture(results: Array<{ data: unknown; error: unknown }>) {
+function workspaceFixture(results: Array<{ data: unknown; error: unknown }>, authError?: Error) {
     const queue = [...results]
-    const builder = { select: () => builder, eq: () => builder, maybeSingle: async () => { assert.ok(queue.length); return queue.shift() } }
+    const selections: string[] = []
+    const client = { fixture: "request-scoped client" }
+    let clientsCreated = 0
+    const builder = { select: (columns: string) => { selections.push(columns); return builder }, eq: () => builder, maybeSingle: async () => { assert.ok(queue.length); return queue.shift() } }
     const redirects: string[] = []
     const functions = moduleFunctions("lib/workspaces.ts", {
-        cache: (fn: unknown) => fn, createSupabaseServerClient: async () => ({}), requireAal2User: async () => user,
-        supabaseAdmin: { from: () => builder }, normalizeWorkspaceRole: (role: unknown) => role,
-        workspaceRoleMeetsMinimum: () => true,
+        cache: (fn: unknown) => fn,
+        createSupabaseServerClient: async () => { clientsCreated++; return client },
+        requireAal2User: async (provided: unknown) => { assert.equal(provided, client); if (authError) throw authError; return user },
+        supabaseAdmin: { from: () => builder }, normalizeWorkspaceRole, workspaceRoleMeetsMinimum,
         redirect: (path: string) => { redirects.push(path); throw new Error(`redirect:${path}`) },
     })
-    return { run: () => functions.requireWorkspace("fixture"), redirects }
+    return {
+        run: () => functions.requireWorkspace("fixture"),
+        runIdentity: () => functions.requireWorkspaceIdentity("fixture", client),
+        redirects, selections, get clientsCreated() { return clientsCreated },
+    }
 }
 
 for (const stage of ["workspace", "membership", "legacy workspace"] as const) test(`${stage} read failures fail closed without redirecting a valid session`, async () => {
@@ -53,6 +62,48 @@ test("verified absent membership still denies entry", async () => {
 test("verified active membership still opens the workspace", async () => {
     const fixture = workspaceFixture([{ data: workspace, error: null }, { data: { role: "staff" }, error: null }])
     assert.equal((await fixture.run()).user.id, user.id)
+})
+
+test("read identity reuses its client and projects only authorization fields", async () => {
+    const results = [{ data: workspace, error: null }, { data: { role: "staff" }, error: null }]
+    const full = workspaceFixture(results)
+    const identity = workspaceFixture(results)
+    assert.deepEqual(await identity.runIdentity(), await full.run())
+    assert.equal(identity.clientsCreated, 0)
+    assert.equal(full.clientsCreated, 1)
+    assert.deepEqual(identity.selections, ["id, slug, status", "role"])
+    assert.equal(full.selections.length, 2)
+    assert.ok(full.selections[0].includes("custom_client_portal_domain_records"))
+})
+
+for (const role of ["owner", "admin", "staff", "member", "guest", null]) test(`read identity keeps canonical ${role} role authorization`, async () => {
+    for (const mode of ["run", "runIdentity"] as const) {
+        const fixture = workspaceFixture([{ data: workspace, error: null }, { data: role ? { role } : null, error: null }])
+        if (role && role !== "guest") assert.equal((await fixture[mode]()).role, role === "member" ? "staff" : role)
+        else await assert.rejects(fixture[mode](), /redirect:\/workspaces/)
+    }
+})
+
+for (const absent of [false, true]) test(`read identity denies ${absent ? "absent" : "suspended"} workspaces`, async () => {
+    const fixture = workspaceFixture([{ data: absent ? null : { ...workspace, status: "suspended" }, error: null }, { data: { role: "staff" }, error: null }])
+    await assert.rejects(fixture.runIdentity(), /redirect:\/workspaces/)
+    assert.equal(fixture.selections.length, absent ? 1 : 2)
+})
+
+for (const stage of ["workspace", "membership", "legacy-column error"] as const) test(`read identity ${stage} failure stays retryable without branding fallback`, async () => {
+    const failure = { data: null, error: { message: stage === "legacy-column error" ? "custom_client_portal_domain unavailable" : "connection unavailable" } }
+    const fixture = workspaceFixture(stage === "membership" ? [{ data: workspace, error: null }, failure] : [failure])
+    await assert.rejects(fixture.runIdentity(), /Please retry/)
+    assert.deepEqual(fixture.redirects, [])
+    assert.equal(fixture.selections.length, stage === "membership" ? 2 : 1)
+})
+
+test("read identity preserves authentication and MFA failure", async () => {
+    const failure = new Error("MFA challenge")
+    const fixture = workspaceFixture([{ data: workspace, error: null }], failure)
+    await assert.rejects(fixture.runIdentity(), (error) => error === failure)
+    assert.deepEqual(fixture.redirects, [])
+    assert.deepEqual(fixture.selections, ["id, slug, status"])
 })
 
 for (const kind of ["enrollment", "assurance", "required", "aal1", "valid"] as const) test(`MFA ${kind} result preserves retry versus genuine challenge`, async () => {

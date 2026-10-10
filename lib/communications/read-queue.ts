@@ -12,6 +12,10 @@ export function createChatReadQueue(options: {
     error: (message: string | null) => void
 }) {
     const pending = new Map<string, ChatReadUpdate>()
+    // React may still present the previous cursor when another visibility
+    // check runs after an acknowledgement. Keep bounded, owner-local evidence
+    // so that check cannot recreate already-saved intent or repeat its POST.
+    const acknowledged = new Map<string, ChatReadUpdate>()
     const key = (read: ChatReadUpdate) => `${read.kind}:${read.conversationId}`
     let running: Promise<void> | null = null
     let disposed = false
@@ -40,8 +44,12 @@ export function createChatReadQueue(options: {
                     if (confirmed.userId !== read.userId || confirmed.workspaceId !== read.workspaceId
                         || key(confirmed) !== id || compareReadPositions(confirmed, read) < 0) throw new Error("Read position was not acknowledged.")
                     options.acknowledge(confirmed)
+                    acknowledged.delete(id)
+                    acknowledged.set(id, confirmed)
+                    if (acknowledged.size > 256) acknowledged.delete(acknowledged.keys().next().value!)
                     if (compareReadPositions(pending.get(id)!, confirmed) <= 0) pending.delete(id)
                     const stored = persist()
+                    if (!stored) acknowledged.delete(id)
                     if (!pending.size && stored) options.error(null)
                 } catch {
                     if (!disposed) options.error("Read position could not be saved. Retrying when messages reconnect.")
@@ -59,14 +67,18 @@ export function createChatReadQueue(options: {
     return {
         observe(read: ChatReadUpdate) {
             if (disposed) return
-            const previous = pending.get(key(read))
+            const id = key(read)
+            const confirmed = acknowledged.get(id)
+            if (confirmed?.workspaceId === read.workspaceId && confirmed.userId === read.userId
+                && compareReadPositions(confirmed, read) >= 0) return
+            const previous = pending.get(id)
             if (previous && compareReadPositions(previous, read) >= 0) return
             if (!previous && pending.size >= 256) { options.error("Read recovery is full. Reconnect to save pending reads."); return }
-            pending.set(key(read), read)
+            pending.set(id, read)
             persist()
             void flush()
         },
         flush: () => flush(),
-        dispose() { disposed = true },
+        dispose() { disposed = true; acknowledged.clear() },
     }
 }

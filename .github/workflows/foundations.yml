@@ -87,6 +87,13 @@ jobs:
         env:
           BE_REFERENCES_PG_EVIDENCE: ${{ runner.temp }}/references-postgres-evidence.json
         run: node scripts/validate-communication-references-postgres.mjs
+      - name: Verify optimized shared reads across independent PostgreSQL connections
+        env:
+          BE_COMMUNICATION_READ_PG_EVIDENCE: ${{ runner.temp }}/communication-read-postgres.json
+        run: node scripts/validate-communication-read-postgres.mjs
+      - name: Print shared read concurrency evidence
+        if: always()
+        run: cat "${{ runner.temp }}/communication-read-postgres.json"
       - name: Print tested SQL runtime and source manifest
         if: always()
         env:
@@ -134,6 +141,8 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/communications-pglite" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8
       - name: Validate atomic cursors, deletion boundaries, summaries and authorization
         run: node scripts/validate-communications-unread-sql.mjs
+      - name: Compare optimized shared read RPC with the exact prior definition
+        run: node scripts/validate-communication-read-efficiency.mjs
       - name: Validate encrypted compact inbox and historical read positions
         run: node scripts/validate-native-inbox-sql.mjs
       - name: Validate unchanged push eligibility against retained read boundaries

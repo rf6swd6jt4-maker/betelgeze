@@ -6,6 +6,14 @@ Established 17 September 2026. This is the protected behavioral contract for sta
 
 Read this document before changing anything that can affect message reading, unread counts, read receipts, foreground/active-chat detection, notification recipients, push subscriptions, delivery/retry/suppression, notification display/click handling, or their database functions and schedulers. **Do not edit this document or change those behaviors without the user's explicit permission for that scope.** An unrelated UI, performance, shell, authentication or cleanup task does not authorize changing these rules. Trace indirect effects before editing shared dependencies. Record the authorized scope, evidence, rollout and rollback here with any authorized change. Do not use a historical repair document to supersede this contract.
 
+### Authorized shared read-path optimization (10 October 2026)
+
+The user requested optimization of the existing read path before reassessing independent device counts, while explicitly retaining the strict speed rule and existing cross-device alert suppression. This scope does not activate device-specific badge state.
+
+The existing read queue retains at most 256 of its own validated acknowledgements until disposal, avoiding duplicate saves when presentation state has not caught up. It never treats an observation, failed response or local storage as confirmation. Newer positions, visibility eligibility, retry recovery and account/workspace isolation retain their existing rules. Both read routes use the canonical workspace authorization path with an identity-only projection and reuse its request-scoped authenticated client for the same atomic RPC. The default workspace loader remains unchanged for other callers.
+
+An independently validated, additive SQL optimization is evaluated separately from application deployment. It must retain canonical authorization, tuple ordering, the separate transaction-lock statement, cursor rows, return shape and account-wide push suppression. Installation and speed evidence, deployment status and rollback belong in [the read-path efficiency report](docs/comms-read-path-efficiency-2026-10-10.md); a migration file in the repository is not evidence of live installation.
+
 ### Authorized cross-device read convergence repair (7 October 2026)
 
 The user approved the scoped application repair and its deployment after the read-only investigation reproduced hosted unread-owner forwarding and stalled recovery failures. Existing newest-visible, active-foreground, server-acknowledgement, recipient and push rules remain unchanged.

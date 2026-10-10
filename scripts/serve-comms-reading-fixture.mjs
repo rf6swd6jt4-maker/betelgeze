@@ -27,7 +27,7 @@ const aliases = new Map(sources.flatMap(path => {
 for (const key of ['@/components/workspace/WorkspaceNavigation', './WorkspaceNavigation', '@/lib/workspace-performance', '@/lib/push/browser-notifications']) aliases.set(key, './stubs.js')
 aliases.set('../record-version.js', './record-version.js')
 for (const path of sources) {
- let source = process.env.COMMS_READ_BASELINE && ['components/communications/useConversationRead.ts','lib/communications/reading-visibility.ts'].includes(path)
+ let source = process.env.COMMS_READ_BASELINE && ['components/communications/useConversationRead.ts','lib/communications/reading-visibility.ts','lib/communications/read-queue.ts'].includes(path)
   ? execFileSync('git', ['show', `${process.env.COMMS_READ_BASELINE}:${path}`], { encoding: 'utf8' }) : readFileSync(path, 'utf8')
  for (const [from, to] of aliases) source = source.replaceAll(`"${from}"`, JSON.stringify(to))
  writeFileSync(join(directory, path.split('/').at(-1).replace(/\.tsx?$/, '.js')), ts.transpileModule(source, { fileName:path, compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX} }).outputText)

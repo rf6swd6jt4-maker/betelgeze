@@ -33,8 +33,28 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
         p_workspace_id: workspace.id, p_relationship_id: relationshipId,
     })
     if (choices.error || !Array.isArray(choices.data)) return Response.json({ error: "Could not verify WhatsApp consent." }, { status: 503 })
-    const whatsappChoice = choices.data.find((choice: { provider?: unknown }) => choice.provider === "meta_whatsapp") as { confirmedAt?: unknown; address?: unknown } | undefined
-    if (!whatsappChoice?.confirmedAt || whatsappChoice.address !== address.slice("whatsapp:".length)) {
+    const phone = address.slice("whatsapp:".length)
+    const whatsappChoice = choices.data.find((choice: { provider?: unknown }) => choice.provider === "meta_whatsapp") as { confirmedAt?: unknown; address?: unknown; confirmationStatus?: unknown } | undefined
+    let confirmed = Boolean(whatsappChoice?.confirmedAt && whatsappChoice.address === phone)
+    if (!confirmed && whatsappChoice?.address === phone && whatsappChoice.confirmationStatus !== "revoked") {
+        // Channel-selected sales record confirmation without a WhatsApp reply ID.
+        // Recognize that evidence only for this template, never for freeform sends.
+        // The existing relationship_sale_confirmation_lookup index bounds this to
+        // the latest confirmed sale; do not scan or transfer the sale history.
+        const sale = await supabaseAdmin.from("client_sales")
+            .select("consent_confirmed_at, raw_payload->confirmation_source, raw_payload->delivery_choices")
+            .eq("workspace_id", workspace.id).eq("relationship_id", relationshipId)
+            .not("consent_confirmed_at", "is", null)
+            .order("consent_confirmed_at", { ascending: false }).limit(1).maybeSingle()
+        if (sale.error) return Response.json({ error: "Could not verify WhatsApp consent." }, { status: 503 })
+        confirmed = Boolean(sale.data?.consent_confirmed_at
+            && sale.data.confirmation_source === "relationship_channels"
+            && Array.isArray(sale.data.delivery_choices)
+            && sale.data.delivery_choices.some((choice: unknown) =>
+                choice && typeof choice === "object" && "provider" in choice && "address" in choice
+                && choice.provider === "meta_whatsapp" && choice.address === phone))
+    }
+    if (!confirmed) {
         return Response.json({ error: "This contact has not confirmed WhatsApp communications. Use the initial consent flow first." }, { status: 409 })
     }
     let reconfirmationTemplate: { name: string; language: string }

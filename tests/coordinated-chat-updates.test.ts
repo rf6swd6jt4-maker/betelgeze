@@ -234,3 +234,68 @@ test("compact inbox unread metadata respects deleted messages through stale snap
     chat.removeMessage("m1")
     assert.deepEqual(chat.getSnapshot().conversations[0].unreadMessages, [])
 })
+
+test("metadata-only device roster preserves visited history reactions and private acknowledged cursor", () => {
+    type ProgressiveConversation = Conversation & { previewState?: "loading" | "ready"; previewMessage?: Message | null; latestMessageAt?: string | null; cursorKnown?: true; deviceCursor?: { lastReadAt: string; lastReadMessageId: string | null } | null }
+    const cursor = { lastReadAt: message.createdAt, lastReadMessageId: message.id }
+    const chat = createCoordinatedChat<Message, ProgressiveConversation, Reaction>({ conversations: [{ ...snapshot().conversations[0], previewState: "ready", cursorKnown: true, deviceCursor: cursor }], reactions: [reaction()] }, reactionKey)
+    chat.setPreview("c1", message)
+    chat.applySnapshot(chat.beginRead(), { conversations: [{ ...snapshot([]).conversations[0], previewState: "loading", latestMessageAt: message.createdAt, cursorKnown: true, deviceCursor: null }], reactions: [] })
+    assert.deepEqual(chat.getSnapshot().conversations[0].messages, [message])
+    assert.equal(chat.getSnapshot().reactions.length, 1)
+    assert.deepEqual(chat.getSnapshot().conversations[0].deviceCursor, cursor)
+    assert.equal(chat.getSnapshot().conversations[0].previewMessage?.body, "Original")
+    chat.removeMessage(message.id)
+    chat.setPreview("c1", message)
+    assert.equal(chat.getSnapshot().conversations[0].previewMessage, null, "stale preview cannot resurrect a tombstone")
+    chat.applySnapshot(chat.beginRead(), { conversations: [], reactions: [] })
+    assert.equal(chat.getSnapshot().conversations.length, 0, "roster revocation is still authoritative")
+})
+
+test("loading one preview cannot reorder a metadata roster or turn a preview into history", () => {
+    const conversations = ["b", "a"].map((id, index) => ({ ...snapshot([]).conversations[0], id, title: id, previewState: "loading" as const, latestMessageAt: `2026-09-0${3 - index}T12:00:00Z` }))
+    const chat = createCoordinatedChat<Message, typeof conversations[number], Reaction>({ conversations, reactions: [] }, reactionKey)
+    chat.setPreview("a", { ...message, createdAt: "2026-09-02T12:00:00Z" })
+    assert.deepEqual(chat.getSnapshot().conversations.map(row => row.id), ["b", "a"])
+    assert.equal(chat.getSnapshot().conversations[1].messages.length, 0)
+    const read = chat.beginRead()
+    chat.applySnapshot(read, { conversations, reactions: [] })
+    assert.deepEqual(chat.getSnapshot().conversations.map(row => row.id), ["b", "a"])
+})
+
+
+test("a replacement installation cannot inherit a previous installation cursor from retained metadata", () => {
+    const previous = { ...snapshot().conversations[0], previewState: "ready" as const, cursorDeviceId: "device-a", cursorKnown: true as const, deviceCursor: { lastReadAt: message.createdAt, lastReadMessageId: message.id } }
+    type ScopedConversation = Omit<typeof previous, "deviceCursor"> & { deviceCursor: typeof previous.deviceCursor | null }
+    const chat = createCoordinatedChat<Message, ScopedConversation, Reaction>({ conversations: [previous], reactions: [] }, reactionKey)
+    chat.applySnapshot(chat.beginRead(), { conversations: [{ ...previous, cursorDeviceId: "device-b", deviceCursor: null }], reactions: [] })
+    assert.equal(chat.getSnapshot().conversations[0].deviceCursor, null)
+    assert.equal(chat.getSnapshot().conversations[0].cursorDeviceId, "device-b")
+})
+
+test("selected history reconciles missed deletions only in its window and retains later arrivals", () => {
+    const old = { ...message, id: "old", clientRequestId: null, createdAt: "2026-09-01T00:00:00Z" }
+    const boundary = { ...message, id: "boundary", clientRequestId: null, createdAt: "2026-09-02T00:00:00Z" }
+    const latest = { ...message, id: "latest", clientRequestId: null, createdAt: "2026-09-03T00:00:00Z" }
+    const other = { ...message, id: "other", clientRequestId: null }
+    const chat = createCoordinatedChat<Message, Conversation, Reaction>({ conversations: [{ ...snapshot().conversations[0], messages: [old, boundary, latest] }, { ...snapshot().conversations[0], id: "c2", messages: [other] }], reactions: [] }, reactionKey)
+    const read = chat.beginRead()
+    const arrival = { ...message, id: "arrival", clientRequestId: null, createdAt: "2026-09-04T00:00:00Z" }
+    chat.setConversations(current => current.map(row => row.id === "c1" ? { ...row, messages: [...row.messages, arrival] } : row))
+    chat.applyHistoryMessages(read, "c1", [boundary], boundary)
+    assert.deepEqual(chat.getSnapshot().conversations.find(row => row.id === "c1")?.messages.map(message => message.id), ["old", "boundary", "arrival"])
+    assert.deepEqual(chat.getSnapshot().conversations.find(row => row.id === "c2")?.messages, [other])
+    chat.applyHistoryMessages(chat.beginRead(), "c1", [], null)
+    assert.deepEqual(chat.getSnapshot().conversations.find(row => row.id === "c1")?.messages, [], "confirmed complete empty history removes missed older deletions")
+    assert.deepEqual(chat.getSnapshot().conversations.find(row => row.id === "c2")?.messages, [other])
+})
+
+test("selected history deletion coverage uses the full microsecond and message-ID frontier", () => {
+    const tuple = "2026-10-11T10:00:00.123456Z"
+    const row = (id: string, createdAt = tuple) => ({ ...message, id, createdAt, clientRequestId: null })
+    const priorMicrosecond = row("z", "2026-10-11T10:00:00.123455Z")
+    const olderTie = row("a"), boundary = row("b"), deletedTie = row("c"), latest = row("d")
+    const chat = create(snapshot([priorMicrosecond, olderTie, boundary, deletedTie, latest]))
+    chat.applyHistoryMessages(chat.beginRead(), "c1", [boundary, latest], boundary)
+    assert.deepEqual(ids(chat), ["z", "a", "b", "d"], "only the covered deleted tie is removed; earlier ties and microseconds remain")
+})

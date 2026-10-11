@@ -1,3 +1,4 @@
+import { deviceCommunicationErrorResponse, validateCommunicationReadProtocol } from "@/lib/communications/device-server"
 import { loadNativeCommunications } from "@/lib/teams/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspacePanel } from "@/lib/workspace-access"
@@ -9,8 +10,16 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 export async function GET(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
     const { workspace, user, role } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const readProtocol = validateCommunicationReadProtocol(request, workspace.id, user.id)
+    if (readProtocol instanceof Response) return readProtocol
     const url = new URL(request.url)
-    return Response.json(await loadNativeCommunications({ workspaceId: workspace.id, workspaceSlug: workspace.slug, currentUserId: user.id, role, requestedConversationId: url.searchParams.get("conversation"), requestedDmUserId: url.searchParams.get("dm") }), { headers: { "Cache-Control": "no-store" } })
+    try {
+    return Response.json(await loadNativeCommunications({ readProtocol, workspaceId: workspace.id, workspaceSlug: workspace.slug, currentUserId: user.id, role, requestedConversationId: url.searchParams.get("conversation"), requestedDmUserId: url.searchParams.get("dm") }), { headers: { "Cache-Control": "no-store" } })
+    } catch (error) {
+        const failure = deviceCommunicationErrorResponse(error)
+        if (failure) return failure
+        throw error
+    }
 }
 
 export async function POST(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {

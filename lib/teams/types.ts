@@ -1,3 +1,4 @@
+import type { CommunicationReadProtocol } from "@/lib/communications/read-protocol"
 import type { ClientConversation, CommunicationAttachment, CommunicationPerson, CommunicationSticker } from "@/lib/communications/types"
 import type { MessageQuote } from "@/lib/communications/message-quotes"
 
@@ -50,6 +51,12 @@ export type NativeReadCursor = {
 }
 
 export type NativeConversation = {
+    previewState?: "loading" | "ready"
+    previewMessage?: NativeMessage | null
+    latestMessageAt?: string | null
+    cursorDeviceId?: string | null
+    cursorKnown?: true
+    deviceCursor?: { lastReadAt: string; lastReadMessageId: string | null } | null
     id: string
     kind: "direct" | "team"
     system?: boolean
@@ -72,6 +79,9 @@ export type WorkspaceCommunicationConversation =
     | NativeConversation
 
 export type NativeCommunicationsBootstrap = {
+    readProtocol?: CommunicationReadProtocol
+    progressivePreviews?: boolean
+    deviceId?: string | null
     workspaceId: string
     workspaceSlug: string
     currentUser: CommunicationPerson

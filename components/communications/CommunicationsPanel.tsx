@@ -2,7 +2,10 @@
 
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { PanelRouteLoading } from "@/components/workspace/PanelRouteLoading"
+import { CommunicationsReadProtocolContext, useCommunicationsReadProtocol } from "./CommunicationsReadProtocol"
+import type { CommunicationReadProtocol } from "@/lib/communications/read-protocol"
 import { useCommunicationsUnread } from "./useCommunicationsUnread"
+import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
 import { invalidateUnreadSummary } from "@/lib/communications/unread-broadcast"
 import { Status } from "@/components/ui"
 import { createCommunicationsModeResource, type CommunicationsMode } from "@/lib/communications/mode-resource"
@@ -34,7 +37,9 @@ function ContentReady({ active, onMounted, onReady }: { active: boolean; onMount
     return null
 }
 
-export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, nativeBootstrap: initialNativeBootstrap, initialMode, initialConversationId, initialNativeConversationId, initialDmUserId, onMounted, onReady }: {
+export function CommunicationsPanel({ readProtocol: requestedReadProtocol, deferredScope, clientBootstrap: initialClientBootstrap, nativeBootstrap: initialNativeBootstrap, initialMode, initialConversationId, initialNativeConversationId, initialDmUserId, onMounted, onReady }: {
+    readProtocol?: CommunicationReadProtocol
+    deferredScope?: { workspaceId: string; workspaceSlug: string; userId: string }
     clientBootstrap: CommunicationsBootstrap | null
     nativeBootstrap: NativeCommunicationsBootstrap | null
     initialMode: CommunicationsMode
@@ -46,17 +51,24 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
 }) {
     const navigation = useWorkspaceNavigation()
     const panelActive = navigation?.active ?? true
-    const initialBootstrap = initialClientBootstrap ?? initialNativeBootstrap!
-    const { workspaceId, workspaceSlug } = initialBootstrap
-    const userId = initialBootstrap.currentUser.id
+    const initialBootstrap = initialClientBootstrap ?? initialNativeBootstrap
+    const hasInitialBootstrap = Boolean(initialBootstrap)
+    const initialReadProtocol = initialBootstrap?.readProtocol ?? "account-v1"
+    const { workspaceId, workspaceSlug } = initialBootstrap ?? deferredScope!
+    const userId = initialBootstrap?.currentUser.id ?? deferredScope!.userId
+    const readProtocol = useCommunicationsReadProtocol(workspaceId, userId, requestedReadProtocol ?? initialBootstrap?.readProtocol ?? "account-v1")
+    const compatible = (bootstrap: CommunicationsBootstrap | NativeCommunicationsBootstrap | null) => bootstrap && (bootstrap.readProtocol ?? "account-v1") === readProtocol
     const [standalone, setStandalone] = useState(false)
-    useEffect(() => { setStandalone(window.top === window && document.body.dataset.workspaceTabsHosted !== "true") }, [])
+    useEffect(() => { setStandalone(window.top === window && document.body.dataset.workspaceTabsHosted !== "true" && !document.querySelector("[data-workspace-shell-root]")) }, [])
     // Hosted panels consume the shell's owner. Standalone routes need one owner.
-    useCommunicationsUnread(workspaceId, workspaceSlug, userId, standalone)
+    useCommunicationsUnread(workspaceId, workspaceSlug, userId, standalone, readProtocol)
     const invalidateUnread = useCallback((eventKey?: string) => invalidateUnreadSummary(workspaceId, userId, eventKey), [workspaceId, userId])
-    const [clientBootstrap, setClientBootstrap] = useState(initialClientBootstrap)
-    const [nativeBootstrap, setNativeBootstrap] = useState(initialNativeBootstrap)
+    const [clientBootstrap, setClientBootstrap] = useState(compatible(initialClientBootstrap) ? initialClientBootstrap : null)
+    const [nativeBootstrap, setNativeBootstrap] = useState(compatible(initialNativeBootstrap) ? initialNativeBootstrap : null)
     const [loadErrors, setLoadErrors] = useState<Partial<Record<CommunicationsMode, string>>>({})
+    const requestedObservation = useRef(false)
+    const bindingModes = useRef(new Set<CommunicationsMode>())
+    const pendingModeLoads = useRef(new Map<CommunicationsMode, Promise<CommunicationsBootstrap | NativeCommunicationsBootstrap>>())
     const resources = useRef<ReturnType<typeof createCommunicationsModeResource<CommunicationsBootstrap | NativeCommunicationsBootstrap>> | null>(null)
     const [mode, setModeState] = useState(initialMode)
     const [clientSelectedId, setClientSelectedId] = useState(initialClientBootstrap?.selectedConversationId ?? initialConversationId ?? null)
@@ -67,30 +79,59 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
         if (!resource) return
         setLoadErrors((errors) => ({ ...errors, [nextMode]: undefined }))
         try {
-            const bootstrap = await resource.load(nextMode)
+            const pending = resource.load(nextMode)
+            pendingModeLoads.current.set(nextMode, pending)
+            const bootstrap = await pending
+            bindingModes.current.delete(nextMode)
+            if (!bindingModes.current.size) requestedObservation.current = false
             if (resources.current !== resource) return
             if (nextMode === "clients") setClientBootstrap(bootstrap as CommunicationsBootstrap)
             else setNativeBootstrap(bootstrap as NativeCommunicationsBootstrap)
         } catch (error) {
             if (resources.current === resource) setLoadErrors((errors) => ({ ...errors, [nextMode]: error instanceof Error ? error.message : "Could not load conversations." }))
-        }
+        } finally { pendingModeLoads.current.delete(nextMode) }
     }, [])
 
     useEffect(() => {
         const resource = createCommunicationsModeResource<CommunicationsBootstrap | NativeCommunicationsBootstrap>({
             workspaceId, userId,
             load: async (nextMode, signal) => {
-                const query = new URLSearchParams()
+                const query = new URLSearchParams({ readProtocol })
                 const conversation = nextMode === "clients" ? initialConversationId : initialNativeConversationId
                 if (conversation) query.set("conversation", conversation)
                 if (nextMode === "team" && initialDmUserId) query.set("dm", initialDmUserId)
                 const path = nextMode === "clients" ? "sync" : "native/conversations"
-                const response = await fetch(`/api/workspaces/${workspaceSlug}/communications/${path}?${query}`, { cache: "no-store", signal })
+                const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+                const response = await fetch(`/api/workspaces/${workspaceSlug}/communications/${path}?${query}`, { cache: "no-store", signal: requestSignal })
+                if (readProtocol === "device-v1" && response.status === 409) {
+                    bindingModes.current.add(nextMode)
+                    if (!requestedObservation.current) {
+                        requestedObservation.current = true
+                        ;(window.top ?? window).dispatchEvent(new Event("betelgeze:device-observation-required"))
+                    }
+                }
                 if (!response.ok) throw new Error("Could not load conversations. Please retry.")
-                return response.json()
+                const result = await response.json()
+                requestSignal.throwIfAborted()
+                if ((result.readProtocol ?? "account-v1") !== readProtocol) throw new Error("Conversation protocol changed. Reload the workspace to continue.")
+                return result
             },
         })
         resources.current = resource
+        if (!hasInitialBootstrap || initialReadProtocol !== readProtocol) void loadMode(initialMode)
+        const host = window.top ?? window
+        const observed = () => {
+            if (readProtocol !== "device-v1" || !requestedObservation.current) return
+            for (const failedMode of bindingModes.current) {
+                // If observation wins the response-settlement race, wait until
+                // that failed slot is released before the one recovery load.
+                const pending = pendingModeLoads.current.get(failedMode)
+                void Promise.resolve(pending).catch(() => undefined).then(() => {
+                    if (resources.current === resource && bindingModes.current.has(failedMode)) void loadMode(failedMode)
+                })
+            }
+        }
+        host.addEventListener("betelgeze:device-observed", observed)
         // Preserve both-mode unread updates, without blocking initial rendering.
         // Two animation frames allow the visible view to paint first.
         let secondFrame = 0
@@ -98,16 +139,24 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
             secondFrame = requestAnimationFrame(() => { void loadMode(initialMode === "clients" ? "team" : "clients") })
         })
         return () => {
+            host.removeEventListener("betelgeze:device-observed", observed)
             cancelAnimationFrame(firstFrame)
             cancelAnimationFrame(secondFrame)
             if (resources.current === resource) resources.current = null
             resource.dispose()
         }
-    }, [initialConversationId, initialDmUserId, initialMode, initialNativeConversationId, loadMode, userId, workspaceId, workspaceSlug])
-    const [clientUnreadCount, setClientUnreadCount] = useState(0)
-    const [nativeUnreadCount, setNativeUnreadCount] = useState(0)
+    }, [initialConversationId, initialDmUserId, initialMode, initialNativeConversationId, hasInitialBootstrap, initialReadProtocol, loadMode, readProtocol, userId, workspaceId, workspaceSlug])
+    const [accountClientUnreadCount, setClientUnreadCount] = useState(0)
+    const [accountNativeUnreadCount, setNativeUnreadCount] = useState(0)
+    const sharedSummary = useSharedUnreadSummary(workspaceId, userId, readProtocol)
+    const deviceCounts = sharedSummary?.loaded ? sharedSummary.rows.reduce((counts, row) => {
+        counts[row.kind] += row.count
+        return counts
+    }, { client: 0, native: 0 }) : null
+    const clientUnreadCount = readProtocol === "device-v1" ? deviceCounts?.client : accountClientUnreadCount
+    const nativeUnreadCount = readProtocol === "device-v1" ? deviceCounts?.native : accountNativeUnreadCount
     const [conversationListWidth, setConversationListWidth] = useState(DEFAULT_CONVERSATION_LIST_WIDTH)
-    const unreadCount = clientUnreadCount + nativeUnreadCount
+    const unreadCount = clientUnreadCount === undefined || nativeUnreadCount === undefined ? undefined : clientUnreadCount + nativeUnreadCount
 
     useEffect(() => {
         const stored = Number(localStorage.getItem(`betelgeze:communications:list-width:${workspaceId}`))
@@ -117,7 +166,7 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
     }, [workspaceId])
 
     useEffect(() => {
-        if (navigation) return
+        if (navigation || unreadCount === undefined) return
         const tabId = new URL(window.location.href).searchParams.get(WORKSPACE_TAB_FRAME_PARAM)
         if (!tabId || window.parent === window) return
         const message: WorkspaceTabFrameMessage = {
@@ -156,6 +205,7 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
         if (!tabId || window.parent === window) return
         const shellUrl = new URL(url)
         shellUrl.searchParams.delete(WORKSPACE_TAB_FRAME_PARAM)
+        shellUrl.searchParams.delete("readProtocol")
         const message: WorkspaceTabFrameMessage = {
             source: WORKSPACE_TAB_MESSAGE_SOURCE,
             target: "host",
@@ -175,7 +225,7 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
         setConversationListWidth(width)
         localStorage.setItem(`betelgeze:communications:list-width:${workspaceId}`, String(width))
     }, [workspaceId])
-    return <div data-communications-panel className={`${navigation ? "absolute" : "fixed"} inset-0 isolate overflow-hidden overscroll-none bg-black [contain:paint]`}>
+    return <CommunicationsReadProtocolContext.Provider value={readProtocol}><div data-communications-panel className={`${navigation ? "absolute" : "fixed"} inset-0 isolate overflow-hidden overscroll-none bg-black [contain:paint]`}>
         {clientBootstrap ? <div className={mode === "clients" ? "absolute inset-0" : "hidden"} aria-hidden={mode !== "clients"}><Suspense fallback={<PanelRouteLoading variant="communications" />}>
             <CommunicationsWorkspace
                 active={panelActive && mode === "clients"}
@@ -212,5 +262,5 @@ export function CommunicationsPanel({ clientBootstrap: initialClientBootstrap, n
                 <button type="button" onClick={() => setMode(initialMode)} className="text-neutral-300 hover:text-white">Back</button>
             </div>
         </> : null}
-    </div>
+    </div></CommunicationsReadProtocolContext.Provider>
 }

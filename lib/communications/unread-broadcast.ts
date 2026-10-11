@@ -1,7 +1,8 @@
 import { recordVersionKey } from "../record-version.js"
+import type { CommunicationReadProtocol } from "./read-protocol"
 import type { UnreadSummary } from "./unread-summary"
 
-export type UnreadSnapshot = { workspaceId: string; userId: string; rows: UnreadSummary[]; stale: boolean }
+export type UnreadSnapshot = { workspaceId: string; userId: string; rows: UnreadSummary[]; stale: boolean; loaded?: boolean; readProtocol?: CommunicationReadProtocol; deviceId?: string | null }
 const eventName = "betelgeze:unread-summary"
 const invalidationEventName = "betelgeze:unread-summary-invalidated"
 const slot = Symbol.for("betelgeze:unread-summary")

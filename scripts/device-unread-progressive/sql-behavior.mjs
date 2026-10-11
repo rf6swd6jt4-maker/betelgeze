@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {writeFile} from 'node:fs/promises'
 import {createProgressiveDatabase,id} from './sql-fixture.mjs'
 const f=await createProgressiveDatabase({chats:20,devices:1,backlog:100}),checks=[];const passed=x=>checks.push(x)
-try{const{db,ids,conversations}=f,{w,me,deviceA,deviceB,sessionB,newDevice,newSession}=ids;const c=conversations[0]
+try{const{db,ids,conversations}=f,{w,me,deviceB,sessionB,newDevice,newSession}=ids;const c=conversations[0]
  await f.setAccountAhead();await f.setClaims({...f.claims,session_id:sessionB});let s=await f.summary({deviceId:deviceB});assert.equal(s.conversations.length,20);passed('Previously known sleeping installation uses frozen cutover baseline, not later shared reads')
  await db.query('insert into auth.sessions values($1,$2,null)',[newSession,me]);await db.query('insert into account_session_devices values($1,$2,$3)',[newSession,me,newDevice]);await f.setClaims({...f.claims,session_id:newSession});s=await f.summary({deviceId:newDevice});assert.equal(s.conversations.length,0);passed('New installation seeds current account cursor atomically')
  await f.setClaims();s=await f.summary();assert.equal(s.conversations.length,20);passed('Original device is unchanged by other installation initialization')

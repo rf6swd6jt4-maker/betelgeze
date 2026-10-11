@@ -1,3 +1,5 @@
+import { deviceCommunicationErrorResponse, validateCommunicationReadProtocol } from "@/lib/communications/device-server"
+import { loadDeviceCommunicationHistory } from "@/lib/communications/progressive-server"
 import { withChatPerformance, markChatBoundary } from "@/lib/communications/performance-server"
 import { attachmentBatch, packAttachments } from "@/lib/communications/attachment-batch"
 import { nativeAttachmentFromInput, assertNativeConversationAccess, loadNativeMessageForCurrentUser, loadNativeMessagesForCurrentUser, loadNativeMessagePage } from "@/lib/teams/server"
@@ -23,6 +25,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 async function handleGET(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
     const { workspace, user } = await requireCommunicationsWorkspace(workspaceSlug)
+    const readProtocol = validateCommunicationReadProtocol(request, workspace.id, user.id)
+    if (readProtocol instanceof Response) return readProtocol
     const searchParams = new URL(request.url).searchParams
     const conversationId = searchParams.get("conversationId") ?? ""
     const messageId = searchParams.get("messageId") ?? ""
@@ -32,17 +36,20 @@ async function handleGET(request: Request, context: { params: Promise<{ workspac
         if (messageId) {
             const message = await loadNativeMessageForCurrentUser({ workspaceId: workspace.id, messageId })
             return message?.conversationId === conversationId
-                ? Response.json({ message })
+                ? Response.json({ message, readProtocol })
                 : Response.json({ error: "Message not found." }, { status: 404 })
         }
         if (searchParams.has("beforeId") || searchParams.has("beforeCreatedAt")) {
             const cursor = communicationHistoryCursor({ id: searchParams.get("beforeId"), createdAt: searchParams.get("beforeCreatedAt") })
             if (!cursor) return Response.json({ error: "Invalid history cursor." }, { status: 400 })
-            return Response.json(await loadNativeMessagePage(workspace.id, conversationId, cursor, user.id), { headers: { "Cache-Control": "no-store" } })
+            return Response.json({ ...await loadNativeMessagePage(workspace.id, conversationId, cursor, user.id), readProtocol }, { headers: { "Cache-Control": "no-store" } })
         }
+        if (readProtocol === "device-v1") return Response.json(await loadDeviceCommunicationHistory(workspace.id, "native", conversationId), { headers: { "Cache-Control": "private, no-store" } })
         const compact = workspacePerformanceEnabled(workspace.id, user.id, process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS)
-        return Response.json({ messages: await loadNativeMessagesForCurrentUser({ workspaceId: workspace.id, conversationId, currentUserId: user.id, limit: compact ? 60 : 1000 }) }, { headers: { "Cache-Control": "no-store" } })
+        return Response.json({ readProtocol, messages: await loadNativeMessagesForCurrentUser({ workspaceId: workspace.id, conversationId, currentUserId: user.id, limit: compact ? 60 : 1000 }) }, { headers: { "Cache-Control": "no-store" } })
     } catch (error) {
+        const deviceFailure = deviceCommunicationErrorResponse(error)
+        if (deviceFailure) return deviceFailure
         return Response.json({ error: error instanceof Error ? error.message : "Could not load messages." }, { status: 503 })
     }
 }

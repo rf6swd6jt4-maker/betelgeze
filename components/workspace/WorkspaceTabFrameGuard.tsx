@@ -1,5 +1,6 @@
 "use client"
 
+import { hostedCommunicationReadProtocol } from "@/lib/communications/read-protocol"
 import { useEffect, useLayoutEffect, useRef, useTransition } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
@@ -52,7 +53,7 @@ export function WorkspaceTabFrameGuard() {
         navigatorRef.current = navigator
         function navigate(url: string, replace = false) {
             window.dispatchEvent(new Event("betelgeze:workspace-navigation-start"))
-            void navigator.navigate(workspaceTabFrameUrl(url, tabId!, window.location.origin), replace).catch((error) => {
+            void navigator.navigate(workspaceTabFrameUrl(url, tabId!, window.location.origin, hostedCommunicationReadProtocol(new URL(url, window.location.origin).pathname.split("/")[1] ?? "")), replace).catch((error) => {
                 // Failed draft persistence must stop navigation, never discard it.
                 const failureReason = error instanceof WorkspaceFrameDraftError ? "drafts" : undefined
                 window.parent.postMessage({ source: WORKSPACE_TAB_MESSAGE_SOURCE, target: "host", tabId, type: "navigation-failed", url, failureReason, retainedUrl: failureReason ? currentUrl() : undefined }, window.location.origin)
@@ -121,7 +122,7 @@ export function WorkspaceTabFrameGuard() {
 
         const query = searchParams.toString()
         const current = `${pathname}${query ? `?${query}` : ""}${window.location.hash}`
-        router.replace(workspaceTabFrameUrl(current, tabId, window.location.origin), { scroll: false })
+        router.replace(workspaceTabFrameUrl(current, tabId, window.location.origin, hostedCommunicationReadProtocol(window.location.pathname.split("/")[1] ?? "")), { scroll: false })
     }, [pathname, router, searchParams])
 
     return null

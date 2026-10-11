@@ -15,6 +15,9 @@ const sources = [
     "components/workspace/NativeCommunicationsTab.tsx",
     "components/workspace/WorkspaceNavigation.tsx",
     "components/communications/CommunicationsPanel.tsx",
+    "components/communications/CommunicationsReadProtocol.tsx",
+    "components/communications/useSharedUnreadSummary.ts",
+    "lib/communications/read-protocol.ts",
     "components/communications/CommunicationsRuntime.tsx",
     "lib/communications/native-host.ts",
     "lib/communications/mode-resource.ts",
@@ -25,6 +28,8 @@ const sources = [
     "lib/workspace-tabs.ts",
 ]
 const aliases = new Map(sources.map(path => ["@/" + path.replace(/\.(tsx?|js)$/, ""), "./" + path.split("/").at(-1).replace(/\.tsx?$/, ".js")]))
+aliases.set("./CommunicationsReadProtocol", "./CommunicationsReadProtocol.js")
+aliases.set("./useSharedUnreadSummary", "./useSharedUnreadSummary.js")
 aliases.set("./WorkspaceNavigation", "./WorkspaceNavigation.js")
 aliases.set("../record-version.js", "./record-version.js")
 for (const from of ["./WorkspaceTabOpeningState", "@/components/workspace/PanelRouteLoading", "./useCommunicationsUnread", "@/components/ui", "@/components/communications/ResizableConversationColumns", "@/components/communications/useReliableCommunicationsRealtime"]) aliases.set(from, "./stubs.js")

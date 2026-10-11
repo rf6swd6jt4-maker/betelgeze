@@ -28,6 +28,7 @@ function load(variant, path, dependencies, globals = {}) {
 const workspaceId = '10000000-0000-4000-8000-000000000001'
 const userId = '20000000-0000-4000-8000-000000000002'
 const conversationId = '30000000-0000-4000-8000-000000000003'
+const deviceId = '60000000-0000-4000-8000-000000000006'
 const messageId = '40000000-0000-4000-8000-000000000004'
 const acknowledgedAt = '2026-10-10T12:00:00.123456Z'
 const workspace = {
@@ -46,10 +47,13 @@ function fixture(variant, kind, options = {}) {
         const client = { id: clients.length + 1, rpc: async (name, input) => {
             rpcCalls.push({ clientId: client.id, name, input })
             if (options.rpcThrows) throw new Error(options.rpcThrows)
-            return { error: options.rpcError ? { code: options.rpcError } : null, data: options.noPosition ? null : {
+            const position = {
                 workspaceId, userId, kind, conversationId,
                 lastReadMessageId: options.acknowledgedMessageId ?? messageId, lastReadAt: acknowledgedAt,
-            } }
+            }
+            return { error: options.rpcError ? { code: options.rpcError } : null, data: options.noPosition ? null : name === 'advance_communication_device_read'
+                ? { deviceId, cursor: position, deviceCursor: { ...position, deviceId, lastReadMessageId: messageId } }
+                : position }
         } }
         clients.push(client)
         return client
@@ -98,9 +102,17 @@ function fixture(variant, kind, options = {}) {
         '@/lib/workspaces': workspaceFunctions, '@/lib/workspace-panels': panels,
         './performance-server': timing,
     })
+    const deviceServer = load('candidate', 'lib/communications/device-server.ts', {
+        'next/headers': { cookies: async () => ({ get: () => options.noDeviceCookie ? undefined : { value: deviceId } }) },
+        '@/lib/push/device': { PUSH_DEVICE_COOKIE: 'betelgeze_push_device', UUID_PATTERN: /^[0-9a-f-]{36}$/i },
+        '@/lib/workspace-native': { workspacePerformanceEnabled: () => options.deviceEnabled === true },
+        '@/lib/supabase/server': { createSupabaseServerClient },
+        '@/lib/communications/server': {}, '@/lib/teams/server': {},
+    })
     const path = `app/api/workspaces/[workspaceSlug]/communications/${kind === 'native' ? 'native/' : ''}read/route.ts`
     const route = load(variant, path, {
         '@/lib/communications/performance-server': timing,
+        '@/lib/communications/device-server': deviceServer,
         'next/server': { after: callback => afterCallbacks.push(callback) },
         '@/lib/supabase/server': { createSupabaseServerClient },
         '@/lib/communications/workspace-access': access,
@@ -111,7 +123,7 @@ function fixture(variant, kind, options = {}) {
     }, { console: { warn: message => warnings.push(message) } })
     const defaultBody = { [kind === 'native' ? 'conversationId' : 'relationshipId']: conversationId, messageId }
     const run = async () => {
-        const request = new Request('https://fixture.test/api/workspaces/fixture/communications/read', {
+        const request = new Request(`https://fixture.test/api/workspaces/fixture/communications/read${options.readProtocol ? `?readProtocol=${options.readProtocol}` : ''}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: options.rawBody ?? JSON.stringify({ ...defaultBody, ...(options.body ?? {}) }),
         })
@@ -155,7 +167,11 @@ for (const kind of ['client', 'native']) {
     for (const [name, options] of scenarios) test(`${kind} read route preserves baseline ${name} behavior`, async () => {
         const before = await fixture('baseline', kind, options).run()
         const after = await fixture('candidate', kind, options).run()
-        assert.deepEqual(after.outcome, before.outcome)
+        if (after.outcome.status === 200) {
+            assert.equal(after.outcome.body.readProtocol, 'account-v1')
+            // One additive protocol echo; every legacy cursor/cleanup field is identical.
+            assert.deepEqual(after.outcome, { ...before.outcome, body: { ...before.outcome.body, readProtocol: 'account-v1' } })
+        } else assert.deepEqual(after.outcome, before.outcome)
         assert.deepEqual(after.rpcCalls.map(({ name, input }) => ({ name, input })), before.rpcCalls.map(({ name, input }) => ({ name, input })))
         assert.equal(after.scheduled, before.scheduled)
         assert.deepEqual(after.cleanups, before.cleanups)
@@ -212,3 +228,35 @@ test('read workspace identity projection omits presentation data while retaining
         context.diagnostic(`${populated ? 'Configured' : 'Null-branding'} fixture workspace projection: ${oldRow.resultBytes} -> ${newRow.resultBytes} JSON bytes (19 -> 3 selected fields); synthetic row serialization, not production timing.`)
     }
 })
+
+for (const kind of ['client', 'native']) {
+    test(`${kind} device read confirms private cursor but keeps account alert cleanup ahead`, async () => {
+        const result = await fixture('candidate', kind, { deviceEnabled: true, readProtocol: 'device-v1', body: { deviceId }, acknowledgedMessageId: '50000000-0000-4000-8000-000000000005' }).run()
+        assert.equal(result.outcome.status, 200)
+        assert.equal(result.outcome.body.readProtocol, 'device-v1')
+        assert.equal(result.outcome.body.deviceCursor.lastReadMessageId, messageId)
+        assert.equal(result.outcome.body.cursor.lastReadMessageId, '50000000-0000-4000-8000-000000000005')
+        assert.equal(result.rpcCalls.length, 1)
+        assert.equal(result.rpcCalls[0].name, 'advance_communication_device_read')
+        assert.equal(result.rpcCalls[0].input.p_device_id, deviceId)
+        assert.equal(result.clients, 1)
+        assert.equal(result.scheduled, 1)
+        assert.deepEqual(result.cleanups, [{ userId, conversationKind: kind, conversationId, readThroughCreatedAt: acknowledgedAt }])
+    })
+    for (const [name, options, status, rpcCount] of [
+        ['disabled capability', {}, 503, 0],
+        ['missing device assertion', { deviceEnabled: true }, 409, 0],
+        ['spoofed device assertion', { deviceEnabled: true, body: { deviceId: userId } }, 409, 0],
+        ['missing installation cookie', { deviceEnabled: true, noDeviceCookie: true, body: { deviceId } }, 409, 0],
+        ['unobserved session binding', { deviceEnabled: true, body: { deviceId }, rpcError: 'P0002' }, 409, 1],
+        ['private transaction failure', { deviceEnabled: true, body: { deviceId }, rpcError: 'XX000' }, 503, 1],
+        ['denied conversation', { deviceEnabled: true, body: { deviceId }, rpcError: '42501' }, 404, 1],
+    ]) test(`${kind} device route rejects ${name} without ACK or notification cleanup`, async () => {
+        const result = await fixture('candidate', kind, { readProtocol: 'device-v1', ...options }).run()
+        assert.equal(result.outcome.status, status)
+        assert.equal(result.rpcCalls.length, rpcCount)
+        assert.equal(result.outcome.body.deviceCursor, undefined)
+        assert.equal(result.scheduled, 0)
+        assert.equal(result.cleanups.length, 0)
+    })
+}

@@ -1,3 +1,5 @@
+import { deviceCommunicationErrorResponse, validateCommunicationReadProtocol } from "@/lib/communications/device-server"
+import { loadDeviceCommunicationHistory } from "@/lib/communications/progressive-server"
 import { withChatPerformance } from "@/lib/communications/performance-server"
 import { clientConversationCanAccess } from "@/lib/communications/access"
 import { NextRequest } from "next/server"
@@ -28,6 +30,8 @@ async function scopedRelationship(workspaceId: string, relationshipId: string) {
 async function handleGET(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
     const { workspace, user } = await requireCommunicationsWorkspace(workspaceSlug)
+    const readProtocol = validateCommunicationReadProtocol(request, workspace.id, user.id)
+    if (readProtocol instanceof Response) return readProtocol
     const relationshipId = request.nextUrl.searchParams.get("relationshipId") ?? ""
     if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const messageId = request.nextUrl.searchParams.get("messageId") ?? ""
@@ -37,15 +41,19 @@ async function handleGET(request: NextRequest, context: { params: Promise<{ work
     if (messageId) {
         const message = await loadCommunicationMessage({ workspaceId: workspace.id, messageId })
         return message?.relationshipId === relationshipId
-            ? Response.json({ message, schemaReady: true })
+            ? Response.json({ message, schemaReady: true, readProtocol })
             : Response.json({ error: "Message not found" }, { status: 404 })
     }
     if (request.nextUrl.searchParams.has("beforeId") || request.nextUrl.searchParams.has("beforeCreatedAt")) {
         const cursor = communicationHistoryCursor({ id: request.nextUrl.searchParams.get("beforeId"), createdAt: request.nextUrl.searchParams.get("beforeCreatedAt") })
         if (!cursor) return Response.json({ error: "Invalid history cursor." }, { status: 400 })
-        return Response.json(await loadCommunicationMessagePage(workspace.id, relationshipId, cursor, user.id), { headers: { "Cache-Control": "no-store" } })
+        return Response.json({ ...await loadCommunicationMessagePage(workspace.id, relationshipId, cursor, user.id), readProtocol }, { headers: { "Cache-Control": "no-store" } })
     }
-    return Response.json(await loadCommunicationMessages({ workspaceId: workspace.id, relationshipId, currentUserId: user.id, limit: 500 }), { headers: { "Cache-Control": "no-store" } })
+    if (readProtocol === "device-v1") {
+        try { return Response.json(await loadDeviceCommunicationHistory(workspace.id, "client", relationshipId), { headers: { "Cache-Control": "private, no-store" } }) }
+        catch (error) { return deviceCommunicationErrorResponse(error) ?? Response.json({ error: "Device history is unavailable. Please retry.", readProtocol }, { status: 503 }) }
+    }
+    return Response.json({ ...await loadCommunicationMessages({ workspaceId: workspace.id, relationshipId, currentUserId: user.id, limit: 500 }), readProtocol }, { headers: { "Cache-Control": "no-store" } })
 }
 
 async function handlePOST(request: NextRequest, context: { params: Promise<{ workspaceSlug: string }> }) {

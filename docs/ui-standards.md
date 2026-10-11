@@ -756,7 +756,7 @@ Escape/backdrop dismissal and focus restoration. The dispute popup uses the shor
 A chat counts as read only in the selected workspace tab, in a visible focused
 app window, with the latest messages in view. Retaining a chat in another tab
 does not mark new messages read or suppress its notifications. Confirmed read
-positions propagate to every open copy of the conversation.
+receipt positions propagate to every open copy of the conversation. On the explicitly enabled device protocol, badge positions propagate only within the same browser installation; account-wide alert suppression stays shared.
 
 Use `UnreadMessageCount` for navigation counts. Inactive Communications tabs show
 the combined unread total; when no Communications tabs exist, show that total to
@@ -769,3 +769,10 @@ summary is independent of whether a chat panel is mounted.
 changes. Conversation rows and section counts consume the shell's scoped
 summary after it arrives; use the same `UnreadMessageCount` primitive for `99+`
 in all three places. A selected chat is never itself a zero-unread override.
+
+On the device protocol, missing conversation previews use an inline spinner and
+“Loading messages” in the existing preview slot. Keep the last usable preview
+during refresh; distinguish retryable failure from a confirmed empty chat.
+Unknown counts must not look like a confirmed zero or disappear from the Unread
+filter. On-demand latest-preview search shows its progress until all matching
+metadata pages complete; selection and the composer remain independently usable.

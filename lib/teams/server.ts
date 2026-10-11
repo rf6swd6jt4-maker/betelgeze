@@ -1,3 +1,5 @@
+import { loadDeviceCommunicationHistory, loadDeviceCommunicationRoster } from "@/lib/communications/progressive-server"
+import type { CommunicationReadProtocol } from "@/lib/communications/read-protocol"
 import { nativeAttachmentBatchFromValue } from "@/lib/communications/attachment-batch"
 import { loadMessageMetadata } from "@/lib/communications/message-batches"
 import { communicationHistoryPage, communicationHistoryRpcMissing, legacyCommunicationHistoryPage, type CommunicationHistoryCursor } from "@/lib/communications/history-page"
@@ -100,6 +102,7 @@ export async function loadWorkspaceTeams(workspaceId: string): Promise<{ teams: 
 }
 
 export async function loadNativeCommunications(input: {
+    readProtocol?: CommunicationReadProtocol
     workspaceId: string
     workspaceSlug: string
     currentUserId: string
@@ -107,6 +110,8 @@ export async function loadNativeCommunications(input: {
     requestedConversationId?: string | null
     requestedDmUserId?: string | null
 }): Promise<NativeCommunicationsBootstrap> {
+    const readProtocol = input.readProtocol ?? "account-v1"
+    const progressive = readProtocol === "device-v1"
     const [{ teams, services, schemaReady }, peopleResult, stickerResult] = await Promise.all([
         loadWorkspaceTeams(input.workspaceId),
         loadCommunicationPeople(input.workspaceId, input.currentUserId),
@@ -116,6 +121,7 @@ export async function loadNativeCommunications(input: {
     const chatTeams = teams.map((team) => ({ ...team, memberIds: team.memberIds.filter((id) => currentMemberIds.has(id)) }))
     const currentUserRole: NativeCommunicationsBootstrap["currentUserRole"] = input.role === "owner" || input.role === "admin" ? input.role : "staff"
     const base = {
+        readProtocol, progressivePreviews: progressive,
         workspaceId: input.workspaceId,
         workspaceSlug: input.workspaceSlug,
         currentUser: peopleResult.currentUser,
@@ -136,6 +142,7 @@ export async function loadNativeCommunications(input: {
     const supabase = await createSupabaseServerClient()
     const compactEnabled = workspacePerformanceEnabled(input.workspaceId, input.currentUserId, process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS)
     const inboxPromise = (async () => {
+        if (progressive) return { data: [], error: null, unread: [] as unknown[], compact: false }
         if (compactEnabled) {
             const result = await supabase.rpc("communication_native_inbox", { p_workspace_id: input.workspaceId })
             if (!communicationHistoryRpcMissing(result.error)) {
@@ -152,15 +159,18 @@ export async function loadNativeCommunications(input: {
         return { ...result, unread: [] as unknown[], compact: false }
     })()
 
-    const [conversationResult, participantResult, messageResult, reactionResult, cursorResult, membershipResult, selectedMessages] = await Promise.all([
+    const [conversationResult, participantResult, messageResult, reactionResult, cursorResult, membershipResult, selectedWindow, deviceRoster] = await Promise.all([
         supabaseAdmin.from("workspace_native_conversations").select("id, kind, is_system, team_id, direct_user_one, direct_user_two, archived_at, pinned_message_id, updated_at").eq("workspace_id", input.workspaceId).order("updated_at", { ascending: false }),
         supabaseAdmin.from("workspace_native_conversation_participants").select("conversation_id, user_id").eq("workspace_id", input.workspaceId),
         inboxPromise,
         supabaseAdmin.from("workspace_native_reactions").select("id, conversation_id, message_id, reactor_user_id, emoji, updated_at").eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("workspace_native_read_cursors").select("conversation_id, user_id, last_read_message_id, last_read_at").eq("workspace_id", input.workspaceId),
         supabaseAdmin.from("workspace_memberships").select("user_id, role").eq("workspace_id", input.workspaceId),
-        base.requestedConversationId ? loadNativeMessagesForCurrentUser({ workspaceId: input.workspaceId, conversationId: base.requestedConversationId, currentUserId: input.currentUserId, limit: compactEnabled ? 60 : 1000 }) : Promise.resolve(null),
+        base.requestedConversationId ? progressive ? loadDeviceCommunicationHistory(input.workspaceId, "native", base.requestedConversationId) : loadNativeMessagesForCurrentUser({ workspaceId: input.workspaceId, conversationId: base.requestedConversationId, currentUserId: input.currentUserId, limit: compactEnabled ? 60 : 1000 }) : Promise.resolve(null),
+        progressive ? loadDeviceCommunicationRoster(input.workspaceId, "native") : Promise.resolve(null),
     ])
+    const selectedMessages = Array.isArray(selectedWindow) ? selectedWindow : selectedWindow?.messages ?? null
+    const latestById = new Map(deviceRoster?.items.map((item) => [item.conversationId, item.latestMessageAt]) ?? [])
     const inbox = messageResult
     const fatal = [conversationResult.error, participantResult.error, messageResult.error, reactionResult.error, cursorResult.error, membershipResult.error].find(Boolean)
     if (fatal) throw new Error(fatal!.message)
@@ -198,7 +208,7 @@ export async function loadNativeCommunications(input: {
     const messageWindowStart = [...messages.values()].flat().reduce<string | null>((start, message) => !start || message.createdAt < start ? message.createdAt : start, null)
     const conversationMessages = (id: string) => id === base.requestedConversationId && selectedMessages ? selectedMessages : messages.get(id) ?? []
     const conversationWindowStart = (id: string) => id === base.requestedConversationId && selectedMessages
-        ? selectedMessages.length >= (compactEnabled ? 60 : 1000) ? selectedMessages[0]?.createdAt ?? null : null
+        ? selectedMessages.length >= (progressive || compactEnabled ? 60 : 1000) ? selectedMessages[0]?.createdAt ?? null : null
         : inbox.compact ? messages.get(id)?.[0]?.createdAt ?? null : messageWindowStart
     const unreadByConversation = new Map(inbox.unread.map((value: unknown) => {
         const row = record(value)
@@ -221,11 +231,11 @@ export async function loadNativeCommunications(input: {
         const archived = Boolean(team.archivedAt)
         if (!team.memberIds.includes(input.currentUserId)) return []
         return [{ id: conversation.id, kind: "team" as const, teamId: team.id, title: team.name, subtitle: `${team.memberIds.length} member${team.memberIds.length === 1 ? "" : "s"}`, avatarSrc: null, memberIds: team.memberIds, archived, canWrite: !archived && team.memberIds.includes(input.currentUserId), pinnedMessageId: conversation.pinned_message_id, updatedAt: conversation.updated_at, messages: conversationMessages(conversation.id), messageWindowStart: conversationWindowStart(conversation.id) }]
-    }).map((conversation) => ({ ...conversation, ...(inbox.compact ? { unreadMessages: unreadByConversation.get(conversation.id) ?? [] } : {}) })).sort((left, right) => (right.messages.at(-1)?.createdAt ?? right.updatedAt).localeCompare(left.messages.at(-1)?.createdAt ?? left.updatedAt) || left.title.localeCompare(right.title))
+    }).map((conversation) => ({ ...conversation, ...(progressive ? { previewState: conversation.id === base.requestedConversationId && selectedWindow ? "ready" as const : "loading" as const, latestMessageAt: latestById.get(conversation.id) ?? null, ...(conversation.id === base.requestedConversationId && selectedWindow && !Array.isArray(selectedWindow) ? { cursorKnown: true as const, deviceCursor: selectedWindow.deviceCursor } : {}) } : {}), ...(inbox.compact ? { unreadMessages: unreadByConversation.get(conversation.id) ?? [] } : {}) })).sort((left, right) => ((progressive ? right.latestMessageAt : right.messages.at(-1)?.createdAt) ?? right.updatedAt).localeCompare((progressive ? left.latestMessageAt : left.messages.at(-1)?.createdAt) ?? left.updatedAt) || left.title.localeCompare(right.title))
     const conversationIds = new Set(conversations.map((conversation) => conversation.id))
     const reactions: NativeReaction[] = (reactionResult.data ?? []).flatMap((reaction) => conversationIds.has(reaction.conversation_id) ? [{ id: reaction.id, conversationId: reaction.conversation_id, messageId: reaction.message_id, reactorUserId: reaction.reactor_user_id, emoji: reaction.emoji, updatedAt: reaction.updated_at }] : [])
     const readCursors: NativeReadCursor[] = (cursorResult.data ?? []).flatMap((cursor) => conversationIds.has(cursor.conversation_id) ? [{ conversationId: cursor.conversation_id, userId: cursor.user_id, lastReadMessageId: cursor.last_read_message_id, lastReadAt: cursor.last_read_at }] : [])
-    return { ...base, formerPeople, conversations, reactions, readCursors, schemaReady: true }
+    return { ...base, deviceId: deviceRoster?.deviceId ?? null, formerPeople, conversations, reactions, readCursors, schemaReady: true }
 }
 
 export async function loadNativeMessagesForCurrentUser(input: {

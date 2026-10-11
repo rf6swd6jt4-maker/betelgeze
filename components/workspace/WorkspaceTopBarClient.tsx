@@ -46,6 +46,7 @@ import { useWorkspaceSearch } from "@/components/workspace/useWorkspaceSearch"
 import { WorkspaceSearchResults } from "@/components/workspace/WorkspaceSearchResults"
 import type { WorkspaceSearchResult } from "@/lib/workspace-search"
 import { WorkspaceTabOpeningState } from "@/components/workspace/WorkspaceTabOpeningState"
+import { publishCommunicationReadProtocol, type CommunicationReadProtocol } from "@/lib/communications/read-protocol"
 import { useCommunicationsUnread } from "@/components/communications/useCommunicationsUnread"
 import { normalizeChatReadUpdate, publishChatRead } from "@/lib/communications/read-state"
 import { invalidateUnreadSummary, unreadMessageEventKey } from "@/lib/communications/unread-broadcast"
@@ -157,6 +158,7 @@ type Props = {
     workspace: { id: string; name: string; slug: string }
     initialWorkspaceUrl?: string
     initialTab: WorkspaceInitialTab
+    communicationsReadProtocol?: CommunicationReadProtocol
     nativePanelsEnabled?: boolean
     nativeBanner?: ReactNode
     launchServerTiming?: WorkspaceShellBootstrapTiming
@@ -305,14 +307,15 @@ function deferNavigationStateUpdate(update: () => void) {
     queueMicrotask(update)
 }
 
-function WorkspaceTabFrame({ tab, active, ready, assignRef, onLoad }: {
+function WorkspaceTabFrame({ tab, active, ready, assignRef, onLoad, readProtocol }: {
     tab: WorkspaceTab
+    readProtocol: CommunicationReadProtocol
     active: boolean
     ready: boolean
     assignRef: (tabId: string, node: HTMLIFrameElement | null) => void
     onLoad: () => void
 }) {
-    const [src] = useState(() => workspaceTabFrameUrl(tab.url, tab.id, "http://localhost"))
+    const [src] = useState(() => workspaceTabFrameUrl(tab.url, tab.id, "http://localhost", readProtocol))
     const frameRef = useCallback((node: HTMLIFrameElement | null) => assignRef(tab.id, node), [assignRef, tab.id])
 
     return <iframe
@@ -336,10 +339,15 @@ export function WorkspaceTopBarClient(props: Props) {
     return <WorkspaceTabsShell {...props} />
 }
 
-function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootstrapTab, nativePanelsEnabled = false, nativeBanner, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createNoteAction, createOkrAction }: Props) {
+function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspace, initialWorkspaceUrl, initialTab: bootstrapTab, nativePanelsEnabled = false, nativeBanner, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createNoteAction, createOkrAction }: Props) {
     // Revalidation may supply a new launch ID. The mounted shell already owns
     // its tabs: changing this ID detaches frame refs and erases their readiness.
     const [initialTab] = useState(() => bootstrapTab)
+    const protocolScope = `${workspace.id}:${currentUserId}`
+    const [protocolPin, setProtocolPin] = useState({ scope: protocolScope, readProtocol: communicationsReadProtocol })
+    if (protocolPin.scope !== protocolScope) setProtocolPin({ scope: protocolScope, readProtocol: communicationsReadProtocol })
+    const readProtocol = protocolPin.scope === protocolScope ? protocolPin.readProtocol : communicationsReadProtocol
+    useLayoutEffect(() => publishCommunicationReadProtocol({ workspaceId: workspace.id, workspaceSlug: workspace.slug, userId: currentUserId, readProtocol }), [currentUserId, readProtocol, workspace.id, workspace.slug])
     // Choose before mounting a chat document, then retain its renderer through
     // rotation/resizing. Mounting an iframe first would duplicate its bootstrap
     // and replacing a resident document would discard editor/selection state.
@@ -472,8 +480,8 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
     const [createTarget, setCreateTarget] = useState<WorkspaceCreateTarget | null>(null)
     const [creationNotice, setCreationNotice] = useState<CreationNotice | null>(null)
     const [profileUserId, setProfileUserId] = useState<string | null>(null)
-    const { count: communicationsUnreadCount, stale: communicationsUnreadStale, invalidate: refreshCommunicationsUnread } = useCommunicationsUnread(
-        workspace.id, workspace.slug, currentUserId, canAccessWorkspacePanel(workspacePanelByKey("communications"), workspaceRole, workspaceCapabilities),
+    const { count: communicationsUnreadCount, loaded: communicationsUnreadLoaded, stale: communicationsUnreadStale, invalidate: refreshCommunicationsUnread } = useCommunicationsUnread(
+        workspace.id, workspace.slug, currentUserId, canAccessWorkspacePanel(workspacePanelByKey("communications"), workspaceRole, workspaceCapabilities), readProtocol,
     )
     const [workspaceLogoSrc, setWorkspaceLogoSrc] = useState<string | null>(null)
     const [email, setEmail] = useState("")
@@ -1078,7 +1086,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         if (nativeRefs.current.has(tabId)) return false
         const frame = iframeRefs.current.get(tabId)
         if (!frame?.contentWindow) return false
-        const target = workspaceTabFrameUrl(url, tabId, window.location.origin)
+        const target = workspaceTabFrameUrl(url, tabId, window.location.origin, readProtocol)
 
         try {
             if (!force && workspaceTabFrameMatchesUrl(frame.contentWindow.location.href, url, tabId, window.location.origin)) return false
@@ -1092,7 +1100,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
             frame.src = target
         }
         return true
-    }, [])
+    }, [readProtocol])
 
     const scheduleSoftNavigationFallback = useCallback((tabId: string, url: string) => {
         const existing = softNavigationFallbackRef.current.get(tabId)
@@ -2821,7 +2829,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         else navigateActiveTab(href)
     }
 
-    return <div ref={shellRootRef} data-workspace-shell-root>
+    return <div ref={shellRootRef} data-workspace-shell-root data-communications-read-protocol={readProtocol} data-communications-workspace={workspace.id} data-communications-workspace-slug={workspace.slug} data-communications-user={currentUserId}>
         {/* Keep this stacking context above the sidebar so account and search popups remain clickable. */}
         <header data-workspace-topbar className="fixed left-0 top-0 z-[55] h-14 w-full border-b border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20">
             <div className="grid h-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 sm:px-6 md:grid-cols-[minmax(0,1fr)_minmax(20rem,40rem)_minmax(0,1fr)] md:gap-4">
@@ -2991,7 +2999,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                                     }}
                                     className={`min-w-0 flex-1 touch-pan-x select-none truncate text-left [-webkit-touch-callout:none] ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
                                 >
-                                    <span className="flex min-w-0 items-center gap-1.5"><span className="truncate">{displayTitle}</span>{communicationsTab && !active ? <UnreadMessageCount count={communicationsUnreadCount} label="unread Communications messages" /> : null}{navigationStateByTab[tab.id]?.status === "loading" || refreshingTabIds.has(tab.id) ? <span aria-label={navigationStateByTab[tab.id]?.status === "loading" ? "Loading" : "Refreshing"} className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-neutral-400" /> : navigationStateByTab[tab.id]?.status === "error" ? <span aria-label="Navigation failed" className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-400" /> : null}</span>
+                                    <span className="flex min-w-0 items-center gap-1.5"><span className="truncate">{displayTitle}</span>{communicationsTab && !active ? <UnreadMessageCount count={communicationsUnreadCount} loading={readProtocol === "device-v1" && !communicationsUnreadLoaded} label="unread Communications messages" /> : null}{navigationStateByTab[tab.id]?.status === "loading" || refreshingTabIds.has(tab.id) ? <span aria-label={navigationStateByTab[tab.id]?.status === "loading" ? "Loading" : "Refreshing"} className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-neutral-400" /> : navigationStateByTab[tab.id]?.status === "error" ? <span aria-label="Navigation failed" className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-400" /> : null}</span>
                                 </button>}
                                 {visibleTabs.length > 1 && (
                                     <button data-icon-button type="button" onClick={() => closeTab(tab.id)} aria-label={`Close ${displayTitle} tab`} className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-500 opacity-80 transition hover:bg-neutral-800 hover:text-white group-hover:opacity-100">
@@ -3028,7 +3036,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
         <div data-workspace-tab-panels className={`fixed bottom-0 top-[6.25rem] z-30 overflow-hidden bg-neutral-950 ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
             {frameTabs.map((tab) => mobileCommunicationsHost === null && communicationsLocation(tab.url, workspace.slug) ? null : usesNativeCommunications(tab.url) ? (
                 <NativeCommunicationsTab key={`${currentUserId}:${workspace.id}:${tab.id}`} tab={tab} active={tab.id === activeTabId}
-                    workspaceId={workspace.id} workspaceSlug={workspace.slug} userId={currentUserId} cache={communicationsCache}
+                    workspaceId={workspace.id} workspaceSlug={workspace.slug} userId={currentUserId} readProtocol={readProtocol} cache={communicationsCache}
                     accountCleared={clearedNativeAccount === nativeAccountScope} assignRef={assignNativeTabRef} onMessage={receiveNativeMessage} prepareNavigation={prepareNativePanelNavigation} />
             ) : nativePanelsEnabled && nativeWorkspaceRoute(tab.url, workspace.slug) ? (
                 <NativeWorkspaceTab key={tab.id} tab={tab} active={tab.id === activeTabId}
@@ -3036,6 +3044,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                     userId={currentUserId} cache={nativeCache} accountCleared={clearedNativeAccount === nativeAccountScope} scrollPositions={nativeScrollPositions} banner={nativeBanner} assignRef={assignNativeTabRef} onMessage={receiveNativeMessage} prepareNavigation={prepareNativePanelNavigation} />
             ) : (
                 <WorkspaceTabFrame
+                    readProtocol={readProtocol}
                     key={tab.id}
                     tab={tab}
                     active={tab.id === activeTabId}
@@ -3099,7 +3108,7 @@ function WorkspaceTabsShell({ workspace, initialWorkspaceUrl, initialTab: bootst
                         <Link key={item.key} aria-disabled={offlineBlocked} title={offlineBlocked ? "Connect to open this panel" : undefined} href={item.href} target={item.standalone ? "_blank" : undefined} rel={item.standalone ? "noopener noreferrer" : undefined} data-global-loading="false" onClick={(event) => { if (offlineBlocked) { event.preventDefault(); return }; if (!online) { event.preventDefault(); if (!activePathname.includes("/communications")) window.location.assign("/offline.html"); closeSidebarAfterNavigation(); return }; if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateWorkspaceDestination(item.href); closeSidebarAfterNavigation() }} className={`${itemClassName} ${offlineBlocked ? "opacity-40 cursor-not-allowed" : ""}`}>
                             <span className="shrink-0">{item.icon}</span>
                             <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                            {item.key === "communications" && !visibleTabs.some(tab => workspaceTabIsCommunications(tab.url, workspace.slug, "http://localhost")) ? <span title={communicationsUnreadStale ? "Unread count may be out of date; reconnect to update." : undefined}><UnreadMessageCount count={communicationsUnreadCount} label="unread Communications messages" /></span> : null}
+                            {item.key === "communications" && !visibleTabs.some(tab => workspaceTabIsCommunications(tab.url, workspace.slug, "http://localhost")) ? <span title={communicationsUnreadStale ? "Unread count may be out of date; reconnect to update." : undefined}><UnreadMessageCount count={communicationsUnreadCount} loading={readProtocol === "device-v1" && !communicationsUnreadLoaded} label="unread Communications messages" /></span> : null}
                         </Link>
                     )
                 })}

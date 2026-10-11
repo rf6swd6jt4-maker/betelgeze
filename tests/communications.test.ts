@@ -116,7 +116,7 @@ test("unread counts move from the workspace tab to the opposite Communications s
 
     assert.match(clients, /onUnreadCountChange\?\.\(unreadCount\)/)
     assert.match(team, /onUnreadCountChange\?\.\(unreadCount\)/)
-    assert.match(panel, /const unreadCount = clientUnreadCount \+ nativeUnreadCount/)
+    assert.match(panel, /const unreadCount = clientUnreadCount === undefined \|\| nativeUnreadCount === undefined \? undefined : clientUnreadCount \+ nativeUnreadCount/)
     assert.match(panel, /teamUnreadCount=\{nativeUnreadCount\}/)
     assert.match(panel, /clientUnreadCount=\{clientUnreadCount\}/)
     assert.match(panel, /type: "communications-unread"/)
@@ -124,11 +124,11 @@ test("unread counts move from the workspace tab to the opposite Communications s
     assert.match(shell, /communicationsUnreadCount/)
     assert.match(shell, /workspaceTabIsCommunications/)
     assert.match(shell, /communicationsTab && !active/)
-    assert.match(clients, /Team<UnreadMessageCount count=\{teamUnreadCount \?\? 0\}/)
-    assert.match(team, /Clients<UnreadMessageCount count=\{clientUnreadCount \?\? 0\}/)
+    assert.match(clients, /Team<UnreadMessageCount count=\{teamUnreadCount\}/)
+    assert.match(team, /Clients<UnreadMessageCount count=\{clientUnreadCount\}/)
     assert.doesNotMatch(clients, />Clients<span[^>]*>\{visibleConversations\.length\}/)
     assert.doesNotMatch(team, />Team<span[^>]*>\{visible\.length\}/)
-    assert.match(count, /if \(count <= 0\) return null/)
+    assert.match(count, /if \(!loading && \(count === undefined \|\| count <= 0\)\) return null/)
 })
 
 test("client and team chats reconcile missed Realtime events without a reload", async () => {

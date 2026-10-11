@@ -30,8 +30,8 @@ async function setup(kind,initial={}){
  requests=[];readGates=[];failReads=0;server={kind,latest:message(1),cursor:null};api=null;sharedNow=null;shellNow=null
  document.body.dataset.workspaceActiveTabId='fixture-tab'
  window.fetch=async(url,options={})=>{
-  if(String(url).endsWith('/unread'))return {ok:true,json:async()=>({conversations:remaining()?[{kind,conversationId:'chat',count:3,latestMessageId:server.latest.id,latestMessageAt:server.latest.createdAt}]:[]})}
-  if(!String(url).endsWith('/read'))throw Error('Unexpected fixture request: '+url)
+  if(new URL(String(url),location.origin).pathname.endsWith('/unread'))return {ok:true,json:async()=>({conversations:remaining()?[{kind,conversationId:'chat',count:3,latestMessageId:server.latest.id,latestMessageAt:server.latest.createdAt}]:[]})}
+  if(!new URL(String(url),location.origin).pathname.endsWith('/read'))throw Error('Unexpected fixture request: '+url)
   const body=JSON.parse(options.body),position={workspaceId:'workspace',userId:'user',kind,conversationId:body.conversationId??body.relationshipId,lastReadAt:message(Number(body.messageId.slice(-12))).createdAt,lastReadMessageId:body.messageId}
   const requestServer=server
   requests.push(position)

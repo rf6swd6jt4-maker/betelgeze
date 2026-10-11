@@ -64,12 +64,16 @@ function App({run}){
   async function bootstrap(){if(bootPending||disposed)return;bootPending=true;try{const result=await json('/fixture/bootstrap');if(disposed)return;const selected=result.selected,histories={[selected.id]:selected};if(mode==='baseline'){const groups=new Map();for(const message of result.loadedMessages??[]){const id=message.relationship_id??message.conversation_id;if(id===selected.id)continue;const list=groups.get(id)??[];list.push({id:message.id,createdAt:message.created_at??message.createdAt,body:message.body});groups.set(id,list)}for(const [id,messages]of groups){messages.sort((a,b)=>compareReadPositions({lastReadAt:a.createdAt,lastReadMessageId:a.id},{lastReadAt:b.createdAt,lastReadMessageId:b.id}));const item=result.previews.find(row=>(row.conversationId??row.id)===id);histories[id]={id,messages,cursor:item?.deviceCursor??item?.cursor??null,cursorKnown:item?.cursorKnown===true}}}setState(s=>({...s,roster:result.conversations,selected:selected.id,histories,boot:true,error:null}));applyItems(result.previews??[])}catch(error){if(!disposed)setState(s=>({...s,error:String(error)}))}finally{bootPending=false}}void bootstrap()
   const unsubscribe=subscribeChatReads(workspaceId,userId,read=>{if(disposed)return;setState(s=>{const old=s.histories[read.conversationId];const prev=s.previews[read.conversationId];return {...s,histories:old?{...s.histories,[read.conversationId]:{...old,cursor:newerCursor(old.cursor,read),cursorKnown:true}}:s.histories,previews:prev?{...s.previews,[read.conversationId]:{...prev,cursor:newerCursor(prev.cursor,read)}}:s.previews}});mark('read_ack_event')})
   return()=>{disposed=true;revision++;controller.abort();unsubscribe();document.removeEventListener('visibilitychange',recover);if(owner.current)owner.current=null}
+ // Recorded diagnostic owner lifetime is keyed to this immutable run identity.
+ // eslint-disable-next-line react-hooks/exhaustive-deps
  },[run,userId,workspaceId])
  useLayoutEffect(()=>{
   if(!list.current||!state.roster.length)return
   const visibleIds=()=>{const rootRect=list.current.getBoundingClientRect();const ids=[...list.current.querySelectorAll('[data-chat-id]')].filter(node=>{const rect=node.getBoundingClientRect();return rect.bottom>rootRect.top&&rect.top<rootRect.bottom}).map(node=>node.dataset.chatId);owner.current?.visible(ids)}
   const observer=new IntersectionObserver(visibleIds,{root:list.current,threshold:0});list.current.querySelectorAll('[data-chat-id]').forEach(node=>observer.observe(node));visibleIds();return()=>observer.disconnect()
  },[state.roster,state.active])
+ // Recorded diagnostic scroll admission depends on message identity, not object refresh.
+ // eslint-disable-next-line react-hooks/exhaustive-deps
  useLayoutEffect(()=>{if(pane.current&&latest){pane.current.scrollTop=pane.current.scrollHeight;pane.current.dataset.positioned='true'}},[state.selected,latest?.id])
  useEffect(()=>{
   let disposed=false

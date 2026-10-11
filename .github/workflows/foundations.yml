@@ -91,6 +91,17 @@ jobs:
         env:
           BE_COMMUNICATION_READ_PG_EVIDENCE: ${{ runner.temp }}/communication-read-postgres.json
         run: node scripts/validate-communication-read-postgres.mjs
+      - name: Verify device read concurrency with encrypted canonical decoders
+        run: |
+          npm install --prefix "$RUNNER_TEMP/device-pg-deps" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8 pg@8.16.3
+          device_cluster=$(mktemp -d "$RUNNER_TEMP/device-unread-pg.XXXXXX")
+          "$BE_RECORDS_PG_BIN/initdb" -D "$device_cluster/data" --username=fixture_owner --auth-local=trust --auth-host=trust
+          trap '"$BE_RECORDS_PG_BIN/pg_ctl" -D "$device_cluster/data" -m fast stop || true' EXIT
+          "$BE_RECORDS_PG_BIN/pg_ctl" -D "$device_cluster/data" -l "$device_cluster/server.log" -o "-h 127.0.0.1 -p 45680 -k $device_cluster -c max_connections=12 -c shared_buffers=16MB" -w start
+          BE_DEVICE_POSTGRES_URL=postgresql://fixture_owner@127.0.0.1:45680/postgres BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/device-unread-progressive/postgres-checks.mjs "$RUNNER_TEMP/device-unread-native-postgres.json"
+      - name: Print device concurrency evidence
+        if: always()
+        run: cat "$RUNNER_TEMP/device-unread-native-postgres.json"
       - name: Print shared read concurrency evidence
         if: always()
         run: cat "${{ runner.temp }}/communication-read-postgres.json"
@@ -141,6 +152,8 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/communications-pglite" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8
       - name: Validate atomic cursors, deletion boundaries, summaries and authorization
         run: node scripts/validate-communications-unread-sql.mjs
+      - name: Validate encrypted device counts, previews, search and rollback
+        run: node scripts/device-unread-progressive/production-checks.mjs "$RUNNER_TEMP/device-unread-production-sql.json"
       - name: Compare optimized shared read RPC with the exact prior definition
         run: node scripts/validate-communication-read-efficiency.mjs
       - name: Validate encrypted compact inbox and historical read positions
@@ -240,3 +253,37 @@ jobs:
               echo "$report evidence unavailable: inspect the preceding installation or runner step."
             fi
           done
+
+  device-full-app:
+    name: Device unread production app (${{ matrix.engine }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:45679
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: fixture-only
+      SUPABASE_SERVICE_ROLE_KEY: fixture-service
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:45678
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.16.0
+          cache: npm
+      - name: Install isolated browser and SQL tooling
+        run: |
+          npm ci
+          npm ci --prefix scripts/browser --ignore-scripts
+          node scripts/browser/node_modules/playwright/cli.js install --with-deps "${{ matrix.engine }}"
+          npm install --prefix "$RUNNER_TEMP/device-pglite" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8
+      - name: Build the complete production app against loopback placeholders
+        run: npx next build --webpack
+      - name: Validate real shell, API, encrypted SQL and separate devices
+        run: BE_BROWSER_TEST_ROOT="$GITHUB_WORKSPACE/scripts/browser" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pglite" BE_FULL_APP_ENGINES="${{ matrix.engine }}" BE_FULL_APP_SAMPLES=1 node scripts/full-app-device-unread/run.mjs "$GITHUB_WORKSPACE" device "$RUNNER_TEMP/device-full-app.json"
+      - name: Print full-app evidence
+        if: always()
+        run: cat "$RUNNER_TEMP/device-full-app.json"

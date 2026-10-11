@@ -15,7 +15,7 @@ let visible = { shell: -1, row: -1 }, trigger, messageTrigger, recover
 window.addEventListener("betelgeze:chat-read", () => { counters.readBatches++ })
 function response(rows) { return { ok: true, json: async () => ({ conversations: rows }) } }
 window.fetch = async (url) => {
-    if (String(url).endsWith("/unread")) {
+    if (new URL(String(url), location.origin).pathname.endsWith("/unread")) {
         counters.summary++
         const rows = structuredClone(summaryRows)
         if (mode === "hold") return new Promise((resolve, reject) => pending.push({ resolve: () => resolve(response(rows)), reject }))
@@ -39,6 +39,7 @@ function App() {
     const invalidate = useMemo(() => panelInvalidator({ workspaceId: "w", userId: "me", invalidateUnreadSummary }, hosted.invalidate), [hosted.invalidate])
     useLayoutEffect(() => {
         const dependencies = {
+            readProtocol: "account-v1", deviceMode: false, deviceId: null, progressivePreviews: false, invalidatePreviews() {}, confirmPreviews() {}, refreshPreviewSearch() {}, setLoadedHistoryIds() {}, setConversations() {},
             ...reads, unreadMessageEventKey: unreadBroadcast.unreadMessageEventKey, bootstrap: { workspaceId: "w", workspaceSlug: "fixture", currentUser: { id: "me" } }, onUnreadInvalidated: invalidate,
             updates: { beginRead: () => ({}), applySnapshot: () => true, getSnapshot: () => ({ conversations: [] }), removeMessage() {} },
             record: value => value ?? {}, text: value => typeof value === "string" ? value : null, stringValue: value => typeof value === "string" ? value : null, realtimeMessage: () => null,

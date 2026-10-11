@@ -243,7 +243,8 @@ test("the client portal mirrors the approved BE message interactions without mak
     assert.match(communicationInteractions, /message\.provider === "client_portal"/u)
     assert.match(communicationsWorkspace, /const canInteract = clientMessageSupportsReaction\(message, reactionCutoff\)/u)
     assert.match(communicationsWorkspace, /payload\.eventType === "DELETE"[\s\S]*updates\.removeMessage\(messageId\)/u)
-    assert.match(communicationsWorkspace, /updates\.applySnapshot\(read, result\)/u)
+    assert.match(communicationsWorkspace, /updates\.applySnapshot\(read, deviceMode \? \{ \.\.\.result, conversations: result\.conversations\.map/u)
+    assert.match(communicationsWorkspace, /cursorDeviceId: result\.deviceId \}\)\) \} : result\)/u)
 })
 
 test("portal attachment access stays relationship scoped without exposing storage paths", () => {

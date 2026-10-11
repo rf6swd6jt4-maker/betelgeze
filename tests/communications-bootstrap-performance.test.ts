@@ -10,6 +10,8 @@ test("cold Comms entry awaits only the selected legacy bootstrap and no new hist
     const source = ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText
     const calls: string[] = []
     const dependencies: Record<string, unknown> = {
+        "@/lib/communications/device-server": { resolveCommunicationReadProtocol: () => "account-v1", communicationDeviceProtocolSupported: () => true, DeviceCommunicationError: class extends Error {} },
+        "@/lib/workspace-tabs": { WORKSPACE_TAB_FRAME_PARAM: "__betelgeze_tab" },
         "@/components/communications/CommunicationsPanel": { CommunicationsPanel: () => null },
         "@/components/workspace/WorkspaceTopBar": { WorkspaceTopBar: () => null },
         "@/lib/workspace-access": { requireWorkspacePanel: async () => { calls.push("authorize"); return { workspace: { id: "workspace", slug: "example" }, user: { id: "actor" }, role: "owner" } } },
@@ -26,6 +28,12 @@ test("cold Comms entry awaits only the selected legacy bootstrap and no new hist
         assert.deepEqual(calls, ["authorize", mode])
         const panel = page.props.children[1]
         assert.equal(panel.props.initialMode, mode)
+        assert.equal(panel.props.readProtocol, "account-v1")
+        assert.equal(page.props.children[0].props.readProtocol, "account-v1")
         assert.equal(panel.props[mode === "clients" ? "nativeBootstrap" : "clientBootstrap"], null)
     }
+    calls.length = 0
+    const retained = await compiled.exports.default({ params: Promise.resolve({ workspaceSlug: "example" }), searchParams: Promise.resolve({ readProtocol: "device-v1", __betelgeze_tab: "retained" }) })
+    assert.equal(retained.props.children[0].props.readProtocol, "device-v1", "a retained device frame keeps its protocol while new shells select account")
+    assert.equal(retained.props.children[1].props.readProtocol, "device-v1")
 })

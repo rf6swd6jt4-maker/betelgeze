@@ -1,3 +1,4 @@
+import type { CommunicationReadProtocol } from "@/lib/communications/read-protocol"
 export type CommunicationSenderKind = "client" | "staff" | "automation" | "legacy"
 
 export type CommunicationAttachment = {
@@ -85,6 +86,12 @@ export type CommunicationReadCursor = {
 }
 
 export type ClientConversation = {
+    previewState?: "loading" | "ready"
+    previewMessage?: CommunicationMessage | null
+    latestMessageAt?: string | null
+    cursorDeviceId?: string | null
+    cursorKnown?: true
+    deviceCursor?: { lastReadAt: string; lastReadMessageId: string | null } | null
     participants?: { managerId: string | null; memberIds: string[]; optionalIds: string[]; eligibleIds: string[] }
     id: string
     clientId: string | null
@@ -102,6 +109,9 @@ export type ClientConversation = {
 }
 
 export type CommunicationsBootstrap = {
+    readProtocol?: CommunicationReadProtocol
+    progressivePreviews?: boolean
+    deviceId?: string | null
     workspaceId: string
     workspaceSlug: string
     currentUser: CommunicationPerson

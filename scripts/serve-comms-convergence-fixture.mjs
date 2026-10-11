@@ -12,10 +12,10 @@ const { webpack } = require("next/dist/compiled/webpack/webpack")
 const baseline = process.env.COMMS_CONVERGENCE_BASELINE
 const read = path => baseline ? execFileSync("git", ["show", `${baseline}:${path}`], { encoding: "utf8" }) : readFileSync(path, "utf8")
 const directory = mkdtempSync(join(tmpdir(), "be-comms-convergence-"))
-const sources = ["components/communications/useCommunicationsUnread.ts", "components/communications/useSharedUnreadSummary.ts", "lib/communications/read-state.ts", "lib/communications/unread-summary.ts", "lib/communications/unread-broadcast.ts", "lib/record-version.js"]
+const sources = ["components/communications/useCommunicationsUnread.ts", "components/communications/useSharedUnreadSummary.ts", "lib/communications/read-state.ts", "lib/communications/unread-summary.ts", "lib/communications/unread-broadcast.ts", "lib/record-version.js", ...(!baseline ? ["components/communications/CommunicationsReadProtocol.tsx", "lib/communications/read-protocol.ts", "lib/communications/device-read-state.ts"] : [])]
 const aliases = new Map(sources.flatMap(path => {
-    const file = path.split("/").at(-1), compiled = "./" + file.replace(/\.ts$/, ".js")
-    return [["@/" + path.replace(/\.(ts|js)$/, ""), compiled], ["./" + file, compiled], ["./" + file.replace(/\.(ts|js)$/, ""), compiled]]
+    const file = path.split("/").at(-1), compiled = "./" + file.replace(/\.tsx?$/, ".js")
+    return [["@/" + path.replace(/\.(tsx?|js)$/, ""), compiled], ["./" + file, compiled], ["./" + file.replace(/\.(tsx?|js)$/, ""), compiled]]
 }))
 aliases.set("../record-version.js", "./record-version.js")
 aliases.set("@/lib/workspace-performance", "./stubs.js")
@@ -30,12 +30,12 @@ function callback(path, name) {
     visit(source)
     return found
 }
-const names = ["bootstrap", "onUnreadInvalidated", "updates", "record", "text", "stringValue", "realtimeMessage", "setReplyingTo", "setEditingMessage", "setActionMessageId", "setDraft", "setEditState", "setReadCursors", "editingSessionRef", "refresh", "synchronize", "NATIVE_TYPING_EVENT", "normalizeChatReadUpdate", "publishChatRead", "publishChatReads", "mergeCursor", "mergeChatReadCursors", "compareReadPositions", "knownReadCursors", "publishedReadSnapshot", "syncLifetime", "selectedRef", "knownMessageKeysRef", "messageAnimationKey", "invalidateUnreadSummary", "unreadMessageEventKey", "setSchemaReady", "setTeams", "setStickers", "setSelectedId", "flushPendingRead", "fetch", "workspaceId", "userId"]
+const names = ["readProtocol", "deviceMode", "deviceId", "progressivePreviews", "invalidatePreviews", "confirmPreviews", "refreshPreviewSearch", "setLoadedHistoryIds", "setConversations", "bootstrap", "onUnreadInvalidated", "updates", "record", "text", "stringValue", "realtimeMessage", "setReplyingTo", "setEditingMessage", "setActionMessageId", "setDraft", "setEditState", "setReadCursors", "editingSessionRef", "refresh", "synchronize", "NATIVE_TYPING_EVENT", "normalizeChatReadUpdate", "publishChatRead", "publishChatReads", "mergeCursor", "mergeChatReadCursors", "compareReadPositions", "knownReadCursors", "publishedReadSnapshot", "syncLifetime", "selectedRef", "knownMessageKeysRef", "messageAnimationKey", "invalidateUnreadSummary", "unreadMessageEventKey", "setSchemaReady", "setTeams", "setStickers", "setSelectedId", "flushPendingRead", "fetch", "workspaceId", "userId"]
 try {
     for (const path of sources) {
         let source = read(path)
         for (const [from, to] of aliases) source = source.replaceAll(`"${from}"`, JSON.stringify(to))
-        writeFileSync(join(directory, path.split("/").at(-1).replace(/\.ts$/, ".js")), compile(source, path))
+        writeFileSync(join(directory, path.split("/").at(-1).replace(/\.tsx?$/, ".js")), compile(source, path))
     }
     let extracted = ""
     for (const [kind, name, sync] of [["client", "CommunicationsWorkspace", "synchronize"], ["native", "TeamCommunicationsWorkspace", "refresh"]]) {

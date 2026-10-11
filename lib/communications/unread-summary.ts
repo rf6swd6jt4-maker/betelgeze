@@ -56,7 +56,7 @@ export function createConfirmedReadLedger(workspaceId: string, userId: string, l
 }
 
 /** One request at a time; a response started before a read/message event is stale. */
-export function createUnreadSummaryResource(load: () => Promise<UnreadSummary[]>, receive: (rows: UnreadSummary[]) => void, failed: () => void) {
+export function createUnreadSummaryResource<T = UnreadSummary[]>(load: () => Promise<T>, receive: (rows: T) => void, failed: (error: unknown) => void) {
     let revision = 0, disposed = false, pending: Promise<void> | null = null
     let completedRevision = -1
     function refresh(): Promise<void> {
@@ -69,9 +69,9 @@ export function createUnreadSummaryResource(load: () => Promise<UnreadSummary[]>
                 try {
                     const rows = await load()
                     if (!disposed && requested === revision) receive(rows)
-                } catch {
+                } catch (error) {
                     if (disposed) return
-                    if (requested === revision) { completedRevision = requested; failed(); return }
+                    if (requested === revision) { completedRevision = requested; failed(error); return }
                     // A newer event still needs its one coalesced refresh,
                     // even if the superseded request failed.
                 }

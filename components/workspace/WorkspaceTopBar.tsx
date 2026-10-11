@@ -1,3 +1,5 @@
+import type { CommunicationReadProtocol } from "@/lib/communications/read-protocol"
+import { resolveCommunicationReadProtocol } from "@/lib/communications/device-server"
 import { Suspense } from "react"
 import { WorkspaceBannerPending } from "@/components/admin/WorkspaceBannerPending"
 import { WorkspaceNativeBanner } from "./WorkspaceNativeBanner"
@@ -19,6 +21,7 @@ import { normalizeWorkspaceUrl, workspaceTabIdFromUrl, workspaceTabTitleForUrl, 
 type Product = "client-work" | "leadgen"
 
 type Props = {
+    readProtocol?: CommunicationReadProtocol
     userId: string
     workspace: { id: string; name: string; slug: string; logo_path?: string | null }
     currentProduct: Product
@@ -29,7 +32,7 @@ type Props = {
     launchServerTiming?: WorkspaceShellBootstrapTiming
 }
 
-export async function WorkspaceTopBar({ userId, workspace, workspaceAccess, shellProfile, initialWorkspaceUrl, initialTab, launchServerTiming }: Props) {
+export async function WorkspaceTopBar({ readProtocol, userId, workspace, workspaceAccess, shellProfile, initialWorkspaceUrl, initialTab, launchServerTiming }: Props) {
     const currentPath = (await headers()).get("x-betelgeze-current-path")
     const tabId = workspaceTabIdFromUrl(currentPath)
     if (tabId) return <WorkspaceTabBridge tabId={tabId} workspaceSlug={workspace.slug} />
@@ -62,6 +65,7 @@ export async function WorkspaceTopBar({ userId, workspace, workspaceAccess, shel
     const nativePanelsEnabled = workspacePerformanceEnabled(workspace.id, userId, process.env.WORKSPACE_NATIVE_PANELS, process.env.WORKSPACE_PERFORMANCE_USERS)
     return <WorkspaceTopBarClient
         workspace={workspace}
+        communicationsReadProtocol={readProtocol ?? resolveCommunicationReadProtocol(workspace.id, userId)}
         nativePanelsEnabled={nativePanelsEnabled}
         nativeBanner={nativePanelsEnabled ? <Suspense fallback={<WorkspaceBannerPending />}><WorkspaceNativeBanner workspaceSlug={workspace.slug} /></Suspense> : null}
         initialWorkspaceUrl={initialWorkspaceUrl}

@@ -14,6 +14,7 @@ const directory = mkdtempSync(join(tmpdir(), 'be-comms-reading-'))
 const sources = [
  'components/communications/MobileConversationSurface.tsx', 'components/communications/useConversationRead.ts',
  'components/communications/useChatDocumentAttention.ts', 'components/workspace/useWorkspaceTabActive.ts',
+ 'components/communications/CommunicationsReadProtocol.tsx', 'lib/communications/read-protocol.ts', 'lib/communications/device-read-state.ts',
  'components/communications/useCommunicationsUnread.ts', 'components/communications/useSharedUnreadSummary.ts',
  'lib/mobile-conversation-viewport.ts', 'lib/workspace-tabs.ts', 'lib/workspace-tab-activity.ts',
  'lib/communications/reading-visibility.ts', 'lib/communications/reading-observer.ts',

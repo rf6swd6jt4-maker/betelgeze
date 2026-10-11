@@ -92,7 +92,7 @@ test("clearing a chat invalidates unread once on acknowledgement even when the l
     assert.equal(invalidations, 1)
 })
 
-function registerWorkspaceRealtime(kind: "client" | "native", invalidated?: () => void, acknowledged: (read: ChatReadUpdate) => void = () => undefined) {
+function registerWorkspaceRealtime(kind: "client" | "native", invalidated?: () => void, acknowledged: (read: ChatReadUpdate) => void = () => undefined, progressive?: { invalidate: (ids?: Iterable<string>) => void; refreshSearch: () => void }) {
     const name = kind === "client" ? "CommunicationsWorkspace" : "TeamCommunicationsWorkspace"
     const file = `components/communications/${name}.tsx`
     const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
@@ -108,6 +108,7 @@ function registerWorkspaceRealtime(kind: "client" | "native", invalidated?: () =
     const dependencies = {
         bootstrap: { workspaceId: "w", workspaceSlug: "fixture", currentUser: { id: "me" } },
         onUnreadInvalidated: invalidated,
+        progressivePreviews: Boolean(progressive), invalidatePreviews: progressive?.invalidate, refreshPreviewSearch: progressive?.refreshSearch,
         normalizeChatReadUpdate, publishChatRead: acknowledged, unreadMessageEventKey,
         updates: { removeMessage() {}, beginRead() {}, getSnapshot: () => ({ conversations: [] }) },
         record: (value: unknown) => value ?? {},
@@ -125,6 +126,24 @@ function registerWorkspaceRealtime(kind: "client" | "native", invalidated?: () =
 }
 
 for (const kind of ["client", "native"] as const) {
+    test(`${kind} progressive body events refresh only affected preview while shared receipts retain their own ingress`, () => {
+        const previewIds: Array<string[] | undefined> = []
+        let searches = 0, counts = 0
+        const confirmed: ChatReadUpdate[] = []
+        const handlers = registerWorkspaceRealtime(kind, () => counts++, read => confirmed.push(read), {
+            invalidate: ids => previewIds.push(ids ? [...ids] : undefined), refreshSearch: () => searches++,
+        })
+        const messages = handlers.get(kind === "client" ? "client_messages" : "workspace_native_messages")!
+        messages({ eventType: "UPDATE", new: { relationship_id: "c", conversation_id: "c" }, old: {} })
+        messages({ eventType: "DELETE", new: {}, old: { relationship_id: "c", conversation_id: "c" } })
+        assert.deepEqual(previewIds, [["c"], ["c"]])
+        assert.equal(searches, 2)
+        assert.equal(counts, 1, "body edits refresh preview matching without inventing a count change")
+        handlers.get(kind === "client" ? "communication_read_cursors" : "workspace_native_read_cursors")!({ eventType: "UPDATE", new: { relationship_id: "c", conversation_id: "c", user_id: "me", last_read_at: "2026-10-07T10:00:00.000003Z", last_read_message_id: "m3" } })
+        assert.equal(confirmed.length, 1, "account cursor still reaches shared receipts")
+        assert.equal(previewIds.length, 2, "another installation account read cannot invalidate private preview cursor")
+    })
+
     test(`${kind} messages invalidate while own remote reads use confirmed-read ingress`, () => {
         let invalidations = 0
         const confirmed: ChatReadUpdate[] = []

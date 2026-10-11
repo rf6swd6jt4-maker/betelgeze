@@ -48,6 +48,12 @@ import { requestChatCheckbox } from "@/lib/communications/checklist-updates"
 import { useMessagePaneInteractions } from "@/components/communications/useMessagePaneInteractions"
 import { useReliableCommunicationsRealtime, type CommunicationsConnectionState } from "@/components/communications/useReliableCommunicationsRealtime"
 import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
+import { useCommunicationsReadProtocol } from "./CommunicationsReadProtocol"
+import { subscribeDeviceChatReads } from "@/lib/communications/device-read-state"
+import { confirmedPreviewCursor } from "@/lib/communications/progressive-previews"
+import { useConversationListActive, useProgressivePreviews, type ProgressivePreview } from "./useProgressivePreviews"
+import { useConversationPreviewSearch } from "./useConversationPreviewSearch"
+import { ConversationPreviewStatus } from "./ConversationPreviewStatus"
 import { useConversationRead } from "./useConversationRead"
 import { CommunicationsActivityTracker } from "./CommunicationsActivityTracker"
 import { compareReadPositions, mergeChatReadCursor, mergeChatReadCursors, normalizeChatReadUpdate, publishChatRead, publishChatReads, readCursorCoversMessage, subscribeChatReadBatches } from "@/lib/communications/read-state"
@@ -172,9 +178,13 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     onConversationListWidthChange: (width: number) => void
 }) {
     const unreadSummary = useSharedUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
-    const unreadByConversation = useMemo(() => unreadSummary ? new Map(unreadSummary.rows.filter(row => row.kind === "native").map(row => [row.conversationId, row.count])) : null, [unreadSummary])
+    const readProtocol = useCommunicationsReadProtocol(bootstrap.workspaceId, bootstrap.currentUser.id, bootstrap.readProtocol)
+    const deviceMode = readProtocol === "device-v1"
+    const progressivePreviews = deviceMode && Boolean(bootstrap.progressivePreviews)
+    const deviceId = unreadSummary ? unreadSummary.deviceId ?? null : bootstrap.deviceId ?? null
+    const unreadByConversation = useMemo(() => unreadSummary?.loaded ? new Map(unreadSummary.rows.filter(row => row.kind === "native").map(row => [row.conversationId, row.count])) : null, [unreadSummary])
     const supabase = useCommunicationsClient()
-    const [updates] = useState(() => createCoordinatedChat<NativeMessage, NativeConversation, NativeReaction>(bootstrap, (reaction) => `${reaction.messageId}:${reaction.reactorUserId}`))
+    const [updates] = useState(() => createCoordinatedChat<NativeMessage, NativeConversation, NativeReaction>({ ...bootstrap, conversations: bootstrap.conversations.map(conversation => ({ ...conversation, cursorDeviceId: bootstrap.deviceId })) }, (reaction) => `${reaction.messageId}:${reaction.reactorUserId}`))
     const { conversations, reactions } = useSyncExternalStore(updates.subscribe, updates.getSnapshot, updates.getSnapshot)
     const { setConversations } = updates
     const [schemaReady, setSchemaReady] = useState(bootstrap.schemaReady)
@@ -189,7 +199,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         syncLifetime.current = lifetime
         publishedReadSnapshot.current = false
         return () => { lifetime.controller.abort(); if (syncLifetime.current === lifetime) syncLifetime.current = null }
-    }, [bootstrap.currentUser.id, bootstrap.workspaceId])
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId, deviceId])
     useEffect(() => subscribeChatReadBatches(bootstrap.workspaceId, bootstrap.currentUser.id, reads => {
         const incoming = reads.filter(read => read.kind === "native").map(read => ({ conversationId: read.conversationId, userId: read.userId, lastReadAt: read.lastReadAt, lastReadMessageId: read.lastReadMessageId }))
         if (incoming.length) setReadCursors(current => mergeChatReadCursors(current, incoming, cursor => cursor.conversationId))
@@ -198,6 +208,8 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [loadedHistoryIds, setLoadedHistoryIds] = useState(() => new Set(bootstrap.requestedConversationId ? [bootstrap.requestedConversationId] : []))
     const bootstrappedSelection = useRef(bootstrap.requestedConversationId)
     const [search, setSearch] = useState("")
+    const [historyLoadError, setHistoryLoadError] = useState<string | null>(null)
+    const [historyAttempt, setHistoryAttempt] = useState(0)
     const [showArchived, setShowArchived] = useState(false)
     const [draft, setDraft] = useState("")
     const restoredDraftKey = useRef<string | null>(null)
@@ -250,6 +262,28 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const editingSessionRef = useRef<{ messageId: string; draft: string } | null>(null)
     const workspaceTabActive = useWorkspaceTabActive()
     const interactionActive = active && workspaceTabActive && documentVisible
+    const listActive = useConversationListActive(interactionActive)
+    const previewSearch = useConversationPreviewSearch({ enabled: progressivePreviews, active: listActive, query: search.trim().toLowerCase(), scope: `${bootstrap.workspaceId}:${bootstrap.currentUser.id}`, workspaceSlug: bootstrap.workspaceSlug, kind: "native", deviceId })
+    const refreshPreviewSearch = previewSearch.refresh
+    const mergeDeviceCursor = useCallback((conversationId: string, cursor: { lastReadAt: string; lastReadMessageId: string | null } | null) => {
+        setConversations(current => current.map(conversation => {
+            if (conversation.id !== conversationId) return conversation
+            const previous = conversation.cursorDeviceId === deviceId ? conversation.deviceCursor : null
+            return { ...conversation, cursorKnown: true, cursorDeviceId: deviceId, deviceCursor: previous && (!cursor || compareReadPositions(previous, cursor) > 0) ? previous : cursor }
+        }))
+    }, [deviceId, setConversations])
+    const receivePreviews = useCallback((items: ProgressivePreview<NativeMessage>[]) => {
+        updates.setPreviews(items.map(item => ({ ...item, cursorDeviceId: deviceId })))
+    }, [deviceId, updates])
+    const { listRef: previewListRef, failed: previewFailures, retry: retryPreview, invalidate: invalidatePreviews, confirm: confirmPreviews } = useProgressivePreviews<NativeMessage>({
+        enabled: progressivePreviews && Boolean(deviceId), active: listActive && !previewSearch.pending,
+        workspaceSlug: bootstrap.workspaceSlug, scope: `${bootstrap.workspaceId}:${bootstrap.currentUser.id}:${readProtocol}:${deviceId}`,
+        kind: "native", deviceId, initialReady: bootstrap.conversations.filter(conversation => conversation.previewState === "ready").map(conversation => conversation.id),
+        onPreview: receivePreviews,
+    })
+    useEffect(() => deviceMode ? subscribeDeviceChatReads(bootstrap.workspaceId, bootstrap.currentUser.id, read => {
+        if (read.kind === "native" && read.deviceId === deviceId) mergeDeviceCursor(read.conversationId, read)
+    }) : undefined, [bootstrap.currentUser.id, bootstrap.workspaceId, deviceId, deviceMode, mergeDeviceCursor])
     useLayoutEffect(() => {
         if (!interactionActive) return
         const pane = messagePaneRef.current
@@ -263,12 +297,13 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         }
     }, [interactionActive, selectedId])
     const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null
+    const selectedHistoryReady = !progressivePreviews || Boolean(selectedId && loadedHistoryIds.has(selectedId))
     const history = useConversationHistory(selectedId, selectedId && loadedHistoryIds.has(selectedId) ? selected?.messages ?? [] : [], {
         hasMore: Boolean(selected?.messageWindowStart),
         load: async (before, signal) => {
             const conversationId = selectedId!
             const read = updates.beginRead()
-            const query = new URLSearchParams({ conversationId, beforeId: before.id, beforeCreatedAt: before.createdAt })
+            const query = new URLSearchParams({ readProtocol, conversationId, beforeId: before.id, beforeCreatedAt: before.createdAt })
             const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/messages?${query}`, { cache: "no-store", signal })
             const result = await response.json() as CommunicationHistoryPage<NativeMessage> & { error?: string }
             if (!response.ok || !Array.isArray(result.messages)) throw new Error(result.error ?? "Could not load earlier messages.")
@@ -344,8 +379,9 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const reading = useConversationRead({
         workspaceId: bootstrap.workspaceId, workspaceSlug: bootstrap.workspaceSlug, userId: bootstrap.currentUser.id,
         kind: "native", conversationId: selectedId, latest: selected?.messages.findLast(message => message.id !== message.clientRequestId),
-        cursor: readCursors.find(cursor => cursor.conversationId === selectedId && cursor.userId === bootstrap.currentUser.id),
-        active: active && schemaReady, atLatest, pane: messagePaneRef,
+        readProtocol, deviceId, cursorKnown: !deviceMode || (selected?.cursorDeviceId === deviceId && selected?.cursorKnown === true),
+        cursor: deviceMode ? selected?.deviceCursor ?? null : readCursors.find(cursor => cursor.conversationId === selectedId && cursor.userId === bootstrap.currentUser.id),
+        active: active && schemaReady && selectedHistoryReady, atLatest, pane: messagePaneRef,
     })
     const flushPendingRead = reading.flush
 
@@ -356,13 +392,24 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         signal.throwIfAborted()
         const read = updates.beginRead()
         const conversationId = selectId === undefined ? selectedRef.current : selectId
-        const search = conversationId ? `?conversation=${encodeURIComponent(conversationId)}` : ""
+        const search = `?${new URLSearchParams({ readProtocol, ...(conversationId ? { conversation: conversationId } : {}) })}`
         const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/conversations${search}`, { cache: "no-store", signal })
         const next = await response.json().catch(() => null) as NativeCommunicationsBootstrap | null
         signal.throwIfAborted()
         if (!response.ok || !next) throw new Error("Could not refresh team conversations.")
+        if (deviceMode && (next.readProtocol !== readProtocol || (deviceId && next.deviceId !== deviceId))) {
+            invalidateUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
+            throw new Error("Device conversation state changed. Reconnecting…")
+        }
         next.conversations.forEach((conversation) => conversation.messages.forEach((message) => knownMessageKeysRef.current.add(messageAnimationKey(message))))
-        if (!updates.applySnapshot(read, next)) return
+        if (!updates.applySnapshot(read, deviceMode ? { ...next, conversations: next.conversations.map(conversation => ({ ...conversation, cursorDeviceId: next.deviceId })) } : next)) return
+        if (progressivePreviews) {
+            invalidatePreviews()
+            refreshPreviewSearch()
+            const loaded = next.conversations.filter(conversation => conversation.previewState === "ready")
+            setLoadedHistoryIds(current => new Set([...current].filter(id => next.conversations.some(conversation => conversation.id === id)).concat(loaded.map(conversation => conversation.id))))
+            confirmPreviews(loaded.map(conversation => conversation.id))
+        }
         const knownPositions = new Map(knownReadCursors.current.filter(cursor => cursor.userId === bootstrap.currentUser.id).map(cursor => [cursor.conversationId, cursor]))
         publishChatReads(next.readCursors.flatMap(cursor => {
             const confirmed = normalizeChatReadUpdate({ workspaceId: bootstrap.workspaceId, userId: bootstrap.currentUser.id, kind: "native" }, cursor)
@@ -377,7 +424,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
             return requested && next.conversations.some((conversation) => conversation.id === requested) ? requested : null
         })
         void flushPendingRead().catch(() => undefined)
-    }, [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, flushPendingRead, updates])
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, flushPendingRead, updates, readProtocol, deviceId, deviceMode, progressivePreviews, invalidatePreviews, confirmPreviews, refreshPreviewSearch])
 
     useEffect(() => {
         if (!bootstrap.requestedDmUserId) return
@@ -414,20 +461,33 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
 
     useEffect(() => {
         if (!selectedId) return
-        if (bootstrappedSelection.current === selectedId) { bootstrappedSelection.current = null; return }
+        if (deviceMode && !deviceId) return
+        if (bootstrappedSelection.current === selectedId && historyAttempt === 0 && (!deviceMode || bootstrap.deviceId === deviceId)) return
+        bootstrappedSelection.current = null
         const controller = new AbortController()
         const read = updates.beginRead()
-        void fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/messages?conversationId=${encodeURIComponent(selectedId)}`, { signal: controller.signal })
-            .then(async (response) => response.ok ? response.json() as Promise<{ messages?: NativeMessage[] }> : null)
-            .then((result) => {
+        const query = new URLSearchParams({ conversationId: selectedId, readProtocol })
+        setHistoryLoadError(null)
+        void fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/messages?${query}`, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]) })
+            .then(async response => {
+                const result = await response.json() as { messages?: NativeMessage[]; hasMore?: boolean; error?: string; readProtocol?: string; deviceId?: string; cursorKnown?: boolean; deviceCursor?: { lastReadAt: string; lastReadMessageId: string | null } | null }
+                if (!response.ok || !Array.isArray(result.messages) || (deviceMode && (result.readProtocol !== readProtocol || result.deviceId !== deviceId || result.cursorKnown !== true || !confirmedPreviewCursor(result.deviceCursor)))) throw new Error(result.error ?? "Could not load this conversation.")
                 if (controller.signal.aborted) return
-                if (!result?.messages) throw new Error("Could not load this conversation. Reopen it to retry.")
-                updateConversationMessages(selectedId, result.messages, false, read)
-                setLoadedHistoryIds((current) => current.has(selectedId) ? current : new Set([...current, selectedId]))
+                if (deviceMode) {
+                    updates.applyHistoryMessages(read, selectedId, result.messages, result.hasMore ? result.messages[0] ?? null : null)
+                    result.messages.forEach(message => knownMessageKeysRef.current.add(messageAnimationKey(message)))
+                } else updateConversationMessages(selectedId, result.messages, false, read)
+                if (deviceMode) {
+                    mergeDeviceCursor(selectedId, result.deviceCursor ?? null)
+                    updates.setPreview(selectedId, updates.getSnapshot().conversations.find(conversation => conversation.id === selectedId)?.messages.at(-1) ?? null)
+                    setConversations(current => current.map(conversation => conversation.id === selectedId ? { ...conversation, messageWindowStart: result.hasMore ? result.messages?.[0]?.createdAt ?? null : null } : conversation))
+                    confirmPreviews([selectedId])
+                }
+                setLoadedHistoryIds(current => current.has(selectedId) ? current : new Set([...current, selectedId]))
             })
-            .catch((error) => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Could not load this conversation.") })
+            .catch(error => { if (!controller.signal.aborted) setHistoryLoadError(error instanceof Error ? error.message : "Could not load this conversation.") })
         return () => controller.abort()
-    }, [bootstrap.workspaceSlug, selectedId, updateConversationMessages, updates])
+    }, [bootstrap.deviceId, bootstrap.workspaceSlug, selectedId, updateConversationMessages, updates, readProtocol, deviceId, deviceMode, mergeDeviceCursor, confirmPreviews, historyAttempt, setConversations])
 
     const registerRealtime = useCallback((channel: ReturnType<typeof supabase.channel>) => channel
                 .on("broadcast", { event: NATIVE_TYPING_EVENT }, ({ payload }) => {
@@ -440,6 +500,11 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     setTypingByConversation((current) => updateNativeTyping(current, conversationId, userId, typing.typing === true ? Date.now() + NATIVE_TYPING_EXPIRY_MS : null))
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_messages", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => {
+                    if (progressivePreviews) {
+                        const previewConversationId = text(record(payload.eventType === "DELETE" ? payload.old : payload.new).conversation_id)
+                        invalidatePreviews(previewConversationId ? [previewConversationId] : undefined)
+                        refreshPreviewSearch()
+                    }
                     if (payload.eventType === "INSERT" || payload.eventType === "DELETE") onUnreadInvalidated?.(unreadMessageEventKey("native", payload))
                     if (payload.eventType === "DELETE") {
                         const deleted = record(payload.old); const messageId = text(deleted.id)
@@ -482,7 +547,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_conversations", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, () => { void refresh().catch(() => undefined) })
                 .on("postgres_changes", { event: "*", schema: "public", table: "workspace_team_members", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, () => { void refresh().catch(() => undefined) })
-        , [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, onUnreadInvalidated, refresh, supabase, updateConversationMessages, updates])
+        , [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, onUnreadInvalidated, refresh, supabase, updateConversationMessages, updates, progressivePreviews, invalidatePreviews, refreshPreviewSearch])
 
     const connection = useReliableCommunicationsRealtime({ active, userId: bootstrap.currentUser.id, privateChannel: true, register: registerRealtime, schemaReady, supabase, synchronize: signal => refresh(undefined, { signal }), topic: `communications:${bootstrap.workspaceSlug}` })
     const sendRealtimeBroadcast = connection.sendBroadcast
@@ -533,7 +598,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         return total + nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id)
     }, 0), [bootstrap.currentUser.id, conversations, readCursors, unreadByConversation])
 
-    useEffect(() => onUnreadCountChange?.(unreadCount), [onUnreadCountChange, unreadCount])
+    useEffect(() => { if (!deviceMode || unreadByConversation) onUnreadCountChange?.(unreadCount) }, [deviceMode, onUnreadCountChange, unreadByConversation, unreadCount])
 
 
 
@@ -820,7 +885,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     }
 
     const normalizedSearch = search.trim().toLowerCase()
-    const visible = conversations.filter((conversation) => (showArchived ? conversation.archived : !conversation.archived) && (!normalizedSearch || `${conversation.title} ${conversation.messages.at(-1)?.body ?? ""}`.toLowerCase().includes(normalizedSearch)))
+    const visible = conversations.filter((conversation) => (showArchived ? conversation.archived : !conversation.archived) && (!normalizedSearch || `${conversation.title} ${conversation.previewMessage?.body ?? conversation.messages.at(-1)?.body ?? ""}`.toLowerCase().includes(normalizedSearch) || Boolean(previewSearch.ids?.has(conversation.id))))
     const currentTeam = selected?.teamId ? teams.find((team) => team.id === selected.teamId) : null
     const pinnedMessage = selected?.pinnedMessageId ? selected.messages.find((message) => message.id === selected.pinnedMessageId) ?? null : null
     const pinnedPreview = pinnedMessage ? messagePreview(pinnedMessage).split(/\r?\n/, 1)[0] : selected?.pinnedMessageId && selected.kind !== "direct" ? "Pinned message unavailable" : null
@@ -836,18 +901,18 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         <ResizableConversationColumns listWidth={conversationListWidth} onListWidthChange={onConversationListWidthChange}>
             <aside data-conversation-list className="flex min-h-0 flex-col border-r border-neutral-800 bg-neutral-950">
                 <div className="shrink-0 border-b border-neutral-800 p-3">
-                    <div className="flex items-center gap-1"><div role="tablist" className="flex items-center gap-1"><button type="button" role="tab" aria-selected="false" onClick={onOpenClients} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-medium text-neutral-400 hover:bg-neutral-900 hover:text-white">Clients<UnreadMessageCount count={clientUnreadCount ?? 0} label="unread Client messages" /></button><button type="button" role="tab" aria-selected="true" className="inline-flex h-8 items-center rounded-lg bg-neutral-800 px-3 text-xs font-semibold text-white">Team</button></div><span className="ml-auto"><CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} /></span></div>
-                    <label className="relative mt-3 block"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"><SearchIcon /></span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search team conversations" className="h-10 w-full rounded-lg border border-neutral-800 bg-black pl-9 pr-3 text-sm outline-none placeholder:text-neutral-600" /></label>
+                    <div className="flex items-center gap-1"><div role="tablist" className="flex items-center gap-1"><button type="button" role="tab" aria-selected="false" onClick={onOpenClients} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-medium text-neutral-400 hover:bg-neutral-900 hover:text-white">Clients<UnreadMessageCount count={clientUnreadCount} loading={deviceMode && clientUnreadCount === undefined} label="unread Client messages" /></button><button type="button" role="tab" aria-selected="true" className="inline-flex h-8 items-center rounded-lg bg-neutral-800 px-3 text-xs font-semibold text-white">Team</button></div><span className="ml-auto"><CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} /></span></div>
+                    <label className="relative mt-3 block"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"><SearchIcon /></span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search team conversations" className="h-10 w-full rounded-lg border border-neutral-800 bg-black pl-9 pr-3 text-sm outline-none placeholder:text-neutral-600" /></label>{previewSearch.pending ? <p role="status" className="mt-2 text-[11px] text-neutral-500">Searching messages…</p> : previewSearch.error ? <button type="button" onClick={previewSearch.retry} className="mt-2 text-[11px] text-neutral-400">Could not search messages · Retry</button> : null}
                     {bootstrap.canManageTeams && teams.some((team) => team.archivedAt) ? <button type="button" onClick={() => { setShowArchived((value) => !value); setSelectedId(null) }} className={`mt-2 text-[11px] ${showArchived ? "text-white" : "text-neutral-500"}`}>{showArchived ? "← Active conversations" : "View archived groups"}</button> : null}
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto">{visible.length ? visible.map((conversation) => {
-                    const latest = conversation.messages.at(-1)
+                <div ref={previewListRef} className="min-h-0 flex-1 overflow-y-auto">{visible.length ? visible.map((conversation) => {
+                    const latest = progressivePreviews && conversation.previewMessage !== undefined ? conversation.previewMessage : conversation.messages.at(-1)
                     const showTypingPreview = conversation.id !== selectedId && Object.keys(typingByConversation[conversation.id] ?? {}).length > 0
                     const ownCursor = readCursors.find((cursor) => cursor.conversationId === conversation.id && cursor.userId === bootstrap.currentUser.id)
-                    const unread = unreadByConversation ? unreadByConversation.get(conversation.id) ?? 0 : nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id)
+                    const unread = unreadByConversation ? unreadByConversation.get(conversation.id) ?? 0 : deviceMode ? null : nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id)
                     const latestRead = Boolean(latest && readCursors.some((cursor) => cursor.conversationId === conversation.id && cursor.userId !== latest.senderUserId && readCursorCoversMessage(cursor, latest)))
-                    return <button key={conversation.id} type="button" onClick={() => selectConversation(conversation.id)} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}><TeamAvatar conversation={conversation} currentUserId={bootstrap.currentUser.id} /><span className="min-w-0"><span className="flex items-start justify-between gap-3"><span className="truncate text-sm font-semibold">{conversation.title}</span>{latest ? <time className={unread ? "text-[11px] text-white" : "text-[11px] text-neutral-600"}>{formatRelativeTime(latest.createdAt)}</time> : null}</span><span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">{!showTypingPreview && latest?.senderUserId === bootstrap.currentUser.id ? <NativeDeliveryTicks message={latest} read={latestRead} /> : null}<span className={`truncate ${showTypingPreview ? "font-medium text-neutral-300" : ""}`}>{showTypingPreview ? "typing…" : latest ? `${latest.senderUserId === bootstrap.currentUser.id ? "You: " : ""}${messagePreview(latest)}` : conversation.subtitle}</span>{unread ? <span className="ml-auto"><UnreadMessageCount count={unread} label="unread messages" /></span> : null}</span></span></button>
-                }) : <div className="p-6 text-center"><p className="text-sm text-neutral-300">{showArchived ? "No archived teams" : "No team conversations yet"}</p><p className="mt-2 text-xs text-neutral-600">{showArchived ? "Archived team history will appear here." : "Open a profile to start a DM or create a team."}</p></div>}</div>
+                    return <button key={conversation.id} data-preview-conversation={conversation.id} type="button" onClick={() => { if (previewFailures.has(conversation.id)) retryPreview(conversation.id); selectConversation(conversation.id) }} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}><TeamAvatar conversation={conversation} currentUserId={bootstrap.currentUser.id} /><span className="min-w-0"><span className="flex items-start justify-between gap-3"><span className="truncate text-sm font-semibold">{conversation.title}</span>{latest ? <time className={unread ? "text-[11px] text-white" : "text-[11px] text-neutral-600"}>{formatRelativeTime(latest.createdAt)}</time> : null}</span><span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">{!showTypingPreview && latest?.senderUserId === bootstrap.currentUser.id ? <NativeDeliveryTicks message={latest} read={latestRead} /> : null}<span className={`truncate ${showTypingPreview ? "font-medium text-neutral-300" : ""}`}>{showTypingPreview ? "typing…" : latest ? `${latest.senderUserId === bootstrap.currentUser.id ? "You: " : ""}${messagePreview(latest)}` : progressivePreviews && conversation.previewState !== "ready" ? <ConversationPreviewStatus failed={previewFailures.has(conversation.id)} /> : "No messages"}</span>{unread === null ? <span className="ml-auto" aria-label="Unread count loading">…</span> : unread ? <span className="ml-auto"><UnreadMessageCount count={unread} label="unread messages" /></span> : null}</span></span></button>
+                }) : <div className="p-6 text-center"><p className="text-sm text-neutral-300">{previewSearch.pending ? "Searching conversations…" : previewSearch.error ? "Search incomplete" : normalizedSearch ? "No matching conversations" : showArchived ? "No archived teams" : "No team conversations yet"}</p><p className="mt-2 text-xs text-neutral-600">{showArchived ? "Archived team history will appear here." : "Open a profile to start a DM or create a team."}</p></div>}</div>
             </aside>
             <MobileConversationSurface selected={Boolean(selected)} active={active && workspaceTabActive} onClose={() => selectConversation(null)}>
             <ConversationMedia active={active && workspaceTabActive && documentVisible}><NativeChatViewport className={`${selected ? "flex" : "hidden lg:flex"} min-h-0 min-w-0 flex-col overflow-hidden bg-black`}>
@@ -867,7 +932,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         {selected.messages.length ? <div aria-hidden="true" className="mt-auto" /> : null}
                             {history.hasEarlier ? <button type="button" disabled={history.loadingEarlier} onClick={() => { followLatestRef.current = false; void history.loadEarlier() }} className="mx-auto shrink-0 px-3 py-2 text-xs text-neutral-500 hover:text-white">{history.loadingEarlier ? "Loading earlier messages…" : "Load earlier messages"}</button> : null}
                             {history.historyError ? <p role="alert" className="px-3 py-2 text-center text-xs text-red-400">{history.historyError}</p> : null}
-                        {selected.messages.length ? selected.messages.slice(history.startIndex).map((message, visibleIndex) => {
+                        {!selectedHistoryReady ? <div className="flex min-h-64 items-center justify-center text-xs text-neutral-500">{historyLoadError ? <button type="button" onClick={() => setHistoryAttempt(current => current + 1)}>Could not load messages · Retry</button> : <ConversationPreviewStatus />}</div> : selected.messages.length ? selected.messages.slice(history.startIndex).map((message, visibleIndex) => {
                             const index = history.startIndex + visibleIndex
                         const own = message.senderUserId === bootstrap.currentUser.id
                         const quoteSelectionMuted = Boolean(selectingQuote && selectingQuote.id !== message.id)

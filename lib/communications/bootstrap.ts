@@ -1,10 +1,13 @@
+import { loadDeviceCommunicationHistory, loadDeviceCommunicationRoster } from "@/lib/communications/progressive-server"
+import type { CommunicationReadProtocol } from "@/lib/communications/read-protocol"
 import { clientConversationRosters } from "@/lib/communications/access"
 import { loadCommunicationMessages, loadCommunicationPeople, loadCommunicationReactions, loadCommunicationReadCursors, loadCommunicationStickers } from "@/lib/communications/server"
 import type { ClientConversation, CommunicationsBootstrap } from "@/lib/communications/types"
 import { listRelationshipsForWorkspace } from "@/lib/relationships"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
-export async function loadClientCommunicationsBootstrap({ currentUserId, requestedConversationId, workspaceId, workspaceSlug }: {
+export async function loadClientCommunicationsBootstrap({ currentUserId, requestedConversationId, workspaceId, workspaceSlug, readProtocol = "account-v1" }: {
+    readProtocol?: CommunicationReadProtocol
     currentUserId: string
     requestedConversationId?: string | null
     workspaceId: string
@@ -17,8 +20,9 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
     const relationships = candidates.filter((r) => r.status !== "archived" && rosterById.has(r.id))
     const conversationIds = new Set(relationships.map((r) => r.id))
     const clientIds = relationships.flatMap((relationship) => relationship.client_id ? [relationship.client_id] : [])
-    const [messageResult, cursorResult, reactionResult, stickerResult, peopleResult, channelResult, integrationResult, selectedMessages] = await Promise.all([
-        loadCommunicationMessages({ workspaceId, currentUserId }),
+    const progressive = readProtocol === "device-v1"
+    const [messageResult, cursorResult, reactionResult, stickerResult, peopleResult, channelResult, integrationResult, selectedMessages, deviceRoster] = await Promise.all([
+        progressive ? Promise.resolve({ messages: [], schemaReady: true }) : loadCommunicationMessages({ workspaceId, currentUserId }),
         loadCommunicationReadCursors(workspaceId),
         loadCommunicationReactions(workspaceId),
         loadCommunicationStickers(workspaceId),
@@ -28,8 +32,9 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
             : Promise.resolve({ data: [], error: null }),
         supabaseAdmin.from("workspace_integrations").select("provider").eq("workspace_id", workspaceId).eq("enabled", true).in("provider", ["meta_whatsapp", "twilio_sms"]),
         requestedConversationId && relationships.some((relationship) => relationship.id === requestedConversationId)
-            ? loadCommunicationMessages({ workspaceId, relationshipId: requestedConversationId, currentUserId, limit: 500 })
+            ? progressive ? loadDeviceCommunicationHistory(workspaceId, "client", requestedConversationId) : loadCommunicationMessages({ workspaceId, relationshipId: requestedConversationId, currentUserId, limit: 500 })
             : Promise.resolve(null),
+        progressive ? loadDeviceCommunicationRoster(workspaceId, "client") : Promise.resolve(null),
     ])
     const channelsByClient = new Map<string, Set<string>>()
     for (const channel of channelResult.data ?? []) {
@@ -44,8 +49,14 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
         existing.push(message)
         messagesByRelationship.set(message.relationshipId, existing)
     }
+    const latestById = new Map(deviceRoster?.items.map((item) => [item.conversationId, item.latestMessageAt]) ?? [])
     const conversations: ClientConversation[] = relationships.map((relationship) => ({
         id: relationship.id,
+        ...(progressive ? {
+            previewState: relationship.id === requestedConversationId && selectedMessages ? "ready" as const : "loading" as const,
+            latestMessageAt: latestById.get(relationship.id) ?? null,
+            ...(relationship.id === requestedConversationId && selectedMessages && "deviceCursor" in selectedMessages ? { cursorKnown: true as const, deviceCursor: selectedMessages.deviceCursor as import("@/lib/communications/device-server").DeviceReadPosition | null } : {}),
+        } : {}),
         participants: rosterById.get(relationship.id),
         clientId: relationship.client_id,
         title: relationship.business_name ? `${relationship.primary_person_name} – ${relationship.business_name}` : relationship.primary_person_name,
@@ -69,11 +80,12 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
             ? selectedMessages.messages.length >= 500 ? selectedMessages.messages[0]?.createdAt : null
             : messageResult.messages[0]?.createdAt ?? null,
     })).sort((left, right) => {
-        const leftDate = left.messages.at(-1)?.createdAt ?? ""
-        const rightDate = right.messages.at(-1)?.createdAt ?? ""
+        const leftDate = (progressive ? left.latestMessageAt : left.messages.at(-1)?.createdAt) ?? ""
+        const rightDate = (progressive ? right.latestMessageAt : right.messages.at(-1)?.createdAt) ?? ""
         return rightDate.localeCompare(leftDate) || left.title.localeCompare(right.title)
     })
     return {
+        readProtocol, progressivePreviews: progressive, deviceId: deviceRoster?.deviceId ?? null,
         workspaceId,
         workspaceSlug,
         currentUser: peopleResult.currentUser,

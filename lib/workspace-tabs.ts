@@ -1,3 +1,4 @@
+import type { CommunicationReadProtocol } from "./communications/read-protocol"
 import type { WorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 import type { RelationshipContextDestination, RelationshipContextPerson, RelationshipContextService } from "./relationship-context"
 
@@ -91,6 +92,7 @@ export type WorkspaceTabRelationshipContext = {
 
 export function normalizeWorkspaceUrl(value: string, workspaceSlug: string, origin: string) {
     const parsed = new URL(value, origin)
+    parsed.searchParams.delete("readProtocol")
     parsed.searchParams.delete(WORKSPACE_TAB_FRAME_PARAM)
     parsed.searchParams.delete(WORKSPACE_TAB_REDIRECT_PARAM)
     const search = parsed.search
@@ -103,9 +105,10 @@ export function normalizeWorkspaceUrl(value: string, workspaceSlug: string, orig
     return `${path}${search}${hash}`
 }
 
-export function workspaceTabFrameUrl(value: string, tabId: string, origin: string) {
+export function workspaceTabFrameUrl(value: string, tabId: string, origin: string, readProtocol?: CommunicationReadProtocol) {
     const parsed = new URL(value, origin)
     parsed.searchParams.set(WORKSPACE_TAB_FRAME_PARAM, tabId)
+    if (readProtocol && /\/communications\/?$/.test(parsed.pathname)) parsed.searchParams.set("readProtocol", readProtocol)
     return `${parsed.pathname}${parsed.search}${parsed.hash}`
 }
 
@@ -209,6 +212,9 @@ export function workspaceRouteIsRecordDetail(value: string, workspaceSlug: strin
 export function workspaceTabFrameMatchesUrl(actualValue: string, desiredValue: string, tabId: string, origin: string) {
     const actual = new URL(actualValue, origin)
     const desired = new URL(workspaceTabFrameUrl(desiredValue, tabId, origin), origin)
+    // Protocol is a mounted-shell transport choice, not a navigable location.
+    actual.searchParams.delete("readProtocol")
+    desired.searchParams.delete("readProtocol")
     actual.searchParams.sort()
     desired.searchParams.sort()
     return actual.origin === desired.origin

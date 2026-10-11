@@ -71,6 +71,9 @@ function fixture(options: { access?: boolean; original?: boolean; originalBody?:
     const writes: Record<string, unknown>[] = []
     const verified: string[] = []
     const route = load("app/api/workspaces/[workspaceSlug]/communications/native/messages/route.ts", {
+        // These tests invoke POST only. Device history must not participate in sends.
+        "@/lib/communications/progressive-server": { loadDeviceCommunicationHistory: () => { throw new Error("Unexpected device history call during send") } },
+        "@/lib/communications/device-server": { validateCommunicationReadProtocol: () => { throw new Error("Unexpected device history call during send") }, loadDeviceCommunicationHistory: () => { throw new Error("Unexpected device history call during send") } },
         "@/lib/communications/attachment-batch": attachmentBatches,
         "@/lib/communications/performance-server": { withChatPerformance: (_command: unknown, handler: unknown) => handler, markChatBoundary: () => {} },
         "@/lib/teams/server": {

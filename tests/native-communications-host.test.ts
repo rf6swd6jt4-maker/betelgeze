@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { CommunicationsHostAccessError, communicationsLocation, readNativeCommunications } from "../lib/communications/native-host.ts"
+import { CommunicationsDeviceBindingError, CommunicationsHostAccessError, communicationsLocation, readNativeCommunications } from "../lib/communications/native-host.ts"
 
 const scope = { workspaceId: "workspace-a", workspaceSlug: "example", userId: "user-a" }
 const bootstrap = { workspaceId: scope.workspaceId, workspaceSlug: scope.workspaceSlug, currentUser: { id: scope.userId }, conversations: [] }
@@ -24,12 +24,12 @@ test("native mobile entry requests only its active authorized mode", async t => 
         return Response.json(bootstrap)
     })
     const client = await read("/example/communications?mode=clients&conversation=client-a&nativeConversation=team-a")
-    assert.deepEqual(calls, ["/api/workspaces/example/communications/sync?conversation=client-a"])
+    assert.deepEqual(calls, ["/api/workspaces/example/communications/sync?readProtocol=account-v1&conversation=client-a"])
     assert.deepEqual(client.clientBootstrap, bootstrap)
     assert.equal(client.nativeBootstrap, null)
     calls.length = 0
     const team = await read("/example/communications?mode=team&nativeConversation=team-a&dm=user-b")
-    assert.deepEqual(calls, ["/api/workspaces/example/communications/native/conversations?conversation=team-a&dm=user-b"])
+    assert.deepEqual(calls, ["/api/workspaces/example/communications/native/conversations?readProtocol=account-v1&conversation=team-a&dm=user-b"])
     assert.equal(team.clientBootstrap, null)
     assert.deepEqual(team.nativeBootstrap, bootstrap)
 })
@@ -67,4 +67,26 @@ test("HTML login responses and malformed payloads never become chat content", as
     t.mock.restoreAll()
     t.mock.method(globalThis, "fetch", async () => Response.json({ ...bootstrap, conversations: null }))
     await assert.rejects(read("/example/communications"), CommunicationsHostAccessError)
+})
+
+
+test("resident device bootstrap carries protocol and rejects an account fallback", async t => {
+    const device = { ...bootstrap, readProtocol: "device-v1", deviceId: "device-a" }
+    t.mock.method(globalThis, "fetch", async (url: string) => {
+        assert.match(url, /readProtocol=device-v1/)
+        return Response.json(device)
+    })
+    const result = await readNativeCommunications({ ...scope, url: "/example/communications", signal: new AbortController().signal, readProtocol: "device-v1" })
+    assert.deepEqual(result.clientBootstrap, device)
+    t.mock.restoreAll()
+    t.mock.method(globalThis, "fetch", async () => Response.json(bootstrap))
+    await assert.rejects(readNativeCommunications({ ...scope, url: "/example/communications", signal: new AbortController().signal, readProtocol: "device-v1" }), /protocol changed/)
+})
+
+test("cold installation binding remains retryable without treating access revocation as binding", async t => {
+    t.mock.method(globalThis, "fetch", async () => Response.json({ code: "device_not_ready" }, { status: 409 }))
+    await assert.rejects(readNativeCommunications({ ...scope, url: "/example/communications", signal: new AbortController().signal, readProtocol: "device-v1" }), CommunicationsDeviceBindingError)
+    t.mock.restoreAll()
+    t.mock.method(globalThis, "fetch", async () => Response.json({ code: "session_changed" }, { status: 409 }))
+    await assert.rejects(readNativeCommunications({ ...scope, url: "/example/communications", signal: new AbortController().signal, readProtocol: "device-v1" }), CommunicationsHostAccessError)
 })

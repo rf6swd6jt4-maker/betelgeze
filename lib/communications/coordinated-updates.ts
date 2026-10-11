@@ -8,7 +8,7 @@ export class ChatMutationError extends Error {
 }
 
 type Message = { id: string; clientRequestId: string | null; createdAt: string; replyToMessageId?: string | null }
-type Conversation<M> = { id: string; messages: M[]; pinnedMessageId: string | null; updatedAt?: string; title?: string; messageWindowStart?: string | null; unreadMessages?: Array<{ id: string }> }
+type Conversation<M> = { id: string; messages: M[]; pinnedMessageId: string | null; updatedAt?: string; latestMessageAt?: string | null; previewState?: "loading" | "ready"; previewMessage?: M | null; cursorDeviceId?: string | null; cursorKnown?: true; deviceCursor?: { lastReadAt: string; lastReadMessageId: string | null } | null; title?: string; messageWindowStart?: string | null; unreadMessages?: Array<{ id: string }> }
 type Reaction = { id: string; messageId: string; updatedAt: string }
 type Cell<T> = { value: T | null; revision: number; pending?: { value: T | null }; version: string; readSequence?: number }
 type Setter<T> = T | ((current: T) => T)
@@ -134,9 +134,12 @@ export function createCoordinatedChat<M extends Message, C extends Conversation<
         const conversations = metadata.map((conversation) => {
             const rows = [...(grouped.get(conversation.id)?.values() ?? [])].sort(compareChatMessages)
             const pinnedMessageId = pins.get(conversation.id)?.messageId ?? null
-            return { ...conversation, ...(conversation.unreadMessages ? { unreadMessages: conversation.unreadMessages.filter((message) => !messages.has(message.id) || messages.get(message.id)) } : {}), messages: rows, pinnedMessageId: pinnedMessageId && messages.has(pinnedMessageId) && !messages.get(pinnedMessageId) ? null : pinnedMessageId }
+            const preview = conversation.previewMessage
+            const previewMessage = preview && messages.has(preview.id) ? messages.get(preview.id) : preview
+            return { ...conversation, ...(preview !== undefined ? { previewMessage } : {}), ...(conversation.unreadMessages ? { unreadMessages: conversation.unreadMessages.filter((message) => !messages.has(message.id) || messages.get(message.id)) } : {}), messages: rows, pinnedMessageId: pinnedMessageId && messages.has(pinnedMessageId) && !messages.get(pinnedMessageId) ? null : pinnedMessageId }
         })
-        conversations.sort((left, right) => (right.messages.at(-1)?.createdAt ?? right.updatedAt ?? "").localeCompare(left.messages.at(-1)?.createdAt ?? left.updatedAt ?? "") || (left.title ?? "").localeCompare(right.title ?? ""))
+        const latestAt = (conversation: C) => conversation.latestMessageAt !== undefined ? conversation.latestMessageAt ?? conversation.updatedAt ?? "" : conversation.messages.at(-1)?.createdAt ?? conversation.updatedAt ?? ""
+        conversations.sort((left, right) => latestAt(right).localeCompare(latestAt(left)) || (left.title ?? "").localeCompare(right.title ?? ""))
         const visibleReactions = reactions.values().filter((reaction) => allowed.has(owners.get(reaction.messageId) ?? "") && (!messages.has(reaction.messageId) || messages.get(reaction.messageId)))
         state = { conversations, reactions: visibleReactions }
         listeners.forEach((listener) => listener())
@@ -148,22 +151,56 @@ export function createCoordinatedChat<M extends Message, C extends Conversation<
         applySnapshot(read: ChatRead, incoming: { conversations: C[]; reactions: R[] }) {
             if (read.sequence < appliedSnapshot) return false
             appliedSnapshot = read.sequence
-            metadata = incoming.conversations // Access and membership always come from the server.
+            const previousMetadata = new Map(metadata.map(conversation => [conversation.id, conversation]))
+            metadata = incoming.conversations.map(conversation => {
+                const previous = previousMetadata.get(conversation.id)
+                const previousCursor = previous?.cursorDeviceId === conversation.cursorDeviceId ? previous?.deviceCursor : null
+                const nextCursor = conversation.deviceCursor
+                const retainCursor = previousCursor && (!nextCursor || compareChatMessages({ createdAt: previousCursor.lastReadAt, id: previousCursor.lastReadMessageId ?? "" }, { createdAt: nextCursor.lastReadAt, id: nextCursor.lastReadMessageId ?? "" }) > 0)
+                return { ...conversation,
+                    ...(conversation.previewState === "loading" ? { previewMessage: previous?.previewMessage !== undefined ? previous.previewMessage : previous?.messages.at(-1) } : {}),
+                    ...(retainCursor ? { cursorKnown: true as const, deviceCursor: previousCursor } : {}),
+                }
+            }) // Access and membership always come from the server.
             ingestMessages(incoming.conversations)
             const windows = new Map(incoming.conversations.map((conversation) => [conversation.id, conversation.messageWindowStart]))
+            const metadataOnly = new Set(incoming.conversations.filter(conversation => conversation.previewState === "loading").map(conversation => conversation.id))
             messages.replace(read, incoming.conversations.flatMap((conversation) => conversation.messages), (message) => {
-                const start = windows.get(owners.get(message.id) ?? "")
+                const conversationId = owners.get(message.id) ?? ""
+                if (metadataOnly.has(conversationId)) return false
+                const start = windows.get(conversationId)
                 // A capped snapshot is authoritative only within its time window.
                 // Keep the boundary timestamp too: its tie group may be truncated.
                 return !start || message.createdAt > start
             })
-            reactions.replace(read, incoming.reactions)
+            reactions.replace(read, incoming.reactions, reaction => !metadataOnly.has(owners.get(reaction.messageId) ?? ""))
             pins.replace(read, incoming.conversations.map((conversation) => ({ id: conversation.id, messageId: conversation.pinnedMessageId })))
             const allowed = new Set(metadata.map((conversation) => conversation.id))
             messages.prune((message) => allowed.has(owners.get(message.id) ?? ""))
             reactions.prune((reaction) => allowed.has(owners.get(reaction.messageId) ?? ""))
             publish()
             return true
+        },
+        setPreviews(items: Array<{ conversationId: string; preview: M | null; cursorKnown: true; deviceCursor: { lastReadAt: string; lastReadMessageId: string | null } | null; cursorDeviceId: string | null }>) {
+            const byId = new Map(items.map(item => [item.conversationId, item]))
+            metadata = metadata.map(conversation => {
+                const item = byId.get(conversation.id)
+                if (!item) return conversation
+                const previous = conversation.cursorDeviceId === item.cursorDeviceId ? conversation.deviceCursor : null
+                const incoming = item.deviceCursor
+                const deviceCursor = previous && (!incoming || compareChatMessages({ createdAt: previous.lastReadAt, id: previous.lastReadMessageId ?? "" }, { createdAt: incoming.lastReadAt, id: incoming.lastReadMessageId ?? "" }) > 0) ? previous : incoming
+                return { ...conversation, previewState: "ready", previewMessage: item.preview, latestMessageAt: item.preview?.createdAt ?? null, cursorKnown: true, cursorDeviceId: item.cursorDeviceId, deviceCursor }
+            })
+            publish()
+        },
+        setPreview(conversationId: string, preview: M | null) {
+            metadata = metadata.map(conversation => conversation.id === conversationId ? { ...conversation, previewState: "ready", previewMessage: preview, latestMessageAt: preview?.createdAt ?? null } : conversation)
+            publish()
+        },
+        applyHistoryMessages(read: ChatRead, conversationId: string, incoming: M[], windowStart: { createdAt: string; id: string } | null) {
+            for (const message of incoming) owners.set(message.id, conversationId)
+            messages.replace(read, incoming, message => owners.get(message.id) === conversationId && (!windowStart || compareChatMessages(message, windowStart) >= 0))
+            publish()
         },
         mergeReadMessages(read: ChatRead, conversationId: string, incoming: M[], acknowledgement = false) {
             for (const message of incoming) owners.set(message.id, conversationId)
@@ -182,7 +219,12 @@ export function createCoordinatedChat<M extends Message, C extends Conversation<
                 const ids = new Set(conversation.messages.map((message) => message.id))
                 for (const message of old?.messages ?? []) if (!ids.has(message.id)) messages.write(message.id, null)
             }
-            metadata = incoming
+            metadata = incoming.map(conversation => {
+                const latest = conversation.messages.at(-1)
+                const preview = conversation.previewMessage
+                if (!conversation.previewState || !latest || latest === previous.get(conversation.id)?.messages.at(-1) || (preview && compareChatMessages(latest, preview) < 0)) return conversation
+                return { ...conversation, latestMessageAt: latest.createdAt, previewMessage: latest }
+            })
             ingestMessages(incoming)
             publish()
         },

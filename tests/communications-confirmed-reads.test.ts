@@ -4,6 +4,7 @@ import { setImmediate } from "node:timers/promises"
 import test from "node:test"
 import ts from "typescript"
 import { mergeChatReadCursor, mergeChatReadCursors, normalizeChatReadUpdate, publishChatRead, publishChatReads, subscribeChatReadBatches, type ChatReadUpdate } from "../lib/communications/read-state.ts"
+import { publishDeviceChatRead, subscribeDeviceChatReads } from "../lib/communications/device-read-state.ts"
 import { applyReadsToSummary, createConfirmedReadLedger, createUnreadSummaryResource, type UnreadSummary } from "../lib/communications/unread-summary.ts"
 import { invalidateUnreadSummary, subscribeUnreadSummaryInvalidations, unreadMessageEventKey } from "../lib/communications/unread-broadcast.ts"
 
@@ -109,12 +110,12 @@ test("batch transport preserves legacy singles, isolates scope and lets sibling 
     } finally { unsubscribe(); fixture.restore() }
 })
 
-function mountUnreadOwner() {
+function mountUnreadOwner(readProtocol: "account-v1" | "device-v1" = "account-v1") {
     const fixture = browserFixture()
     const cleanups: Array<() => void> = []
     const effects: Array<() => void | (() => void)> = []
     const states: unknown[] = []
-    const requests: Array<{ resolve: (rows: UnreadSummary[]) => void; reject: (error: Error) => void }> = []
+    const requests: Array<{ resolve: (rows: UnreadSummary[], deviceId?: string) => void; respond: (body: unknown, status: number) => void; reject: (error: Error) => void }> = []
     let stateIndex = 0
     const dependencies = {
         useCallback: (callback: unknown) => callback,
@@ -126,19 +127,20 @@ function mountUnreadOwner() {
         },
         useEffect: (effect: () => void | (() => void)) => effects.push(effect),
         beginWorkspaceInteraction: () => ({ mark() {}, finish() {} }),
-        subscribeChatReadBatches, subscribeUnreadSummaryInvalidations, publishUnreadSummary() {},
+        subscribeChatReadBatches, subscribeDeviceChatReads, subscribeUnreadSummaryInvalidations, publishUnreadSummary() {},
         applyReadsToSummary, createConfirmedReadLedger, createUnreadSummaryResource,
-        fetch: () => new Promise((resolve, reject) => requests.push({ resolve: rows => resolve({ ok: true, json: async () => ({ conversations: rows }) }), reject })),
+        fetch: () => new Promise((resolve, reject) => requests.push({ resolve: (rows, deviceId = "device-a") => resolve({ ok: true, json: async () => ({ conversations: rows, readProtocol, deviceId }) }), respond: (body, status) => resolve({ ok: status < 400, status, json: async () => body }), reject })),
     }
     const file = "components/communications/useCommunicationsUnread.ts"
     const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true)
     const declaration = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.getText(source) === "useCommunicationsUnread")!
     const code = ts.transpileModule(declaration.getText(source).replace(/^export /, ""), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
     const mount = new Function(...Object.keys(dependencies), `${code}; return useCommunicationsUnread`)(...Object.values(dependencies))
-    mount("w", "fixture", "me", true)
+    mount("w", "fixture", "me", true, readProtocol)
     for (const effect of effects) { const cleanup = effect(); if (cleanup) cleanups.push(cleanup) }
     return {
-        requests,
+        requests, host: fixture.host,
+        snapshot: () => states[0] as { rows: UnreadSummary[]; deviceId: string | null; loaded: boolean },
         rows: () => (states[0] as { rows: UnreadSummary[] }).rows,
         stale: () => states[1],
         unmount: () => cleanups.forEach(cleanup => cleanup()),
@@ -281,5 +283,86 @@ test("event deduplication forgets old identities after its bounded window", asyn
         assert.equal(owner.requests.length, 4, "old identities are evicted instead of growing without bound")
         owner.requests[3].resolve([])
         await setImmediate()
+    } finally { owner.dispose() }
+})
+
+
+test("device owner ignores shared receipts and other installations, then reconciles its own confirmed ACK once", async () => {
+    const owner = mountUnreadOwner("device-v1")
+    try {
+        owner.requests[0].resolve([summary])
+        await setImmediate()
+        publishChatRead(read)
+        publishDeviceChatRead({ ...read, deviceId: "device-b" })
+        assert.deepEqual(owner.rows(), [summary])
+        assert.equal(owner.requests.length, 1)
+        publishDeviceChatRead({ ...read, deviceId: "device-a" })
+        assert.deepEqual(owner.rows(), [])
+        assert.equal(owner.requests.length, 2)
+        publishDeviceChatRead({ ...read, deviceId: "device-a" })
+        assert.equal(owner.requests.length, 2)
+        owner.requests[1].resolve([summary])
+        await setImmediate()
+        assert.deepEqual(owner.rows(), [], "an older confirmed summary cannot undo the ACK")
+    } finally { owner.dispose() }
+})
+
+test("an installation ACK while identity is loading fences the earlier result without trusting its ID", async () => {
+    const owner = mountUnreadOwner("device-v1")
+    try {
+        publishDeviceChatRead({ ...read, deviceId: "unverified" })
+        owner.requests[0].resolve([summary])
+        await setImmediate()
+        assert.equal(owner.requests.length, 2)
+        assert.equal(owner.snapshot().loaded, false)
+        owner.requests[1].resolve([summary])
+        await setImmediate()
+        assert.equal(owner.snapshot().deviceId, "device-a")
+        assert.deepEqual(owner.rows(), [summary])
+    } finally { owner.dispose() }
+})
+
+test("binding recovery keeps confirmed counts stale and requests observation once without a retry loop", async () => {
+    const owner = mountUnreadOwner("device-v1")
+    let observations = 0
+    const observed = () => observations++
+    owner.host.addEventListener("betelgeze:device-observation-required", observed)
+    try {
+        owner.requests[0].resolve([summary])
+        await setImmediate()
+        window.dispatchEvent(new Event("focus"))
+        owner.requests[1].respond({}, 409)
+        await setImmediate()
+        assert.deepEqual(owner.rows(), [summary])
+        assert.equal(owner.snapshot().deviceId, null)
+        assert.equal(owner.stale(), true)
+        assert.equal(observations, 1)
+        window.dispatchEvent(new Event("betelgeze:device-observed"))
+        owner.requests[2].respond({}, 409)
+        await setImmediate()
+        assert.equal(observations, 1)
+        assert.equal(owner.requests.length, 3)
+        window.dispatchEvent(new Event("focus"))
+        owner.requests[3].resolve([summary], "device-replacement")
+        await setImmediate()
+        assert.equal(owner.snapshot().deviceId, "device-replacement")
+        assert.equal(owner.stale(), false)
+        publishDeviceChatRead({ ...read, deviceId: "device-a" })
+        assert.deepEqual(owner.rows(), [summary])
+    } finally { owner.host.removeEventListener("betelgeze:device-observation-required", observed); owner.dispose() }
+})
+
+test("device owner rejects an account fallback response and recovers only with matching protocol", async () => {
+    const owner = mountUnreadOwner("device-v1")
+    try {
+        owner.requests[0].respond({ readProtocol: "account-v1", conversations: [] }, 200)
+        await setImmediate()
+        assert.equal(owner.snapshot().loaded, false)
+        assert.equal(owner.stale(), true)
+        window.dispatchEvent(new Event("online"))
+        owner.requests[1].resolve([summary])
+        await setImmediate()
+        assert.equal(owner.snapshot().loaded, true)
+        assert.deepEqual(owner.rows(), [summary])
     } finally { owner.dispose() }
 })

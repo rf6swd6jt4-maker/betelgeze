@@ -5,9 +5,10 @@ import { WorkspaceNavigationProvider, type WorkspaceNavigation } from "./Workspa
 import { WorkspaceTabOpeningState } from "./WorkspaceTabOpeningState"
 import type { NativeTabHandle, NativeTabNavigationCommit, NativeTabNavigationRequest } from "./NativeWorkspaceTab"
 import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
-import { CommunicationsHostAccessError, communicationsLocation, readNativeCommunications, type NativeCommunicationsSnapshot } from "@/lib/communications/native-host"
+import { CommunicationsDeviceBindingError, CommunicationsHostAccessError, communicationsLocation, readNativeCommunications, type NativeCommunicationsSnapshot } from "@/lib/communications/native-host"
 import { WORKSPACE_TAB_MESSAGE_SOURCE, workspaceTabRecordTitleForUrl, type WorkspaceTabFrameMessage } from "@/lib/workspace-tabs"
 import { COMMUNICATIONS_RECOVERY_EVENT } from "@/components/communications/useReliableCommunicationsRealtime"
+import type { CommunicationReadProtocol } from "@/lib/communications/read-protocol"
 import { CommunicationsRuntime } from "@/components/communications/CommunicationsRuntime"
 
 const CommunicationsPanel = lazy(() => import("@/components/communications/CommunicationsPanel").then(module => ({ default: module.CommunicationsPanel })))
@@ -22,12 +23,13 @@ class Boundary extends Component<{ children: ReactNode; retry: () => void; faile
 }
 
 /** A resident chat shares the shell document, but retains its own identity and state. */
-export function NativeCommunicationsTab({ tab, active, workspaceId, workspaceSlug, userId, cache, accountCleared, assignRef, onMessage, prepareNavigation }: {
+export function NativeCommunicationsTab({ tab, active, workspaceId, workspaceSlug, userId, readProtocol = "account-v1", cache, accountCleared, assignRef, onMessage, prepareNavigation }: {
     tab: { id: string; url: string }
     active: boolean
     workspaceId: string
     workspaceSlug: string
     userId: string
+    readProtocol?: CommunicationReadProtocol
     cache: WorkspaceRecordCache<NativeCommunicationsSnapshot>
     accountCleared: boolean
     assignRef: (tabId: string, handle: NativeTabHandle | null) => void
@@ -44,8 +46,10 @@ export function NativeCommunicationsTab({ tab, active, workspaceId, workspaceSlu
     if (tab.url !== session.acknowledgedUrl) setSession({ sourceUrl: tab.url, acknowledgedUrl: tab.url, revision: session.revision + 1 })
     const currentSession = useRef(session)
     useLayoutEffect(() => { currentSession.current = session }, [session])
-    const key = `${userId}:${workspaceId}:${session.sourceUrl}`
+    const key = `${userId}:${workspaceId}:${readProtocol}:${session.sourceUrl}`
     const snapshot = useSyncExternalStore(useCallback(notify => cache.subscribe(key, notify), [cache, key]), useCallback(() => cache.getSnapshot(key), [cache, key]), useCallback(() => cache.getSnapshot(key), [cache, key]))
+    const waitingForDevice = useRef(false)
+    const pendingRead = useRef<Promise<unknown> | null>(null)
     const [accessError, setAccessError] = useState<string | null>(null)
     const blocked = accountCleared || Boolean(accessError)
     const committed = useRef<{ revision: number; sourceUrl: string } | null>(null)
@@ -68,12 +72,31 @@ export function NativeCommunicationsTab({ tab, active, workspaceId, workspaceSlu
         committed.current = null
         post({ type: "navigation-failed", url: tab.url })
     }, [post, tab.url])
-    const read = useCallback((force = false) => cache.load(key, signal => readNativeCommunications({ url: session.sourceUrl, workspaceSlug, workspaceId, userId, signal }), {
-        force, discardDataOnError: error => error instanceof CommunicationsHostAccessError,
-    }).catch((error: unknown) => {
-        if (error instanceof CommunicationsHostAccessError) { setAccessError(error.message); cache.clear() }
-        throw error
-    }), [cache, key, session.sourceUrl, workspaceSlug, workspaceId, userId])
+    const read = useCallback((force = false) => {
+        const request = cache.load(key, signal => readNativeCommunications({ url: session.sourceUrl, workspaceSlug, workspaceId, userId, readProtocol, signal }), {
+            force, discardDataOnError: error => error instanceof CommunicationsHostAccessError,
+        }).then(value => { waitingForDevice.current = false; return value }).catch((error: unknown) => {
+            if (error instanceof CommunicationsHostAccessError) { setAccessError(error.message); cache.clear() }
+            if (error instanceof CommunicationsDeviceBindingError && !waitingForDevice.current) {
+                waitingForDevice.current = true
+                ;(window.top ?? window).dispatchEvent(new Event("betelgeze:device-observation-required"))
+            }
+            throw error
+        }).finally(() => { if (pendingRead.current === request) pendingRead.current = null })
+        pendingRead.current = request
+        return request
+    }, [cache, key, readProtocol, session.sourceUrl, workspaceSlug, workspaceId, userId])
+    useEffect(() => {
+        let disposed = false
+        const observed = () => {
+            if (!waitingForDevice.current) return
+            void Promise.resolve(pendingRead.current).catch(() => undefined).then(() => {
+                if (!disposed && waitingForDevice.current && current.current.active && !current.current.accountCleared) void read(true).catch(() => undefined)
+            })
+        }
+        window.addEventListener("betelgeze:device-observed", observed)
+        return () => { disposed = true; window.removeEventListener("betelgeze:device-observed", observed) }
+    }, [read])
     useEffect(() => {
         if (!active || blocked || snapshot.data || snapshot.error) return
         void read().catch(() => post({ type: "navigation-failed", url: session.sourceUrl }))
@@ -156,7 +179,7 @@ export function NativeCommunicationsTab({ tab, active, workspaceId, workspaceSlu
             navigation.push(`${destination.pathname}${destination.search}${destination.hash}`)
         }}>
         {blocked ? <div role="alert" className="p-4 text-sm text-red-200">{accessError ?? "Your workspace session changed. Reload to continue."} <button className="underline" onClick={() => window.location.reload()}>Reload workspace</button></div> : snapshot.error ? <div role="alert" className="p-4 text-sm text-red-200">{snapshot.error} <button type="button" className="underline" onClick={refresh}>Retry</button></div> : snapshot.data ? <Boundary key={`${key}:${session.revision}`} retry={refresh} failed={reportFailure}><Suspense fallback={<WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />}>
-            <CommunicationsRuntime><CommunicationsPanel clientBootstrap={snapshot.data.clientBootstrap} nativeBootstrap={snapshot.data.nativeBootstrap} initialMode={snapshot.data.mode} initialConversationId={snapshot.data.conversationId} initialNativeConversationId={snapshot.data.nativeConversationId} initialDmUserId={snapshot.data.dmUserId} onMounted={reportMounted} onReady={reportReady} /></CommunicationsRuntime>
+            <CommunicationsRuntime><CommunicationsPanel readProtocol={readProtocol} clientBootstrap={snapshot.data.clientBootstrap} nativeBootstrap={snapshot.data.nativeBootstrap} initialMode={snapshot.data.mode} initialConversationId={snapshot.data.conversationId} initialNativeConversationId={snapshot.data.nativeConversationId} initialDmUserId={snapshot.data.dmUserId} onMounted={reportMounted} onReady={reportReady} /></CommunicationsRuntime>
         </Suspense></Boundary> : <WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />}
     </div></WorkspaceNavigationProvider>
 }

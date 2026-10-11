@@ -1,0 +1,12 @@
+import {readFile} from 'node:fs/promises'
+const files=process.argv.slice(2);if(!files.length)throw Error('Pass browser report paths')
+const percentile=(values,p)=>{const a=values.filter(Number.isFinite).sort((a,b)=>a-b);return a.length?Number(a[Math.max(0,Math.min(a.length-1,Math.ceil(p*a.length)-1))].toFixed(2)):null}
+const median=values=>{const a=values.filter(Number.isFinite).sort((x,y)=>x-y);return a.length?Number(((a[Math.floor((a.length-1)/2)]+a[Math.ceil((a.length-1)/2)])/2).toFixed(2)):null}
+const summarize=values=>({n:values.filter(Number.isFinite).length,median:median(values),p95Observed:percentile(values,.95),min:percentile(values,0),max:percentile(values,1)})
+const all=[],checks=[]
+for(const file of files){const data=JSON.parse(await readFile(file,'utf8'));all.push(...(data.trials??[]));checks.push(...(data.checks??[]))}
+const groups=Map.groupBy(all,t=>[t.kind,t.accountAhead?'account-ahead':'account-unread',t.engine,t.viewport,t.network,t.mode].join('|'))
+const rows=[]
+for(const [key,trials]of groups){const readSamples=trials.flatMap(t=>t.cold.samples.filter(s=>s.command==='message.read'&&s.outcome==='completed'));const marks=['names_meaningful_ready','selected_meaningful_ready','visible_previews_meaningful_ready','read_ack_event','confirmed_badge_zero'];rows.push({key,n:trials.length,marks:Object.fromEntries(marks.map(name=>[name,summarize(trials.map(t=>t.cold.marks[name]))])),readSaveAckMs:summarize(readSamples.map(s=>s.durationMs)),uncachedSelectedMs:summarize(trials.map(t=>t.uncachedSwitch.durationMs)),warmSelectedMs:summarize(trials.flatMap(t=>t.warmSwitches.map(s=>s.durationMs))),typingVisualMs:summarize(trials.flatMap(t=>t.typing.map(s=>s.durationMs))),offscreenPreviewMs:summarize(trials.map(t=>t.offscreenPreviewMs)),warmOffscreenPreviewMs:summarize(trials.map(t=>t.warmOffscreenPreviewMs)),coldHttpRequests:summarize(trials.map(t=>t.cold.server.requests.length)),coldReadPosts:summarize(trials.map(t=>t.cold.server.reads)),coldRawBytes:summarize(trials.map(t=>t.cold.server.rawBytes)),coldGzipBytes:summarize(trials.map(t=>t.cold.server.compressedBytes)),coldRequestBodyBytes:summarize(trials.map(t=>t.cold.server.requestBodyBytes)),coldDbMs:summarize(trials.map(t=>t.cold.server.dbMs))})}
+const output={notes:'p95Observed is nearest-rank empirical observation; n=5/10 cells do not establish stable production p95. Warm n=2*cold; synthetic loopback React/HTTP/SQL only. No averaging across device/action/cohort.',rows,checks:checks.length}
+console.log(JSON.stringify(output,null,2))

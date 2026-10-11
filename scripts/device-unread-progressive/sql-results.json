@@ -1,0 +1,2554 @@
+{
+  "isolated": true,
+  "fixture": "PGlite PostgreSQL WASM, synthetic120B plaintext bodies",
+  "samples": 30,
+  "warmups": 5,
+  "failures": 0,
+  "cohorts": [
+    {
+      "config": {
+        "chats": 20,
+        "devices": 1,
+        "backlog": 0
+      },
+      "actions": {
+        "sharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.589,
+            "p95": 0.782
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.7099170000001322,
+            "p95": 0.963292000000024
+          },
+          "responseBytes": 2
+        },
+        "deviceSummaryCountsOnly": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.508,
+            "p95": 0.611
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.6377919999999904,
+            "p95": 0.7715420000001814
+          },
+          "responseBytes": 94
+        },
+        "heldDeviceSummaryFullCursorMap": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.607,
+            "p95": 0.692
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.7302080000000615,
+            "p95": 0.878832999999986
+          },
+          "responseBytes": 6749
+        },
+        "previewBatchNative": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.511,
+            "p95": 0.636
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.6404170000000704,
+            "p95": 0.8024580000000014
+          },
+          "responseBytes": 4561
+        },
+        "previewBatchClient": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.286,
+            "p95": 0.408
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.4107500000000073,
+            "p95": 0.7745409999999993
+          },
+          "responseBytes": 4561
+        },
+        "canonicalNativeInbox": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.685,
+            "p95": 0.823
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.8024169999999913,
+            "p95": 0.9500419999999394
+          },
+          "responseBytes": 4665
+        },
+        "initializeKnownScope": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.163,
+            "p95": 0.181
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.26345800000012787,
+            "p95": 0.28904099999999744
+          },
+          "responseBytes": 2
+        },
+        "firstDeviceSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.684,
+            "p95": 1.061
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.8175830000000133,
+            "p95": 1.5073329999997895
+          },
+          "responseBytes": 94
+        },
+        "accountAheadSharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.537,
+            "p95": 0.556
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.6319169999999303,
+            "p95": 0.6634169999999813
+          },
+          "responseBytes": 2
+        },
+        "deviceBehindSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.471,
+            "p95": 0.527
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.5731249999998909,
+            "p95": 0.6822500000000673
+          },
+          "responseBytes": 94
+        }
+      },
+      "storage": [
+        {
+          "relname": "communication_device_read_cursors",
+          "heap_bytes": 40960,
+          "index_bytes": 16384,
+          "total_bytes": 90112
+        },
+        {
+          "relname": "communication_device_read_scopes",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        },
+        {
+          "relname": "communication_read_cutover_baselines",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 32768
+        },
+        {
+          "relname": "communication_read_cutover_installations",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        }
+      ],
+      "deviceRows": 20,
+      "plans": {
+        "cursor": [
+          {
+            "Plan": {
+              "Node Type": "Seq Scan",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Relation Name": "communication_device_read_cursors",
+              "Alias": "communication_device_read_cursors",
+              "Startup Cost": 0,
+              "Total Cost": 7.25,
+              "Plan Rows": 1,
+              "Plan Width": 95,
+              "Actual Startup Time": 0.005,
+              "Actual Total Time": 0.008,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Filter": "((workspace_id = '00000000-0000-4000-8000-000000000001'::uuid) AND (user_id = '00000000-0000-4000-8000-000000000002'::uuid) AND (device_id = '00000000-0000-4000-8000-000000000006'::uuid) AND (kind = 'client'::text) AND (conversation_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid))",
+              "Rows Removed by Filter": 19,
+              "Shared Hit Blocks": 5,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.028,
+            "Triggers": [],
+            "Execution Time": 0.011
+          }
+        ],
+        "preview": [
+          {
+            "Plan": {
+              "Node Type": "Limit",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 1.16,
+              "Total Cost": 1.16,
+              "Plan Rows": 1,
+              "Plan Width": 145,
+              "Actual Startup Time": 0.006,
+              "Actual Total Time": 0.006,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Shared Hit Blocks": 1,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Sort",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 1.16,
+                  "Total Cost": 1.16,
+                  "Plan Rows": 1,
+                  "Plan Width": 145,
+                  "Actual Startup Time": 0.005,
+                  "Actual Total Time": 0.005,
+                  "Actual Rows": 1,
+                  "Actual Loops": 1,
+                  "Disabled": false,
+                  "Sort Key": [
+                    "created_at DESC",
+                    "id DESC"
+                  ],
+                  "Sort Method": "quicksort",
+                  "Sort Space Used": 17,
+                  "Sort Space Type": "Memory",
+                  "Shared Hit Blocks": 1,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Plans": [
+                    {
+                      "Node Type": "Seq Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Relation Name": "client_messages",
+                      "Alias": "client_messages",
+                      "Startup Cost": 0,
+                      "Total Cost": 1.15,
+                      "Plan Rows": 1,
+                      "Plan Width": 145,
+                      "Actual Startup Time": 0.002,
+                      "Actual Total Time": 0.003,
+                      "Actual Rows": 1,
+                      "Actual Loops": 1,
+                      "Disabled": false,
+                      "Filter": "((workspace_id = '00000000-0000-4000-8000-000000000001'::uuid) AND (relationship_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid))",
+                      "Rows Removed by Filter": 9,
+                      "Shared Hit Blocks": 1,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.032,
+            "Triggers": [],
+            "Execution Time": 0.011
+          }
+        ]
+      }
+    },
+    {
+      "config": {
+        "chats": 20,
+        "devices": 1,
+        "backlog": 100
+      },
+      "actions": {
+        "sharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 2.774,
+            "p95": 2.905
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 2.894625000000133,
+            "p95": 3.0844580000000406
+          },
+          "responseBytes": 3921
+        },
+        "deviceSummaryCountsOnly": {
+          "sqlMs": {
+            "n": 30,
+            "median": 1.627,
+            "p95": 1.679
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 1.7452079999998205,
+            "p95": 1.8025829999999132
+          },
+          "responseBytes": 4013
+        },
+        "heldDeviceSummaryFullCursorMap": {
+          "sqlMs": {
+            "n": 30,
+            "median": 1.746,
+            "p95": 1.809
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 1.8596659999998337,
+            "p95": 1.955791999999974
+          },
+          "responseBytes": 10668
+        },
+        "previewBatchNative": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.513,
+            "p95": 0.566
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.640041999999994,
+            "p95": 0.7354159999999865
+          },
+          "responseBytes": 4561
+        },
+        "previewBatchClient": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.337,
+            "p95": 0.457
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.47087499999997817,
+            "p95": 0.6154160000000957
+          },
+          "responseBytes": 4561
+        },
+        "canonicalNativeInbox": {
+          "sqlMs": {
+            "n": 30,
+            "median": 5.496,
+            "p95": 5.632
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 5.6414590000003955,
+            "p95": 5.802625000000035
+          },
+          "responseBytes": 151655
+        },
+        "initializeKnownScope": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.151,
+            "p95": 0.192
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.25008299999990413,
+            "p95": 0.3110420000002705
+          },
+          "responseBytes": 2
+        },
+        "firstDeviceSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 1.77,
+            "p95": 1.867
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 1.880750000000262,
+            "p95": 2.007792000000336
+          },
+          "responseBytes": 4013
+        },
+        "accountAheadSharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 1.853,
+            "p95": 1.981
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 1.9584159999999429,
+            "p95": 2.129417000000103
+          },
+          "responseBytes": 2
+        },
+        "deviceBehindSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 1.602,
+            "p95": 1.664
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 1.7071249999999054,
+            "p95": 1.781582999999955
+          },
+          "responseBytes": 4013
+        }
+      },
+      "storage": [
+        {
+          "relname": "communication_device_read_cursors",
+          "heap_bytes": 40960,
+          "index_bytes": 16384,
+          "total_bytes": 90112
+        },
+        {
+          "relname": "communication_device_read_scopes",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        },
+        {
+          "relname": "communication_read_cutover_baselines",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 32768
+        },
+        {
+          "relname": "communication_read_cutover_installations",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        }
+      ],
+      "deviceRows": 20,
+      "plans": {
+        "cursor": [
+          {
+            "Plan": {
+              "Node Type": "Seq Scan",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Relation Name": "communication_device_read_cursors",
+              "Alias": "communication_device_read_cursors",
+              "Startup Cost": 0,
+              "Total Cost": 7.25,
+              "Plan Rows": 1,
+              "Plan Width": 95,
+              "Actual Startup Time": 0.004,
+              "Actual Total Time": 0.006,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Filter": "((workspace_id = '00000000-0000-4000-8000-000000000001'::uuid) AND (user_id = '00000000-0000-4000-8000-000000000002'::uuid) AND (device_id = '00000000-0000-4000-8000-000000000006'::uuid) AND (kind = 'client'::text) AND (conversation_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid))",
+              "Rows Removed by Filter": 19,
+              "Shared Hit Blocks": 5,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.024,
+            "Triggers": [],
+            "Execution Time": 0.009
+          }
+        ],
+        "preview": [
+          {
+            "Plan": {
+              "Node Type": "Limit",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 1.9,
+              "Total Cost": 2.97,
+              "Plan Rows": 1,
+              "Plan Width": 145,
+              "Actual Startup Time": 0.035,
+              "Actual Total Time": 0.036,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Shared Hit Blocks": 13,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Incremental Sort",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 1.9,
+                  "Total Cost": 110.23,
+                  "Plan Rows": 101,
+                  "Plan Width": 145,
+                  "Actual Startup Time": 0.034,
+                  "Actual Total Time": 0.035,
+                  "Actual Rows": 1,
+                  "Actual Loops": 1,
+                  "Disabled": false,
+                  "Sort Key": [
+                    "created_at DESC",
+                    "id DESC"
+                  ],
+                  "Presorted Key": [
+                    "created_at"
+                  ],
+                  "Full-sort Groups": {
+                    "Group Count": 1,
+                    "Sort Methods Used": [
+                      "quicksort"
+                    ],
+                    "Sort Space Memory": {
+                      "Average Sort Space Used": 17,
+                      "Peak Sort Space Used": 17
+                    }
+                  },
+                  "Shared Hit Blocks": 13,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Plans": [
+                    {
+                      "Node Type": "Index Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Scan Direction": "Forward",
+                      "Index Name": "client_messages_workspace_created_idx",
+                      "Relation Name": "client_messages",
+                      "Alias": "client_messages",
+                      "Startup Cost": 0.28,
+                      "Total Cost": 106.91,
+                      "Plan Rows": 101,
+                      "Plan Width": 145,
+                      "Actual Startup Time": 0.006,
+                      "Actual Total Time": 0.009,
+                      "Actual Rows": 2,
+                      "Actual Loops": 1,
+                      "Disabled": false,
+                      "Index Cond": "(workspace_id = '00000000-0000-4000-8000-000000000001'::uuid)",
+                      "Rows Removed by Index Recheck": 0,
+                      "Filter": "(relationship_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid)",
+                      "Rows Removed by Filter": 9,
+                      "Index Searches": 1,
+                      "Shared Hit Blocks": 13,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.033,
+            "Triggers": [],
+            "Execution Time": 0.041
+          }
+        ]
+      }
+    },
+    {
+      "config": {
+        "chats": 200,
+        "devices": 1,
+        "backlog": 100
+      },
+      "actions": {
+        "sharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 29.358,
+            "p95": 30.784
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 29.532791000001453,
+            "p95": 31.0854589999999
+          },
+          "responseBytes": 39201
+        },
+        "deviceSummaryCountsOnly": {
+          "sqlMs": {
+            "n": 30,
+            "median": 16.778,
+            "p95": 17.836
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 16.975124999999935,
+            "p95": 18.165124999999534
+          },
+          "responseBytes": 39293
+        },
+        "heldDeviceSummaryFullCursorMap": {
+          "sqlMs": {
+            "n": 30,
+            "median": 18.083,
+            "p95": 18.884
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 18.21154099999967,
+            "p95": 19.19262499999968
+          },
+          "responseBytes": 105708
+        },
+        "previewBatchNative": {
+          "sqlMs": {
+            "n": 30,
+            "median": 1.237,
+            "p95": 1.344
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 1.392624999999498,
+            "p95": 1.7532909999999902
+          },
+          "responseBytes": 9061
+        },
+        "previewBatchClient": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.572,
+            "p95": 0.682
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.7769170000001395,
+            "p95": 0.9548329999997804
+          },
+          "responseBytes": 9061
+        },
+        "canonicalNativeInbox": {
+          "sqlMs": {
+            "n": 30,
+            "median": 136.071,
+            "p95": 165.539
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 136.3327500000005,
+            "p95": 165.8227079999997
+          },
+          "responseBytes": 1516325
+        },
+        "initializeKnownScope": {
+          "sqlMs": {
+            "n": 30,
+            "median": 1.149,
+            "p95": 1.204
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 1.2621669999989535,
+            "p95": 1.410334000000148
+          },
+          "responseBytes": 2
+        },
+        "firstDeviceSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 19.482,
+            "p95": 24.797
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 19.82574999999997,
+            "p95": 25.641083000000435
+          },
+          "responseBytes": 39293
+        },
+        "accountAheadSharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 22.693,
+            "p95": 29.736
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 23.142791000000216,
+            "p95": 30.607915999999022
+          },
+          "responseBytes": 2
+        },
+        "deviceBehindSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 18.498,
+            "p95": 21.433
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 18.808084000000235,
+            "p95": 21.864707999999155
+          },
+          "responseBytes": 39293
+        }
+      },
+      "storage": [
+        {
+          "relname": "communication_device_read_cursors",
+          "heap_bytes": 1794048,
+          "index_bytes": 40960,
+          "total_bytes": 1867776
+        },
+        {
+          "relname": "communication_device_read_scopes",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        },
+        {
+          "relname": "communication_read_cutover_baselines",
+          "heap_bytes": 24576,
+          "index_bytes": 40960,
+          "total_bytes": 98304
+        },
+        {
+          "relname": "communication_read_cutover_installations",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        }
+      ],
+      "deviceRows": 200,
+      "plans": {
+        "cursor": [
+          {
+            "Plan": {
+              "Node Type": "Index Scan",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "communication_device_read_cursors_pkey",
+              "Relation Name": "communication_device_read_cursors",
+              "Alias": "communication_device_read_cursors",
+              "Startup Cost": 0.29,
+              "Total Cost": 8.31,
+              "Plan Rows": 1,
+              "Plan Width": 95,
+              "Actual Startup Time": 0.004,
+              "Actual Total Time": 0.005,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Index Cond": "((workspace_id = '00000000-0000-4000-8000-000000000001'::uuid) AND (user_id = '00000000-0000-4000-8000-000000000002'::uuid) AND (device_id = '00000000-0000-4000-8000-000000000006'::uuid) AND (kind = 'client'::text) AND (conversation_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid))",
+              "Rows Removed by Index Recheck": 0,
+              "Index Searches": 1,
+              "Shared Hit Blocks": 3,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.03,
+            "Triggers": [],
+            "Execution Time": 0.009
+          }
+        ],
+        "preview": [
+          {
+            "Plan": {
+              "Node Type": "Limit",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 5.76,
+              "Total Cost": 9.2,
+              "Plan Rows": 1,
+              "Plan Width": 145,
+              "Actual Startup Time": 0.01,
+              "Actual Total Time": 0.011,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Shared Hit Blocks": 3,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Incremental Sort",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 5.76,
+                  "Total Cost": 353.37,
+                  "Plan Rows": 101,
+                  "Plan Width": 145,
+                  "Actual Startup Time": 0.01,
+                  "Actual Total Time": 0.01,
+                  "Actual Rows": 1,
+                  "Actual Loops": 1,
+                  "Disabled": false,
+                  "Sort Key": [
+                    "created_at DESC",
+                    "id DESC"
+                  ],
+                  "Presorted Key": [
+                    "created_at"
+                  ],
+                  "Full-sort Groups": {
+                    "Group Count": 1,
+                    "Sort Methods Used": [
+                      "quicksort"
+                    ],
+                    "Sort Space Memory": {
+                      "Average Sort Space Used": 17,
+                      "Peak Sort Space Used": 17
+                    }
+                  },
+                  "Shared Hit Blocks": 3,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Plans": [
+                    {
+                      "Node Type": "Index Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Scan Direction": "Forward",
+                      "Index Name": "client_messages_relationship_id_idx",
+                      "Relation Name": "client_messages",
+                      "Alias": "client_messages",
+                      "Startup Cost": 0.29,
+                      "Total Cost": 350.12,
+                      "Plan Rows": 101,
+                      "Plan Width": 145,
+                      "Actual Startup Time": 0.004,
+                      "Actual Total Time": 0.005,
+                      "Actual Rows": 2,
+                      "Actual Loops": 1,
+                      "Disabled": false,
+                      "Index Cond": "(relationship_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid)",
+                      "Rows Removed by Index Recheck": 0,
+                      "Filter": "(workspace_id = '00000000-0000-4000-8000-000000000001'::uuid)",
+                      "Rows Removed by Filter": 0,
+                      "Index Searches": 1,
+                      "Shared Hit Blocks": 3,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.037,
+            "Triggers": [],
+            "Execution Time": 0.016
+          }
+        ]
+      }
+    },
+    {
+      "config": {
+        "chats": 1000,
+        "devices": 1,
+        "backlog": 100
+      },
+      "actions": {
+        "sharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 170.373,
+            "p95": 191.515
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 170.68037499999627,
+            "p95": 191.9132499999978
+          },
+          "responseBytes": 196001
+        },
+        "deviceSummaryCountsOnly": {
+          "sqlMs": {
+            "n": 30,
+            "median": 114.673,
+            "p95": 125.664
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 115.00849999999627,
+            "p95": 126.09816699999647
+          },
+          "responseBytes": 196093
+        },
+        "heldDeviceSummaryFullCursorMap": {
+          "sqlMs": {
+            "n": 30,
+            "median": 119.628,
+            "p95": 128.217
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 119.90887499999371,
+            "p95": 128.60545799999818
+          },
+          "responseBytes": 528108
+        },
+        "previewBatchNative": {
+          "sqlMs": {
+            "n": 30,
+            "median": 2.481,
+            "p95": 2.69
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 2.7408329999889247,
+            "p95": 2.946416999999201
+          },
+          "responseBytes": 9061
+        },
+        "previewBatchClient": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.725,
+            "p95": 1.039
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 1.0135840000002645,
+            "p95": 1.5264580000075512
+          },
+          "responseBytes": 9061
+        },
+        "canonicalNativeInbox": {
+          "sqlMs": {
+            "n": 30,
+            "median": 2453.99,
+            "p95": 2786.49
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 2454.351208,
+            "p95": 2786.8749580000003
+          },
+          "responseBytes": 7581525
+        },
+        "initializeKnownScope": {
+          "sqlMs": {
+            "n": 30,
+            "median": 5.88,
+            "p95": 6.228
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 6.035957999993116,
+            "p95": 7.2022089999954915
+          },
+          "responseBytes": 2
+        },
+        "firstDeviceSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 121.165,
+            "p95": 124.522
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 121.53141699999105,
+            "p95": 138.96774999999616
+          },
+          "responseBytes": 196093
+        },
+        "accountAheadSharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 127.622,
+            "p95": 153.584
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 127.9543330000015,
+            "p95": 154.00424999999814
+          },
+          "responseBytes": 2
+        },
+        "deviceBehindSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 114.861,
+            "p95": 115.69
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 115.18958399999246,
+            "p95": 116.00270899999305
+          },
+          "responseBytes": 196093
+        }
+      },
+      "storage": [
+        {
+          "relname": "communication_device_read_cursors",
+          "heap_bytes": 8953856,
+          "index_bytes": 114688,
+          "total_bytes": 9101312
+        },
+        {
+          "relname": "communication_device_read_scopes",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        },
+        {
+          "relname": "communication_read_cutover_baselines",
+          "heap_bytes": 114688,
+          "index_bytes": 114688,
+          "total_bytes": 262144
+        },
+        {
+          "relname": "communication_read_cutover_installations",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        }
+      ],
+      "deviceRows": 1000,
+      "plans": {
+        "cursor": [
+          {
+            "Plan": {
+              "Node Type": "Index Scan",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "communication_device_read_cursors_pkey",
+              "Relation Name": "communication_device_read_cursors",
+              "Alias": "communication_device_read_cursors",
+              "Startup Cost": 0.29,
+              "Total Cost": 8.32,
+              "Plan Rows": 1,
+              "Plan Width": 95,
+              "Actual Startup Time": 0.005,
+              "Actual Total Time": 0.005,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Index Cond": "((workspace_id = '00000000-0000-4000-8000-000000000001'::uuid) AND (user_id = '00000000-0000-4000-8000-000000000002'::uuid) AND (device_id = '00000000-0000-4000-8000-000000000006'::uuid) AND (kind = 'client'::text) AND (conversation_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid))",
+              "Rows Removed by Index Recheck": 0,
+              "Index Searches": 1,
+              "Shared Hit Blocks": 3,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.031,
+            "Triggers": [],
+            "Execution Time": 0.011
+          }
+        ],
+        "preview": [
+          {
+            "Plan": {
+              "Node Type": "Limit",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 6.64,
+              "Total Cost": 10.55,
+              "Plan Rows": 1,
+              "Plan Width": 145,
+              "Actual Startup Time": 0.012,
+              "Actual Total Time": 0.013,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Shared Hit Blocks": 4,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Incremental Sort",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 6.64,
+                  "Total Cost": 401.53,
+                  "Plan Rows": 101,
+                  "Plan Width": 145,
+                  "Actual Startup Time": 0.011,
+                  "Actual Total Time": 0.012,
+                  "Actual Rows": 1,
+                  "Actual Loops": 1,
+                  "Disabled": false,
+                  "Sort Key": [
+                    "created_at DESC",
+                    "id DESC"
+                  ],
+                  "Presorted Key": [
+                    "created_at"
+                  ],
+                  "Full-sort Groups": {
+                    "Group Count": 1,
+                    "Sort Methods Used": [
+                      "quicksort"
+                    ],
+                    "Sort Space Memory": {
+                      "Average Sort Space Used": 17,
+                      "Peak Sort Space Used": 17
+                    }
+                  },
+                  "Shared Hit Blocks": 4,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Plans": [
+                    {
+                      "Node Type": "Index Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Scan Direction": "Forward",
+                      "Index Name": "client_messages_relationship_id_idx",
+                      "Relation Name": "client_messages",
+                      "Alias": "client_messages",
+                      "Startup Cost": 0.41,
+                      "Total Cost": 398.28,
+                      "Plan Rows": 101,
+                      "Plan Width": 145,
+                      "Actual Startup Time": 0.006,
+                      "Actual Total Time": 0.007,
+                      "Actual Rows": 2,
+                      "Actual Loops": 1,
+                      "Disabled": false,
+                      "Index Cond": "(relationship_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid)",
+                      "Rows Removed by Index Recheck": 0,
+                      "Filter": "(workspace_id = '00000000-0000-4000-8000-000000000001'::uuid)",
+                      "Rows Removed by Filter": 0,
+                      "Index Searches": 1,
+                      "Shared Hit Blocks": 4,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.051,
+            "Triggers": [],
+            "Execution Time": 0.018
+          }
+        ]
+      }
+    },
+    {
+      "config": {
+        "chats": 200,
+        "devices": 20,
+        "backlog": 100
+      },
+      "actions": {
+        "sharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 29.089,
+            "p95": 29.851
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 29.345791999978246,
+            "p95": 30.42074999999022
+          },
+          "responseBytes": 39201
+        },
+        "deviceSummaryCountsOnly": {
+          "sqlMs": {
+            "n": 30,
+            "median": 16.706,
+            "p95": 17.923
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 16.832417000026908,
+            "p95": 18.20350000000326
+          },
+          "responseBytes": 39293
+        },
+        "heldDeviceSummaryFullCursorMap": {
+          "sqlMs": {
+            "n": 30,
+            "median": 17.865,
+            "p95": 18.473
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 17.9788750000007,
+            "p95": 18.63474999999744
+          },
+          "responseBytes": 105708
+        },
+        "previewBatchNative": {
+          "sqlMs": {
+            "n": 30,
+            "median": 1.207,
+            "p95": 1.273
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 1.3478340000147,
+            "p95": 1.462415999994846
+          },
+          "responseBytes": 9061
+        },
+        "previewBatchClient": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.55,
+            "p95": 0.606
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.7205830000166316,
+            "p95": 0.9902500000025611
+          },
+          "responseBytes": 9061
+        },
+        "canonicalNativeInbox": {
+          "sqlMs": {
+            "n": 30,
+            "median": 134.753,
+            "p95": 135.732
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 134.9928329999966,
+            "p95": 136.02291700002388
+          },
+          "responseBytes": 1516325
+        },
+        "initializeKnownScope": {
+          "sqlMs": {
+            "n": 30,
+            "median": 1.366,
+            "p95": 1.452
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 1.467917000001762,
+            "p95": 1.5510420000064187
+          },
+          "responseBytes": 2
+        },
+        "firstDeviceSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 18.735,
+            "p95": 19.548
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 18.86637500001234,
+            "p95": 19.809041000000434
+          },
+          "responseBytes": 39293
+        },
+        "accountAheadSharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 20.416,
+            "p95": 21.333
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 20.53641699999571,
+            "p95": 21.57837499998277
+          },
+          "responseBytes": 2
+        },
+        "deviceBehindSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 17.695,
+            "p95": 18.361
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 17.949875000020256,
+            "p95": 18.701957999990555
+          },
+          "responseBytes": 39293
+        }
+      },
+      "storage": [
+        {
+          "relname": "communication_device_read_cursors",
+          "heap_bytes": 2269184,
+          "index_bytes": 573440,
+          "total_bytes": 2875392
+        },
+        {
+          "relname": "communication_device_read_scopes",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        },
+        {
+          "relname": "communication_read_cutover_baselines",
+          "heap_bytes": 24576,
+          "index_bytes": 40960,
+          "total_bytes": 98304
+        },
+        {
+          "relname": "communication_read_cutover_installations",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        }
+      ],
+      "deviceRows": 4000,
+      "plans": {
+        "cursor": [
+          {
+            "Plan": {
+              "Node Type": "Index Scan",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "communication_device_read_cursors_pkey",
+              "Relation Name": "communication_device_read_cursors",
+              "Alias": "communication_device_read_cursors",
+              "Startup Cost": 0.29,
+              "Total Cost": 10.07,
+              "Plan Rows": 2,
+              "Plan Width": 95,
+              "Actual Startup Time": 0.015,
+              "Actual Total Time": 0.016,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Index Cond": "((workspace_id = '00000000-0000-4000-8000-000000000001'::uuid) AND (user_id = '00000000-0000-4000-8000-000000000002'::uuid) AND (device_id = '00000000-0000-4000-8000-000000000006'::uuid) AND (kind = 'client'::text) AND (conversation_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid))",
+              "Rows Removed by Index Recheck": 0,
+              "Index Searches": 1,
+              "Shared Hit Blocks": 3,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.082,
+            "Triggers": [],
+            "Execution Time": 0.031
+          }
+        ],
+        "preview": [
+          {
+            "Plan": {
+              "Node Type": "Limit",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 5.76,
+              "Total Cost": 9.2,
+              "Plan Rows": 1,
+              "Plan Width": 145,
+              "Actual Startup Time": 0.027,
+              "Actual Total Time": 0.028,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Shared Hit Blocks": 3,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Incremental Sort",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 5.76,
+                  "Total Cost": 353.37,
+                  "Plan Rows": 101,
+                  "Plan Width": 145,
+                  "Actual Startup Time": 0.025,
+                  "Actual Total Time": 0.026,
+                  "Actual Rows": 1,
+                  "Actual Loops": 1,
+                  "Disabled": false,
+                  "Sort Key": [
+                    "created_at DESC",
+                    "id DESC"
+                  ],
+                  "Presorted Key": [
+                    "created_at"
+                  ],
+                  "Full-sort Groups": {
+                    "Group Count": 1,
+                    "Sort Methods Used": [
+                      "quicksort"
+                    ],
+                    "Sort Space Memory": {
+                      "Average Sort Space Used": 17,
+                      "Peak Sort Space Used": 17
+                    }
+                  },
+                  "Shared Hit Blocks": 3,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Plans": [
+                    {
+                      "Node Type": "Index Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Scan Direction": "Forward",
+                      "Index Name": "client_messages_relationship_id_idx",
+                      "Relation Name": "client_messages",
+                      "Alias": "client_messages",
+                      "Startup Cost": 0.29,
+                      "Total Cost": 350.12,
+                      "Plan Rows": 101,
+                      "Plan Width": 145,
+                      "Actual Startup Time": 0.014,
+                      "Actual Total Time": 0.015,
+                      "Actual Rows": 2,
+                      "Actual Loops": 1,
+                      "Disabled": false,
+                      "Index Cond": "(relationship_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid)",
+                      "Rows Removed by Index Recheck": 0,
+                      "Filter": "(workspace_id = '00000000-0000-4000-8000-000000000001'::uuid)",
+                      "Rows Removed by Filter": 0,
+                      "Index Searches": 1,
+                      "Shared Hit Blocks": 3,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.079,
+            "Triggers": [],
+            "Execution Time": 0.041
+          }
+        ]
+      }
+    },
+    {
+      "config": {
+        "chats": 200,
+        "devices": 100,
+        "backlog": 100
+      },
+      "actions": {
+        "sharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 29.133,
+            "p95": 30.322
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 29.27783399997861,
+            "p95": 30.627166999998735
+          },
+          "responseBytes": 39201
+        },
+        "deviceSummaryCountsOnly": {
+          "sqlMs": {
+            "n": 30,
+            "median": 16.605,
+            "p95": 17.855
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 16.74283399997512,
+            "p95": 18.13816699999734
+          },
+          "responseBytes": 39293
+        },
+        "heldDeviceSummaryFullCursorMap": {
+          "sqlMs": {
+            "n": 30,
+            "median": 17.939,
+            "p95": 18.682
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 18.062082999997074,
+            "p95": 18.97066699998686
+          },
+          "responseBytes": 105708
+        },
+        "previewBatchNative": {
+          "sqlMs": {
+            "n": 30,
+            "median": 1.216,
+            "p95": 1.277
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 1.357917000015732,
+            "p95": 1.4459159999969415
+          },
+          "responseBytes": 9061
+        },
+        "previewBatchClient": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.565,
+            "p95": 0.63
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.7419170000066515,
+            "p95": 0.8964170000108425
+          },
+          "responseBytes": 9061
+        },
+        "canonicalNativeInbox": {
+          "sqlMs": {
+            "n": 30,
+            "median": 134.799,
+            "p95": 138.111
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 135.04266700000153,
+            "p95": 138.42920899999444
+          },
+          "responseBytes": 1516325
+        },
+        "initializeKnownScope": {
+          "sqlMs": {
+            "n": 30,
+            "median": 2.374,
+            "p95": 2.52
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 2.472458000003826,
+            "p95": 2.6207500000018626
+          },
+          "responseBytes": 2
+        },
+        "firstDeviceSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 19.019,
+            "p95": 19.569
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 19.13016699999571,
+            "p95": 19.731041999999434
+          },
+          "responseBytes": 39293
+        },
+        "accountAheadSharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 20.591,
+            "p95": 21.882
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 20.707374999998137,
+            "p95": 22.167416999989655
+          },
+          "responseBytes": 2
+        },
+        "deviceBehindSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 16.535,
+            "p95": 16.775
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 16.651125000003958,
+            "p95": 16.911083999992115
+          },
+          "responseBytes": 39293
+        }
+      },
+      "storage": [
+        {
+          "relname": "communication_device_read_cursors",
+          "heap_bytes": 4292608,
+          "index_bytes": 3039232,
+          "total_bytes": 7364608
+        },
+        {
+          "relname": "communication_device_read_scopes",
+          "heap_bytes": 16384,
+          "index_bytes": 16384,
+          "total_bytes": 57344
+        },
+        {
+          "relname": "communication_read_cutover_baselines",
+          "heap_bytes": 24576,
+          "index_bytes": 40960,
+          "total_bytes": 98304
+        },
+        {
+          "relname": "communication_read_cutover_installations",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        }
+      ],
+      "deviceRows": 20000,
+      "plans": {
+        "cursor": [
+          {
+            "Plan": {
+              "Node Type": "Index Scan",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "communication_device_read_cursors_pkey",
+              "Relation Name": "communication_device_read_cursors",
+              "Alias": "communication_device_read_cursors",
+              "Startup Cost": 0.41,
+              "Total Cost": 8.44,
+              "Plan Rows": 1,
+              "Plan Width": 95,
+              "Actual Startup Time": 0.004,
+              "Actual Total Time": 0.005,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Index Cond": "((workspace_id = '00000000-0000-4000-8000-000000000001'::uuid) AND (user_id = '00000000-0000-4000-8000-000000000002'::uuid) AND (device_id = '00000000-0000-4000-8000-000000000006'::uuid) AND (kind = 'client'::text) AND (conversation_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid))",
+              "Rows Removed by Index Recheck": 0,
+              "Index Searches": 1,
+              "Shared Hit Blocks": 4,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.033,
+            "Triggers": [],
+            "Execution Time": 0.01
+          }
+        ],
+        "preview": [
+          {
+            "Plan": {
+              "Node Type": "Limit",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 5.76,
+              "Total Cost": 9.2,
+              "Plan Rows": 1,
+              "Plan Width": 145,
+              "Actual Startup Time": 0.01,
+              "Actual Total Time": 0.011,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Shared Hit Blocks": 3,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Incremental Sort",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 5.76,
+                  "Total Cost": 353.37,
+                  "Plan Rows": 101,
+                  "Plan Width": 145,
+                  "Actual Startup Time": 0.009,
+                  "Actual Total Time": 0.01,
+                  "Actual Rows": 1,
+                  "Actual Loops": 1,
+                  "Disabled": false,
+                  "Sort Key": [
+                    "created_at DESC",
+                    "id DESC"
+                  ],
+                  "Presorted Key": [
+                    "created_at"
+                  ],
+                  "Full-sort Groups": {
+                    "Group Count": 1,
+                    "Sort Methods Used": [
+                      "quicksort"
+                    ],
+                    "Sort Space Memory": {
+                      "Average Sort Space Used": 17,
+                      "Peak Sort Space Used": 17
+                    }
+                  },
+                  "Shared Hit Blocks": 3,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Plans": [
+                    {
+                      "Node Type": "Index Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Scan Direction": "Forward",
+                      "Index Name": "client_messages_relationship_id_idx",
+                      "Relation Name": "client_messages",
+                      "Alias": "client_messages",
+                      "Startup Cost": 0.29,
+                      "Total Cost": 350.12,
+                      "Plan Rows": 101,
+                      "Plan Width": 145,
+                      "Actual Startup Time": 0.005,
+                      "Actual Total Time": 0.005,
+                      "Actual Rows": 2,
+                      "Actual Loops": 1,
+                      "Disabled": false,
+                      "Index Cond": "(relationship_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid)",
+                      "Rows Removed by Index Recheck": 0,
+                      "Filter": "(workspace_id = '00000000-0000-4000-8000-000000000001'::uuid)",
+                      "Rows Removed by Filter": 0,
+                      "Index Searches": 1,
+                      "Shared Hit Blocks": 3,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.033,
+            "Triggers": [],
+            "Execution Time": 0.015
+          }
+        ]
+      },
+      "reads": [
+        {
+          "kind": "client",
+          "scenario": "advance",
+          "arms": {
+            "shared": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.07,
+                "p95": 0.077
+              },
+              "responseBytes": 156
+            },
+            "device": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.12,
+                "p95": 0.136
+              },
+              "responseBytes": 689
+            }
+          }
+        },
+        {
+          "kind": "client",
+          "scenario": "accountAhead",
+          "arms": {
+            "shared": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.065,
+                "p95": 0.072
+              },
+              "responseBytes": 156
+            },
+            "device": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.117,
+                "p95": 0.137
+              },
+              "responseBytes": 689
+            }
+          }
+        },
+        {
+          "kind": "client",
+          "scenario": "duplicate",
+          "arms": {
+            "shared": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.066,
+                "p95": 0.069
+              },
+              "responseBytes": 156
+            },
+            "device": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.114,
+                "p95": 0.124
+              },
+              "responseBytes": 689
+            }
+          }
+        },
+        {
+          "kind": "native",
+          "scenario": "advance",
+          "arms": {
+            "shared": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.096,
+                "p95": 0.101
+              },
+              "responseBytes": 156
+            },
+            "device": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.147,
+                "p95": 0.153
+              },
+              "responseBytes": 689
+            }
+          }
+        },
+        {
+          "kind": "native",
+          "scenario": "accountAhead",
+          "arms": {
+            "shared": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.088,
+                "p95": 0.095
+              },
+              "responseBytes": 156
+            },
+            "device": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.138,
+                "p95": 0.147
+              },
+              "responseBytes": 689
+            }
+          }
+        },
+        {
+          "kind": "native",
+          "scenario": "duplicate",
+          "arms": {
+            "shared": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.087,
+                "p95": 0.094
+              },
+              "responseBytes": 156
+            },
+            "device": {
+              "sqlMs": {
+                "n": 60,
+                "median": 0.135,
+                "p95": 0.14
+              },
+              "responseBytes": 689
+            }
+          }
+        }
+      ]
+    },
+    {
+      "config": {
+        "chats": 20,
+        "devices": 1,
+        "backlog": 10000
+      },
+      "actions": {
+        "sharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 4.4,
+            "p95": 4.784
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 4.5228340000030585,
+            "p95": 5.0037089999823365
+          },
+          "responseBytes": 3921
+        },
+        "deviceSummaryCountsOnly": {
+          "sqlMs": {
+            "n": 30,
+            "median": 3.585,
+            "p95": 3.768
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 3.712375000002794,
+            "p95": 4.111291999986861
+          },
+          "responseBytes": 4013
+        },
+        "heldDeviceSummaryFullCursorMap": {
+          "sqlMs": {
+            "n": 30,
+            "median": 3.815,
+            "p95": 4.001
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 3.9574999999895226,
+            "p95": 4.1478340000030585
+          },
+          "responseBytes": 10668
+        },
+        "previewBatchNative": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.539,
+            "p95": 0.573
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.6867919999931473,
+            "p95": 0.7507500000065193
+          },
+          "responseBytes": 4561
+        },
+        "previewBatchClient": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.435,
+            "p95": 0.484
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.6389579999959096,
+            "p95": 0.7898330000170972
+          },
+          "responseBytes": 4561
+        },
+        "canonicalNativeInbox": {
+          "sqlMs": {
+            "n": 30,
+            "median": 473.879,
+            "p95": 479.675
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 474.25,
+            "p95": 480.04837500001304
+          },
+          "responseBytes": 14704655
+        },
+        "initializeKnownScope": {
+          "sqlMs": {
+            "n": 30,
+            "median": 0.142,
+            "p95": 0.161
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 0.24216600001091138,
+            "p95": 0.2750419999938458
+          },
+          "responseBytes": 2
+        },
+        "firstDeviceSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 3.656,
+            "p95": 3.69
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 3.7602919999917503,
+            "p95": 3.800459000020055
+          },
+          "responseBytes": 4013
+        },
+        "accountAheadSharedSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 301.908,
+            "p95": 308.724
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 302.2299579999817,
+            "p95": 309.0356669999892
+          },
+          "responseBytes": 2
+        },
+        "deviceBehindSummary": {
+          "sqlMs": {
+            "n": 30,
+            "median": 3.501,
+            "p95": 3.55
+          },
+          "wallMs": {
+            "n": 30,
+            "median": 3.6071249999804422,
+            "p95": 3.756541999988258
+          },
+          "responseBytes": 4013
+        }
+      },
+      "storage": [
+        {
+          "relname": "communication_device_read_cursors",
+          "heap_bytes": 40960,
+          "index_bytes": 16384,
+          "total_bytes": 90112
+        },
+        {
+          "relname": "communication_device_read_scopes",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        },
+        {
+          "relname": "communication_read_cutover_baselines",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 32768
+        },
+        {
+          "relname": "communication_read_cutover_installations",
+          "heap_bytes": 8192,
+          "index_bytes": 16384,
+          "total_bytes": 24576
+        }
+      ],
+      "deviceRows": 20,
+      "plans": {
+        "cursor": [
+          {
+            "Plan": {
+              "Node Type": "Seq Scan",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Relation Name": "communication_device_read_cursors",
+              "Alias": "communication_device_read_cursors",
+              "Startup Cost": 0,
+              "Total Cost": 7.25,
+              "Plan Rows": 1,
+              "Plan Width": 95,
+              "Actual Startup Time": 0.004,
+              "Actual Total Time": 0.006,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Filter": "((workspace_id = '00000000-0000-4000-8000-000000000001'::uuid) AND (user_id = '00000000-0000-4000-8000-000000000002'::uuid) AND (device_id = '00000000-0000-4000-8000-000000000006'::uuid) AND (kind = 'client'::text) AND (conversation_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid))",
+              "Rows Removed by Filter": 19,
+              "Shared Hit Blocks": 5,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.018,
+            "Triggers": [],
+            "Execution Time": 0.009
+          }
+        ],
+        "preview": [
+          {
+            "Plan": {
+              "Node Type": "Limit",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 1.65,
+              "Total Cost": 2.55,
+              "Plan Rows": 1,
+              "Plan Width": 145,
+              "Actual Startup Time": 0.011,
+              "Actual Total Time": 0.012,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Shared Hit Blocks": 13,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Incremental Sort",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 1.65,
+                  "Total Cost": 9304.45,
+                  "Plan Rows": 10318,
+                  "Plan Width": 145,
+                  "Actual Startup Time": 0.011,
+                  "Actual Total Time": 0.011,
+                  "Actual Rows": 1,
+                  "Actual Loops": 1,
+                  "Disabled": false,
+                  "Sort Key": [
+                    "created_at DESC",
+                    "id DESC"
+                  ],
+                  "Presorted Key": [
+                    "created_at"
+                  ],
+                  "Full-sort Groups": {
+                    "Group Count": 1,
+                    "Sort Methods Used": [
+                      "quicksort"
+                    ],
+                    "Sort Space Memory": {
+                      "Average Sort Space Used": 17,
+                      "Peak Sort Space Used": 17
+                    }
+                  },
+                  "Shared Hit Blocks": 13,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Plans": [
+                    {
+                      "Node Type": "Index Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Scan Direction": "Forward",
+                      "Index Name": "client_messages_workspace_created_idx",
+                      "Relation Name": "client_messages",
+                      "Alias": "client_messages",
+                      "Startup Cost": 0.29,
+                      "Total Cost": 8968.87,
+                      "Plan Rows": 10318,
+                      "Plan Width": 145,
+                      "Actual Startup Time": 0.005,
+                      "Actual Total Time": 0.007,
+                      "Actual Rows": 2,
+                      "Actual Loops": 1,
+                      "Disabled": false,
+                      "Index Cond": "(workspace_id = '00000000-0000-4000-8000-000000000001'::uuid)",
+                      "Rows Removed by Index Recheck": 0,
+                      "Filter": "(relationship_id = 'ca608eab-a0e3-e98e-88f7-5a6723033c1b'::uuid)",
+                      "Rows Removed by Filter": 9,
+                      "Index Searches": 1,
+                      "Shared Hit Blocks": 13,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.02,
+            "Triggers": [],
+            "Execution Time": 0.016
+          }
+        ]
+      }
+    }
+  ],
+  "assertions": [
+    "client: advance exactly one device and one shared row",
+    "client: duplicate zero changed cursor rows",
+    "client: account ahead changes device row only",
+    "native: advance exactly one device and one shared row",
+    "native: duplicate zero changed cursor rows",
+    "native: account ahead changes device row only",
+    "Shared account read suppressing state unchanged while device keeps20 unread chats",
+    "Deleted cursor target retains full boundary; preview falls back to existing row",
+    "Confirmed no cursor distinct from request pending",
+    "Denied batch21",
+    "Denied empty",
+    "Denied wrongDevice",
+    "Denied inaccessible",
+    "Denied wrongKind",
+    "Denied AAL1",
+    "Denied wrongUser",
+    "Denied expiredSession",
+    "Native cleared history hidden from preview and count",
+    "Own native messages excluded from unread counts",
+    "Private table communication_device_read_cursors not selectable by authenticated",
+    "Private table communication_device_read_scopes not selectable by authenticated",
+    "Private table communication_read_cutover_baselines not selectable by authenticated",
+    "Private table communication_read_cutover_installations not selectable by authenticated",
+    "Equal timestamp later UUID remains unread after deleting read target"
+  ],
+  "limitations": [
+    "No production deployment, encryption/decryption CPU, route auth/bootstrap, real WAN or mobile CPU.",
+    "Single PGlite connection; no concurrent-transaction/WAL/replication performance claim.",
+    "All conversations authorized fixture; production membership complexity and system-resolver/portal policies need separate acceptance.",
+    "SQL execution time excludes RPC HTTP; PGlite wall includes WASM bridge.",
+    "Sizes are this synthetic JSON, not production payload predictions."
+  ],
+  "writeCounts": {
+    "advance": {
+      "shared": 1,
+      "device": 1
+    },
+    "accountAhead": {
+      "shared": 0,
+      "device": 1
+    },
+    "duplicate": {
+      "shared": 0,
+      "device": 0
+    }
+  },
+  "assertionCount": 24
+}

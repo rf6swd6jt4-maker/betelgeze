@@ -1,0 +1,25 @@
+{
+  "baselineCommit": "f2cc3331dce775e89f4ad80e861460603fbdd56e",
+  "heldCandidateCommit": "cdaa9f7f74107dd1cfa6c4bdfd30979449fde2e6",
+  "runtime": "v24.16.0",
+  "pglite": "0.5.8",
+  "hashes": {
+    "sql-base.mjs": "e4daf1b5d4ac23f3fdd2103a61bf99c01b782e4c48c383a949007bf4a63cbceb",
+    "sql-behavior-results.json": "39191bf441b00ec51e2028d9af87702cd72f620fda64b91ad8247ca14fae2f79",
+    "sql-behavior.mjs": "f52fb4c3559bd56a63981b0e058abc72bd28d20b8bc0db1b9c4a150f173c8224",
+    "sql-fixture.mjs": "a0f07de44134ca906901e489e4609a6ca2c40f7d02da0b504c06f105c8f500bd",
+    "sql-held-device.sql": "01aee48a27e233bfc7535d600282dc92fad298d5903b8cc8b484d82f1b6d2a63",
+    "sql-measure.mjs": "c816364c552ca3af71ee6ad37b922d3d81a86140e3cbc6b75da16d86204a961b",
+    "sql-notes.md": "0521d651984afbf847648c851502c8c735f5d5aa4329492a4ebefeea025dc007",
+    "sql-preview.sql": "4f0caaefba775fa649ba08bc99a3850e162356a922c5aa0c72d51923d1de92c5",
+    "sql-results.json": "9e022f89c06708c53b630a183862a970e622de23c4445760c1f934ed4dbdd81f",
+    "sql-supplement-results.json": "caf83bf03b699285825df9e4ced80101b10a3e93879812444a63994cff12e7cd",
+    "sql-supplement.mjs": "fc524d0660ce79664bf44168c4330d11915042157f8116b1abd47c46e356e697"
+  },
+  "postMeasurementFormatting": {
+    "file": "sql-measure.mjs",
+    "change": "Removed one trailing space only; no semantic change.",
+    "measuredSha256": "34b6b274d0985b6e28be4bd87ae1a0c5b866c941e2894f8e580052a9e0355474",
+    "originalSourceArtifact": "measured-sql-measure.mjs"
+  }
+}

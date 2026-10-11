@@ -1,0 +1,19 @@
+{
+  "isolated": true,
+  "checks": [
+    "Previously known sleeping installation uses frozen cutover baseline, not later shared reads",
+    "New installation seeds current account cursor atomically",
+    "Original device is unchanged by other installation initialization",
+    "Transaction rollback discards device cursor advance",
+    "Same rollback also discards shared account cursor advance",
+    "Deleted or unknown read target rejected without cursor change",
+    "Revoked workspace access denies summary, batch and write",
+    "Revoked Client conversation access denies batch"
+  ],
+  "assertions": 8,
+  "failures": 0,
+  "limitations": [
+    "Sequential PGlite transaction tests; not real concurrent sessions",
+    "Lost installation cookie deliberately becomes new installation with current account baseline, subject to user product approval."
+  ]
+}

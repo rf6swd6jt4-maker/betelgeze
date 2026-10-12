@@ -65,8 +65,28 @@ export async function startFixture({port=45679,chats=48,backlog=100,rpcOverride}
   }else{unexpected.push(url.pathname);throw Error(`Unhandled synthetic path ${url.pathname}`)}
   res.end(JSON.stringify(value))
  }catch(e){res.statusCode=500;res.end(JSON.stringify({message:e.message,code:e.code??'FIXTURE_UNHANDLED'}))}})
- const sockets=new WebSocketServer({server});sockets.on('connection',socket=>socket.on('message',bytes=>{const data=JSON.parse(bytes.toString());if(data.event==='phx_join'||data.event==='heartbeat')socket.send(JSON.stringify({event:'phx_reply',topic:data.topic,ref:data.ref,payload:{status:'ok',response:data.event==='phx_join'?{postgres_changes:(data.payload?.config?.postgres_changes??[]).map((x,i)=>({...x,id:i+1}))}:{}}}))}))
+ const realtimeEvents=[]
+ const sockets=new WebSocketServer({server})
+ sockets.on('connection',socket=>socket.on('message',(bytes,binary)=>{
+  let data,v2=true
+  if(binary){
+   // The installed SDK uses v2 binary envelopes for broadcasts. Only the
+   // routing fields are needed to acknowledge this synthetic transport.
+   if(bytes[0]!==3){unexpected.push('Unsupported Realtime binary envelope');return}
+   let offset=7;const field=length=>{const value=bytes.subarray(offset,offset+length).toString();offset+=length;return value}
+   data={join_ref:field(bytes[1]),ref:field(bytes[2]),topic:field(bytes[3]),event:'broadcast'}
+  }else{
+   const value=JSON.parse(bytes.toString());v2=Array.isArray(value)
+   data=v2?{join_ref:value[0],ref:value[1],topic:value[2],event:value[3],payload:value[4]}:value
+  }
+  realtimeEvents.push({event:data.event,topic:data.topic})
+  const send=(event,payload,ref=data.ref)=>socket.send(JSON.stringify(v2?[data.join_ref??null,ref??null,data.topic,event,payload]:{join_ref:data.join_ref,ref,topic:data.topic,event,payload}))
+  if(['phx_join','phx_leave','heartbeat','presence','broadcast'].includes(data.event)){
+   send('phx_reply',{status:'ok',response:data.event==='phx_join'?{postgres_changes:(data.payload?.config?.postgres_changes??[]).map((x,i)=>({...x,id:i+1}))}:{}})
+   if(data.event==='phx_join'&&data.payload?.config?.presence?.enabled)send('presence_state',{},null)
+  }
+ }))
  await new Promise(resolve=>server.listen(port,'127.0.0.1',resolve))
- return {server,sql,control,calls,unexpected,idle:async()=>{while(pendingRpc.size)await Promise.allSettled([...pendingRpc]);await sqlQueue},conversations,messages,tables,close:async()=>{for(const socket of sockets.clients)socket.terminate();await new Promise(resolve=>server.close(resolve));await sql.close()}}
+ return {server,sql,control,calls,unexpected,realtimeEvents,idle:async()=>{while(pendingRpc.size)await Promise.allSettled([...pendingRpc]);await sqlQueue},conversations,messages,tables,close:async()=>{for(const socket of sockets.clients)socket.terminate();await new Promise(resolve=>server.close(resolve));await sql.close()}}
 }
 if(process.argv[1]===new URL(import.meta.url).pathname){await startFixture();console.log('Synthetic Supabase: http://127.0.0.1:45679')}

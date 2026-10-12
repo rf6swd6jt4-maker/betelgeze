@@ -1,3 +1,4 @@
+import { markChatBoundary } from "@/lib/communications/performance-server"
 import { loadDeviceCommunicationHistory, loadDeviceCommunicationRoster } from "@/lib/communications/progressive-server"
 import type { CommunicationReadProtocol } from "@/lib/communications/read-protocol"
 import { nativeAttachmentBatchFromValue } from "@/lib/communications/attachment-batch"
@@ -117,6 +118,7 @@ export async function loadNativeCommunications(input: {
         loadCommunicationPeople(input.workspaceId, input.currentUserId),
         loadCommunicationStickers(input.workspaceId),
     ])
+    markChatBoundary("roster_ready")
     const currentMemberIds = new Set(peopleResult.people.map((person) => person.id))
     const chatTeams = teams.map((team) => ({ ...team, memberIds: team.memberIds.filter((id) => currentMemberIds.has(id)) }))
     const currentUserRole: NativeCommunicationsBootstrap["currentUserRole"] = input.role === "owner" || input.role === "admin" ? input.role : "staff"

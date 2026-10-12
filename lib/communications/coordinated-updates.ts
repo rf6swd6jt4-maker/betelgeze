@@ -154,12 +154,17 @@ export function createCoordinatedChat<M extends Message, C extends Conversation<
             const previousMetadata = new Map(metadata.map(conversation => [conversation.id, conversation]))
             metadata = incoming.conversations.map(conversation => {
                 const previous = previousMetadata.get(conversation.id)
-                const previousCursor = previous?.cursorDeviceId === conversation.cursorDeviceId ? previous?.deviceCursor : null
+                const sameDevice = previous?.cursorDeviceId === conversation.cursorDeviceId
+                const previousCursor = sameDevice ? previous?.deviceCursor : null
                 const nextCursor = conversation.deviceCursor
                 const retainCursor = previousCursor && (!nextCursor || compareChatMessages({ createdAt: previousCursor.lastReadAt, id: previousCursor.lastReadMessageId ?? "" }, { createdAt: nextCursor.lastReadAt, id: nextCursor.lastReadMessageId ?? "" }) > 0)
+                // Metadata-only snapshots omit cursor evidence. A confirmed
+                // absence is evidence too, and must survive just like a saved
+                // position when a background roster finishes after history.
+                const retainKnown = sameDevice && previous?.cursorKnown === true && conversation.cursorKnown !== true
                 return { ...conversation,
                     ...(conversation.previewState === "loading" ? { previewMessage: previous?.previewMessage !== undefined ? previous.previewMessage : previous?.messages.at(-1) } : {}),
-                    ...(retainCursor ? { cursorKnown: true as const, deviceCursor: previousCursor } : {}),
+                    ...(retainCursor || retainKnown ? { cursorKnown: true as const, deviceCursor: previousCursor ?? null } : {}),
                 }
             }) // Access and membership always come from the server.
             ingestMessages(incoming.conversations)

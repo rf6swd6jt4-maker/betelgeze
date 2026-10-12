@@ -1,3 +1,4 @@
+import { markChatBoundary } from "@/lib/communications/performance-server"
 import { communicationDeviceId, DeviceCommunicationError, type DeviceReadPosition } from "@/lib/communications/device-server"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { communicationMessageFromRow } from "@/lib/communications/server"
@@ -36,6 +37,7 @@ export function loadDeviceCommunicationHistory(workspaceId: string, kind: "clien
 export function loadDeviceCommunicationHistory(workspaceId: string, kind: "native", conversationId: string): Promise<DeviceHistory<import("@/lib/teams/types").NativeMessage>>
 export async function loadDeviceCommunicationHistory(workspaceId: string, kind: "client" | "native", conversationId: string): Promise<DeviceHistory<CommunicationMessage | import("@/lib/teams/types").NativeMessage>> {
     const data = await deviceRpc("communication_device_history", workspaceId, { p_kind: kind, p_conversation_id: conversationId })
+    markChatBoundary("history_ready")
     if (data.cursorKnown !== true || !Object.hasOwn(data, "deviceCursor") || !Array.isArray(data.messages)) throw new Error("Invalid device history response.")
     return {
         readProtocol: "device-v1" as const, deviceId: data.deviceId as string, cursorKnown: true as const,

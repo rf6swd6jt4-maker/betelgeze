@@ -24,27 +24,28 @@ export async function connectClientAccount(workspaceSlug: string, input: { relat
     }
 }
 
-export async function refreshClientAccount(workspaceSlug: string, relationshipId: string): Promise<ClientConnectionActionResult> {
+export async function refreshClientAccount(workspaceSlug: string, relationshipId: string, relationshipOnly = false): Promise<ClientConnectionActionResult> {
     try {
         const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "client-connections")
         await refreshClientHighLevel({ workspaceId: workspace.id, userId: user.id, relationshipId })
-        return { ok: true, accounts: await listClientConnections(workspace.id, user.id) }
+        return { ok: true, accounts: await listClientConnections(workspace.id, user.id, relationshipOnly ? relationshipId : undefined) }
     } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : "The client connection could not be refreshed." }
     }
 }
 
-export async function saveClientAccount(workspaceSlug: string, input: ClientConnectionEdit) {
+export async function saveClientAccount(workspaceSlug: string, input: ClientConnectionEdit, relationshipOnly = false) {
     try {
         const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "client-connections")
         await saveClientConnection(workspace.id, user.id, input)
-        return { ok: true as const, accounts: await listClientConnections(workspace.id, user.id) }
+        const relationshipId = input.relationshipId
+        return { ok: true as const, accounts: await listClientConnections(workspace.id, user.id, relationshipOnly ? relationshipId : undefined) }
     } catch (error) { return { ok: false as const, error: error instanceof Error ? error.message : "The connection could not be saved." } }
 }
-export async function removeClientAccount(workspaceSlug: string, relationshipId: string, revision: string) {
+export async function removeClientAccount(workspaceSlug: string, relationshipId: string, revision: string, relationshipOnly = false) {
     try {
         const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "client-connections")
         await removeClientConnection(workspace.id, user.id, relationshipId, revision)
-        return { ok: true as const, accounts: await listClientConnections(workspace.id, user.id) }
+        return { ok: true as const, accounts: await listClientConnections(workspace.id, user.id, relationshipOnly ? relationshipId : undefined) }
     } catch (error) { return { ok: false as const, error: error instanceof Error ? error.message : "The connection could not be removed." } }
 }

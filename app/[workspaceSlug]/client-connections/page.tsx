@@ -6,11 +6,12 @@ import { listWorkspaceConnections } from "@/lib/workspace-integrations"
 
 export const dynamic = "force-dynamic"
 
-export default async function ClientConnectionsPage({ params }: { params: Promise<{ workspaceSlug: string }> }) {
-    const { workspaceSlug } = await params
+export default async function ClientConnectionsPage({ params, searchParams }: { params: Promise<{ workspaceSlug: string }>; searchParams: Promise<{ relationship?: string }> }) {
+    const [{ workspaceSlug }, query] = await Promise.all([params, searchParams])
+    const relationshipId = typeof query.relationship === "string" && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(query.relationship) ? query.relationship : undefined
     const authorization = await requireWorkspacePanel(workspaceSlug, "client-connections")
     const [accounts, connections] = await Promise.all([
-        listClientConnections(authorization.workspace.id, authorization.user.id),
+        listClientConnections(authorization.workspace.id, authorization.user.id, relationshipId),
         listWorkspaceConnections(authorization.workspace.id),
     ])
     const highLevel = connections.find((connection) => connection.provider === "ghl")

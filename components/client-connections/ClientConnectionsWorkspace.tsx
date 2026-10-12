@@ -18,6 +18,11 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
     canManageAgency: boolean
 }) {
     const [accounts, setAccounts] = useState(initialAccounts)
+    const [loadedAccounts, setLoadedAccounts] = useState(initialAccounts)
+    if (loadedAccounts !== initialAccounts) {
+        setLoadedAccounts(initialAccounts)
+        setAccounts(initialAccounts)
+    }
     const [editing, setEditing] = useState<ClientConnectionAccount | null>(null)
     const [removing, setRemoving] = useState<ClientConnectionAccount | null>(null)
     const [menu, setMenu] = useState<{ account: ClientConnectionAccount; anchor: HTMLElement; point?: { x: number; y: number } } | null>(null)
@@ -72,26 +77,26 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
     function submit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault(); setError(null)
         startTransition(async () => {
-            const result = await saveClientAccount(workspaceSlug, { relationshipId, accountType, locationId, privateToken, calendarId, expectedRevision: editing?.revision ?? null })
+            const result = await saveClientAccount(workspaceSlug, { relationshipId, accountType, locationId, privateToken, calendarId, expectedRevision: editing?.revision ?? null }, true)
             if (!result.ok) { setError(result.error); return }
-            setAccounts(result.accounts); closeEditor()
+            setAccounts(current => current.map(account => result.accounts?.find(updated => updated.relationshipId === account.relationshipId) ?? account)); closeEditor()
         })
     }
     function refresh(relationshipId: string) {
         setError(null)
         startTransition(async () => {
-            const result = await refreshClientAccount(workspaceSlug, relationshipId)
+            const result = await refreshClientAccount(workspaceSlug, relationshipId, true)
             if (!result.ok) { setError(result.error); return }
-            if (result.accounts) setAccounts(result.accounts)
+            if (result.accounts) setAccounts(current => current.map(account => result.accounts?.find(updated => updated.relationshipId === account.relationshipId) ?? account))
         })
     }
     function remove() {
         if (!removing?.revision) return
         setError(null)
         startTransition(async () => {
-            const result = await removeClientAccount(workspaceSlug, removing.relationshipId, removing.revision!)
+            const result = await removeClientAccount(workspaceSlug, removing.relationshipId, removing.revision!, true)
             if (!result.ok) { setError(result.error); return }
-            setAccounts(result.accounts); setRemoving(null)
+            setAccounts(current => current.map(account => result.accounts?.find(updated => updated.relationshipId === account.relationshipId) ?? account)); setRemoving(null)
         })
     }
 
@@ -115,7 +120,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
                     <ListPrimaryRow><ListTitle className="flex-1">{title}</ListTitle><Status label={status.label} tone={status.tone} /><button type="button" aria-label={`Actions for ${title}`} disabled={pending} onClick={(event) => setMenu({ account, anchor: event.currentTarget })} className="h-11 w-11 shrink-0 text-xl text-neutral-300">⋯</button></ListPrimaryRow>
                     <ListSecondaryRow><span className="min-w-0 truncate text-neutral-400">{account.connected ? `${account.accountType === "agency_subaccount" ? "Agency sub-account" : "Client account"}${account.locationName ? ` · ${account.locationName}` : ""}${account.calendarName ? ` · ${account.calendarName}` : ""}` : "Waiting for a HighLevel account to be linked"}</span><ListTrailing>{account.connected ? <button type="button" disabled={pending} onClick={() => refresh(account.relationshipId)} className="h-8 rounded-md border border-neutral-700 px-2.5 text-xs text-neutral-300 disabled:opacity-40">Refresh</button> : null}</ListTrailing></ListSecondaryRow>
                 </div></ListItem>
-            }) : <div className="p-6"><p className="font-semibold">{selectedRelationship ? "No available connection for this relationship." : "No Appointment Setting clients yet."}</p><p className="mt-2 text-sm text-neutral-400">{selectedRelationship ? "It may no longer be eligible or available to your account." : "Clients appear here as soon as Appointment Setting is added to their relationship."}</p></div>}
+            }) : <div className="p-6"><p className="font-semibold">{selectedRelationship ? "No available connection for this relationship." : "No eligible clients yet."}</p><p className="mt-2 text-sm text-neutral-400">{selectedRelationship ? "It may no longer be eligible or available to your account." : "Clients in onboarding or retention can connect HighLevel without purchasing Appointment Setting."}</p></div>}
         </List>
 
         {open ? <CenteredDialog title={editing ? "Edit client connection" : "Add client connection"} busy={pending} onClose={closeEditor}><form onSubmit={submit}><fieldset disabled={pending} className="space-y-4">

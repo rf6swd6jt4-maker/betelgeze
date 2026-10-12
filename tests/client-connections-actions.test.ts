@@ -108,3 +108,22 @@ test("refresh checks the authenticated actor's exact client before requesting pr
     assert.equal(f.providerCalls(), 0)
     assert.ok(f.calls.every(call => call.p_workspace_id === workspaceId && call.p_user_id === userId && call.p_relationship_id === relationshipId))
 })
+
+test("older open tabs retain complete responses while new tabs opt into exact-client refreshes", async () => {
+    const reads: unknown[][] = []
+    const actions = compiled("app/[workspaceSlug]/client-connections/actions.ts", {
+        "next/cache": { revalidatePath() {} },
+        "@/lib/workspace-access": { requireWorkspacePanel: async () => ({ workspace: { id: workspaceId }, user: { id: userId } }) },
+        "@/lib/client-connections": {
+            saveClientConnection: async () => {}, removeClientConnection: async () => {}, refreshClientHighLevel: async () => {},
+            listClientConnections: async (...args: unknown[]) => { reads.push(args); return [] },
+        },
+    })
+    for (const scoped of [false, true]) {
+        const option = scoped ? [true] : []
+        assert.equal((await actions.saveClientAccount("fixture", payload, ...option)).ok, true)
+        assert.equal((await actions.refreshClientAccount("fixture", relationshipId, ...option)).ok, true)
+        assert.equal((await actions.removeClientAccount("fixture", relationshipId, "revision", ...option)).ok, true)
+        assert.deepEqual(reads.splice(0), Array.from({ length: 3 }, () => [workspaceId, userId, scoped ? relationshipId : undefined]))
+    }
+})

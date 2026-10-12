@@ -32,7 +32,9 @@ export async function loadRelationshipContext({ relationship, access, metrics = 
         const [serviceResult, people, setupAccess] = await Promise.all([
             readRelationshipServices(access.workspaceId, relationship.id, access.userId),
             loadWorkspaceMemberProfiles(access.workspaceId),
-            supabaseAdmin.rpc("service_assignee_can_setup_client", { p_workspace: access.workspaceId, p_user: access.userId, p_relationship: relationship.id }),
+            (access.role === "owner" || access.role === "admin") && ["onboarding", "retention"].includes(relationship.lifecycle_phase)
+                ? Promise.resolve({ data: true, error: null })
+                : supabaseAdmin.rpc("service_assignee_can_setup_client", { p_workspace: access.workspaceId, p_user: access.userId, p_relationship: relationship.id }),
         ])
         const services = serviceResult.items
         context.servicesHasMore = serviceResult.hasMore
@@ -47,7 +49,9 @@ export async function loadRelationshipContext({ relationship, access, metrics = 
             assignee: person(service.assignee_user_id),
         }))
         if (setupAccess.error) throw new Error("Could not verify client setup access")
-        context.allowedDestinations = relationshipContextShortcuts(access.capabilities, relationship.status !== "archived" && setupAccess.data === true)
+        const ownerClientAvailable = (access.role === "owner" || access.role === "admin") && services.some(service =>
+            !service.legacy && service.disposition === "active" && service.stage !== null && ["onboarding", "setup", "maintenance"].includes(service.stage))
+        context.allowedDestinations = relationshipContextShortcuts(access.capabilities, relationship.status !== "archived" && (setupAccess.data === true || ownerClientAvailable))
     } catch {
         context.teamUnavailable = true
     }

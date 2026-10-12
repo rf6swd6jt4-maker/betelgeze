@@ -25,6 +25,7 @@ export type ClientConnectionAccount = {
 }
 
 const failureMessages: Record<string, string> = {
+    list_limit: "Too many clients to load in one list. Open a specific client connection.",
     access: "You do not have access to this client connection.", busy: "This client connection is already being updated.",
     cooldown: "Wait a few seconds before trying again.", changed: "The connection changed while it was being verified. Reload and try again.",
     credentials: "HighLevel denied access. Check the token's read permissions and Location ID.", permissions: "The HighLevel token does not have the required read permissions.",
@@ -40,8 +41,8 @@ async function call(workspaceId: string, userId: string, action: string, params:
     return data
 }
 
-export async function listClientConnections(workspaceId: string, userId: string): Promise<ClientConnectionAccount[]> {
-    const data = await managementCall(workspaceId, userId, "list")
+export async function listClientConnections(workspaceId: string, userId: string, relationshipId?: string): Promise<ClientConnectionAccount[]> {
+    const data = await managementCall(workspaceId, userId, "list", relationshipId ? { p_relationship_id: relationshipId } : {})
     if (!Array.isArray(data)) throw new Error("Client connections could not be loaded.")
     return data.flatMap((value): ClientConnectionAccount[] => {
         if (!value || typeof value !== "object") return []

@@ -13,6 +13,7 @@ export type ServiceSaleLine = {
     recurringCents: number
 }
 export type ServiceSaleInput = {
+    pricingVersion?: 1
     uiVersion?: 2
     offered?: Array<{ id: string; version: number }>
     delivery?: Array<{ provider: MessagingMethod; address: string }>
@@ -64,6 +65,11 @@ export type ServicePosPage = {
         upfront_total_amount: number
         recurring_total_amount: number
         onboarding_session_id: string | null
+        billing_interval?: string | null
+        billing_interval_count?: number | null
+        pricing_revision?: number
+        pricing_correction_id?: string | null
+        can_correct_prices?: boolean
         consent_confirmed_at: string | null
         services: Array<{ id: string; name: string }>
     }>
@@ -108,16 +114,16 @@ export function serviceSaleTotals(rows: ServicePosRow[], lines: ServiceSaleLine[
     }
 }
 
-/** Display and new-sale default for catalogue schedules expressed per week/year. */
+/** Monthly equivalents are for relationship metrics only, never a checkout price. */
 export function monthlyServicePrice(row: Pick<ServicePosRow, "recurring_cents" | "billing_interval" | "billing_interval_count">) {
     return Math.round(row.recurring_cents * (row.billing_interval === "year" ? 1 / 12 : row.billing_interval === "week" ? 52 / 12 : 1) / Math.max(1, row.billing_interval_count))
 }
 
-/** Incomplete drafts may omit people/prices, but never carry corrupt or non-monthly values into this UI. */
+/** Incomplete drafts may omit people/prices, but never carry corrupt values or old silently normalized prices into this UI. */
 export function validServiceSaleDraft(value: unknown, rows: ServicePosRow[], version: string): value is ServiceSaleInput {
     if (!value || typeof value !== "object") return false
     const draft = value as ServiceSaleInput
-    if (draft.uiVersion !== 2 || draft.relationshipVersion !== version || draft.billingInterval !== "month" || draft.billingIntervalCount !== 1 || typeof draft.managerId !== "string" || !Array.isArray(draft.lines) || draft.lines.length > 30) return false
+    if (draft.uiVersion !== 2 || draft.pricingVersion !== 1 || draft.relationshipVersion !== version || !["week", "month", "year"].includes(draft.billingInterval) || !Number.isSafeInteger(draft.billingIntervalCount) || draft.billingIntervalCount < 1 || draft.billingIntervalCount > ({week:156,month:36,year:3}[draft.billingInterval] ?? 0) || typeof draft.managerId !== "string" || !Array.isArray(draft.lines) || draft.lines.length > 30) return false
     if (new Set(draft.lines.map(line => line?.id)).size !== draft.lines.length) return false
     return draft.lines.every(line => line && typeof line.assigneeId === "string" && rows.some(row => row.id === line.id && row.version === line.version) && [line.upfrontCents,line.recurringCents].every(price => Number.isSafeInteger(price) && price >= 0 && price <= 99999999))
 }

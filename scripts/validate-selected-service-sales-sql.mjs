@@ -1,4 +1,5 @@
 // Actual migration SQL in isolated PostgreSQL/WASM; no credentials or provider calls.
+import { validatePricingCorrections } from './service-pricing-corrections-fixture.mjs'
 import assert from 'node:assert/strict'
 import { validateSessionReadiness } from './onboarding-session-fixture.mjs'
 import { validateRelationshipCards } from './relationship-card-fixture.mjs'
@@ -272,4 +273,5 @@ try {
     pass('repeat purchases of one catalogue service retain distinct sale lines and one shared module')
     await validateRelationshipCards({db,q,one,w,owner,seller,staff,relationship,service,revision,add,uuid,pass})
     await validateSessionReadiness({db,q,one,w,owner,seller,staff,unrelated,relationship,service,revision,add,uuid,pass})
+    await validatePricingCorrections({db,q,one,w,owner,seller,staff,relationship,service,revision,add,uuid,pass})
 } catch(error) {console.error({message:error.message,code:error.code,where:error.where,position:error.position});process.exitCode=1} finally {await db.close()}

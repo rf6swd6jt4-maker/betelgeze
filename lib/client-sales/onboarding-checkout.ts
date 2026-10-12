@@ -1,3 +1,4 @@
+import type { SalePricingOverride } from "./price-correction-types"
 import { createStripeMixedCheckout, retrieveStripeCheckoutSession, getCheckoutFields, type StripeCheckoutLineItemInput, type StripeRecurringInterval } from "@/lib/stripe/api"
 import { handleCompletedStripeCheckout } from "@/lib/client-sales/automation"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -18,6 +19,9 @@ type PaymentContext = {
     }
     sale: {
         id: string
+        pricing_revision?: number
+        pricing_override?: SalePricingOverride | null
+        pricing_correction_id?: string | null
         service_scope?: "relationship" | "selected_services"
         status: string
         billing_interval: StripeRecurringInterval | null
@@ -45,7 +49,7 @@ export async function getOnboardingPaymentContext(token: string): Promise<Paymen
         .eq("id", session.workspace_id).maybeSingle()
     if (workspaceError || !workspace) return null
     const { data: sale, error: saleError } = await supabaseAdmin.from("client_sales")
-        .select("id, status, billing_interval, billing_interval_count, upfront_total_amount, recurring_total_amount, client_name, client_email, client_phone, currency, project_timeframe_days, stripe_checkout_session_id, stripe_checkout_url, stripe_checkout_expires_at, service_scope, consent_confirmed_at")
+        .select("id, pricing_revision, pricing_override, pricing_correction_id, status, billing_interval, billing_interval_count, upfront_total_amount, recurring_total_amount, client_name, client_email, client_phone, currency, project_timeframe_days, stripe_checkout_session_id, stripe_checkout_url, stripe_checkout_expires_at, service_scope, consent_confirmed_at")
         .eq("workspace_id", session.workspace_id).eq("id", session.source_sale_id).maybeSingle()
     if (saleError || !sale) return null
     if (sale.service_scope === "selected_services" && (!sale.consent_confirmed_at || !["onboarding_payment_pending","onboarding_link_sent","onboarding_link_failed","payment_failed","paid","test_paid"].includes(sale.status))) return null
@@ -54,7 +58,7 @@ export async function getOnboardingPaymentContext(token: string): Promise<Paymen
         workspaceId: session.workspace_id,
         relationshipId: session.relationship_id,
         workspace,
-        sale: sale as PaymentContext["sale"],
+        sale: { ...sale, ...(sale.pricing_override ? { upfront_total_amount: sale.pricing_override.upfrontTotal, recurring_total_amount: sale.pricing_override.recurringTotal, billing_interval: sale.pricing_override.billingInterval, billing_interval_count: sale.pricing_override.billingIntervalCount } : {}) } as PaymentContext["sale"],
     }
 }
 
@@ -89,15 +93,19 @@ export async function getFrozenOnboardingPaymentDefinition(context: PaymentConte
 
 async function frozenCheckoutLineItems(context: PaymentContext, expiresAt: number, publicOrigin: string): Promise<StripeCheckoutLineItemInput[]> {
     const { data: items, error } = await supabaseAdmin.from("client_sale_items")
-        .select("service_code, service_name, service_revision_id, description, upfront_amount_cents, recurring_amount_cents")
+        .select("id, service_code, service_name, service_revision_id, description, upfront_amount_cents, recurring_amount_cents")
         .eq("workspace_id", context.workspaceId).eq("client_sale_id", context.sale.id).order("sort_order")
     if (error || !items?.length) throw new Error(error?.message ?? "This sale has no frozen services")
+    const overrides = context.sale.pricing_override?.linePrices
+    if (overrides && (Object.keys(overrides).length !== items.length || items.some(item => !overrides[item.id]))) throw new Error("The corrected service prices need review before payment.")
+    const effectiveItems = items.map(item => ({ ...item, upfront_amount_cents: overrides?.[item.id]?.upfrontCents ?? item.upfront_amount_cents, recurring_amount_cents: overrides?.[item.id]?.recurringCents ?? item.recurring_amount_cents }))
+    if (effectiveItems.reduce((sum,item) => sum+item.upfront_amount_cents,0) !== context.sale.upfront_total_amount || effectiveItems.reduce((sum,item) => sum+item.recurring_amount_cents,0) !== context.sale.recurring_total_amount) throw new Error("The recorded total differs from the service prices. Please ask the team to correct this sale before payment.")
     const revisionIds = items.map((item) => item.service_revision_id).filter((id): id is string => Boolean(id))
     const { data: revisions } = revisionIds.length
         ? await supabaseAdmin.from("onboarding_service_revisions").select("id, definition").eq("workspace_id", context.workspaceId).in("id", revisionIds)
         : { data: [] }
     const definitionByRevision = new Map((revisions ?? []).map((revision) => [revision.id, revision.definition && typeof revision.definition === "object" ? revision.definition as Record<string, unknown> : {}]))
-    const serviceItems = await Promise.all(items.map(async (item) => {
+    const serviceItems = await Promise.all(effectiveItems.map(async (item) => {
         const definition = definitionByRevision.get(item.service_revision_id ?? "") ?? {}
         const upfrontName = item.service_name
         const upfrontDescription = String(item.description ?? upfrontName)
@@ -129,11 +137,15 @@ async function frozenCheckoutLineItems(context: PaymentContext, expiresAt: numbe
     return serviceItems.flat()
 }
 
-export async function createOrReuseOnboardingCheckout(input: { token: string; origin: string }) {
+export const CHECKOUT_PRICES_CHANGED = "The prices have changed. Review the updated amount below before continuing to payment."
+
+export async function createOrReuseOnboardingCheckout(input: { token: string; origin: string; pricingRevision?: number }) {
     const context = await getOnboardingPaymentContext(input.token)
     if (!context) throw new Error("Payment is not available for this onboarding link")
     const returnUrl = onboardingPaymentReturnUrl(context, input.token)
     if (!onboardingPaymentPending(context)) return { paid: true as const, checkoutUrl: null, returnUrl }
+    if (context.sale.pricing_correction_id) throw new Error("Prices are being corrected. Please reopen payment shortly to review the updated total.")
+    if ((input.pricingRevision ?? 0) !== (context.sale.pricing_revision ?? 0)) throw new Error(CHECKOUT_PRICES_CHANGED)
     const existingExpiry = Date.parse(context.sale.stripe_checkout_expires_at ?? "")
     if (context.sale.stripe_checkout_url && Number.isFinite(existingExpiry) && existingExpiry > Date.now() + 60_000) {
         return { paid: false as const, checkoutUrl: context.sale.stripe_checkout_url, returnUrl }
@@ -163,6 +175,7 @@ export async function createOrReuseOnboardingCheckout(input: { token: string; or
     const lineItems = await frozenCheckoutLineItems(context, expiresAt, input.origin)
     const generation = context.sale.stripe_checkout_expires_at ?? "initial"
     const shared = {
+        pricingRevision: context.sale.pricing_revision ?? 0,
         saleId: context.sale.id,
         relationshipId: context.relationshipId,
         workspaceId: context.workspaceId,

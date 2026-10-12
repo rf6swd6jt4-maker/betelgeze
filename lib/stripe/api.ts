@@ -169,6 +169,10 @@ export function getCheckoutFields(checkout: unknown) {
     }
 }
 
+export async function expireStripeCheckoutSession({ checkoutSessionId, secretKey, idempotencyKey }: { checkoutSessionId: string; secretKey?: string; idempotencyKey: string }) {
+    return stripeRequest(`/checkout/sessions/${encodeURIComponent(checkoutSessionId)}/expire`, { idempotencyKey }, secretKey)
+}
+
 export async function createStripeMixedCheckout({
     saleId,
     relationshipId,
@@ -225,7 +229,7 @@ export async function createStripeMixedCheckout({
         "phone_number_collection[enabled]": true,
         submit_type: recurring ? "subscribe" : "pay",
         "custom_text[submit][message]": recurring
-            ? "This payment includes the upfront fees and first recurring period shown above."
+            ? "Pay the first recurring period plus any additional one-time fees today. Only the recurring items repeat afterward."
             : "This is the full one-time amount shown above.",
         "metadata[client_sale_id]": saleId,
         "metadata[relationship_id]": relationshipId,
@@ -257,7 +261,8 @@ export async function createStripeMixedCheckout({
         params[`${base}[quantity]`] = 1
         params[`${base}[price_data][currency]`] = currency
         params[`${base}[price_data][unit_amount]`] = item.amount
-        params[`${base}[price_data][product_data][name]`] = item.name || item.description
+        const itemName = item.name || item.description
+        params[`${base}[price_data][product_data][name]`] = recurring && item.billingComponent === "upfront" ? `${itemName} (additional one-time fee)` : itemName
         params[`${base}[price_data][product_data][description]`] = item.description
         params[`${base}[price_data][product_data][metadata][service_key]`] = item.serviceKey
         params[`${base}[price_data][product_data][metadata][billing_component]`] =

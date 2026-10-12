@@ -1,3 +1,4 @@
+import { ServicePriceSummary } from "@/components/services/ServicePriceSummary"
 import { OnboardingSessionFlow } from "@/components/onboarding/OnboardingSessionFlow"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getCanonicalSessionByToken, getCanonicalStepDraft, getFormResponseAsset } from "@/lib/onboarding/canonical"
@@ -81,7 +82,8 @@ export default async function CanonicalSessionPage({ params, searchParams }: Pag
         const header = stepHeader(paymentStep)
         const resolvedBlocks = await Promise.all(paymentStep.blocks.map(async (block) => {
             if (block.kind === "video" && block.upload?.path) return { ...block, upload: { ...block.upload, resolvedUrl: await createPrivateUploadSignedUrl(block.upload.path) } }
-            if (block.id === ONBOARDING_PAYMENT_BUTTON_ID && block.kind === "button") return { ...block, url: `/api/onboarding/session/${token}/checkout`, required: true, openInSameTab: true }
+            if (block.id === ONBOARDING_PAYMENT_BUTTON_ID && block.kind === "button" && paymentContext.sale.pricing_correction_id) return null
+            if (block.id === ONBOARDING_PAYMENT_BUTTON_ID && block.kind === "button") return { ...block, url: `/api/onboarding/session/${token}/checkout?pricing_revision=${paymentContext.sale.pricing_revision ?? 0}`, required: true, openInSameTab: true }
             return block
         }))
         const roadmapSteps = [
@@ -90,14 +92,14 @@ export default async function CanonicalSessionPage({ params, searchParams }: Pag
         ]
         return <OnboardingThemeProvider theme={theme}><OnboardingLayout clientSession roadmapSteps={roadmapSteps} client={{ name: relationship.primary_person_name, email: relationship.primary_email, phone: relationship.primary_phone, isTest: session.is_test }} workspaceName={publicBranding.displayName} logoSrc={logoSrc} help={help} privacyPolicyUrl={publicBranding.privacyPolicyUrl} termsOfServiceUrl={publicBranding.termsOfServiceUrl}>
             <OnboardingSessionRenderer
-                step={{ key: "payment", kind: "video", title: header.title, description: header.description, moduleTitle: "Payment", estimatedTime: stepEstimate(paymentStep)?.estimatedTime ?? header.estimatedTime, why: "", blocks: resolvedBlocks, navigation: paymentStep.navigation }}
+                step={{ key: "payment", kind: "video", title: header.title, description: header.description, moduleTitle: "Payment", estimatedTime: stepEstimate(paymentStep)?.estimatedTime ?? header.estimatedTime, why: "", blocks: resolvedBlocks.filter((block): block is NonNullable<typeof block> => block !== null), navigation: paymentStep.navigation }}
                 moduleTitles={moduleTitles}
                 token={token}
                 locked={false}
                 preview={false}
                 allowEditRequest={false}
                 satisfiedBlockIds={[]}
-                notice={paymentResult === "pending" ? <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Stripe is still confirming the payment. This page will unlock as soon as payment succeeds.</div> : paymentResult === "unavailable" ? <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{paymentReason || "Payment could not be opened. Please try again or contact the team for help."}</div> : null}
+                notice={<>{paymentContext.sale.pricing_correction_id ? <p role="status" className="my-5 text-base">Your prices are being corrected. Payment is temporarily unavailable. Please reopen this link shortly to review the updated total.</p> : <ServicePriceSummary surface="light" pricing={{ upfrontCents: paymentContext.sale.upfront_total_amount, recurringCents: paymentContext.sale.recurring_total_amount, currency: paymentContext.sale.currency ?? "USD", billingInterval: paymentContext.sale.billing_interval, billingIntervalCount: paymentContext.sale.billing_interval_count }} />}{paymentResult === "pending" ? <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Stripe is still confirming the payment. This page will unlock as soon as payment succeeds.</div> : paymentResult === "unavailable" ? <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{paymentReason || "Payment could not be opened. Please try again or contact the team for help."}</div> : null}</>}
             />
         </OnboardingLayout></OnboardingThemeProvider>
     }

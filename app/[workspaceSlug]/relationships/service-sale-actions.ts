@@ -41,7 +41,7 @@ async function deliver(workspaceId: string, relationshipId: string, saleId: stri
 export async function sellRelationshipServices(
     slug: string,
     relationshipId: string,
-    request: { expectedUserId: string; requestId: string; input: ServiceSaleInput; quoteHash: string },
+    request: { expectedUserId: string; requestId: string; input: ServiceSaleInput; quoteHash: string; pricingAcceptedHash?: string },
 ) {
     const { workspace, user, access } = await requireWorkspacePanel(slug, "relationships")
     await requireRelationshipAccess(access, relationshipId)
@@ -91,6 +91,7 @@ export async function sellRelationshipServices(
             destination = saved.data.client_phone
             sms = saved.data.sms_recipient_e164
         } else if (request.input.uiVersion === 2) {
+            if (request.pricingAcceptedHash !== request.quoteHash) throw new Error("Review and confirm the amount due at checkout and the recurring payments before selling.")
             if (!request.input.delivery?.length) throw new Error("Choose a contact method.")
             const configs = await Promise.all([getWorkspaceProviderConfig(workspace.id, "stripe"), ...request.input.delivery.map(choice => getWorkspaceProviderConfig(workspace.id, choice.provider))])
             const whatsapp = request.input.delivery.find(choice => choice.provider === "meta_whatsapp")

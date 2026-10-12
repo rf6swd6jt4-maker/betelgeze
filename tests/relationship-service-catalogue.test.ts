@@ -274,9 +274,6 @@ test("relationship selling uses the visible details workspace and four-stage rev
         "Primary messaging",
         "Outbound delivery",
         "onboarding link sent via WhatsApp",
-        "Upfront fees",
-        "Recurring total",
-        "Due at Checkout",
     ]) assert.match(workspace, new RegExp(label))
     assert.match(workspace, /Sell and send onboarding link/)
     assert.match(workspace, /<BuilderPreview/)
@@ -346,7 +343,7 @@ test("mixed Checkout combines upfront fees with recurring service charges", () =
     assert.match(services, /window\.parent\.document\.body/)
     assert.match(services, /One-time/)
     assert.match(services, /Retainer/)
-    assert.match(services, /Upfront name/)
+    assert.match(services, /One-time fee name/)
     assert.match(services, /Recurring name/)
     assert.match(services, /defaultBillingInterval/)
     assert.doesNotMatch(services, /Checkout name|Checkout description/)

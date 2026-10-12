@@ -1,5 +1,7 @@
 "use client"
 
+import { ServicePriceSummary } from "@/components/services/ServicePriceSummary"
+import { servicePricingText } from "@/lib/service-pricing"
 import { DeliveryUserPicker } from "@/components/settings/DeliveryUserPicker"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
@@ -51,20 +53,6 @@ function blankService(template?: ServiceTemplateDefinition): OnboardingServiceDe
         archiveBlockers: [],
         lastEditedAt: null,
     }
-}
-
-function priceLabel(cents: number, currency: string) {
-    try {
-        return new Intl.NumberFormat("en-IE", { style: "currency", currency }).format(cents / 100)
-    } catch {
-        return `${currency} ${(cents / 100).toFixed(2)}`
-    }
-}
-
-function intervalLabel(service: OnboardingServiceDefinition) {
-    const count = service.defaultBillingIntervalCount
-    const unit = service.defaultBillingInterval
-    return count === 1 ? `per ${unit}` : `every ${count} ${unit}s`
 }
 
 function intervalCountMaximum(interval: OnboardingServiceDefinition["defaultBillingInterval"]) {
@@ -310,7 +298,7 @@ function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schem
                             <button type="button" aria-pressed={draft.serviceType === "one_time"} onClick={() => changeType("one_time")} className={`h-9 rounded-md text-sm ${draft.serviceType === "one_time" ? "bg-white font-medium text-black" : "text-neutral-400 hover:text-white"}`}>One-time</button>
                             <button type="button" aria-pressed={draft.serviceType === "retainer"} onClick={() => changeType("retainer")} className={`h-9 rounded-md text-sm ${draft.serviceType === "retainer" ? "bg-white font-medium text-black" : "text-neutral-400 hover:text-white"}`}>Retainer</button>
                         </div>
-                        <p className="mt-2 text-xs leading-5 text-neutral-600">{draft.serviceType === "one_time" ? "One Checkout line item, charged once." : "Separate upfront and subscription line items at Checkout."}</p>
+                        <p className="mt-2 text-xs leading-5 text-neutral-600">{draft.serviceType === "one_time" ? "One Checkout line item, charged once." : "The first subscription payment is charged at checkout, plus any additional one-time fee."}</p>
                     </div>
 
                     <div>
@@ -323,18 +311,18 @@ function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schem
                 </div>
 
                 <div className="mt-5 rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 sm:p-4">
-                    <p className="text-sm font-medium text-neutral-200">{draft.serviceType === "retainer" ? "Upfront charge" : "Service details"}</p>
+                    <p className="text-sm font-medium text-neutral-200">{draft.serviceType === "retainer" ? "Additional one-time fee" : "Service details"}</p>
                     <p className="mt-1 text-xs leading-5 text-neutral-600">The name and description below are used directly on Stripe Checkout.</p>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
-                        <label className="text-xs text-neutral-500">{draft.serviceType === "retainer" ? "Upfront name" : "Name"}<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} required maxLength={120} className={inputClass} /></label>
-                        <label className="text-xs text-neutral-500">{draft.serviceType === "retainer" ? "Upfront price" : "Price"}<div className="mt-1.5 flex"><span className="inline-flex h-10 items-center rounded-l-lg border border-r-0 border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-500">{draft.currency}</span><input value={upfrontPrice} onChange={(event) => setUpfrontPrice(event.target.value)} onBlur={() => setUpfrontPrice((parsedUpfrontPriceCents / 100).toFixed(2))} type="number" min="0" step="0.01" className="h-10 min-w-0 flex-1 rounded-r-lg border border-neutral-700 bg-black px-2 text-sm text-white outline-none focus:border-neutral-500" /></div></label>
-                        <label className="text-xs text-neutral-500 sm:col-span-2">{draft.serviceType === "retainer" ? "Upfront description" : "Description"} <span className="text-neutral-700">(optional)</span><textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} rows={2} maxLength={4000} className={textareaClass} /></label>
+                        <label className="text-xs text-neutral-500">{draft.serviceType === "retainer" ? "One-time fee name" : "Name"}<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} required maxLength={120} className={inputClass} /></label>
+                        <label className="text-xs text-neutral-500">{draft.serviceType === "retainer" ? "Additional one-time fee" : "Price"}<div className="mt-1.5 flex"><span className="inline-flex h-10 items-center rounded-l-lg border border-r-0 border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-500">{draft.currency}</span><input value={upfrontPrice} onChange={(event) => setUpfrontPrice(event.target.value)} onBlur={() => setUpfrontPrice((parsedUpfrontPriceCents / 100).toFixed(2))} type="number" min="0" step="0.01" className="h-10 min-w-0 flex-1 rounded-r-lg border border-neutral-700 bg-black px-2 text-sm text-white outline-none focus:border-neutral-500" /></div></label>
+                        <label className="text-xs text-neutral-500 sm:col-span-2">{draft.serviceType === "retainer" ? "One-time fee description" : "Description"} <span className="text-neutral-700">(optional)</span><textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} rows={2} maxLength={4000} className={textareaClass} /></label>
                     </div>
                 </div>
 
                 {draft.serviceType === "retainer" ? <div className="mt-3 rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 sm:p-4">
                     <p className="text-sm font-medium text-neutral-200">Recurring charge</p>
-                    <p className="mt-1 text-xs leading-5 text-neutral-600">Used for the subscription line item and as the default schedule in the POS.</p>
+                    <p className="mt-1 text-xs leading-5 text-neutral-600">First charged at checkout, then repeated on the schedule below. The POS preserves this schedule.</p>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
                         <label className="text-xs text-neutral-500">Recurring name<input value={draft.recurringName} onChange={(event) => setDraft({ ...draft, recurringName: event.target.value })} required maxLength={120} className={inputClass} /></label>
                         <label className="text-xs text-neutral-500">Recurring price<div className="mt-1.5 flex"><span className="inline-flex h-10 items-center rounded-l-lg border border-r-0 border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-500">{draft.currency}</span><input value={recurringPrice} onChange={(event) => setRecurringPrice(event.target.value)} onBlur={() => setRecurringPrice((parsedRecurringPriceCents / 100).toFixed(2))} type="number" min="0.01" step="0.01" className="h-10 min-w-0 flex-1 rounded-r-lg border border-neutral-700 bg-black px-2 text-sm text-white outline-none focus:border-neutral-500" /></div></label>
@@ -343,6 +331,7 @@ function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schem
                     </div>
                 </div> : null}
 
+                <ServicePriceSummary estimate pricing={{ upfrontCents: parsedUpfrontPriceCents, recurringCents: parsedRecurringPriceCents, currency: draft.currency, billingInterval: draft.defaultBillingInterval, billingIntervalCount: draft.defaultBillingIntervalCount }} />
                 <div className="mt-5 grid gap-3 sm:grid-cols-2">
                     <label className="text-xs text-neutral-500">Currency<input value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value.toUpperCase().slice(0, 3) })} maxLength={3} className={`${inputClass} uppercase`} /></label>
                     <fieldset className="sm:col-span-2"><legend className="text-sm font-medium text-neutral-300">Eligible fulfilment people</legend><p className="mt-1 text-xs text-neutral-500">Choose who can deliver this service. Select the client’s person during POS.</p><DeliveryUserPicker people={assignees} selected={deliveryUsers} onChange={setDeliveryUsers} disabled={pending} /></fieldset>
@@ -669,9 +658,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
             {orderedServices.map((service, index) => {
                 const status = serviceStatus(service.state)
                 const eligibleNames = (eligibleUsers[service.id] ?? []).map((id) => assigneeById.get(id)?.name).filter(Boolean)
-                const pricing = service.serviceType === "retainer"
-                    ? `${priceLabel(service.defaultUpfrontPriceCents, service.currency)} upfront · ${priceLabel(service.defaultRecurringPriceCents, service.currency)} ${intervalLabel(service)}`
-                    : `${priceLabel(service.defaultUpfrontPriceCents, service.currency)} one-time`
+                const pricing = servicePricingText({ upfrontCents: service.defaultUpfrontPriceCents, recurringCents: service.defaultRecurringPriceCents, currency: service.currency, billingInterval: service.defaultBillingInterval, billingIntervalCount: service.defaultBillingIntervalCount })
                 return <article ref={(node) => { if (node) rowRefs.current.set(service.id, node); else rowRefs.current.delete(service.id) }} role="listitem" data-service-id={service.id} key={service.id} className={`grid min-h-14 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 px-2 py-2 transition-[opacity,background-color] duration-150 sm:gap-3 sm:px-4 ${service.state === "active" ? "bg-emerald-300/[0.035]" : "bg-neutral-950 hover:bg-black"} ${draggingId === service.id ? "opacity-0" : ""}`}>
                     {dragHandle(service, index)}
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-800 bg-black text-[7px] uppercase tracking-wide text-neutral-600 sm:h-10 sm:w-10">{service.thumbnailUrl ? <Image src={service.thumbnailUrl} alt="" width={40} height={40} unoptimized className="h-full w-full object-cover" /> : "Service"}</div>

@@ -76,15 +76,17 @@ test("native service POS defers its browser-only dialog until it is opened", () 
  assert.match(workspace,/\{requestedPos \? <PosDialog/)
 })
 
-// The stepped POS always edits monthly prices, including services priced by another catalogue cadence.
-test("monthly POS defaults normalize cadence and reject stale or malformed drafts", async () => {
+// Old normalized drafts must never be mistaken for an agreed catalogue schedule.
+test("POS preserves explicit cadence and rejects drafts from the old normalized UI", async () => {
  const { monthlyServicePrice, validServiceSaleDraft } = await import("../lib/service-pos.ts")
  assert.equal(monthlyServicePrice({recurring_cents:120000,billing_interval:"year",billing_interval_count:1}),10000)
  assert.equal(monthlyServicePrice({recurring_cents:30000,billing_interval:"month",billing_interval_count:3}),10000)
  const row={id:"00000000-0000-4000-a000-000000000001",version:2} as import("../lib/service-pos.ts").ServicePosRow
- const draft={uiVersion:2,relationshipVersion:"2026-09-13",billingInterval:"month",billingIntervalCount:1,managerId:"",lines:[{id:row.id,version:2,assigneeId:"",upfrontCents:0,recurringCents:10000}]}
+ const draft={uiVersion:2,pricingVersion:1,relationshipVersion:"2026-09-13",billingInterval:"month",billingIntervalCount:1,managerId:"",lines:[{id:row.id,version:2,assigneeId:"",upfrontCents:0,recurringCents:10000}]}
  assert(validServiceSaleDraft(draft,[row],"2026-09-13"))
- assert(!validServiceSaleDraft({...draft,billingInterval:"year"},[row],"2026-09-13"))
+ assert(validServiceSaleDraft({...draft,billingInterval:"year"},[row],"2026-09-13"))
+ assert(!validServiceSaleDraft({...draft,pricingVersion:undefined},[row],"2026-09-13"))
+ assert(!validServiceSaleDraft({...draft,billingInterval:"year",billingIntervalCount:4},[row],"2026-09-13"))
  assert(!validServiceSaleDraft(draft,[{...row,version:3}],"2026-09-13"))
  assert(!validServiceSaleDraft({...draft,lines:[null]},[row],"2026-09-13"))
 })

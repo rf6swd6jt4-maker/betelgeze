@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransiti
 import dynamic from "next/dynamic"
 import Link from "@/components/workspace/WorkspaceLink"
 import { useRouter } from "@/components/workspace/WorkspaceNavigation"
+import { ServicePriceSummary } from "@/components/services/ServicePriceSummary"
+import { billingCadence, servicePricingText } from "@/lib/service-pricing"
 import { DetailField, DetailFields } from "@/components/detail"
 import { AssignmentSelector, Status, AttachmentCard, AttachmentCards, RoundPill } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
@@ -10,6 +12,7 @@ import {
     sellRelationshipServices,
     retryServiceSaleConfirmation,
 } from "@/app/[workspaceSlug]/relationships/service-sale-actions"
+import { MoneyField } from "./ServicePriceInput"
 import { ServiceThumbnail } from "./ServiceThumbnail"
 import { ContactThumbnail } from "./RelationshipContactCards"
 import { contactMethodName } from "@/lib/relationship-contacts"
@@ -19,7 +22,6 @@ import {
     serviceSaleTotals,
     validServiceSaleInput,
     validServiceSaleDraft,
-    monthlyServicePrice,
     type ServicePosPage,
     type ServicePosRow,
     type ServiceSaleInput,
@@ -27,6 +29,7 @@ import {
     type ServiceSaleQuote,
 } from "@/lib/service-pos"
 import type { BuilderPreview as PreviewComponent } from "@/components/onboarding-builder/BuilderPreview"
+const PriceCorrection = dynamic(() => import("./ServicePriceCorrection").then(m => m.ServicePriceCorrection), { ssr: false })
 const Preview = dynamic(() => import("@/components/onboarding-builder/BuilderPreview").then((m) => m.BuilderPreview))
 const PreviewOverlay = dynamic(() =>
     import("@/components/onboarding-builder/OnboardingPreviewOverlay").then((m) => m.OnboardingPreviewOverlay),
@@ -35,8 +38,7 @@ const button =
     "inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
 const secondary =
     "inline-flex min-h-11 items-center justify-center rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 disabled:opacity-40"
-const inputClass =
-    "min-h-11 w-full min-w-0 rounded-lg border border-neutral-700 bg-black px-3 py-2 text-base text-white sm:text-sm"
+
 const money = (cents: number, currency: string) =>
     new Intl.NumberFormat(undefined, { style: "currency", currency }).format(cents / 100)
 const recoveryEvent = "be:service-pos:recovery-changed"
@@ -48,7 +50,8 @@ function subscribeToRecovery(onChange: () => void) {
         window.removeEventListener(recoveryEvent, onChange)
     }
 }
-type PendingSale = { requestId: string; input: ServiceSaleInput; quoteHash: string }
+type PendingSale = {
+    pricingAcceptedHash?: string; requestId: string; input: ServiceSaleInput; quoteHash: string }
 type Props = {
     initialSelectionId?: string
     onBusyChange?: (busy: boolean) => void
@@ -126,44 +129,6 @@ function AssigneeField({
         </div>
     )
 }
-function MoneyField({
-    label,
-    value,
-    onChange,
-    disabled,
-}: {
-    label: string
-    value: number
-    onChange: (cents: number) => void
-    disabled: boolean
-}) {
-    const [editing, setEditing] = useState<{ text: string; cents: number } | null>(null)
-    return (
-        <label className="block min-w-0 text-xs text-neutral-400">
-            {label.split(" for ")[0]}
-            <input
-                aria-label={label}
-                className={`${inputClass} mt-1`}
-                type="text"
-                inputMode="decimal"
-                maxLength={14}
-                value={editing?.cents === value ? editing.text : (value / 100).toFixed(2)}
-                placeholder="0.00"
-                disabled={disabled}
-                onChange={(event) => {
-                    const text = event.target.value
-                    if (!/^\d*(?:\.\d{0,2})?$/.test(text)) return
-                    const cents = Math.round(Number(text === "." ? "0" : text) * 100)
-                    if (!Number.isSafeInteger(cents) || cents > 99999999) return
-                    setEditing({ text, cents })
-                    onChange(cents)
-                }}
-                onBlur={() => setEditing(null)}
-                onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.blur() } }}
-            />
-        </label>
-    )
-}
 export function RelationshipServicePos(props: Props) {
     const { workspaceSlug, relationshipId, userId, relationship, onBusyChange } = props
     const router = useRouter()
@@ -171,27 +136,45 @@ export function RelationshipServicePos(props: Props) {
     const servicesEndpoint = endpoint.replace(/\/pos$/, "/services")
     const storageKey = `be:service-pos:pending:${userId}:${workspaceSlug}:${relationshipId}`
     const [page, setPage] = useState(props.initial)
+    const [correctingSale, setCorrectingSale] = useState<string | null>(null)
+    const recoverableCorrections = useMemo(() => {
+        if (correctingSale) return new Set([correctingSale])
+        try { return new Set(page.sales.filter(sale => sessionStorage.getItem(`be:price-correction:${userId}:${workspaceSlug}:${relationshipId}:${sale.id}`)).map(sale => sale.id)) }
+        catch { return new Set<string>() }
+    }, [page.sales, correctingSale, userId, workspaceSlug, relationshipId])
     const [step, setStep] = useState(1)
-    const draftKey = `be:service-pos:draft:${userId}:${workspaceSlug}:${relationshipId}`
-    const [draft, setDraft] = useState<ServiceSaleInput>(() => {
+    const previousDraftKey = `be:service-pos:draft:${userId}:${workspaceSlug}:${relationshipId}`
+    const draftKey = `${previousDraftKey}:pricing-v1`
+    const [restoredDraft] = useState(() => {
+        let notice = ""
         const initial: ServiceSaleInput = {
         relationshipVersion: relationship.updatedAt,
         managerId: relationship.managerId ?? "",
         billingInterval: "month",
         billingIntervalCount: 1,
         uiVersion: 2,
+        pricingVersion: 1,
         offered: props.initial.items.map(row => ({ id: row.id, version: row.version })),
         delivery: [],
         lines: [],
         }
         try {
-            const saved = JSON.parse(sessionStorage.getItem(draftKey) ?? "null") as ServiceSaleInput | null
-            if (validServiceSaleDraft(saved, props.initial.items, initial.relationshipVersion)) Object.assign(initial, { lines: saved.lines, managerId: saved.managerId })
+            const saved = JSON.parse(sessionStorage.getItem(draftKey) ?? sessionStorage.getItem(previousDraftKey) ?? "null") as ServiceSaleInput | null
+            if (validServiceSaleDraft(saved, props.initial.items, initial.relationshipVersion)) Object.assign(initial, { lines: saved.lines, managerId: saved.managerId, billingInterval: saved.billingInterval, billingIntervalCount: saved.billingIntervalCount })
+            else if (saved) notice = "Your saved draft used the previous pricing display or is no longer current. Review the service prices and billing schedule again before selling. The previous draft remains stored on this device."
         } catch { /* A fresh form remains available when no saved draft can be read. */ }
         const selected = props.initial.items.find(row => row.id === props.initialSelectionId)
-        if (selected && !initial.lines.some(line => line.id === selected.id)) initial.lines.push({ id: selected.id, version: selected.version, assigneeId: selected.assignee_user_id ?? "", upfrontCents: selected.upfront_cents, recurringCents: monthlyServicePrice(selected) })
-        return initial
+        if (selected && !initial.lines.some(line => line.id === selected.id)) {
+            const recurring = initial.lines.some(line => line.recurringCents > 0)
+            if (!recurring || !selected.recurring_cents || initial.billingInterval === selected.billing_interval && initial.billingIntervalCount === selected.billing_interval_count) {
+                if (!recurring && selected.recurring_cents) { initial.billingInterval = selected.billing_interval; initial.billingIntervalCount = selected.billing_interval_count }
+                initial.lines.push({ id: selected.id, version: selected.version, assigneeId: selected.assignee_user_id ?? "", upfrontCents: selected.upfront_cents, recurringCents: selected.recurring_cents })
+            } else notice = "This service has a different billing schedule from your saved selection. Sell it separately to keep its agreed schedule."
+        }
+        return { input: initial, notice }
     })
+    const [draft, setDraft] = useState<ServiceSaleInput>(restoredDraft.input)
+    const [acceptedQuote, setAcceptedQuote] = useState<string | null>(null)
     const [quote, setQuote] = useState<ServiceSaleQuote | null>(null)
     const [preview, setPreview] = useState<ComponentProps<typeof PreviewComponent> | null>(null)
     const recoverySnapshot = useSyncExternalStore(
@@ -257,10 +240,21 @@ export function RelationshipServicePos(props: Props) {
                 : next,
         )
         setQuote(null)
+        setAcceptedQuote(null)
         setPreview(null)
         setError("")
     }
     function patchLine(id: string, patch: Partial<ServiceSaleLine>) {
+        const row = page.items.find(item => item.id === id)
+        if (row && patch.recurringCents !== undefined && patch.recurringCents > 0) {
+            const anotherRecurring = input.lines.some(line => line.id !== id && line.recurringCents > 0)
+            if (anotherRecurring && (input.billingInterval !== row.billing_interval || input.billingIntervalCount !== row.billing_interval_count)) {
+                setError("These services have different billing schedules. Sell them separately to keep each agreed schedule.")
+                return
+            }
+            change({ ...input, billingInterval: row.billing_interval, billingIntervalCount: row.billing_interval_count, lines: input.lines.map(line => line.id === id ? { ...line, ...patch } : line) })
+            return
+        }
         change({ ...input, lines: input.lines.map((line) => (line.id === id ? { ...line, ...patch } : line)) })
     }
     function toggle(row: ServicePosRow) {
@@ -269,11 +263,15 @@ export function RelationshipServicePos(props: Props) {
             setError("Select up to 30 services in one sale.")
             return
         }
+        if (!exists && row.recurring_cents > 0 && input.lines.some(line => line.recurringCents > 0) && (input.billingInterval !== row.billing_interval || input.billingIntervalCount !== row.billing_interval_count)) {
+            setError("These services have different billing schedules. Sell them separately to keep each agreed schedule.")
+            return
+        }
         const firstRecurring = !input.lines.some((l) => l.recurringCents > 0) && row.recurring_cents > 0
         change({
             ...input,
             ...(!exists && firstRecurring
-                ? { billingInterval: "month", billingIntervalCount: 1 }
+                ? { billingInterval: row.billing_interval, billingIntervalCount: row.billing_interval_count }
                 : {}),
             lines: exists
                 ? input.lines.filter((l) => l.id !== row.id)
@@ -284,7 +282,7 @@ export function RelationshipServicePos(props: Props) {
                           version: row.version,
                           assigneeId: row.assignee_user_id ?? "",
                           upfrontCents: row.upfront_cents,
-                          recurringCents: monthlyServicePrice(row),
+                          recurringCents: row.recurring_cents,
                       },
                   ],
         })
@@ -328,8 +326,8 @@ export function RelationshipServicePos(props: Props) {
         postGanttSync(workspaceSlug)
     }
     function sell() {
-        if (guard.current || (!quote && !recovery) || !ready) return
-        const request = recovery ?? { requestId: crypto.randomUUID(), input, quoteHash: quote!.hash }
+        if (guard.current || (!quote && !recovery) || !ready || (!recovery && acceptedQuote !== quote?.hash)) return
+        const request = recovery ?? { requestId: crypto.randomUUID(), input, quoteHash: quote!.hash, pricingAcceptedHash: acceptedQuote! }
         try {
             saveRecovery(request)
         } catch {
@@ -371,6 +369,8 @@ export function RelationshipServicePos(props: Props) {
         setInput(current => ({ ...current, delivery: selected ? current.delivery?.filter(item => item.provider !== choice.provider) : [...(current.delivery ?? []), { provider: choice.provider, address: choice.address }] }))
     }
     return <div className="min-w-0 text-white">
+            {correctingSale ? <PriceCorrection workspaceSlug={workspaceSlug} relationshipId={relationshipId} userId={userId} saleId={correctingSale} onClose={() => setCorrectingSale(null)} onSaved={() => { setCorrectingSale(null); setNotice("Prices corrected. The existing onboarding link will open the revised checkout."); void refresh().catch(() => setError("Prices were corrected, but the sale list could not refresh. Reload to see the saved prices.")) }} /> : null}
+            {restoredDraft.notice ? <p role="status" className="mb-4 text-sm text-amber-200">{restoredDraft.notice}</p> : null}
             {draftStorageError ? <p role="alert" className="mb-4 text-sm text-red-300">{draftStorageError}</p> : null}
             <ol aria-label="Sale steps" className="mb-5 flex gap-3 border-b border-neutral-800 pb-4 text-xs sm:gap-6 sm:text-sm">{["Services", "Onboarding", "Send link"].map((label, index) => <li key={label} aria-current={step === index + 1 ? "step" : undefined} className={step === index + 1 ? "font-semibold text-white" : "text-neutral-500"}>{index + 1}. {label}</li>)}</ol>
             {recovery ? <div className="mb-4 space-y-3 text-sm text-amber-200"><p>A sale submission is pending. Recover the same sale before making changes.</p><button disabled={pending || !ready} className={button} onClick={sell}>{pending ? "Recovering…" : "Retry same sale"}</button></div> : null}
@@ -379,7 +379,7 @@ export function RelationshipServicePos(props: Props) {
                 <AttachmentCards label="Services to sell" selection>{page.items.map(row => {
                     const line = input.lines.find(line => line.id === row.id)
                     return <AttachmentCard key={row.id} title={row.name} thumbnail={<ServiceThumbnail service={row} />} selected={Boolean(line)} inactive={!line} onClick={() => toggle(row)} disabled={locked || !ready} subtitle={line ? "Selected" : row.stage === "declined" ? "Declined · available to sell" : "Select service"}>
-                        {line ? <div className="grid min-w-0 grid-cols-2 gap-3"><MoneyField label={`Upfront for ${row.name}`} value={line.upfrontCents} onChange={upfrontCents => patchLine(row.id, { upfrontCents })} disabled={locked} />{row.service_type === "retainer" ? <MoneyField label={`Monthly for ${row.name}`} value={line.recurringCents} onChange={recurringCents => patchLine(row.id, { recurringCents })} disabled={locked} /> : null}<div className="col-span-2 min-w-0"><AssigneeField key={`${userId}:${servicesEndpoint}:${row.service_id}`} endpoint={servicesEndpoint} userId={userId} row={row} value={line.assigneeId} onChange={assigneeId => patchLine(row.id, { assigneeId })} disabled={locked} /></div></div> : <p className="text-xs text-neutral-500">{money(row.upfront_cents, row.currency)} upfront{row.recurring_cents ? ` + ${money(monthlyServicePrice(row), row.currency)} / month` : ""}</p>}
+                        {line ? <div className="grid min-w-0 grid-cols-2 gap-3"><MoneyField label={`${row.service_type === "retainer" ? "Additional one-time fee" : "One-time fee"} for ${row.name}`} value={line.upfrontCents} onChange={upfrontCents => patchLine(row.id, { upfrontCents })} disabled={locked} />{row.service_type === "retainer" ? <MoneyField label={`Recurring payment for ${row.name}`} value={line.recurringCents} onChange={recurringCents => patchLine(row.id, { recurringCents })} disabled={locked} /> : null}<p className="col-span-2 text-xs leading-5 text-neutral-400">{servicePricingText({ upfrontCents: line.upfrontCents, recurringCents: line.recurringCents, currency: row.currency, billingInterval: input.billingInterval, billingIntervalCount: input.billingIntervalCount })}</p><div className="col-span-2 min-w-0"><AssigneeField key={`${userId}:${servicesEndpoint}:${row.service_id}`} endpoint={servicesEndpoint} userId={userId} row={row} value={line.assigneeId} onChange={assigneeId => patchLine(row.id, { assigneeId })} disabled={locked} /></div></div> : <p className="text-xs text-neutral-500">{servicePricingText({ upfrontCents: row.upfront_cents, recurringCents: row.recurring_cents, currency: row.currency, billingInterval: row.billing_interval, billingIntervalCount: row.billing_interval_count })}</p>}
                     </AttachmentCard>
                 })}</AttachmentCards>
                 {!page.items.length ? <p className="py-4 text-sm text-neutral-400">Add a service from the relationship’s catalogue before selling.</p> : null}
@@ -402,9 +402,10 @@ export function RelationshipServicePos(props: Props) {
                 {!(page.contacts ?? []).some(choice => choice.added && (choice.state === "active" && choice.canSend || choice.provider === "meta_whatsapp" && choice.enabled && choice.state !== "broken")) ? <p className="mt-3 text-sm text-neutral-400">Add a connected WhatsApp or Twilio contact before selling. WhatsApp can use the approved onboarding-link Utility template without a client reply.</p> : null}
                 <button className="mt-2 min-h-11 text-sm text-neutral-300 underline" disabled={locked} onClick={async () => { try { const response = await fetch(endpoint, { headers: { "x-workspace-user": userId }, cache: "no-store", signal: AbortSignal.timeout(30000) }); const value = await response.json(); if (!response.ok) throw new Error(); setPage(current => ({ ...current, contacts: value.contacts })) } catch { setError("Could not check contact methods. Try again.") } }}>Refresh contact methods</button>
             </>}
-            {totals.currency && input.lines.length ? <p className="mt-5 border-t border-neutral-800 pt-4 text-sm font-semibold">{money(totals.upfront, totals.currency)} upfront{totals.recurring ? ` + ${money(totals.recurring, totals.currency)} / month` : ""}</p> : null}
+            {totals.currency && input.lines.length ? <ServicePriceSummary pricing={{ upfrontCents: quote?.upfrontTotal ?? totals.upfront, recurringCents: quote?.recurringTotal ?? totals.recurring, currency: quote?.currency ?? totals.currency, billingInterval: quote?.billingInterval ?? input.billingInterval, billingIntervalCount: quote?.billingIntervalCount ?? input.billingIntervalCount }} /> : null}
+            {step === 3 && quote && !recovery ? <label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-5 w-5 shrink-0" disabled={locked} checked={acceptedQuote === quote.hash} onChange={event => setAcceptedQuote(event.target.checked ? quote.hash : null)} /><span>I reviewed {money(quote.upfrontTotal + quote.recurringTotal, quote.currency)} due at checkout{quote.recurringTotal ? ` and ${money(quote.recurringTotal, quote.currency)} ${billingCadence(quote.billingInterval, quote.billingIntervalCount)} afterward` : ", with no recurring payments"}. These are the agreed client prices.</span></label> : null}
             {totals.mixedCurrencies ? <p className="mt-3 text-sm text-amber-300">Sell services in different currencies separately.</p> : null}
-            {!recovery ? <div className="mt-4 flex items-center justify-between gap-3">{step > 1 ? <button className={secondary} disabled={locked} onClick={() => setStep(step - 1)}>Back</button> : <span />}{step === 1 ? <button className={button} disabled={locked || !ready || !input.lines.length || page.hasMore || totals.mixedCurrencies} onClick={() => void readReview()}>{reading ? "Reviewing…" : "Review onboarding"}</button> : step === 2 ? <button className={button} disabled={locked || !quote} onClick={() => setStep(3)}>Choose contact methods</button> : <button className={button} disabled={locked || !quote || !input.delivery?.length} onClick={sell}>{pending ? "Saving sale…" : `Sell ${input.lines.length === 1 ? "service" : `${input.lines.length} services`} & send link`}</button>}</div> : null}
+            {!recovery ? <div className="mt-4 flex items-center justify-between gap-3">{step > 1 ? <button className={secondary} disabled={locked} onClick={() => setStep(step - 1)}>Back</button> : <span />}{step === 1 ? <button className={button} disabled={locked || !ready || !input.lines.length || page.hasMore || totals.mixedCurrencies} onClick={() => void readReview()}>{reading ? "Reviewing…" : "Review onboarding"}</button> : step === 2 ? <button className={button} disabled={locked || !quote} onClick={() => setStep(3)}>Choose contact methods</button> : <button className={button} disabled={locked || !quote || acceptedQuote !== quote.hash || !input.delivery?.length} onClick={sell}>{pending ? "Saving sale…" : `Sell ${input.lines.length === 1 ? "service" : `${input.lines.length} services`} & send link`}</button>}</div> : null}
             {error || storedRecovery.error ? (
                 <p role="alert" className="mt-4 text-sm text-red-300">
                     {error || storedRecovery.error}
@@ -425,11 +426,9 @@ export function RelationshipServicePos(props: Props) {
                                     <ListTitle>{sale.services.map((s) => s.name).join(", ")}</ListTitle>
                                 </ListPrimaryRow>
                                 <ListSecondaryRow className="!flex-wrap !whitespace-normal">
+                                    {sale.can_correct_prices || recoverableCorrections.has(sale.id) ? <button type="button" className="min-h-11 text-xs underline" disabled={locked} onClick={() => setCorrectingSale(sale.id)}>{sale.pricing_correction_id || recoverableCorrections.has(sale.id) ? "Resume price correction" : "Correct prices"}</button> : null}
                                     <span className="text-xs text-neutral-400">
-                                        {money(sale.upfront_total_amount, sale.currency)} upfront
-                                        {sale.recurring_total_amount
-                                            ? ` + ${money(sale.recurring_total_amount, sale.currency)} recurring`
-                                            : ""}
+                                        {servicePricingText({ upfrontCents: sale.upfront_total_amount, recurringCents: sale.recurring_total_amount, currency: sale.currency, billingInterval: sale.billing_interval, billingIntervalCount: sale.billing_interval_count })}
                                     </span>
                                     <Status
                                         label={

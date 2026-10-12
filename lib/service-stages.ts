@@ -18,6 +18,6 @@ export type RelationshipServiceRow = {
 }
 export type ServiceValueSummary = { currency: string; kind: "catalogue_estimate" | "sold" | "all_time"; billing_interval: string | null; billing_interval_count: number | null; upfront_cents: number; recurring_cents: number }
 export type RelationshipServicePage = { items: RelationshipServiceRow[]; hasMore: boolean; values?: ServiceValueSummary[] }
-export type ServiceCatalogueChoice = { id: string; revision_id: string; name: string; description: string; upfront_cents: number; recurring_cents: number; currency: string }
+export type ServiceCatalogueChoice = { billing_interval?: string | null; billing_interval_count?: number | null; id: string; revision_id: string; name: string; description: string; upfront_cents: number; recurring_cents: number; currency: string }
 export type RelationshipServiceSummary = { relationship_id: string; stages: ServiceStageKey[]; count: number; services: Array<{key: string; label: string}> }
 export const isServiceStage = (value: unknown): value is ServiceStageKey => SERVICE_STAGES.some(s => s.key === value)

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { createOrReuseOnboardingCheckout, getOnboardingPaymentReturnUrl } from "@/lib/client-sales/onboarding-checkout"
+import { CHECKOUT_PRICES_CHANGED, createOrReuseOnboardingCheckout, getOnboardingPaymentReturnUrl } from "@/lib/client-sales/onboarding-checkout"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic"
 export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
     const { token } = await params
     try {
-        const result = await createOrReuseOnboardingCheckout({ token, origin: request.nextUrl.origin })
+        const revision = request.nextUrl.searchParams.get("pricing_revision")
+        const result = await createOrReuseOnboardingCheckout({ token, origin: request.nextUrl.origin, pricingRevision: revision === null ? 0 : /^\d+$/.test(revision) ? Number(revision) : -1 })
         const destination = result.paid ? new URL(result.returnUrl) : new URL(result.checkoutUrl!)
         return Response.redirect(destination, 303)
     } catch (error) {
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const returnUrl = await getOnboardingPaymentReturnUrl(token)
         const destination = new URL(returnUrl ?? `/onboarding/session/${token}`, request.url)
         destination.searchParams.set("payment", "unavailable")
-        destination.searchParams.set("reason", "Payment is temporarily unavailable. Please try again or contact the team for help.")
+        destination.searchParams.set("reason", error instanceof Error && error.message === CHECKOUT_PRICES_CHANGED ? CHECKOUT_PRICES_CHANGED : "Payment is temporarily unavailable. Please try again or contact the team for help.")
         return Response.redirect(destination, 303)
     }
 }

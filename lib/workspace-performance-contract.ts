@@ -3,7 +3,7 @@ export const WORKSPACE_PERFORMANCE_OPERATIONS = [
     "navigation", "panel_load", "tab_switch", "field_edit", "draft_save", "command", "launch", "media", "conversation_switch",
 ] as const
 export const WORKSPACE_PERFORMANCE_BOUNDARIES = [
-    "code_ready", "data_ready", "meaningful_ready", "local_persisted", "server_ack", "external_completed", "visual_response", "access_ready", "message_saved", "push_claimed", "push_prepared", "push_authorized",
+    "code_ready", "data_ready", "meaningful_ready", "local_persisted", "server_ack", "external_completed", "visual_response", "access_ready", "message_saved", "push_claimed", "push_prepared", "push_authorized", "roster_ready", "history_ready",
 ] as const
 export const WORKSPACE_PERFORMANCE_SECTIONS = [
     "queue", "workspace", "relationships", "work", "work-items", "assets", "notes", "client-connections", "onboarding",

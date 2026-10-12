@@ -2636,6 +2636,9 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         let reconnectTimeout: number | null = null
         let reconnectAttempt = 0
         let connecting = false
+        let joining = false
+        let realtimeToken: string | null = null
+        let authTimer: number | null = null
         let channel: WorkspacePresenceChannel | null = null
 
         function updateState(state: WorkspacePresenceState, error: string | null = null) {
@@ -2667,6 +2670,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
 
         function scheduleReconnect(message: string) {
             if (disposed || reconnectTimeout !== null) return
+            joining = false
             reconnectAttempt += 1
             const delay = [1000, 2000, 5000, 10_000, 30_000][Math.min(reconnectAttempt - 1, 4)]
             updateState(reconnectAttempt >= 5 ? "error" : "reconnecting", message)
@@ -2676,8 +2680,18 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
             }, delay)
         }
 
+        async function refreshRealtimeAuth() {
+            const session = await supabase.auth.getSession()
+            if (disposed) return
+            const token = session.data.session?.access_token
+            if (!token) { updateState("offline", "Sign in again to restore workspace presence."); return false }
+            await supabase.realtime.setAuth(token)
+            realtimeToken = token
+            return true
+        }
+
         async function connect() {
-            if (disposed || connecting) return
+            if (disposed || connecting || joining) return
             connecting = true
             if (reconnectTimeout !== null) {
                 window.clearTimeout(reconnectTimeout)
@@ -2691,19 +2705,14 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                     presenceChannelRef.current = null
                     await supabase.removeChannel(previous)
                 }
-                const session = await supabase.auth.getSession()
-                const accessToken = session.data.session?.access_token
-                if (!accessToken) {
-                    updateState("offline", "Sign in again to restore workspace presence.")
-                    return
-                }
-                await supabase.realtime.setAuth(accessToken)
+                if (!await refreshRealtimeAuth()) return
                 if (disposed) return
                 const candidate = supabase.channel(workspacePresenceTopic(workspace.slug), {
                     config: { private: true, presence: { key: presenceSessionIdRef.current } },
                 })
                 channel = candidate
                 presenceChannelRef.current = candidate
+                joining = true
                 candidate
                     .on("postgres_changes", { event: "*", schema: "public", table: "client_messages", filter: `workspace_id=eq.${workspace.id}` }, payload => invalidateUnreadSummary(workspace.id, currentUserId, unreadMessageEventKey("client", payload)))
                     .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_messages", filter: `workspace_id=eq.${workspace.id}` }, payload => invalidateUnreadSummary(workspace.id, currentUserId, unreadMessageEventKey("native", payload)))
@@ -2724,6 +2733,8 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                     .subscribe(async (status) => {
                         if (disposed || channel !== candidate) return
                         if (status === "SUBSCRIBED") {
+                            joining = false
+                            if (reconnectTimeout !== null) { window.clearTimeout(reconnectTimeout); reconnectTimeout = null }
                             reconnectAttempt = 0
                             updateState("live")
                             refreshCommunicationsUnread()
@@ -2748,8 +2759,15 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         }
 
         const authSubscription = supabase.auth.onAuthStateChange((_event, session) => {
-            if (!session?.access_token || disposed) return
-            window.setTimeout(() => { void connect() }, 0)
+            if (!session?.access_token || disposed || session.access_token === realtimeToken) return
+            if (authTimer !== null) window.clearTimeout(authTimer)
+            authTimer = window.setTimeout(() => {
+                authTimer = null
+                if (disposed || session.access_token === realtimeToken) return
+                void refreshRealtimeAuth().then(authenticated => {
+                    if (authenticated && !disposed && presenceStateRef.current !== "live") void connect()
+                }).catch(error => scheduleReconnect(error instanceof Error ? error.message : "Workspace presence authentication could not refresh."))
+            }, 0)
         })
         window.addEventListener("online", reconnectWhenAvailable)
         window.addEventListener("focus", reconnectWhenAvailable)
@@ -2759,6 +2777,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         return () => {
             disposed = true
             if (reconnectTimeout !== null) window.clearTimeout(reconnectTimeout)
+            if (authTimer !== null) window.clearTimeout(authTimer)
             authSubscription.data.subscription.unsubscribe()
             window.removeEventListener("online", reconnectWhenAvailable)
             window.removeEventListener("focus", reconnectWhenAvailable)

@@ -299,3 +299,21 @@ test("selected history deletion coverage uses the full microsecond and message-I
     chat.applyHistoryMessages(chat.beginRead(), "c1", [boundary, latest], boundary)
     assert.deepEqual(ids(chat), ["z", "a", "b", "d"], "only the covered deleted tie is removed; earlier ties and microseconds remain")
 })
+
+
+test("metadata refresh preserves a server-confirmed empty device cursor after history arrives", () => {
+    const base = { id: "c1", messages: [] as Message[], pinnedMessageId: null, cursorDeviceId: "device-a", previewState: "loading" as const }
+    const chat = createCoordinatedChat({ conversations: [base], reactions: [] as Reaction[] }, reactionKey)
+    const old = chat.beginRead()
+    chat.applyHistoryMessages(chat.beginRead(), "c1", [message], null)
+    chat.setPreviews([{ conversationId: "c1", preview: message, cursorKnown: true, deviceCursor: null, cursorDeviceId: "device-a" }])
+    chat.applySnapshot(old, { conversations: [base], reactions: [] })
+    const current = chat.getSnapshot().conversations[0] as typeof base & { cursorKnown?: true; deviceCursor?: unknown }
+    assert.equal(current.cursorKnown, true, "loaded history remains eligible for the visibility/read-ACK checks")
+    assert.equal(current.deviceCursor, null)
+    assert.deepEqual(current.messages, [message])
+    chat.applySnapshot(chat.beginRead(), { conversations: [{ ...base, cursorDeviceId: "device-b" }], reactions: [] })
+    assert.equal((chat.getSnapshot().conversations[0] as typeof current).cursorKnown, undefined, "another installation needs its own evidence")
+    chat.applySnapshot(chat.beginRead(), { conversations: [], reactions: [] })
+    assert.equal(chat.getSnapshot().conversations.length, 0, "lost access still removes the conversation")
+})

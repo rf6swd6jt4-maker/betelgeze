@@ -1,3 +1,4 @@
+import { markChatBoundary, withChatPerformance } from "@/lib/communications/performance-server"
 import { deviceCommunicationErrorResponse, validateCommunicationReadProtocol } from "@/lib/communications/device-server"
 import { loadNativeCommunications } from "@/lib/teams/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -7,9 +8,10 @@ export const dynamic = "force-dynamic"
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-export async function GET(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
+export const GET = withChatPerformance("message.receive", async (request: Request, context: { params: Promise<{ workspaceSlug: string }> }) => {
     const { workspaceSlug } = await context.params
     const { workspace, user, role } = await requireWorkspacePanel(workspaceSlug, "communications")
+    markChatBoundary("access_ready")
     const readProtocol = validateCommunicationReadProtocol(request, workspace.id, user.id)
     if (readProtocol instanceof Response) return readProtocol
     const url = new URL(request.url)
@@ -20,7 +22,7 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
         if (failure) return failure
         throw error
     }
-}
+})
 
 export async function POST(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params

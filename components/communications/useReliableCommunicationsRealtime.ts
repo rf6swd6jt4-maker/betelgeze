@@ -78,6 +78,9 @@ export function useReliableCommunicationsRealtime({
 
         let disposed = false
         let connecting = false
+        let joining = false
+        let realtimeToken: string | null = null
+        let authTimer: number | null = null
         let channel: RealtimeChannel | null = null
         let retryTimer: number | null = null
         let retryAttempt = 0
@@ -99,6 +102,7 @@ export function useReliableCommunicationsRealtime({
             // the newest token after those requests instead of leaving the
             // socket on the JWT it mounted with.
             await supabase.realtime.setAuth(accessToken)
+            realtimeToken = accessToken
         }
 
         const syncOwner = createCommunicationsSyncOwner(async signal => {
@@ -117,6 +121,7 @@ export function useReliableCommunicationsRealtime({
 
         function scheduleReconnect(message: string) {
             if (disposed || retryTimer !== null) return
+            joining = false
             subscribed = false
             if (!navigator.onLine) {
                 updateState("offline", "Offline. Messages will be checked when the connection returns.")
@@ -132,7 +137,7 @@ export function useReliableCommunicationsRealtime({
         }
 
         async function connect() {
-            if (disposed || connecting) return
+            if (disposed || connecting || joining) return
             if (!navigator.onLine) {
                 updateState("offline", "Offline. Messages will be checked when the connection returns.")
                 return
@@ -163,9 +168,12 @@ export function useReliableCommunicationsRealtime({
                 const candidate = registerRef.current(supabase.channel(topic, { config: { private: privateChannel, broadcast: { self: false, ack: true } } }))
                 channel = candidate
                 channelRef.current = candidate
+                joining = true
                 candidate.subscribe((status, subscribeError) => {
                     if (disposed || channel !== candidate) return
                     if (status === "SUBSCRIBED") {
+                        joining = false
+                        if (retryTimer !== null) { window.clearTimeout(retryTimer); retryTimer = null }
                         subscribed = true
                         retryAttempt = 0
                         void runSync(true).catch((syncError) => {
@@ -188,7 +196,7 @@ export function useReliableCommunicationsRealtime({
                 updateState("offline", "Offline. Messages will be checked when the connection returns.")
                 return
             }
-            if (stateRef.current === "live") {
+            if (subscribed && (stateRef.current === "live" || stateRef.current === "syncing")) {
                 void runSync(false).catch((syncError) => {
                     scheduleReconnect(syncError instanceof Error ? syncError.message : "Could not check for missed messages.")
                 })
@@ -198,13 +206,23 @@ export function useReliableCommunicationsRealtime({
         }
 
         const authSubscription = supabase.auth.onAuthStateChange((_event, session) => {
-            if (!session?.access_token || disposed) return
-            window.setTimeout(() => { void connect() }, 0)
+            if (!session?.access_token || disposed || session.access_token === realtimeToken) return
+            if (authTimer !== null) window.clearTimeout(authTimer)
+            authTimer = window.setTimeout(() => {
+                authTimer = null
+                if (disposed || session.access_token === realtimeToken) return
+                // Auth events include INITIAL_SESSION and repeated SIGNED_IN.
+                // Refresh the socket token without tearing down a joining/live
+                // channel; only an actual failed channel needs another join.
+                void refreshRealtimeAuth().then(() => {
+                    if (!disposed && !subscribed) void connect()
+                }).catch(error => scheduleReconnect(error instanceof Error ? error.message : "Live authentication could not refresh."))
+            }, 0)
         })
         const interval = window.setInterval(() => {
             if (visibleAndActive()) recoverWhenAvailable()
         }, SAFETY_SYNC_MS)
-        const handleOffline = () => { subscribed = false; updateState("offline", "Offline. Messages will be checked when the connection returns.") }
+        const handleOffline = () => { joining = false; subscribed = false; updateState("offline", "Offline. Messages will be checked when the connection returns.") }
         window.addEventListener("online", recoverWhenAvailable)
         window.addEventListener("offline", handleOffline)
         window.addEventListener("focus", recoverWhenAvailable)
@@ -217,6 +235,7 @@ export function useReliableCommunicationsRealtime({
             disposed = true
             syncOwner.dispose()
             if (retryTimer !== null) window.clearTimeout(retryTimer)
+            if (authTimer !== null) window.clearTimeout(authTimer)
             window.clearInterval(interval)
             authSubscription.data.subscription.unsubscribe()
             window.removeEventListener("online", recoverWhenAvailable)

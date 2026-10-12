@@ -11,7 +11,11 @@ export async function validatePricingCorrections({db,q,one,w,owner,seller,staff,
         await db.exec(source.replace(`public.${name}(`,`public.pricing_baseline_${name}(`))
         await db.exec(source.replace(`public.${name}(`,`public.pricing_control_${name}(`))
     }
+    // Reproduce Supabase's production table defaults, including server-role writes.
+    await db.exec('alter default privileges in schema public grant all on tables to anon,authenticated,service_role')
     await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261012120000_service_pricing_review_and_corrections.sql`,'utf8'))
+    for (const role of ['anon','authenticated','service_role']) assert.equal((await one("select has_table_privilege($1,'client_sale_price_corrections','UPDATE') allowed",[role])).allowed,false)
+    assert.equal((await one("select has_table_privilege('service_role','client_sale_price_corrections','SELECT') allowed")).allowed,true)
     pass('pricing migration installs against actual sale, adjustment and card owners')
     const instance=await add(service,revision,uuid(1800))
     const input={uiVersion:2,relationshipVersion:(await one('select updated_at::text value from relationships where id=$1',[relationship])).value,managerId:owner,billingInterval:'month',billingIntervalCount:1,offered:[{id:instance,version:1}],delivery:[{provider:'meta_whatsapp',address:'+353850000001'}],lines:[{id:instance,version:1,assigneeId:staff,upfrontCents:75000,recurringCents:75000}]}

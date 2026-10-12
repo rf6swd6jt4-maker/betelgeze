@@ -20,7 +20,7 @@ create table public.client_sale_price_corrections (
  foreign key(workspace_id,sale_id) references public.client_sales(workspace_id,id)
 );
 alter table public.client_sale_price_corrections enable row level security;
-revoke all on public.client_sale_price_corrections from public,anon,authenticated;
+revoke all on public.client_sale_price_corrections from public,anon,authenticated,service_role;
 grant select on public.client_sale_price_corrections to service_role;
 
 create function public.begin_client_sale_price_correction(p_workspace uuid,p_relationship uuid,p_sale uuid,p_actor uuid,p_request uuid,p_version integer,p_terms jsonb,p_reason text)

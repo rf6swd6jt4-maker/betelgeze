@@ -246,3 +246,11 @@ Suggested instruction for `AGENTS.md` or other development instructions:
 - Evidence: the prior isolated assessment is `docs/device-unread-progressive-assessment.md`; implementation validation is recorded separately in `docs/device-unread-implementation-validation.md`. Prior helper fixtures are not full-app or physical-device proof.
 - Rollout: additive SQL first after approval, scoped device feature flag, then exact application candidate; no production installation is authorized by this entry.
 - Rollback: select the account protocol for new owners; preserve additive device tables, cutover baselines, stored private cursors and support for already-mounted device owners. Never erase messages or queued delivery history.
+
+### 2026-10-13 — Client Connections retained history, explicit acceptance
+
+- Authorization: the user selected one bounded query and explicitly accepted the measured history-view cost after reviewing staff and single-relationship regressions.
+- Narrow allowance: showing the first 50 retired connections on opening Client Connections may add the measured fixture cost to staff lists (median 0.125 to 0.227 ms, p95 0.175 to 0.303 ms) and single-relationship views (median 0.083 to 0.262 ms, p95 0.110 to 0.317 ms). This does not relax existing save/refresh reads or other platform actions. These SQL observations are not production latency ceilings.
+- Owner workspace lists improved from 4.444 to 3.646 ms median and 4.639 to 3.813 ms p95 with 500 clients and 20,000 historical rows. Older history uses indexed 50-row keyset pages on demand. Do not load all history at startup or decrypt credentials for a list.
+- Retirement is a new, confirmed transaction: retain credential-free history and its actor/revision receipt, delete the live binding and managed secret, retain relationship/provider history, and release the location. Retry the identical revision after uncertainty. Legacy confirmed Remove uses the same transaction.
+- Evidence and rollout: `docs/client-connection-retirement-release.md`. Preserve history and credential deletion on rollback; never recreate retired credentials or location reservations.

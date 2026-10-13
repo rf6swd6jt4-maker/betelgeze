@@ -8,6 +8,9 @@ import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
 export type ClientConnectionAccount = {
+    historyId?: string
+    retiredAt?: string | null
+    archived?: boolean
     relationshipId: string
     clientName: string
     businessName: string | null
@@ -25,12 +28,14 @@ export type ClientConnectionAccount = {
 }
 
 const failureMessages: Record<string, string> = {
+    retire_required: "Retire the existing connection before connecting a different HighLevel location.",
     list_limit: "Too many clients to load in one list. Open a specific client connection.",
     access: "You do not have access to this client connection.", busy: "This client connection is already being updated.",
     cooldown: "Wait a few seconds before trying again.", changed: "The connection changed while it was being verified. Reload and try again.",
     credentials: "HighLevel denied access. Check the token's read permissions and Location ID.", permissions: "The HighLevel token does not have the required read permissions.",
     location: "HighLevel could not find that Location ID.", rate_limit: "HighLevel is temporarily rate limiting requests.",
-    response: "HighLevel returned an unexpected response.", duplicate: "That HighLevel location is already linked to another client.",
+    response: "HighLevel returned an unexpected response.", duplicate: "That HighLevel location is already linked to another active relationship. Retire its existing connection in Client Connections before linking it here.",
+    duplicate_archived: "That HighLevel location is linked to an archived relationship. Find it in Client Connections and retire that connection before linking it here.",
     agency: "That location does not belong to the connected agency.", unavailable: "HighLevel could not be reached.", storage: "The connection could not be saved.",
 }
 
@@ -43,12 +48,27 @@ async function call(workspaceId: string, userId: string, action: string, params:
 
 export async function listClientConnections(workspaceId: string, userId: string, relationshipId?: string): Promise<ClientConnectionAccount[]> {
     const data = await managementCall(workspaceId, userId, "list", relationshipId ? { p_relationship_id: relationshipId } : {})
+    return parseAccounts(data)
+}
+export type ConnectionHistoryCursor = { before: string; id: string }
+export async function readClientConnections(workspaceId: string, userId: string, relationshipId?: string, cursor?: ConnectionHistoryCursor) {
+    const { data, error } = await supabaseAdmin.rpc("read_client_ghl_connections", {
+        p_workspace_id: workspaceId, p_user_id: userId, p_relationship_id: relationshipId ?? null,
+        p_history_only: Boolean(cursor), p_before: cursor?.before ?? null, p_before_id: cursor?.id ?? null,
+    })
+    if (error || !data || typeof data !== "object") throw new Error("Client connections could not be loaded.")
+    if (data.failure) throw new Error(failureMessages[data.failure] ?? failureMessages.unavailable)
+    return { accounts: parseAccounts(data.accounts), history: parseAccounts(data.history), nextCursor: data.nextCursor as ConnectionHistoryCursor | null }
+}
+function parseAccounts(data: unknown): ClientConnectionAccount[] {
     if (!Array.isArray(data)) throw new Error("Client connections could not be loaded.")
     return data.flatMap((value): ClientConnectionAccount[] => {
         if (!value || typeof value !== "object") return []
         const row = value as Record<string, unknown>
         if (typeof row.relationshipId !== "string" || typeof row.clientName !== "string") return []
         return [{
+            historyId: typeof row.historyId === "string" ? row.historyId : undefined,
+            retiredAt: typeof row.retiredAt === "string" ? row.retiredAt : null, archived: row.archived === true,
             relationshipId: row.relationshipId, clientName: row.clientName,
             businessName: typeof row.businessName === "string" ? row.businessName : null,
             accountType: row.accountType === "agency_subaccount" ? "agency_subaccount" : "client_account",
@@ -152,5 +172,6 @@ export async function saveClientConnection(workspaceId: string, userId: string, 
     }
 }
 export async function removeClientConnection(workspaceId: string, userId: string, relationshipId: string, expectedRevision: string) {
-    await managementCall(workspaceId, userId, "remove", { p_relationship_id: relationshipId, p_expected_revision: expectedRevision })
+    const result = await managementCall(workspaceId, userId, "remove", { p_relationship_id: relationshipId, p_expected_revision: expectedRevision })
+    return result.retired ? parseAccounts([result.retired]) : []
 }

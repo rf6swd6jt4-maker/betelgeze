@@ -45,7 +45,7 @@ export async function saveClientAccount(workspaceSlug: string, input: ClientConn
 export async function removeClientAccount(workspaceSlug: string, relationshipId: string, revision: string, relationshipOnly = false) {
     try {
         const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "client-connections")
-        await removeClientConnection(workspace.id, user.id, relationshipId, revision)
-        return { ok: true as const, accounts: await listClientConnections(workspace.id, user.id, relationshipOnly ? relationshipId : undefined) }
-    } catch (error) { return { ok: false as const, error: error instanceof Error ? error.message : "The connection could not be removed." } }
+        const retired = await removeClientConnection(workspace.id, user.id, relationshipId, revision)
+        return { ok: true as const, accounts: await listClientConnections(workspace.id, user.id, relationshipOnly ? relationshipId : undefined), retired }
+    } catch (error) { return { ok: false as const, error: error instanceof Error ? error.message : "The connection could not be retired." } }
 }

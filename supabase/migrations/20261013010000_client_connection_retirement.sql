@@ -144,7 +144,8 @@ begin
  select coalesce(jsonb_agg(item order by retired_at desc,id desc),'[]') into history from (
   select h.id,h.retired_at,h.snapshot||jsonb_build_object('historyId',h.id,'connected',false,'retiredAt',h.retired_at,'retiredBy',h.retired_by) item
   from client_portal_secure.ghl_connection_history h
-  where h.workspace_id=p_workspace_id and h.relationship_id=any(permitted)
+  where h.workspace_id=p_workspace_id and (p_relationship_id is null or h.relationship_id=p_relationship_id)
+   and (actor_role in ('owner','admin') or h.relationship_id=any(permitted))
    and (h.retired_at,h.id)<(coalesce(p_before,'infinity'::timestamptz),coalesce(p_before_id,'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid))
   order by h.retired_at desc,h.id desc limit 51
  ) page;

@@ -85,7 +85,7 @@ try {
  assert.equal((await manage('remove',{revision:uuid(999)})).failure,'changed')
  await manage('begin_connect',{id:appointment,op:uuid(51)})
  assert.equal((await manage('finish',{id:appointment,op:uuid(51),credential:'synthetic-token-long-enough'})).failure,'duplicate_archived')
- assert.equal((await manage('remove',{revision})).removed,true)
+ const receipt=await manage('remove',{revision});assert.equal(receipt.removed,true);assert.equal(receipt.retired.historyId,revision);assert.equal(receipt.retired.locationId,'syntheticlocation123')
  assert.equal((await one('select count(*)::int n from vault.secrets where id=$1',[secret])).n,0)
  assert.equal((await one('select count(*)::int n from client_portal_secure.ghl_connections where relationship_id=$1',[client])).n,0)
  assert.equal((await one('select status from relationships where id=$1',[client])).status,'archived')

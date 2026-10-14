@@ -15,8 +15,13 @@ import { DISPUTE_REASONS, rankQueue, type RankedQueueItem } from "@/lib/work-que
 import { shortId, formatRelativeTime } from "@/lib/ui/relative-time"
 import type { PersonalQueueSnapshot } from "@/lib/work-queue/server"
 
+import { isQueueCommandRequest, type QueueCommandRequest } from "@/lib/shared-service-queue"
+
 const button = "min-h-11 rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
 export function PersonalWorkQueue({ data }: { data: PersonalQueueSnapshot }) {
+    return <PersonalWorkQueueOwner key={`${data.workspaceId}:${data.userId}`} data={data} />
+}
+function PersonalWorkQueueOwner({ data }: { data: PersonalQueueSnapshot }) {
     const [snapshot,setSnapshot] = useState(data)
     const [previousData,setPreviousData] = useState(data)
     const [view,setView] = useState<"ready"|"deferred">(data.view ?? "ready")
@@ -27,6 +32,20 @@ export function PersonalWorkQueue({ data }: { data: PersonalQueueSnapshot }) {
     const [note,setNote] = useState("")
     const disputeRequest=useRef("")
     const [completion,setCompletion] = useState<RankedQueueItem|null>(null)
+    const [recoveryProblem, setRecoveryProblem] = useState<string | null>(null)
+    const [recovery, setRecovery] = useState<QueueCommandRequest | null>(null)
+    const recoveryKey = `shared-queue-command:${data.workspaceId}:${data.userId}`
+    useEffect(() => {
+        let disposed = false
+        queueMicrotask(() => {
+        if (disposed) return
+        try {
+            const raw = sessionStorage.getItem(recoveryKey)
+            if (raw) { const saved: unknown = JSON.parse(raw); if (isQueueCommandRequest(saved)) setRecovery(saved); else setRecoveryProblem("Saved work action is invalid. Contact an administrator.") }
+        } catch { setRecoveryProblem("Could not read saved work action. Contact an administrator before retrying work.") }
+        })
+        return () => { disposed = true }
+    }, [recoveryKey])
     const active = useWorkspaceNavigation()?.active ?? true
     const generation = useRef(0)
     const flight = useRef(false)
@@ -38,6 +57,7 @@ export function PersonalWorkQueue({ data }: { data: PersonalQueueSnapshot }) {
     if (previousActive !== active) { setPreviousActive(active); if (!active) { setDispute(null);setCompletion(null) } }
     const ranked = useMemo(() => rankQueue(snapshot.items),[snapshot])
     const ready = ranked.filter(x => x.state === "Ready" || x.state === "In progress")
+    const working = ready.some(item => item.status === "doing" && (!item.shared || item.started_by === data.userId))
     const featured = view === "ready" ? ready[0] : null
     const rows = view === "ready" ? ready.slice(1) : ranked.filter(x => x.state !== "Ready" && x.state !== "In progress")
     const href = (id: string) => `/${snapshot.workspaceSlug}/work-items/${id}`
@@ -56,16 +76,43 @@ export function PersonalWorkQueue({ data }: { data: PersonalQueueSnapshot }) {
         } catch(e) { if (generation.current === version) setError(e instanceof Error ? e.message : "Could not refresh") }
         finally { clearTimeout(timeout); flight.current=false; setBusy(null) }
     }
-    async function command(item: RankedQueueItem,action:"start"|"pause"|"complete") {
-        if (flight.current) return
+    const refreshCurrent = useRef(() => {})
+    useEffect(() => { refreshCurrent.current = () => { if (!flight.current) void refresh() } })
+    const lastActive = useRef(active)
+    useEffect(() => {
+        const resumed = !lastActive.current && active
+        lastActive.current = active
+        if (!active) return
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const recover = () => {
+            clearTimeout(timer)
+            if (document.visibilityState === "visible") timer = setTimeout(() => refreshCurrent.current(), 250)
+        }
+        if (resumed) recover()
+        window.addEventListener("focus", recover)
+        window.addEventListener("online", recover)
+        document.addEventListener("visibilitychange", recover)
+        return () => { clearTimeout(timer); window.removeEventListener("focus", recover); window.removeEventListener("online", recover); document.removeEventListener("visibilitychange", recover) }
+    }, [active])
+    async function command(item: Pick<RankedQueueItem, "id" | "updated_at" | "shared">,action:"start"|"pause"|"complete") {
+        if (flight.current || recoveryProblem) return
+        const input = recovery ?? { id: item.id, action, version: item.updated_at, requestId: crypto.randomUUID() }
+        if (item.shared || recovery) {
+            try { sessionStorage.setItem(recoveryKey, JSON.stringify(input)) } catch { setError("Device recovery is unavailable. Nothing was sent."); return }
+            setRecovery(input)
+        }
         flight.current=true; setBusy(item.id); setError(null)
         const version=++generation.current
         const controller=new AbortController();abort.current=controller
         const timeout=window.setTimeout(()=>controller.abort(),30000)
         try {
-            const response = await fetch(`/api/workspaces/${encodeURIComponent(data.workspaceSlug)}/queue`, { method:"POST",headers:{"Content-Type":"application/json","x-workspace-user":data.userId},body:JSON.stringify({id:item.id,action,version:item.updated_at}),signal:controller.signal })
+            const response = await fetch(`/api/workspaces/${encodeURIComponent(data.workspaceSlug)}/queue`, { method:"POST",headers:{"Content-Type":"application/json","x-workspace-user":data.userId},body:JSON.stringify(item.shared || recovery ? input : {id:item.id,action,version:item.updated_at}),signal:controller.signal })
             const result = await response.json()
-            if (!response.ok) throw new Error(result.error ?? "Could not confirm this action. Refresh before retrying.")
+            if (!response.ok) {
+                if (response.status === 409 || response.status === 400) { sessionStorage.removeItem(recoveryKey); setRecovery(null) }
+                throw new Error(result.error ?? "Could not confirm this action. Refresh before retrying.")
+            }
+            sessionStorage.removeItem(recoveryKey); setRecovery(null)
             if (generation.current!==version) return
             // Never invent success before the transaction acknowledges it.
             setSnapshot(current => ({...current,items: action === "complete" ? current.items.filter(x=>x.id!==item.id) : current.items.map(x=>x.id===item.id?{...x,...result}:x)}))
@@ -87,9 +134,12 @@ export function PersonalWorkQueue({ data }: { data: PersonalQueueSnapshot }) {
 
     const tone = (item: RankedQueueItem) => item.state === "In progress" ? "yellow" as const : item.state === "Ready" ? "green" as const : "grey" as const
     return <>
-        <PanelTabHeader title="Work Queue" description="Your ready work, ordered by value, timing and what it enables." />
+        <PanelTabHeader title="Work Queue" description="Your assigned and shared service work, ordered by readiness and priority." />
         <QuickStats ariaLabel="Your queue statistics" items={[{label:"Ready",value:snapshot.ready},{label:"Waiting",value:snapshot.deferred},{label:"Open work",value:snapshot.total}]} />
         <FilterRail ariaLabel="Your work"><FilterRailButton selected={view==="ready"} disabled={Boolean(busy)} onClick={()=>void refresh(false,"ready")}>Ready <FilterRailCount>{snapshot.ready}</FilterRailCount></FilterRailButton><FilterRailButton selected={view==="deferred"} disabled={Boolean(busy)} onClick={()=>void refresh(false,"deferred")}>Waiting & scheduled <FilterRailCount>{snapshot.deferred}</FilterRailCount></FilterRailButton></FilterRail>
+        {recovery ? <p role="status" className="mt-4 text-sm text-neutral-300">A shared work action needs confirmation. <button className="min-h-11 underline" disabled={Boolean(busy)} onClick={() => void command({id: recovery.id, updated_at: recovery.version, shared: true}, recovery.action)}>Retry same action</button></p> : null}
+        <button type="button" className="min-h-11 text-sm underline" disabled={Boolean(busy)} onClick={() => void refresh()}>Refresh queue</button>
+        {recoveryProblem ? <p role="alert" className="mt-5 text-sm text-red-200">{recoveryProblem}</p> : null}
         {error ? <p role="alert" className="mt-5 rounded-lg border border-red-900 bg-red-950/20 p-3 text-sm text-red-200">{error}</p> : null}
         <List ariaLabel="Personal work queue">
             {featured ? <ListItem className="[content-visibility:visible]">
@@ -109,19 +159,19 @@ export function PersonalWorkQueue({ data }: { data: PersonalQueueSnapshot }) {
                     {featured.schedule_conflict ? <p className="text-sm text-amber-200">{featured.schedule_reason}</p> : null}
                     {featured.assessment?.uncertainty ? <p className="text-xs text-neutral-500">Estimate note: {featured.assessment.uncertainty}</p> : null}
                     <div className="flex flex-wrap gap-2">
-                        {featured.status === "doing" ? <><button className={`${button} border-neutral-300 bg-neutral-100 !text-neutral-950 hover:bg-white`} disabled={Boolean(busy)} onClick={()=>setCompletion(featured)}>Complete</button><button className={button} disabled={Boolean(busy)} onClick={()=>void command(featured,"pause")}>Pause</button></> : <button className={`${button} border-neutral-300 bg-neutral-100 !text-neutral-950 hover:bg-white`} disabled={Boolean(busy)} onClick={()=>void command(featured,"start")}>{busy===featured.id?"Starting…":featured.actual_start_at?"Resume":"Accept & start"}</button>}
+                        {featured.status === "doing" ? <><button className={`${button} border-neutral-300 bg-neutral-100 !text-neutral-950 hover:bg-white`} disabled={Boolean(busy) || Boolean(recovery) || Boolean(recoveryProblem)} onClick={()=>setCompletion(featured)}>Complete</button><button className={button} disabled={Boolean(busy) || Boolean(recovery) || Boolean(recoveryProblem)} onClick={()=>void command(featured,"pause")}>Pause</button></> : <button className={`${button} border-neutral-300 bg-neutral-100 !text-neutral-950 hover:bg-white`} disabled={Boolean(busy) || Boolean(recovery) || Boolean(recoveryProblem) || working} onClick={()=>void command(featured,"start")}>{busy===featured.id?"Starting…":featured.actual_start_at?"Resume":"Accept & start"}</button>}
                         <button className={button} disabled={Boolean(busy)} onClick={()=>openDispute(featured)}>Dispute</button>
                     </div>
                 </div>
             </ListItem> : null}
             {rows.map(item => {
-                const actions=[{label:"Open work item",href:href(item.id)},...(item.state==="Ready" && !ready.some(x=>x.state==="In progress")?[{label:item.actual_start_at?"Resume":"Accept & start",onClick:()=>void command(item,"start")}]:[]),{label:"Dispute",onClick:()=>openDispute(item)}]
+                const actions=[{label:"Open work item",href:href(item.id)},...(item.state==="In progress" && item.shared && !recovery && !recoveryProblem ? [{label:"Complete",onClick:()=>setCompletion(item)},{label:"Pause",onClick:()=>void command(item,"pause")}] : []),...(item.state==="Ready" && !working && !recovery && !recoveryProblem?[{label:item.actual_start_at?"Resume":"Accept & start",onClick:()=>void command(item,"start")}]:[]),{label:"Dispute",onClick:()=>openDispute(item)}]
                 return <ListItem key={item.id}><MobileListActionSurface actions={actions} label={`Actions for ${item.title}`}><ListPrimaryRow><ListTitle href={href(item.id)} className="flex-1">{item.title}</ListTitle><Status label={item.state==="Ready"?priorityLabel(item):item.state} tone={tone(item)} /></ListPrimaryRow><ListSecondaryRow><span className="hidden min-w-0 flex-1 truncate text-neutral-400 sm:inline">{item.relationship ? `${item.relationship} · ` : ""}{item.reason}</span>{item.assessment ? <span className="shrink-0 text-neutral-500">~{item.calibrated_minutes??item.assessment.effort_minutes}m</span> : null}<ListTrailing><span className="font-mono text-neutral-500">{shortId(item.id)}</span><span className="text-neutral-500">{formatRelativeTime(item.updated_at)}</span><ListActionMenu className="hidden sm:block" actions={actions} /></ListTrailing></ListSecondaryRow></MobileListActionSurface></ListItem>
             })}
             {!featured && !rows.length ? <p className="px-4 py-6 text-sm text-neutral-400">{view==="ready"?"No ready work is assigned to you. Check waiting work or ask your manager for an assignment.":"No waiting or scheduled work on this page."}</p> : null}
         </List>
         {snapshot.hasMore ? <button className={`${button} mt-5`} disabled={Boolean(busy)} onClick={()=>void refresh(true)}>Load more work</button> : null}
         {dispute ? <CenteredDialog title="Dispute work item" short busy={Boolean(busy)} onClose={()=>setDispute(null)} footer={<button className={button} disabled={Boolean(busy)||!reason||(reason==="Other"&&!note.trim())} onClick={()=>void submitDispute()}>{busy?"Submitting…":"Submit dispute"}</button>}><p className="mb-4 text-sm text-neutral-300">{dispute.title}</p><fieldset className="space-y-1"><legend className="mb-2 text-sm text-neutral-400">What is stopping you?</legend>{DISPUTE_REASONS.map(value=><label key={value} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-2 text-sm hover:bg-neutral-900"><input type="radio" name="dispute-reason" value={value} checked={reason===value} onChange={()=>saveDisputeDraft(value,note)} />{value}</label>)}</fieldset><label className="mt-4 block text-sm text-neutral-400">{reason==="Other"?"Explanation":"Additional details (optional)"}<textarea className="mt-2 min-h-24 w-full resize-none rounded-lg border border-neutral-700 bg-neutral-900 p-3 text-white" value={note} onChange={e=>saveDisputeDraft(reason,e.target.value)} maxLength={3000} required={reason==="Other"} /></label><p className="mt-3 text-xs text-neutral-500">Sent to your internal team for manager review. The client is not notified. Presentation preferences let you keep working.</p>{error?<p role="alert" className="mt-3 text-sm text-red-200">{error}</p>:null}</CenteredDialog> : null}
-        {completion ? <CenteredDialog title="Complete work item" onClose={()=>setCompletion(null)} busy={Boolean(busy)} footer={<button className={button} disabled={Boolean(busy)} onClick={()=>void command(completion,"complete")}>{busy?"Completing…":"Confirm complete"}</button>}><p className="text-sm text-neutral-200">{completion.title}</p><p className="mt-3 text-sm leading-6 text-neutral-400">Confirm that you have followed the instructions and met the completion requirements.</p><Link href={href(completion.id)} className="mt-3 inline-block text-sm underline">Review instructions and assets</Link>{error?<p role="alert" className="mt-3 text-sm text-red-200">{error}</p>:null}</CenteredDialog> : null}
+        {completion ? <CenteredDialog title="Complete work item" onClose={()=>setCompletion(null)} busy={Boolean(busy)} footer={<button className={button} disabled={Boolean(busy)} onClick={()=>void command(completion,"complete")}>{busy?"Completing…":"Confirm complete"}</button>}><p className="text-sm text-neutral-200">{completion.title}</p><p className="mt-3 text-sm leading-6 text-neutral-400">{completion.shared && completion.started_by !== data.userId ? `This work was started by ${completion.started_by_name || "another assignee"}. Your completion will be recorded. ` : ""}Confirm that you have followed the instructions and met the completion requirements.</p><Link href={href(completion.id)} className="mt-3 inline-block text-sm underline">Review instructions and assets</Link>{error?<p role="alert" className="mt-3 text-sm text-red-200">{error}</p>:null}</CenteredDialog> : null}
     </>
 }

@@ -59,6 +59,8 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/be-pglite" --no-save --ignore-scripts @electric-sql/pglite@0.5.8
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-client-connection-controls-sql.mjs
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-free-client-ghl-sql.mjs
+      - name: Shared service queue authorization and lifecycle
+        run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-shared-service-queue.mjs
       - name: Full test suite
         run: npm test
       - name: Production webpack build with local placeholders
@@ -100,6 +102,8 @@ jobs:
           trap '"$BE_RECORDS_PG_BIN/pg_ctl" -D "$device_cluster/data" -m fast stop || true' EXIT
           "$BE_RECORDS_PG_BIN/pg_ctl" -D "$device_cluster/data" -l "$device_cluster/server.log" -o "-h 127.0.0.1 -p 45680 -k $device_cluster -c max_connections=12 -c shared_buffers=16MB" -w start
           BE_DEVICE_POSTGRES_URL=postgresql://fixture_owner@127.0.0.1:45680/postgres BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/device-unread-progressive/postgres-checks.mjs "$RUNNER_TEMP/device-unread-native-postgres.json"
+      - name: Verify shared service queue concurrent actions and removal
+        run: BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/shared-service-queue/postgres.mjs
       - name: Print device concurrency evidence
         if: always()
         run: cat "$RUNNER_TEMP/device-unread-native-postgres.json"
@@ -226,6 +230,8 @@ jobs:
         run: node scripts/browser/run-asset-library.mjs "${{ matrix.engine }}"
       - name: Exercise client connection menus and calendar selection
         run: node scripts/browser/run-client-connections.mjs "${{ matrix.engine }}"
+      - name: Exercise shared service assignment and command recovery
+        run: node scripts/browser/run-shared-service-queue.mjs "${{ matrix.engine }}"
       - name: Exercise service transfer preview, acknowledgement and recovery
         run: node scripts/browser/run-service-transfer.mjs "${{ matrix.engine }}"
       - name: Exercise on-demand relationship queue refresh and access loss

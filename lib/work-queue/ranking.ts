@@ -6,6 +6,7 @@ export type Assessment = {
     reason: string; uncertainty: string; horizon?: "now"|"today"|"tomorrow"|"week"; horizon_reason?: string; guidance?: string;
 }
 export type QueueItem = {
+    shared?: boolean; started_by?: string | null; started_by_name?: string | null;
     id: string; title: string; description: string | null; status: string;
     created_at: string; updated_at: string; actual_start_at: string | null;
     due_at: string | null; planned_at: string | null; priority_override: number | null;
@@ -26,7 +27,7 @@ export function rankQueue(items: QueueItem[], now = Date.now()): RankedQueueItem
         const age = Math.min(20, Math.max(0, (now - Date.parse(item.created_at)) / 86400000))
         const score = (a?.impact ?? 40) * .55 + (a?.urgency ?? 30) * .25 + timing + age + Math.max(0, 10 - effort / 60)
         const reason = state !== "Ready" && state !== "In progress" ? state
-            : state === "In progress" ? "Continue the work you started."
+            : state === "In progress" ? (item.shared ? `Started by ${item.started_by_name || "a service assignee"}.` : "Continue the work you started.")
             : item.priority_band !== undefined ? (a?.horizon_reason || a?.reason || "Priority assessment pending.")
             : item.priority_override !== null ? `Manager priority ${item.priority_override}${a ? ` · ${a.reason}` : ""}`
             : slack <= 0 ? `Deadline needs attention${a ? ` · ${a.reason}` : ""}`

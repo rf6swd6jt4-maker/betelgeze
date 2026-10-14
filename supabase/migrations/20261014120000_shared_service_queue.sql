@@ -134,7 +134,7 @@ do $$declare d text;begin
   )
  ),false)$ownership$);
 
- d:=replace(d,'-- One running task per user across simultaneous tabs. Existing work remains stable.',E'if exists(select 1 from public.service_queue_rosters sq join public.service_instance_work_items sl on sl.workspace_id=sq.workspace_id and sl.instance_id=sq.instance_id where sq.workspace_id=p_workspace and sl.work_item_id=p_item) and public.service_queue_work_instance(p_workspace,p_item) is not null then raise exception ''Reload the queue to use shared work.''; end if;\n -- One running task per user across simultaneous tabs. Existing work remains stable.');
+ d:=replace(d,' update work_items set status=case p_action',E' if exists(select 1 from public.service_queue_rosters sq join public.service_instance_work_items sl on sl.workspace_id=sq.workspace_id and sl.instance_id=sq.instance_id where sq.workspace_id=p_workspace and sl.work_item_id=p_item) and public.service_queue_work_instance(p_workspace,p_item) is not null then raise exception ''Reload the queue to use shared work.''; end if;\n update work_items set status=case p_action');
  execute d;
 end $$;
 
@@ -213,7 +213,7 @@ declare i relationship_service_instances; prior service_queue_receipts; v intege
  select coalesce(array_agg(user_id),'{}') into removed from service_queue_members where instance_id=i.id and not(user_id=any(p_members));
  delete from service_queue_members where instance_id=i.id and not(user_id=any(p_members));
  insert into service_queue_members(workspace_id,instance_id,user_id,added_by) select p_workspace,i.id,person,p_actor from unnest(p_members) person on conflict do nothing;
- perform 1 from work_items w join service_instance_work_items l on l.workspace_id=w.workspace_id and l.work_item_id=w.id where l.instance_id=i.id order by w.id for update of w;
+ perform 1 from work_items w join service_instance_work_items l on l.workspace_id=w.workspace_id and l.work_item_id=w.id where l.instance_id=i.id and w.status='doing' order by w.id for update of w;
  -- Preserve already-started work when sharing is first enabled.
  insert into service_queue_activity(workspace_id,work_item_id,started_by,active)
  select p_workspace,w.id,coalesce(run.user_id,w.execution_owner_id,i.assignee_user_id),true

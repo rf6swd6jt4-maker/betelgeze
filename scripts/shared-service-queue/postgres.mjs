@@ -24,8 +24,12 @@ try {
  const roster=async(c,members,v,request)=>(await c.query('select save_service_queue_roster($1,$2,$3,$4,$5,$6,$7) r',[w,client,instance,f.admin,id(request),v,members])).rows[0].r
  const cmd=async(c,n,action,user,v,request)=>(await c.query('select shared_queue_command($1,$2,$3,$4,$5,$6) r',[w,user,id(n),action,v,id(request)])).rows[0].r
  const waitLock=async c=>{const deadline=Date.now()+3000;while(Date.now()<deadline){if((await one('select exists(select 1 from pg_locks where pid=$1 and not granted) waiting',[c.pid])).waiting)return;await new Promise(r=>setTimeout(r,10))}throw Error('No real lock wait observed')}
- await roster(admin,[bob],0,100)
  const a=await connect(),b=await connect()
+ await a.query('begin');await roster(a,[bob],0,100)
+ const mixed=assert.rejects(b.query('select personal_queue_command($1,$2,$3,$4,$5)',[w,alice,id(20),'start',await version(20)]),/Reload the queue/)
+ await waitLock(b);await a.query('commit');await mixed
+ assert.equal((await one('select status from work_items where id=$1',[id(20)])).status,'todo')
+ pass('first sharing fences an already-open legacy client before its waiting start can commit')
  let v=await version(20)
  await a.query('begin');await cmd(a,20,'start',alice,v,101)
  const loser=assert.rejects(cmd(b,20,'start',bob,v,102),/changed/);await waitLock(b);await a.query('commit');await loser

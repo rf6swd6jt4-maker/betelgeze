@@ -21,7 +21,7 @@ export async function fixtureSql(){
  create table workspace_member_service_access(workspace_id uuid,user_id uuid,service_id uuid,primary key(workspace_id,user_id,service_id));
  create table workspace_teams(id uuid primary key default gen_random_uuid(),workspace_id uuid,name text,kind text,relationship_id uuid,archived_at timestamptz,unique(workspace_id,relationship_id));
  create table workspace_team_members(workspace_id uuid,team_id uuid,user_id uuid,added_by uuid,primary key(team_id,user_id));
- create table workspace_native_conversations(id uuid primary key default gen_random_uuid(),workspace_id uuid,team_id uuid,kind text,archived_at timestamptz,created_by uuid,unique(team_id,kind));
+ create table workspace_native_conversations(id uuid primary key default gen_random_uuid(),workspace_id uuid,team_id uuid,kind text,archived_at timestamptz,created_by uuid,is_system boolean default false,unique(team_id,kind));
  create table workspace_native_conversation_participants(conversation_id uuid,user_id uuid);
  create table workspace_native_messages(id uuid primary key default gen_random_uuid(),workspace_id uuid,conversation_id uuid,sender_user_id uuid,client_request_id uuid unique,body text,created_at timestamptz default now());
  create function workspace_role_for_user(uuid,uuid) returns text language sql stable as $$select role from workspace_memberships where workspace_id=$1 and user_id=$2$$;
@@ -54,8 +54,8 @@ export async function fixtureSql(){
  const a=feedback.indexOf('create or replace function public.dispatch_pending_work_queue'),b=feedback.indexOf('do $$declare f record;',a)
  schema+=feedback.slice(0,a)+feedback.slice(b)
  schema+=fn(await read('supabase/migrations/20260920150000_service_work_and_fulfilment_chat.sql'),'ensure_active_service_fulfilment_chat')
- const chat=await read('supabase/migrations/20260815143000_workspace_teams_native_chat.sql')
- schema+=fn(chat,'native_conversation_can_read')+fn(chat,'native_conversation_can_write')
+ const chat=await read('supabase/migrations/20260821150000_encrypted_communications.sql')
+ schema+=fn(chat,'native_conversation_can_read')+fn(await read('supabase/migrations/20260909230000_retention_creator_portal_handoff.sql'),'native_conversation_can_write')
  return schema
 }
 export async function seed(db){

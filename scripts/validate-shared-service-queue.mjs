@@ -11,6 +11,20 @@ try {
  const queue=async(user)=>(await one('select read_personal_work_queue($1,$2) r',[w,user])).r
  const version=async(n)=>(await one('select updated_at from work_items where id=$1',[id(n)])).updated_at
  const command=async(n,action,user,ver,request=id(serial++))=>(await one('select shared_queue_command($1,$2,$3,$4,$5,$6) r',[w,user,id(n),action,ver??await version(n),request])).r
+ // Exercise legacy command ownership against the canonical predicate, including
+ // NULL ownership, explicit assignment precedence and private administrative work.
+ for(const owner of [alice,bob,null])for(const actor of [alice,bob,admin,outsider]){
+  await db.exec('begin')
+  await q('update work_items set execution_owner_id=$2 where id=$1',[id(20),owner])
+  if(owner===null)await q('insert into work_item_assignees values($1,$2,$3)',[w,id(20),bob])
+  const allowed=(await one('select personal_queue_owns($1,$2,$3) ok',[w,id(20),actor])).ok
+  const action=q('select personal_queue_command($1,$2,$3,$4,$5)',[w,actor,id(20),'start',await version(20)])
+  if(allowed)await action;else await assert.rejects(action,/not available/)
+  await db.exec('rollback')
+ }
+ await q('select ensure_active_service_fulfilment_chat($1,$2)',[w,client])
+ const originalChat=(await one('select id from workspace_native_conversations')).id
+ await q('insert into workspace_native_messages(workspace_id,conversation_id,sender_user_id,body) values($1,$2,$3,$4)',[w,originalChat,alice,'Retained synthetic history'])
  const before=await q('select * from work_items order by id')
  await assert.rejects(save([bob],alice,0),/Owner or admin/)
  await assert.rejects(save([id(999)]),/eligible/)
@@ -24,7 +38,10 @@ try {
  assert.equal((await one('select can_read_service_instance($1,$2) ok',[w,instance])).ok,false)
  await db.exec("set fixture.aal='aal2'");assert.equal((await one('select can_read_service_instance($1,$2) ok',[w,instance])).ok,true)
  const c=(await one('select id from workspace_native_conversations')).id
+ assert.equal(c,originalChat);assert.equal((await one('select count(*)::int n from workspace_native_conversations')).n,1);assert.equal((await one('select body from workspace_native_messages')).body,'Retained synthetic history')
  assert.equal((await one('select native_conversation_can_read($1,$2) ok',[c,bob])).ok,true)
+ assert.equal((await one('select native_conversation_can_write($1,$2) ok',[c,bob])).ok,true)
+ assert.equal((await one('select native_conversation_can_write($1,$2) ok',[c,outsider])).ok,false)
  console.log('PASS roster authorization, scope, shared existing work, common queue and existing group')
  const v=await version(20),request=id(serial++)
  const started=await command(20,'start',alice,v,request);assert.deepEqual(await command(20,'start',alice,v,request),started)

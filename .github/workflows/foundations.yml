@@ -59,6 +59,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/be-pglite" --no-save --ignore-scripts @electric-sql/pglite@0.5.8
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-client-connection-controls-sql.mjs
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-free-client-ghl-sql.mjs
+          BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-client-connection-retirement-sql.mjs
       - name: Shared service queue authorization and lifecycle
         run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-shared-service-queue.mjs
       - name: Full test suite

@@ -17,6 +17,12 @@ try {
  await assert.rejects(save([bob,bob]),/Duplicate/)
  await save([bob]);assert.deepEqual(await q('select * from work_items order by id'),before)
  assert.deepEqual((await queue(alice)).items.map(x=>x.id),(await queue(bob)).items.map(x=>x.id));assert.equal((await queue(outsider)).total,0)
+ // Different personal calendars must not reorder the shared service.
+ await q("insert into work_queue_plans(workspace_id,user_id,work_item_id,effort_minutes,horizon,anchor_day,target_day,reason) values($1,$2,$3,1,'now',current_date,current_date,'Personal only'),($1,$4,$3,400,'week',current_date,current_date+5,'Different calendar')",[w,alice,id(20),bob])
+ await db.exec('begin');assert.deepEqual((await queue(alice)).items,(await queue(bob)).items);await db.exec('rollback')
+ await q("select set_config('fixture.actor',$1,false)",[bob]);await db.exec("set fixture.aal='aal1'")
+ assert.equal((await one('select can_read_service_instance($1,$2) ok',[w,instance])).ok,false)
+ await db.exec("set fixture.aal='aal2'");assert.equal((await one('select can_read_service_instance($1,$2) ok',[w,instance])).ok,true)
  const c=(await one('select id from workspace_native_conversations')).id
  assert.equal((await one('select native_conversation_can_read($1,$2) ok',[c,bob])).ok,true)
  console.log('PASS roster authorization, scope, shared existing work, common queue and existing group')
@@ -85,6 +91,21 @@ try {
  const doneVersion=await version(23),doneRequest=id(serial++),done=await command(23,'complete',bob,doneVersion,doneRequest)
  await q("update relationship_service_instances set stage='completed' where id=$1",[instance])
  assert.deepEqual(await command(23,'complete',bob,doneVersion,doneRequest),done)
+ // A feature-created extra who becomes primary gains retained historical chat access.
+ await q("update relationship_service_instances set stage='setup' where id=$1",[instance])
+ await save([outsider]);assert.equal((await one('select count(*)::int n from service_queue_chat_members where user_id=$1',[outsider])).n,1)
+ await q('update relationship_service_instances set assignee_user_id=$2 where id=$1',[instance,outsider])
+ assert.equal((await one('select count(*)::int n from service_queue_chat_members where user_id=$1',[outsider])).n,0)
+ await q('update relationship_service_instances set assignee_user_id=$2 where id=$1',[instance,alice])
+ assert.equal((await one('select native_conversation_can_read($1,$2) ok',[c,outsider])).ok,true)
+
+ // Existing dispute/admin paths may pause work without a queue command.
+ // Reconcile the actor's stale claim at their next shared start.
+ await q("update work_items set status='todo' where id=$1",[id(23)]);await command(23,'start',alice)
+ await q("update work_items set status='todo' where id=$1",[id(23)])
+ await q("update work_items set visibility='workspace' where id=$1",[id(26)])
+ await command(26,'start',alice)
+ assert.equal((await one('select count(*)::int n from service_queue_activity where started_by=$1 and active',[alice])).n,1)
  console.log('PASS bulk/canonical scope parity, transfer version fence and replay after service completion')
  await db.exec('set role authenticated');await assert.rejects(roster(),/permission denied/);await assert.rejects(q('select * from service_queue_members'),/permission denied/);await db.exec('reset role')
  await assert.rejects(q("update service_queue_receipts set input='{}'"),/immutable/)

@@ -9,7 +9,7 @@ async function handle(request: Request, context: Context, write: boolean) {
     try {
         const { workspaceSlug, relationshipId } = await context.params
         const { workspace, user } = await requireWorkspace(workspaceSlug, "admin")
-        if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed. Reopen this service." }, { status: 409, headers })
+        if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed. Reopen this service.", code: "account_changed" }, { status: 409, headers })
         if (!isQueueUuid(relationshipId)) return Response.json({ error: "Invalid client" }, { status: 400, headers })
         const body: unknown = write ? await request.json() : null
         const instanceId = write && isServiceRosterRequest(body) ? body.instanceId : new URL(request.url).searchParams.get("instance")

@@ -106,10 +106,10 @@ function PersonalWorkQueueOwner({ data }: { data: PersonalQueueSnapshot }) {
         const controller=new AbortController();abort.current=controller
         const timeout=window.setTimeout(()=>controller.abort(),30000)
         try {
-            const response = await fetch(`/api/workspaces/${encodeURIComponent(data.workspaceSlug)}/queue`, { method:"POST",headers:{"Content-Type":"application/json","x-workspace-user":data.userId},body:JSON.stringify(item.shared || recovery ? input : {id:item.id,action,version:item.updated_at}),signal:controller.signal })
+            const response = await fetch(`/api/workspaces/${encodeURIComponent(data.workspaceSlug)}/queue`, { method:"POST",headers:{"Content-Type":"application/json","x-workspace-user":data.userId},body:JSON.stringify(item.shared || recovery ? input : {id:item.id,action,version:item.updated_at}),redirect:"error",signal:controller.signal })
             const result = await response.json()
             if (!response.ok) {
-                if (response.status === 409 || response.status === 400) { sessionStorage.removeItem(recoveryKey); setRecovery(null) }
+                if ((response.status === 409 && result.code !== "account_changed") || response.status === 400) { sessionStorage.removeItem(recoveryKey); setRecovery(null) }
                 throw new Error(result.error ?? "Could not confirm this action. Refresh before retrying.")
             }
             sessionStorage.removeItem(recoveryKey); setRecovery(null)

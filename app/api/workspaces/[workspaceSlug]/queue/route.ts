@@ -10,7 +10,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ wor
     try {
         const { workspaceSlug } = await params
         const { workspace, user } = await requireWorkspace(workspaceSlug)
-        if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your session changed" }, { status: 409, headers })
+        if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your session changed", code: "account_changed" }, { status: 409, headers })
         const body = await request.json()
         if (!body || !isQueueUuid(body.id) || !["start","pause","complete"].includes(body.action) || typeof body.version !== "string" || !Number.isFinite(Date.parse(body.version)) || ("requestId" in body && !isQueueCommandRequest(body))) return Response.json({ error: "Invalid work action" }, { status: 400, headers })
         const result = isQueueCommandRequest(body)

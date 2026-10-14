@@ -116,6 +116,22 @@ do $$declare d text;begin
  d:=pg_get_functiondef('public.personal_queue_command_v1(uuid,uuid,uuid,text,timestamptz)'::regprocedure);
  if position('personal_queue_owns(p_workspace,other.id,p_user)' in d)=0 then raise exception 'Unexpected queue active-work check';end if;
  d:=replace(d,'personal_queue_owns(p_workspace,other.id,p_user)','queue_actor_is_working(p_workspace,other.id,p_user)');
+ d:=replace(d,'if not found or not queue_work_open(w) or not personal_queue_owns(p_workspace,p_item,p_user) then',
+ E'if not found or not queue_work_open(w) then raise exception ''This work is not available to you''; end if;\n if not personal_queue_owns(p_workspace,p_item,p_user) then');
+ -- The task is already locked and loaded as w. Reuse that row instead of
+ -- invoking a second work-row lookup in the legacy ownership helper.
+ d:=replace(d,'personal_queue_owns(p_workspace,p_item,p_user)',$ownership$coalesce((
+  workspace_user_can_access_work_item(p_workspace,w.id,p_user) and (
+   w.execution_owner_id=p_user or (w.execution_owner_id is null and (
+    exists(select 1 from work_item_assignees a where a.workspace_id=p_workspace and a.work_item_id=w.id and a.user_id=p_user)
+    or (not exists(select 1 from work_item_assignees a where a.workspace_id=p_workspace and a.work_item_id=w.id) and (
+     exists(select 1 from service_instance_work_items l join relationship_service_instances i on i.workspace_id=l.workspace_id and i.id=l.instance_id where l.workspace_id=p_workspace and l.work_item_id=w.id and i.assignee_user_id=p_user)
+     or (not exists(select 1 from service_instance_work_items l where l.workspace_id=p_workspace and l.work_item_id=w.id) and exists(select 1 from work_item_relationships l join relationship_services s on s.workspace_id=l.workspace_id and s.relationship_id=l.relationship_id and s.service_id=w.service_id where l.workspace_id=p_workspace and l.work_item_id=w.id and s.assignee_user_id=p_user))
+    ))
+   ))
+  )
+ ),false)$ownership$);
+
  d:=replace(d,'-- One running task per user across simultaneous tabs. Existing work remains stable.',E'if exists(select 1 from public.service_queue_rosters sq join public.service_instance_work_items sl on sl.workspace_id=sq.workspace_id and sl.instance_id=sq.instance_id where sq.workspace_id=p_workspace and sl.work_item_id=p_item) and public.service_queue_work_instance(p_workspace,p_item) is not null then raise exception ''Reload the queue to use shared work.''; end if;\n -- One running task per user across simultaneous tabs. Existing work remains stable.');
  execute d;
 end $$;
@@ -195,6 +211,7 @@ declare i relationship_service_instances; prior service_queue_receipts; v intege
  select coalesce(array_agg(user_id),'{}') into removed from service_queue_members where instance_id=i.id and not(user_id=any(p_members));
  delete from service_queue_members where instance_id=i.id and not(user_id=any(p_members));
  insert into service_queue_members(workspace_id,instance_id,user_id,added_by) select p_workspace,i.id,person,p_actor from unnest(p_members) person on conflict do nothing;
+ perform 1 from work_items w join service_instance_work_items l on l.workspace_id=w.workspace_id and l.work_item_id=w.id where l.instance_id=i.id order by w.id for update of w;
  -- Preserve already-started work when sharing is first enabled.
  insert into service_queue_activity(workspace_id,work_item_id,started_by,active)
  select p_workspace,w.id,coalesce(run.user_id,w.execution_owner_id,i.assignee_user_id),true
@@ -204,7 +221,6 @@ declare i relationship_service_instances; prior service_queue_receipts; v intege
  on conflict(work_item_id) do nothing;
  -- Removing an active worker pauses only their shared task; never completes it,
  -- clears their work content or resets its original start/progress history.
- perform 1 from work_items w join service_instance_work_items l on l.workspace_id=w.workspace_id and l.work_item_id=w.id where l.instance_id=i.id order by w.id for update of w;
  update work_items w set status='todo',updated_at=clock_timestamp() from service_queue_activity a
  where a.workspace_id=p_workspace and a.work_item_id=w.id and a.active and w.status='doing'
  and service_queue_work_instance(p_workspace,w.id)=i.id and a.started_by=any(removed) and not service_queue_is_member(p_workspace,i.id,a.started_by);
@@ -249,6 +265,11 @@ declare instance uuid; relationship uuid; w work_items; prior service_queue_rece
   if p_action='start' and w.planned_start_date+coalesce(w.planned_start_time,time '00:00')>now() at time zone 'UTC' then raise exception 'This work is scheduled for later';end if;
  end if;
  if p_action='start' and exists(select 1 from work_items other where other.workspace_id=p_workspace and other.id<>p_item and other.status='doing' and queue_work_open(other) and queue_actor_is_working(p_workspace,other.id,p_user)) then raise exception 'Pause your current task before starting another';end if;
+ if p_action='start' then
+  update service_queue_activity a set active=false,updated_at=clock_timestamp()
+  where a.workspace_id=p_workspace and a.started_by=p_user and a.active
+  and not exists(select 1 from work_items old_work where old_work.workspace_id=p_workspace and old_work.id=a.work_item_id and old_work.status='doing');
+ end if;
  perform set_config('app.queue_actor',p_user::text,true);
  select started_by into starter from service_queue_activity where work_item_id=p_item;
  -- Team effort must never train an individual's timing estimates.
@@ -338,10 +359,15 @@ do $$declare d text; old text; signature text; rel text; svc text;begin
  old:='queue_work_open(w) and personal_queue_owns(p_workspace,w.id,p_user)';
  if position(old in d)=0 then raise exception 'Unexpected schedule context';end if;
  execute replace(d,old,old||' and public.service_queue_work_instance(p_workspace,w.id) is null');
- d:=pg_get_functiondef('public.queue_schedule_item(uuid,uuid)'::regprocedure);
- old:='where exists(select 1 from workspace_memberships';
- if position(old in d)=0 then raise exception 'Unexpected schedule enqueue';end if;
- execute replace(d,old,'where (not exists(select 1 from public.service_queue_rosters sq join public.service_instance_work_items sl on sl.workspace_id=sq.workspace_id and sl.instance_id=sq.instance_id where sq.workspace_id=p_workspace and sl.work_item_id=p_item) or public.service_queue_work_instance(p_workspace,p_item) is null) and exists(select 1 from workspace_memberships');
+ select prosrc into d from pg_proc where oid='public.queue_schedule_item(uuid,uuid)'::regprocedure;
+ if position('select queue_feedback_enqueue' in d)=0 then raise exception 'Unexpected schedule enqueue';end if;
+ -- Keep the existing UNION query plan intact on ordinary writes. An opt-in
+ -- guard outside that query avoids extra predicates across every union arm.
+ execute 'create or replace function public.queue_schedule_item(p_workspace uuid,p_item uuid) returns void language plpgsql security definer set search_path=public as '||quote_literal(
+ 'begin
+ if exists(select 1 from service_queue_rosters sq join service_instance_work_items sl on sl.workspace_id=sq.workspace_id and sl.instance_id=sq.instance_id where sq.workspace_id=p_workspace and sl.work_item_id=p_item)
+ and service_queue_work_instance(p_workspace,p_item) is not null then return;end if;
+ '||replace(d,'select queue_feedback_enqueue','perform queue_feedback_enqueue')||';end');
  foreach signature in array array['public.relationship_service_rows(uuid,uuid,uuid)','public.read_selected_service_session_access(uuid,uuid[],uuid)'] loop
   d:=pg_get_functiondef(signature::regprocedure);
   old:='i.assignee_user_id=p_user_id';
@@ -354,14 +380,9 @@ do $$declare d text; old text; signature text; rel text; svc text;begin
  execute replace(d,old,'(i.assignee_user_id=m.user_id or public.service_queue_is_member(p_workspace_id,i.id,m.user_id))');
 end $$;
 
--- Keep live shared activity honest when existing dispute/status paths pause it.
-create function public.sync_service_queue_activity() returns trigger language plpgsql security definer set search_path=public as $$
-begin
- if new.status<>'doing' and old.status='doing' then
-  update service_queue_activity set active=false,updated_at=clock_timestamp() where work_item_id=new.id and active;
- end if;return null;
-end $$;
-create trigger sync_service_queue_activity after update of status on public.work_items for each row when(old.status='doing' and new.status<>'doing') execute function public.sync_service_queue_activity();
+-- Claims are authoritative only while their work row is doing. Shared starts
+-- reconcile a claimant's externally paused/completed rows under the actor lock;
+-- unrelated status changes need no new trigger or work on their write path.
 create function public.sync_service_queue_lifecycle() returns trigger language plpgsql security definer set search_path=public as $$
 begin
  if exists(select 1 from service_queue_rosters where instance_id=new.id) then
@@ -378,6 +399,10 @@ begin
   update work_items w set status='todo',updated_at=clock_timestamp() from service_queue_activity a
   where a.workspace_id=new.workspace_id and a.work_item_id=w.id and a.active and w.status='doing'
   and service_queue_work_instance(new.workspace_id,w.id)=new.id
+  and not service_queue_is_member(new.workspace_id,new.id,a.started_by);
+  update service_queue_activity a set active=false,updated_at=clock_timestamp()
+  where a.workspace_id=new.workspace_id and a.active
+  and service_queue_work_instance(new.workspace_id,a.work_item_id)=new.id
   and not service_queue_is_member(new.workspace_id,new.id,a.started_by);
   perform sync_service_queue_chat(new.workspace_id,new.relationship_id);
  end if;return null;
@@ -407,7 +432,7 @@ create trigger guard_service_queue_eligibility before delete or update on public
 -- precede service-role commands; policy helpers retain their established use.
 do $$declare f record;begin
  for f in select oid::regprocedure signature,proname from pg_proc where pronamespace='public'::regnamespace and proname in (
- 'guard_service_queue_offboarding','service_queue_visible_work','sync_service_queue_activity','sync_service_queue_lifecycle','guard_service_queue_receipt','service_queue_is_member','service_queue_work_instance','service_queue_can_work','queue_actor_is_working','read_service_queue_roster','preserve_explicit_service_queue_chat_member','sync_service_queue_chat','save_service_queue_roster','shared_queue_command') loop
+ 'guard_service_queue_offboarding','service_queue_visible_work','sync_service_queue_lifecycle','guard_service_queue_receipt','service_queue_is_member','service_queue_work_instance','service_queue_can_work','queue_actor_is_working','read_service_queue_roster','preserve_explicit_service_queue_chat_member','sync_service_queue_chat','save_service_queue_roster','shared_queue_command') loop
   execute format('revoke all on function %s from public,anon,authenticated,service_role',f.signature);
   if f.proname in ('read_service_queue_roster','save_service_queue_roster','shared_queue_command') then execute format('grant execute on function %s to service_role',f.signature);end if;
  end loop;

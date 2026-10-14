@@ -13,7 +13,7 @@ assert.ok(bin&&path.isAbsolute(bin),'Set BE_RECORDS_PG_BIN to reviewed PostgreSQ
 const root=await mkdtemp(path.join(tmpdir(),'be-shared-queue-pg-')),data=path.join(root,'data'),socket=path.join(root,'socket');await mkdir(socket,{mode:0o700})
 const clients=[];let started=false,passed=0
 const pass=name=>console.log(`PASS ${++passed}: ${name}`)
-const connect=async()=>{const c=new Client({host:socket,port:55487,user:'fixture_owner',database:'postgres'});await c.connect();clients.push(c);await c.query("set statement_timeout='10s';set lock_timeout='8s'");c.pid=(await c.query('select pg_backend_pid() pid')).rows[0].pid;return c}
+const connect=async(database='postgres')=>{const c=new Client({host:socket,port:55487,user:'fixture_owner',database});await c.connect();clients.push(c);await c.query("set statement_timeout='10s';set lock_timeout='8s'");c.pid=(await c.query('select pg_backend_pid() pid')).rows[0].pid;return c}
 try {
  execFileSync(path.join(bin,'initdb'),['-D',data,'--username=fixture_owner','--auth-local=trust','--auth-host=reject','--encoding=UTF8','--locale=C'],{stdio:'pipe'})
  execFileSync(path.join(bin,'pg_ctl'),['-D',data,'-l',path.join(root,'server.log'),'-o',`-k ${socket} -p 55487 -c listen_addresses='' -c unix_socket_permissions=0700 -c max_connections=12 -c shared_buffers=16MB`,'-w','start'],{stdio:'pipe'});started=true
@@ -55,6 +55,12 @@ try {
  assert.equal((await one('select status from work_items where id=$1',[id(22)])).status,'todo')
  assert.equal((await one('select count(*)::int n from service_queue_receipts where request_id=$1',[id(114)])).n,1)
  pass('accepted action precedes removal without losing its receipt or leaving an active removed worker')
+ const rv=(await one('select version from service_queue_rosters where instance_id=$1',[instance])).version
+ await a.query('begin');await roster(a,[bob],rv,116)
+ const staleRoster=assert.rejects(roster(b,[f.outsider],rv,117),/Assignments changed/);await waitLock(b);await a.query('commit');await staleRoster
+ assert.deepEqual((await admin.query('select user_id from service_queue_members where instance_id=$1',[instance])).rows.map(x=>x.user_id),[bob])
+ pass('simultaneous roster edits preserve the winning membership and reject a stale replacement')
+ if(process.env.BE_SHARED_MEASURE==='1')await (await import('./native-measure.mjs')).measureNative(admin,connect)
  console.log(JSON.stringify({passed,productionCalls:0,postgres:(await one('select version() v')).v}))
 }finally{
  await Promise.allSettled(clients.map(c=>c.end()))

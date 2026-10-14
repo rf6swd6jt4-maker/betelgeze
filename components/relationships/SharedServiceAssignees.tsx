@@ -54,7 +54,7 @@ function SharedServiceAssigneesEditor({ endpoint, instanceId, userId, allowChang
             const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "x-workspace-user": userId }, body: JSON.stringify(input), redirect: "error", signal: AbortSignal.timeout(30000) })
             const data = await response.json()
             if (!response.ok) {
-                if (response.status === 409 || response.status === 400) { sessionStorage.removeItem(key); if (mounted.current) setRecovery(null); if (mounted.current) setRoster(null) }
+                if ((response.status === 409 && data.code !== "account_changed") || response.status === 400) { sessionStorage.removeItem(key); if (mounted.current) setRecovery(null); if (mounted.current) setRoster(null) }
                 throw new Error(data.error || "Assignments were not confirmed. Retry the same request.")
             }
             sessionStorage.removeItem(key)

@@ -25,11 +25,15 @@ try {
  await q('select ensure_active_service_fulfilment_chat($1,$2)',[w,client])
  const originalChat=(await one('select id from workspace_native_conversations')).id
  await q('insert into workspace_native_messages(workspace_id,conversation_id,sender_user_id,body) values($1,$2,$3,$4)',[w,originalChat,alice,'Retained synthetic history'])
+ await q("update work_items set status='doing' where id=any($1::uuid[])",[[id(23),id(24)]])
  const before=await q('select * from work_items order by id')
  await assert.rejects(save([bob],alice,0),/Owner or admin/)
  await assert.rejects(save([id(999)]),/eligible/)
  await assert.rejects(save([bob,bob]),/Duplicate/)
  await save([bob]);assert.deepEqual(await q('select * from work_items order by id'),before)
+ assert.equal((await one('select count(*)::int n from service_queue_activity where started_by=$1 and active',[alice])).n,2)
+ await assert.rejects(command(20,'start',alice),/Pause your current/)
+ await q("update work_items set status='todo' where id=any($1::uuid[])",[[id(23),id(24)]])
  assert.deepEqual((await queue(alice)).items.map(x=>x.id),(await queue(bob)).items.map(x=>x.id));assert.equal((await queue(outsider)).total,0)
  // Different personal calendars must not reorder the shared service.
  await q("insert into work_queue_plans(workspace_id,user_id,work_item_id,effort_minutes,horizon,anchor_day,target_day,reason) values($1,$2,$3,1,'now',current_date,current_date,'Personal only'),($1,$4,$3,400,'week',current_date,current_date+5,'Different calendar')",[w,alice,id(20),bob])

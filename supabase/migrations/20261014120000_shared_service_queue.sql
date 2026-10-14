@@ -26,7 +26,9 @@ create table public.service_queue_activity (
  started_by uuid references auth.users(id), active boolean not null default false,
  completed_by uuid references auth.users(id), updated_at timestamptz not null default now()
 );
-create unique index service_queue_one_active_actor_idx on public.service_queue_activity(workspace_id,started_by) where active;
+-- Existing legacy work may already contain several started items for one person.
+-- Preserve them; actor advisory locks and the command gate prevent new races.
+create index service_queue_active_actor_idx on public.service_queue_activity(workspace_id,started_by) where active;
 create table public.service_queue_receipts (
  workspace_id uuid not null, actor_id uuid not null references auth.users(id), request_id uuid not null,
  kind text not null check(kind in ('roster','work')), input jsonb not null, result jsonb not null,

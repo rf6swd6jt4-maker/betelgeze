@@ -241,6 +241,8 @@ jobs:
         run: node scripts/browser/run-ghl-appointment-summary.mjs "${{ matrix.engine }}"
       - name: Exercise client connection menus and calendar selection
         run: node scripts/browser/run-client-connections.mjs "${{ matrix.engine }}"
+      - name: Exercise app connection and explicit WhatsApp activation
+        run: node scripts/browser/run-ghl-app-connections.mjs "${{ matrix.engine }}"
       - name: Exercise shared service assignment and command recovery
         run: node scripts/browser/run-shared-service-queue.mjs "${{ matrix.engine }}"
       - name: Exercise service transfer preview, acknowledgement and recovery

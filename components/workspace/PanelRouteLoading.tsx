@@ -68,7 +68,7 @@ function WorkItemsLoading({ fulfilment = false }: { fulfilment?: boolean }) {
 function ClientConnectionsLoading() {
     return <PanelLoadingFrame title="Client Connections">
         <div className="pt-5">
-            <PanelTabHeader title="Client Connections" description="Connect client accounts to the systems used to deliver their services." actions={<LoadingPulse className="h-10 w-full sm:w-32" />} />
+            <PanelTabHeader title="Client Connections" description="Connect HighLevel calendars and choose which clients receive WhatsApp appointment notifications." actions={<LoadingPulse className="h-10 w-full sm:w-32" />} />
             <section className="mt-6 rounded-2xl border border-neutral-800 bg-neutral-900 p-5" aria-label="Loading agency connection">
                 <LoadingPulse className="h-5 w-44" /><LoadingPulse className="mt-2 h-4 w-96 max-w-full" /><LoadingPulse className="mt-4 h-4 w-56" />
             </section>

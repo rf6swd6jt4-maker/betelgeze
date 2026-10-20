@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useSearchParams } from "@/components/workspace/WorkspaceNavigation"
+import dynamic from "next/dynamic"
+import { useRouter, useSearchParams } from "@/components/workspace/WorkspaceNavigation"
 import { useMemo, useState, useTransition, useRef, useEffect, type FormEvent } from "react"
 import { saveClientAccount, removeClientAccount, refreshClientAccount } from "@/app/[workspaceSlug]/client-connections/actions"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
@@ -10,6 +11,7 @@ import { CenteredDialog, Selector, Status } from "@/components/ui"
 import type { ClientConnectionAccount, ConnectionHistoryCursor } from "@/lib/client-connections"
 
 const field = "mt-2 h-11 w-full rounded-xl border border-neutral-700 bg-black px-3 text-sm text-white outline-none focus:border-neutral-400"
+const GhlAppConnectionDialog = dynamic(() => import("./GhlAppConnectionDialog").then(module => module.GhlAppConnectionDialog))
 
 export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAccounts, historyCursor = null, agency, canManageAgency }: {
     workspaceSlug: string
@@ -38,7 +40,14 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
     const [loadingCalendars, setLoadingCalendars] = useState(false)
     const calendarRequest = useRef<AbortController | null>(null)
     useEffect(() => () => calendarRequest.current?.abort(), [])
-    const selectedRelationship = useSearchParams().get("relationship")
+    const router = useRouter(), search = useSearchParams()
+    const selectedRelationship = search.get("relationship")
+    const returnedFromHighLevel = search.get("ghl")
+    const [handledReturn, setHandledReturn] = useState<string | null>(null)
+    const [appDialog, setAppDialog] = useState<{ account?: ClientConnectionAccount; choices?: ClientConnectionAccount[]; resume?: boolean } | null>(null)
+    if (returnedFromHighLevel && handledReturn !== returnedFromHighLevel) {
+        setHandledReturn(returnedFromHighLevel); setAppDialog({ resume: true })
+    }
     const visibleAccounts = useMemo(() => selectedRelationship ? accounts.filter(account => account.relationshipId === selectedRelationship) : accounts, [accounts, selectedRelationship])
     const unconnected = useMemo(() => visibleAccounts.filter((account) => !account.connected && !account.historyId && !account.archived), [visibleAccounts])
     const [connectionChoices, setConnectionChoices] = useState<ClientConnectionAccount[]>([])
@@ -131,11 +140,11 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
     }
 
     return <div className="mx-auto max-w-7xl px-4 pb-8 pt-5 text-white sm:px-6">
-        <PanelTabHeader title="Client Connections" description="Connect client accounts to the systems used to deliver their services." actions={<button type="button" disabled={!unconnected.length} onClick={() => edit(null)} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">＋ Add connection</button>} />
+        <PanelTabHeader title="Client Connections" description="Connect HighLevel calendars and choose which clients receive WhatsApp appointment notifications." actions={<button type="button" disabled={!unconnected.length} onClick={() => setAppDialog({ choices: unconnected })} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">Connect HighLevel</button>} />
 
         <section className="mt-6 rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-semibold">Agency Connection</h2><p className="mt-1 text-sm leading-6 text-neutral-400">The agency HighLevel account used to verify agency sub-accounts.</p></div><Status label={agency.connected ? "Connected" : "Not connected"} tone={agency.connected ? "green" : "grey"} /></div>
-            {agency.connected ? <p className="mt-4 text-sm text-neutral-300">{agency.name ?? "HighLevel agency"}{agency.id ? ` · ${agency.id}` : ""}</p> : <p className="mt-4 text-sm text-neutral-400">Connect an agency account before linking an agency sub-account.</p>}
+            <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-semibold">Agency connection</h2><p className="mt-1 text-sm leading-6 text-neutral-400">Used to verify agency sub-accounts connected with a private token. App connections are authorised directly in HighLevel.</p></div><Status label={agency.connected ? "Connected" : "Not connected"} tone={agency.connected ? "green" : "grey"} /></div>
+            {agency.connected ? <p className="mt-4 text-sm text-neutral-300">{agency.name ?? "HighLevel agency"}{agency.id ? ` · ${agency.id}` : ""}</p> : <p className="mt-4 text-sm text-neutral-400">The HighLevel app can connect your own agency’s sub-accounts without a separate agency-token setup here.</p>}
             <p className="mt-4 text-xs text-neutral-500">Only Admins can edit the agency connection in Settings.</p>
             {canManageAgency ? <Link href={`/${workspaceSlug}/settings#connections`} className="mt-3 inline-flex h-9 items-center rounded-lg border border-neutral-700 px-3 text-sm text-neutral-200 hover:border-neutral-500">Open Settings</Link> : null}
         </section>
@@ -148,14 +157,15 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
                 const status = account.historyId ? { label: "Retired", tone: "red" as const } : account.connected ? { label: "Active", tone: account.error ? "yellow" as const : "green" as const } : { label: "Not configured", tone: "yellow" as const }
                 return <ListItem key={account.historyId ?? account.relationshipId}>
                     <ListPrimaryRow><ListTitle className="flex-1">{title}</ListTitle><Status label={status.label} tone={status.tone} /></ListPrimaryRow>
-                    <ListSecondaryRow><span className="min-w-0 truncate text-neutral-400">{account.locationName ?? "No HighLevel account linked"}{account.archived ? " · Archived relationship" : ""}{account.retiredAt ? ` · Retired ${new Date(account.retiredAt).toLocaleDateString()}` : ""}</span><ListTrailing><button type="button" aria-label={`Actions for ${title}${account.historyId ? " retired connection" : ""}`} disabled={pending} onClick={() => edit(account)} className="-my-3 flex h-11 w-11 shrink-0 items-center justify-center text-neutral-300 hover:text-white disabled:opacity-40"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" /></svg></button></ListTrailing></ListSecondaryRow>
+                    <ListSecondaryRow><span className="min-w-0 truncate text-neutral-400">{account.locationName ?? "No HighLevel account linked"}{account.archived ? " · Archived relationship" : ""}{account.retiredAt ? ` · Retired ${new Date(account.retiredAt).toLocaleDateString()}` : ""}</span><ListTrailing><button type="button" aria-label={`Actions for ${title}${account.historyId ? " retired connection" : ""}`} disabled={pending} onClick={() => account.historyId || account.archived ? edit(account) : setAppDialog({ account })} className="-my-3 flex h-11 w-11 shrink-0 items-center justify-center text-neutral-300 hover:text-white disabled:opacity-40"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" /></svg></button></ListTrailing></ListSecondaryRow>
                 </ListItem>
             }) : <div className="p-6"><p className="font-semibold">{selectedRelationship ? "No available connection for this relationship." : "No eligible clients yet."}</p><p className="mt-2 text-sm text-neutral-400">{selectedRelationship ? "It may no longer be eligible or available to your account." : "Clients in onboarding or retention can connect HighLevel without purchasing Appointment Setting."}</p></div>}
         </List>
 
+        {appDialog ? <GhlAppConnectionDialog key={appDialog.resume ? "resume" : appDialog.account?.relationshipId ?? "new"} workspaceSlug={workspaceSlug} accounts={accounts.filter(account => !account.historyId && !account.archived)} initialAccount={appDialog.account} initialChoices={appDialog.choices} resume={appDialog.resume} onClose={() => setAppDialog(null)} onManual={account => { setAppDialog(null); edit(account) }} onSaved={() => router.refresh()} /> : null}
         {nextCursor ? <button type="button" disabled={loadingHistory} onClick={() => void loadHistory()} className="mt-4 min-h-11 px-3 text-sm underline underline-offset-4 disabled:opacity-40">{loadingHistory ? "Loading history…" : "Load older connections"}</button> : null}
         {open && editing?.historyId ? <CenteredDialog title="Retired connection" onClose={closeEditor}><p className="text-sm leading-6 text-neutral-300">{editing.locationName ?? editing.locationId} · {editing.clientName}</p><p className="mt-3 text-sm text-neutral-400">Retired {editing.retiredAt ? new Date(editing.retiredAt).toLocaleString() : ""}. This connection no longer reserves the location or provides portal access.</p><p className="mt-3 text-sm text-neutral-400">Calendar: {editing.calendarName ?? "Not selected"}</p></CenteredDialog> : null}
-        {open && !editing?.historyId ? <CenteredDialog title={editing ? "Edit client connection" : "Add client connection"} busy={pending} onClose={closeEditor}><form onSubmit={submit}>{editing?.archived ? <p className="mb-4 text-sm text-neutral-400">This relationship is archived. Retire its connection to release the location for another relationship.</p> : null}<fieldset disabled={pending || editing?.archived} className="space-y-4">
+        {open && !editing?.historyId ? <CenteredDialog title="Manual connection" busy={pending} onClose={closeEditor}><form onSubmit={submit}>{editing?.archived ? <p className="mb-4 text-sm text-neutral-400">This relationship is archived. Retire its connection to release the location for another relationship.</p> : null}<fieldset disabled={pending || editing?.archived} className="space-y-4">
             <label className="block text-sm text-neutral-300">Client<Selector name="relationshipId" required appearance="input" ariaLabel="Client account" value={relationshipId} onChange={(value) => { clearCalendars(); setRelationshipId(value) }} options={connectionChoices.map((account) => ({ value: account.relationshipId, label: account.businessName ? `${account.clientName} – ${account.businessName}` : account.clientName }))} /></label>
             <label className="block text-sm text-neutral-300">Account source<Selector name="accountType" required appearance="input" ariaLabel="Account source" value={accountType} onChange={(value) => setAccountType(value === "agency_subaccount" ? "agency_subaccount" : "client_account")} options={[{ value: "client_account", label: "Client account", description: "The client already owns this HighLevel account." }, { value: "agency_subaccount", label: "Agency sub-account", description: "Your team created this under the connected agency." }]} /></label>
             {accountType === "agency_subaccount" && !agency.connected ? <p role="alert" className="rounded-lg border border-yellow-800/60 bg-yellow-950/20 p-3 text-sm text-yellow-200">Connect the agency HighLevel account in Settings first.</p> : null}

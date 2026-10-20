@@ -48,7 +48,7 @@ test("legacy Appointment Setting routes move into Client Connections without del
     assert.match(detail, /requireWorkspacePanel\(workspaceSlug, "client-connections"\)/)
     assert.match(detail, /redirect\(`\/\$\{workspaceSlug\}\/client-connections`\)/)
     assert.match(connections, /readClientConnections/)
-    assert.match(workspace, /Agency Connection/)
+    assert.match(workspace, /Agency connection/i)
     assert.match(workspace, /ariaLabel="Client accounts"/)
     assert.equal(appointmentSettingDetailHref("acme", "relationship-1"), "/acme/appointment-setting/relationship-1")
 })
